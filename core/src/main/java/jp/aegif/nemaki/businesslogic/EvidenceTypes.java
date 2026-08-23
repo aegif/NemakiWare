@@ -54,11 +54,13 @@ public final class EvidenceTypes {
     /**
      * The protected set.
      *
-     * <p>Kept explicit rather than derived. There is no mechanical check that a new evidence type
-     * was added here — the association between a type and its properties lives in a private local
-     * array inside the type patch, and what reaches the database is detail node ids rather than
-     * property ids, so the containment test the design first proposed cannot be written today.
-     * Saying so is the point: a guarantee that cannot be tested must not be described as one.
+     * <p>Kept explicit rather than derived. The mechanical containment check the design first
+     * proposed became writable on 2026-08-24, when the type patches promoted their type ids and
+     * derived property-id lists to public constants — {@code EvidenceProtectionRosterTest} now
+     * pins "this set == the types the patches declare" and the full type↔property rosters.
+     * What remains true: the DATABASE stores detail node ids rather than property ids, so the
+     * static test proves the constants agree, not the stored definitions — that check would be
+     * an integration test (evidence-types §2.2's other branch).
      */
     public static final Set<String> PROTECTED = Set.of(
             // The eleven chat evidence properties P1-1(c) made READONLY.

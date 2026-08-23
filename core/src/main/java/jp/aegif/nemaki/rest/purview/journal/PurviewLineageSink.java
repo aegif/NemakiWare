@@ -95,7 +95,14 @@ public class PurviewLineageSink implements LineageTargetSink {
         // Add process-type-specific required fields
         addProcessTypeAttributes(processAttrs, record);
 
-        processEntity.put("attributes", processAttrs);
+        // The same last gate every entity payload passes (disclosure §4 named this sink as the
+        // one place that did not call it). qualifiedName is identity-exempted at the boundary
+        // since 2026-08-24 — see IDENTITY_ATTRIBUTES there for the recorded decision.
+        // The same last gate every entity payload passes (disclosure §4 named this sink as the
+        // one place that did not call it). qualifiedName is identity-exempted at the boundary
+        // since 2026-08-24 — see IDENTITY_ATTRIBUTES there for the recorded decision.
+        processEntity.put("attributes",
+                jp.aegif.nemaki.rest.purview.payload.CatalogSecretBoundary.sealed(processAttrs));
 
         // Build entity list: process + input entities + output entities
         List<Map<String, Object>> entities = new ArrayList<>();
@@ -290,7 +297,8 @@ public class PurviewLineageSink implements LineageTargetSink {
         // The allowlist in EndpointKind is already checked against the real Atlas schema by
         // EndpointKindSchemaAlignmentTest, so everything here is an attribute the type has.
         attrs.putAll(endpoint.attributes());
-        entity.put("attributes", attrs);
+        entity.put("attributes",
+                jp.aegif.nemaki.rest.purview.payload.CatalogSecretBoundary.sealed(attrs));
         return entity;
     }
 
@@ -329,7 +337,8 @@ public class PurviewLineageSink implements LineageTargetSink {
             default -> { /* no additional fields */ }
         }
 
-        entity.put("attributes", attrs);
+        entity.put("attributes",
+                jp.aegif.nemaki.rest.purview.payload.CatalogSecretBoundary.sealed(attrs));
         return entity;
     }
 

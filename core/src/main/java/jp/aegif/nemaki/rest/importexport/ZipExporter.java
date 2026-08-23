@@ -335,7 +335,57 @@ public class ZipExporter {
         }
         metadata.put("versionInfo", versionInfo);
 
+        appendEvidenceSidecar(metadata, doc);
+
         return metadata;
+    }
+
+    /**
+     * The capture-evidence values, as an INFORMATIONAL sidecar — deliberately outside
+     * {@code properties}.
+     *
+     * <p>InterPARES A.1 requires the record's attributes to remain bound and usable on export
+     * and transfer; until this, an export carried NONE of them (the exporter wrote neither
+     * aspects nor secondary type ids — the gap the A.1 mapping would have had to state).
+     * Putting them under {@code properties} would make the importer re-APPLY them, which D-6
+     * refuses: a capture assertion is not re-assertable outside the repository whose ledger
+     * backs it. A separate key the importer never reads carries the data without the claim —
+     * the transfer requirement and the no-manufacture rule stop competing.
+     */
+    @SuppressWarnings("unchecked")
+    static void appendEvidenceSidecar(JSONObject metadata, Document doc) {
+        if (doc.getAspects() == null) {
+            return;
+        }
+        JSONArray aspects = new JSONArray();
+        for (jp.aegif.nemaki.model.Aspect aspect : doc.getAspects()) {
+            if (aspect == null
+                    || !jp.aegif.nemaki.businesslogic.EvidenceTypes.isProtected(aspect.getName())) {
+                continue;
+            }
+            JSONObject one = new JSONObject();
+            one.put("secondaryTypeId", aspect.getName());
+            JSONObject values = new JSONObject();
+            if (aspect.getProperties() != null) {
+                for (jp.aegif.nemaki.model.Property prop : aspect.getProperties()) {
+                    if (prop.getKey() != null && prop.getValue() != null) {
+                        values.put(prop.getKey(), serializePropertyValue(prop.getValue()));
+                    }
+                }
+            }
+            one.put("values", values);
+            aspects.add(one);
+        }
+        if (aspects.isEmpty()) {
+            return;
+        }
+        JSONObject evidence = new JSONObject();
+        evidence.put("note", "Informational sidecar. These are the capture-evidence values the "
+                + "source repository holds; the importer intentionally does not apply them — a "
+                + "capture assertion is only backed by the ledger of the repository that made "
+                + "it (see ZipImporter.stripEvidenceAssertions).");
+        evidence.put("aspects", aspects);
+        metadata.put("evidence", evidence);
     }
 
     @SuppressWarnings("unchecked")

@@ -145,8 +145,10 @@ public class DataplexLineageSink implements LineageTargetSink {
         for (LineageAssetRef source : record.inputs()) {
             for (LineageAssetRef target : record.outputs()) {
                 Map<String, Object> link = new LinkedHashMap<>();
-                link.put("source", buildEntityRef(record.repositoryId(), source.qualifiedName()));
-                link.put("target", buildEntityRef(record.repositoryId(), target.qualifiedName()));
+                link.put("source", jp.aegif.nemaki.rest.purview.payload.CatalogSecretBoundary
+                        .sealed(buildEntityRef(record.repositoryId(), source.qualifiedName())));
+                link.put("target", jp.aegif.nemaki.rest.purview.payload.CatalogSecretBoundary
+                        .sealed(buildEntityRef(record.repositoryId(), target.qualifiedName())));
                 links.add(link);
             }
         }

@@ -105,7 +105,7 @@ public class ZipImporter {
      * hand — the one hand-curated copy of the source-identity set missed
      * {@code nemaki:sourceArchetype} and shipped that way (external review P2-6).
      */
-    static final java.util.Set<String> EVIDENCE_PROPERTY_IDS = buildEvidencePropertyIds();
+    public static final java.util.Set<String> EVIDENCE_PROPERTY_IDS = buildEvidencePropertyIds();
 
     private static java.util.Set<String> buildEvidencePropertyIds() {
         java.util.Set<String> ids = new java.util.TreeSet<>();

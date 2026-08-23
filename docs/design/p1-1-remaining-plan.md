@@ -60,9 +60,9 @@ HEAD `246a0e03f` + 自己レビュー修正パスに対する、Codex + サブ�
 | 項目 | 根拠 | 一言 |
 |---|---|---|
 | ✅ 2026-08-23 **CMIS `updateType` の実保護** — `constraintUpdatePropertyDefinition` が READONLY の拡張を拒否 (絞り込みは許可)。tripwire は残置 | (c) §5.5 | 済 |
-| **Solr/PII の方針判断** — `chatParticipants` が既定で全文検索に出る | `SolrUtil:1481-1512` が全 aspect 値を無濾過で索引。disclosure §6.2 で認知済み・担当未割当 | **方針判断が先** (検索できるべきか)。機構は Disclosure の第 3 の口として同じ表から導ける |
+| ✅ 2026-08-24 **Solr/PII** — 露出経路は CONTAINS でなく**プロパティ検索** (`dynamic.property.*`、copyField 無し)。判断: **既定で INTERNAL_ONLY 6 件を索引から除外** (`search.evidence.internalonly.indexing.enabled=false`、可逆・要再索引)。第 3 の口は `internalOnlyCmisPropertyIds()` — 手数え無し。**読み出しはマスキングしない** (結果は CouchDB から再構成、オブジェクトを読める者には見える) と明記 | `SolrUtil` 3 ループ + createSolrDocument 実走テスト + revert 実測 | 済 |
 | ✅ 2026-08-23 **bulkUpdateProperties の add/remove 無視** (既存不具合) — `withSecondaryTypeChanges` が add/remove を `cmis:secondaryObjectTypeIds` へ畳んでから `updateProperties` へ渡す = 要求どおり `modifyProperties` → `keepEvidenceAspects` 経由。別口の attach/detach は作らない | `ObjectServiceImpl` BulkUpdateTask | helper 単体 4 + call() 配線 pin 1 (`BulkUpdateSecondaryTypeChangesTest`)。3 protections とも revert で fail を実測 |
-| **CatalogSecretBoundary 統合** — `PurviewLineageSink` だけ `sealed()` を呼ばない | disclosure §4 | sink の qualifiedName (非 `nemaki://`) の許可を先に決める |
+| ✅ 2026-08-24 **CatalogSecretBoundary 統合** — 決定: qualifiedName / fullyQualifiedName を identity 免除 (scheme+path 可・`?`/`#`/userinfo 不可) に加え、**ただし http(s) は拒否のまま** (sharing link = §4 の脅威は http(s)、正当な sink identity に http(s) は無い)。ネスト map は leaf 名で照合。**3 sink (Purview/Atlas/Dataplex) とも sealed() を通す** (レビューで Atlas/Dataplex も未統合と判明) | disclosure §4 | boundary 24 tests + sink 契約 19 + unwire 実測 |
 
 ## 6. A.1「分かち難く結合した保護属性」の判定
 
@@ -72,8 +72,12 @@ HEAD `246a0e03f` + 自己レビュー修正パスに対する、Codex + サブ�
 ~~D-6 (復元経路の分裂)~~ / ~~D-7 (chat 以外が無保護 + source identity の `""` 上書き)~~ /
 (e) の D7 (実行主体の食い違い) / 複製の偽証拠 (evidence-types §0) /
 ~~`updateType` の偶然依存~~ (実保護に置換・tripwire 残置) / ローリング再起動の手続き依存 /
-`PROTECTED` の機械的検査が書けない (`Patch_ChatContextMetadataSecondaryType` の定数が private のまま)。
-残り: **D-5 / (e) の D7 / 複製の偽証拠 / ローリング再起動 / PROTECTED 機械検査** の 5 つ。
+~~`PROTECTED` の機械的検査が書けない~~ (**2026-08-24 解消** — patch 定数を public 昇格し
+`EvidenceProtectionRosterTest` が型↔プロパティの含意を静的に pin。DB 側突合が原理的に
+静的検査できない理由は EvidenceTypes javadoc に残る) /
+~~複製の偽証拠~~ (**2026-08-24 解消** — `createDocumentFromSource` だけが新 id へ証拠を運ぶ
+唯一の経路で、copy 時 strip。version 系 4 経路は不変)。
+残り: **D-5 / (e) の D7 / ローリング再起動** の 3 つ (前 2 つは (e) 束で解消予定)。
 
 ## 7. 最終レビュー (2026-08-23) と対応
 

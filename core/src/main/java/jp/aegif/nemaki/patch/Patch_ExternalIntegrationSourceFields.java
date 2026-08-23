@@ -34,6 +34,34 @@ import java.util.List;
  */
 public class Patch_ExternalIntegrationSourceFields extends AbstractNemakiPatch {
 
+    // Class-level (was method-local) so the public id list DERIVES from the same literals the
+    // patch creates from (evidence-types §2.2 — the association must be mechanically checkable).
+    private static final String[][] PROPERTY_DEFS = {
+            {"nemaki:sourceArchetype", "sourceArchetype", "Source Archetype",
+                    "Archetype classification: FILE_SHARE, COMPOUND_NOTE, CHAT_CONTEXT, BUSINESS_RECORD"},
+            {"nemaki:sourceSystem", "sourceSystem", "Source System",
+                    "Canonical source system name (e.g. google_drive, notion, salesforce)"},
+            {"nemaki:sourceObjectType", "sourceObjectType", "Source Object Type",
+                    "Object type in source system (e.g. file, page, record, message)"},
+            {"nemaki:sourceObjectId", "sourceObjectId", "Source Object ID",
+                    "Stable object identifier in the source system"},
+            {"nemaki:sourceUrl", "sourceUrl", "Source URL",
+                    "URL to the object in the source system"},
+            {"nemaki:ingestionRunId", "ingestionRunId", "Ingestion Run ID",
+                    "Correlation ID linking to the ExternalIngestRequest that created this document"},
+    };
+
+    /** The six property ids this patch declares — derived from PROPERTY_DEFS, cannot drift. */
+    public static final java.util.List<String> PROPERTY_IDS = idsOf(PROPERTY_DEFS);
+
+    private static java.util.List<String> idsOf(String[][] defs) {
+        java.util.List<String> ids = new java.util.ArrayList<>(defs.length);
+        for (String[] def : defs) {
+            ids.add(def[0]);
+        }
+        return java.util.List.copyOf(ids);
+    }
+
     private static final Log log = LogFactory.getLog(Patch_ExternalIntegrationSourceFields.class);
 
     private static final String PATCH_NAME = "external-integration-source-fields-20260401";
@@ -73,20 +101,7 @@ public class Patch_ExternalIntegrationSourceFields extends AbstractNemakiPatch {
             }
 
             boolean updated = false;
-            String[][] newProperties = {
-                    {"nemaki:sourceArchetype", "sourceArchetype", "Source Archetype",
-                            "Archetype classification: FILE_SHARE, COMPOUND_NOTE, CHAT_CONTEXT, BUSINESS_RECORD"},
-                    {"nemaki:sourceSystem", "sourceSystem", "Source System",
-                            "Canonical source system name (e.g. google_drive, notion, salesforce)"},
-                    {"nemaki:sourceObjectType", "sourceObjectType", "Source Object Type",
-                            "Object type in source system (e.g. file, page, record, message)"},
-                    {"nemaki:sourceObjectId", "sourceObjectId", "Source Object ID",
-                            "Stable object identifier in the source system"},
-                    {"nemaki:sourceUrl", "sourceUrl", "Source URL",
-                            "URL to the object in the source system"},
-                    {"nemaki:ingestionRunId", "ingestionRunId", "Ingestion Run ID",
-                            "Correlation ID linking to the ExternalIngestRequest that created this document"},
-            };
+            String[][] newProperties = PROPERTY_DEFS;
 
             for (String[] prop : newProperties) {
                 String propId = prop[0];

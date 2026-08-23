@@ -259,4 +259,50 @@ public class CatalogSecretBoundaryTest {
     public void nullIsAllowed() {
         assertEquals(null, CatalogSecretBoundary.sealed(null));
     }
+    /**
+     * The 2026-08-24 decision that let the lineage sinks call this gate at all: qualifiedName /
+     * fullyQualifiedName are IDENTITY — refusing them removes no secret, it breaks every
+     * reference through them — but the exemption deliberately excludes http(s), because a
+     * sharing link (the §4 threat, token in the PATH) is always http(s) and no legitimate sink
+     * identity ever is.
+     */
+    @Nested
+    class QualifiedNameIdentity {
+
+        @Test
+        @DisplayName("a canonical source URI passes as identity")
+        void canonicalSourceUriPasses() {
+            Map<String, Object> attributes = new LinkedHashMap<>();
+            attributes.put("qualifiedName",
+                    "acme-chat://org/W1/channels/C1/messages/1720000000.000200");
+            assertEquals(attributes, CatalogSecretBoundary.sealed(attributes));
+        }
+
+        @Test
+        @DisplayName("nested refs get the same identity treatment — the sinks' real shape")
+        void nestedQualifiedNamePasses() {
+            Map<String, Object> ref = new LinkedHashMap<>();
+            ref.put("uniqueAttributes",
+                    Map.of("qualifiedName", "acme-chat://org/W1/channels/C1/messages/1"));
+            Map<String, Object> attributes = new LinkedHashMap<>();
+            attributes.put("inputs", java.util.List.of(ref));
+            assertEquals(attributes, CatalogSecretBoundary.sealed(attributes));
+        }
+
+        @Test
+        @DisplayName("query on a qualified name is still a refusal — identity carries no token")
+        void queryStillRefused() {
+            refusalFor("qualifiedName", "acme-chat://org/W1/channels/C1?sig=abc");
+        }
+
+        @Test
+        @DisplayName("Dataplex's colon form with an embedded scheme passes")
+        void dataplexFullyQualifiedNamePasses() {
+            Map<String, Object> attributes = new LinkedHashMap<>();
+            attributes.put("fullyQualifiedName",
+                    "nemakiware:bedroom:nemaki://bedroom/objects/doc-1");
+            assertEquals(attributes, CatalogSecretBoundary.sealed(attributes));
+        }
+    }
+
 }

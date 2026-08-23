@@ -42,7 +42,20 @@ public class Patch_ExternalIntegrationSecondaryType extends AbstractNemakiPatch 
 
 	private static final String PATCH_NAME = "external-integration-secondary-type-20260204";
 	private static final String NEMAKI_NAMESPACE = "http://www.aegif.jp/NEMAKI";
-	private static final String TYPE_ID = "nemaki:externalIntegration";
+	/** Public so the type↔property association is mechanically checkable (evidence-types §2.2). */
+	public static final String TYPE_ID = "nemaki:externalIntegration";
+
+	/**
+	 * The four property ids this patch creates. MUST equal the four createXxxProperty calls in
+	 * applyPerRepositoryPatch — EvidenceProtectionRosterTest pins the union of the three
+	 * externalIntegration patches' declarations against the protection layer, so adding a call
+	 * without extending this list fails the roster test rather than drifting silently.
+	 */
+	public static final java.util.List<String> PROPERTY_IDS = java.util.List.of(
+			"nemaki:externalContext",
+			"nemaki:externalContextUpdatedAt",
+			"nemaki:externalSourceType",
+			"nemaki:externalSourceId");
 
 	@Override
 	public String getName() {

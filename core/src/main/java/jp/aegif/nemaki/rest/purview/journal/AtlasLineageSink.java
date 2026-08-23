@@ -179,7 +179,8 @@ public class AtlasLineageSink implements LineageTargetSink {
         processAttrs.put("qualifiedName", processQualifiedName(record));
         processAttrs.put("name", record.processType() != null ? record.processType().name() : "UNKNOWN");
         processAttrs.put("description", "NemakiWare lineage event: " + record.processIdentity());
-        processEntity.put("attributes", processAttrs);
+        processEntity.put("attributes",
+                jp.aegif.nemaki.rest.purview.payload.CatalogSecretBoundary.sealed(processAttrs));
 
         // Input and output entities.
         //

@@ -226,6 +226,42 @@ public class SolrUtil implements ApplicationContextAware {
 	}
 
 	/**
+	 * Whether INTERNAL_ONLY evidence values go into the search index. Default: they do not.
+	 *
+	 * <p>The six {@code Disclosure.INTERNAL_ONLY} fields are personal data or caller free text
+	 * that may contain any ({@code chatParticipants}, {@code chatChannelName} — a DM's channel
+	 * name IS the counterpart's name — plus the capture-judgment quartet). Until this filter,
+	 * every one of them landed unfiltered in {@code dynamic.property.*} with {@code stored=true},
+	 * so {@code WHERE nemaki:chatParticipants LIKE '%name%'} found people by name in the default
+	 * deployment — the gap p1-1d-evidence-disclosure.md §6.2 records as known and unassigned.
+	 *
+	 * <p>The policy default follows the same judgment the catalog doors already made (the sink
+	 * withholds these fields; the mapping resolver refuses them): disclosure fails toward LESS.
+	 * A deployment that wants them searchable states it in config — reversible, per repository
+	 * of intent if not of mechanism. What this does NOT do: mask reads. Whoever can read the
+	 * object still sees the values via getObject/SELECT (the result set is rebuilt from CouchDB);
+	 * the lever here is discoverability-by-search only, and the runbook says so.
+	 *
+	 * <p>Flipping the flag changes the index only for documents (re)indexed afterwards — a full
+	 * reindex applies it retroactively.
+	 */
+	private boolean indexInternalOnlyEvidence() {
+		try {
+			return propertyManager != null && propertyManager
+					.readBoolean(PropertyKey.SEARCH_EVIDENCE_INTERNAL_ONLY_INDEXING_ENABLED);
+		} catch (Exception e) {
+			// Unreadable config must not fail toward disclosure.
+			return false;
+		}
+	}
+
+	/** The same declaration both catalog doors read — no third hand-curated list. */
+	private static boolean isInternalOnlyEvidence(String propertyKey) {
+		return propertyKey != null && jp.aegif.nemaki.rest.ingest.CaptureEvidenceField
+				.internalOnlyCmisPropertyIds().contains(propertyKey);
+	}
+
+	/**
 	 * CMIS to Solr property name dictionary
 	 *
 	 * @param cmisColName
@@ -1446,7 +1482,11 @@ public class SolrUtil implements ApplicationContextAware {
 			// Index custom properties (subTypeProperties) for relationship type queries
 			List<Property> subTypeProperties = relationship.getSubTypeProperties();
 			if (subTypeProperties != null && !subTypeProperties.isEmpty()) {
+				boolean indexInternalOnRelationship = indexInternalOnlyEvidence();
 				for (Property prop : subTypeProperties) {
+					if (!indexInternalOnRelationship && isInternalOnlyEvidence(prop.getKey())) {
+						continue;
+					}
 					if (prop.getKey() != null && prop.getValue() != null) {
 						// Use dynamic field naming for custom properties
 						String fieldName = "dynamic.property." + prop.getKey();
@@ -1478,6 +1518,7 @@ public class SolrUtil implements ApplicationContextAware {
 		// This enables queries like: nemaki:comment LIKE '%テスト%'
 		// NOTE: Field names should NOT be escaped when adding to SolrInputDocument
 		// Escaping is only needed in query strings, not field names
+		boolean indexInternalOnlyEvidence = indexInternalOnlyEvidence();
 		List<jp.aegif.nemaki.model.Aspect> aspects = content.getAspects();
 		if (aspects != null && !aspects.isEmpty()) {
 			for (jp.aegif.nemaki.model.Aspect aspect : aspects) {
@@ -1486,6 +1527,9 @@ public class SolrUtil implements ApplicationContextAware {
 					for (jp.aegif.nemaki.model.Property prop : properties) {
 						String key = prop.getKey();
 						Object value = prop.getValue();
+						if (!indexInternalOnlyEvidence && isInternalOnlyEvidence(key)) {
+							continue;
+						}
 						if (key != null && value != null) {
 							// Use dynamic field naming convention for custom properties
 							// Matches Solr dynamicField pattern: dynamic.* (no escaping needed for field names)
@@ -1517,6 +1561,9 @@ public class SolrUtil implements ApplicationContextAware {
 			for (jp.aegif.nemaki.model.Property prop : subTypeProperties) {
 				String key = prop.getKey();
 				Object value = prop.getValue();
+				if (!indexInternalOnlyEvidence && isInternalOnlyEvidence(key)) {
+					continue;
+				}
 				if (key != null && value != null) {
 					// Use dynamic field naming convention (no escaping for field names)
 					String solrFieldName = "dynamic.property." + key;

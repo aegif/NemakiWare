@@ -51,7 +51,11 @@ public class Patch_ExternalIntegrationEvidenceReadOnly extends AbstractNemakiPat
     private static final Log log =
             LogFactory.getLog(Patch_ExternalIntegrationEvidenceReadOnly.class);
 
-    private static final String TYPE_ID = "nemaki:externalIntegration";
+    /** Public so the type↔property association is mechanically checkable (evidence-types §2.2). */
+    public static final String TYPE_ID = "nemaki:externalIntegration";
+
+    /** The property this patch DECLARES (read-only from birth) — the 9th source-identity id. */
+    public static final String CONTENT_HASH_PROPERTY_ID = "nemaki:contentHash";
 
     /**
      * The eight DECLARED source-identity properties this patch rewrites to READONLY.
@@ -188,7 +192,7 @@ public class Patch_ExternalIntegrationEvidenceReadOnly extends AbstractNemakiPat
             NemakiTypeDefinition type, java.util.Set<String> attachedDetailIds) {
         NemakiPropertyDefinitionCore existing =
                 typeService.getPropertyDefinitionCoreByPropertyId(repositoryId,
-                        "nemaki:contentHash");
+                        CONTENT_HASH_PROPERTY_ID);
         String detailId;
         if (existing != null) {
             List<NemakiPropertyDefinitionDetail> details =
@@ -261,7 +265,7 @@ public class Patch_ExternalIntegrationEvidenceReadOnly extends AbstractNemakiPat
     /** The declaration, shared by the fresh-create and existing-core branches verbatim. */
     private static NemakiPropertyDefinition contentHashDefinition() {
         NemakiPropertyDefinition propDef = new NemakiPropertyDefinition();
-        propDef.setPropertyId("nemaki:contentHash");
+        propDef.setPropertyId(CONTENT_HASH_PROPERTY_ID);
         propDef.setLocalName("contentHash");
         propDef.setLocalNameSpace("http://www.aegif.jp/Nemaki");
         propDef.setQueryName("nemaki:contentHash");

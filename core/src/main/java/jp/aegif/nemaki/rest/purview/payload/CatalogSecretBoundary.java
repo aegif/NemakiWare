@@ -102,7 +102,21 @@ public final class CatalogSecretBoundary {
      * arrive in whether or not this list exists.
      */
     private static final List<String> IDENTITY_ATTRIBUTES = List.of(
-            "externalStableKey", "externalPath", "targetDescription", "sourceDescription");
+            "externalStableKey", "externalPath", "targetDescription", "sourceDescription",
+            // Decision (P1-1 §5 「CatalogSecretBoundary 統合」, 2026-08-24): the lineage sinks'
+            // qualifiedName IS the asset's identity, and for a v1 legacy external asset it is a
+            // canonical source URI ({system}://org/{workspace}/channels/... — CONSTRUCTED from
+            // connector + ids by ExternalSourceUri.build, never a stored/pasted link). Refusing
+            // it would not remove a secret; it would break the identity every process reference
+            // resolves through — the same reasoning externalStableKey has carried all along.
+            // The credential-bearing parts (query / fragment / userinfo) stay refused — and so
+            // do http(s) values (see the qualified-name branch in check): a sharing link is an
+            // http(s) URL with its token in the PATH, and no legitimate sink identity is ever
+            // http(s), so the §4 threat class stays closed for exactly these two names.
+            "qualifiedName",
+            // Dataplex's identity form: "nemakiware:{repo}:{qualifiedName}" — embeds a scheme
+            // mid-string, which the stored-URL check would refuse; same identity reasoning.
+            "fullyQualifiedName");
 
     /**
      * The user's own display text, which this gate does not get to judge.
@@ -173,10 +187,24 @@ public final class CatalogSecretBoundary {
                 throw refusal(name, text, "its name says it holds a secret");
             }
         }
-        if (USER_TEXT_ATTRIBUTES.contains(name)) {
+        // Nested maps arrive with dotted names (inputs.uniqueAttributes.qualifiedName); the
+        // user-text and identity exemptions go by the LEAF attribute name, because the class of
+        // the value is the leaf's, wherever the map nests it. The secret-name check above stays
+        // on the FULL dotted name — broader is stricter there.
+        String leafName = name.substring(name.lastIndexOf('.') + 1);
+        if (USER_TEXT_ATTRIBUTES.contains(leafName)) {
             return;
         }
-        if (IDENTITY_ATTRIBUTES.contains(name)) {
+        if (IDENTITY_ATTRIBUTES.contains(leafName)) {
+            // A qualified name is never legitimately http(s) — canonical source URIs use the
+            // source system as the scheme, and every other identity is nemaki:// or colon-form.
+            // A sharing link, the §4 threat, IS http(s) with its token in the path; keeping
+            // this refusal is what lets the rest of the exemption exist.
+            if (("qualifiedName".equals(leafName) || "fullyQualifiedName".equals(leafName))
+                    && (text.startsWith("http://") || text.startsWith("https://"))) {
+                throw refusal(name, text, "a qualified name is never http(s); a stored URL's"
+                        + " token can be in the path (§4)");
+            }
             // Scheme and path allowed; the credential-bearing parts are not.
             if (text.indexOf('?') >= 0 || text.indexOf('#') >= 0 || hasUserinfo(text)) {
                 throw refusal(name, text, "an external identity carries no query, fragment or"

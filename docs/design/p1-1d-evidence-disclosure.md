@@ -245,7 +245,7 @@ asset の `qualifiedName`・`externalStableKey`・`externalPath`、および Pro
 
 `nemaki:chatContextMetadata` は `fulltextIndexed=true`、各プロパティは `queryable=true`。
 `SolrUtil` は aspect の値を全部 `dynamic.property.{key}` に載せる。
-**既定配備でも `nemaki:chatParticipants` は検索に出る。**
+**既定配備でも `nemaki:chatParticipants` は検索に出る。** → **2026-08-24 閉鎖**: 索引時に INTERNAL_ONLY 6 件を除外 (`search.evidence.internalonly.indexing.enabled=false` 既定、第 3 の口も同じ表)。露出経路は CONTAINS でなくプロパティ検索だった (copyField 不在)。**読み出しは対象外のまま** — オブジェクトを読める者は値を見る。
 
 この作業が閉じたのは**外部カタログへの 2 経路だけ**である。オブジェクト側と検索索引は
 対象外で、そちらは**文書の生存期間**に従う (journal の保持期限ではない)。

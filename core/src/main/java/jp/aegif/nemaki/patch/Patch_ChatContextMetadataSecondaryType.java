@@ -15,7 +15,41 @@ import java.util.List;
 public class Patch_ChatContextMetadataSecondaryType extends AbstractNemakiPatch {
     private static final Log log = LogFactory.getLog(Patch_ChatContextMetadataSecondaryType.class);
     private static final String NS = "http://www.aegif.jp/NEMAKI";
-    private static final String TYPE_ID = "nemaki:chatContextMetadata";
+
+    /** Public so the type↔property association is mechanically checkable (evidence-types §2.2). */
+    public static final String TYPE_ID = "nemaki:chatContextMetadata";
+
+    // Class-level (were method-local) so the id lists below DERIVE from the same literals the
+    // patch creates from — the association used to live only in this method's body, which is
+    // exactly what made the containment test unwritable (EvidenceTypes javadoc, plan §6).
+    private static final String[][] STRING_PROPERTY_DEFS = {
+        {"nemaki:chatWorkspaceId", "chatWorkspaceId", "Workspace ID", "Slack/Teams workspace/tenant identifier"},
+        {"nemaki:chatChannelId", "chatChannelId", "Channel ID", "Channel identifier"},
+        {"nemaki:chatChannelName", "chatChannelName", "Channel Name", "Channel display name"},
+        {"nemaki:chatThreadId", "chatThreadId", "Thread ID", "Thread/conversation identifier"},
+        {"nemaki:chatMessageId", "chatMessageId", "Message ID", "Anchor message identifier"},
+        {"nemaki:chatParticipants", "chatParticipants", "Participants", "Comma-separated participant names/IDs"},
+        {"nemaki:chatSelectionReason", "chatSelectionReason", "Selection Reason", "Why this conversation was captured"},
+        {"nemaki:chatEvidenceScope", "chatEvidenceScope", "Evidence Scope", "Scope of captured evidence: message, thread, channel_window"},
+    };
+    private static final String[][] DATETIME_PROPERTY_DEFS = {
+        {"nemaki:chatCapturedAt", "chatCapturedAt", "Captured At", "When the conversation was captured"},
+        {"nemaki:chatCaptureWindowStart", "chatCaptureWindowStart", "Capture Window Start", "Start of evidence capture time window"},
+        {"nemaki:chatCaptureWindowEnd", "chatCaptureWindowEnd", "Capture Window End", "End of evidence capture time window"},
+    };
+
+    /** The 8 string property ids this patch declares — derived, so it cannot drift. */
+    public static final List<String> STRING_PROPERTY_IDS = idsOf(STRING_PROPERTY_DEFS);
+    /** The 3 datetime property ids this patch declares — derived, so it cannot drift. */
+    public static final List<String> DATETIME_PROPERTY_IDS = idsOf(DATETIME_PROPERTY_DEFS);
+
+    private static List<String> idsOf(String[][] defs) {
+        List<String> ids = new ArrayList<>(defs.length);
+        for (String[] def : defs) {
+            ids.add(def[0]);
+        }
+        return List.copyOf(ids);
+    }
 
     @Override public String getName() { return "chat-context-metadata-20260403"; }
     @Override protected void applySystemPatch() { }
@@ -28,24 +62,8 @@ public class Patch_ChatContextMetadataSecondaryType extends AbstractNemakiPatch 
             NemakiTypeDefinition existing = ts.getTypeDefinition(repositoryId, TYPE_ID);
             List<String> pids = new ArrayList<>();
 
-            String[][] sp = {
-                {"nemaki:chatWorkspaceId", "chatWorkspaceId", "Workspace ID", "Slack/Teams workspace/tenant identifier"},
-                {"nemaki:chatChannelId", "chatChannelId", "Channel ID", "Channel identifier"},
-                {"nemaki:chatChannelName", "chatChannelName", "Channel Name", "Channel display name"},
-                {"nemaki:chatThreadId", "chatThreadId", "Thread ID", "Thread/conversation identifier"},
-                {"nemaki:chatMessageId", "chatMessageId", "Message ID", "Anchor message identifier"},
-                {"nemaki:chatParticipants", "chatParticipants", "Participants", "Comma-separated participant names/IDs"},
-                {"nemaki:chatSelectionReason", "chatSelectionReason", "Selection Reason", "Why this conversation was captured"},
-                {"nemaki:chatEvidenceScope", "chatEvidenceScope", "Evidence Scope", "Scope of captured evidence: message, thread, channel_window"},
-            };
-            String[][] dp = {
-                {"nemaki:chatCapturedAt", "chatCapturedAt", "Captured At", "When the conversation was captured"},
-                {"nemaki:chatCaptureWindowStart", "chatCaptureWindowStart", "Capture Window Start", "Start of evidence capture time window"},
-                {"nemaki:chatCaptureWindowEnd", "chatCaptureWindowEnd", "Capture Window End", "End of evidence capture time window"},
-            };
-
-            for (String[] p : sp) { String id = mkStr(ts, repositoryId, p); if (id != null) pids.add(id); }
-            for (String[] p : dp) { String id = mkDt(ts, repositoryId, p); if (id != null) pids.add(id); }
+            for (String[] p : STRING_PROPERTY_DEFS) { String id = mkStr(ts, repositoryId, p); if (id != null) pids.add(id); }
+            for (String[] p : DATETIME_PROPERTY_DEFS) { String id = mkDt(ts, repositoryId, p); if (id != null) pids.add(id); }
 
             if (existing != null) {
                 List<String> ep = existing.getProperties() != null ? existing.getProperties() : new ArrayList<>();

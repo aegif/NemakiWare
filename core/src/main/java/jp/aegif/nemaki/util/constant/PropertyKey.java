@@ -51,6 +51,9 @@ public interface PropertyKey {
 
 	//Search
 	final String SEARCH_USERGROUP_SOLR_ENABLED = "search.usergroup.solr.enabled";
+	// INTERNAL_ONLY evidence (chatParticipants etc.) in the search index — default false;
+	// the six fields come from CaptureEvidenceField.internalOnlyCmisPropertyIds().
+	final String SEARCH_EVIDENCE_INTERNAL_ONLY_INDEXING_ENABLED = "search.evidence.internalonly.indexing.enabled";
 
 	//Rest
 	final String REST_USER_ENABLED = "rest.user.enabled";

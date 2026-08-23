@@ -142,6 +142,54 @@ public class LineageSinkRecordContractTest {
         assertEquals("a".repeat(64), processAttrs.get("contentHash"));
     }
 
+    /**
+     * The sink now passes every attribute map through {@code CatalogSecretBoundary.sealed} —
+     * the one publisher disclosure §4 named as not calling the gate. qualifiedName is
+     * identity-exempted there (scheme+path allowed, query/fragment/userinfo refused), so the
+     * legacy external URIs keep flowing while stored-URL-shaped values in ordinary attributes
+     * are refused instead of published.
+     */
+    @Test
+    public void sealedGateRefusesAStoredUrlInAnOrdinaryAttribute() {
+        LineageRecord poisoned = LineageRecord.fromV1(new LineageEventBuilder()
+                .repositoryId(REPO)
+                .processType(LineageProcessType.ARCHIVE_LOCAL)
+                .addInputObject(REPO, "doc-1")
+                .addOutput("nemaki://" + REPO + "/archives/doc-1")
+                // A sharing link keeps its token in the PATH — no transformation of a stored
+                // URL can be shown safe, so the gate refuses rather than logs (§4).
+                .snapshotAttribute("callbackUrl", "https://tenant.sharepoint.example/g/EaB12345")
+                .targets(List.of("atlas"))
+                .build());
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                jp.aegif.nemaki.rest.purview.payload.CatalogSecretBoundary
+                        .SecretAtBoundaryException.class,
+                () -> purviewPayload(poisoned),
+                "a stored URL sailed through the sink the gate was built to close");
+    }
+
+    /** The counterweight: a legacy external-asset URI is IDENTITY and must keep publishing. */
+    @Test
+    public void sealedGateStillPassesLegacyExternalIdentity() throws Exception {
+        LineageRecord external = LineageRecord.fromV1(new LineageEventBuilder()
+                .repositoryId(REPO)
+                .processType(LineageProcessType.ARCHIVE_LOCAL)
+                .addInput("acme-chat://org/W1/channels/C1/messages/1720000000.000200")
+                .addOutput("nemaki://" + REPO + "/archives/doc-1")
+                .targets(List.of("atlas"))
+                .build());
+
+        Map<String, Object> payload = purviewPayload(external);
+        boolean uriSurvived = entities(payload).stream()
+                .map(LineageSinkRecordContractTest::attributes)
+                .anyMatch(attrs -> "acme-chat://org/W1/channels/C1/messages/1720000000.000200"
+                        .equals(attrs.get("qualifiedName")));
+        org.junit.jupiter.api.Assertions.assertTrue(uriSurvived,
+                "the canonical source URI is the asset's identity — refusing it removes no "
+                        + "secret and breaks every reference through it");
+    }
+
     private static LineageRecord v2Record() {
         return LineageRecord.fromV2(new LineageEventV2Builder()
                 .eventId("11111111-2222-3333-4444-555555555555")

@@ -1261,14 +1261,24 @@ public class ContentServiceImpl implements ContentService {
 	// ATOMIC OPERATION IMPLEMENTATION: Document Copy + Attachment + Versioning
 	log.debug("=== ATOMIC DOCUMENT FROM SOURCE START ===");
 	log.debug("Repository: {}, Original: {}", repositoryId, original.getId());
-	
+
 	Document atomicResult = null;
 	String createdDocumentId = null;
 	String createdAttachmentId = null;
-	
+
 	try {
 		// PHASE 1: Prepare document copy without CouchDB writes
 		Document copy = buildCopyDocument(callContext, repositoryId, original, null, null);
+
+		// A from-source copy is a NEW object with a NEW version series: the capture ledger
+		// rows stand behind the ORIGINAL's id, so carried-over evidence aspects would assert
+		// a capture that never happened to this object — and keepEvidenceAspects would then
+		// refuse to ever detach them (evidence-types §0, "複製の偽証拠"). Same split the zip
+		// import encodes (D-6): the four version-lineage copies (checkOut / checkIn /
+		// setContentStream / updateWithoutCheckInOut) KEEP evidence, because there the object
+		// keeps its identity and the ledger keeps standing behind it. Only this path mints a
+		// new identity, so only this path strips.
+		stripEvidenceForNewObject(copy);
 
 		// PHASE 2: Atomic Attachment copy (if source has attachment)
 		if (original.getAttachmentNodeId() != null) {
@@ -2711,6 +2721,28 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	/** A detached copy: new {@code Aspect}, new property list, new {@code Property} objects. */
+	/**
+	 * Removes the protected evidence aspects and their type ids from a copy that will become a
+	 * NEW object. The aspect list is the fresh one {@code buildCopyDocument} made and may be
+	 * mutated; {@code secondaryIds} is SHARED with the original ({@code buildCopyDocument}
+	 * passes the reference through), so a filtered new list is set instead of mutating.
+	 */
+	private static void stripEvidenceForNewObject(Document copy) {
+		if (copy.getAspects() != null) {
+			copy.getAspects().removeIf(aspect -> aspect != null
+					&& jp.aegif.nemaki.businesslogic.EvidenceTypes.isProtected(aspect.getName()));
+		}
+		if (copy.getSecondaryIds() != null) {
+			List<String> kept = new ArrayList<>();
+			for (String id : copy.getSecondaryIds()) {
+				if (!jp.aegif.nemaki.businesslogic.EvidenceTypes.isProtected(id)) {
+					kept.add(id);
+				}
+			}
+			copy.setSecondaryIds(kept);
+		}
+	}
+
 	private static Aspect copyAspect(Aspect original) {
 		Aspect copy = new Aspect();
 		copy.setName(original.getName());
