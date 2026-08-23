@@ -196,6 +196,43 @@ class IngestFillRuleExtensionTest {
     }
 
     @Test
+    @DisplayName("a write failure does not take the refusal report down with it")
+    void writeFailureStillReportsRefusals() {
+        // The refusal (a conflicting captured value) is a fact about the READ, decided before
+        // any write. The first shape's catch returned empty lists, so a request carrying both a
+        // conflict and a genuine gap reported only the write error — the refusal vanished from
+        // the warnings and the reimport event (review of the batch).
+        IngestMetadataService metadataService = new IngestMetadataService();
+        metadataService.setContentService(contentService);
+        Map<String, String> captured = new LinkedHashMap<>();
+        captured.put("nemaki:noteAuthor", "otsuka");
+        storedObject("page-obj", "page-1", "page", aspect("nemaki:noteMetadata", captured));
+        when(contentService.update(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq("bedroom"),
+                org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new RuntimeException("CouchDB update rejected"));
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setSourceObjectId("page-1");
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("author", "someone-else");   // conflicts with the captured value → refused
+        metadata.put("lastEditedBy", "ishii");    // genuinely missing → triggers the write
+        req.setMetadata(metadata);
+
+        IngestMetadataService.FillOutcome outcome = metadataService.fillMissingNoteMetadata(
+                "bedroom", "page-obj",
+                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class), req, null);
+
+        assertTrue(outcome.error() != null && !outcome.error().isBlank(),
+                "the write failed; the outcome must say so");
+        assertTrue(outcome.refused().contains("nemaki:noteAuthor"),
+                "the refusal was established before the write and must survive its failure: "
+                        + outcome.refused());
+        assertTrue(outcome.filled().isEmpty(),
+                "whether the write persisted is unknown — claiming a fill would overstate");
+    }
+
+    @Test
     @DisplayName("mail: a re-poll keeps captured message metadata; the gap fills")
     void mailSkipDoesNotRewrite() {
         connector(SourceArchetype.MESSAGE_CONTEXT);

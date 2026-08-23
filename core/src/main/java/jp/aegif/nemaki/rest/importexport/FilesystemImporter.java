@@ -164,6 +164,19 @@ public class FilesystemImporter {
                 props.addProperty(new PropertyStringImpl(PropertyIds.NAME, fileName));
 
                 if (metadata != null) {
+                    // Same rule as the zip route (ZipImporter.stripEvidenceAssertions): an
+                    // import writes no capture ledger rows, so it must not write capture
+                    // assertions — admin-only and path-allowlisted here, but the reasoning
+                    // does not depend on who is importing (review F-9).
+                    List<String> droppedEvidence = ZipImporter.stripEvidenceAssertions(metadata);
+                    if (!droppedEvidence.isEmpty()) {
+                        String message = "Evidence metadata not imported for '" + relativePath
+                                + "': " + String.join(", ", droppedEvidence)
+                                + " — this repository did not capture the object, so the import"
+                                + " will not assert that it did. The content itself is imported.";
+                        result.warnings.add(message);
+                        log.info(message);
+                    }
                     applyCustomProperties(repositoryId, metadata, props);
                 }
 

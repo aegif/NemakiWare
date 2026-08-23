@@ -81,6 +81,9 @@ class ExternalIntegrationEvidenceReadOnlyTest {
                 detail.setId("detail-" + propertyId);
                 detail.setUpdatability(Updatability.READWRITE);
                 details.put(propertyId, detail);
+                // The type patches attached these details to the evidence type; the patch under
+                // test only touches details the type references, so the fixture must say so.
+                type.getProperties().add(detail.getId());
                 when(mock.getPropertyDefinitionCoreByPropertyId(REPO, propertyId))
                         .thenReturn(core);
                 when(mock.getPropertyDefinitionDetailByCoreNodeId(REPO, core.getId()))
@@ -102,11 +105,17 @@ class ExternalIntegrationEvidenceReadOnlyTest {
     }
 
     private static Patch_ExternalIntegrationEvidenceReadOnly patchWith(TypeService typeService) {
+        return patchWith(typeService, mock(jp.aegif.nemaki.dao.ContentDaoService.class));
+    }
+
+    private static Patch_ExternalIntegrationEvidenceReadOnly patchWith(TypeService typeService,
+            jp.aegif.nemaki.dao.ContentDaoService contentDaoService) {
         Patch_ExternalIntegrationEvidenceReadOnly patch =
                 new Patch_ExternalIntegrationEvidenceReadOnly();
         PatchUtil util = mock(PatchUtil.class);
         when(util.getTypeService()).thenReturn(typeService);
         when(util.getTypeManager()).thenReturn(mock(TypeManager.class));
+        when(util.getContentDaoService()).thenReturn(contentDaoService);
         patch.setPatchUtil(util);
         return patch;
     }
@@ -159,12 +168,86 @@ class ExternalIntegrationEvidenceReadOnlyTest {
     @DisplayName("finding nothing THROWS, so the run is retried rather than recorded")
     void findingNothingIsNotSuccess() {
         TypeService empty = mock(TypeService.class);
+        // The type exists (so the earlier type-missing throw stays out of the way) but no
+        // property core answers — the silent-view shape this test is about.
+        NemakiTypeDefinition bareType = new NemakiTypeDefinition();
+        bareType.setTypeId("nemaki:externalIntegration");
+        bareType.setProperties(new ArrayList<>());
+        when(empty.getTypeDefinition(REPO, "nemaki:externalIntegration")).thenReturn(bareType);
         when(empty.getPropertyDefinitionCoreByPropertyId(anyString(), anyString()))
                 .thenReturn(null);
 
         assertThrows(RuntimeException.class,
                 () -> patchWith(empty).applyPerRepositoryPatch(REPO),
                 "a silent view would otherwise mark the repository protected for ever");
+    }
+
+    @Test
+    @DisplayName("a foreign contentHash declaration is neither rewritten nor hijacked")
+    void foreignContentHashIsNotHijacked() {
+        FakeTypeService fake = new FakeTypeService(false);
+        // Another type declares nemaki:contentHash: the core exists, but its one detail is NOT
+        // referenced by the evidence type. The first patch shape rewrote it READONLY and
+        // attached it — silently changing the foreign type's contract and sharing one detail
+        // node between two types.
+        NemakiPropertyDefinitionCore foreignCore = new NemakiPropertyDefinitionCore();
+        foreignCore.setId("core-foreign-contentHash");
+        foreignCore.setPropertyId("nemaki:contentHash");
+        NemakiPropertyDefinitionDetail foreignDetail = new NemakiPropertyDefinitionDetail();
+        foreignDetail.setId("detail-foreign-contentHash");
+        foreignDetail.setUpdatability(Updatability.READWRITE);
+        when(fake.mock.getPropertyDefinitionCoreByPropertyId(REPO, "nemaki:contentHash"))
+                .thenReturn(foreignCore);
+        when(fake.mock.getPropertyDefinitionDetailByCoreNodeId(REPO, foreignCore.getId()))
+                .thenReturn(List.of(foreignDetail));
+
+        jp.aegif.nemaki.dao.ContentDaoService dao =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        when(dao.createPropertyDefinitionDetail(anyString(), any())).thenAnswer(inv -> {
+            NemakiPropertyDefinitionDetail d = inv.getArgument(1);
+            d.setId("detail-evidence-contentHash");
+            return d;
+        });
+
+        patchWith(fake.mock, dao).applyPerRepositoryPatch(REPO);
+
+        assertEquals(Updatability.READWRITE, foreignDetail.getUpdatability(),
+                "the foreign type's contentHash was silently made READONLY — its author never "
+                        + "asked for evidence semantics");
+        org.mockito.ArgumentCaptor<NemakiPropertyDefinitionDetail> created =
+                org.mockito.ArgumentCaptor.forClass(NemakiPropertyDefinitionDetail.class);
+        org.mockito.Mockito.verify(dao).createPropertyDefinitionDetail(
+                org.mockito.ArgumentMatchers.eq(REPO), created.capture());
+        assertEquals(Updatability.READONLY, created.getValue().getUpdatability(),
+                "the evidence type's own detail must be born read-only");
+        assertEquals(foreignCore.getId(), created.getValue().getCoreNodeId(),
+                "the new detail must sit on the SHARED core — creating a second core would "
+                        + "mint nemaki:contentHash_<timestamp>, a different property");
+        assertTrue(fake.type.getProperties().contains("detail-evidence-contentHash"),
+                "the fresh detail is not attached to the evidence type");
+        assertTrue(!fake.type.getProperties().contains("detail-foreign-contentHash"),
+                "the foreign detail was attached — one admin edit would then change both types");
+    }
+
+    @Test
+    @DisplayName("a foreign detail sharing a source-identity core keeps its updatability")
+    void foreignSourceIdentityDetailIsLeftAlone() {
+        FakeTypeService fake = new FakeTypeService(false);
+        NemakiPropertyDefinitionDetail foreignDetail = new NemakiPropertyDefinitionDetail();
+        foreignDetail.setId("detail-foreign-sourceSystem");
+        foreignDetail.setUpdatability(Updatability.READWRITE);
+        // The shared core now answers with our detail AND a foreign one.
+        when(fake.mock.getPropertyDefinitionDetailByCoreNodeId(REPO, "core-nemaki:sourceSystem"))
+                .thenReturn(List.of(fake.details.get("nemaki:sourceSystem"), foreignDetail));
+
+        patchWith(fake.mock).applyPerRepositoryPatch(REPO);
+
+        assertEquals(Updatability.READONLY,
+                fake.details.get("nemaki:sourceSystem").getUpdatability(),
+                "our own detail must still be protected when a foreign one shares the core");
+        assertEquals(Updatability.READWRITE, foreignDetail.getUpdatability(),
+                "the foreign detail was rewritten — a property id collision must not change "
+                        + "another type's contract");
     }
 
     @Test

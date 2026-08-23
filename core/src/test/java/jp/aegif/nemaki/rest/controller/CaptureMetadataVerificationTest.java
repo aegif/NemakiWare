@@ -149,14 +149,58 @@ class CaptureMetadataVerificationTest {
         when(store.listCapturedForObject(REPO, OBJECT, 20))
                 .thenReturn(List.of(completedRow(storedChatHash, 1000L)));
         stored.getAspects().get(0).getProperties().get(0).setValue("C-REWRITTEN");
-        // A later pass for the same source item left a record — perhaps unresolved, perhaps a
-        // wrapper that does not hash. Either way "unrecorded change" would be false.
-        when(store.listRowsForSourceSince(eq(REPO), eq("1720000000.000200"), eq(1000L), anyInt()))
-                .thenReturn(List.of(Map.of("captureState", "UNRESOLVED")));
+        // A pass completed AFTER the baseline without recording a hash — a wrapper that does
+        // not hash, or a replay through the plain path. "Unrecorded change" would be false.
+        Map<String, Object> laterNoHash = new LinkedHashMap<>();
+        laterNoHash.put("intentId", "lineage_capture:y");
+        laterNoHash.put("captureState", "CAPTURED");
+        laterNoHash.put("capturedAtMs", 2000L);
+        when(store.listRowsForSourceSince(eq(REPO), eq("1720000000.000200"), eq(-1L), anyInt()))
+                .thenReturn(List.of(laterNoHash));
 
         Map<String, Object> body = verify();
         assertEquals("UNVERIFIABLE", body.get("chatEvidence"),
                 "the verifier claimed an unrecorded change while a record of a later pass exists");
+    }
+
+    @Test
+    @DisplayName("a pass OPENED before the baseline completed, never resolved, downgrades too")
+    void overlappingUnresolvedPassDowngrades() {
+        when(store.listCapturedForObject(REPO, OBJECT, 20))
+                .thenReturn(List.of(completedRow(storedChatHash, 1000L)));
+        stored.getAspects().get(0).getProperties().get(0).setValue("C-REWRITTEN");
+        // The view is keyed by intentOpenedAtMs. This pass opened BEFORE the baseline
+        // completed, may have written after, and never resolved — the first shape queried
+        // "rows since capturedAtMs" and missed it entirely, reporting an honest concurrent
+        // write as MISMATCH (review of the batch). No capturedAtMs = unresolved.
+        Map<String, Object> unresolved = new LinkedHashMap<>();
+        unresolved.put("intentId", "lineage_capture:z");
+        unresolved.put("captureState", "INTENT");
+        when(store.listRowsForSourceSince(eq(REPO), eq("1720000000.000200"), eq(-1L), anyInt()))
+                .thenReturn(List.of(unresolved));
+
+        assertEquals("UNVERIFIABLE", verify().get("chatEvidence"),
+                "an unresolved overlapping pass exists — claiming tampering is an overstatement");
+    }
+
+    @Test
+    @DisplayName("a pass fully completed BEFORE the baseline does not downgrade — the control")
+    void earlierCompletedPassDoesNotDowngrade() {
+        when(store.listCapturedForObject(REPO, OBJECT, 20))
+                .thenReturn(List.of(completedRow(storedChatHash, 1000L)));
+        stored.getAspects().get(0).getProperties().get(0).setValue("C-REWRITTEN");
+        // Completed at 500, before the baseline hashed at 1000: its writes are INSIDE the
+        // baseline hash. If this row downgraded, every object with any earlier pass would
+        // become permanently unverifiable and the tamper signal would be dead.
+        Map<String, Object> earlier = new LinkedHashMap<>();
+        earlier.put("intentId", "lineage_capture:w");
+        earlier.put("captureState", "CAPTURED");
+        earlier.put("capturedAtMs", 500L);
+        when(store.listRowsForSourceSince(eq(REPO), eq("1720000000.000200"), eq(-1L), anyInt()))
+                .thenReturn(List.of(earlier));
+
+        assertEquals("MISMATCH", verify().get("chatEvidence"),
+                "history that predates the recorded hash must not mute the tamper signal");
     }
 
     @Test

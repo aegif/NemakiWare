@@ -88,11 +88,24 @@ public class Patch_ExternalIntegrationEvidenceReadOnly extends AbstractNemakiPat
             throw new IllegalStateException("no TypeService, so nothing could be protected in "
                     + repositoryId + "; retry on the next start");
         }
+        NemakiTypeDefinition type = typeService.getTypeDefinition(repositoryId, TYPE_ID);
+        if (type == null) {
+            throw new IllegalStateException("type " + TYPE_ID + " not found — the type patches "
+                    + "have not run yet; retry on the next start");
+        }
+        // Cores are shared by property id across ALL types, but a detail belongs to the types
+        // whose definition references its id. Everything below touches ONLY details this type
+        // references: rewriting a foreign type's detail because its author reused a property id
+        // would silently change that type's contract (external review — the first shape
+        // rewrote every detail of the core and attached details.get(0), whichever type it
+        // belonged to).
+        java.util.Set<String> attachedDetailIds = type.getProperties() == null
+                ? java.util.Set.of() : new java.util.HashSet<>(type.getProperties());
         int found = 0;
         List<String> failures = new ArrayList<>();
         for (String propertyId : DECLARED_SOURCE_IDENTITY_PROPERTIES) {
             try {
-                if (makeReadOnly(typeService, repositoryId, propertyId)) {
+                if (makeReadOnly(typeService, repositoryId, propertyId, attachedDetailIds)) {
                     found++;
                 }
             } catch (Exception e) {
@@ -101,7 +114,7 @@ public class Patch_ExternalIntegrationEvidenceReadOnly extends AbstractNemakiPat
             }
         }
         try {
-            declareContentHashReadOnly(typeService, repositoryId);
+            declareContentHashReadOnly(typeService, repositoryId, type, attachedDetailIds);
         } catch (Exception e) {
             log.error("Could not declare nemaki:contentHash in " + repositoryId, e);
             failures.add("nemaki:contentHash");
@@ -126,9 +139,13 @@ public class Patch_ExternalIntegrationEvidenceReadOnly extends AbstractNemakiPat
         }
     }
 
-    /** True when the property existed (already read-only counts as found). */
+    /**
+     * True when the property is declared ON THE EVIDENCE TYPE (already read-only counts as
+     * found). A core whose details all belong to other types is "not found" — this type does
+     * not declare the property, and those types keep their own contract, said out loud.
+     */
     private boolean makeReadOnly(TypeService typeService, String repositoryId,
-            String propertyId) {
+            String propertyId, java.util.Set<String> attachedDetailIds) {
         NemakiPropertyDefinitionCore core =
                 typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, propertyId);
         if (core == null) {
@@ -139,14 +156,26 @@ public class Patch_ExternalIntegrationEvidenceReadOnly extends AbstractNemakiPat
         if (details == null || details.isEmpty()) {
             return false;
         }
+        boolean declaredOnThisType = false;
+        int foreign = 0;
         for (NemakiPropertyDefinitionDetail detail : details) {
+            if (!attachedDetailIds.contains(detail.getId())) {
+                foreign++;
+                continue;
+            }
+            declaredOnThisType = true;
             if (Updatability.READONLY.equals(detail.getUpdatability())) {
                 continue;
             }
             detail.setUpdatability(Updatability.READONLY);
             typeService.updatePropertyDefinitionDetail(repositoryId, detail);
         }
-        return true;
+        if (foreign > 0) {
+            log.warn(propertyId + " in " + repositoryId + " is also declared by " + foreign
+                    + " definition(s) outside " + TYPE_ID + "; those keep their own "
+                    + "updatability — this patch protects the evidence type only");
+        }
+        return declaredOnThisType;
     }
 
     /**
@@ -155,7 +184,8 @@ public class Patch_ExternalIntegrationEvidenceReadOnly extends AbstractNemakiPat
      * <p>Values already stored under the undeclared key stay exactly where they are — the
      * declaration changes what CMIS shows and refuses, not what CouchDB holds.
      */
-    private void declareContentHashReadOnly(TypeService typeService, String repositoryId) {
+    private void declareContentHashReadOnly(TypeService typeService, String repositoryId,
+            NemakiTypeDefinition type, java.util.Set<String> attachedDetailIds) {
         NemakiPropertyDefinitionCore existing =
                 typeService.getPropertyDefinitionCoreByPropertyId(repositoryId,
                         "nemaki:contentHash");
@@ -169,30 +199,49 @@ public class Patch_ExternalIntegrationEvidenceReadOnly extends AbstractNemakiPat
                         "nemaki:contentHash has a core but no detail — view silence or a "
                                 + "half-created definition; retry on the next start");
             }
+            // Only a detail THIS type references may be rewritten or reused. Attaching
+            // details.get(0) regardless — the first shape — would have shared a foreign
+            // type's detail node with the evidence type: one admin edit then changes both.
+            NemakiPropertyDefinitionDetail ours = null;
+            int foreign = 0;
             for (NemakiPropertyDefinitionDetail detail : details) {
-                if (!Updatability.READONLY.equals(detail.getUpdatability())) {
-                    detail.setUpdatability(Updatability.READONLY);
-                    typeService.updatePropertyDefinitionDetail(repositoryId, detail);
+                if (attachedDetailIds.contains(detail.getId())) {
+                    if (ours == null) {
+                        ours = detail;
+                    }
+                } else {
+                    foreign++;
                 }
             }
-            detailId = details.get(0).getId();
+            if (foreign > 0) {
+                log.warn("nemaki:contentHash in " + repositoryId + " is also declared by "
+                        + foreign + " definition(s) outside " + TYPE_ID + "; those keep their "
+                        + "own updatability — this patch declares it on the evidence type only");
+            }
+            if (ours != null) {
+                if (!Updatability.READONLY.equals(ours.getUpdatability())) {
+                    ours.setUpdatability(Updatability.READONLY);
+                    typeService.updatePropertyDefinitionDetail(repositoryId, ours);
+                }
+                detailId = ours.getId();
+            } else {
+                // The core exists but belongs to other types. createPropertyDefinition would
+                // dodge the id collision by minting "nemaki:contentHash_<timestamp>" — a
+                // different property — so the detail is created directly on the shared core.
+                NemakiPropertyDefinitionDetail fresh =
+                        new NemakiPropertyDefinitionDetail(contentHashDefinition(),
+                                existing.getId());
+                NemakiPropertyDefinitionDetail created = patchUtil.getContentDaoService()
+                        .createPropertyDefinitionDetail(repositoryId, fresh);
+                if (created == null) {
+                    throw new IllegalStateException("creating the nemaki:contentHash detail on "
+                            + "the existing core returned nothing; retry on the next start");
+                }
+                detailId = created.getId();
+            }
         } else {
-            NemakiPropertyDefinition propDef = new NemakiPropertyDefinition();
-            propDef.setPropertyId("nemaki:contentHash");
-            propDef.setLocalName("contentHash");
-            propDef.setLocalNameSpace("http://www.aegif.jp/Nemaki");
-            propDef.setQueryName("nemaki:contentHash");
-            propDef.setDisplayName("Content Hash");
-            propDef.setDescription("SHA-256 of the content bytes this ingest fetched and "
-                    + "supplied (subject: input). Written by the capture path only.");
-            propDef.setPropertyType(PropertyType.STRING);
-            propDef.setCardinality(Cardinality.SINGLE);
-            propDef.setUpdatability(Updatability.READONLY);
-            propDef.setRequired(false);
-            propDef.setQueryable(true);
-            propDef.setOrderable(false);
             NemakiPropertyDefinitionDetail created =
-                    typeService.createPropertyDefinition(repositoryId, propDef);
+                    typeService.createPropertyDefinition(repositoryId, contentHashDefinition());
             if (created == null) {
                 throw new IllegalStateException(
                         "creating nemaki:contentHash returned nothing; retry on the next start");
@@ -200,11 +249,6 @@ public class Patch_ExternalIntegrationEvidenceReadOnly extends AbstractNemakiPat
             detailId = created.getId();
         }
 
-        NemakiTypeDefinition type = typeService.getTypeDefinition(repositoryId, TYPE_ID);
-        if (type == null) {
-            throw new IllegalStateException("type " + TYPE_ID + " not found — the type patches "
-                    + "have not run yet; retry on the next start");
-        }
         List<String> properties = type.getProperties() == null
                 ? new ArrayList<>() : new ArrayList<>(type.getProperties());
         if (!properties.contains(detailId)) {
@@ -212,5 +256,24 @@ public class Patch_ExternalIntegrationEvidenceReadOnly extends AbstractNemakiPat
             type.setProperties(properties);
             typeService.updateTypeDefinition(repositoryId, type);
         }
+    }
+
+    /** The declaration, shared by the fresh-create and existing-core branches verbatim. */
+    private static NemakiPropertyDefinition contentHashDefinition() {
+        NemakiPropertyDefinition propDef = new NemakiPropertyDefinition();
+        propDef.setPropertyId("nemaki:contentHash");
+        propDef.setLocalName("contentHash");
+        propDef.setLocalNameSpace("http://www.aegif.jp/Nemaki");
+        propDef.setQueryName("nemaki:contentHash");
+        propDef.setDisplayName("Content Hash");
+        propDef.setDescription("SHA-256 of the content bytes this ingest fetched and "
+                + "supplied (subject: input). Written by the capture path only.");
+        propDef.setPropertyType(PropertyType.STRING);
+        propDef.setCardinality(Cardinality.SINGLE);
+        propDef.setUpdatability(Updatability.READONLY);
+        propDef.setRequired(false);
+        propDef.setQueryable(true);
+        propDef.setOrderable(false);
+        return propDef;
     }
 }

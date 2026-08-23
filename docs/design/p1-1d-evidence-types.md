@@ -124,8 +124,10 @@ aspect から値を引くので、**id が在って aspect が無い**と「証�
 しかもこの向きは当時**現に作れた**: `setBaseProperties` は生のリクエスト値を `secondaryIds` に
 無条件で書き、aspect は `if (!isEmpty(secondary))` のときしか書かなかった。
 **→ 2026-08-23 に両方の製造元を閉鎖**: 作成時の `secondaryIds` は組み上がった aspect から
-導出 (D-8、`SecondaryIdsMatchAspectsAtCreateTest`)。残っていた製造元は製品自身の復元経路
-(zip import が証拠型 id だけ通し、READONLY 値は作成時に落ちて殻になる) で、これは
+導出 (D-8、`SecondaryIdsMatchAspectsAtCreateTest`)。残っていた製造元は zip import 経路
+(証拠型 id だけ通り、READONLY 値は作成時に落ちて殻になる)。正確には**細工または他製品の
+archive に限る** — 製品自身の exporter は aspects も `cmis:secondaryObjectTypeIds` も
+meta.json に書かないため、製品の export→import 往復では殻はできない (レビュー F-8)。これは
 `ZipImporter.stripEvidenceAssertions` が import 前に**型 id ごと主張を除去して警告に名指し**する
 ことで閉じた (D-6。archive restore との分裂の設計判断は同メソッドの javadoc)。
 

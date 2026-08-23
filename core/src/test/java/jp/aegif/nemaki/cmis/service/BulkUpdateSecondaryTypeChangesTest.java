@@ -51,20 +51,33 @@ import static org.mockito.Mockito.when;
  */
 class BulkUpdateSecondaryTypeChangesTest {
 
-    @SuppressWarnings("unchecked")
-    private static Properties fold(Properties original, Document content,
-            List<String> add, List<String> remove) throws Exception {
-        ObjectServiceImpl service = new ObjectServiceImpl();
+    /**
+     * The explicit signature, not {@code getDeclaredConstructors()[0]} — the array's order is
+     * JVM-dependent, so a second constructor would make the lookup nondeterministic (it fails
+     * loudly either way, but flakily).
+     */
+    private static Constructor<?> taskConstructor() throws Exception {
         Class<?> taskClass = null;
         for (Class<?> declared : ObjectServiceImpl.class.getDeclaredClasses()) {
             if (declared.getSimpleName().equals("BulkUpdateTask")) {
                 taskClass = declared;
             }
         }
-        Constructor<?> ctor = taskClass.getDeclaredConstructors()[0];
+        Constructor<?> ctor = taskClass.getDeclaredConstructor(ObjectServiceImpl.class,
+                org.apache.chemistry.opencmis.commons.server.CallContext.class, String.class,
+                org.apache.chemistry.opencmis.commons.data.BulkUpdateObjectIdAndChangeToken.class,
+                Properties.class, List.class, List.class,
+                org.apache.chemistry.opencmis.commons.data.ExtensionsData.class);
         ctor.setAccessible(true);
-        Object task = ctor.newInstance(service, null, "bedroom", null, original, add, remove, null);
-        Method m = taskClass.getDeclaredMethod("withSecondaryTypeChanges",
+        return ctor;
+    }
+
+    private static Properties fold(Properties original, Document content,
+            List<String> add, List<String> remove) throws Exception {
+        Constructor<?> ctor = taskConstructor();
+        Object task = ctor.newInstance(new ObjectServiceImpl(), null, "bedroom", null, original,
+                add, remove, null);
+        Method m = ctor.getDeclaringClass().getDeclaredMethod("withSecondaryTypeChanges",
                 Properties.class, jp.aegif.nemaki.model.Content.class);
         m.setAccessible(true);
         return (Properties) m.invoke(task, original, content);
@@ -123,6 +136,24 @@ class BulkUpdateSecondaryTypeChangesTest {
     }
 
     @Test
+    @DisplayName("null properties + removes: the fold materializes a fresh Properties")
+    void nullPropertiesAreMaterialized() throws Exception {
+        // CMIS allows a bulk update that ONLY touches secondary types;
+        // checkExceptionBeforeUpdateProperties carves out null properties for exactly that.
+        // The first fold NPE'd here (review) — and because modifyProperties returns early on
+        // null, the shape had never worked at all: the fold materializing the ids is what
+        // makes it work.
+        Properties folded = fold(null, withSecondaryIds("nemaki:comment", "nemaki:tagged"),
+                null, List.of("nemaki:comment"));
+
+        assertEquals(List.of("nemaki:tagged"), secondaryIdsOf(folded),
+                "a secondary-type-only bulk update (properties == null) fell over instead of "
+                        + "folding");
+        assertEquals(1, folded.getPropertyList().size(),
+                "nothing but the folded secondary-ids property should be materialized");
+    }
+
+    @Test
     @DisplayName("call() hands the FOLDED properties to updateProperties — the wiring pin")
     void callUsesTheFoldedProperties() throws Exception {
         // The helper tests above cannot see a regression at the call site (they invoke the
@@ -153,14 +184,7 @@ class BulkUpdateSecondaryTypeChangesTest {
         when(contentService.getContent(org.mockito.ArgumentMatchers.eq("bedroom"),
                 org.mockito.ArgumentMatchers.anyString())).thenReturn(stored);
 
-        Class<?> taskClass = null;
-        for (Class<?> declared : ObjectServiceImpl.class.getDeclaredClasses()) {
-            if (declared.getSimpleName().equals("BulkUpdateTask")) {
-                taskClass = declared;
-            }
-        }
-        Constructor<?> ctor = taskClass.getDeclaredConstructors()[0];
-        ctor.setAccessible(true);
+        Constructor<?> ctor = taskConstructor();
         PropertiesImpl request = new PropertiesImpl();
         request.addProperty(new PropertyStringImpl(PropertyIds.NAME, "renamed"));
         Object task = ctor.newInstance(service,
@@ -178,6 +202,32 @@ class BulkUpdateSecondaryTypeChangesTest {
         assertEquals(List.of("nemaki:tagged"), secondaryIdsOf(sent.getValue()),
                 "call() did not fold the remove list — updateProperties saw the raw request "
                         + "and the bulk update silently ignored removeSecondaryTypeIds again");
+    }
+
+    @Test
+    @DisplayName("add/remove ids get the SAME validation as the properties list at the entrance")
+    void addRemoveIdsAreValidatedAtTheEntrance() {
+        // The properties-list variant of a bad type id fails with invalidArgument at the bulk
+        // entrance; the add/remove lists skipped that check entirely, so a typo'd id sailed
+        // through, buildSecondaryTypes dropped it at debug level, and numUpdated=N read as
+        // success while nothing was attached (review F-1).
+        ObjectServiceImpl service = new ObjectServiceImpl();
+        jp.aegif.nemaki.cmis.aspect.ExceptionService exceptions =
+                mock(jp.aegif.nemaki.cmis.aspect.ExceptionService.class);
+        service.setExceptionService(exceptions);
+
+        service.bulkUpdateProperties(
+                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class), "bedroom",
+                new ArrayList<>(), null, List.of("nemaki:ghost"), List.of("nemaki:tagged"), null);
+
+        org.mockito.ArgumentCaptor<Properties> checked =
+                org.mockito.ArgumentCaptor.forClass(Properties.class);
+        org.mockito.Mockito.verify(exceptions, org.mockito.Mockito.times(2))
+                .invalidArgumentSecondaryTypeIds(
+                        org.mockito.ArgumentMatchers.eq("bedroom"), checked.capture());
+        assertEquals(List.of("nemaki:ghost", "nemaki:tagged"),
+                secondaryIdsOf(checked.getAllValues().get(1)),
+                "the add/remove ids must reach the same validator the properties list gets");
     }
 
     @Test

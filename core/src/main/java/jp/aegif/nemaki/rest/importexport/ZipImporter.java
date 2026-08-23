@@ -145,18 +145,38 @@ public class ZipImporter {
      * same-repository copy — the object keeps its id, the capture ledger rows keyed by that id
      * still stand behind the claims, so evidence survives it untouched. A <b>zip import</b> mints
      * new ids in (usually) another repository, where no ledger backs the claims — so it must not
-     * write them. Without this strip the import did something worse than either: the evidence
-     * values are READONLY and dropped at create, but the type id went into
-     * {@code cmis:secondaryObjectTypeIds}, so the product's own restore path manufactured "type
-     * attached, every property null" (data-model N2 — the shell).
+     * write them. Without this strip, importing such an archive did something worse than either:
+     * the evidence values are READONLY and dropped at create, but the type id went into
+     * {@code cmis:secondaryObjectTypeIds}, manufacturing "type attached, every property null"
+     * (data-model N2 — the shell). Precisely stated, the archives that could do this are crafted
+     * or foreign ones: the product's own exporter writes neither aspects nor
+     * {@code cmis:secondaryObjectTypeIds} into {@code .meta.json} (review F-8), so a product
+     * export/import round trip never minted the shell — which is the threat model anyway, since
+     * the meta is attacker-controlled.
+     *
+     * <p>The strip set includes the two deliberately-READWRITE sync-state properties
+     * ({@code nemaki:externalContext} / {@code nemaki:externalContextUpdatedAt}) not because
+     * they are capture assertions — they are not, and any CMIS writer may set them later — but
+     * because their home type is stripped here, so the values could not land anyway; naming
+     * them in the warning beats losing them silently (review F-7).
+     */
+    static List<String> stripEvidenceAssertions(JSONObject metadata) {
+        if (metadata == null) {
+            return new ArrayList<>();
+        }
+        return stripEvidenceAssertionsFromProperties((JSONObject) metadata.get("properties"));
+    }
+
+    /**
+     * The property-level strip, shared by the document call site (whole {@code .meta.json}) and
+     * the relationship call site ({@code .nemaki-relationships/*.json} carries a bare
+     * {@code properties} object). The relationship route was the strip's first bypass found in
+     * review: {@code createRelationship} runs {@code setBaseProperties} too, so an archive
+     * relationship naming a protected secondary type minted the same shell on a relationship.
      */
     @SuppressWarnings("unchecked")
-    static List<String> stripEvidenceAssertions(JSONObject metadata) {
+    static List<String> stripEvidenceAssertionsFromProperties(JSONObject properties) {
         List<String> dropped = new ArrayList<>();
-        if (metadata == null) {
-            return dropped;
-        }
-        JSONObject properties = (JSONObject) metadata.get("properties");
         if (properties == null) {
             return dropped;
         }
@@ -831,12 +851,16 @@ public class ZipImporter {
             Element propEl = it.next();
             String propName = propEl.attributeValue("name");
             String propValue = propEl.getTextTrim();
-            // Evidence ids never occur in a genuine Alfresco ACP; one here is crafted. They were
-            // inert on this path anyway (no secondary type gets attached), but "inert today" is
-            // not a guarantee — same rule as the custom format: capture evidence does not enter
-            // through an upload.
+            // Evidence ids never occur in a genuine Alfresco ACP; one here is crafted. Same rule
+            // as the custom format: capture evidence does not enter through an upload. The
+            // second condition closes the type-id route the first filter missed (review F-2):
+            // a crafted <property name="cmis:secondaryObjectTypeIds">nemaki:chatContextMetadata
+            // </property> is not "cm:"-prefixed and not an evidence PROPERTY id, yet
+            // createDocument would attach the protected type from it — the empty shell again.
             if (propName != null && propValue != null && !propName.startsWith("cm:")
-                    && !EVIDENCE_PROPERTY_IDS.contains(propName)) {
+                    && !EVIDENCE_PROPERTY_IDS.contains(propName)
+                    && !(PropertyIds.SECONDARY_OBJECT_TYPE_IDS.equals(propName)
+                            && jp.aegif.nemaki.businesslogic.EvidenceTypes.isProtected(propValue))) {
                 props.addProperty(new PropertyStringImpl(propName, propValue));
             }
         }
@@ -1384,6 +1408,15 @@ public class ZipImporter {
 
                 JSONObject customProps = (JSONObject) relJson.get("properties");
                 if (customProps != null) {
+                    List<String> droppedEvidence = stripEvidenceAssertionsFromProperties(customProps);
+                    if (!droppedEvidence.isEmpty()) {
+                        String message = "Evidence metadata not imported for relationship '"
+                                + entryName + "': " + String.join(", ", droppedEvidence)
+                                + " — this repository did not capture it, so the import will"
+                                + " not assert that it did. The relationship itself is imported.";
+                        result.warnings.add(message);
+                        log.info(message);
+                    }
                     for (Object key : customProps.keySet()) {
                         String propName = (String) key;
                         Object propValue = customProps.get(propName);

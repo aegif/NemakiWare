@@ -246,6 +246,11 @@ public class IngestMetadataService {
                                               CallContext callContext, String secondaryTypeId,
                                               List<Property> requested,
                                               Runnable beforeFirstWrite) {
+        // Outside the try: a refusal is a fact about the read, established before any write is
+        // attempted — a write that then fails must not take the refusal report down with it
+        // (first shape returned empty lists from the catch, so a request carrying both a
+        // conflicting value and a missing one reported only the write error).
+        List<String> refused = new ArrayList<>();
         try {
             Content content = contentService.getContent(repositoryId, objectId);
             if (content == null) {
@@ -256,7 +261,6 @@ public class IngestMetadataService {
 
             Map<String, Object> present = presentValues(aspects, secondaryTypeId);
             List<Property> missing = new ArrayList<>();
-            List<String> refused = new ArrayList<>();
             for (Property p : requested) {
                 if (!present.containsKey(p.getKey())) {
                     missing.add(p);
@@ -285,8 +289,11 @@ public class IngestMetadataService {
             throw failClosed;
         } catch (Exception e) {
             logger.warn("Failed to fill {} on {}: {}", secondaryTypeId, objectId, e.getMessage());
+            // filled stays empty: whether the write persisted is unknown, and claiming a fill
+            // that may not exist would be worse than omitting one that does. The refusals are
+            // read-derived facts and survive.
             return new FillOutcome(secondaryTypeId + " metadata failed: " + e.getMessage(),
-                    List.of(), List.of());
+                    List.of(), List.copyOf(refused));
         }
     }
 

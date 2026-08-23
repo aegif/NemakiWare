@@ -140,6 +140,30 @@ class EvidenceAspectsAreNotSharedAcrossVersionsTest {
     }
 
     @Test
+    @DisplayName("a MUTABLE value (multi-value list) is not aliased between versions")
+    void mutableValuesAreNotAliased() throws Exception {
+        // Fresh Property objects were not enough: the first copy passed p.getValue() through,
+        // so a shared List (or a Calendar from a cache hit) still bridged the versions — an
+        // add() through one edited the other's evidence in memory (review of the batch).
+        Document v1 = original();
+        java.util.List<String> participants = new ArrayList<>(List.of("otsuka"));
+        v1.getAspects().stream().filter(a -> CHAT.equals(a.getName())).findFirst().orElseThrow()
+                .getProperties().add(new Property("nemaki:chatParticipants", participants));
+
+        Document v2 = copyOf(v1);
+        Object v2Value = v2.getAspects().stream()
+                .filter(a -> CHAT.equals(a.getName())).findFirst().orElseThrow()
+                .getProperties().stream()
+                .filter(p -> "nemaki:chatParticipants".equals(p.getKey()))
+                .findFirst().orElseThrow().getValue();
+        ((java.util.List<String>) v2Value).add("intruder");
+
+        assertEquals(List.of("otsuka"), participants,
+                "adding a participant through the copy grew the ORIGINAL version's list — the "
+                        + "Property objects differ but the value object is the same");
+    }
+
+    @Test
     @DisplayName("ordinary aspects stay shared — the deliberate scope limit")
     void ordinaryAspectsStayShared() throws Exception {
         // Copying everything would be a broader behaviour change than D3 needs; the protected

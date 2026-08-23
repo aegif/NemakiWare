@@ -190,6 +190,120 @@ class ZipImporterEvidenceStripTest {
     }
 
     @Test
+    @DisplayName("a String-form secondary id is stripped — the crafted-archive shape")
+    @SuppressWarnings("unchecked")
+    void stringFormSecondaryIdIsStripped() {
+        // The product's exporter writes no secondary ids at all, so the String (non-array) form
+        // only occurs in crafted or foreign archives — exactly the input the strip exists for.
+        // This branch had no test: deleting it left the suite green (review F-6).
+        JSONObject props = new JSONObject();
+        props.put(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, "nemaki:chatContextMetadata");
+        JSONObject meta = new JSONObject();
+        meta.put("properties", props);
+
+        List<String> dropped = ZipImporter.stripEvidenceAssertions(meta);
+
+        assertNull(props.get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS),
+                "the String-form protected id survived the strip");
+        assertTrue(dropped.contains("nemaki:chatContextMetadata"), String.valueOf(dropped));
+    }
+
+    @Test
+    @DisplayName("ACP: a crafted secondaryObjectTypeIds property cannot attach the evidence type")
+    void acpSecondaryTypeRouteIsClosed() throws Exception {
+        // The first ACP filter only excluded evidence PROPERTY ids; a property ELEMENT named
+        // cmis:secondaryObjectTypeIds is neither "cm:"-prefixed nor in that set, and
+        // createDocument attaches the type from it — the shell through the ACP door
+        // (review F-2).
+        org.dom4j.Element crafted = org.dom4j.DocumentHelper.createElement("content");
+        org.dom4j.Element evidenceType = crafted.addElement("property");
+        evidenceType.addAttribute("name", PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
+        evidenceType.setText("nemaki:chatContextMetadata");
+        org.dom4j.Element ordinary = crafted.addElement("property");
+        ordinary.addAttribute("name", "my:ordinary");
+        ordinary.setText("kept");
+
+        java.lang.reflect.Method m = ZipImporter.class.getDeclaredMethod("addAcpProperties",
+                org.dom4j.Element.class,
+                org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl.class);
+        m.setAccessible(true);
+        org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl props =
+                new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl();
+        m.invoke(new ZipImporter(), crafted, props);
+
+        assertFalse(props.getProperties().containsKey(PropertyIds.SECONDARY_OBJECT_TYPE_IDS),
+                "the crafted ACP attached the protected type — the empty shell again");
+        assertTrue(props.getProperties().containsKey("my:ordinary"));
+
+        // The control: an ORDINARY secondary type id still passes through the ACP door.
+        org.dom4j.Element plain = org.dom4j.DocumentHelper.createElement("content");
+        org.dom4j.Element tagged = plain.addElement("property");
+        tagged.addAttribute("name", PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
+        tagged.setText("nemaki:tagged");
+        org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl plainProps =
+                new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl();
+        m.invoke(new ZipImporter(), plain, plainProps);
+        assertTrue(plainProps.getProperties().containsKey(PropertyIds.SECONDARY_OBJECT_TYPE_IDS),
+                "the guard must be scoped to the protected types, not all secondary types");
+    }
+
+    @Test
+    @DisplayName("relationship metadata is stripped too — the first bypass found in review")
+    @SuppressWarnings("unchecked")
+    void relationshipRouteIsStripped(@TempDir Path tempDir) throws Exception {
+        // createRelationship runs setBaseProperties like a document create, so an archive
+        // relationship naming a protected secondary type minted the same "type attached,
+        // every property null" shell on a relationship — around the document-only strip.
+        JSONObject relProps = new JSONObject();
+        JSONArray secondary = new JSONArray();
+        secondary.add("nemaki:chatContextMetadata");
+        relProps.put(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondary);
+        relProps.put("nemaki:sourceSystem", "slack");
+        relProps.put("my:relNote", "kept");
+        JSONObject rel = new JSONObject();
+        rel.put("objectType", "nemaki:related");
+        rel.put("sourceId", "old-s");
+        rel.put("targetId", "old-t");
+        rel.put("properties", relProps);
+
+        File zip = tempDir.resolve("rels.zip").toFile();
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zip))) {
+            zos.putNextEntry(new ZipEntry(
+                    ImportExportUtils.RELATIONSHIPS_DIR + "r1"
+                            + ImportExportUtils.RELATIONSHIP_SUFFIX));
+            zos.write(rel.toJSONString().getBytes(StandardCharsets.UTF_8));
+            zos.closeEntry();
+        }
+
+        ContentService cs = mock(ContentService.class);
+        ApplicationContext ctx = mock(ApplicationContext.class);
+        when(ctx.getBean("ContentService", ContentService.class)).thenReturn(cs);
+        new SpringContext().setApplicationContext(ctx);
+        jp.aegif.nemaki.model.Relationship createdRel = new jp.aegif.nemaki.model.Relationship();
+        createdRel.setId("rel-1");
+        when(cs.createRelationship(any(), eq("bedroom"), any(Properties.class), any(), any(),
+                any(), any())).thenReturn(createdRel);
+
+        ImportResult result = new ZipImporter().importCustomFormat("bedroom", "target", zip,
+                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class));
+
+        ArgumentCaptor<Properties> sent = ArgumentCaptor.forClass(Properties.class);
+        verify(cs).createRelationship(any(), eq("bedroom"), sent.capture(), any(), any(),
+                any(), any());
+        assertFalse(sent.getValue().getProperties()
+                        .containsKey(PropertyIds.SECONDARY_OBJECT_TYPE_IDS),
+                "the protected type id reached createRelationship — the shell, on a "
+                        + "relationship this time");
+        assertFalse(sent.getValue().getProperties().containsKey("nemaki:sourceSystem"));
+        assertTrue(sent.getValue().getProperties().containsKey("my:relNote"),
+                "ordinary relationship metadata must still import");
+        assertTrue(result.warnings.stream().anyMatch(w ->
+                        w.contains("Evidence metadata not imported for relationship")
+                                && w.contains("nemaki:chatContextMetadata")),
+                "the strip must say what it dropped: " + result.warnings);
+    }
+
+    @Test
     @DisplayName("an evidence-free import draws no evidence warning — the control")
     void evidenceFreeImportHasNoWarning(@TempDir Path tempDir) throws Exception {
         File zip = tempDir.resolve("plain.zip").toFile();

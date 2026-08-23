@@ -43,13 +43,23 @@ import java.util.TreeMap;
  *       since capture" — mixing the two would let a legitimate edit read as tampering.</li>
  * </ul>
  *
- * <h2>The canonical form is injective, and the escaping is why</h2>
+ * <h2>What the escaping guarantees — and what it does not</h2>
  *
  * <p>{@code mh1:SHA-256( join(LF, sorted(propertyId + "=" + escape(value))) )} with
- * {@code \ → \\} and {@code LF → \n}. Without the escaping the first draft was not injective:
- * a value containing {@code "\nnemaki:sourceObjectType=…"} swallowed its neighbouring lines,
- * so two DIFFERENT stored states canonicalized identically and a forged object verified as
- * MATCH — inside this design's own threat model (external review P1-1).
+ * {@code \ → \\} and {@code LF → \n}. The escaping makes the JOIN injective over the canonical
+ * per-property strings: no value can impersonate a line boundary. Without it the first draft
+ * collided — a value containing {@code "\nnemaki:sourceObjectType=…"} swallowed its neighbouring
+ * lines, so two DIFFERENT stored states canonicalized identically and a forged object verified
+ * as MATCH — inside this design's own threat model (external review P1-1).
+ *
+ * <p>Injectivity over RAW stored states is deliberately NOT claimed. Canonicalization collapses
+ * on purpose: blank equals absent (the word every other evidence path uses), a duplicated
+ * property id within an aspect keeps the last occurrence, duplicate aspects of one name merge,
+ * and datetime {@code Number}s truncate to whole millis ({@code longValue()}). Each collapse
+ * equates states the PRODUCT already treats as the same value; a verifier reporting MATCH across
+ * one of them is reporting product semantics, not missing a forgery of the property text
+ * (external review of the batch — the earlier heading overclaimed "injective" without this
+ * scope).
  */
 public final class EvidenceMetadataHash {
 

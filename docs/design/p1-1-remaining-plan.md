@@ -75,7 +75,29 @@ HEAD `246a0e03f` + 自己レビュー修正パスに対する、Codex + サブ�
 `PROTECTED` の機械的検査が書けない (`Patch_ChatContextMetadataSecondaryType` の定数が private のまま)。
 残り: **D-5 / (e) の D7 / 複製の偽証拠 / ローリング再起動 / PROTECTED 機械検査** の 5 つ。
 
-## 7. やり直さない (閉じたもの)
+## 7. 最終レビュー (2026-08-23) と対応
+
+バッチ全体 (570c99396..HEAD) に Codex + サブエージェントの 2 本を実施。
+**修正 10 件 (全て revert→fail 実測済み)**:
+bulk fold の properties=null NPE (この形は modifyProperties の早期 return で**元々一度も
+動いていなかった** — fold が新規 Properties を実体化して初めて動く) /
+add/remove リストの型 id 無検証 (typo が numUpdated=N の成功で黙殺 → properties 変種と
+同じ `invalidArgumentSecondaryTypeIds` を合成リストに適用) /
+strip の迂回 3 経路 (relationship JSON・ACP の `cmis:secondaryObjectTypeIds` property 要素・
+FilesystemImporter) + String 形の無テスト /
+patch の contentHash 既存 core 衝突 (**他型の detail を READONLY 化し `details.get(0)` を
+共有結線していた** → 型が参照する detail だけに絞り、他型専有なら共有 core 上に detail
+直作成・警告) / FillOutcome エラー経路の refused 喪失 / verify の重なり検出漏れ
+(view キーが intentOpenedAtMs なので「baseline 完了前に open した未解決 pass」を見落とし
+偽 MISMATCH → 全行取得 + メモリ判定、満杯ページは UNVERIFIABLE 側へ) /
+copyAspect の可変値 (List/Calendar) 共有。
+**文書修正 3 件**: 「単射」主張のスコープ明確化 (M1) / READWRITE 同期ペアを strip する
+理由の明文化 (F-7) / 「製品自身の復元経路が殻を製造」は過大 — exporter は secondary ids を
+書かないので細工/他製品 archive に限る (F-8)。
+**対応不要と判断**: F-10 (型 import の再定義は skip-if-exists + patch 再適用で自己修復、
+検証済み)。テスト強化: コンストラクタ明示参照 (F-5)・cast 撤去 (F-4)。
+
+## 8. やり直さない (閉じたもの)
 
 D6 (fill/refuse/reimport イベント + 洪水防止 + intent-before-write pin) / 証拠型の 2 経路保護 /
 (c) の管理 API・ZipImporter 型取込・READONLY 消去防止 / R2 `assuranceAsserted` / R3 digest 主語 /

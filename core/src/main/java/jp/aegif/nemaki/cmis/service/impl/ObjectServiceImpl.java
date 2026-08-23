@@ -1179,6 +1179,26 @@ public class ObjectServiceImpl implements ObjectService {
 		// Each permission is checked at each execution
 		exceptionService.invalidArgumentRequiredCollection("objectIdAndChangeToken", objectIdAndChangeTokenList);
 		exceptionService.invalidArgumentSecondaryTypeIds(repositoryId, properties);
+		// The add/remove lists carry the same kind of ids but skipped that validation entirely:
+		// a typo'd id sailed through, buildSecondaryTypes dropped it at debug level, and the
+		// caller read numUpdated=N as success while nothing was attached (review F-1 — the
+		// Browser binding validates upstream, so the other bindings behaved differently). The
+		// SAME check, on a synthetic list, makes every request shape fail identically.
+		List<String> secondaryTypeChanges = new ArrayList<>();
+		if (addSecondaryTypeIds != null) {
+			secondaryTypeChanges.addAll(addSecondaryTypeIds);
+		}
+		if (removeSecondaryTypeIds != null) {
+			secondaryTypeChanges.addAll(removeSecondaryTypeIds);
+		}
+		if (!secondaryTypeChanges.isEmpty()) {
+			org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl synthetic =
+					new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl();
+			synthetic.addProperty(
+					new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl(
+							PropertyIds.SECONDARY_OBJECT_TYPE_IDS, secondaryTypeChanges));
+			exceptionService.invalidArgumentSecondaryTypeIds(repositoryId, synthetic);
+		}
 
 		// //////////////////
 		// Body of the method
@@ -1236,6 +1256,12 @@ public class ObjectServiceImpl implements ObjectService {
 		 * <p>Base = the ids the request supplies, else the object's current ones; plus adds,
 		 * minus removes, order preserved, duplicates dropped. Returns the properties untouched
 		 * when there is nothing to fold, so ordinary bulk updates keep their exact old shape.
+		 *
+		 * <p>{@code original} may be null: CMIS allows a bulk update that ONLY changes secondary
+		 * types ({@code checkExceptionBeforeUpdateProperties} carves that out explicitly), and
+		 * {@code modifyProperties} returns early on null — so this fold materializing the ids
+		 * into a fresh {@link Properties} is what makes that request shape work at all
+		 * (external review of the first fold, which NPE'd here instead).
 		 */
 		private Properties withSecondaryTypeChanges(Properties original, Content content) {
 			boolean hasAdds = addSecondaryTypeIds != null && !addSecondaryTypeIds.isEmpty();
@@ -1244,8 +1270,9 @@ public class ObjectServiceImpl implements ObjectService {
 				return original;
 			}
 			java.util.List<String> base;
-			org.apache.chemistry.opencmis.commons.data.PropertyData<?> requested =
-					original.getProperties().get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
+			org.apache.chemistry.opencmis.commons.data.PropertyData<?> requested = original == null
+					? null
+					: original.getProperties().get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
 			if (requested != null) {
 				base = new java.util.ArrayList<>();
 				for (Object value : requested.getValues()) {
@@ -1265,11 +1292,12 @@ public class ObjectServiceImpl implements ObjectService {
 			}
 			org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl rebuilt =
 					new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl();
-			for (org.apache.chemistry.opencmis.commons.data.PropertyData<?> property
-					: original.getPropertyList()) {
-				if (!PropertyIds.SECONDARY_OBJECT_TYPE_IDS.equals(property.getId())) {
-					rebuilt.addProperty(
-							(org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyData<?>) property);
+			if (original != null) {
+				for (org.apache.chemistry.opencmis.commons.data.PropertyData<?> property
+						: original.getPropertyList()) {
+					if (!PropertyIds.SECONDARY_OBJECT_TYPE_IDS.equals(property.getId())) {
+						rebuilt.addProperty(property);
+					}
 				}
 			}
 			rebuilt.addProperty(

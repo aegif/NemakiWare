@@ -87,7 +87,7 @@ escape: "\\" → "\\\\"、LF → "\\n"
 
 | 規則 | 焼き込む罠 |
 |---|---|
-| **値をエスケープする** (`\\` と LF)。行の区切りが値の中に現れない | **エスケープ無しの初稿は単射でなかった** (外部レビュー P1-1): `chatSelectionReason` は呼び出し元の自由記述で LF を含みうるし、悪意なら `sourceObjectId` に `id\nnemaki:sourceObjectType=message…` を入れて隣接する行を**値の中に飲み込み**、他を空文字 (=不在) にすれば**正準文字列が一致したまま証拠を書き換えられる** — 設計自身の脅威モデル (content DB だけを触る改変) の内側で hash が MATCH を返す |
+| **値をエスケープする** (`\\` と LF)。行の区切りが値の中に現れない。**単射なのは join であって raw 状態ではない** — blank=不在・重複キーは後勝ち・datetime Number の小数切捨ては**製品が同値とみなす状態を意図的に畳む** (最終レビュー M1 で明確化) | **エスケープ無しの初稿は単射でなかった** (外部レビュー P1-1): `chatSelectionReason` は呼び出し元の自由記述で LF を含みうるし、悪意なら `sourceObjectId` に `id\nnemaki:sourceObjectType=message…` を入れて隣接する行を**値の中に飲み込み**、他を空文字 (=不在) にすれば**正準文字列が一致したまま証拠を書き換えられる** — 設計自身の脅威モデル (content DB だけを触る改変) の内側で hash が MATCH を返す |
 | **propertyId でソート**。map の反復順に依存しない | JSON のキー順は JVM のクラスロード順依存 (実測済みの既知トラップ)。propertyId は固定語彙なのでキー側のエスケープは不要、最初の `=` で分割できる |
 | datetime は **epoch millis の 10 進**に正規化。`Calendar` / `Date` / `Number` / ISO 文字列 / millis 文字列を同じ値に | aspect 値は CouchDB 往復で `Double`/`Long` になり、キャッシュヒットでは `Calendar` のまま — `instanceof Calendar` が決して真にならなかった F1 と同じ地形。`toEpochMillis` と同じ正規化を使う (**現在 private — 公開が要る**) |
 | **欠けているプロパティは行ごと出さない** (null 埋めしない)。**blank は不在扱い** (`isBlank` — 空白のみも不在。`presentValues` ほか実経路と同じ語で) | 「空を保管した」と「無い」の混同 (D5 の教訓は content の話だが、規則は揃える) |

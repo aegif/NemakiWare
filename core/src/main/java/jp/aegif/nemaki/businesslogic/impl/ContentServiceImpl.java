@@ -2717,11 +2717,31 @@ public class ContentServiceImpl implements ContentService {
 		List<Property> properties = new ArrayList<>();
 		if (original.getProperties() != null) {
 			for (Property p : original.getProperties()) {
-				properties.add(new Property(p.getKey(), p.getValue()));
+				properties.add(new Property(p.getKey(), copyPropertyValue(p.getValue())));
 			}
 		}
 		copy.setProperties(properties);
 		return copy;
+	}
+
+	/**
+	 * Fresh Property objects are not enough: a shared MUTABLE value (a multi-value list, a
+	 * Calendar from a cache hit) still aliases the versions, and an add() or setTimeInMillis()
+	 * through one version edits the other's evidence in memory (external review of the D-3
+	 * copy, which copied the Property but passed the value reference through). Strings and
+	 * boxed numbers — the CouchDB round-trip shapes — are immutable and pass as-is.
+	 */
+	private static Object copyPropertyValue(Object value) {
+		if (value instanceof List<?> list) {
+			return new ArrayList<>(list);
+		}
+		if (value instanceof java.util.Calendar calendar) {
+			return calendar.clone();
+		}
+		if (value instanceof java.util.Date date) {
+			return date.clone();
+		}
+		return value;
 	}
 
 	private List<Aspect> keepEvidenceAspects(List<Aspect> rebuilt, Map<String, Aspect> existing) {

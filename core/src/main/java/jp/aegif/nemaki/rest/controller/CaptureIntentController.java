@@ -240,15 +240,40 @@ public class CaptureIntentController {
             EvidenceMetadataHash.AppliedHashes current =
                     EvidenceMetadataHash.compute(content.getAspects());
 
-            // Later activity on the same source item, in any state — what downgrades a mismatch.
+            // Activity on the same source item that could postdate the recorded hash — what
+            // downgrades a mismatch. The first shape asked the view for rows OPENED after the
+            // baseline COMPLETED, but the view is keyed by intentOpenedAtMs: a pass that opened
+            // before the baseline completed, wrote afterward and never resolved sits BELOW that
+            // cutoff and was missed — an honest concurrent write read as tampering (external
+            // review). So read every row for the source and judge here. A row that COMPLETED
+            // before the baseline did needs no downgrade: the hash reads the applied state at
+            // completion, so that row's writes are inside it.
             long baselineAtMs = baseline.get("capturedAtMs") instanceof Number n
                     ? n.longValue() : 0L;
             Object sourceObjectId = baseline.get("sourceObjectId");
-            java.util.List<Map<String, Object>> later = sourceObjectId == null
+            Object baselineIntentId = baseline.get("intentId");
+            java.util.List<Map<String, Object>> sourceRows = sourceObjectId == null
                     ? java.util.List.of()
                     : maintenanceStore.listRowsForSourceSince(repositoryId,
-                            String.valueOf(sourceObjectId), baselineAtMs, 20);
-            boolean laterActivity = rowsWithoutHash > 0 || !later.isEmpty();
+                            String.valueOf(sourceObjectId), -1L, 100);
+            boolean overlapping = false;
+            for (Map<String, Object> row : sourceRows) {
+                if (baselineIntentId != null && baselineIntentId.equals(row.get("intentId"))) {
+                    continue;
+                }
+                Long rowCapturedAt = row.get("capturedAtMs") instanceof Number rc
+                        ? rc.longValue() : null;
+                boolean rowHasHash = row.get("appliedChatEvidenceHash") != null
+                        || row.get("appliedSourceIdentityHash") != null;
+                if (rowCapturedAt == null || (rowCapturedAt >= baselineAtMs && !rowHasHash)) {
+                    overlapping = true;
+                    break;
+                }
+            }
+            // A full page might have hidden the overlapping row beyond the cap; that must read
+            // as "cannot rule out", never as a clean MISMATCH.
+            boolean laterActivity = rowsWithoutHash > 0 || overlapping
+                    || sourceRows.size() >= 100;
 
             body.put("chatEvidence", verdict(
                     (String) baseline.get("appliedChatEvidenceHash"),
