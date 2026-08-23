@@ -81,10 +81,17 @@ class EventStatesItsUnverifiedClaimsTest {
         List<CaptureEvidenceField> chat = Arrays.stream(CaptureEvidenceField.values())
                 .filter(f -> f.v1Key().startsWith("chat."))
                 .toList();
-        assertEquals(10, chat.size(),
-                "the chat block is ten facts on the event — capturedAt is the eleventh property "
-                        + "and it is stamped after the emit, so no event carries it: " + chat);
+        assertEquals(11, chat.size(),
+                "the chat block gained its eleventh at P1-1(e): the beforeEmit hook stamps "
+                        + "capturedAt BEFORE emission, so the event now carries it too: " + chat);
         for (CaptureEvidenceField field : chat) {
+            if (field == CaptureEvidenceField.CHAT_CAPTURED_AT) {
+                // The one chat fact that is OURS: the server clock at the moment of capture,
+                // observed by the stamping code — not read out of the caller's metadata.
+                assertEquals(Assurance.OBSERVED, field.assurance(),
+                        "the custody stamp is this deployment's own observation");
+                continue;
+            }
             assertEquals(Assurance.ASSERTED, field.assurance(),
                     field.v1Key() + " is recorded as verified, but the ingest reads it straight "
                             + "out of the request metadata and checks nothing");
