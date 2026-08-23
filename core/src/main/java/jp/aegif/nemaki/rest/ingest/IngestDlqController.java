@@ -217,8 +217,16 @@ public class IngestDlqController {
                 case FILE_SHARE -> canonicalImportService.execute(callContext, request);
             };
         }
-        // Fallback: generic execute
-        return canonicalImportService.execute(callContext, request);
+        // NO generic fallback. Replaying an archetype-less connector through the plain
+        // execute() emitted an event carrying the request's chat.* facts while the chat aspect
+        // was never attached — "the event asserts, the object lacks" (data-model D1's DLQ
+        // remnant, audit #21). An archetype that is null is a connector-definition defect, and
+        // replaying THROUGH the defect turns one broken row into a permanently mismatched
+        // object. Fix the connector, then replay.
+        return ExternalIngestResult.error(request.getRequestId(),
+                "Connector '" + request.getConnectorId() + "' has no sourceArchetype, so the "
+                        + "replay cannot pick the import flow that attaches this item's "
+                        + "evidence. Set the archetype on the connector definition, then retry.");
     }
 
     private boolean isAdmin() {

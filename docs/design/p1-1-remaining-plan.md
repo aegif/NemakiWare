@@ -36,7 +36,7 @@ HEAD `246a0e03f` + 自己レビュー修正パスに対する、Codex + サブ�
 | D-5 | **(d)-6: `chatCapturedAt` の第 2 の写しが無い** | `:883-901` 自認「There is no second copy」。11 個中 1 個だけイベントが運べない | aspect 付与を `execute()` へ引き込む設計 ((b) §8 の「emit 前倒し」は撤回済みのまま)。**(e) の隔離と同じ変更で** — 取込の境界を引き直すのは 1 度だけ |
 | D-6 | **N2: ZipImporter の文書 import が証拠の空殻を作る** | `ZipImporter:337/:513` → CMIS 経路 → `injectPropertyValue` が READONLY 値を**作成時にも**落とす。secondaryIds は生値で書かれ「型あり・中身 null」を製品の復元経路が製造 | 選択肢: (i) import 経路は model 直書き (取込と同じ側) に変える、(ii) 作成時だけ READONLY を通す (ONCREATE 相当)、(iii) 証拠型を含む zip を拒否。**archive restore (raw copy・無傷) との分裂**を設計に明記してから選ぶ |
 | D-7 | **保護の拡張**: mail/note/record の skip 上書き + `applySourceMetadata` の `""` 上書き + `externalIntegration` プロパティの READONLY 化 | `:311-321` (意図的除外と明記済み)、`:2674-2690` (欠落値を空文字で put、**どの台帳にも未記載だったのを完全性監査が発見**)、`Patch_ExternalIntegrationSourceFields:153` READWRITE | 3 つは同じ仕事の面: **「証拠は記録なしに変わらない」を chat 以外へ**。READONLY 化パッチ → D6 の fill 規則を mail/note/record へ → `applySourceMetadata` を fill 化。**Gmail は当日メッセージを毎 poll 再取得**するので revision churn の解消も兼ねる |
-| D-8 | **小物**: DLQ null-archetype 再実行 (D1 残滓、`IngestDlqController:212-214`) / 作成時の空殻 (evidence-types §5-AC3 の残し) | 監査 #21 / #17 | D-6 と同じ増分で。作成時は「secondaryIds と aspect の整合」を `setBaseProperties` に |
+| D-8 ✅ 2026-08-23 | **小物** — 対応済み: DLQ replay は archetype 無しを拒否 (plain fallback 廃止・直し方を明示)。作成時の `secondaryIds` は組み上がった aspect から導出 (解決できない型の殻を初版から作らない) | 監査 #21 / #17 | D-6 と同じ増分で。作成時は「secondaryIds と aspect の整合」を `setBaseProperties` に |
 | D-9 | **復元 + InterPARES 逐条マッピング** (最後) | roadmap:192、棚卸し §5-§7 | モデルが安定してから。A.1 の判定 (§5) とセット |
 
 ## 3. (e) 失敗時の隔離 + 実行起源

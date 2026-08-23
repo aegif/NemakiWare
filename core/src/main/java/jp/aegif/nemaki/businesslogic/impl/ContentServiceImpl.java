@@ -2433,9 +2433,12 @@ public class ContentServiceImpl implements ContentService {
 		String description = DataUtil.getStringProperty(properties, PropertyIds.DESCRIPTION);
 		content.setDescription(description != null ? description : "");
 
-		// Secondary Type IDs - CMIS 1.1 compliance: provide empty list default for required property
-		List<String> secondaryTypeIds = DataUtil.getIdListProperty(properties, PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
-		content.setSecondaryIds(secondaryTypeIds != null ? secondaryTypeIds : new ArrayList<String>());
+		// Secondary Type IDs are DERIVED from the aspects actually built below, not taken raw
+		// from the request. The raw put let a request naming an unresolvable type create an
+		// object whose secondaryIds claim a type with no aspect behind it — "the type is
+		// attached and every property is null", which the evidence-type design calls worse
+		// than invisible (evidence-types §3, audit #17). CompileService iterates secondaryIds
+		// and reads values from aspects, so the two must not disagree from birth.
 
 		// Subtype properties
 		List<Property> subTypeProperties = buildSubTypeProperties(repositoryId, properties, content);
@@ -2445,11 +2448,18 @@ public class ContentServiceImpl implements ContentService {
 
 		// Secondary properties
 		List<Aspect> secondary = buildSecondaryTypes(repositoryId, properties, content);
+		List<String> derivedSecondaryIds = new ArrayList<String>();
 		if (!CollectionUtils.isEmpty(secondary)) {
 			content.setAspects(secondary);
+			for (Aspect aspect : secondary) {
+				if (aspect.getName() != null) {
+					derivedSecondaryIds.add(aspect.getName());
+				}
+			}
 			log.debug("Applied {} Secondary Types to content: {}", secondary.size(), 
 				secondary.stream().map(Aspect::getName).collect(java.util.stream.Collectors.toList()));
 		}
+		content.setSecondaryIds(derivedSecondaryIds);
 
 		// Signature
 		setSignature(callContext, content);
