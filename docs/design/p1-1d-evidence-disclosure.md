@@ -55,11 +55,18 @@ for (Map.Entry<String, String> entry : record.legacyEventAttributes().entrySet()
 > `EndpointKindSchemaAlignmentTest` の `FORBIDDEN_ON_ARTIFACTS` は artifact kind にしか
 > 掛からないので、自動では止まらない ((b) §6)。
 
-### 1.2 第 2 の経路 — **設定ひとつで届く。初稿は見落としていた**
+### 1.2 第 2 の経路 — **在るが、初稿の脅威文は誇張だった** (2026-08-23 訂正)
 
-chat の証拠は snapshot だけに在るのではない。取込は**オブジェクトにも**書く
-(`nemaki:chatParticipants` が `nemaki:chatContextMetadata` に入り、
-`content.getSubTypeProperties()` に載る)。そして:
+初稿は「取込が書いた値が mapping 設定ひとつでカタログへ入る」と書いた。**誇張である**
+(外部レビュー): 取込が書くのは **aspect** であって `subTypeProperties` ではなく、
+`appendCustomPropertyValues` が読むのは `content.getSubTypeProperties()` **だけ**。
+`nemaki:chatParticipants → chatParticipants` の mapping を有効にしても、
+取込が書いた値は **null として投影され、漏れない**。
+
+**それでも門は要る。** 実在する残余経路は: 管理者が**同じ property id を宣言する
+primary subtype** を定義すると、その値は `subTypeProperties` に載り、mapping が
+外へ運ぶ。また mapping の拒否は**保存時と payload 組立時の両方**で効くので、
+このルール以前に保存された mapping・restore・手編集も塞がる。そして:
 
 [`PurviewEntityPayloadFactory.appendCustomPropertyValues`](../../core/src/main/java/jp/aegif/nemaki/rest/purview/payload/PurviewEntityPayloadFactory.java#L193)
 が、**管理者が設定した mapping に従って `subTypeProperties` を `nemaki_document` に写す**。

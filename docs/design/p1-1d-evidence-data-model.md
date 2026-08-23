@@ -283,6 +283,12 @@ metadata-only 再取込は読み戻し経路に落ちて `none()` を出しう�
   Atlas 型定義・`EndpointKind`・整合テストの 3 箇所を揃えた
 - **主語なしで digest が出る経路を無くした** — `digestSubjectValue` は null なら `input` を
   返す。負のコントロール: null を返すようにすると `expected: <input> but was: <null>`
+- **配送先カタログに届くのは v2 flip 以降** (2026-08-23 追記、外部レビュー)。v1 sink は
+  snapshot を Process 型に載せるが、`nemaki_import_process` は content 系属性を
+  **宣言していない** (contentHash 自体も同様) ので到着時に落ちる。SCHEMA_VERSION 16 で
+  宣言したのは `nemaki_document` 側で、そこへ書くのは v2 の endpoint attribute 経路。
+  **flip までの主語の在処は journal と REST である** — 「カタログに主語が在る」とは
+  読まないこと。(b) §3.4 の Process 属性供給と同根
 - D2 の但し書きを実装。`compareContent` は一致したことを `matchedRecordedHash` として
   覚え、`describeCapturedContent` が「取得もハッシュも一致確認もした。ただし記録済み
   digest との比較であって保管バイト列との比較ではない」と言う。

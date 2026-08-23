@@ -202,10 +202,21 @@ public class IngestMetadataService {
      * <p>A stored value that is null or blank counts as absent. A write that half-succeeded should
      * still be repairable; only a real value is protected.
      */
+    /**
+     * @param beforeFirstWrite runs after this method has decided, from ITS OWN read, that it
+     *        will write — and before the write. The capture intent opens here, not from a
+     *        separate preflight: the first shape read the object twice (a willFill preflight,
+     *        then this method), and the two reads could disagree. One direction opened an
+     *        intent for a pass that then wrote nothing; the other — a preflight that saw
+     *        nothing missing while this method's read then did — WROTE WITHOUT AN OPEN INTENT,
+     *        which is the one state the whole boundary exists to prevent (external review).
+     *        One read, one decision, and the hook sits between decision and write.
+     */
     public FillOutcome fillMissingArchetypeMetadata(String repositoryId, String objectId,
                                                     CallContext callContext, String secondaryTypeId,
                                                     ExternalIngestRequest request,
-                                                    String[][] fieldMappings) {
+                                                    String[][] fieldMappings,
+                                                    Runnable beforeFirstWrite) {
         try {
             Content content = contentService.getContent(repositoryId, objectId);
             if (content == null) {
@@ -229,34 +240,25 @@ public class IngestMetadataService {
             if (missing.isEmpty()) {
                 return new FillOutcome(null, List.of(), refused);
             }
+            if (beforeFirstWrite != null) {
+                beforeFirstWrite.run();
+            }
             mergeAspect(aspects, secondaryTypeId, missing);
             ensureSecondaryType(content, secondaryTypeId);
             content.setAspects(aspects);
             contentService.update(callContext, repositoryId, content);
             invalidateCache(repositoryId, objectId);
             return new FillOutcome(null, missing.stream().map(Property::getKey).toList(), refused);
+        } catch (jp.aegif.nemaki.rest.ingest.capture.CaptureScope.CaptureIntentFailedException failClosed) {
+            // The hook's refusal to open the intent is fail-closed and must stay that way.
+            // Folding it into the FillOutcome error string would swallow the one exception this
+            // boundary relies on — the inner catch is exactly where such a swallow hides
+            // (fail-open-boundary-trap).
+            throw failClosed;
         } catch (Exception e) {
             logger.warn("Failed to fill {} on {}: {}", secondaryTypeId, objectId, e.getMessage());
             return new FillOutcome(secondaryTypeId + " metadata failed: " + e.getMessage(),
                     List.of(), List.of());
-        }
-    }
-
-    /** Whether a fill-only pass would write anything, without writing it. */
-    public boolean willFillArchetypeMetadata(String repositoryId, String objectId,
-                                             String secondaryTypeId, ExternalIngestRequest request,
-                                             String[][] fieldMappings) {
-        try {
-            Content content = contentService.getContent(repositoryId, objectId);
-            if (content == null) return false;
-            List<Aspect> aspects = content.getAspects() == null ? List.of() : content.getAspects();
-            Map<String, Object> present = presentValues(aspects, secondaryTypeId);
-            return collectArchetypeProps(request, fieldMappings).stream()
-                    .anyMatch(p -> !present.containsKey(p.getKey()));
-        } catch (Exception e) {
-            // Cannot tell. Say yes: opening a capture intent that turns out to write nothing is
-            // harmless, whereas not opening one before a write that does happen is not.
-            return true;
         }
     }
 

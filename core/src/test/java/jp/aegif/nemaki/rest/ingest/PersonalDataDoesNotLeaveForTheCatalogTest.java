@@ -34,13 +34,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <h2>Why two doors</h2>
  *
- * <p>The lineage sink copies the v1 snapshot into its outbound payload, and the ingest ALSO
- * writes the same chat facts onto the document as {@code subTypeProperties} — which an
- * administrator can project onto the catalogue entity through {@code catalog.sync
- * .propertyMappings}. Filtering only the sink leaves a setting between the personal names and
- * the catalogue, and {@code CatalogPropertyMappingResolver}'s own javadoc already says a custom
- * mapping "must not be a second door" to a value the product decided to withhold (external
- * review).
+ * <p>Door 1 is the lineage sink, which copies the v1 snapshot into its outbound payload — that
+ * one was genuinely open and is now filtered, with a payload-building test.
+ *
+ * <p>Door 2 is narrower than this class first claimed. The ingest writes chat facts into
+ * ASPECTS, not {@code subTypeProperties}, and {@code appendCustomPropertyValues} reads only
+ * {@code subTypeProperties} — so a mapping for {@code nemaki:chatParticipants} projected null
+ * even before the ban (external review). What the ban actually closes is the residual route:
+ * an admin-defined PRIMARY subtype declaring the same property id would land its values in
+ * {@code subTypeProperties}, and a mapping would then carry them out. The rejection is enforced
+ * both when mappings are parsed (covering ones saved before this rule, restores, hand edits)
+ * and at the payload boundary, and {@code CatalogPropertyMappingResolver}'s own javadoc already
+ * says a custom mapping "must not be a second door" to a withheld value.
  *
  * <h2>What this does not establish</h2>
  *

@@ -837,13 +837,20 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         List<String> refusedByThisPass = new ArrayList<>();
         List<String> filledByThisPass = new ArrayList<>();
         if (noEventForThisPass) {
-            boolean fillTracked = openIfWriting(captureScope,
-                    ingestMetadataService.willFillArchetypeMetadata(request.getRepositoryId(),
-                            result.objectId(), "nemaki:chatContextMetadata", request, chatFields));
+            // The intent opens from INSIDE the fill, between its decision and its write. The
+            // first shape ran a willFill preflight and opened here — a second read of the same
+            // object, and the two could disagree: one direction opened an intent for a pass
+            // that wrote nothing, the other let the fill write WITHOUT an open intent (external
+            // review, Codex). One read now makes the decision, and this flag records whether
+            // the write was actually attempted, which is what decides whether to record.
+            boolean[] writeAttempted = {false};
             IngestMetadataService.FillOutcome fill =
                     ingestMetadataService.fillMissingArchetypeMetadata(request.getRepositoryId(),
                             result.objectId(), callContext, "nemaki:chatContextMetadata",
-                            request, chatFields);
+                            request, chatFields, () -> {
+                                captureScope.ensureIntentOpened();
+                                writeAttempted[0] = true;
+                            });
             if (fill == null) {
                 // Unreachable with the real service — every path there returns a record. A null
                 // means the collaborator is not the real one, and the safe reading is "this pass
@@ -854,12 +861,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             metaError = fill.error();
             refusedByThisPass.addAll(fill.refused());
             filledByThisPass.addAll(fill.filled());
-            // wroteAnything(), not just fillTracked: willFill and fillMissing each do their own
-            // getContent, so a concurrent write between the two reads — or willFill's catch-all
-            // "assume yes" on a transient read failure — would otherwise open an intent and
-            // record a SUCCEEDED mutation for a pass that wrote nothing. That fabricated entry is
-            // what openIfWriting exists to prevent (design §6.10-B2, external review).
-            if (fillTracked && (fill.wroteAnything() || metaError != null)) {
+            if (writeAttempted[0]) {
                 recordWrapperUpdate(captureScope, "fillMissingArchetypeMetadata", metaError);
             }
             if (!fill.refused().isEmpty()) {

@@ -101,10 +101,21 @@ class CmisUpdateTypeCannotUnprotectEvidenceTest {
         TypeService typeService = mock(TypeService.class);
         TypeManager typeManager = mock(TypeManager.class);
 
-        // getTypeDefinition is deliberately left unstubbed. It returns the OpenCMIS
-        // TypeDefinition interface, and updateType casts that to NemakiTypeDefinition — a class
-        // that does not implement it (it extends NodeBase). So in production the very first
-        // statement of the method body throws ClassCastException; see the javadoc.
+        // getTypeDefinition is stubbed with what production actually returns: an OpenCMIS
+        // TypeDefinition. updateType casts it to NemakiTypeDefinition — a class that does not
+        // implement that interface (it extends NodeBase) — so the cast throws today, for real.
+        //
+        // The FIRST version of this test left it unstubbed and its comment claimed the cast
+        // would throw. It could not: the mock returned null, and casting null never throws in
+        // Java. The test then died on its own mock-induced NPE, which meant every one of the
+        // three production accidents could be repaired while both tests stayed green (external
+        // review). Stubbing the real shape makes accident #1 fire here exactly as it does in
+        // production — and once it is repaired, execution genuinely reaches the TypeService
+        // boundary, where the loop below catches the widened value.
+        when(typeManager.getTypeDefinition(REPO, TYPE_ID)).thenReturn(storedType());
+        // getTypeById stays unstubbed (null) on purpose: it simulates accident #2 (the
+        // duplicate-id rejection) ALREADY repaired, so this tripwire fires as soon as accident
+        // #1 alone is removed. Erring toward firing early is the safe direction.
         when(typeManager.getSystemPropertyIds()).thenReturn(new ArrayList<>());
 
         NemakiPropertyDefinitionCore core = new NemakiPropertyDefinitionCore();
@@ -139,6 +150,37 @@ class CmisUpdateTypeCannotUnprotectEvidenceTest {
         service.setRepositoryInfoMap(mock(RepositoryInfoMap.class));
     }
 
+    /**
+     * What the type manager returns for the stored type — the shape whose cast fails today.
+     *
+     * <p>Carries the stored (READONLY) property definition so that, once the cast is repaired,
+     * the loop's {@code oldPropDef} lookup finds a real definition instead of dying on a mock
+     * gap — the flow must be able to reach TypeService or the main assertion is vacuous.
+     */
+    private static TypeDefinition storedType() {
+        SecondaryTypeDefinitionImpl type = new SecondaryTypeDefinitionImpl();
+        type.setId(TYPE_ID);
+        type.setLocalName("chatContextMetadata");
+        type.setQueryName(TYPE_ID);
+        type.setBaseTypeId(BaseTypeId.CMIS_SECONDARY);
+        type.setParentTypeId("cmis:secondary");
+
+        PropertyStringDefinitionImpl stored = new PropertyStringDefinitionImpl();
+        stored.setId(PROPERTY_ID);
+        stored.setLocalName("chatChannelId");
+        stored.setQueryName(PROPERTY_ID);
+        stored.setPropertyType(PropertyType.STRING);
+        stored.setCardinality(Cardinality.SINGLE);
+        stored.setUpdatability(Updatability.READONLY);
+        stored.setIsRequired(false);
+        stored.setIsQueryable(true);
+        stored.setIsInherited(false);
+        stored.setIsOrderable(false);
+        stored.setIsOpenChoice(false);
+        type.addPropertyDefinition(stored);
+        return type;
+    }
+
     /** The type as a CMIS client would send it back, with the evidence property widened. */
     private static TypeDefinition widenedType() {
         SecondaryTypeDefinitionImpl type = new SecondaryTypeDefinitionImpl();
@@ -169,11 +211,11 @@ class CmisUpdateTypeCannotUnprotectEvidenceTest {
     @Test
     @DisplayName("CMIS updateType does not carry a widened updatability down to TypeService")
     void updateTypeDoesNotReachTypeServiceWithAWidenedValue() {
+        Exception thrown = null;
         try {
             service.updateType(mock(CallContext.class), REPO, widenedType(), null);
         } catch (Exception expectedToday) {
-            // Today this always throws — see the class javadoc. The throw is not the assertion;
-            // what did or did not reach TypeService is.
+            thrown = expectedToday;
         }
 
         for (NemakiPropertyDefinitionDetail detail : reachedTypeService) {
@@ -184,6 +226,14 @@ class CmisUpdateTypeCannotUnprotectEvidenceTest {
                             + "must also refuse to widen a stored READONLY — see "
                             + "p1-1c-evidence-updatability.md §5.5.");
         }
+        // Pin WHICH accident protects today. Without this, a mock gap that kills the flow
+        // early keeps the list empty and the loop above asserts nothing — the exact vacuity
+        // the first version of this test had (external review).
+        assertTrue(thrown instanceof ClassCastException,
+                "updateType no longer dies on the NemakiTypeDefinition cast (got: " + thrown
+                        + "). The accidental protection is being dismantled; add a real "
+                        + "updatability check to RepositoryServiceImpl.updateType — "
+                        + "p1-1c-evidence-updatability.md §5.5.");
     }
 
     @Test

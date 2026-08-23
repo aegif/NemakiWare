@@ -286,10 +286,17 @@ public enum CaptureEvidenceField {
          * a request body's. Still unverified: nothing proves the far end really is that system.
          */
         CONFIGURED("configured"),
-        /** We computed or read it ourselves during this pass — a digest, a read-back state. */
-        OBSERVED("observed"),
         /** We wrote it and the write returned — an object id, a filled property. */
-        APPLIED("applied");
+        APPLIED("applied"),
+        /** We computed or read it ourselves during this pass — a digest, a read-back state. */
+        OBSERVED("observed");
+
+        // Declaration order IS the strength order the class javadoc states —
+        // ASSERTED < CONFIGURED < APPLIED < OBSERVED — so ordinal comparison agrees with the
+        // documented "weakest wins" rule. The first version declared OBSERVED before APPLIED,
+        // which inverted the top of the lattice for anyone who wrote Collections.min over it
+        // (external review). A test pins the relation.
+
 
         private final String wireValue;
 

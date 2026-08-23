@@ -194,6 +194,62 @@ class IngestReimportDoesNotRewriteEvidenceTest {
     }
 
     @Test
+    @DisplayName("the fill opens a capture intent BEFORE it writes")
+    void theFillOpensTheIntentBeforeWriting() {
+        // The first shape decided from a separate preflight read whether to open the intent,
+        // and the fill then read again — the two reads could disagree, letting the fill WRITE
+        // WITHOUT AN OPEN INTENT (external review, Codex). The hook now opens it between the
+        // fill's own decision and its write. Nothing else pinned that: with the hook emptied,
+        // every capture suite stayed green (measured), so this test is the pin.
+        List<String> order = new ArrayList<>();
+        jp.aegif.nemaki.rest.ingest.capture.CaptureIntentStore store =
+                new jp.aegif.nemaki.rest.ingest.capture.CaptureIntentStore() {
+                    @Override
+                    public boolean openIntent(jp.aegif.nemaki.rest.ingest.capture.CaptureIntent intent) {
+                        order.add("open");
+                        return true;
+                    }
+
+                    @Override
+                    public CaptureCompletion completeIntent(
+                            jp.aegif.nemaki.rest.ingest.capture.CaptureIntent intent,
+                            Map<String, Object> evidence) {
+                        order.add("complete");
+                        return CaptureCompletion.COMPLETED;
+                    }
+
+                    @Override
+                    public boolean isActive() {
+                        return true;
+                    }
+
+                    @Override
+                    public Applicability appliesTo(String repositoryId) {
+                        return Applicability.APPLIES;
+                    }
+                };
+        service.setCaptureIntentStore(store);
+        org.mockito.Mockito.doAnswer(inv -> {
+            order.add("write");
+            return null;
+        }).when(contentService).update(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+
+        service.executeChatContextImport(
+                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class), secondPoll());
+
+        int open = order.indexOf("open");
+        int write = order.indexOf("write");
+        assertTrue(write >= 0, "the fixture must produce a fill write, or this pins nothing: " + order);
+        assertTrue(open >= 0,
+                "the fill wrote evidence with NO capture intent open — the one state the "
+                        + "boundary exists to prevent: " + order);
+        assertTrue(open < write,
+                "the intent was opened after the write, so a crash between them leaves an "
+                        + "unrecorded mutation: " + order);
+    }
+
+    @Test
     @DisplayName("but a gap the first capture left IS filled — the retry still works")
     void aMissingValueIsStillFilled() {
         service.executeChatContextImport(

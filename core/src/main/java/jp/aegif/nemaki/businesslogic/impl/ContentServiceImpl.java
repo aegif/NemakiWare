@@ -2670,6 +2670,20 @@ public class ContentServiceImpl implements ContentService {
 	 * @param rebuilt the aspects this call constructed, which is what would be stored
 	 * @param existing the aspects the object already had, by name
 	 */
+	/** A detached copy: new {@code Aspect}, new property list, new {@code Property} objects. */
+	private static Aspect copyAspect(Aspect original) {
+		Aspect copy = new Aspect();
+		copy.setName(original.getName());
+		List<Property> properties = new ArrayList<>();
+		if (original.getProperties() != null) {
+			for (Property p : original.getProperties()) {
+				properties.add(new Property(p.getKey(), p.getValue()));
+			}
+		}
+		copy.setProperties(properties);
+		return copy;
+	}
+
 	private List<Aspect> keepEvidenceAspects(List<Aspect> rebuilt, Map<String, Aspect> existing) {
 		if (existing == null || existing.isEmpty()) {
 			return rebuilt;
@@ -2691,7 +2705,13 @@ public class ContentServiceImpl implements ContentService {
 					+ "aspects and secondaryIds into the archive verbatim and a restore brings "
 					+ "them back. The lineage events live in a separate database and survive "
 					+ "either way.", entry.getKey());
-			rebuilt.add(entry.getValue());
+			// A COPY, not the existing instance. buildCopyDocument shares aspect lists across
+			// versions and mergeSecondaryTypesFromLatest adds the latest version's Aspect
+			// objects by reference, so re-adding the existing instance here would let a later
+			// in-place fill on the NEW version rewrite the OLD version's cached aspect — the
+			// exact cross-version aliasing D3 warns about, added by the very guard that exists
+			// to protect the evidence (external review).
+			rebuilt.add(copyAspect(entry.getValue()));
 		}
 		return rebuilt;
 	}

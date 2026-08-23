@@ -49,6 +49,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class EventStatesItsUnverifiedClaimsTest {
 
     @Test
+    @DisplayName("the enum's order IS the documented strength order — weakest first")
+    void theDeclarationOrderIsTheStrengthOrder() {
+        // The class javadoc mandates ASSERTED < CONFIGURED < APPLIED < OBSERVED and invites a
+        // "weakest wins" computation. The first declaration inverted APPLIED and OBSERVED, so
+        // the first Collections.min over the enum would have called OBSERVED the weakest
+        // (external review). Ordinals must agree with the lattice, and this holds them to it.
+        assertTrue(Assurance.ASSERTED.ordinal() < Assurance.CONFIGURED.ordinal());
+        assertTrue(Assurance.CONFIGURED.ordinal() < Assurance.APPLIED.ordinal());
+        assertTrue(Assurance.APPLIED.ordinal() < Assurance.OBSERVED.ordinal(),
+                "APPLIED must rank below OBSERVED: 'we wrote it and the call returned' is a "
+                        + "weaker justification than 'we read it back'");
+    }
+
+    @Test
     @DisplayName("every fact declares how strongly it is known")
     void everyFactDeclaresItsAssurance() {
         // A field added without one cannot compile — the constructor requires it — so this
