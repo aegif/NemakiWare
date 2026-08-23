@@ -70,13 +70,32 @@ class CaptureIntentSweeperTest {
     }
 
     @Test
-    @DisplayName("the defaults are the documented ones")
+    @DisplayName("the defaults are the documented ones — stale is floored by the fetch timeout")
     void defaultsAreAsDocumented() {
         CaptureIntentSweeper s = sweeper(mock(CaptureMaintenanceStore.class), null);
 
-        assertEquals(15, s.staleMinutes());
+        // 15 configured, but the effective threshold is max(15, fetchTimeout 30 + 5): the old
+        // defaults let a fetch's second half be judged dead mid-write (M5, P1-1(e) §4).
+        assertEquals(35, s.staleMinutes(),
+                "the default stale threshold no longer undercuts the default fetch timeout");
         assertEquals(5, s.intervalMinutes());
         assertEquals(200, s.batchLimit(), "bounded: every replica walks the same batch");
+    }
+
+    @Test
+    @DisplayName("the floor follows the SAME fetch-timeout config the scheduler reads")
+    void staleFloorFollowsFetchTimeout() {
+        PropertyManager pm = mock(PropertyManager.class);
+        when(pm.readValue("ingest.scheduler.fetchTimeoutMinutes")).thenReturn("50");
+        CaptureIntentSweeper s = sweeper(mock(CaptureMaintenanceStore.class), pm);
+
+        assertEquals(55, s.staleMinutes(),
+                "raising the fetch timeout without touching the sweeper reopened the "
+                        + "judged-dead-while-fetching window");
+
+        // An operator setting stale ABOVE the floor is still honored.
+        when(pm.readValue(CaptureIntentSweeper.KEY_STALE_MINUTES)).thenReturn("120");
+        assertEquals(120, s.staleMinutes());
     }
 
     @Test
@@ -220,7 +239,8 @@ class CaptureIntentSweeperTest {
     @DisplayName("the deadline passed to the store is in the past by the staleness threshold")
     void deadlineIsComputedFromStaleness() {
         PropertyManager pm = mock(PropertyManager.class);
-        when(pm.readValue(CaptureIntentSweeper.KEY_STALE_MINUTES)).thenReturn("15");
+        // Above the fetch-timeout floor, so the configured value is the effective one.
+        when(pm.readValue(CaptureIntentSweeper.KEY_STALE_MINUTES)).thenReturn("60");
         CaptureMaintenanceStore store = mock(CaptureMaintenanceStore.class);
         long before = System.currentTimeMillis();
 
@@ -228,9 +248,9 @@ class CaptureIntentSweeperTest {
 
         org.mockito.ArgumentCaptor<Long> cutoff = org.mockito.ArgumentCaptor.forClass(Long.class);
         verify(store).sweepExpiredIntents(cutoff.capture(), anyInt());
-        long expected = before - 15 * 60_000L;
+        long expected = before - 60 * 60_000L;
         assertTrue(cutoff.getValue() <= expected + 5_000 && cutoff.getValue() >= expected - 5_000,
-                "cutoff " + cutoff.getValue() + " should be about 15 minutes before " + before);
+                "cutoff " + cutoff.getValue() + " should be about 60 minutes before " + before);
     }
 
     @Test

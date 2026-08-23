@@ -172,8 +172,25 @@ public class CaptureIntentSweeper {
         }
     }
 
+    /**
+     * The effective stale threshold: never below the scheduler's fetch timeout + 5.
+     *
+     * <p>The defaults used to contradict each other — sweep at 15 minutes, fetch timeout at 30
+     * — so a fetch in its second half could have its intent judged dead while it was still
+     * writing (capture-outbox §6.9-3, M5). Coupling the floor to the SAME config the scheduler
+     * reads closes that in every configuration, not just tuned ones; an operator setting the
+     * stale threshold higher is still honored.
+     *
+     * <p>What this is NOT (P1-1(e) §4, Codex H6): a liveness guarantee. The scheduler's timeout
+     * only interrupts — a blocking fetch can outlive it — and the webhook / IMAP IDLE paths run
+     * without a timeout wrapper at all. A zombie pass can still be swept and write afterwards;
+     * the runbook states the residual, and the verify endpoint's "swept-before-baseline does
+     * not downgrade" rule inherits it.
+     */
     int staleMinutes() {
-        return positiveInt(KEY_STALE_MINUTES, DEFAULT_STALE_MINUTES);
+        int configured = positiveInt(KEY_STALE_MINUTES, DEFAULT_STALE_MINUTES);
+        int fetchTimeoutFloor = positiveInt("ingest.scheduler.fetchTimeoutMinutes", 30) + 5;
+        return Math.max(configured, fetchTimeoutFloor);
     }
 
     int intervalMinutes() {

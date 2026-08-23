@@ -118,7 +118,7 @@ curl -u admin:admin -H "X-Requested-With: XMLHttpRequest" \
 
 | 設定 | 既定 | 意味 |
 |---|---|---|
-| `lineage.capture-boundary.stale.minutes` | 15 | これを超えて開いたままなら `UNRESOLVED`。**取込 1 件の timeout (既定 30 分) より短いので、実行中の取込が一覧に出ます** — §2 を見てください |
+| `lineage.capture-boundary.stale.minutes` | 15 (**実効下限 = `ingest.scheduler.fetchTimeoutMinutes` + 5 = 既定 35**) | これを超えて開いたままなら `UNRESOLVED`。2026-08-24 から掃引閾値は fetch timeout に**自動連動**し、既定構成で「実行中の取込が死亡判定される」ことは起きません。これより大きい値の設定は従来どおり尊重。**保証ではありません**: timeout は interrupt するだけで join せず、webhook / IMAP IDLE 経路には timeout wrapper が無いため、interrupt を無視する fetch は掃引後に生き残って書き得ます (P1-1(e) §4) |
 | `lineage.capture-boundary.sweep.interval.minutes` | 5 | 掃引の間隔 |
 | `lineage.capture-boundary.sweep.batch` | 200 | 1 回で触る行数の上限 |
 
@@ -211,7 +211,7 @@ curl -s -u admin:password http://localhost:5984/nemaki_lineage | \
 
 | 症状 | 見るところ |
 |---|---|
-| 一覧に行が出るが、取込は失敗していない | **正常です。** 掃引の既定 15 分に対し取込の timeout は既定 30 分なので、**添付の多い取込は走っている最中に `UNRESOLVED` になります**。時間を置いて引き直し、消えていれば完走です。恒久的に避けるなら `stale.minutes` を timeout より大きく (§2) |
+| 一覧に行が出るが、取込は失敗していない | 2026-08-24 以降は稀です (実効掃引閾値 ≥ fetch timeout + 5 分)。出るとしたら: timeout 後も interrupt を無視して走り続ける fetch、または timeout wrapper の無い webhook / IMAP IDLE の長走行。時間を置いて引き直し、消えていれば完走です |
 | 取込が「証拠を書けなかった」と失敗する | `nemaki_lineage` への書込。これは fail-closed の設計どおりで、**変更を残さないための拒否**です |
 | 一覧が常に空 | 掃引が動いているか (ログ `Capture intent sweeper started`)。`lineage.mode` が `journaled` か |
 | 一覧が 503 | 境界の bean が配線されていない。`nemaki_lineage` の有無を確認 |
