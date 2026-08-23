@@ -162,32 +162,8 @@ public class IngestJobService {
             String dlqId = deadLetterIdFor(request);
             IngestDeadLetterRecord existing = getDlqEntry(dlqId);
 
-            IngestDeadLetterRecord dlq = new IngestDeadLetterRecord();
-            dlq.setDlqId(dlqId);
-            dlq.setProfileId(request.getProfileId());
-            dlq.setConnectorId(request.getConnectorId());
-            dlq.setRepositoryId(request.getRepositoryId());
-            dlq.setSourceObjectId(request.getSourceObjectId());
-            dlq.setSourceObjectType(request.getSourceObjectType());
-            dlq.setFileName(request.getFileName());
-            String now = Instant.now().toString();
-            dlq.setFailedAt(now);
-            dlq.setErrorMessage(errorMessage);
-            // The same source item failing again is the SAME entry, not a new one. With a random
-            // id, a persistent outage wrote one document per item per poll — every five minutes,
-            // with the payload attached each time, into the configuration database, for ever
-            // (external review).
-            if (existing != null) {
-                dlq.setFailureCount(existing.getFailureCount() + 1);
-                dlq.setFirstFailedAt(existing.getFirstFailedAt() != null
-                        ? existing.getFirstFailedAt() : existing.getFailedAt());
-                dlq.setRetryCount(existing.getRetryCount());
-                dlq.setLastRetryAt(existing.getLastRetryAt());
-            } else {
-                dlq.setFailureCount(1);
-                dlq.setFirstFailedAt(now);
-                dlq.setRetryCount(0);
-            }
+            IngestDeadLetterRecord dlq = buildDlqRecord(request, errorMessage, existing,
+                    Instant.now().toString());
 
             // The payload is encrypted or it is not written. Storing ingested bytes in the
             // clear in nemaki_conf — no ACL of its own, no retention — is not an acceptable
@@ -211,8 +187,6 @@ public class IngestJobService {
                     && existing.isHasContent();
             dlq.setHasContent(payload != null || keptEarlierPayload);
             dlq.setPayloadDropReason(payload == null && !keptEarlierPayload ? dropReason : null);
-            // Serialize full request for replay (contentStream is @JsonIgnore, auto-excluded)
-            dlq.setOriginalRequestJson(MAPPER.writeValueAsString(request));
             @SuppressWarnings("unchecked")
             Map<String, Object> jsonMap = MAPPER.convertValue(dlq, Map.class);
             String docId = upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE, jsonMap);
@@ -231,12 +205,102 @@ public class IngestJobService {
     }
 
     /**
+     * Everything about a dead-letter row except the payload attachment and the upsert.
+     *
+     * <p>Extracted so the byte-free rule on the request JSON is testable without a live
+     * CouchDB — {@code saveToDlq}'s tail (payload encryption, upsert, attachment) stays
+     * untestable here, which the DLQ test states rather than implies.
+     */
+    static IngestDeadLetterRecord buildDlqRecord(ExternalIngestRequest request,
+            String errorMessage, IngestDeadLetterRecord existing, String now) {
+        IngestDeadLetterRecord dlq = new IngestDeadLetterRecord();
+        dlq.setDlqId(deadLetterIdFor(request));
+        dlq.setProfileId(request.getProfileId());
+        dlq.setConnectorId(request.getConnectorId());
+        dlq.setRepositoryId(request.getRepositoryId());
+        dlq.setSourceObjectId(request.getSourceObjectId());
+        dlq.setSourceObjectType(request.getSourceObjectType());
+        dlq.setFileName(request.getFileName());
+        dlq.setFailedAt(now);
+        dlq.setErrorMessage(errorMessage);
+        // The same source item failing again is the SAME entry, not a new one. With a random
+        // id, a persistent outage wrote one document per item per poll — every five minutes,
+        // with the payload attached each time, into the configuration database, for ever
+        // (external review).
+        if (existing != null) {
+            dlq.setFailureCount(existing.getFailureCount() + 1);
+            dlq.setFirstFailedAt(existing.getFirstFailedAt() != null
+                    ? existing.getFirstFailedAt() : existing.getFailedAt());
+            dlq.setRetryCount(existing.getRetryCount());
+            dlq.setLastRetryAt(existing.getLastRetryAt());
+        } else {
+            dlq.setFailureCount(1);
+            dlq.setFirstFailedAt(now);
+            dlq.setRetryCount(0);
+        }
+        // The request JSON obeys the same rule as the payload: INGESTED BYTES DO NOT ENTER
+        // nemaki_conf IN THE CLEAR. The payload channel above is encrypted-or-dropped, but the
+        // note orchestrator transiently injects attachment bytes into request metadata as
+        // contentBase64, and a failure inside that window used to serialize them verbatim into
+        // originalRequestJson — the same bytes the 20 lines above refuse to store, through a
+        // side door (external review, Codex/audit N1).
+        //
+        // Replay semantics, decided: bytes travel ONLY through the encrypted attachment
+        // channel. A replay restores the main content from it; stripped attachment bytes are
+        // NOT restored — for orchestrator-fetched attachments the next poll re-fetches them
+        // and the dedupe-skip fall-through retries the attachment import, and a caller who
+        // supplied contentBase64 by hand re-sends it. The count is recorded so neither the
+        // operator nor the replay result mistakes the absence for "there were none".
+        SerializedRequest serialized = serializeRequestForDlq(request);
+        dlq.setOriginalRequestJson(serialized.json());
+        dlq.setRequestBinaryStrippedCount(serialized.strippedBinaryCount());
+        return dlq;
+    }
+
+    /** The byte-free request JSON, and how many binary values were removed to make it so. */
+    record SerializedRequest(String json, int strippedBinaryCount) {
+    }
+
+    /**
+     * Serializes a request for the DLQ with every {@code contentBase64} value removed,
+     * wherever it nests. Works on the serialized tree rather than the live request, so the
+     * caller's in-flight object — whose metadata the orchestrator is still using — is never
+     * mutated by the act of saving it.
+     */
+    static SerializedRequest serializeRequestForDlq(ExternalIngestRequest request) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> tree = MAPPER.convertValue(request, Map.class);
+        int stripped = stripBinaryKeys(tree);
+        return new SerializedRequest(MAPPER.writeValueAsString(tree), stripped);
+    }
+
+    /** Removes {@code contentBase64} entries recursively; returns how many were removed. */
+    private static int stripBinaryKeys(Object node) {
+        int removed = 0;
+        if (node instanceof Map<?, ?> rawMap) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> map = (Map<String, Object>) rawMap;
+            if (map.remove("contentBase64") != null) {
+                removed++;
+            }
+            for (Object value : map.values()) {
+                removed += stripBinaryKeys(value);
+            }
+        } else if (node instanceof Iterable<?> list) {
+            for (Object item : list) {
+                removed += stripBinaryKeys(item);
+            }
+        }
+        return removed;
+    }
+
+    /**
      * A stable id for one source item, so a repeated failure updates its entry.
      *
      * <p>Derived from the identity the ingest path itself dedupes on. A blank source id falls
      * back to a random suffix rather than colliding every anonymous failure into one row.
      */
-    private String deadLetterIdFor(ExternalIngestRequest request) {
+    private static String deadLetterIdFor(ExternalIngestRequest request) {
         String source = request.getSourceObjectId();
         if (source == null || source.isBlank()) {
             return "dlq-" + UUID.randomUUID().toString().substring(0, 8);

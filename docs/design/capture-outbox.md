@@ -795,7 +795,7 @@ leader gate は**有効な構成では本物の gate だが** (`LineagePurgeSche
 
 | 代価 | 手当て |
 |---|---|
-| **取込バイトが `nemaki_conf` に暗号化なしで残る** (`IngestJobService` が添付として保存)。ACL も保持方針も無い | **本 PR の範囲に含める** — DLQ ペイロードの保護と保持期限。設計は別紙に切る |
+| **取込バイトが `nemaki_conf` に暗号化なしで残る** (`IngestJobService` が添付として保存)。ACL も保持方針も無い | **本 PR の範囲に含める** — DLQ ペイロードの保護と保持期限。設計は別紙に切る。**payload は「暗号化か破棄」で実装済み。request JSON の側door (note の `contentBase64`) も 2026-08-23 に閉鎖** — bytes は暗号化 attachment 経路のみ、request JSON は常に byte-free (`IngestJobService.buildDlqRecord`)。replay は本文のみ復元し、添付は次ポーリングの skip-retry が取り直す |
 | `isTransientError` に journal 障害の分類が無く `[permanent]` になって自動再試行されない | **本 PR で分類を足す** — `nemaki_lineage` 起因は transient |
 
 ### B1 → fail-closed の適用条件は「journal store の協調者が在ること」

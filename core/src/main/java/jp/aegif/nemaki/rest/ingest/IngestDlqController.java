@@ -153,6 +153,13 @@ public class IngestDlqController {
             ExternalIngestResult result = dispatchByArchetype(callContext, request);
 
             Map<String, Object> response = new LinkedHashMap<>();
+            if (dlq.getRequestBinaryStrippedCount() > 0) {
+                // The stored request is byte-free by rule; say so, or a "success" here reads as
+                // "everything came back" when the attachments did not.
+                response.put("strippedBinaryCount", dlq.getRequestBinaryStrippedCount());
+                response.put("strippedBinaryNote", "attachment bytes were not stored with this "
+                        + "entry and were not replayed; the next connector poll re-fetches them");
+            }
             if (result.skipped()) {
                 // Idempotent outcome — object already exists, remove from DLQ
                 ingestJobService.deleteDlqEntry(dlqId);

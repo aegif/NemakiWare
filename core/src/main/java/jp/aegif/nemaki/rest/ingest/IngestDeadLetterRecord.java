@@ -27,6 +27,15 @@ public class IngestDeadLetterRecord {
     private String lastRetryAt;
     /** Serialized ExternalIngestRequest JSON for replay. */
     private String originalRequestJson;
+    /**
+     * How many {@code contentBase64} values were removed from {@link #originalRequestJson}.
+     *
+     * <p>Non-zero means a replay will NOT restore those attachment bytes: they travel only
+     * through the encrypted payload attachment. Orchestrator-fetched attachments come back on
+     * the next poll (the dedupe-skip fall-through retries them); caller-supplied ones need
+     * re-sending.
+     */
+    private int requestBinaryStrippedCount;
     /** Whether binary content is stored as a CouchDB attachment. */
     private boolean hasContent;
 
@@ -90,6 +99,8 @@ public class IngestDeadLetterRecord {
     public String getLastRetryAt() { return lastRetryAt; }
     public void setLastRetryAt(String lastRetryAt) { this.lastRetryAt = lastRetryAt; }
 
+    public int getRequestBinaryStrippedCount() { return requestBinaryStrippedCount; }
+    public void setRequestBinaryStrippedCount(int requestBinaryStrippedCount) { this.requestBinaryStrippedCount = requestBinaryStrippedCount; }
     public String getOriginalRequestJson() { return originalRequestJson; }
     public void setOriginalRequestJson(String originalRequestJson) { this.originalRequestJson = originalRequestJson; }
 
