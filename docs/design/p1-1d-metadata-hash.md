@@ -164,7 +164,7 @@ UNRESOLVED 行がある・オブジェクトが読めない・式バージョン
 
 **1〜4 は 2026-08-23 に実装済み** (`EvidenceMetadataHash` / `buildSourceIdentityProps` の
 括り出し / 完了 evidence への記録 / `captured_by_object`・`rows_by_source_object` view +
-`listCapturedForObject`・`listRowsForSourceSince` + `GET /verify-metadata`)。
+`listCapturedForObject`・`listRowsForSourceBefore` (keyset cursor — 単ページの `listRowsForSourceSince` は第 2 レビューで 100 行キャップが長履歴 source の MISMATCH を恒久に殺すと判明し置換) + `GET /verify-metadata`)。
 golden vector は式の外 (python hashlib) で計算し、**エスケープ無しの旧式で 2 状態が実際に
 衝突することも確認した**。負のコントロール実測: 記録を外すと
 「the completed row carries no metadata hash」。
