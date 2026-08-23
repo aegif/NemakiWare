@@ -29,7 +29,7 @@ HEAD `246a0e03f` + 自己レビュー修正パスに対する、Codex + サブ�
 
 | # | 項目 | 根拠 | アプローチ |
 |---|---|---|---|
-| D-1 | **メタデータ hash の設計** — ブロッカー (D1/D6) は解消済みで**着手可能** | data-model §5。改竄検出は content bytes のみ | 設計 1 本。**「要求された値ではなく載った値を hash する」**を R2 (assurance) と整合させて決める。digest 式に触るなら (e) の executedBy と**同時に 1 度だけ** ((b) §5 の制約) |
+| D-1 ✅ 設計 2026-08-23 | **メタデータ hash の設計** — [`p1-1d-metadata-hash.md`](p1-1d-metadata-hash.md)。レビュー済 (P1 3 / P2 6 を反映): 載った値を raw aspect 経路で読み戻して hash、**エスケープ付き正準形** (単射性)、**hash 2 本** (chat 11 = day-1 改竄シグナル / integration 9 = D-7 で昇格)、outbox 完了 evidence に記録、「hash を持つ最新の完了行」規則。**実装は未** — 式は (e) の executedBy と同時に 1 度だけ、読む側に view + endpoint が要る | data-model §5。改竄検出は content bytes のみ | 実装順は同文書 §5 |
 | D-2 | **D5: 0 バイト attachment の skip が無記録** | `CanonicalImportServiceImpl:2168-2174` — hash 前に return。document・aspect・イベント・intent 皆無 | 「取り込まなかった」を D6 の reimport イベントと同じ形で記録 (`skippedReason` を pass 事実として)。**emit は wrapper 側** — early return に足すと D1 の形が戻る |
 | D-3 | **D3: aspect の version 間参照共有** | `buildCopyDocument:1970` が同一 List/Aspect を共有。checkIn は `cancelCheckOut` の再読込で偶然救われ、`BulkCheckInResource:420` → `updateWithoutCheckInOut` に保険が無い | `buildCopyDocument` で**証拠 aspect だけ防御コピー** (keepEvidenceAspects の `copyAspect` を再利用)。全 aspect のコピーは挙動変更が広いので証拠に限定。AC7 を負のコントロール付きで |
 | D-4 | **(d)-5: 会話の範囲 (window/scope/reason) の恒久的置き場** | `CaptureEvidenceField:226-240` 全て `V2Home.none` — flip で行き場を失う | Process 属性が唯一の候補 → **F-1 (flip 前提) と同じ設計で決める**。(d) 単独では動かさない |
