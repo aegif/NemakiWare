@@ -308,16 +308,39 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // 4. Apply nemaki:messageMetadata secondary type
             List<String> warnings = failureState.warnings;
             warnings.addAll(messageResult.warnings());
-            // applyMessageMetadata always writes (it builds properties from the parsed message,
-            // not from optional request metadata), so there is nothing to predicate here.
-        // The no-overwrite rule of P1-1(d) D6 is NOT applied here, on purpose. It covers the
-        // eleven chat properties that Patch_ChatContextEvidenceReadOnly made READONLY, and
-        // nothing on this type is protected, so re-decorating is not yet a broken guarantee.
-        // The ordering defect is the same one, though: a dedupe skip returns before the lineage
-        // emit and this still writes. See docs/design/p1-1d-evidence-data-model.md §R5.
-            captureScope.ensureIntentOpened();
-            String metaError = ingestMetadataService.applyMessageMetadata(request.getRepositoryId(), messageObjectId, callContext, parsed, request);
-            recordWrapperUpdate(captureScope, "applyMessageMetadata", metaError);
+            // D-7: D6's rule extended here. A dedupe/idempotency skip returns from execute()
+            // BEFORE the emit, so this write used to rewrite the whole messageMetadata aspect —
+            // revision bump, capture row and Solr churn included — on EVERY poll of an
+            // already-imported message, with no event anywhere. On a skip pass, fill gaps and
+            // refuse changes; on a real capture, write as before.
+            String metaError;
+            if (messageResult.skipped()) {
+                boolean[] mailFillAttempted = {false};
+                IngestMetadataService.FillOutcome fill =
+                        ingestMetadataService.fillMissingMessageMetadata(
+                                request.getRepositoryId(), messageObjectId, callContext, parsed,
+                                request, () -> {
+                                    captureScope.ensureIntentOpened();
+                                    mailFillAttempted[0] = true;
+                                });
+                metaError = fill == null ? null : fill.error();
+                if (fill != null && mailFillAttempted[0]) {
+                    recordWrapperUpdate(captureScope, "fillMissingMessageMetadata", metaError);
+                }
+                if (fill != null && !fill.refused().isEmpty()) {
+                    warnings.add("This message already carried metadata, so " + fill.refused()
+                            + " were left as captured rather than replaced.");
+                }
+                if (fill != null) {
+                    emitReimportEvent(callContext, request, messageResult, fill.filled(),
+                            fill.refused(), warnings);
+                }
+            } else {
+                captureScope.ensureIntentOpened();
+                metaError = ingestMetadataService.applyMessageMetadata(
+                        request.getRepositoryId(), messageObjectId, callContext, parsed, request);
+                recordWrapperUpdate(captureScope, "applyMessageMetadata", metaError);
+            }
             if (metaError != null) warnings.add(metaError);
 
             // 4b. Preserve raw .eml as a separate document if profile requests it
@@ -522,14 +545,37 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // cannot key on the page result alone — files_only never runs the page import — so
             // every write here is guarded on the REQUEST.
             if (!request.isDryRun()) {
-                boolean tracked = openIfWriting(captureScope,
-                        ingestMetadataService.willWriteNoteMetadata(request));
-                // Same deliberate exclusion as the mail path above: the no-overwrite rule of
-                // P1-1(d) D6 covers only the eleven READONLY chat properties, and nothing on
-                // this type is protected. The ordering defect is the same.
-                String metaError = ingestMetadataService.applyNoteMetadata(request.getRepositoryId(), pageObjectId, callContext, request);
-                if (tracked) {
-                    recordWrapperUpdate(captureScope, "applyNoteMetadata", metaError);
+                // D-7: on a page dedupe-skip no event was emitted, so fill gaps and refuse
+                // changes rather than rewriting the aspect every poll (D6's rule, extended).
+                String metaError;
+                if (pageSkipped) {
+                    boolean[] noteFillAttempted = {false};
+                    IngestMetadataService.FillOutcome fill =
+                            ingestMetadataService.fillMissingNoteMetadata(
+                                    request.getRepositoryId(), pageObjectId, callContext, request,
+                                    () -> {
+                                        captureScope.ensureIntentOpened();
+                                        noteFillAttempted[0] = true;
+                                    });
+                    metaError = fill == null ? null : fill.error();
+                    if (fill != null && noteFillAttempted[0]) {
+                        recordWrapperUpdate(captureScope, "fillMissingNoteMetadata", metaError);
+                    }
+                    if (fill != null && !fill.refused().isEmpty()) {
+                        warnings.add("This page already carried metadata, so " + fill.refused()
+                                + " were left as captured rather than replaced.");
+                    }
+                    if (fill != null) {
+                        emitReimportEvent(callContext, request, pageResult, fill.filled(),
+                                fill.refused(), warnings);
+                    }
+                } else {
+                    boolean tracked = openIfWriting(captureScope,
+                            ingestMetadataService.willWriteNoteMetadata(request));
+                    metaError = ingestMetadataService.applyNoteMetadata(request.getRepositoryId(), pageObjectId, callContext, request);
+                    if (tracked) {
+                        recordWrapperUpdate(captureScope, "applyNoteMetadata", metaError);
+                    }
                 }
                 if (metaError != null) warnings.add(metaError);
             }
@@ -776,16 +822,40 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 {"nemaki:recordUrl", "recordUrl"}, {"nemaki:recordStatus", "recordStatus"},
                 {"nemaki:recordOwner", "recordOwner"}, {"nemaki:processInstanceId", "processInstanceId"},
         };
-        boolean brFieldsTracked = openIfWriting(captureScope,
-                ingestMetadataService.willWriteArchetypeMetadata(request, brFields));
-        // Same deliberate exclusion as the mail and note paths: the no-overwrite rule of
-        // P1-1(d) D6 covers only the eleven READONLY chat properties.
-        String metaError = ingestMetadataService.applyArchetypeMetadata(request.getRepositoryId(), result.objectId(), callContext,
-                "nemaki:businessRecordMetadata", request, brFields);
-        if (metaError != null) warnings.add(metaError);
-        if (brFieldsTracked) {
-            recordWrapperUpdate(captureScope, "applyArchetypeMetadata", metaError);
+        // D-7: D6's rule, extended — on a skip pass no event was emitted, so fill gaps and
+        // refuse changes; on a real capture, write as before.
+        String metaError;
+        if (result.skipped()) {
+            boolean[] brFillAttempted = {false};
+            IngestMetadataService.FillOutcome fill =
+                    ingestMetadataService.fillMissingArchetypeMetadata(request.getRepositoryId(),
+                            result.objectId(), callContext, "nemaki:businessRecordMetadata",
+                            request, brFields, () -> {
+                                captureScope.ensureIntentOpened();
+                                brFillAttempted[0] = true;
+                            });
+            metaError = fill == null ? null : fill.error();
+            if (fill != null && brFillAttempted[0]) {
+                recordWrapperUpdate(captureScope, "fillMissingArchetypeMetadata", metaError);
+            }
+            if (fill != null && !fill.refused().isEmpty()) {
+                warnings.add("This record already carried metadata, so " + fill.refused()
+                        + " were left as captured rather than replaced.");
+            }
+            if (fill != null) {
+                emitReimportEvent(callContext, request, result, fill.filled(), fill.refused(),
+                        warnings);
+            }
+        } else {
+            boolean brFieldsTracked = openIfWriting(captureScope,
+                    ingestMetadataService.willWriteArchetypeMetadata(request, brFields));
+            metaError = ingestMetadataService.applyArchetypeMetadata(request.getRepositoryId(), result.objectId(), callContext,
+                    "nemaki:businessRecordMetadata", request, brFields);
+            if (brFieldsTracked) {
+                recordWrapperUpdate(captureScope, "applyArchetypeMetadata", metaError);
+            }
         }
+        if (metaError != null) warnings.add(metaError);
 
         // Create attachedToRecord relationship if parentRecordId is provided
         if (request.getMetadata() != null) {
@@ -1913,21 +1983,23 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     Map<String, Object> buildSourceIdentityProps(ConnectorDefinition connector,
             ExternalIngestRequest request, String contentHash) {
         Map<String, Object> newProps = new java.util.LinkedHashMap<>();
-        newProps.put("nemaki:sourceArchetype",
-                connector.getSourceArchetype() != null ? connector.getSourceArchetype().name() : "");
-        newProps.put("nemaki:sourceSystem",
-                connector.getSourceSystem() != null ? connector.getSourceSystem() : "");
-        newProps.put("nemaki:sourceObjectType",
-                request.getSourceObjectType() != null ? request.getSourceObjectType() : "");
-        newProps.put("nemaki:sourceObjectId",
-                request.getSourceObjectId() != null ? request.getSourceObjectId() : "");
-        newProps.put("nemaki:sourceUrl",
-                request.getSourceUrl() != null ? request.getSourceUrl() : "");
-        newProps.put("nemaki:ingestionRunId", request.getRequestId());
-        newProps.put("nemaki:externalSourceType",
-                connector.getSourceArchetype() != null ? connector.getSourceArchetype().name().toLowerCase() : "");
-        newProps.put("nemaki:externalSourceId",
-                connector.getSourceSystem() != null ? connector.getSourceSystem() : "");
+        // ABSENT source values stay absent. The first shape put "" for every missing value, and
+        // because the merge overwrites any key present in this map, a version-up whose request
+        // happened to lack sourceUrl BLANKED the stored source identity — evidence destroyed by
+        // an ordinary re-import, with an event that never mentions it (external review, audit
+        // #12 / plan D-7). Omitting the key makes the merge preserve the stored value: fill
+        // semantics, the same rule the chat evidence got in D6.
+        putUnlessBlank(newProps, "nemaki:sourceArchetype",
+                connector.getSourceArchetype() != null ? connector.getSourceArchetype().name() : null);
+        putUnlessBlank(newProps, "nemaki:sourceSystem", connector.getSourceSystem());
+        putUnlessBlank(newProps, "nemaki:sourceObjectType", request.getSourceObjectType());
+        putUnlessBlank(newProps, "nemaki:sourceObjectId", request.getSourceObjectId());
+        putUnlessBlank(newProps, "nemaki:sourceUrl", request.getSourceUrl());
+        putUnlessBlank(newProps, "nemaki:ingestionRunId", request.getRequestId());
+        putUnlessBlank(newProps, "nemaki:externalSourceType",
+                connector.getSourceArchetype() != null
+                        ? connector.getSourceArchetype().name().toLowerCase() : null);
+        putUnlessBlank(newProps, "nemaki:externalSourceId", connector.getSourceSystem());
         newProps.put("nemaki:externalContextUpdatedAt", new GregorianCalendar());
 
         // Persist externalContext from request metadata if provided
@@ -1945,6 +2017,12 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             newProps.put("nemaki:contentHash", contentHash);
         }
         return newProps;
+    }
+
+    private static void putUnlessBlank(Map<String, Object> props, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            props.put(key, value);
+        }
     }
 
     /**

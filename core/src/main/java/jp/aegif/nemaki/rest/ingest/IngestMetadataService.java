@@ -217,6 +217,35 @@ public class IngestMetadataService {
                                                     ExternalIngestRequest request,
                                                     String[][] fieldMappings,
                                                     Runnable beforeFirstWrite) {
+        return fillMissingProperties(repositoryId, objectId, callContext, secondaryTypeId,
+                collectArchetypeProps(request, fieldMappings), beforeFirstWrite);
+    }
+
+    /** As above, for {@code nemaki:messageMetadata} — mail's skip pass (D-7). */
+    public FillOutcome fillMissingMessageMetadata(String repositoryId, String objectId,
+            CallContext callContext, ParsedMailMessage parsed, ExternalIngestRequest request,
+            Runnable beforeFirstWrite) {
+        return fillMissingProperties(repositoryId, objectId, callContext,
+                "nemaki:messageMetadata", buildMessageProperties(parsed, request),
+                beforeFirstWrite);
+    }
+
+    /** As above, for {@code nemaki:noteMetadata} — the note page's skip pass (D-7). */
+    public FillOutcome fillMissingNoteMetadata(String repositoryId, String objectId,
+            CallContext callContext, ExternalIngestRequest request, Runnable beforeFirstWrite) {
+        return fillMissingProperties(repositoryId, objectId, callContext,
+                "nemaki:noteMetadata", collectNoteProps(request), beforeFirstWrite);
+    }
+
+    /**
+     * The one fill implementation every archetype's skip pass uses — extracted when D6's rule
+     * ("evidence is not changed without a record") was extended beyond chat (plan D-7), so the
+     * fill/refuse semantics cannot drift per archetype.
+     */
+    private FillOutcome fillMissingProperties(String repositoryId, String objectId,
+                                              CallContext callContext, String secondaryTypeId,
+                                              List<Property> requested,
+                                              Runnable beforeFirstWrite) {
         try {
             Content content = contentService.getContent(repositoryId, objectId);
             if (content == null) {
@@ -226,7 +255,6 @@ public class IngestMetadataService {
             if (aspects == null) aspects = new ArrayList<>();
 
             Map<String, Object> present = presentValues(aspects, secondaryTypeId);
-            List<Property> requested = collectArchetypeProps(request, fieldMappings);
             List<Property> missing = new ArrayList<>();
             List<String> refused = new ArrayList<>();
             for (Property p : requested) {

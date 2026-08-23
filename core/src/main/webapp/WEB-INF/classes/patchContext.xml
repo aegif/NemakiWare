@@ -211,6 +211,17 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- Source-identity evidence: make the externalIntegration properties read-only
+     through CMIS and give nemaki:contentHash a READONLY declaration. MUST come after
+     Patch_ExternalIntegrationSourceFields (which creates the eight) — this one
+     rewrites what is there and creates only contentHash. Promotes the
+     appliedSourceIdentityHash from change detection to a tamper signal
+     (p1-1d-metadata-hash.md §2.3). -->
+				<bean class="jp.aegif.nemaki.patch.Patch_ExternalIntegrationEvidenceReadOnly">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 				<!-- Business record metadata secondary type (CRM/ERP/BPM) -->
 				<bean class="jp.aegif.nemaki.patch.Patch_BusinessRecordMetadataSecondaryType">
 					<property name="patchUtil">

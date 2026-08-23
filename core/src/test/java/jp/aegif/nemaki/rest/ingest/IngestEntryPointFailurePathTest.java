@@ -209,7 +209,9 @@ class IngestEntryPointFailurePathTest {
         // metadata step throws. The warning from the skip must survive the failure.
         wire(SourceArchetype.MESSAGE_CONTEXT);
         alreadyImported("mail-obj", "mail-1", "message");
-        when(metadataService.applyMessageMetadata(any(), any(), any(), any(), any()))
+        // D-7 moved the dedupe-skip path from applyMessageMetadata to the fill; the failing
+        // step this test injects is now the fill.
+        when(metadataService.fillMissingMessageMetadata(any(), any(), any(), any(), any(), any()))
                 .thenThrow(new IllegalStateException("catalogue unreachable"));
         ExternalIngestRequest req = request("mail-1", "message.eml");
         req.setSourceObjectType("message");

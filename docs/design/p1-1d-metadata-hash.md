@@ -111,7 +111,7 @@ golden とは違い JDK ビルドに依存しない — 依存したのは環境
 | hash | 対象 | MISMATCH の意味 |
 |---|---|---|
 | `appliedChatEvidenceHash` | chat の 11 個 (READONLY 済み) | **記録された pass の無い変化** — day-1 から改竄シグナル |
-| `appliedSourceIdentityHash` | integration の 9 個 | D-7 (READONLY 化) までは「capture 後に変わった」という**変化検出**であって改竄シグナルではない。**D-7 が入った日に意味が昇格する** — 式は変えずに |
+| `appliedSourceIdentityHash` | integration の 9 個 | ~~D-7 までは変化検出~~ **D-7 は 2026-08-23 に実装され、昇格済み**: 9 個とも READONLY (contentHash は宣言ごと新設) なので、MISMATCH は chat 側と同じく「記録された pass の無い変化」を意味する。式は変わっていない |
 
 検証はそれぞれ別に判定して返す。
 

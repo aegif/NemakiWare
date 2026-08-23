@@ -210,6 +210,33 @@ class EvidenceMetadataHashTest {
     }
 
     @Test
+    @DisplayName("an absent source value is OMITTED, not written as empty string")
+    void absentValuesAreOmittedNotBlanked() {
+        // The merge overwrites every key present in the map, so putting "" for a missing value
+        // BLANKED the stored source identity on any version-up whose request lacked the field —
+        // evidence destroyed by an ordinary re-import (audit #12 / plan D-7). Omission makes the
+        // merge preserve the stored value: fill semantics.
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setSourceSystem("acme");
+        connector.setSourceArchetype(SourceArchetype.BUSINESS_RECORD);
+
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setRepositoryId("bedroom");
+        request.setSourceObjectId("r-1");
+        // No sourceUrl, no sourceObjectType — the version-up shape.
+
+        Map<String, Object> written = new CanonicalImportServiceImpl()
+                .buildSourceIdentityProps(connector, request, null);
+
+        assertTrue(!written.containsKey("nemaki:sourceUrl"),
+                "an absent sourceUrl was written anyway; as \"\" it erases the stored one");
+        assertTrue(!written.containsKey("nemaki:sourceObjectType"), written.keySet().toString());
+        assertEquals("acme", written.get("nemaki:sourceSystem"),
+                "present values must still be written — this is fill, not freeze");
+    }
+
+    @Test
     @DisplayName("compute() fills both hashes from one aspect list")
     void computeCoversBothAspects() {
         Map<String, Object> chat = new LinkedHashMap<>();

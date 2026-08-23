@@ -346,10 +346,19 @@ class IngestCaptureWrapperScopeTest {
     @Test
     @DisplayName("a metadata helper that WILL write does open — the control")
     void willWriteOpens() {
-        // Without this, hard-coding willWrite to false would pass the test above while turning
-        // the wrapper tracker off entirely.
+        // Without this, a fill that never ran its before-write hook would pass the test above
+        // while writing outside the boundary. D-7 moved the skip path from willWrite+apply to
+        // fillMissingNoteMetadata with an intent-opening hook, so the stub simulates a fill
+        // that genuinely writes: it runs the hook, exactly as the real service does between
+        // its decision and its write.
         wire(SourceArchetype.COMPOUND_NOTE, "files_and_body");
         alreadyImported("page-6-obj", "page-6", "page");
+        when(metadataService.fillMissingNoteMetadata(any(), any(), any(), any(), any()))
+                .thenAnswer(inv -> {
+                    ((Runnable) inv.getArgument(4)).run();
+                    return new IngestMetadataService.FillOutcome(null,
+                            List.of("nemaki:notePageId"), List.of());
+                });
 
         service.executeNoteImport(ctx(), noteRequest("page-6", null));
 
