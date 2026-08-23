@@ -121,8 +121,13 @@ chat の aspect ではなく **`nemaki:externalIntegration`** に入る。同じ
 aspect から値を引くので、**id が在って aspect が無い**と「証拠型が付いていて中身が全部 null」
 になる。「証拠が在ると称して中身が無い」で、真正性の上では**見えない状態より悪い**。
 
-しかもこの向きは**現に作れる**: `setBaseProperties` は生のリクエスト値を `secondaryIds` に
-無条件で書き、aspect は `if (!isEmpty(secondary))` のときしか書かない。
+しかもこの向きは当時**現に作れた**: `setBaseProperties` は生のリクエスト値を `secondaryIds` に
+無条件で書き、aspect は `if (!isEmpty(secondary))` のときしか書かなかった。
+**→ 2026-08-23 に両方の製造元を閉鎖**: 作成時の `secondaryIds` は組み上がった aspect から
+導出 (D-8、`SecondaryIdsMatchAspectsAtCreateTest`)。残っていた製造元は製品自身の復元経路
+(zip import が証拠型 id だけ通し、READONLY 値は作成時に落ちて殻になる) で、これは
+`ZipImporter.stripEvidenceAssertions` が import 前に**型 id ごと主張を除去して警告に名指し**する
+ことで閉じた (D-6。archive restore との分裂の設計判断は同メソッドの javadoc)。
 
 **したがって保つのは aspect であり、id はそれに従う。** 条件は「id が残ること」ではなく
 **「id と aspect が食い違わないこと」**で書く。

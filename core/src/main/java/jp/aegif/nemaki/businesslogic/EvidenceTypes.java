@@ -63,9 +63,11 @@ public final class EvidenceTypes {
     public static final Set<String> PROTECTED = Set.of(
             // The eleven chat evidence properties P1-1(c) made READONLY.
             "nemaki:chatContextMetadata",
-            // nemaki:contentHash, nemaki:sourceObjectId, nemaki:sourceSystem,
-            // nemaki:ingestionRunId, nemaki:sourceUrl. Not READONLY — P1-1(c) scoped itself to
-            // chat — but evidence all the same, and the dedupe path depends on it.
+            // Source identity (sourceObjectId, sourceSystem, contentHash, ...): READONLY since
+            // Patch_ExternalIntegrationEvidenceReadOnly (2026-08-23; P1-1(c) had scoped itself to
+            // chat before that). The sync-state pair externalContext/externalContextUpdatedAt
+            // stays READWRITE deliberately. The dedupe path reads contentHash back, so detaching
+            // this type re-imports the next poll as a new version.
             "nemaki:externalIntegration");
 
     private EvidenceTypes() {

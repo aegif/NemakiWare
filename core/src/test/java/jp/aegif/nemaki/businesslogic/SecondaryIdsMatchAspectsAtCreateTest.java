@@ -56,13 +56,21 @@ class SecondaryIdsMatchAspectsAtCreateTest {
 
     private static Document created(Properties properties, String... resolvableTypes)
             throws Exception {
+        SecondaryTypeDefinitionImpl[] defs = new SecondaryTypeDefinitionImpl[resolvableTypes.length];
+        for (int i = 0; i < resolvableTypes.length; i++) {
+            defs[i] = new SecondaryTypeDefinitionImpl();
+            defs[i].setId(resolvableTypes[i]);
+            defs[i].setBaseTypeId(BaseTypeId.CMIS_SECONDARY);
+        }
+        return created(properties, defs);
+    }
+
+    private static Document created(Properties properties, SecondaryTypeDefinitionImpl... types)
+            throws Exception {
         ContentServiceImpl service = new ContentServiceImpl();
         TypeManager typeManager = mock(TypeManager.class);
-        for (String typeId : resolvableTypes) {
-            SecondaryTypeDefinitionImpl td = new SecondaryTypeDefinitionImpl();
-            td.setId(typeId);
-            td.setBaseTypeId(BaseTypeId.CMIS_SECONDARY);
-            when(typeManager.getTypeDefinition(anyString(), eq(typeId))).thenReturn(td);
+        for (SecondaryTypeDefinitionImpl td : types) {
+            when(typeManager.getTypeDefinition(anyString(), eq(td.getId()))).thenReturn(td);
         }
         org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl docType =
                 new org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl();
@@ -121,6 +129,42 @@ class SecondaryIdsMatchAspectsAtCreateTest {
         assertEquals(doc.getAspects() == null ? 0 : doc.getAspects().size(),
                 doc.getSecondaryIds().size(),
                 "ids and aspects disagree from the object's first revision");
+    }
+
+    @Test
+    @DisplayName("a READONLY evidence value in a create request is dropped — the shell mechanism")
+    void readonlyValueDoesNotEnterAtCreate() throws Exception {
+        // The CMIS-layer half of D-6: any caller with folder write can send createDocument, so a
+        // READONLY evidence property in the request must NOT become a value — injectPropertyValue
+        // drops it at create too. That defense is also what turns an imported evidence TYPE id
+        // into a "type attached, every property null" shell, which is why ZipImporter strips the
+        // id as well (ZipImporterEvidenceStripTest). If this test starts failing because
+        // create-time begins honoring the value, the import strip is the only line left —
+        // revisit D-6 before relying on it.
+        SecondaryTypeDefinitionImpl td = new SecondaryTypeDefinitionImpl();
+        td.setId("nemaki:chatContextMetadata");
+        td.setBaseTypeId(BaseTypeId.CMIS_SECONDARY);
+        org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl pd =
+                new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl();
+        pd.setId("nemaki:chatMessageId");
+        pd.setPropertyType(org.apache.chemistry.opencmis.commons.enums.PropertyType.STRING);
+        pd.setCardinality(org.apache.chemistry.opencmis.commons.enums.Cardinality.SINGLE);
+        pd.setUpdatability(org.apache.chemistry.opencmis.commons.enums.Updatability.READONLY);
+        pd.setIsInherited(false);
+        td.addPropertyDefinition(pd);
+
+        Properties request = requesting("nemaki:chatContextMetadata");
+        ((PropertiesImpl) request).addProperty(
+                new PropertyStringImpl("nemaki:chatMessageId", "forged"));
+
+        Document doc = created(request, td);
+
+        jp.aegif.nemaki.model.Aspect aspect = doc.getAspects().stream()
+                .filter(a -> "nemaki:chatContextMetadata".equals(a.getName()))
+                .findFirst().orElseThrow();
+        assertTrue(aspect.getProperties() == null || aspect.getProperties().isEmpty(),
+                "a create request wrote a READONLY evidence value — any folder-writer could then "
+                        + "assert capture facts through plain CMIS: " + aspect.getProperties());
     }
 
     @Test

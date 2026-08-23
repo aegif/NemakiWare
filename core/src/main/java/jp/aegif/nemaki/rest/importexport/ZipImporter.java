@@ -98,6 +98,101 @@ public class ZipImporter {
         ACP, CUSTOM, UNKNOWN
     }
 
+    /**
+     * Every property the capture pipeline writes into the protected evidence aspects.
+     *
+     * <p>Built from the constants the hash and the type patches already read, never counted by
+     * hand — the one hand-curated copy of the source-identity set missed
+     * {@code nemaki:sourceArchetype} and shipped that way (external review P2-6).
+     */
+    static final java.util.Set<String> EVIDENCE_PROPERTY_IDS = buildEvidencePropertyIds();
+
+    private static java.util.Set<String> buildEvidencePropertyIds() {
+        java.util.Set<String> ids = new java.util.TreeSet<>();
+        ids.addAll(jp.aegif.nemaki.patch.Patch_ChatContextEvidenceReadOnly.EVIDENCE_PROPERTIES);
+        ids.addAll(jp.aegif.nemaki.rest.ingest.EvidenceMetadataHash.SOURCE_IDENTITY_PROPERTIES);
+        ids.addAll(jp.aegif.nemaki.rest.ingest.EvidenceMetadataHash.EXCLUDED_FROM_METADATA_HASH);
+        return java.util.Collections.unmodifiableSet(ids);
+    }
+
+    /**
+     * Removes capture-evidence assertions from an archive's metadata before import, and returns
+     * what was removed so the caller can say so.
+     *
+     * <p>Archive metadata is attacker-controlled data — the import needs only create-child
+     * permission on one folder, and the {@code .meta.json} says whatever its author typed. The
+     * same judgement already governs archive ACEs ({@code isAclApplyAllowed}); this extends it to
+     * capture evidence, which is worth more to forge than an ACL: {@code nemaki:contentHash} +
+     * {@code nemaki:sourceObjectId} are what ingest dedupe reads back, so an imported assertion
+     * would also silently suppress future REAL captures of that source object.
+     *
+     * <h2>Why strip, of the three options the plan weighed (D-6)</h2>
+     *
+     * <ul>
+     * <li><b>Not model-direct write</b> (the ingest's side): the ingest path opens a capture
+     * intent and records completion evidence; an import writes no ledger rows, so the properties
+     * would assert a capture the platform cannot stand behind — and any folder-writer could mint
+     * them.</li>
+     * <li><b>Not create-time READONLY pass-through</b>: that change is global CMIS semantics —
+     * every {@code createDocument} caller could then assert capture facts, which is the front
+     * door P1-1(c) closed.</li>
+     * <li><b>Not refusing the whole zip</b>: one captured document in an export would make the
+     * entire migration impossible. The content imports; the assertions do not; the warning names
+     * both.</li>
+     * </ul>
+     *
+     * <p>The split this encodes: <b>archive restore</b> (delete → archive DB → restore) is a raw
+     * same-repository copy — the object keeps its id, the capture ledger rows keyed by that id
+     * still stand behind the claims, so evidence survives it untouched. A <b>zip import</b> mints
+     * new ids in (usually) another repository, where no ledger backs the claims — so it must not
+     * write them. Without this strip the import did something worse than either: the evidence
+     * values are READONLY and dropped at create, but the type id went into
+     * {@code cmis:secondaryObjectTypeIds}, so the product's own restore path manufactured "type
+     * attached, every property null" (data-model N2 — the shell).
+     */
+    @SuppressWarnings("unchecked")
+    static List<String> stripEvidenceAssertions(JSONObject metadata) {
+        List<String> dropped = new ArrayList<>();
+        if (metadata == null) {
+            return dropped;
+        }
+        JSONObject properties = (JSONObject) metadata.get("properties");
+        if (properties == null) {
+            return dropped;
+        }
+
+        Object secondaryIds = properties.get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
+        if (secondaryIds instanceof JSONArray) {
+            JSONArray remaining = new JSONArray();
+            for (Object id : (JSONArray) secondaryIds) {
+                if (jp.aegif.nemaki.businesslogic.EvidenceTypes.isProtected(String.valueOf(id))) {
+                    dropped.add(String.valueOf(id));
+                } else {
+                    remaining.add(id);
+                }
+            }
+            if (remaining.size() != ((JSONArray) secondaryIds).size()) {
+                if (remaining.isEmpty()) {
+                    properties.remove(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
+                } else {
+                    properties.put(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, remaining);
+                }
+            }
+        } else if (secondaryIds instanceof String
+                && jp.aegif.nemaki.businesslogic.EvidenceTypes.isProtected((String) secondaryIds)) {
+            properties.remove(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
+            dropped.add((String) secondaryIds);
+        }
+
+        for (String propertyId : EVIDENCE_PROPERTY_IDS) {
+            if (properties.containsKey(propertyId)) {
+                properties.remove(propertyId);
+                dropped.add(propertyId);
+            }
+        }
+        return dropped;
+    }
+
     public ImportFormat detectFormat(File zipFile) throws IOException {
         try (ZipFile zf = new ZipFile(zipFile)) {
             boolean hasPackageXml = false;
@@ -442,6 +537,17 @@ public class ZipImporter {
 
                     JSONObject metadata = metadataMap.get(path);
 
+                    List<String> droppedEvidence = stripEvidenceAssertions(metadata);
+                    if (!droppedEvidence.isEmpty()) {
+                        String message = "Evidence metadata not imported for '" + path + "': "
+                                + String.join(", ", droppedEvidence)
+                                + " — this repository did not capture the object, so the import"
+                                + " will not assert that it did. The content itself is imported;"
+                                + " the assertions remain readable in " + path + META_SUFFIX + ".";
+                        result.warnings.add(message);
+                        log.info(message);
+                    }
+
                     String oldObjectId = null;
                     if (metadata != null) {
                         JSONObject metaProps = (JSONObject) metadata.get("properties");
@@ -725,7 +831,12 @@ public class ZipImporter {
             Element propEl = it.next();
             String propName = propEl.attributeValue("name");
             String propValue = propEl.getTextTrim();
-            if (propName != null && propValue != null && !propName.startsWith("cm:")) {
+            // Evidence ids never occur in a genuine Alfresco ACP; one here is crafted. They were
+            // inert on this path anyway (no secondary type gets attached), but "inert today" is
+            // not a guarantee — same rule as the custom format: capture evidence does not enter
+            // through an upload.
+            if (propName != null && propValue != null && !propName.startsWith("cm:")
+                    && !EVIDENCE_PROPERTY_IDS.contains(propName)) {
                 props.addProperty(new PropertyStringImpl(propName, propValue));
             }
         }

@@ -34,8 +34,8 @@ HEAD `246a0e03f` + 自己レビュー修正パスに対する、Codex + サブ�
 | D-3 ✅ 2026-08-23 | **D3: aspect の version 間参照共有** — 対応済み: `buildCopyDocument` が証拠 aspect を防御コピー (リストも新規)。4 呼び出し元を生成点 1 箇所で被覆 | `buildCopyDocument:1970` が同一 List/Aspect を共有。checkIn は `cancelCheckOut` の再読込で偶然救われ、`BulkCheckInResource:420` → `updateWithoutCheckInOut` に保険が無い | `buildCopyDocument` で**証拠 aspect だけ防御コピー** (keepEvidenceAspects の `copyAspect` を再利用)。全 aspect のコピーは挙動変更が広いので証拠に限定。AC7 を負のコントロール付きで |
 | D-4 | **(d)-5: 会話の範囲 (window/scope/reason) の恒久的置き場** | `CaptureEvidenceField:226-240` 全て `V2Home.none` — flip で行き場を失う | Process 属性が唯一の候補 → **F-1 (flip 前提) と同じ設計で決める**。(d) 単独では動かさない |
 | D-5 | **(d)-6: `chatCapturedAt` の第 2 の写しが無い** | `:883-901` 自認「There is no second copy」。11 個中 1 個だけイベントが運べない | aspect 付与を `execute()` へ引き込む設計 ((b) §8 の「emit 前倒し」は撤回済みのまま)。**(e) の隔離と同じ変更で** — 取込の境界を引き直すのは 1 度だけ |
-| D-6 | **N2: ZipImporter の文書 import が証拠の空殻を作る** | `ZipImporter:337/:513` → CMIS 経路 → `injectPropertyValue` が READONLY 値を**作成時にも**落とす。secondaryIds は生値で書かれ「型あり・中身 null」を製品の復元経路が製造 | 選択肢: (i) import 経路は model 直書き (取込と同じ側) に変える、(ii) 作成時だけ READONLY を通す (ONCREATE 相当)、(iii) 証拠型を含む zip を拒否。**archive restore (raw copy・無傷) との分裂**を設計に明記してから選ぶ |
-| D-7 | **保護の拡張**: mail/note/record の skip 上書き + `applySourceMetadata` の `""` 上書き + `externalIntegration` プロパティの READONLY 化 | `:311-321` (意図的除外と明記済み)、`:2674-2690` (欠落値を空文字で put、**どの台帳にも未記載だったのを完全性監査が発見**)、`Patch_ExternalIntegrationSourceFields:153` READWRITE | 3 つは同じ仕事の面: **「証拠は記録なしに変わらない」を chat 以外へ**。READONLY 化パッチ → D6 の fill 規則を mail/note/record へ → `applySourceMetadata` を fill 化。**Gmail は当日メッセージを毎 poll 再取得**するので revision churn の解消も兼ねる |
+| D-6 ✅ 2026-08-23 | **N2: ZipImporter の文書 import が証拠の空殻を作る** — 対応済み: **(iii) の精緻化 = 主張だけ落とす**。`stripEvidenceAssertions` が meta の証拠型 id (PROTECTED) と証拠プロパティ全部 (chat 11 + source identity 9 + externalContext 2、定数の合成で手数えなし) を import 前に除去し、**warning が落とした項目を全部名指し** (zip 全体拒否は棄却 — 捕獲文書 1 件で移行全体が死ぬ)。ACP 経路も同じ集合で濾過 | 分裂の設計判断は `stripEvidenceAssertions` の javadoc に記録: **archive restore (同一リポジトリ・raw copy・objectId 不変) は台帳行が主張を裏づけるので証拠は無傷で通る / zip import は新 id・台帳なしなので主張を書いてはならない**。(i) model 直書きは棄却 (import は create-child 権限だけで呼べる = folder 書込者が捏造可能。さらに contentHash+sourceObjectId は dedupe が読み戻すので**本物の捕獲を静かに抑止**する)。(ii) READONLY の作成時素通しは棄却 (P1-1(c) が閉じた表玄関を CMIS 全体で開ける)。CMIS 層の落とし (殻の機構) は `SecondaryIdsMatchAspectsAtCreateTest` がピン |
+| D-7 ✅ 2026-08-23 | **保護の拡張**: mail/note/record の skip 上書き + `applySourceMetadata` の `""` 上書き + `externalIntegration` プロパティの READONLY 化 | `:311-321` (意図的除外と明記済み)、`:2674-2690` (欠落値を空文字で put、**どの台帳にも未記載だったのを完全性監査が発見**)、`Patch_ExternalIntegrationSourceFields:153` READWRITE | 対応済み (2e8cfcf30): `Patch_ExternalIntegrationEvidenceReadOnly` (8+contentHash 新設 READONLY) / fill 規則を mail/note/record へ (fill/refuse/reimport イベント + intent-before-write hook) / `putUnlessBlank` で `""` 上書き根絶。integration hash は改竄シグナルに昇格 |
 | D-8 ✅ 2026-08-23 | **小物** — 対応済み: DLQ replay は archetype 無しを拒否 (plain fallback 廃止・直し方を明示)。作成時の `secondaryIds` は組み上がった aspect から導出 (解決できない型の殻を初版から作らない) | 監査 #21 / #17 | D-6 と同じ増分で。作成時は「secondaryIds と aspect の整合」を `setBaseProperties` に |
 | D-9 | **復元 + InterPARES 逐条マッピング** (最後) | roadmap:192、棚卸し §5-§7 | モデルが安定してから。A.1 の判定 (§5) とセット |
 
@@ -61,16 +61,19 @@ HEAD `246a0e03f` + 自己レビュー修正パスに対する、Codex + サブ�
 |---|---|---|
 | ✅ 2026-08-23 **CMIS `updateType` の実保護** — `constraintUpdatePropertyDefinition` が READONLY の拡張を拒否 (絞り込みは許可)。tripwire は残置 | (c) §5.5 | 済 |
 | **Solr/PII の方針判断** — `chatParticipants` が既定で全文検索に出る | `SolrUtil:1481-1512` が全 aspect 値を無濾過で索引。disclosure §6.2 で認知済み・担当未割当 | **方針判断が先** (検索できるべきか)。機構は Disclosure の第 3 の口として同じ表から導ける |
-| **bulkUpdateProperties の add/remove 無視** (既存不具合) | `ObjectServiceImpl:1216-1244` | 直すなら必ず `modifyProperties` 経由 (= `keepEvidenceAspects` を通す) |
+| ✅ 2026-08-23 **bulkUpdateProperties の add/remove 無視** (既存不具合) — `withSecondaryTypeChanges` が add/remove を `cmis:secondaryObjectTypeIds` へ畳んでから `updateProperties` へ渡す = 要求どおり `modifyProperties` → `keepEvidenceAspects` 経由。別口の attach/detach は作らない | `ObjectServiceImpl` BulkUpdateTask | helper 単体 4 + call() 配線 pin 1 (`BulkUpdateSecondaryTypeChangesTest`)。3 protections とも revert で fail を実測 |
 | **CatalogSecretBoundary 統合** — `PurviewLineageSink` だけ `sealed()` を呼ばない | disclosure §4 | sink の qualifiedName (非 `nemaki://`) の許可を先に決める |
 
 ## 6. A.1「分かち難く結合した保護属性」の判定
 
-**名乗るのは (d) 完了後の判定作業として。** 現時点のブロッカー:
-D-3 (参照共有) / D-2 (0 バイトの無名) / D-5 (capturedAt 単一保存) / D-6 (復元経路の分裂) /
-D-7 (chat 以外が無保護 + source identity の `""` 上書き) / (e) の D7 (実行主体の食い違い) /
-複製の偽証拠 (evidence-types §0) / `updateType` の偶然依存 / ローリング再起動の手続き依存 /
+**名乗るのは (d) 完了後の判定作業として。** 現時点のブロッカー
+(〜~~取消線~~ = 2026-08-23 までに解消):
+~~D-3 (参照共有)~~ / ~~D-2 (0 バイトの無名)~~ / D-5 (capturedAt 単一保存) /
+~~D-6 (復元経路の分裂)~~ / ~~D-7 (chat 以外が無保護 + source identity の `""` 上書き)~~ /
+(e) の D7 (実行主体の食い違い) / 複製の偽証拠 (evidence-types §0) /
+~~`updateType` の偶然依存~~ (実保護に置換・tripwire 残置) / ローリング再起動の手続き依存 /
 `PROTECTED` の機械的検査が書けない (`Patch_ChatContextMetadataSecondaryType` の定数が private のまま)。
+残り: **D-5 / (e) の D7 / 複製の偽証拠 / ローリング再起動 / PROTECTED 機械検査** の 5 つ。
 
 ## 7. やり直さない (閉じたもの)
 
