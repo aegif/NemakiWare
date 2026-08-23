@@ -1967,7 +1967,14 @@ public class ContentServiceImpl implements ContentService {
 		copy.setAclInherited(original.isAclInherited());
 		copy.setSubTypeProperties(new ArrayList<Property>(original.getSubTypeProperties()));
 		setAclOnCreated(callContext, repositoryId, copy, addAces, removeAces);
-		copy.setAspects(original.getAspects());
+		// The LIST is fresh and the EVIDENCE aspects are deep copies; ordinary aspects stay
+		// shared, keeping the change minimal. With the old whole-reference share, every version
+		// produced through here (checkOut, checkIn, copy, updateWithoutCheckInOut) held the SAME
+		// Aspect objects — and while the checkIn path is rescued by cancelCheckOut's re-read,
+		// BulkCheckInResource → updateWithoutCheckInOut has no such rescue, so an in-place fill
+		// on the new version rewrote the OLD version's cached evidence (P1-1(d) D3, external
+		// review). Per-version evidence hashes are meaningless while versions share the bytes.
+		copy.setAspects(copyEvidenceAspects(original.getAspects()));
 		copy.setSecondaryIds(original.getSecondaryIds());
 		setSignature(callContext, copy);
 
@@ -2670,6 +2677,29 @@ public class ContentServiceImpl implements ContentService {
 	 * @param rebuilt the aspects this call constructed, which is what would be stored
 	 * @param existing the aspects the object already had, by name
 	 */
+	/**
+	 * A fresh list in which every EVIDENCE aspect is a detached copy.
+	 *
+	 * <p>Evidence only, not everything: copying every aspect on every version operation is a
+	 * broader behaviour change than D3 needs, and the protected set is exactly where shared
+	 * bytes turn into shared evidence.
+	 */
+	private static List<Aspect> copyEvidenceAspects(List<Aspect> aspects) {
+		if (aspects == null) {
+			return null;
+		}
+		List<Aspect> result = new ArrayList<>(aspects.size());
+		for (Aspect aspect : aspects) {
+			if (aspect != null
+					&& jp.aegif.nemaki.businesslogic.EvidenceTypes.isProtected(aspect.getName())) {
+				result.add(copyAspect(aspect));
+			} else {
+				result.add(aspect);
+			}
+		}
+		return result;
+	}
+
 	/** A detached copy: new {@code Aspect}, new property list, new {@code Property} objects. */
 	private static Aspect copyAspect(Aspect original) {
 		Aspect copy = new Aspect();

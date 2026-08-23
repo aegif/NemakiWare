@@ -173,6 +173,12 @@ emit 時点で本当に存在しないのは `chatCapturedAt` **1 個だけ**。
 
 ### D3 — version ごとの hash — **結論は今のところ真だが、理由が偽だった。閉じない**
 
+> **2026-08-23 追記: invariant「証拠 aspect は version 間で参照共有しない」を実装した。**
+> `buildCopyDocument` が証拠 aspect を防御コピーし、aspect リスト自体も新しくする
+> (通常 aspect の共有は据え置き — 挙動変更を最小にする意図的な範囲)。4 呼び出し元
+> (checkOut / checkIn / copy / `updateWithoutCheckInOut`) は同じ生成点を通るので構造的に
+> 全部覆う。控え実測: 共有に戻すと 3 件落ちる。**cancelCheckOut の偶然に依存しない**。
+
 初稿は「aspect は document ごとなので古い version は自分の hash を保持する」と書いた。
 **aspect は document ごとではない。参照で共有されている** (外部レビュー):
 
