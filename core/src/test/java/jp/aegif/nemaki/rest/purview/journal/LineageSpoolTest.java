@@ -167,14 +167,35 @@ public class LineageSpoolTest {
         public void hashConsistencyAloneIsNotVerification() {
             LineageSpoolPayloadV1 good = payload();
 
+            // Pre-(e) this asserted selfVerifies()==false ("schema 2 is not this record
+            // type"). Version 2 exists now, and this forged shape — version 2 with no
+            // attribution — is refused one step EARLIER, at construction (Codex N2): the
+            // record never exists to mis-verify.
+            assertThrows(IllegalArgumentException.class, () -> new LineageSpoolPayloadV1(2L,
+                    good.spoolRecordId(), good.repositoryId(), good.processType(),
+                    good.operationId(), good.occurredAt(), good.inputs(), good.outputs(),
+                    good.canonicalTargetSet(), 0L, 1L, good.correlationId(),
+                    good.legacyV1Projection(),
+                    LineageSpoolIdentity.payloadDigest(good.spoolRecordId(), 2L, good.inputs(),
+                            good.outputs(), good.correlationId(), good.legacyV1Projection()),
+                    null, java.util.Map.of(), java.util.Map.of()),
+                    "a version-2 claim without an attribution must be unconstructible");
+
+            // The original claim, restated for the version that DOES exist: a version-2 row
+            // whose digest is the version-1 formula's output is hash-shaped but not a
+            // producible record — it must not verify.
             LineageSpoolPayloadV1 wrongSchema = new LineageSpoolPayloadV1(2L,
                     good.spoolRecordId(), good.repositoryId(), good.processType(),
                     good.operationId(), good.occurredAt(), good.inputs(), good.outputs(),
                     good.canonicalTargetSet(), 0L, 1L, good.correlationId(),
                     good.legacyV1Projection(),
                     LineageSpoolIdentity.payloadDigest(good.spoolRecordId(), 2L, good.inputs(),
-                            good.outputs(), good.correlationId(), good.legacyV1Projection()));
-            assertFalse(wrongSchema.selfVerifies(), "schema 2 is not this record type");
+                            good.outputs(), good.correlationId(), good.legacyV1Projection()),
+                    new jp.aegif.nemaki.rest.purview.journal.LineageExecutionAttribution(
+                            "admin", null),
+                    java.util.Map.of(), java.util.Map.of());
+            assertFalse(wrongSchema.selfVerifies(),
+                    "a version-1 digest under a version-2 claim is not this record type");
 
             String chunkedId = LineageSpoolIdentity.spoolRecordId(REPO,
                     LineageProcessType.ARCHIVE_LOCAL, "op-1", fact().inputs(), fact().outputs(),
