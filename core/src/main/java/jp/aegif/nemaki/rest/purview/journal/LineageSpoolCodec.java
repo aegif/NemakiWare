@@ -51,6 +51,14 @@ public final class LineageSpoolCodec {
             "operationId", "occurredAt", "inputs", "outputs", "canonicalTargetSet",
             "chunkIndex", "chunkCount", "correlationId", "legacyV1Projection",
             "payloadDigest");
+    private static final java.util.Set<String> ROOT_FIELDS_V2;
+    static {
+        java.util.Set<String> v2 = new java.util.LinkedHashSet<>(ROOT_FIELDS);
+        v2.add("attribution");
+        v2.add("processFacts");
+        v2.add("journalFacts");
+        ROOT_FIELDS_V2 = java.util.Set.copyOf(v2);
+    }
     private static final java.util.Set<String> ENDPOINT_FIELDS = java.util.Set.of(
             "kind", "catalogQualifiedName", "repositoryId", "objectId", "operationId",
             "attributes");
@@ -84,6 +92,19 @@ public final class LineageSpoolCodec {
         }
         root.set("legacyV1Projection", legacyNode(payload.legacyV1Projection()));
         root.put("payloadDigest", payload.payloadDigest());
+        if (payload.spoolSchemaVersion() == LineageSpoolPayloadV1.SCHEMA_VERSION_V2) {
+            ObjectNode attribution = root.putObject("attribution");
+            attribution.put("executedBy", payload.attribution().executedBy());
+            if (payload.attribution().onBehalfOf() == null) {
+                attribution.putNull("onBehalfOf");
+            } else {
+                attribution.put("onBehalfOf", payload.attribution().onBehalfOf());
+            }
+            ObjectNode processFacts = root.putObject("processFacts");
+            payload.processFacts().forEach(processFacts::put);
+            ObjectNode journalFacts = root.putObject("journalFacts");
+            payload.journalFacts().forEach(journalFacts::put);
+        }
         try {
             return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(root);
         } catch (tools.jackson.core.JacksonException e) {
@@ -101,11 +122,42 @@ public final class LineageSpoolCodec {
         if (root == null || !root.isObject()) {
             throw new IllegalArgumentException("spool record is not a JSON object");
         }
-        requireExactFields(root, ROOT_FIELDS, "spool record");
-        long schemaVersion = requiredLong(root, "spoolSchemaVersion");
-        if (schemaVersion != LineageSpoolPayloadV1.SCHEMA_VERSION) {
+        long schemaVersion = root.get("spoolSchemaVersion") != null
+                && root.get("spoolSchemaVersion").isNumber()
+                        ? root.get("spoolSchemaVersion").asLong() : -1L;
+        if (schemaVersion != LineageSpoolPayloadV1.SCHEMA_VERSION
+                && schemaVersion != LineageSpoolPayloadV1.SCHEMA_VERSION_V2) {
             throw new IllegalArgumentException("unknown spoolSchemaVersion " + schemaVersion
-                    + " — this build decodes only " + LineageSpoolPayloadV1.SCHEMA_VERSION);
+                    + " — this build decodes only " + LineageSpoolPayloadV1.SCHEMA_VERSION
+                    + " and " + LineageSpoolPayloadV1.SCHEMA_VERSION_V2);
+        }
+        // Strictness stays PER VERSION: each version's field set is exactly what its encode
+        // writes, so the digest keeps covering the bytes on disk (Codex C2).
+        requireExactFields(root,
+                schemaVersion == LineageSpoolPayloadV1.SCHEMA_VERSION
+                        ? ROOT_FIELDS : ROOT_FIELDS_V2,
+                "spool record");
+        requiredLong(root, "spoolSchemaVersion");
+        if (schemaVersion == LineageSpoolPayloadV1.SCHEMA_VERSION) {
+            return new LineageSpoolPayloadV1(
+                    schemaVersion,
+                    requiredText(root, "spoolRecordId"),
+                    requiredText(root, "repositoryId"),
+                    processType(requiredText(root, "processType")),
+                    requiredText(root, "operationId"),
+                    requiredText(root, "occurredAt"),
+                    endpoints(root, "inputs"),
+                    endpoints(root, "outputs"),
+                    textList(root, "canonicalTargetSet"),
+                    requiredLong(root, "chunkIndex"),
+                    requiredLong(root, "chunkCount"),
+                    nullableNonBlankText(root, "correlationId"),
+                    legacyProjection(root.get("legacyV1Projection")),
+                    requiredText(root, "payloadDigest"));
+        }
+        JsonNode attributionNode = root.get("attribution");
+        if (attributionNode == null || !attributionNode.isObject()) {
+            throw new IllegalArgumentException("a version-2 spool record requires attribution");
         }
         return new LineageSpoolPayloadV1(
                 schemaVersion,
@@ -121,7 +173,28 @@ public final class LineageSpoolCodec {
                 requiredLong(root, "chunkCount"),
                 nullableNonBlankText(root, "correlationId"),
                 legacyProjection(root.get("legacyV1Projection")),
-                requiredText(root, "payloadDigest"));
+                requiredText(root, "payloadDigest"),
+                new LineageExecutionAttribution(
+                        requiredText((ObjectNode) attributionNode, "executedBy"),
+                        nullableNonBlankText((ObjectNode) attributionNode, "onBehalfOf")),
+                stringMap(root.get("processFacts"), "processFacts"),
+                stringMap(root.get("journalFacts"), "journalFacts"));
+    }
+
+    private static java.util.Map<String, String> stringMap(JsonNode node, String what) {
+        if (node == null || !node.isObject()) {
+            throw new IllegalArgumentException(what + " must be a JSON object");
+        }
+        java.util.Map<String, String> out = new java.util.LinkedHashMap<>();
+        node.propertyNames().forEach(name -> {
+            JsonNode value = node.get(name);
+            if (value == null || !value.isTextual() || value.asString().isBlank()) {
+                throw new IllegalArgumentException(what + "['" + name + "'] must be non-blank"
+                        + " text");
+            }
+            out.put(name, value.asString());
+        });
+        return out;
     }
 
     /**

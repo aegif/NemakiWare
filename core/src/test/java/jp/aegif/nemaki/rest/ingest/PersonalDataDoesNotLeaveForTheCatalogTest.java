@@ -57,6 +57,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class PersonalDataDoesNotLeaveForTheCatalogTest {
 
     @Test
+    @DisplayName("the actor pair is withheld from the catalog — a deliberate change at (e)")
+    void actorIsWithheldFromTheCatalog() {
+        // v1 used to SEND executedBy/onBehalfOf and rely on the destination dropping them
+        // (an undeclared attribute) — protection living outside this product. Since P1-1(e)
+        // both are INTERNAL_ONLY: the sink withholds them, and their v2 home is the typed,
+        // digest-covered attribution that never reaches a sink payload (Codex M6).
+        assertTrue(CaptureEvidenceField.internalOnlyV1Keys().contains("executedBy"),
+                "executedBy went back to being sent to the catalog");
+        assertTrue(CaptureEvidenceField.internalOnlyV1Keys().contains("onBehalfOf"),
+                "onBehalfOf went back to being sent to the catalog");
+    }
+
+    @Test
     @DisplayName("every fact declares whether it may leave — there is no default")
     void everyFactDeclaresItsDisclosure() {
         // The constructor requires it, so a field cannot be added without a decision. This

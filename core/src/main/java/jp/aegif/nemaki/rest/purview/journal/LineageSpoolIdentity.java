@@ -56,6 +56,9 @@ public final class LineageSpoolIdentity {
     /** Domain tag for {@code payloadDigest} — content integrity of one spool record. */
     static final String SPOOL_PAYLOAD_DOMAIN = "SPOOL_PAYLOAD_V1";
 
+    /** Domain tag of the version-2 composition — appends the P1-1(e) extras. */
+    static final String SPOOL_PAYLOAD_DOMAIN_V2 = "SPOOL_PAYLOAD_V2";
+
     private LineageSpoolIdentity() {
     }
 
@@ -115,6 +118,30 @@ public final class LineageSpoolIdentity {
                 LineageEventDigest.endpointRecords(outputs),
                 correlationId,
                 legacyProjectionRecord(legacyProjection));
+    }
+
+    /** The version-2 composition: V1's inputs, then the attribution pair and the compartments. */
+    public static String payloadDigestV2(String spoolRecordId, long spoolSchemaVersion,
+                                         List<LineageEndpoint> inputs,
+                                         List<LineageEndpoint> outputs,
+                                         String correlationId,
+                                         LineageFact.LegacyV1Projection legacyProjection,
+                                         LineageExecutionAttribution attribution,
+                                         Map<String, String> journalFacts,
+                                         Map<String, String> processFacts) {
+        requireText(spoolRecordId, "spoolRecordId");
+        return LineageCanonicalHash.hash(
+                SPOOL_PAYLOAD_DOMAIN_V2,
+                spoolRecordId,
+                spoolSchemaVersion,
+                LineageEventDigest.endpointRecords(inputs),
+                LineageEventDigest.endpointRecords(outputs),
+                correlationId,
+                legacyProjectionRecord(legacyProjection),
+                attribution == null ? null : attribution.executedBy(),
+                attribution == null ? null : attribution.onBehalfOf(),
+                journalFacts == null ? Map.of() : journalFacts,
+                processFacts == null ? Map.of() : processFacts);
     }
 
     /**

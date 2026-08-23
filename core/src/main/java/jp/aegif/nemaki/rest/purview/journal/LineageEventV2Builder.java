@@ -144,6 +144,29 @@ public final class LineageEventV2Builder {
         return this;
     }
 
+    private int creationDigestVersion = LineageEventV2.DIGEST_VERSION_V1;
+    private LineageExecutionAttribution attribution;
+    private java.util.Map<String, String> processFacts = java.util.Map.of();
+    private java.util.Map<String, String> journalFacts = java.util.Map.of();
+
+    /**
+     * Switch to the version-2 digest composition with its digest-covered extras. The version
+     * follows the SOURCE: a spool payload that carries the facts materializes as version 2, a
+     * pre-extension payload (or decision) as version 1 — which is what keeps every frozen
+     * decision digest matching its rebuild without a migration (P1-1(e) §2.0).
+     */
+    public LineageEventV2Builder digestV2(LineageExecutionAttribution attribution,
+            java.util.Map<String, String> processFacts,
+            java.util.Map<String, String> journalFacts) {
+        this.creationDigestVersion = LineageEventV2.DIGEST_VERSION_V2;
+        this.attribution = attribution;
+        this.processFacts = processFacts == null ? java.util.Map.of()
+                : java.util.Map.copyOf(processFacts);
+        this.journalFacts = journalFacts == null ? java.util.Map.of()
+                : java.util.Map.copyOf(journalFacts);
+        return this;
+    }
+
     /**
      * @throws IllegalArgumentException if anything required is missing, or if the endpoints do not
      *                                  form a shape this process type accepts
@@ -169,9 +192,14 @@ public final class LineageEventV2Builder {
         String processKey = LineageIdentity.processKey(repositoryId, processType, operationId,
                 in, out, LineageEventV2.CURRENT_SCHEMA_VERSION, chunkIndex, chunkCount);
         String deliveryId = delivery.deliveryId(processKey);
-        String digest = LineageEventDigest.creationPayloadDigest(processKey, deliveryId,
-                LineageEventV2.CURRENT_SCHEMA_VERSION, repositoryId, processType, operationId,
-                occurredAt, in, out, chunkIndex, chunkCount);
+        String digest = creationDigestVersion == LineageEventV2.DIGEST_VERSION_V1
+                ? LineageEventDigest.creationPayloadDigest(processKey, deliveryId,
+                        LineageEventV2.CURRENT_SCHEMA_VERSION, repositoryId, processType,
+                        operationId, occurredAt, in, out, chunkIndex, chunkCount)
+                : LineageEventDigest.creationPayloadDigestV2(processKey, deliveryId,
+                        LineageEventV2.CURRENT_SCHEMA_VERSION, repositoryId, processType,
+                        operationId, occurredAt, in, out, chunkIndex, chunkCount,
+                        attribution, journalFacts, processFacts);
 
         return new LineageEventV2(
                 LineageEventV2.CURRENT_SCHEMA_VERSION,
@@ -193,7 +221,11 @@ public final class LineageEventV2Builder {
                 spoolRecordId,
                 legacyEventKey,
                 pendingTargets(),
-                digest);
+                digest,
+                creationDigestVersion,
+                attribution,
+                processFacts,
+                journalFacts);
     }
 
     /** Every target this delivery owes, all {@code PENDING}. */

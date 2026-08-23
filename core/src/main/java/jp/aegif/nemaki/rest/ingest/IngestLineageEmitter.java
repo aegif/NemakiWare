@@ -115,7 +115,15 @@ public class IngestLineageEmitter {
                                 java.util.List.of(sourceUri),
                                 java.util.List.of(LineageEvent.qualifiedName(repositoryId, objectId)),
                                 v1Snapshot,
-                                v1EventId));
+                                v1EventId),
+                        // P1-1(e): the digest-covered extras, derived from the SAME snapshot the
+                        // same table built — one table, every door.
+                        new jp.aegif.nemaki.rest.purview.journal.LineageExecutionAttribution(
+                                executedBy, onBehalfOf),
+                        factCompartment(v1Snapshot,
+                                CaptureEvidenceField.V2Home.Placement.PROCESS_FACT),
+                        factCompartment(v1Snapshot,
+                                CaptureEvidenceField.V2Home.Placement.JOURNAL_FACT));
             }, "repo=" + repositoryId + " op=" + operationId + " type=" + factProcessType);
             if (outcome.failed()) {
                 lastFailure.set(outcome.failureReason());
@@ -389,6 +397,10 @@ public class IngestLineageEmitter {
         v1Snapshot.put(CaptureEvidenceField.SOURCE_ARCHETYPE.v1Key(),
                 connector.getSourceArchetype() != null ? connector.getSourceArchetype().name() : "");
         v1Snapshot.put(CaptureEvidenceField.SOURCE_OBJECT_ID.v1Key(), request.getSourceObjectId());
+        // DERIVED (P1-1(e), Codex M5): the same formula the sink used to compute at delivery —
+        // emitted here so both the v1 snapshot and the v2 processFacts carry it, digest-covered.
+        v1Snapshot.put(CaptureEvidenceField.SOURCE_DESCRIPTION.v1Key(),
+                connector.getSourceSystem() + ":" + request.getSourceObjectId());
         if (request.getSourceObjectType() != null) {
             v1Snapshot.put(CaptureEvidenceField.SOURCE_OBJECT_TYPE.v1Key(),
                     request.getSourceObjectType());
@@ -477,6 +489,27 @@ public class IngestLineageEmitter {
 
         return v1Snapshot;
     }
+    /**
+     * One compartment of the v2 fact, read out of the v1 snapshot by the table (P1-1(e) §2.2).
+     *
+     * <p>Blank-safe: the event constructor rejects blank values, and the snapshot never stores
+     * them, but a defensive skip here keeps the two contracts independent.
+     */
+    static java.util.Map<String, String> factCompartment(java.util.Map<String, String> v1Snapshot,
+            CaptureEvidenceField.V2Home.Placement placement) {
+        java.util.Map<String, String> facts = new java.util.LinkedHashMap<>();
+        for (CaptureEvidenceField field : CaptureEvidenceField.values()) {
+            if (field.v2Home().placement() != placement) {
+                continue;
+            }
+            String value = v1Snapshot.get(field.v1Key());
+            if (value != null && !value.isBlank()) {
+                facts.put(field.v1Key(), value);
+            }
+        }
+        return facts;
+    }
+
     /**
      * Why the most recent {@link #emitLineageEvent} on THIS thread produced no event id, or null
      * when the last call succeeded or simply had nothing to emit.

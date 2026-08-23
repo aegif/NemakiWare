@@ -32,5 +32,9 @@
   "materializationPlanDigest_v3_classified": "39f69fd2d8ead434f83352e8fe3565c963c6828c651773262ac79fc0cc286844",
   "barrierMembershipDigest": "ce6be555263b351fdf70473f60090700ced75a66d8a84bf0c5603e4e3892e2be",
   "barrierBinaryDigest": "d27e6212ffd71557019fe3c0bf7c43ad5b2342a4595a5dce9c81b2bb22dbf26e",
-  "attributeEvidenceDigest_1025v": "3d4b46294b5d561c5999a0f1567d75ad4be018d867a75d9949b4ea1b589889da"
+  "attributeEvidenceDigest_1025v": "3d4b46294b5d561c5999a0f1567d75ad4be018d867a75d9949b4ea1b589889da",
+  "creationPayloadDigest_v1_minimal": "69355108983545a862aee67a1222c96a8ddae5046341a96233a54d8e8d82c9df",
+  "creationPayloadDigest_v2_full": "7768e8cc6d8de380a03772122dfe2f31d30637b9f3b4ffdb0a41f3ca6afedc75",
+  "creationPayloadDigest_v2_noOnBehalf": "8537457d22bc048101e0f8bb9dd3d923fef4e6f11150f2dd192a3bc41e8bd0d4",
+  "spoolPayloadDigest_v2_full": "330e4243fb92cb88be752ac074ab341398b8752987496e8d797f7559e8aacd97"
 }

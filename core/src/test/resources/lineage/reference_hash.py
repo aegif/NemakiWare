@@ -212,6 +212,47 @@ vectors["attributeEvidenceDigest_1025v"] = attribute_evidence_digest(
     "v" * (MAX_DISPLAY_CODE_UNITS + 1))
 
 
+# ---- P1-1(e): creation payload digest (v1 pinned for the first time; v2 adds the extras) ----
+
+def creation_payload_digest(pk, delivery_id, schema, repo, ptype, op, occurred_at,
+                            inputs, outputs, idx, count):
+    return h("EVENT_CREATION_V1", pk, delivery_id, schema, repo, ptype, op, occurred_at,
+             endpoint_records(inputs), endpoint_records(outputs), idx, count)
+
+def creation_payload_digest_v2(pk, delivery_id, schema, repo, ptype, op, occurred_at,
+                               inputs, outputs, idx, count,
+                               executed_by, on_behalf_of, journal_facts, process_facts):
+    return h("EVENT_CREATION_V2", pk, delivery_id, schema, repo, ptype, op, occurred_at,
+             endpoint_records(inputs), endpoint_records(outputs), idx, count,
+             executed_by, on_behalf_of, journal_facts, process_facts)
+
+def spool_payload_digest_v2(record_id, schema, inputs, outputs, correlation_id, legacy,
+                            executed_by, on_behalf_of, journal_facts, process_facts):
+    return h("SPOOL_PAYLOAD_V2", record_id, schema,
+             endpoint_records(inputs), endpoint_records(outputs), correlation_id, legacy,
+             executed_by, on_behalf_of, journal_facts, process_facts)
+
+_E_JOURNAL = {"chat.capturedAt": "2026-08-24T00:00:00Z",
+              "appliedChatEvidenceHash": "mh1:aa", "metadataHashFormula": "mh1",
+              "metadataHashSubject": "applied"}
+_E_PROCESS = {"targetFolderId": "folder-1", "sourceArchetype": "CHAT_CONTEXT",
+              "sourceDescription": "slack:1720000000.000200"}
+vectors["creationPayloadDigest_v1_minimal"] = creation_payload_digest(
+    pk, orig, 2, "bedroom", "IMPORT_UPLOADED", "op-fixed", "2026-08-01T00:00:00Z",
+    [SPOOL_IN_EXT], [SPOOL_IN_DOC], 0, 1)
+vectors["creationPayloadDigest_v2_full"] = creation_payload_digest_v2(
+    pk, orig, 2, "bedroom", "IMPORT_UPLOADED", "op-fixed", "2026-08-01T00:00:00Z",
+    [SPOOL_IN_EXT], [SPOOL_IN_DOC], 0, 1,
+    "scheduler: delegated profile p1, schedule configured by ishii", "otsuka",
+    _E_JOURNAL, _E_PROCESS)
+vectors["creationPayloadDigest_v2_noOnBehalf"] = creation_payload_digest_v2(
+    pk, orig, 2, "bedroom", "IMPORT_UPLOADED", "op-fixed", "2026-08-01T00:00:00Z",
+    [SPOOL_IN_EXT], [SPOOL_IN_DOC], 0, 1,
+    "admin", None, {}, _E_PROCESS)
+vectors["spoolPayloadDigest_v2_full"] = spool_payload_digest_v2(
+    _spool_id, 2, [SPOOL_IN_EXT], [SPOOL_IN_DOC], "corr-1", None,
+    "admin", "otsuka", _E_JOURNAL, _E_PROCESS)
+
 def main():
     """Compare against the fixture the Java golden test also reads, and exit non-zero on drift."""
     import json, os, sys

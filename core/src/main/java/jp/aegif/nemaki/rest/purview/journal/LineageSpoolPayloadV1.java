@@ -17,6 +17,7 @@
 package jp.aegif.nemaki.rest.purview.journal;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * The durable, version-independent spool record of one business fact — §6-a's answer to "the
@@ -55,20 +56,52 @@ public record LineageSpoolPayloadV1(
         long chunkCount,
         String correlationId,
         LineageFact.LegacyV1Projection legacyV1Projection,
-        String payloadDigest
+        String payloadDigest,
+        LineageExecutionAttribution attribution,
+        Map<String, String> processFacts,
+        Map<String, String> journalFacts
 ) {
 
-    /** The one schema version this record type writes and decodes. */
+    /** The original schema version: no attribution, no fact compartments. */
     public static final long SCHEMA_VERSION = 1L;
+
+    /** The P1-1(e) schema version: appends the digest-covered extras (Codex C2). */
+    public static final long SCHEMA_VERSION_V2 = 2L;
+
+    /** The pre-(e) shape. */
+    public LineageSpoolPayloadV1(long spoolSchemaVersion, String spoolRecordId,
+            String repositoryId, LineageProcessType processType, String operationId,
+            String occurredAt, List<LineageEndpoint> inputs, List<LineageEndpoint> outputs,
+            List<String> canonicalTargetSet, long chunkIndex, long chunkCount,
+            String correlationId, LineageFact.LegacyV1Projection legacyV1Projection,
+            String payloadDigest) {
+        this(spoolSchemaVersion, spoolRecordId, repositoryId, processType, operationId,
+                occurredAt, inputs, outputs, canonicalTargetSet, chunkIndex, chunkCount,
+                correlationId, legacyV1Projection, payloadDigest, null, Map.of(), Map.of());
+    }
 
     public LineageSpoolPayloadV1 {
         inputs = inputs == null ? List.of() : List.copyOf(inputs);
         outputs = outputs == null ? List.of() : List.copyOf(outputs);
         canonicalTargetSet = canonicalTargetSet == null ? List.of()
                 : List.copyOf(canonicalTargetSet);
+        processFacts = processFacts == null ? Map.of() : Map.copyOf(processFacts);
+        journalFacts = journalFacts == null ? Map.of() : Map.copyOf(journalFacts);
+        if (spoolSchemaVersion == SCHEMA_VERSION
+                && (attribution != null || !processFacts.isEmpty() || !journalFacts.isEmpty())) {
+            throw new IllegalArgumentException("a version-1 spool payload cannot carry the"
+                    + " P1-1(e) extras — its digest does not cover them");
+        }
     }
 
-    /** The producer-level conversion: one unchunked fact, identity and digest computed here. */
+    /**
+     * The producer-level conversion: one unchunked fact, identity and digest computed here.
+     *
+     * <p>The schema version follows the FACT: a fact carrying the P1-1(e) extras spools as
+     * version 2 (digest covers them), a bare fact stays byte-identical to the pre-(e) format —
+     * which is what keeps old readers untouched by facts that never carried the extras, and
+     * what lets the materializer choose the event's digest version by the payload's (§2.0).
+     */
     public static LineageSpoolPayloadV1 of(LineageFact fact) {
         if (fact == null) {
             throw new IllegalArgumentException("fact must not be null");
@@ -76,24 +109,28 @@ public record LineageSpoolPayloadV1(
         String spoolRecordId = LineageSpoolIdentity.spoolRecordId(
                 fact.repositoryId(), fact.processType(), fact.operationId(),
                 fact.inputs(), fact.outputs(), fact.targets(), 0L, 1L, fact.occurredAt());
-        String payloadDigest = LineageSpoolIdentity.payloadDigest(
-                spoolRecordId, SCHEMA_VERSION, fact.inputs(), fact.outputs(),
-                fact.correlationId(), fact.legacyProjection());
+        boolean hasExtras = fact.attribution() != null || !fact.processFacts().isEmpty()
+                || !fact.journalFacts().isEmpty();
+        if (!hasExtras) {
+            String payloadDigest = LineageSpoolIdentity.payloadDigest(
+                    spoolRecordId, SCHEMA_VERSION, fact.inputs(), fact.outputs(),
+                    fact.correlationId(), fact.legacyProjection());
+            return new LineageSpoolPayloadV1(
+                    SCHEMA_VERSION, spoolRecordId, fact.repositoryId(), fact.processType(),
+                    fact.operationId(), fact.occurredAt(), fact.inputs(), fact.outputs(),
+                    LineageCanonicalHash.canonicalTargetSet(fact.targets()),
+                    0L, 1L, fact.correlationId(), fact.legacyProjection(), payloadDigest);
+        }
+        String payloadDigest = LineageSpoolIdentity.payloadDigestV2(
+                spoolRecordId, SCHEMA_VERSION_V2, fact.inputs(), fact.outputs(),
+                fact.correlationId(), fact.legacyProjection(),
+                fact.attribution(), fact.journalFacts(), fact.processFacts());
         return new LineageSpoolPayloadV1(
-                SCHEMA_VERSION,
-                spoolRecordId,
-                fact.repositoryId(),
-                fact.processType(),
-                fact.operationId(),
-                fact.occurredAt(),
-                fact.inputs(),
-                fact.outputs(),
+                SCHEMA_VERSION_V2, spoolRecordId, fact.repositoryId(), fact.processType(),
+                fact.operationId(), fact.occurredAt(), fact.inputs(), fact.outputs(),
                 LineageCanonicalHash.canonicalTargetSet(fact.targets()),
-                0L,
-                1L,
-                fact.correlationId(),
-                fact.legacyProjection(),
-                payloadDigest);
+                0L, 1L, fact.correlationId(), fact.legacyProjection(), payloadDigest,
+                fact.attribution(), fact.processFacts(), fact.journalFacts());
     }
 
     /**
@@ -109,7 +146,8 @@ public record LineageSpoolPayloadV1(
             // timestamp, targets already in canonical form, and endpoints that pass the same
             // scope/shape rules a LineageFact must — a record that could never have come from
             // the producer conversion must not materialise just because its hashes agree.
-            if (spoolSchemaVersion != SCHEMA_VERSION) {
+            if (spoolSchemaVersion != SCHEMA_VERSION
+                    && spoolSchemaVersion != SCHEMA_VERSION_V2) {
                 return false;
             }
             if (chunkIndex != 0L || chunkCount != 1L) {
@@ -132,9 +170,14 @@ public record LineageSpoolPayloadV1(
             String expectedId = LineageSpoolIdentity.spoolRecordId(
                     repositoryId, processType, operationId, inputs, outputs,
                     canonicalTargetSet, chunkIndex, chunkCount, occurredAt);
-            String expectedDigest = LineageSpoolIdentity.payloadDigest(
-                    expectedId, spoolSchemaVersion, inputs, outputs,
-                    correlationId, legacyV1Projection);
+            String expectedDigest = spoolSchemaVersion == SCHEMA_VERSION
+                    ? LineageSpoolIdentity.payloadDigest(
+                            expectedId, spoolSchemaVersion, inputs, outputs,
+                            correlationId, legacyV1Projection)
+                    : LineageSpoolIdentity.payloadDigestV2(
+                            expectedId, spoolSchemaVersion, inputs, outputs,
+                            correlationId, legacyV1Projection,
+                            attribution, journalFacts, processFacts);
             return expectedId.equals(spoolRecordId) && expectedDigest.equals(payloadDigest);
         } catch (RuntimeException e) {
             // A payload any of the rules reject (duplicate endpoints, blank fields, cross-repo

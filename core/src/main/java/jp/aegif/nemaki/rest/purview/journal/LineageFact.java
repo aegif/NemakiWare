@@ -63,8 +63,19 @@ public record LineageFact(
         List<LineageEndpoint> outputs,
         List<String> targets,
         String correlationId,
-        LegacyV1Projection legacyProjection
+        LegacyV1Projection legacyProjection,
+        LineageExecutionAttribution attribution,
+        Map<String, String> processFacts,
+        Map<String, String> journalFacts
 ) {
+
+    /** The pre-(e) shape: no attribution, no fact compartments. */
+    public LineageFact(String repositoryId, LineageProcessType processType, String operationId,
+            String occurredAt, List<LineageEndpoint> inputs, List<LineageEndpoint> outputs,
+            List<String> targets, String correlationId, LegacyV1Projection legacyProjection) {
+        this(repositoryId, processType, operationId, occurredAt, inputs, outputs, targets,
+                correlationId, legacyProjection, null, Map.of(), Map.of());
+    }
 
     /**
      * The v1 emission, exactly as the producer used to build it.
@@ -129,6 +140,23 @@ public record LineageFact(
         outputs = outputs == null ? List.of() : List.copyOf(outputs);
         targets = targets == null ? List.of() : List.copyOf(targets);
         correlationId = correlationId == null || correlationId.isBlank() ? null : correlationId;
+        // The same closed sets the v2 event enforces — failing at fact construction puts the
+        // discovery next to the producer, not inside the fenced rollout (same reasoning as the
+        // shape checks below).
+        processFacts = processFacts == null ? Map.of() : Map.copyOf(processFacts);
+        journalFacts = journalFacts == null ? Map.of() : Map.copyOf(journalFacts);
+        for (String key : processFacts.keySet()) {
+            if (!LineageEventV2.PROCESS_FACT_KEYS.contains(key)) {
+                throw new IllegalArgumentException("processFacts does not accept key '" + key
+                        + "' — the compartments are closed sets (P1-1(e) §2.2)");
+            }
+        }
+        for (String key : journalFacts.keySet()) {
+            if (!LineageEventV2.JOURNAL_FACT_KEYS.contains(key)) {
+                throw new IllegalArgumentException("journalFacts does not accept key '" + key
+                        + "' — the compartments are closed sets (P1-1(e) §2.2)");
+            }
+        }
 
         // v2-valid from day one: A-1's scope rules and the shape table. A fact that only became
         // checkable at the flip would put the discovery of every mis-shaped producer inside the

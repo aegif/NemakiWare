@@ -31,7 +31,7 @@ public class PurviewSchemaManifestFactory {
      * an unchanged version has happened before in this file's history; this note is here so the
      * next attribute does not repeat it (external review).
      */
-    private static final String SCHEMA_VERSION = "16";
+    private static final String SCHEMA_VERSION = "17";
     private static final List<String> CUSTOM_TYPE_NAMES = List.of(
             "nemaki_repository",
             "nemaki_folder",

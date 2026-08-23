@@ -196,6 +196,42 @@ public class LineageCanonicalHashTest {
         computed.put("spoolPayloadDigest_legacyPreset", LineageSpoolIdentity.payloadDigest(
                 spoolRecordId, 1L, spoolInputs, spoolOutputs, "corr-1", legacyPreset));
 
+        // P1-1(e): the creation payload digest, pinned by the independent implementation for
+        // the first time — v1 the moment the formula gained a second version, v2 with the
+        // attribution and both fact compartments.
+        java.util.Map<String, String> eJournal = new LinkedHashMap<>();
+        eJournal.put("chat.capturedAt", "2026-08-24T00:00:00Z");
+        eJournal.put("appliedChatEvidenceHash", "mh1:aa");
+        eJournal.put("metadataHashFormula", "mh1");
+        eJournal.put("metadataHashSubject", "applied");
+        java.util.Map<String, String> eProcess = new LinkedHashMap<>();
+        eProcess.put("targetFolderId", "folder-1");
+        eProcess.put("sourceArchetype", "CHAT_CONTEXT");
+        eProcess.put("sourceDescription", "slack:1720000000.000200");
+        computed.put("creationPayloadDigest_v1_minimal",
+                LineageEventDigest.creationPayloadDigest(processKey, original, 2, "bedroom",
+                        LineageProcessType.IMPORT_UPLOADED, "op-fixed", "2026-08-01T00:00:00Z",
+                        List.of(spoolInExt), List.of(spoolInDoc), 0, 1));
+        computed.put("creationPayloadDigest_v2_full",
+                LineageEventDigest.creationPayloadDigestV2(processKey, original, 2, "bedroom",
+                        LineageProcessType.IMPORT_UPLOADED, "op-fixed", "2026-08-01T00:00:00Z",
+                        List.of(spoolInExt), List.of(spoolInDoc), 0, 1,
+                        new LineageExecutionAttribution(
+                                "scheduler: delegated profile p1, schedule configured by ishii",
+                                "otsuka"),
+                        eJournal, eProcess));
+        computed.put("creationPayloadDigest_v2_noOnBehalf",
+                LineageEventDigest.creationPayloadDigestV2(processKey, original, 2, "bedroom",
+                        LineageProcessType.IMPORT_UPLOADED, "op-fixed", "2026-08-01T00:00:00Z",
+                        List.of(spoolInExt), List.of(spoolInDoc), 0, 1,
+                        new LineageExecutionAttribution("admin", null),
+                        java.util.Map.of(), eProcess));
+        computed.put("spoolPayloadDigest_v2_full",
+                LineageSpoolIdentity.payloadDigestV2(spoolRecordId, 2L,
+                        List.of(spoolInExt), List.of(spoolInDoc), "corr-1", null,
+                        new LineageExecutionAttribution("admin", "otsuka"),
+                        eJournal, eProcess));
+
         // v2.3.21 (D-rest-4): v1EventDigest + the V2-domain plan digest.
         String matEventId = "11111111-2222-3333-4444-555555555555";
         computed.put("v1EventDigest_minimal", LineageSpoolIdentity.v1EventDigest(matEventId,
@@ -293,7 +329,7 @@ public class LineageCanonicalHashTest {
         while (matcher.find()) {
             vectors.put(matcher.group(1), matcher.group(2));
         }
-        assertEquals(34, vectors.size(), "unexpected fixture size: " + vectors.size());
+        assertEquals(38, vectors.size(), "unexpected fixture size: " + vectors.size());
         return vectors;
     }
 

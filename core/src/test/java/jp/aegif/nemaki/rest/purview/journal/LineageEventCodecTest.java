@@ -310,11 +310,16 @@ public class LineageEventCodecTest {
         LineageEventV2 event = original();
         Map<String, Object> doc = CouchLineageEventV2.toMap(event);
 
+        // creationDigestVersion joined the base set at P1-1(e); attribution / processFacts /
+        // journalFacts appear ONLY on version-2-digest rows (this fixture is version 1), so a
+        // version-1 row's bytes differ from the pre-(e) format by exactly one self-describing
+        // field — which is what lets pre-(e) binaries' rows decode as version 1 for ever.
         assertEquals(Set.of("_id", "type", "schemaVersion", "idempotencyKeyVersion", "eventId",
                         "processKey", "deliveryId", "deliveryKind", "delivery", "repositoryId",
                         "processType", "operationId", "occurredAt", "chunkIndex", "chunkCount",
                         "sequenceNumber", "correlationId", "inputs", "outputs",
-                        "publishStatusByTarget", "creationPayloadDigest"),
+                        "publishStatusByTarget", "creationPayloadDigest",
+                        "creationDigestVersion"),
                 doc.keySet());
         assertEquals("lineage:" + event.deliveryId(), doc.get("_id"));
 

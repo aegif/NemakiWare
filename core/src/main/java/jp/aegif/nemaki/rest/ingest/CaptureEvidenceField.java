@@ -57,12 +57,18 @@ public enum CaptureEvidenceField {
     SOURCE_OBJECT_ID("sourceObjectId", V2Home.identity(
             "carried by externalStableKey: the source URI is built from this id"), Assurance.ASSERTED, Disclosure.EXTERNAL_OK),
 
-    SOURCE_ARCHETYPE("sourceArchetype", V2Home.none(
-            "delivered today as nemaki_import_process.importMode, a Process attribute fed from "
-                    + "the v1 snapshot. Restoring that supply for v2 records is a separate piece "
-                    + "of work — see p1-1b-v2-evidence-home.md section 3.4"), Assurance.CONFIGURED, Disclosure.EXTERNAL_OK),
+    SOURCE_ARCHETYPE("sourceArchetype", V2Home.processFact(), Assurance.CONFIGURED, Disclosure.EXTERNAL_OK),
 
     SOURCE_OBJECT_TYPE("sourceObjectType", V2Home.inputAttribute("sourceObjectType"), Assurance.ASSERTED, Disclosure.EXTERNAL_OK),
+
+    /**
+     * DERIVED: {@code sourceSystem + ":" + sourceObjectId}, the same formula the Purview sink
+     * used to compute at delivery time (P1-1(e), Codex M5). Emitted into the v1 snapshot and
+     * the v2 processFacts by the emitter so the sink READS rather than derives — a derivation
+     * at the sink was invisible to the evidence table and to the digest.
+     */
+    SOURCE_DESCRIPTION("sourceDescription", V2Home.processFact(), Assurance.ASSERTED,
+            Disclosure.EXTERNAL_OK),
 
     /**
      * ASSERTED, not APPLIED, because three paths disagree and the weakest wins: a request may
@@ -71,11 +77,7 @@ public enum CaptureEvidenceField {
      * actually put in. On every update path nothing writes a folder at all — the document stays
      * wherever it already was (external review).
      */
-    TARGET_FOLDER_ID("targetFolderId", V2Home.none(
-            "delivered today as nemaki_import_process.folderId, a REQUIRED Process attribute fed "
-                    + "from the v1 snapshot. LineageProcessShape binds ingest to exactly one "
-                    + "external asset and one document, so it cannot become an endpoint — see "
-                    + "p1-1b-v2-evidence-home.md section 3.4"), Assurance.ASSERTED, Disclosure.EXTERNAL_OK),
+    TARGET_FOLDER_ID("targetFolderId", V2Home.processFact(), Assurance.ASSERTED, Disclosure.EXTERNAL_OK),
 
     // ── What the repository now holds ────────────────────────────────────────────────────
 
@@ -116,16 +118,15 @@ public enum CaptureEvidenceField {
      * explicit "unknown:" / "service:" string — what we observed is that there was no
      * authenticated principal, and saying so is an observation, not a claim about who ran it.
      */
-    EXECUTED_BY("executedBy", V2Home.none(
-            "a field on LineageEventV2 would not be covered by creationPayloadDigest, so the "
-                    + "actor could be edited without detection. Moving it into the digest changes "
-                    + "the formula, and the roadmap puts execution origin in P1-1(e) — the "
-                    + "formula should move once, there"), Assurance.OBSERVED, Disclosure.EXTERNAL_OK),
+    /**
+     * INTERNAL_ONLY since P1-1(e) — a deliberate privacy CHANGE, not parity (Codex M6): v1 was
+     * sending the actor's username over the network to the catalog, which silently dropped it
+     * for lack of a declared attribute. Now neither version sends it; the journal (and the v2
+     * typed attribution, digest-covered) is its home.
+     */
+    EXECUTED_BY("executedBy", V2Home.eventAttribution(), Assurance.OBSERVED, Disclosure.INTERNAL_ONLY),
 
-    ON_BEHALF_OF("onBehalfOf", V2Home.none(
-            "the same digest-coverage problem as executedBy, and the same destination: the "
-                    + "roadmap places execution origin in P1-1(e), where the delegated-execution "
-                    + "case is decided as well"), Assurance.CONFIGURED, Disclosure.EXTERNAL_OK),
+    ON_BEHALF_OF("onBehalfOf", V2Home.eventAttribution(), Assurance.CONFIGURED, Disclosure.INTERNAL_ONLY),
 
     // ── What a re-import pass did ────────────────────────────────────────────────────────
 
@@ -137,24 +138,13 @@ public enum CaptureEvidenceField {
      * evidence through the wrapper. The rewrite is now refused; this says a pass happened and
      * what it decided (P1-1(d) D6/R5).
      */
-    REIMPORT_OUTCOME("reimportOutcome", V2Home.none(
-            "this describes the PASS, not either endpoint: the same external asset and the same "
-                    + "document are named by the original capture event too, so an endpoint "
-                    + "attribute would attach a per-run outcome to a thing that outlives the run. "
-                    + "Its v2 home is a Process attribute, and Process attribute supply is the "
-                    + "open prerequisite of the v2 write flip (p1-1b-v2-evidence-home.md §3.4)"), Assurance.OBSERVED, Disclosure.EXTERNAL_OK),
+    REIMPORT_OUTCOME("reimportOutcome", V2Home.processFact(), Assurance.OBSERVED, Disclosure.EXTERNAL_OK),
 
     /** Evidence keys this pass wrote because the object did not have them. */
-    REIMPORT_FILLED("reimportFilled", V2Home.none(
-            "a per-pass list, with the same problem as reimportOutcome: it belongs to the run "
-                    + "rather than to the asset or the document, so it waits for Process "
-                    + "attributes (p1-1b-v2-evidence-home.md §3.4)"), Assurance.APPLIED, Disclosure.EXTERNAL_OK),
+    REIMPORT_FILLED("reimportFilled", V2Home.processFact(), Assurance.APPLIED, Disclosure.EXTERNAL_OK),
 
     /** Evidence keys this pass was asked to change and did not. */
-    REIMPORT_REFUSED("reimportRefused", V2Home.none(
-            "a per-pass list, as reimportFilled. Recorded because a refusal is the more "
-                    + "interesting half: it means the caller believes something different about "
-                    + "this record than what was captured (p1-1b-v2-evidence-home.md §3.4)"), Assurance.OBSERVED, Disclosure.EXTERNAL_OK),
+    REIMPORT_REFUSED("reimportRefused", V2Home.processFact(), Assurance.OBSERVED, Disclosure.EXTERNAL_OK),
 
     /**
      * Which of THIS event's facts are unverified claims (P1-1(d) R2).
@@ -174,51 +164,33 @@ public enum CaptureEvidenceField {
      * the flat v1 map small — four lists would be four keys on every event, most of them
      * derivable by subtraction.
      */
-    ASSURANCE_ASSERTED("assuranceAsserted", V2Home.none(
-            "a statement about the other facts in this event rather than a fact about either "
-                    + "endpoint, so an endpoint attribute would attach it to the asset or the "
-                    + "document instead of to the record. Its v2 home is a Process attribute, "
-                    + "which waits on Process attribute supply (p1-1b-v2-evidence-home.md §3.4)"),
+    ASSURANCE_ASSERTED("assuranceAsserted", V2Home.processFact(),
             Assurance.OBSERVED, Disclosure.EXTERNAL_OK),
 
     /**
      * The custody stamp, carried by the event since P1-1(e)'s beforeEmit hook moved the chat
      * aspect application AHEAD of emission — the second copy D1 said the event could not repeat.
      */
-    CHAT_CAPTURED_AT("chat.capturedAt", V2Home.none(
-            "supplied by the beforeEmit hook, not the request: the wrapper stamps the aspect "
-                    + "before emission since P1-1(e) and hands the instant to the event as a "
-                    + "pass fact. Its v2 home is the journal-facts compartment of the extended "
-                    + "record (p1-1e-boundary-and-origin.md §2.1), which lands with the digest "
-                    + "extension"), Assurance.OBSERVED, Disclosure.EXTERNAL_OK,
+    CHAT_CAPTURED_AT("chat.capturedAt", V2Home.journalFact(), Assurance.OBSERVED, Disclosure.EXTERNAL_OK,
             "nemaki:chatCapturedAt"),
 
     /**
      * The applied-metadata hash (mh1) of the chat evidence at emission — read back from the
      * stored object, never from the request (P1-1(d) D-1's event-side copy, landed in (e)).
      */
-    APPLIED_CHAT_EVIDENCE_HASH("appliedChatEvidenceHash", V2Home.none(
-            "computed at emission from the stored aspects; journal verification internals, so "
-                    + "it must not travel to the catalogue — its v2 home is the journal-facts "
-                    + "compartment (p1-1e-boundary-and-origin.md §2.1)"),
+    APPLIED_CHAT_EVIDENCE_HASH("appliedChatEvidenceHash", V2Home.journalFact(),
             Assurance.OBSERVED, Disclosure.INTERNAL_ONLY),
 
     /** As above, for the source-identity nine. */
-    APPLIED_SOURCE_IDENTITY_HASH("appliedSourceIdentityHash", V2Home.none(
-            "computed at emission from the stored aspects; journal verification internals — "
-                    + "journal-facts compartment (p1-1e-boundary-and-origin.md §2.1)"),
+    APPLIED_SOURCE_IDENTITY_HASH("appliedSourceIdentityHash", V2Home.journalFact(),
             Assurance.OBSERVED, Disclosure.INTERNAL_ONLY),
 
     /** What the hashes are OF ("applied") — carried so rows outlive the formula's subject. */
-    METADATA_HASH_SUBJECT("metadataHashSubject", V2Home.none(
-            "names the hashes' subject; meaningless without them, so it lives and travels with "
-                    + "them — journal-facts compartment (p1-1e-boundary-and-origin.md §2.1)"),
+    METADATA_HASH_SUBJECT("metadataHashSubject", V2Home.journalFact(),
             Assurance.OBSERVED, Disclosure.INTERNAL_ONLY),
 
     /** The formula version ("mh1"), for the same reason. */
-    METADATA_HASH_FORMULA("metadataHashFormula", V2Home.none(
-            "names the hashes' formula; travels with them — journal-facts compartment "
-                    + "(p1-1e-boundary-and-origin.md §2.1)"),
+    METADATA_HASH_FORMULA("metadataHashFormula", V2Home.journalFact(),
             Assurance.OBSERVED, Disclosure.INTERNAL_ONLY),
 
     // ── The conversation ─────────────────────────────────────────────────────────────────
@@ -263,23 +235,13 @@ public enum CaptureEvidenceField {
     CHAT_PARTICIPANTS("chat.participants", V2Home.none(
             "personal names, same reason as chat.channelName"), Assurance.ASSERTED, Disclosure.INTERNAL_ONLY, "nemaki:chatParticipants"),
 
-    CHAT_SELECTION_REASON("chat.selectionReason", V2Home.none(
-            "this ingest's judgement, not a property of the source. The endpoint's qualified name "
-                    + "repeats on re-ingest and the delivery target upserts, so a second ingest "
-                    + "would silently overwrite the first one's judgement — and LineageEndpoint "
-                    + "defines attributes as captured at emission and never updated"), Assurance.ASSERTED, Disclosure.INTERNAL_ONLY, "nemaki:chatSelectionReason"),
+    CHAT_SELECTION_REASON("chat.selectionReason", V2Home.journalFact(), Assurance.ASSERTED, Disclosure.INTERNAL_ONLY, "nemaki:chatSelectionReason"),
 
-    CHAT_EVIDENCE_SCOPE("chat.evidenceScope", V2Home.none(
-            "this ingest's judgement about what the evidence covers, not a property of the "
-                    + "source; a re-ingest would upsert the endpoint and overwrite it"), Assurance.ASSERTED, Disclosure.INTERNAL_ONLY, "nemaki:chatEvidenceScope"),
+    CHAT_EVIDENCE_SCOPE("chat.evidenceScope", V2Home.journalFact(), Assurance.ASSERTED, Disclosure.INTERNAL_ONLY, "nemaki:chatEvidenceScope"),
 
-    CHAT_CAPTURE_WINDOW_START("chat.captureWindowStart", V2Home.none(
-            "the window this ingest chose to capture, not a property of the source; a re-ingest "
-                    + "would upsert the endpoint and overwrite it"), Assurance.ASSERTED, Disclosure.INTERNAL_ONLY, "nemaki:chatCaptureWindowStart"),
+    CHAT_CAPTURE_WINDOW_START("chat.captureWindowStart", V2Home.journalFact(), Assurance.ASSERTED, Disclosure.INTERNAL_ONLY, "nemaki:chatCaptureWindowStart"),
 
-    CHAT_CAPTURE_WINDOW_END("chat.captureWindowEnd", V2Home.none(
-            "the window this ingest chose to capture, not a property of the source; a re-ingest "
-                    + "would upsert the endpoint and overwrite it"), Assurance.ASSERTED, Disclosure.INTERNAL_ONLY, "nemaki:chatCaptureWindowEnd");
+    CHAT_CAPTURE_WINDOW_END("chat.captureWindowEnd", V2Home.journalFact(), Assurance.ASSERTED, Disclosure.INTERNAL_ONLY, "nemaki:chatCaptureWindowEnd");
 
     /**
      * How strongly the recorded value is known (P1-1(d) R2/R4).
@@ -504,6 +466,27 @@ public enum CaptureEvidenceField {
              */
             IDENTITY,
 
+            /**
+             * An entry of the v2 event's {@code processFacts} compartment — digest-covered,
+             * and the ONLY compartment the catalog sink reads (delivered as a Process
+             * attribute). EXTERNAL_OK facts only; the event constructor enforces the closed
+             * key set (P1-1(e) §2.2).
+             */
+            PROCESS_FACT,
+
+            /**
+             * An entry of the v2 event's {@code journalFacts} compartment — digest-covered and
+             * never delivered anywhere. The home for INTERNAL_ONLY judgments and the
+             * verification internals (P1-1(e) §2.2).
+             */
+            JOURNAL_FACT,
+
+            /**
+             * Carried as the event's TYPED {@code attribution} pair rather than as a map entry
+             * — required non-blank executedBy, pair invariants in the constructor (Codex H2).
+             */
+            EVENT_ATTRIBUTION,
+
             /** Not carried by a v2 event. The reason says why, and where the work went. */
             NONE
         }
@@ -522,6 +505,19 @@ public enum CaptureEvidenceField {
 
         public static V2Home none(String reason) {
             return new V2Home(Placement.NONE, null, reason);
+        }
+
+        /** The map key inside processFacts is the field's v1Key; no separate name needed. */
+        public static V2Home processFact() {
+            return new V2Home(Placement.PROCESS_FACT, null, null);
+        }
+
+        public static V2Home journalFact() {
+            return new V2Home(Placement.JOURNAL_FACT, null, null);
+        }
+
+        public static V2Home eventAttribution() {
+            return new V2Home(Placement.EVENT_ATTRIBUTION, null, null);
         }
 
         /** Whether this fact reaches a v2 event at all, as an attribute or inside the identity. */

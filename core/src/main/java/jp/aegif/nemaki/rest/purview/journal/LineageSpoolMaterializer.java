@@ -566,6 +566,14 @@ public class LineageSpoolMaterializer implements LineageSpoolScanner.SpoolMateri
         }
         slice.inputs().forEach(builder::addInput);
         slice.outputs().forEach(builder::addOutput);
+        if (payload.spoolSchemaVersion() == LineageSpoolPayloadV1.SCHEMA_VERSION_V2) {
+            // The event's digest version follows the payload's (P1-1(e) §2.0): a version-2
+            // payload carries the extras, so the event covers them; a version-1 payload (or a
+            // decision frozen before the extension) rebuilds byte-identically as version 1 —
+            // no decision migration, every frozen digest keeps matching (Codex C1).
+            builder.digestV2(payload.attribution(), payload.processFacts(),
+                    payload.journalFacts());
+        }
         return builder.build();
     }
 

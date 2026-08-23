@@ -59,8 +59,16 @@ import java.util.Map;
  */
 public final class LineageEventDigest {
 
-    /** Domain separator. Changing it invalidates every stored digest. */
+    /** Domain separator of the version-1 composition. Never changes: stored digests live here. */
     private static final String CREATION_DOMAIN = "EVENT_CREATION_V1";
+
+    /**
+     * Domain separator of the version-2 composition (P1-1(e)): appends the execution
+     * attribution and the two digest-covered fact compartments. A separate domain rather than
+     * a mutation of V1, so the composition change is self-describing and stored version-1
+     * digests stay valid under their own domain for ever (Codex C1).
+     */
+    private static final String CREATION_DOMAIN_V2 = "EVENT_CREATION_V2";
 
     private LineageEventDigest() {
     }
@@ -139,5 +147,45 @@ public final class LineageEventDigest {
                 endpointRecords(outputs),
                 (long) chunkIndex,
                 (long) chunkCount);
+    }
+
+    /**
+     * The version-2 composition: V1's inputs in the same order, then the attribution pair, the
+     * journal facts and the process facts. Maps are canonicalized by
+     * {@link LineageCanonicalHash} (keys in unsigned UTF-8 order), and the independent
+     * reference implementation ({@code reference_hash.py}, {@code creation_payload_digest_v2})
+     * pins the whole composition with externally computed vectors.
+     */
+    public static String creationPayloadDigestV2(String processKey,
+                                                 String deliveryId,
+                                                 int schemaVersion,
+                                                 String repositoryId,
+                                                 LineageProcessType processType,
+                                                 String operationId,
+                                                 String occurredAt,
+                                                 List<LineageEndpoint> inputs,
+                                                 List<LineageEndpoint> outputs,
+                                                 int chunkIndex,
+                                                 int chunkCount,
+                                                 LineageExecutionAttribution attribution,
+                                                 Map<String, String> journalFacts,
+                                                 Map<String, String> processFacts) {
+        return LineageCanonicalHash.hash(
+                CREATION_DOMAIN_V2,
+                processKey,
+                deliveryId,
+                (long) schemaVersion,
+                repositoryId,
+                processType == null ? null : processType.name(),
+                operationId,
+                occurredAt,
+                endpointRecords(inputs),
+                endpointRecords(outputs),
+                (long) chunkIndex,
+                (long) chunkCount,
+                attribution == null ? null : attribution.executedBy(),
+                attribution == null ? null : attribution.onBehalfOf(),
+                journalFacts == null ? Map.of() : journalFacts,
+                processFacts == null ? Map.of() : processFacts);
     }
 }

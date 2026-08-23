@@ -88,7 +88,11 @@ class IngestEvidenceCorrespondenceTest {
     /** Where a fact ended up in the v2 encoding, for one set of inputs. */
     private record V2Encoding(Map<String, Object> inputAttributes,
                               Map<String, Object> outputAttributes,
-                              String stableKey) {
+                              String stableKey,
+                              Map<String, String> processFacts,
+                              Map<String, String> journalFacts,
+                              String attributedExecutedBy,
+                              String attributedOnBehalfOf) {
 
         boolean carries(CaptureEvidenceField field, String expectedValue) {
             V2Home home = field.v2Home();
@@ -99,6 +103,11 @@ class IngestEvidenceCorrespondenceTest {
                         String.valueOf(outputAttributes.get(home.attributeName())));
                 // The fact is inside the endpoint's name rather than beside it.
                 case IDENTITY -> stableKey.contains(expectedValue);
+                // P1-1(e): the digest-covered compartments of the extended record.
+                case PROCESS_FACT -> expectedValue.equals(processFacts.get(field.v1Key()));
+                case JOURNAL_FACT -> expectedValue.equals(journalFacts.get(field.v1Key()));
+                case EVENT_ATTRIBUTION -> expectedValue.equals(attributedExecutedBy)
+                        || expectedValue.equals(attributedOnBehalfOf);
                 case NONE -> false;
             };
         }
@@ -111,8 +120,18 @@ class IngestEvidenceCorrespondenceTest {
                 request);
         LineageEndpoint output = emitter().buildOutputEndpoint("bedroom", "obj-1", "message.txt",
                 content);
+        // The compartments derive from the SAME snapshot via the SAME table the production
+        // fact construction uses — so a fact the table promotes but the derivation misses
+        // fails here, not at the flip.
+        Map<String, String> snapshot = emitter().buildV1Snapshot(connector, request, "folder-1",
+                content, "admin", "alice");
         return new V2Encoding(input.attributes(), output.attributes(),
-                String.valueOf(input.attributes().get("externalStableKey")));
+                String.valueOf(input.attributes().get("externalStableKey")),
+                IngestLineageEmitter.factCompartment(snapshot,
+                        V2Home.Placement.PROCESS_FACT),
+                IngestLineageEmitter.factCompartment(snapshot,
+                        V2Home.Placement.JOURNAL_FACT),
+                "admin", "alice");
     }
 
     // ── The correspondence itself ─────────────────────────────────────────────────────────

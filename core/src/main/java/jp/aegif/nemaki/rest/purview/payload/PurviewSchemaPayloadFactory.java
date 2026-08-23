@@ -263,7 +263,14 @@ public class PurviewSchemaPayloadFactory {
                 attribute("importMode", "string", false),
                 attribute("externalStableKey", "string", true),
                 attribute("sourceDescription", "string", true),
-                attribute("objectCount", "long", true)));
+                attribute("objectCount", "long", true),
+                // P1-1(e): the per-pass facts a v2 record supplies via processFacts —
+                // declared in the SAME commit as the supply ((b) §4's rule), with the
+                // SCHEMA_VERSION bump the manifest hash needs to notice them.
+                attribute("reimportOutcome", "string", true),
+                attribute("reimportFilled", "string", true),
+                attribute("reimportRefused", "string", true),
+                attribute("assuranceAsserted", "string", true)));
         return entityDef;
     }
 

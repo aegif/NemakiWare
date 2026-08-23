@@ -110,6 +110,21 @@ public final class CouchLineageEventV2 {
         event.publishStatusByTarget().forEach((target, s) -> status.put(target, s.name()));
         doc.put("publishStatusByTarget", status);
         doc.put("creationPayloadDigest", event.creationPayloadDigest());
+        doc.put("creationDigestVersion", event.creationDigestVersion());
+        if (event.attribution() != null) {
+            Map<String, Object> attribution = new LinkedHashMap<>();
+            attribution.put("executedBy", event.attribution().executedBy());
+            if (event.attribution().onBehalfOf() != null) {
+                attribution.put("onBehalfOf", event.attribution().onBehalfOf());
+            }
+            doc.put("attribution", attribution);
+        }
+        if (!event.processFacts().isEmpty()) {
+            doc.put("processFacts", new LinkedHashMap<>(event.processFacts()));
+        }
+        if (!event.journalFacts().isEmpty()) {
+            doc.put("journalFacts", new LinkedHashMap<>(event.journalFacts()));
+        }
         return doc;
     }
 
@@ -195,7 +210,15 @@ public final class CouchLineageEventV2 {
                 asString(doc.get("spoolRecordId")),
                 asString(doc.get("legacyEventKey")),
                 statusFromMap(doc.get("publishStatusByTarget")),
-                requireString(doc, "creationPayloadDigest"));
+                requireString(doc, "creationPayloadDigest"),
+                // Absent on rows written before the P1-1(e) extension: those were computed with
+                // the version-1 composition and stay readable for ever (Codex C1).
+                doc.containsKey("creationDigestVersion")
+                        ? requireInt(doc, "creationDigestVersion")
+                        : LineageEventV2.DIGEST_VERSION_V1,
+                attributionFromMap(doc.get("attribution")),
+                stringMapFrom(doc.get("processFacts")),
+                stringMapFrom(doc.get("journalFacts")));
 
         // The _id is derived from the deliveryId; a row stored under any other key is a row that
         // create-if-absent idempotency cannot see, which is how duplicates are born.
@@ -388,4 +411,27 @@ public final class CouchLineageEventV2 {
                     + " long, got " + n);
         }
     }
+    @SuppressWarnings("unchecked")
+    private static LineageExecutionAttribution attributionFromMap(Object raw) {
+        if (!(raw instanceof Map<?, ?> map)) {
+            return null;
+        }
+        Object executedBy = map.get("executedBy");
+        Object onBehalfOf = map.get("onBehalfOf");
+        return new LineageExecutionAttribution(
+                executedBy == null ? null : String.valueOf(executedBy),
+                onBehalfOf == null ? null : String.valueOf(onBehalfOf));
+    }
+
+    private static Map<String, String> stringMapFrom(Object raw) {
+        if (!(raw instanceof Map<?, ?> map)) {
+            return Map.of();
+        }
+        Map<String, String> out = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            out.put(String.valueOf(entry.getKey()), String.valueOf(entry.getValue()));
+        }
+        return out;
+    }
+
 }

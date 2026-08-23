@@ -64,8 +64,26 @@ class CaptureEvidenceFieldTest {
             EndpointKind kind = switch (home.placement()) {
                 case INPUT_ATTRIBUTE -> EndpointKind.EXTERNAL_ASSET;
                 case OUTPUT_ATTRIBUTE -> EndpointKind.CMIS_DOCUMENT;
-                case IDENTITY, NONE -> null;
+                case IDENTITY, NONE, PROCESS_FACT, JOURNAL_FACT, EVENT_ATTRIBUTION -> null;
             };
+            if (home.placement() == V2Home.Placement.PROCESS_FACT) {
+                // The one-table principle across the layering boundary: the journal owns a
+                // closed key set (it must not import this table), and this pin is what keeps
+                // the two from drifting (P1-1(e) §2.2, Codex H1).
+                assertTrue(jp.aegif.nemaki.rest.purview.journal.LineageEventV2.PROCESS_FACT_KEYS
+                                .contains(field.v1Key()),
+                        field + " is a PROCESS_FACT but the event's closed key set does not "
+                                + "know '" + field.v1Key() + "' — construction would throw");
+                assertTrue(field.disclosure() == CaptureEvidenceField.Disclosure.EXTERNAL_OK,
+                        field + " is INTERNAL_ONLY but placed in the compartment the catalog "
+                                + "sink reads");
+            }
+            if (home.placement() == V2Home.Placement.JOURNAL_FACT) {
+                assertTrue(jp.aegif.nemaki.rest.purview.journal.LineageEventV2.JOURNAL_FACT_KEYS
+                                .contains(field.v1Key()),
+                        field + " is a JOURNAL_FACT but the event's closed key set does not "
+                                + "know '" + field.v1Key() + "'");
+            }
             if (kind == null) {
                 continue;
             }
@@ -85,8 +103,9 @@ class CaptureEvidenceFieldTest {
 
         for (CaptureEvidenceField field : CaptureEvidenceField.values()) {
             V2Home home = field.v2Home();
-            if (home.placement() == V2Home.Placement.INPUT_ATTRIBUTE
-                    || home.placement() == V2Home.Placement.OUTPUT_ATTRIBUTE) {
+            if (home.placement() != V2Home.Placement.NONE
+                    && home.placement() != V2Home.Placement.IDENTITY) {
+                // Carried placements need no absence reason — the compartment IS the decision.
                 continue;
             }
             String reason = home.reason();
@@ -159,16 +178,21 @@ class CaptureEvidenceFieldTest {
     void theUnrescuedFactsAreDeclared() {
         // Without this, marking everything as carried would pass the test above while making the
         // table a claim that nothing checks.
+        // P1-1(e) rescued the rest (processFacts / journalFacts / typed attribution). What
+        // stays out is the pair (b) §6 kept out of every delivered or journaled v2 home on
+        // privacy grounds — personal names with no retention rule anywhere but the journal's.
         for (CaptureEvidenceField absent : List.of(
-                CaptureEvidenceField.EXECUTED_BY,
-                CaptureEvidenceField.ON_BEHALF_OF,
-                CaptureEvidenceField.TARGET_FOLDER_ID,
                 CaptureEvidenceField.CHAT_PARTICIPANTS,
-                CaptureEvidenceField.CHAT_CHANNEL_NAME,
-                CaptureEvidenceField.CHAT_SELECTION_REASON)) {
+                CaptureEvidenceField.CHAT_CHANNEL_NAME)) {
             assertFalse(absent.v2Home().carriedByV2(),
                     absent + " is documented as NOT carried by v2; if that changed, the design "
                             + "and the roadmap have to change with it");
         }
+        // And the rescues themselves are pinned, so reverting one is loud:
+        assertTrue(CaptureEvidenceField.TARGET_FOLDER_ID.v2Home().carriedByV2(),
+                "the REQUIRED Process attribute's supply was the flip's open prerequisite");
+        assertTrue(CaptureEvidenceField.EXECUTED_BY.v2Home().placement()
+                        == V2Home.Placement.EVENT_ATTRIBUTION,
+                "the actor is typed attribution, not a map entry (Codex H2)");
     }
 }

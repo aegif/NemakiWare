@@ -80,8 +80,21 @@ public record LineageRecord(
         List<LineageAssetRef> inputs,
         List<LineageAssetRef> outputs,
         Map<String, LineagePublishStatus> publishStatusByTarget,
-        Map<String, String> legacyEventAttributes
+        Map<String, String> legacyEventAttributes,
+        Map<String, String> processFacts
 ) {
+
+    /** The pre-(e) shape: no processFacts compartment. */
+    public LineageRecord(int schemaVersion, int idempotencyKeyVersion, String recordId,
+            String eventId, String processIdentity, String repositoryId,
+            LineageProcessType processType, String occurredAt, long sequenceNumber,
+            String correlationId, List<LineageAssetRef> inputs, List<LineageAssetRef> outputs,
+            Map<String, LineagePublishStatus> publishStatusByTarget,
+            Map<String, String> legacyEventAttributes) {
+        this(schemaVersion, idempotencyKeyVersion, recordId, eventId, processIdentity,
+                repositoryId, processType, occurredAt, sequenceNumber, correlationId, inputs,
+                outputs, publishStatusByTarget, legacyEventAttributes, Map.of());
+    }
 
     public LineageRecord {
         if (recordId == null || recordId.isBlank()) {
@@ -97,6 +110,7 @@ public record LineageRecord(
                 : Map.copyOf(publishStatusByTarget);
         legacyEventAttributes = legacyEventAttributes == null ? Map.of()
                 : Map.copyOf(legacyEventAttributes);
+        processFacts = processFacts == null ? Map.of() : Map.copyOf(processFacts);
     }
 
     /**
@@ -158,7 +172,12 @@ public record LineageRecord(
                 typedRefs(event.inputs()),
                 typedRefs(event.outputs()),
                 event.publishStatusByTarget(),
-                Map.of());
+                Map.of(),
+                // The digest-covered Process supply (P1-1(e) §2.2): what the sink reads instead
+                // of the v1 snapshot it no longer has. journalFacts and the attribution are
+                // deliberately NOT projected — a sink cannot leak what the record does not
+                // carry (Codex H1's structural half).
+                event.processFacts());
     }
 
     /** True when {@code processIdentity} was produced by the v2 {@code processKey} rule. */

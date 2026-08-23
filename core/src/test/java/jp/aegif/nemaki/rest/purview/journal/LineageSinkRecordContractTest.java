@@ -203,6 +203,58 @@ public class LineageSinkRecordContractTest {
                 .build());
     }
 
+    /** An import-type v2 record CARRYING the digest-covered Process supply (P1-1(e)). */
+    private static LineageRecord v2ImportRecord() {
+        java.util.Map<String, String> processFacts = new java.util.LinkedHashMap<>();
+        processFacts.put("targetFolderId", "folder-1");
+        processFacts.put("sourceArchetype", "CHAT_CONTEXT");
+        processFacts.put("sourceDescription", "slack:1720000000.000200");
+        processFacts.put("reimportOutcome", "stored nothing");
+        java.util.Map<String, String> journalFacts = new java.util.LinkedHashMap<>();
+        journalFacts.put("appliedChatEvidenceHash", "mh1:aa");
+        return LineageRecord.fromV2(new LineageEventV2Builder()
+                .eventId("11111111-2222-3333-4444-555555555555")
+                .occurredAt(OCCURRED)
+                .repositoryId(REPO)
+                .processType(LineageProcessType.CHAT_MESSAGE_IMPORT)
+                .operationId("op-1")
+                .delivery(new LineageDelivery.Original(List.of("purview")))
+                .addInput(LineageEndpoint.externalAsset(REPO,
+                        "acme-chat://org/W1/channels/C1", "acme-chat"))
+                .addOutput(LineageEndpoint.document(REPO, "doc-1", "message.txt"))
+                .digestV2(new LineageExecutionAttribution("admin", "otsuka"),
+                        processFacts, journalFacts)
+                .build());
+    }
+
+    /**
+     * The flip's open prerequisite, closed: a v2 record used to fill the REQUIRED Process
+     * attributes with "" and "external" because its v1 snapshot is empty ((b) §3.4). The sink
+     * now reads the digest-covered processFacts — and ONLY that compartment: journalFacts and
+     * the attribution are not even projected onto the record (Codex H1's structural half).
+     */
+    @Test
+    public void purviewFillsProcessAttributesFromV2ProcessFacts() throws Exception {
+        Map<String, Object> processAttrs =
+                attributes(entities(purviewPayload(v2ImportRecord())).get(0));
+
+        assertEquals("folder-1", processAttrs.get("folderId"),
+                "the REQUIRED folderId fell back to \"\" — the v2 supply was not read");
+        assertEquals("CHAT_CONTEXT", processAttrs.get("importMode"),
+                "importMode fell back to \"external\"");
+        assertEquals("slack:1720000000.000200", processAttrs.get("sourceDescription"),
+                "the emitter-precomputed sourceDescription must be read, not re-derived");
+        assertEquals("stored nothing", processAttrs.get("reimportOutcome"),
+                "the per-pass facts are declared in the catalog type since SCHEMA_VERSION 17 "
+                        + "and must be delivered");
+        assertEquals("acme-chat://org/W1/channels/C1", processAttrs.get("externalStableKey"),
+                "the raw stable key comes from the typed input endpoint (Codex M4)");
+        assertFalse(processAttrs.containsKey("appliedChatEvidenceHash"),
+                "a journal-only fact reached the catalog payload");
+        assertFalse(processAttrs.toString().contains("otsuka"),
+                "the attribution reached the catalog payload");
+    }
+
     private static LineageRecord withUnresolvedInput() {
         LineageRecord base = v1Record();
         return new LineageRecord(base.schemaVersion(), base.idempotencyKeyVersion(),

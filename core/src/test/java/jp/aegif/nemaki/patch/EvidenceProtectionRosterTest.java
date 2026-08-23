@@ -107,6 +107,32 @@ class EvidenceProtectionRosterTest {
     }
 
     @Test
+    @DisplayName("the journal's closed compartment key sets equal the evidence table's — exactly")
+    void compartmentKeySetsMatchTheTable() {
+        // The journal must not import the ingest layer, so it owns literal key sets; this
+        // equality (BOTH directions) is what keeps the one-table principle across the layering
+        // boundary (P1-1(e) §2.2). A key in the journal's set no enum entry claims is dead
+        // weight that validation would accept; an enum entry the set lacks throws at
+        // construction.
+        java.util.TreeSet<String> tableProcess = new java.util.TreeSet<>();
+        java.util.TreeSet<String> tableJournal = new java.util.TreeSet<>();
+        for (jp.aegif.nemaki.rest.ingest.CaptureEvidenceField field
+                : jp.aegif.nemaki.rest.ingest.CaptureEvidenceField.values()) {
+            switch (field.v2Home().placement()) {
+                case PROCESS_FACT -> tableProcess.add(field.v1Key());
+                case JOURNAL_FACT -> tableJournal.add(field.v1Key());
+                default -> { }
+            }
+        }
+        assertEquals(new java.util.TreeSet<>(
+                        jp.aegif.nemaki.rest.purview.journal.LineageEventV2.PROCESS_FACT_KEYS),
+                tableProcess, "the process compartment drifted from the table");
+        assertEquals(new java.util.TreeSet<>(
+                        jp.aegif.nemaki.rest.purview.journal.LineageEventV2.JOURNAL_FACT_KEYS),
+                tableJournal, "the journal compartment drifted from the table");
+    }
+
+    @Test
     @DisplayName("both protected types have a non-empty declared roster — the vacuity control")
     void rostersAreNonEmpty() {
         assertTrue(Patch_ChatContextMetadataSecondaryType.STRING_PROPERTY_IDS.size() == 8

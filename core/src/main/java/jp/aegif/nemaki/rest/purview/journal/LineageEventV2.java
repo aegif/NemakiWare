@@ -74,11 +74,60 @@ public record LineageEventV2(
         String spoolRecordId,
         String legacyEventKey,
         Map<String, LineagePublishStatus> publishStatusByTarget,
-        String creationPayloadDigest
+        String creationPayloadDigest,
+        int creationDigestVersion,
+        LineageExecutionAttribution attribution,
+        Map<String, String> processFacts,
+        Map<String, String> journalFacts
 ) {
 
     /** The envelope version this record is. */
     public static final int CURRENT_SCHEMA_VERSION = 2;
+
+    /**
+     * The digest-composition version this record's {@code creationPayloadDigest} was computed
+     * with. Version 1 is the pre-(e) composition (domain {@code EVENT_CREATION_V1}, no
+     * attribution or fact maps — and this constructor REFUSES them, so a v1 record cannot smuggle
+     * facts its digest does not cover). Version 2 adds attribution + the two fact compartments
+     * (domain {@code EVENT_CREATION_V2}). Stored rows without the field decode as 1, so rows
+     * written before the extension stay readable for ever (Codex C1); {@code schemaVersion}
+     * stays 2 in both, because it feeds {@code processKey} and bumping it would split the same
+     * business fact into two processes.
+     */
+    public static final int DIGEST_VERSION_V1 = 1;
+    public static final int DIGEST_VERSION_V2 = 2;
+
+    /**
+     * The closed key sets of the two fact compartments (P1-1(e) §2.2, Codex H1). Journal-owned
+     * — this type must not depend on the ingest layer's evidence table — and pinned EQUAL to
+     * that table's PROCESS_FACT / JOURNAL_FACT declarations by a test, so the one-table
+     * principle holds without a reversed dependency. processFacts is what the catalog sink may
+     * read; journalFacts never leaves the journal, and an INTERNAL_ONLY fact placed in
+     * processFacts is a construction error, not a filtering hope.
+     */
+    public static final java.util.Set<String> PROCESS_FACT_KEYS = java.util.Set.of(
+            "targetFolderId", "sourceArchetype", "sourceDescription",
+            "reimportOutcome", "reimportFilled", "reimportRefused", "assuranceAsserted");
+    public static final java.util.Set<String> JOURNAL_FACT_KEYS = java.util.Set.of(
+            "chat.selectionReason", "chat.evidenceScope",
+            "chat.captureWindowStart", "chat.captureWindowEnd", "chat.capturedAt",
+            "appliedChatEvidenceHash", "appliedSourceIdentityHash",
+            "metadataHashSubject", "metadataHashFormula");
+
+    /** The pre-(e) shape: digest version 1, no attribution, no fact compartments. */
+    public LineageEventV2(int schemaVersion, int idempotencyKeyVersion, String eventId,
+            String processKey, LineageDelivery delivery, String deliveryId, String repositoryId,
+            LineageProcessType processType, String operationId, String occurredAt,
+            List<LineageEndpoint> inputs, List<LineageEndpoint> outputs, int chunkIndex,
+            int chunkCount, long sequenceNumber, String correlationId, String spoolRecordId,
+            String legacyEventKey, Map<String, LineagePublishStatus> publishStatusByTarget,
+            String creationPayloadDigest) {
+        this(schemaVersion, idempotencyKeyVersion, eventId, processKey, delivery, deliveryId,
+                repositoryId, processType, operationId, occurredAt, inputs, outputs, chunkIndex,
+                chunkCount, sequenceNumber, correlationId, spoolRecordId, legacyEventKey,
+                publishStatusByTarget, creationPayloadDigest, DIGEST_VERSION_V1, null,
+                Map.of(), Map.of());
+    }
 
     public LineageEventV2 {
         if (schemaVersion != CURRENT_SCHEMA_VERSION) {
@@ -137,12 +186,51 @@ public record LineageEventV2(
                     + deliveryId);
         }
 
-        String expectedDigest = LineageEventDigest.creationPayloadDigest(expectedProcessKey,
-                expectedDeliveryId, schemaVersion, repositoryId, processType, operationId,
-                occurredAt, inputs, outputs, chunkIndex, chunkCount);
+        if (creationDigestVersion != DIGEST_VERSION_V1
+                && creationDigestVersion != DIGEST_VERSION_V2) {
+            throw new IllegalArgumentException("creationDigestVersion must be 1 or 2, got "
+                    + creationDigestVersion);
+        }
+        processFacts = processFacts == null ? Map.of() : Map.copyOf(processFacts);
+        journalFacts = journalFacts == null ? Map.of() : Map.copyOf(journalFacts);
+        if (creationDigestVersion == DIGEST_VERSION_V1) {
+            if (attribution != null || !processFacts.isEmpty() || !journalFacts.isEmpty()) {
+                throw new IllegalArgumentException("a version-1 digest does not cover attribution"
+                        + " or fact compartments — carrying them there would be a home outside"
+                        + " the digest, which is no home (p1-1b §2)");
+            }
+        } else {
+            requireFactKeys(processFacts, PROCESS_FACT_KEYS, "processFacts");
+            requireFactKeys(journalFacts, JOURNAL_FACT_KEYS, "journalFacts");
+        }
+
+        String expectedDigest = creationDigestVersion == DIGEST_VERSION_V1
+                ? LineageEventDigest.creationPayloadDigest(expectedProcessKey,
+                        expectedDeliveryId, schemaVersion, repositoryId, processType, operationId,
+                        occurredAt, inputs, outputs, chunkIndex, chunkCount)
+                : LineageEventDigest.creationPayloadDigestV2(expectedProcessKey,
+                        expectedDeliveryId, schemaVersion, repositoryId, processType, operationId,
+                        occurredAt, inputs, outputs, chunkIndex, chunkCount,
+                        attribution, journalFacts, processFacts);
         if (!expectedDigest.equals(creationPayloadDigest)) {
             throw new IllegalArgumentException("creationPayloadDigest does not match the immutable"
                     + " payload — expected " + expectedDigest + ", got " + creationPayloadDigest);
+        }
+    }
+
+    /** Codex H1: reject unknown keys, wrong-compartment keys and blank values at construction. */
+    private static void requireFactKeys(Map<String, String> facts,
+            java.util.Set<String> allowed, String compartment) {
+        for (Map.Entry<String, String> entry : facts.entrySet()) {
+            if (!allowed.contains(entry.getKey())) {
+                throw new IllegalArgumentException(compartment + " does not accept key '"
+                        + entry.getKey() + "' — the compartments are closed sets; an unknown or"
+                        + " misplaced key is a construction error, not a filtering problem");
+            }
+            if (entry.getValue() == null || entry.getValue().isBlank()) {
+                throw new IllegalArgumentException(compartment + "['" + entry.getKey()
+                        + "'] is blank — absence is expressed by omission");
+            }
         }
     }
 

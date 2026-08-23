@@ -406,21 +406,53 @@ public class PurviewLineageSink implements LineageTargetSink {
                  BUSINESS_RECORD_IMPORT, CHAT_ATTACHMENT_IMPORT,
                  MAIL_MESSAGE_IMPORT, MAIL_ATTACHMENT_IMPORT,
                  GENERIC_EXTERNAL_INGEST, CHAT_MESSAGE_IMPORT -> {
+                // P1-1(e) §2.2: a v2 record carries the Process supply in its digest-covered
+                // processFacts — its v1 snapshot is empty, and reading it filled the two
+                // REQUIRED attributes with "" and "external" ((b) §3.4, the flip's open
+                // prerequisite). The v1 path still reads the snapshot; nothing is derived for
+                // v2 (sourceDescription is precomputed by the emitter with the same formula).
+                Map<String, String> supply = record.processFacts().isEmpty()
+                        ? snap : record.processFacts();
                 processAttrs.putIfAbsent("repositoryId", record.repositoryId());
-                // Use targetFolderId from snapshot (set by CanonicalImportService),
+                // Use targetFolderId from the supply (set by CanonicalImportService),
                 // NOT from outputs which contains the created document objectId.
                 processAttrs.putIfAbsent("folderId",
-                        snap.getOrDefault("targetFolderId", ""));
+                        supply.getOrDefault("targetFolderId", ""));
                 processAttrs.putIfAbsent("importMode",
-                        snap.getOrDefault("sourceArchetype", "external"));
+                        supply.getOrDefault("sourceArchetype", "external"));
                 processAttrs.putIfAbsent("sourceDescription",
-                        snap.getOrDefault("sourceSystem", "") + ":"
-                        + snap.getOrDefault("sourceObjectId", ""));
-                // External source URI as stableKey
+                        supply.containsKey("sourceDescription")
+                                ? supply.get("sourceDescription")
+                                : supply.getOrDefault("sourceSystem", "") + ":"
+                                        + supply.getOrDefault("sourceObjectId", ""));
+                // The per-pass facts, when the record carries them (declared in the catalog
+                // type since SCHEMA_VERSION 17 — same commit, (b) §4's rule).
+                for (String passFact : java.util.List.of("reimportOutcome", "reimportFilled",
+                        "reimportRefused", "assuranceAsserted")) {
+                    if (supply.containsKey(passFact)) {
+                        processAttrs.putIfAbsent(passFact, supply.get(passFact));
+                    }
+                }
+                // External source URI as stableKey. A v2 input's qualifiedName is the
+                // base64-wrapped nemaki:// form, so the raw key comes from the typed
+                // endpoint's REQUIRED externalStableKey attribute — the endpoint identity is
+                // the canonical source (Codex M4: no duplicate in processFacts to disagree).
                 for (String uri : qualifiedNames(record.inputs())) {
                     if (uri.contains("://") && !uri.startsWith("nemaki://")) {
                         processAttrs.putIfAbsent("externalStableKey", uri);
                         break;
+                    }
+                }
+                for (LineageAssetRef ref : record.inputs()) {
+                    if (ref instanceof LineageAssetRef.Typed typed
+                            && typed.endpoint().kind() == EndpointKind.EXTERNAL_ASSET) {
+                        Object stableKey = typed.endpoint().attributes()
+                                .get("externalStableKey");
+                        if (stableKey != null) {
+                            processAttrs.putIfAbsent("externalStableKey",
+                                    String.valueOf(stableKey));
+                            break;
+                        }
                     }
                 }
             }
