@@ -162,6 +162,13 @@ UNRESOLVED 行がある・オブジェクトが読めない・式バージョン
 
 ## 5. 実装の順序と制約
 
+**1〜4 は 2026-08-23 に実装済み** (`EvidenceMetadataHash` / `buildSourceIdentityProps` の
+括り出し / 完了 evidence への記録 / `captured_by_object`・`rows_by_source_object` view +
+`listCapturedForObject`・`listRowsForSourceSince` + `GET /verify-metadata`)。
+golden vector は式の外 (python hashlib) で計算し、**エスケープ無しの旧式で 2 状態が実際に
+衝突することも確認した**。負のコントロール実測: 記録を外すと
+「the completed row carries no metadata hash」。
+
 1. **この設計のレビュー** — 済 (2026-08-23、P1 3 件 / P2 6 件を反映)
 2. `SourceIdentityProperties` 定数の括り出し (§2.1) + `toEpochMillis` の公開 (§2.2)
 3. 正準形 (エスケープ込み) + golden vector + 完了 evidence への hash 2 本の記録

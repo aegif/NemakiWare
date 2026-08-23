@@ -90,6 +90,23 @@ public class CouchCaptureIntentStore implements CaptureIntentStore, CaptureMaint
     /** Completed rows keyed by when they completed, for retention. */
     static final String VIEW_CAPTURED_BY_CAPTURED_AT = "captured_by_captured_at";
 
+    /**
+     * Completed rows by the OBJECT they captured, newest first. The objectId reaches the row as
+     * completion evidence, so only CAPTURED rows can appear here — an open or unresolved row has
+     * no objectId yet. Exists for metadata-hash verification (p1-1d-metadata-hash.md §4): the
+     * verifier needs "the latest hash-bearing completed row for object X", and without this view
+     * that question is a full scan.
+     */
+    static final String VIEW_CAPTURED_BY_OBJECT = "captured_by_object";
+
+    /**
+     * Every row by its SOURCE item, newest first. What lets the verifier see passes that touched
+     * the same source item but never completed (partial failures) or completed without a hash —
+     * the rows that downgrade a would-be MISMATCH to UNVERIFIABLE instead of letting it read as
+     * "an unrecorded change" when a record does exist.
+     */
+    static final String VIEW_BY_SOURCE_OBJECT = "rows_by_source_object";
+
     private final LineageStoreSupport support;
     private final LineageConfig lineageConfig;
 
@@ -297,6 +314,32 @@ public class CouchCaptureIntentStore implements CaptureIntentStore, CaptureMaint
         return purge(VIEW_CAPTURED_BY_CAPTURED_AT, CaptureState.CAPTURED, cutoffMs, batchLimit);
     }
 
+    @Override
+    public List<Map<String, Object>> listCapturedForObject(String repositoryId, String objectId,
+            int limit) {
+        int safeLimit = limit <= 0 ? 10 : Math.min(limit, 100);
+        Map<String, Object> params = new HashMap<>();
+        params.put("descending", true);
+        params.put("limit", safeLimit);
+        params.put("startkey", List.of(repositoryId, objectId, MAX_KEY));
+        params.put("endkey", List.of(repositoryId, objectId, 0));
+        return new ArrayList<>(support.queryRawView(DESIGN_DOC, VIEW_CAPTURED_BY_OBJECT, params));
+    }
+
+    @Override
+    public List<Map<String, Object>> listRowsForSourceSince(String repositoryId,
+            String sourceObjectId, long sinceMs, int limit) {
+        int safeLimit = limit <= 0 ? 10 : Math.min(limit, 100);
+        Map<String, Object> params = new HashMap<>();
+        params.put("descending", true);
+        params.put("limit", safeLimit);
+        params.put("startkey", List.of(repositoryId, sourceObjectId, MAX_KEY));
+        // sinceMs is exclusive of the compared row itself: the caller passes that row's
+        // capturedAtMs and wants strictly-later activity, so the range floor sits just above it.
+        params.put("endkey", List.of(repositoryId, sourceObjectId, sinceMs + 1));
+        return new ArrayList<>(support.queryRawView(DESIGN_DOC, VIEW_BY_SOURCE_OBJECT, params));
+    }
+
     private int purge(String view, CaptureState expected, long cutoffMs, int batchLimit) {
         int deleted = 0;
         for (Map<String, Object> raw : page(view, null, cutoffMs, batchLimit)) {
@@ -408,6 +451,16 @@ public class CouchCaptureIntentStore implements CaptureIntentStore, CaptureMaint
                 "function(doc) { if (doc.type === 'lineage_capture_intent'"
                         + " && doc.captureState === 'CAPTURED' && doc.capturedAtMs) {"
                         + " emit(doc.capturedAtMs, null); } }");
+        views.put(VIEW_CAPTURED_BY_OBJECT,
+                "function(doc) { if (doc.type === 'lineage_capture_intent'"
+                        + " && doc.captureState === 'CAPTURED' && doc.repositoryId"
+                        + " && doc.objectId) {"
+                        + " emit([doc.repositoryId, doc.objectId, doc.capturedAtMs || 0], null); } }");
+        views.put(VIEW_BY_SOURCE_OBJECT,
+                "function(doc) { if (doc.type === 'lineage_capture_intent'"
+                        + " && doc.repositoryId && doc.sourceObjectId) {"
+                        + " emit([doc.repositoryId, doc.sourceObjectId,"
+                        + " doc.intentOpenedAtMs || 0], null); } }");
         return views;
     }
 }

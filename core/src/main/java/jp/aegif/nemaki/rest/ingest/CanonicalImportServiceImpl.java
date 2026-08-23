@@ -1179,23 +1179,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         return storedMillis != null && storedMillis != incoming.getTimeInMillis();
     }
 
-    /** Epoch millis for the shapes a stored datetime can have, or null when unreadable. */
+    /**
+     * Epoch millis for the shapes a stored datetime can have, or null when unreadable.
+     *
+     * <p>Delegates to the metadata hash's normalizer so the re-import comparison and the hash
+     * canonicalize identically — two normalizers is how they drift.
+     */
     private static Long toEpochMillis(Object stored) {
-        if (stored instanceof java.util.Calendar c) return c.getTimeInMillis();
-        if (stored instanceof java.util.Date d) return d.getTime();
-        if (stored instanceof Number n) return n.longValue();
-        if (stored instanceof String str && !str.isBlank()) {
-            try {
-                return java.time.Instant.parse(str).toEpochMilli();
-            } catch (Exception notIso) {
-                try {
-                    return Long.parseLong(str.trim());
-                } catch (Exception notMillis) {
-                    return null;
-                }
-            }
-        }
-        return null;
+        return EvidenceMetadataHash.toEpochMillis(stored);
     }
 
     /**
@@ -1832,6 +1823,98 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     }
 
     /**
+     * Records what the evidence metadata looked like when this pass finished
+     * (design p1-1d-metadata-hash.md).
+     *
+     * <p>Runs at completion — after every fill this wrapper performed — and reads the object
+     * BACK through the raw aspect path, so the hash is of applied values, never of the request
+     * (hashing the request would notarize a claim; D1). Two hashes, because the chat properties
+     * are READONLY through CMIS while the source-identity ones are not yet: a mismatch means
+     * different things for the two sets and mixing them would let a legitimate edit read as
+     * tampering.
+     *
+     * <p>A failed read-back records the REASON and no hash — filling in a hash from request
+     * values here would be the exact substitution the subject field exists to prevent.
+     */
+    private void appendAppliedMetadataHashes(Map<String, Object> evidence,
+            String repositoryId, String objectId) {
+        try {
+            if (contentService == null) {
+                evidence.put("appliedMetadataHashUnavailable", "no content service wired");
+                return;
+            }
+            Content content = contentService.getContent(repositoryId, objectId);
+            if (content == null) {
+                evidence.put("appliedMetadataHashUnavailable",
+                        "the object could not be read back at completion");
+                return;
+            }
+            EvidenceMetadataHash.AppliedHashes hashes =
+                    EvidenceMetadataHash.compute(content.getAspects());
+            if (hashes.isEmpty()) {
+                return;
+            }
+            if (hashes.chatEvidenceHash() != null) {
+                evidence.put("appliedChatEvidenceHash", hashes.chatEvidenceHash());
+            }
+            if (hashes.sourceIdentityHash() != null) {
+                evidence.put("appliedSourceIdentityHash", hashes.sourceIdentityHash());
+            }
+            evidence.put("metadataHashSubject", EvidenceMetadataHash.SUBJECT);
+            evidence.put("metadataHashFormula", EvidenceMetadataHash.FORMULA);
+        } catch (Exception e) {
+            evidence.put("appliedMetadataHashUnavailable",
+                    "the object could not be read back at completion: " + e.getMessage());
+        }
+    }
+
+    /**
+     * The {@code nemaki:externalIntegration} property map one capture pass writes.
+     *
+     * <p>Extracted so a test can pin that this set and
+     * {@link EvidenceMetadataHash#SOURCE_IDENTITY_PROPERTIES} (plus the two declared
+     * exclusions) are the SAME set — a twelfth put added here without a hash-side decision
+     * fails the pin instead of silently leaving a new fact outside the metadata hash
+     * (design p1-1d-metadata-hash.md §2.1, external review P2-6).
+     */
+    Map<String, Object> buildSourceIdentityProps(ConnectorDefinition connector,
+            ExternalIngestRequest request, String contentHash) {
+        Map<String, Object> newProps = new java.util.LinkedHashMap<>();
+        newProps.put("nemaki:sourceArchetype",
+                connector.getSourceArchetype() != null ? connector.getSourceArchetype().name() : "");
+        newProps.put("nemaki:sourceSystem",
+                connector.getSourceSystem() != null ? connector.getSourceSystem() : "");
+        newProps.put("nemaki:sourceObjectType",
+                request.getSourceObjectType() != null ? request.getSourceObjectType() : "");
+        newProps.put("nemaki:sourceObjectId",
+                request.getSourceObjectId() != null ? request.getSourceObjectId() : "");
+        newProps.put("nemaki:sourceUrl",
+                request.getSourceUrl() != null ? request.getSourceUrl() : "");
+        newProps.put("nemaki:ingestionRunId", request.getRequestId());
+        newProps.put("nemaki:externalSourceType",
+                connector.getSourceArchetype() != null ? connector.getSourceArchetype().name().toLowerCase() : "");
+        newProps.put("nemaki:externalSourceId",
+                connector.getSourceSystem() != null ? connector.getSourceSystem() : "");
+        newProps.put("nemaki:externalContextUpdatedAt", new GregorianCalendar());
+
+        // Persist externalContext from request metadata if provided
+        // Strip binary content (contentBase64) to avoid bloating CouchDB documents
+        if (request.getMetadata() != null && !request.getMetadata().isEmpty()) {
+            // Jackson 3 throws unchecked; the caller's own catch turns it into the metadata
+            // warning exactly as before the extraction. Swallowing it here would silently drop
+            // externalContext (fail-open-boundary-trap).
+            Map<String, Object> sanitized = stripBinaryContent(request.getMetadata());
+            newProps.put("nemaki:externalContext", JSON_MAPPER.writeValueAsString(sanitized));
+        }
+
+        // Store content hash for future dedupe comparisons
+        if (contentHash != null && !contentHash.isBlank()) {
+            newProps.put("nemaki:contentHash", contentHash);
+        }
+        return newProps;
+    }
+
+    /**
      * Deep-copy metadata map, stripping {@code contentBase64} keys from nested
      * attachment entries to prevent multi-MB binary blobs from being persisted
      * into {@code nemaki:externalContext}.
@@ -1994,6 +2077,12 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         Map<String, Object> evidence = new java.util.LinkedHashMap<>();
         if (result != null && result.objectId() != null) {
             evidence.put("objectId", result.objectId());
+            // Only for a scope that opened: an unopened scope writes no row, so reading the
+            // object back would cost a getContent per no-op poll for a hash nobody stores.
+            if (scope.isOpened() && scope.intent() != null) {
+                appendAppliedMetadataHashes(evidence, scope.intent().repositoryId(),
+                        result.objectId());
+            }
         }
         if (scope.wasOpenRefused()) {
             // Belt and braces with the rethrow guards on the individual catches. If one of them
@@ -2672,37 +2761,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     .findFirst()
                     .orElse(null);
 
-            // Build property map for merge (preserves existing properties not in this set)
-            Map<String, Object> newProps = new java.util.LinkedHashMap<>();
-            newProps.put("nemaki:sourceArchetype",
-                    connector.getSourceArchetype() != null ? connector.getSourceArchetype().name() : "");
-            newProps.put("nemaki:sourceSystem",
-                    connector.getSourceSystem() != null ? connector.getSourceSystem() : "");
-            newProps.put("nemaki:sourceObjectType",
-                    request.getSourceObjectType() != null ? request.getSourceObjectType() : "");
-            newProps.put("nemaki:sourceObjectId",
-                    request.getSourceObjectId() != null ? request.getSourceObjectId() : "");
-            newProps.put("nemaki:sourceUrl",
-                    request.getSourceUrl() != null ? request.getSourceUrl() : "");
-            newProps.put("nemaki:ingestionRunId", request.getRequestId());
-            newProps.put("nemaki:externalSourceType",
-                    connector.getSourceArchetype() != null ? connector.getSourceArchetype().name().toLowerCase() : "");
-            newProps.put("nemaki:externalSourceId",
-                    connector.getSourceSystem() != null ? connector.getSourceSystem() : "");
-            newProps.put("nemaki:externalContextUpdatedAt", new GregorianCalendar());
-
-            // Persist externalContext from request metadata if provided
-            // Strip binary content (contentBase64) to avoid bloating CouchDB documents
-            if (request.getMetadata() != null && !request.getMetadata().isEmpty()) {
-                Map<String, Object> sanitized = stripBinaryContent(request.getMetadata());
-                String contextJson = JSON_MAPPER.writeValueAsString(sanitized);
-                newProps.put("nemaki:externalContext", contextJson);
-            }
-
-            // Store content hash for future dedupe comparisons
-            if (contentHash != null && !contentHash.isBlank()) {
-                newProps.put("nemaki:contentHash", contentHash);
-            }
+            Map<String, Object> newProps =
+                    buildSourceIdentityProps(connector, request, contentHash);
 
             // Merge: preserve existing properties, overwrite with new values
             List<Property> mergedProps;

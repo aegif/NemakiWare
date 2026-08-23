@@ -57,6 +57,26 @@ public interface CaptureMaintenanceStore {
      */
     int purgeUnresolvedOlderThan(long cutoffMs, int batchLimit);
 
+    /**
+     * Completed rows for one captured object, newest first, raw as stored.
+     *
+     * <p>For metadata-hash verification (p1-1d-metadata-hash.md §4). Raw maps rather than a
+     * typed record because the completion evidence is open-ended — the verifier reads the keys
+     * it knows and shows the rest.
+     */
+    java.util.List<java.util.Map<String, Object>> listCapturedForObject(
+            String repositoryId, String objectId, int limit);
+
+    /**
+     * Every row for one source item newer than {@code sinceMs}, any state, newest first.
+     *
+     * <p>What downgrades a would-be MISMATCH to UNVERIFIABLE: a partial failure left an
+     * unresolved row, or another wrapper completed a row without a hash — either way a record
+     * of a later pass exists and "an unrecorded change" must not be claimed.
+     */
+    java.util.List<java.util.Map<String, Object>> listRowsForSourceSince(
+            String repositoryId, String sourceObjectId, long sinceMs, int limit);
+
     /** Deletes completed rows captured before the cutoff. Keyed on when they completed. */
     int purgeCapturedOlderThan(long cutoffMs, int batchLimit);
 

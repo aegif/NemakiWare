@@ -545,10 +545,26 @@ class CouchCaptureIntentStoreTest {
     void viewsCannotCross() {
         Map<String, String> views = CouchCaptureIntentStore.views();
 
-        assertEquals(5, views.size());
+        // 5 originals + captured_by_object and rows_by_source_object for metadata-hash
+        // verification (p1-1d-metadata-hash.md §4): "the latest hash-bearing completed row for
+        // object X" must not be a full scan, and later activity for the source item is what
+        // downgrades a mismatch.
+        assertEquals(7, views.size());
+        assertTrue(views.get(CouchCaptureIntentStore.VIEW_CAPTURED_BY_OBJECT)
+                .contains("doc.objectId"));
+        assertTrue(views.get(CouchCaptureIntentStore.VIEW_BY_SOURCE_OBJECT)
+                .contains("doc.sourceObjectId"));
         for (Map.Entry<String, String> v : views.entrySet()) {
             assertTrue(v.getValue().contains("doc.type === 'lineage_capture_intent'"),
                     v.getKey() + " must not be able to see a journal row: " + v.getValue());
+            if (CouchCaptureIntentStore.VIEW_BY_SOURCE_OBJECT.equals(v.getKey())) {
+                // The one deliberate exception: this view exists to find later activity for a
+                // source item in ANY state — an unresolved partial failure and a hash-less
+                // completion both downgrade a would-be MISMATCH, so selecting on state would
+                // blind it to exactly the rows it is for. It is read-only for verification and
+                // is never handed to purge(), which re-checks state per document anyway.
+                continue;
+            }
             assertTrue(v.getValue().contains("captureState"),
                     v.getKey() + " must select on state: " + v.getValue());
         }

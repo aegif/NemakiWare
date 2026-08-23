@@ -16,6 +16,9 @@
  */
 package jp.aegif.nemaki.rest.controller;
 
+import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.model.Content;
+import jp.aegif.nemaki.rest.ingest.EvidenceMetadataHash;
 import jp.aegif.nemaki.rest.ingest.capture.CaptureMaintenanceStore;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 
@@ -70,6 +73,15 @@ public class CaptureIntentController {
     /** For tests and for wiring without a servlet container. */
     public void setMaintenanceStore(CaptureMaintenanceStore maintenanceStore) {
         this.maintenanceStore = maintenanceStore;
+    }
+
+    @Autowired(required = false)
+    @org.springframework.beans.factory.annotation.Qualifier("contentService")
+    private ContentService contentService;
+
+    /** For tests. */
+    public void setContentService(ContentService contentService) {
+        this.contentService = contentService;
     }
 
     /**
@@ -166,6 +178,110 @@ public class CaptureIntentController {
             body.put("message", "Could not count the capture rows: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
         }
+    }
+
+    /**
+     * Recomputes the applied-metadata hashes for one object and compares them to the latest
+     * hash-bearing completed capture row (design p1-1d-metadata-hash.md §4).
+     *
+     * <p>Three-valued per hash, deliberately: {@code MATCH} / {@code MISMATCH} /
+     * {@code UNVERIFIABLE}. A would-be mismatch DOWNGRADES to {@code UNVERIFIABLE} when a later
+     * row for the same source item exists without a hash — a partial failure's unresolved row,
+     * or a wrapper that completed without hashing — because "an unrecorded change" must not be
+     * claimed while a record of a later pass sits in the store. And a transient MISMATCH is
+     * possible while a pass is in flight, so the operational rule is: re-verify once; two
+     * consecutive mismatches with no pass between them are the real thing.
+     */
+    @GetMapping("/verify-metadata")
+    public ResponseEntity<Map<String, Object>> verifyMetadata(
+            @RequestParam String repositoryId,
+            @RequestParam String objectId) {
+
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) {
+            return forbidden;
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        if (maintenanceStore == null || contentService == null) {
+            body.put("status", "unavailable");
+            body.put("message", "The capture boundary is not wired in this deployment");
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+        }
+        try {
+            java.util.List<Map<String, Object>> rows =
+                    maintenanceStore.listCapturedForObject(repositoryId, objectId, 20);
+            Map<String, Object> baseline = null;
+            int rowsWithoutHash = 0;
+            for (Map<String, Object> row : rows) {
+                if (row.get("appliedChatEvidenceHash") != null
+                        || row.get("appliedSourceIdentityHash") != null) {
+                    baseline = row;
+                    break;
+                }
+                rowsWithoutHash++;
+            }
+            if (baseline == null) {
+                body.put("chatEvidence", "UNVERIFIABLE");
+                body.put("sourceIdentity", "UNVERIFIABLE");
+                body.put("reason", rows.isEmpty()
+                        ? "no completed capture row exists for this object"
+                        : "completed rows exist but none carries a metadata hash (recorded "
+                                + "before hashing, or by a wrapper that does not hash yet)");
+                return ResponseEntity.ok(body);
+            }
+
+            Content content = contentService.getContent(repositoryId, objectId);
+            if (content == null) {
+                body.put("chatEvidence", "UNVERIFIABLE");
+                body.put("sourceIdentity", "UNVERIFIABLE");
+                body.put("reason", "the object could not be read");
+                return ResponseEntity.ok(body);
+            }
+            EvidenceMetadataHash.AppliedHashes current =
+                    EvidenceMetadataHash.compute(content.getAspects());
+
+            // Later activity on the same source item, in any state — what downgrades a mismatch.
+            long baselineAtMs = baseline.get("capturedAtMs") instanceof Number n
+                    ? n.longValue() : 0L;
+            Object sourceObjectId = baseline.get("sourceObjectId");
+            java.util.List<Map<String, Object>> later = sourceObjectId == null
+                    ? java.util.List.of()
+                    : maintenanceStore.listRowsForSourceSince(repositoryId,
+                            String.valueOf(sourceObjectId), baselineAtMs, 20);
+            boolean laterActivity = rowsWithoutHash > 0 || !later.isEmpty();
+
+            body.put("chatEvidence", verdict(
+                    (String) baseline.get("appliedChatEvidenceHash"),
+                    current.chatEvidenceHash(), laterActivity));
+            body.put("sourceIdentity", verdict(
+                    (String) baseline.get("appliedSourceIdentityHash"),
+                    current.sourceIdentityHash(), laterActivity));
+            body.put("comparedIntentId", baseline.get("intentId"));
+            body.put("comparedCapturedAtMs", baselineAtMs);
+            if (laterActivity) {
+                body.put("laterActivity", "a later pass for the same source item exists without "
+                        + "a recorded hash; mismatches are downgraded to UNVERIFIABLE");
+            }
+            body.put("formula", baseline.get("metadataHashFormula"));
+            return ResponseEntity.ok(body);
+        } catch (Exception e) {
+            logger.warn("verify-metadata failed for {}/{}: {}", repositoryId, objectId,
+                    e.getMessage());
+            body.put("status", "error");
+            body.put("message", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+        }
+    }
+
+    /** One hash's verdict. Absent on either side is not a mismatch — it is unverifiable. */
+    private static String verdict(String recorded, String current, boolean laterActivity) {
+        if (recorded == null) {
+            return "UNVERIFIABLE";
+        }
+        if (recorded.equals(current)) {
+            return "MATCH";
+        }
+        return laterActivity ? "UNVERIFIABLE" : "MISMATCH";
     }
 
     private ResponseEntity<Map<String, Object>> requireAdminOrForbidden() {

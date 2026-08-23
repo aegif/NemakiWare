@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -247,6 +248,72 @@ class IngestReimportDoesNotRewriteEvidenceTest {
         assertTrue(open < write,
                 "the intent was opened after the write, so a crash between them leaves an "
                         + "unrecorded mutation: " + order);
+    }
+
+    @Test
+    @DisplayName("the completed row records the hash of the POST-fill state")
+    void theCompletionRecordsThePostFillHash() {
+        // AC1+AC6 of p1-1d-metadata-hash.md. The hash must be of what the pass LEFT BEHIND —
+        // computing it before the fill would notarize the pre-fill state as this pass's result.
+        Map<String, Object>[] completedEvidence = new Map[1];
+        jp.aegif.nemaki.rest.ingest.capture.CaptureIntentStore store =
+                new jp.aegif.nemaki.rest.ingest.capture.CaptureIntentStore() {
+                    @Override
+                    public boolean openIntent(jp.aegif.nemaki.rest.ingest.capture.CaptureIntent intent) {
+                        return true;
+                    }
+
+                    @Override
+                    public CaptureCompletion completeIntent(
+                            jp.aegif.nemaki.rest.ingest.capture.CaptureIntent intent,
+                            Map<String, Object> evidence) {
+                        completedEvidence[0] = evidence;
+                        return CaptureCompletion.COMPLETED;
+                    }
+
+                    @Override
+                    public boolean isActive() {
+                        return true;
+                    }
+
+                    @Override
+                    public Applicability appliesTo(String repositoryId) {
+                        return Applicability.APPLIES;
+                    }
+                };
+        service.setCaptureIntentStore(store);
+
+        service.executeChatContextImport(
+                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class), secondPoll());
+
+        Map<String, Object> evidence = completedEvidence[0];
+        assertNotNull(evidence, "the fill pass must complete a row");
+        String recorded = (String) evidence.get("appliedChatEvidenceHash");
+        assertNotNull(recorded, "the completed row carries no metadata hash: " + evidence.keySet());
+        assertEquals("applied", evidence.get("metadataHashSubject"));
+        assertEquals("mh1", evidence.get("metadataHashFormula"));
+
+        // The post-fill state, recomputed from the SAME stored object the wrapper mutated.
+        String expected = EvidenceMetadataHash.compute(stored.getAspects()).chatEvidenceHash();
+        assertEquals(expected, recorded,
+                "the recorded hash is not the post-fill state — either it was computed before "
+                        + "the fill, or from the request instead of the object");
+        // And it names the filled value: recompute WITHOUT chatChannelName and confirm the
+        // recorded hash is not that — i.e. the fill genuinely moved the hash.
+        java.util.List<Aspect> withoutFill = new ArrayList<>();
+        for (Aspect a : stored.getAspects()) {
+            if (!CHAT_ASPECT.equals(a.getName())) { withoutFill.add(a); continue; }
+            Aspect copy = new Aspect();
+            copy.setName(a.getName());
+            java.util.List<Property> props = new ArrayList<>();
+            for (Property pr : a.getProperties()) {
+                if (!"nemaki:chatChannelName".equals(pr.getKey())) props.add(pr);
+            }
+            copy.setProperties(props);
+            withoutFill.add(copy);
+        }
+        assertNotEquals(EvidenceMetadataHash.compute(withoutFill).chatEvidenceHash(), recorded,
+                "the hash did not change with the fill, so it cannot be of the applied state");
     }
 
     @Test
