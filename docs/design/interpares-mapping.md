@@ -62,17 +62,42 @@ B.2 (4 項目) だけ**。A.2〜A.8 と B.3 は各 1 文の要求である。
 | **責務** | **C** 属性の内容を定める / **N** 属性を保持し記録に結び付ける / **O** 運用規程で必須属性を定義 |
 | **条件** | 無条件 |
 | **現状** | CMIS プロパティ + `nemaki:externalIntegration` / `nemaki:chatContextMetadata` の二次型。取込経路では取込文脈の一部を lineage イベントにも複写する。**どこに在るかは属性ごとに違う**: |
-| | ・`sourceSystem` / `sourceArchetype` / `sourceObjectId` — **両方**。オブジェクト側は `nemaki:externalIntegration` aspect。ただし**オブジェクト側の付与が失敗しても警告のみでイベントは発行される**ので、両方に在ることは保証ではない<br>・`sourceObjectType` — 同上だが、**値が与えられたか正規化で決まった場合に限る** (generic / file share の取込は未指定を許す。**未指定のとき、オブジェクト側の aspect には空文字が入り、イベント側にはキー自体が出ない**)<br>・`sourceUrl` — **オブジェクトのみ**。イベント snapshot には入らない。`sourceObjectType` と同じく、**未指定でもオブジェクト側 aspect には空文字が入る**<br>・`contentHash` — 両方に**書かれうる**が、どちらも**バイトを取得できた場合に限る**条件付き (⚑ イベント側は 3.4 で追加)。しかもオブジェクト側は aspect 内の生の値で、**secondary type にプロパティ定義が無いため通常の CMIS プロパティとしては出てこない** (取得には aspect を直接読む必要がある)<br>・`chat.*` (workspace / channel / thread / message / participants / 選定理由 / 範囲 / 捕獲窓) — ⚑ **イベント**と、`nemaki:chatContextMetadata` として**オブジェクト**の両方<br>・`targetFolderId` / `executedBy` / `onBehalfOf` / `contentStored` — **イベントのみ**。オブジェクト側に対応するプロパティは無い (後ろ 3 つは ⚑) |
+| | ・`sourceSystem` / `sourceArchetype` / `sourceObjectId` — **両方**。オブジェクト側は `nemaki:externalIntegration` aspect。ただし**オブジェクト側の付与が失敗しても警告のみでイベントは発行される**ので、両方に在ることは保証ではない<br>・`sourceObjectType` — 同上だが、**値が与えられたか正規化で決まった場合に限る** (generic / file share の取込は未指定を許す。**未指定のとき、オブジェクト側の aspect には空文字が入り、イベント側にはキー自体が出ない**)<br>・`sourceUrl` — **オブジェクトのみ**。イベント snapshot には入らない。`sourceObjectType` と同じく、**未指定でもオブジェクト側 aspect には空文字が入る**<br>・`contentHash` — 両方に**書かれうる**が、どちらも**バイトを取得できた場合に限る**条件付き (⚑ イベント側は 3.4 で追加)。しかもオブジェクト側は aspect 内の生の値で、**secondary type にプロパティ定義が無いため通常の CMIS プロパティとしては出てこない** (取得には aspect を直接読む必要がある)<br>・`chat.*` (workspace / channel / thread / message / participants / 選定理由 / 範囲 / 捕獲窓 / **capturedAt**) — ⚑ **イベント**と、`nemaki:chatContextMetadata` として**オブジェクト**の両方。**2026-08-24 (P1-1(e)) から aspect 適用は emit より前** (beforeEmit hook) で、capturedAt もイベントが運ぶ<br>・`targetFolderId` / `executedBy` / `onBehalfOf` / `contentStored` — **イベントのみ**。オブジェクト側に対応するプロパティは無い (後ろ 3 つは ⚑)。executedBy/onBehalfOf は 2026-08-24 から **typed attribution として outbox と一致** |
 | **主張** | **CMIS でオブジェクトのプロパティを書き換えても、イベント側の値は変わらない。** これだけである。以下は主張しない: |
-| | ・「属性が両方に在る」— **上表のとおり属性ごとに違う**<br>・「両方が一致している」— chat メタデータの付与は**イベント発行より後**に走り、付与の失敗は警告扱いで取込は成功として返る。よって**片方だけ在る状態が正常に起こりうる**<br>・「イベントは改竄できない」— **管理者は CouchDB に直接到達でき**、terminal 行は purge 対象になり、既定 90 日の purge もある。(`POST .../events/{recordId}/discard` も terminal 化の手段だが、**v1 の `PENDING` / `FAILED` 行に限られ v2 行は拒否される**ので、これ単体を根拠にはしない)<br>・v2 レコードでは `snapshotAttributes` は**空**になる。**「属性が asset 側へ移る」わけではない** — asset が持つのは `sourceSystem` と正規化した `externalStableKey` だけで、`sourceArchetype` / `sourceObjectType` / `contentHash` / `contentStored` / 実行主体 / 会話文脈には **v2 の置き場が無く、v2 書込へ切り替えた時点で失われる** (P1-1(b)) |
+| | ・「属性が両方に在る」— **上表のとおり属性ごとに違う**<br>・「両方が一致している」— ~~chat メタデータの付与はイベント発行より後~~ **2026-08-24 解消**: 付与は emit より前 (hook) で、mh1 の event 写しと完了 evidence 写しの一致をテストが pin。ただし**言えるのは create 経路の chat のみ** — mail/note/record の aspect は従来どおり後段<br>・「イベントは改竄できない」— **管理者は CouchDB に直接到達でき**、terminal 行は purge 対象になり、既定 90 日の purge もある。(`POST .../events/{recordId}/discard` も terminal 化の手段だが、**v1 の `PENDING` / `FAILED` 行に限られ v2 行は拒否される**ので、これ単体を根拠にはしない)<br>・~~v2 で失われる~~ **2026-08-24 解消** (P1-1(e)): v2 record は digest 被覆の `processFacts` / `journalFacts` / typed attribution を持ち、Process 供給・会話文脈・実行主体・mh1 が flip 後も残る。恒久 none は participants / channelName のみ ((b) §6 の判断) |
 | **検証根拠** | 下記①〜⑤は**走らせて確かめられる**が、示せるのは「プロパティ書換でイベントが変わらないこと」と「`executedBy` の非対称」まで。**上表の所在一覧・chat の順序・条件付きハッシュ・v2 での喪失は、コードを読んで確認した設計上の期待**であって、手順では示していない |
 | **検証手順** | ⓪ **実効モードが `journaled` であることを確認する** — `direct` も「有効」だが journal に書かないので、以下の手順は成立しない。① 取込を 1 件行う。② `GET /core/api/v1/admin/lineage-journal/events` でそのイベントを引き、`sourceSystem` が入っていることを見る。③ CMIS でオブジェクトのプロパティを書き換え、②をもう一度引いて**イベント側が変わらない**ことを見る。④ 反証 1: 同じイベントに `executedBy` はあるがオブジェクト側には対応プロパティが無いことを見る (=「すべての属性が両方に在る」ではない)。⑤ 反証 2: 運用者権限で CouchDB の journal 文書に**到達できる**ことを見る。**ただし読めることは書き換えや purge の実証ではない** — 実証するなら隔離環境で直接変更・purge を試す必要があり、未実施。ここはコードと配置から言える推論に留める。`discard` でも terminal 化できるが **v1 の `PENDING` / `FAILED` 行に限る** |
-| **ギャップ** | (0) **イベントは改竄不能ではなく、オブジェクトとの一致も保証されない** — discard / purge があり、chat メタデータは発行後に別トランザクションで付く。P1-1(a) の outbox と P1-3 の hash chain まで、どちらも言えない。(a) 属性の**完全性**が未定 — 作成者・宛先・日付・行為の型化が要求されているが、現状は取込経路が捕まえたものに依存する。(b) **エクスポート経路で属性が記録に結び付いたまま出せるか未検証** — 原典 Commentary p.8 は link を概念的でよいとする一方、**export / migrate / 移管のときも属性が利用可能であること**を要求している。(c) 属性自体の保護 (改竄検知) は未実装 |
+| **ギャップ** | (0) **イベントは改竄不能ではなく、オブジェクトとの一致も保証されない** — discard / purge があり、chat メタデータは発行後に別トランザクションで付く。P1-1(a) の outbox と P1-3 の hash chain まで、どちらも言えない。(a) 属性の**完全性**が未定 — 作成者・宛先・日付・行為の型化が要求されているが、現状は取込経路が捕まえたものに依存する。(b) **エクスポート経路で属性が記録に結び付いたまま出せるか未検証** — 原典 Commentary p.8 は link を概念的でよいとする一方、**export / migrate / 移管のときも属性が利用可能であること**を要求している。(c) ~~属性自体の保護 (改竄検知) は未実装~~ **2026-08-24 更新**: mh1 (適用メタデータ hash) が outbox + event の 2 写し・verify 3 値判定。ただし**敵対的改竄証明ではない** (式は公開 SHA-256 — p1-1e §0)。(b) の export ギャップも **evidence sidecar で属性が archive に同梱される**ようになった (import は再主張しない — D-6 の分裂) |
 | **計画** | P1-1 (evidence data model)、P1-3 (hash chain)、P3-1 (SIP に属性を同梱) |
 
-> **注**: 細目 11 項目に対する逐条マッピングは未作成。ここに書いているのは要求全体に
-> 対する現状であって、11 項目それぞれの充足判定ではない。**逐条は 3.4 P1-1(d) の
-> evidence data model が固まってから作る。**
+#### A.1 逐条 (2026-08-24 作成 — D-9)
+
+原典 pp.208-209 を 2026-08-24 に PDF で照合した。葉の細目は **9** (A.1.a.i〜v + A.1.b.i〜iv)
+— 本行の旧記載「細目 11 項目」は a.i / a.iii の内訳 bullet を含む数え方で、以後は原典の
+記号で数える。chapeau は「the value of the following attributes are explicitly expressed
+and **inextricably linked** to every record」 — 本プロジェクトの「分かち難く結合」はこの
+inextricably linked の訳。
+
+| 細目 | 原典の属性 (要旨) | NemakiWare の現状 (2026-08-24) | 判定 |
+|---|---|---|---|
+| A.1.a.i | 記録の形成に関与した者の名 (author / writer / originator / addressee) | **記録の作成者ではなく捕獲の実行者を記録している**: `LineageExecutionAttribution` (executedBy / onBehalfOf、outbox と event で一致、digest 被覆)。記録自身の author/addressee は archetype 依存 — mail は From/To (`nemaki:messageMetadata`)、chat は participants (INTERNAL_ONLY)、file share は**無し** | **部分** — 捕獲者は堅牢、記録の形成者は経路依存 |
+| A.1.a.ii | 行為・案件の名 | `sourceObjectType` / `sourceArchetype` / event の processType。業務上の「行為」の型付けは無い | **部分** |
+| A.1.a.iii | 作成・伝達の日付 (chronological / received / archival / transmission) | **archival date (脚注 17「creator の記録に正式に組み込まれた日時」) に相当するのが `chatCapturedAt`** — P1-1(e) で emit 前に刻まれ、event が第 2 の写しを digest 被覆で持つ。chronological は `cmis:creationDate` + mail の Date。received/transmission は mail のみ | **部分** — archival date は chat で強い、他は経路依存 |
+| A.1.a.iv | archival bond の表現 (分類コード・ファイル識別子等) | lineage event の processKey / operationId が同一操作の記録を結ぶ。`derivedFromContext` 関係、folder 配置、`ingestionRunId` | **部分** — bond は存在するが分類体系としては未型化 |
+| A.1.a.v | 添付の表示 | mail/note の添付は個別に取込まれ関係で結ばれる。**取り込まなかった添付も親 pass の完了 evidence に `attachmentsNotIngested` として残る** (D-2) | **概ね充足** (取込経路) |
+| A.1.b.i | handling office の名 | 組織単位 (office) のモデルが無い | **未充足** |
+| A.1.b.ii | office of primary responsibility の名 | 同上 | **未充足** |
+| A.1.b.iii | 記録完成後に加えられた annotation の種別表示 | 完成後の evidence 変更は fill/refuse として **reimport イベント** (`reimportFilled` / `reimportRefused` / `reimportOutcome`) に記録され、v2 では digest 被覆の processFacts | **部分** — evidence 属性の追補に限る (本文 annotation の概念は無い) |
+| A.1.b.iv | 技術的変更の表示 | version 履歴 + lineage event。`contentHash` (両所在) と **mh1** (適用メタデータ hash、outbox + event の 2 写し) が「変わったか」を検出可能にする。verify-metadata は 3 値 | **部分** — 検出手段は在るが「変更の種別説明」は無い |
+
+**逐条の帰結**: A.1 全体 (「**every record** に**全**属性」) は名乗れない — b.i/b.ii の
+未充足が構造的で、a 系も archetype 依存の部分充足、かつ捕獲経路外の CMIS 作成文書は
+CMIS 標準属性しか持たない。**名乗れる範囲の限定文**は §3 の禁止 (達成率・準拠) に触れない
+形で: 「**取込が捕獲した記録について**、捕獲属性 (chat 11 + source identity 9) は
+CMIS 経路に対して読み取り専用で、適用値の hash が outbox と lineage event の 2 箇所に
+記録され、export に同梱され、複製には持ち出せない」。この限定文の残余は
+`p1-1-remaining-plan.md` §6 (ローリング再起動の手続き依存) と、イベント側の
+非・敵対的改竄証明 (`p1-1e-boundary-and-origin.md` §0 — digest は同期しない書換の検出) 。
 
 ### A.2 アクセス権限の定義と実施
 

@@ -270,7 +270,14 @@ public class PurviewSchemaPayloadFactory {
                 attribute("reimportOutcome", "string", true),
                 attribute("reimportFilled", "string", true),
                 attribute("reimportRefused", "string", true),
-                attribute("assuranceAsserted", "string", true)));
+                attribute("assuranceAsserted", "string", true),
+                // The v1 sink has SENT these in the Process attributes all along; the type not
+                // declaring them meant the destination silently dropped the recorded digest
+                // (plan §4 row 3, Codex P1). Declared, delivery starts — v1 today, v2 via
+                // processFacts at the flip.
+                attribute("contentHash", "string", true),
+                attribute("contentHashSubject", "string", true),
+                attribute("contentHashAlgorithm", "string", true)));
         return entityDef;
     }
 
