@@ -22,8 +22,8 @@ HEAD `246a0e03f` + 自己レビュー修正パスに対する、Codex + サブ�
 | # | 項目 | 根拠 | アプローチ |
 |---|---|---|---|
 | I-1 ✅ 2026-08-23 | **DLQ の `originalRequestJson` に note 添付バイトが平文で残る** — 対応済み。決定した replay 意味論: **bytes は暗号化 attachment 経路のみ・request JSON は常に byte-free**。replay は本文を復元、添付は次ポーリングの skip-retry。stripped count を行と replay 応答に記録 | `NotionFetchOrchestrator:118-126` が metadata に `contentBase64` を注入し、除去は import が**返った後**の finally。その間の失敗で `saveToDlq` → `IngestJobService:215` が request を**無加工で** `nemaki_conf` へ。「payload は暗号化か破棄」(`:192-194`) の 20 行下で同じバイトが素通り | **payload と同じ規則に揃える**: DLQ 保存前に request JSON も `encryptDeadLetterPayload` を通すか、鍵が無ければ `contentBase64` を落として `payloadDropReason` に記録。**replay の意味論を先に決める** (バイトを失った replay は添付を再 fetch できるか)。復号は pre-encryption 行を許容する既存パターンを踏襲 |
-| I-2 | **`purgeReplayed()` が到達不能** — replay 済み DLQ 行を製品の表面から消せない | `CouchLineageDeadLetterStore:292` 実装済み・呼び出し 0 件 | `LineageJournalController` の DLQ 系に purge エンドポイントを配線。admin 専用・CSRF 対象 |
-| I-3 | **purge が既定で走らない**のに運用文書が保持期限を語る | `lineage.purge.cron` 既定空 → `LineagePurgeScheduler` は arm しない。DLQ 行は purge view の対象外 | 運用 runbook に「cron 未設定なら保持は無期限」を明記 (disclosure §6 は済)。**DLQ 行を purge 対象に含める**か別途の保持を設計 — I-2 と同時 |
+| I-2 ✅ 2026-08-23 | **`purgeReplayed()` が到達不能** — 対応済み: `POST /dead-letters/purge-replayed` (admin) を配線 — replay 済み DLQ 行を製品の表面から消せない | `CouchLineageDeadLetterStore:292` 実装済み・呼び出し 0 件 | `LineageJournalController` の DLQ 系に purge エンドポイントを配線。admin 専用・CSRF 対象 |
+| I-3 ✅ 2026-08-23 | **purge が既定で走らない**のに運用文書が保持期限を語る — 対応済み: replay 済み dead letter を purge スケジュールに同乗させ、runbook に保持の表を書いた (未 replay 行は意図的に残す) | `lineage.purge.cron` 既定空 → `LineagePurgeScheduler` は arm しない。DLQ 行は purge view の対象外 | 運用 runbook に「cron 未設定なら保持は無期限」を明記 (disclosure §6 は済)。**DLQ 行を purge 対象に含める**か別途の保持を設計 — I-2 と同時 |
 
 ## 2. (d) の残り (この順で)
 

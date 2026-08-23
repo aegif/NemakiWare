@@ -50,6 +50,14 @@ public class LineagePurgeScheduler {
     @Autowired(required = false)
     private LeaderElection leaderElection;
 
+    @Autowired(required = false)
+    private LineageDeadLetterStore deadLetterStore;
+
+    /** For tests. */
+    void setDeadLetterStore(LineageDeadLetterStore deadLetterStore) {
+        this.deadLetterStore = deadLetterStore;
+    }
+
     private ScheduledExecutorService scheduler;
     private ScheduledFuture<?> purgeTask;
     private volatile String activeCron;
@@ -189,6 +197,22 @@ public class LineagePurgeScheduler {
             logger.info("Lineage purge completed: {} events purged (retention={} days)", purged, days);
         } catch (Exception e) {
             logger.error("Lineage purge failed: {}", e.getMessage(), e);
+        }
+        // Replayed dead letters ride the same schedule. They carry the full v1 snapshot in a
+        // store the journal purge view cannot see (it selects lineage_event only), so without
+        // this the rows that outlived every retention rule were exactly the ones written while
+        // a catalog was down (external review, I-3). Only REPLAYED rows: an un-replayed row is
+        // the queue, and deleting it would silently drop an undelivered event.
+        try {
+            if (deadLetterStore != null) {
+                int purgedDeadLetters = deadLetterStore.purgeReplayed();
+                if (purgedDeadLetters > 0) {
+                    logger.info("Lineage purge removed {} replayed dead-letter rows",
+                            purgedDeadLetters);
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Replayed dead-letter purge failed: {}", e.getMessage(), e);
         }
     }
 

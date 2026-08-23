@@ -682,4 +682,32 @@ public class LineageJournalControllerTest {
                 jp.aegif.nemaki.rest.purview.journal.LineageJournalEntry.ofV1(event));
     }
 
+    // ── purge-replayed (I-2): the endpoint purgeReplayed() never had ──────────────────────
+
+    @org.junit.jupiter.api.Test
+    void purgeReplayedDeletesOnlyThroughTheStore() {
+        // Until this endpoint existed, purgeReplayed() had zero callers — replayed dead-letter
+        // rows, which carry the full v1 snapshot, could not be removed from the product's
+        // surface at all (audit N4). Un-replayed rows are the queue; the store method's own
+        // contract leaves them alone, and this endpoint adds no filter of its own.
+        when(deadLetterStore.purgeReplayed()).thenReturn(3);
+
+        org.springframework.http.ResponseEntity<java.util.Map<String, Object>> response =
+                controller.purgeReplayedDeadLetters();
+
+        org.junit.jupiter.api.Assertions.assertEquals(200, response.getStatusCode().value());
+        org.junit.jupiter.api.Assertions.assertEquals(3, response.getBody().get("purged"));
+        org.mockito.Mockito.verify(deadLetterStore).purgeReplayed();
+    }
+
+    @org.junit.jupiter.api.Test
+    void purgeReplayedRequiresAdmin() {
+        when(callContext.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN))
+                .thenReturn(Boolean.FALSE);
+        org.springframework.http.ResponseEntity<java.util.Map<String, Object>> response =
+                controller.purgeReplayedDeadLetters();
+        org.junit.jupiter.api.Assertions.assertEquals(403, response.getStatusCode().value());
+        org.mockito.Mockito.verify(deadLetterStore, org.mockito.Mockito.never()).purgeReplayed();
+    }
+
 }

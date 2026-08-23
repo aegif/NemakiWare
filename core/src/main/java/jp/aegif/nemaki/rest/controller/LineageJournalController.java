@@ -362,6 +362,31 @@ public class LineageJournalController {
         return ResponseEntity.ok(response);
     }
 
+    /**
+     * Deletes replayed dead-letter rows.
+     *
+     * <p>Until this endpoint, {@code purgeReplayed()} had zero callers: a replayed row could not
+     * be removed from the product's surface at all, and dead-letter rows carry the full v1
+     * snapshot — including facts the journal's own retention would purge — in a store the purge
+     * view cannot see (external review, audit N4/I-2). Un-replayed rows are untouched: they ARE
+     * the queue.
+     */
+    @PostMapping("/dead-letters/purge-replayed")
+    public ResponseEntity<Map<String, Object>> purgeReplayedDeadLetters() {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+
+        if (deadLetterStore == null) {
+            return badRequest("Dead-letter store not available");
+        }
+
+        int purged = deadLetterStore.purgeReplayed();
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", "ok");
+        response.put("purged", purged);
+        return ResponseEntity.ok(response);
+    }
+
     @GetMapping("/dead-letters/count")
     public ResponseEntity<Map<String, Object>> countDeadLetters(
             @RequestParam(required = false) Boolean replayed) {

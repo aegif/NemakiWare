@@ -218,3 +218,18 @@ curl -s -u admin:password http://localhost:5984/nemaki_lineage | \
 | 一覧が 500 | view の索引再構築中か DB 障害。**空と区別するために意図的に 500 にしています** |
 | 取込は成功するが警告に「境界が適用されるか判定できなかった」と出る | `nemaki_conf` が読めていません。その間、保証は成立していません (§1) |
 | 取込は成功するが警告に「証拠の行を読めなかった」と出る | 文書は作られています。行が retention で消えたか、一時的な障害か、① の書込が成立していなかったか — **この 3 つは区別できません** |
+
+---
+
+## 保持 (retention) — 既定では何も消えない
+
+| 対象 | 既定 | 消し方 |
+|---|---|---|
+| 来歴 journal (`lineage_event`) | **`lineage.purge.cron` が空なので purge は走らない**。`lineage.retention.days` (既定 90) は cron を設定して初めて意味を持つ | cron を設定する。例: `lineage.purge.cron=0 0 3 * * *` |
+| dead letter (`lineage_dead_letter`) | journal の purge view の対象外。**replay 済みの行は journal と同じスケジュールで purge される** (2026-08-23)。**未 replay の行は消えない** — それがキューであり、消すと未配送イベントを黙って落とす | replay してから待つ、または `POST /v1/admin/lineage-journal/dead-letters/purge-replayed` |
+| capture outbox 行 | 設定可能・**既定は無期限** (owner 決定) | sweeper の retention 設定 |
+| DLQ (取込、`nemaki_conf`) | 保持規則なし。**payload は暗号化か破棄・request JSON は byte-free** (2026-08-23) | replay 成功で削除、または DELETE エンドポイント |
+
+**保持期限を当てにするなら cron を設定すること。** 設定しない配備では、上の表の
+「既定」列がそのまま恒久保存を意味する。dead letter は**カタログ障害中の取込ほど残る**
+(失敗した pass の snapshot が入るため) — 障害復旧後は replay → purge を運用に入れる。
