@@ -35,13 +35,6 @@ public class IngestLineageEmitter {
      *                     not here, which would stamp it after the mutation already happened
      * @return the v1 eventId of the emitted event, or null when nothing was emitted
      */
-    public String emitLineageEvent(String repositoryId, String objectId, String targetFolderId,
-                                   String documentName, String operationId,
-                                   ConnectorDefinition connector, ExternalIngestRequest request) {
-        return emitLineageEvent(repositoryId, objectId, targetFolderId, documentName, operationId,
-                connector, request, null, null, null);
-    }
-
     /**
      * @param content what this import can say about the bytes now held — see
      *        {@link CapturedContent}. Recording a digest is what lets a later reader tie the
@@ -427,10 +420,15 @@ public class IngestLineageEmitter {
         // and unauthenticated ingest has no actor to name at all. Collapsing those into one
         // "ingestedBy" made an absent agent and a delegated one look alike (external review,
         // P1-1(b)).
-        v1Snapshot.put(CaptureEvidenceField.EXECUTED_BY.v1Key(),
-                executedBy == null || executedBy.isBlank()
-                        ? "service: no authenticated context (scheduled or webhook ingest)"
-                        : executedBy);
+        if (executedBy == null || executedBy.isBlank()) {
+            // P1-1(e) retired the "service: no authenticated context" fallback: every entry
+            // path now resolves a LineageExecutionAttribution (the scheduler and webhook are
+            // named actors, not absences), so a blank here is a caller bug — and a THIRD
+            // vocabulary for the same fact was itself the D7 defect (Codex H2).
+            throw new IllegalArgumentException("executedBy must be resolved before emission —"
+                    + " use resolveExecutionAttribution");
+        }
+        v1Snapshot.put(CaptureEvidenceField.EXECUTED_BY.v1Key(), executedBy);
         if (onBehalfOf != null && !onBehalfOf.isBlank()) {
             v1Snapshot.put(CaptureEvidenceField.ON_BEHALF_OF.v1Key(), onBehalfOf);
         }

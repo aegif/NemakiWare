@@ -229,6 +229,20 @@ public final class CaptureScope {
      * @throws IllegalStateException if the intent has already been written
      */
     public void describe(String sourceSystem, String processType) {
+        describe(sourceSystem, processType, null, null);
+    }
+
+    /**
+     * As above, additionally CONFIRMING the execution attribution.
+     *
+     * <p>{@code newCaptureScope} runs before the profile is resolved, so the scope opens with a
+     * provisional actor (the raw context username). The resolver's verdict — one resolution,
+     * shared verbatim with the lineage event — lands here, before anything is written, which is
+     * what makes "outbox actor == event actor" structural rather than coincidental (P1-1(e) D7,
+     * AC9). Null attribution values keep the provisional ones (the 2-arg overload's behavior).
+     */
+    public void describe(String sourceSystem, String processType,
+            String executedBy, String onBehalfOf) {
         if (intent == null) {
             return;
         }
@@ -242,7 +256,8 @@ public final class CaptureScope {
                 sourceSystem == null ? intent.sourceSystem() : sourceSystem,
                 intent.sourceObjectType(), intent.sourceObjectId(), intent.requestId(),
                 processType == null ? intent.processType() : processType,
-                intent.executedBy(), intent.onBehalfOf());
+                executedBy == null ? intent.executedBy() : executedBy,
+                onBehalfOf == null ? intent.onBehalfOf() : onBehalfOf);
     }
 
     /**

@@ -48,7 +48,7 @@ class IngestLineageEmitterFailureVisibilityTest {
         ExternalIngestRequest request = new ExternalIngestRequest();
         request.setSourceObjectType("file");
         return emitter.emitLineageEvent("bedroom", "obj-1", "folder-1", "doc.txt", "op-1",
-                connector, request);
+                connector, request, null, "test-actor", null);
     }
 
     @Test
@@ -61,7 +61,7 @@ class IngestLineageEmitterFailureVisibilityTest {
         request.setSourceObjectType("file");
 
         String eventId = emitter.emitLineageEvent("bedroom", "obj-1", "folder-1", "doc.txt",
-                "op-1", connector, request);
+                "op-1", connector, request, null, "test-actor", null);
 
         assertNull(eventId, "nothing was emitted");
         assertNotNull(emitter.lastEmissionFailure(),
@@ -81,7 +81,7 @@ class IngestLineageEmitterFailureVisibilityTest {
         ExternalIngestRequest request = new ExternalIngestRequest();
         request.setSourceObjectType("file");
 
-        emitter.emitLineageEvent("bedroom", "obj-1", "f", "d", "op-1", connector, request);
+        emitter.emitLineageEvent("bedroom", "obj-1", "f", "d", "op-1", connector, request, null, "test-actor", null);
         assertNotNull(emitter.lastEmissionFailure(), "control: the first call did fail");
 
         // The second call must be judged on its own. Asserting that it ALSO reports a failure

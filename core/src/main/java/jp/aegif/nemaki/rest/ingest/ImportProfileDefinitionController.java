@@ -85,6 +85,11 @@ public class ImportProfileDefinitionController {
                     return deniedResp;
                 }
             }
+            // P1-1(e) §1.3: server-stamped, even for admins — the admin create path passes the
+            // body through otherwise, and "who configured the schedule" must be an observation,
+            // not an assertion (Codex H4).
+            def.setScheduleConfiguredByUserId(ctx.getUsername());
+            def.setScheduleConfiguredAtMs(System.currentTimeMillis());
             ImportProfileDefinition created = importProfileDefinitionService.create(def);
             audit(AuditOperation.EXTERNAL_PROFILE_CREATED, ctx, def, true, null);
             Map<String, Object> response = new LinkedHashMap<>();
@@ -200,6 +205,27 @@ public class ImportProfileDefinitionController {
         }
         // A caller must not relocate a profile into another repository via the body.
         def.setRepositoryId(existingForRepo.getRepositoryId());
+
+        // P1-1(e) §1.3 (Codex H3): scheduleConfiguredBy* is SERVER-owned. The full-replace PUT
+        // would otherwise let any caller plant a false operator or erase the record by omitting
+        // the field. Client values are always discarded; a schedule-relevant change stamps the
+        // authenticated operator, anything else preserves the stored value.
+        boolean scheduleChanged = def.isEnabled() != existingForRepo.isEnabled()
+                || def.isSchedulerEnabled() != existingForRepo.isSchedulerEnabled()
+                || def.isDelegated() != existingForRepo.isDelegated()
+                || !java.util.Objects.equals(def.getDefaultConnectorId(),
+                        existingForRepo.getDefaultConnectorId())
+                || !java.util.Objects.equals(def.getAllowedConnectorIds(),
+                        existingForRepo.getAllowedConnectorIds())
+                || !java.util.Objects.equals(def.getSchedulerParams(),
+                        existingForRepo.getSchedulerParams());
+        if (scheduleChanged) {
+            def.setScheduleConfiguredByUserId(ctx.getUsername());
+            def.setScheduleConfiguredAtMs(System.currentTimeMillis());
+        } else {
+            def.setScheduleConfiguredByUserId(existingForRepo.getScheduleConfiguredByUserId());
+            def.setScheduleConfiguredAtMs(existingForRepo.getScheduleConfiguredAtMs());
+        }
 
         // F1 (RC5 ext): a non-admin must never be able to spoof the
         // scheduler-controlled marker fields via the PUT payload. Strip

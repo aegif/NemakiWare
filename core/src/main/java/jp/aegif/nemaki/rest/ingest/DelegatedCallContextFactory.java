@@ -107,6 +107,19 @@ public class DelegatedCallContextFactory {
     }
 
     /**
+     * Whether this context was synthesized by this factory (a delegated autonomous run).
+     *
+     * <p>The server-side truth about execution origin: only this factory creates synthetic
+     * contexts, and only the autonomous paths (scheduler tick, webhook fetch, IMAP IDLE)
+     * receive them. Deciding origin by the request's {@code executionMode} instead would let a
+     * manual caller NAME itself "scheduled" — that field is part of the request JSON
+     * (P1-1(e) §1.1).
+     */
+    public static boolean isSynthetic(org.apache.chemistry.opencmis.commons.server.CallContext callContext) {
+        return callContext instanceof SyntheticCallContext;
+    }
+
+    /**
      * Minimal CallContext that satisfies the methods the delegation
      * gate touches. Anything else returns defaults compatible with the
      * Browser binding the scheduler conceptually impersonates.

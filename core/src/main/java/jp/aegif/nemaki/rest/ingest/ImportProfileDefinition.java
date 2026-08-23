@@ -98,6 +98,18 @@ public class ImportProfileDefinition {
     private String lastAutoDisabledAt;
     private String lastAutoDisabledReason;
 
+    /**
+     * Who last configured this profile's SCHEDULING (enabled / schedulerEnabled / delegated /
+     * connector wiring / schedulerParams) — server-stamped, never client-supplied. This is what
+     * lets the execution attribution of an autonomous run say "schedule configured by X"
+     * instead of "unknown" (P1-1(e) §1.3). A legacy profile without it is reported as
+     * configured-by UNRECORDED, not silently substituted with the creator (Codex H4 — creation
+     * and schedule-enablement can be different people, and admin create takes the body's
+     * createdByUserId verbatim).
+     */
+    private String scheduleConfiguredByUserId;
+    private Long scheduleConfiguredAtMs;
+
     public ImportProfileDefinition() {}
 
     // --- Getters / Setters ---
@@ -191,6 +203,11 @@ public class ImportProfileDefinition {
 
     public String getLastAutoDisabledReason() { return lastAutoDisabledReason; }
     public void setLastAutoDisabledReason(String lastAutoDisabledReason) { this.lastAutoDisabledReason = lastAutoDisabledReason; }
+
+    public String getScheduleConfiguredByUserId() { return scheduleConfiguredByUserId; }
+    public void setScheduleConfiguredByUserId(String scheduleConfiguredByUserId) { this.scheduleConfiguredByUserId = scheduleConfiguredByUserId; }
+    public Long getScheduleConfiguredAtMs() { return scheduleConfiguredAtMs; }
+    public void setScheduleConfiguredAtMs(Long scheduleConfiguredAtMs) { this.scheduleConfiguredAtMs = scheduleConfiguredAtMs; }
 
     /**
      * Checks whether the given connector is allowed by this profile.

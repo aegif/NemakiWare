@@ -129,16 +129,17 @@ class IngestEvidenceSnapshotTest {
     }
 
     @Test
-    @DisplayName("an unauthenticated (scheduled/webhook) import says so rather than omitting it")
+    @DisplayName("a blank actor is refused at the emitter — the third vocabulary is retired")
     void absentAgentIsStated() {
-        Map<String, String> snapshot = new IngestLineageEmitter().buildV1Snapshot(
-                connector(), request(null), "folder-1", IngestLineageEmitter.CapturedContent.hashed("abc"), null, null);
-
-        String executedBy = snapshot.get("executedBy");
-        assertNotNull(executedBy,
-                "leaving the key out made an absent agent look like a delegated import whose "
-                        + "name simply was not filled in");
-        assertTrue(executedBy.startsWith("service:"), executedBy);
+        // P1-1(e): every entry path resolves a LineageExecutionAttribution (the scheduler and
+        // webhook are named actors now), so a blank executedBy is a caller bug — and letting
+        // the emitter invent "service: no authenticated context" was a THIRD vocabulary for
+        // the same fact, the D7 defect itself (Codex H2).
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> new IngestLineageEmitter().buildV1Snapshot(
+                        connector(), request(null), "folder-1",
+                        IngestLineageEmitter.CapturedContent.hashed("abc"), null, null),
+                "a blank actor must be refused, not papered over with a service label");
     }
 
     @Test
@@ -215,33 +216,69 @@ class IngestEvidenceSnapshotTest {
     }
 
     @Test
-    @DisplayName("the call site picks the actor: delegated is admitted-unknown, direct is the caller")
+    @DisplayName("attribution: manual is the caller, autonomous is the scheduler with its origin")
     void productionDecisionPicksTheActor() {
-        // The builder test below only proves the snapshot renders what it is handed. This drives
-        // the DECISION, which is what a revert would break while leaving every other test green
-        // (external review).
+        // P1-1(e) retired "unknown: delegated profile …". The resolver now DISTINGUISHES what
+        // the old code could not: a delegated profile driven manually records the authenticated
+        // caller; an autonomous run records the scheduler AS the actor with the recorded
+        // configure operation. The distinguisher is the CONTEXT'S TYPE — the resolver does not
+        // even receive the request, so executionMode (caller JSON) cannot forge the label.
         ImportProfileDefinition delegated = new ImportProfileDefinition();
         delegated.setProfileId("p-1");
         delegated.setDelegated(true);
         delegated.setCreatedByUserId("otsuka");
+        delegated.setScheduleConfiguredByUserId("ishii");
 
-        org.apache.chemistry.opencmis.commons.server.CallContext ctx =
-                org.mockito.Mockito.mock(
-                        org.apache.chemistry.opencmis.commons.server.CallContext.class);
-        org.mockito.Mockito.when(ctx.getUsername()).thenReturn("svc-caller");
+        org.apache.chemistry.opencmis.commons.server.CallContext manualCtx =
+                testContext();
+        org.mockito.Mockito.when(manualCtx.getUsername()).thenReturn("svc-caller");
 
-        String executed = CanonicalImportServiceImpl.resolveExecutedBy(delegated, ctx);
-        assertTrue(executed.startsWith("unknown:"),
-                "the synthesized context names the authority, not the actor — a service label "
-                        + "here would assert an actor nobody observed; got: " + executed);
-        assertEquals("otsuka", CanonicalImportServiceImpl.resolveOnBehalfOf(delegated));
+        var manual = CanonicalImportServiceImpl.resolveExecutionAttribution(delegated, manualCtx);
+        assertEquals("svc-caller", manual.executedBy(),
+                "a real context IS an observed actor — the old code discarded it as unknown");
+        assertEquals("otsuka", manual.onBehalfOf());
+
+        org.apache.chemistry.opencmis.commons.server.CallContext synthetic =
+                new DelegatedCallContextFactory.SyntheticCallContext("bedroom", "otsuka");
+        var autonomous = CanonicalImportServiceImpl
+                .resolveExecutionAttribution(delegated, synthetic);
+        assertEquals("scheduler: delegated profile p-1, schedule configured by ishii",
+                autonomous.executedBy(),
+                "the autonomous actor is the scheduler, and the configure operation is on "
+                        + "record — 'unknown' is no longer an honest answer");
+        assertEquals("otsuka", autonomous.onBehalfOf());
+        assertTrue(!autonomous.executedBy().contains("unknown"),
+                "the admitted-unknown form must be gone");
+
+        // A profile from before the field existed: creation is NOT configuration (Codex H4).
+        ImportProfileDefinition legacy = new ImportProfileDefinition();
+        legacy.setProfileId("p-3");
+        legacy.setDelegated(true);
+        legacy.setCreatedByUserId("otsuka");
+        var legacyRun = CanonicalImportServiceImpl.resolveExecutionAttribution(legacy, synthetic);
+        assertTrue(legacyRun.executedBy().contains("configured-by unrecorded"),
+                "a legacy profile must say the configure operation is UNRECORDED, not credit "
+                        + "the creator with it: " + legacyRun.executedBy());
+        assertTrue(legacyRun.executedBy().contains("(profile created by otsuka)"),
+                "the creator is still stated — as the creator");
+
+        // Admin autonomous run: null context.
+        ImportProfileDefinition admin = new ImportProfileDefinition();
+        admin.setProfileId("p-4");
+        admin.setScheduleConfiguredByUserId("ishii");
+        var adminRun = CanonicalImportServiceImpl.resolveExecutionAttribution(admin, null);
+        assertEquals("scheduler: admin profile p-4, schedule configured by ishii",
+                adminRun.executedBy());
+        assertNull(adminRun.onBehalfOf(), "an admin profile has no separate authority");
 
         ImportProfileDefinition direct = new ImportProfileDefinition();
         direct.setProfileId("p-2");
         direct.setDelegated(false);
-        assertEquals("svc-caller", CanonicalImportServiceImpl.resolveExecutedBy(direct, ctx),
+        assertEquals("svc-caller", CanonicalImportServiceImpl
+                        .resolveExecutionAttribution(direct, manualCtx).executedBy(),
                 "a direct import HAS an observed actor and must not discard it");
-        assertNull(CanonicalImportServiceImpl.resolveOnBehalfOf(direct),
+        assertNull(CanonicalImportServiceImpl
+                        .resolveExecutionAttribution(direct, manualCtx).onBehalfOf(),
                 "a direct import has no separate authority to name");
     }
 
@@ -359,10 +396,11 @@ class IngestEvidenceSnapshotTest {
         req.setSourceObjectId("file-123");
         req.setSourceObjectType("files");
         req.setFileName("test.txt");
+        // A delegated AUTONOMOUS run: the factory's synthetic context, whose username is the
+        // profile creator (the authority) — the exact confusion the resolver now untangles by
+        // TYPE. A plain mock here would read as a manual caller.
         org.apache.chemistry.opencmis.commons.server.CallContext ctx =
-                org.mockito.Mockito.mock(
-                        org.apache.chemistry.opencmis.commons.server.CallContext.class);
-        org.mockito.Mockito.when(ctx.getUsername()).thenReturn("otsuka");
+                new DelegatedCallContextFactory.SyntheticCallContext("bedroom", "otsuka");
 
         assertTrue(service.execute(ctx, req).isSuccess(), "control: the import must succeed");
 
@@ -374,9 +412,12 @@ class IngestEvidenceSnapshotTest {
                         && emitter.captured.reason().contains("att-1"),
                 "only the real decision can name the attachment it saw; a constant cannot. "
                         + "Got: " + emitter.captured.reason());
-        assertTrue(emitter.executedBy != null && emitter.executedBy.startsWith("unknown:"),
-                "a delegated run has no observed actor; passing the context's username would "
-                        + "name the authority as the executor. Got: " + emitter.executedBy);
+        assertTrue(emitter.executedBy != null
+                        && emitter.executedBy.startsWith("scheduler: delegated profile"),
+                "an autonomous run's actor is the scheduler with its recorded origin — passing "
+                        + "the synthetic context's username would name the authority as the "
+                        + "executor, and 'unknown' is retired (P1-1(e)). Got: "
+                        + emitter.executedBy);
         assertEquals("otsuka", emitter.onBehalfOf,
                 "the authority IS known and must reach the emitter");
     }
@@ -494,8 +535,7 @@ class IngestEvidenceSnapshotTest {
         req.setContentStream(new java.io.ByteArrayInputStream(
                 UNCHANGED_BYTES.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
 
-        service.execute(org.mockito.Mockito.mock(
-                org.apache.chemistry.opencmis.commons.server.CallContext.class), req);
+        service.execute(testContext(), req);
         return emitter;
     }
 
@@ -764,8 +804,7 @@ class IngestEvidenceSnapshotTest {
                 org.mockito.ArgumentMatchers.eq("bedroom"), org.mockito.ArgumentMatchers.any());
 
         ExternalIngestResult result = service.executeChatContextImport(
-                org.mockito.Mockito.mock(
-                        org.apache.chemistry.opencmis.commons.server.CallContext.class),
+                testContext(),
                 chatRequest());
         assertTrue(result.isSuccess(), "control: the chat import must succeed");
         return result;
@@ -910,4 +949,11 @@ class IngestEvidenceSnapshotTest {
         assertEquals("file", snapshot.get("sourceObjectType"));
         assertEquals("folder-1", snapshot.get("targetFolderId"));
     }
+    private static org.apache.chemistry.opencmis.commons.server.CallContext testContext() {
+        org.apache.chemistry.opencmis.commons.server.CallContext ctx = org.mockito.Mockito.mock(
+                org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        org.mockito.Mockito.when(ctx.getUsername()).thenReturn("test-user");
+        return ctx;
+    }
+
 }

@@ -144,7 +144,11 @@ class IngestEntryPointFailurePathTest {
     }
 
     private static org.apache.chemistry.opencmis.commons.server.CallContext ctx() {
-        return mock(org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        // These tests simulate AUTONOMOUS (scheduled) ingest failures — the DLQ expectations
+        // depend on it. P1-1(e) decides autonomy by the context's type, not executionMode:
+        // null = the admin scheduler path. A stubbed real mock here would read as a MANUAL
+        // caller and correctly skip the DLQ.
+        return null;
     }
 
     /** Blow up in the wrapper's post-processing, after execute() has committed. */
@@ -239,9 +243,15 @@ class IngestEntryPointFailurePathTest {
         metadataExplodes();
         ExternalIngestRequest req = request("rec-2", "record.json");
         req.setSourceObjectType("record");
-        req.setExecutionMode("manual");
+        // A manual run is a REAL authenticated context — that, not executionMode, is what the
+        // gate reads now (P1-1(e) §1.1). The mode string stays purely informational; setting
+        // it to "scheduled" here would NOT enroll this failure in the DLQ.
+        req.setExecutionMode("scheduled");
+        org.apache.chemistry.opencmis.commons.server.CallContext manualCtx =
+                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        org.mockito.Mockito.when(manualCtx.getUsername()).thenReturn("operator");
 
-        ExternalIngestResult result = service.executeBusinessRecordImport(ctx(), req);
+        ExternalIngestResult result = service.executeBusinessRecordImport(manualCtx, req);
 
         assertFalse(result.isSuccess(), "control");
         org.mockito.Mockito.verify(jobService, org.mockito.Mockito.never())

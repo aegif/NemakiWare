@@ -471,7 +471,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         } catch (Exception e) {
             logger.error("Mail import failed: {}", e.getMessage(), e);
             captureScope.operationFailed(e.getMessage());
-            return failedAfterEntry(request, requestId, failureState.committedObjectId,
+            return failedAfterEntry(callContext, request, requestId, failureState.committedObjectId,
                     failureState.warnings, "Mail import failed: ", e);
         }
     }
@@ -494,7 +494,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         } catch (Exception e) {
             logger.error("Note import failed: {}", e.getMessage(), e);
             captureScope.operationFailed(e.getMessage());
-            return withCaptureOutcome(failedAfterEntry(request, request.getRequestId(),
+            return withCaptureOutcome(failedAfterEntry(callContext, request, request.getRequestId(),
                     failureState.committedObjectId, failureState.warnings, "Note import failed: ", e),
                     captureScope);
         }
@@ -791,7 +791,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         } catch (Exception e) {
             logger.error("Business record import failed: {}", e.getMessage(), e);
             captureScope.operationFailed(e.getMessage());
-            return withCaptureOutcome(failedAfterEntry(request, request.getRequestId(),
+            return withCaptureOutcome(failedAfterEntry(callContext, request, request.getRequestId(),
                     failureState.committedObjectId, failureState.warnings, "Business record import failed: ", e),
                     captureScope);
         }
@@ -893,7 +893,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         } catch (Exception e) {
             logger.error("Chat context import failed: {}", e.getMessage(), e);
             captureScope.operationFailed(e.getMessage());
-            return withCaptureOutcome(failedAfterEntry(request, request.getRequestId(),
+            return withCaptureOutcome(failedAfterEntry(callContext, request, request.getRequestId(),
                     failureState.committedObjectId, failureState.warnings, "Chat context import failed: ", e),
                     captureScope);
         }
@@ -1091,25 +1091,48 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     }
 
     /**
-     * Who ran this import, as far as this code can honestly tell.
+     * Who ran this import and on whose authority — resolved ONCE, from server-side truth.
      *
-     * <p>A delegated profile can be driven manually by an authenticated caller OR autonomously
-     * by the scheduler, and the context for the latter is synthesized from the profile creator
-     * — so it names the authority, not the actor. Rather than print a service name nobody
-     * observed, the gap is admitted with its reason (external review). Threading execution
-     * origin through is P1-1(e).
+     * <p>Autonomy is decided by the CONTEXT'S TYPE (a synthetic context only the delegation
+     * factory can mint, or the admin path's null), never by the request's {@code executionMode}
+     * — that field is caller-supplied JSON, and a manual caller naming itself "scheduled" must
+     * not change what the evidence says (P1-1(e) §1.1). The old "unknown: delegated profile"
+     * admission is retired: the actor of an autonomous run IS the scheduler, and the operation
+     * that configured it is now recorded on the profile — so both are stated. A profile from
+     * before that field exists is reported as configured-by UNRECORDED, not silently credited
+     * to its creator (Codex H4 — creation and schedule-enablement can be different people).
      */
-    static String resolveExecutedBy(ImportProfileDefinition profile, CallContext callContext) {
-        if (profile != null && profile.isDelegated()) {
-            return "unknown: delegated profile " + profile.getProfileId()
-                    + " — execution origin is not recorded yet";
-        }
-        return callContext != null ? callContext.getUsername() : null;
+    /** Server-side execution-origin truth: synthetic (delegated autonomous) or null (admin). */
+    static boolean autonomousExecution(CallContext callContext) {
+        return callContext == null || DelegatedCallContextFactory.isSynthetic(callContext);
     }
 
-    /** The authority a delegated import ran under: the profile's creator, or none if direct. */
-    static String resolveOnBehalfOf(ImportProfileDefinition profile) {
-        return profile != null && profile.isDelegated() ? profile.getCreatedByUserId() : null;
+    static jp.aegif.nemaki.rest.purview.journal.LineageExecutionAttribution
+            resolveExecutionAttribution(ImportProfileDefinition profile, CallContext callContext) {
+        boolean autonomous = callContext == null
+                || DelegatedCallContextFactory.isSynthetic(callContext);
+        boolean delegated = profile != null && profile.isDelegated();
+        if (!autonomous) {
+            return new jp.aegif.nemaki.rest.purview.journal.LineageExecutionAttribution(
+                    callContext.getUsername(),
+                    delegated ? profile.getCreatedByUserId() : null);
+        }
+        String profileId = profile != null ? profile.getProfileId() : "unknown";
+        String configuredBy;
+        if (profile != null && profile.getScheduleConfiguredByUserId() != null
+                && !profile.getScheduleConfiguredByUserId().isBlank()) {
+            configuredBy = "schedule configured by " + profile.getScheduleConfiguredByUserId();
+        } else if (profile != null && profile.getCreatedByUserId() != null
+                && !profile.getCreatedByUserId().isBlank()) {
+            configuredBy = "schedule configured-by unrecorded (profile created by "
+                    + profile.getCreatedByUserId() + ")";
+        } else {
+            configuredBy = "schedule configured-by unrecorded";
+        }
+        return new jp.aegif.nemaki.rest.purview.journal.LineageExecutionAttribution(
+                "scheduler: " + (delegated ? "delegated" : "admin") + " profile " + profileId
+                        + ", " + configuredBy,
+                delegated ? profile.getCreatedByUserId() : null);
     }
 
     /**
@@ -1165,13 +1188,15 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (!refused.isEmpty()) {
                 passOutcome.put(CaptureEvidenceField.REIMPORT_REFUSED, String.join(",", refused));
             }
+            jp.aegif.nemaki.rest.purview.journal.LineageExecutionAttribution reimportAttribution =
+                    resolveExecutionAttribution(profile, callContext);
             String eventId = ingestLineageEmitter.emitLineageEvent(repositoryId, result.objectId(),
                     folderId, documentName, java.util.UUID.randomUUID().toString(),
                     connector, request,
                     // No bytes were supplied by this pass, so the content state is read back
                     // rather than asserted — the same three-state answer as any other emit.
                     describeCapturedContent(repositoryId, result.objectId(), null),
-                    resolveExecutedBy(profile, callContext), resolveOnBehalfOf(profile),
+                    reimportAttribution.executedBy(), reimportAttribution.onBehalfOf(),
                     passOutcome);
             if (eventId == null) {
                 String reason = ingestLineageEmitter.lastEmissionFailure();
@@ -2321,9 +2346,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
 
         // Everything the row must carry is known by now, and nothing has been written yet.
+        // Resolved ONCE; the same instance reaches the intent row here and the lineage emit
+        // below — outbox actor == event actor by construction (D7, AC9).
+        jp.aegif.nemaki.rest.purview.journal.LineageExecutionAttribution attribution =
+                resolveExecutionAttribution(profile, callContext);
         captureScope.describe(connector == null ? null : connector.getSourceSystem(),
                 connector == null || connector.getSourceArchetype() == null
-                        ? null : connector.getSourceArchetype().name());
+                        ? null : connector.getSourceArchetype().name(),
+                attribution.executedBy(), attribution.onBehalfOf());
 
         byte[] bufferedContent = null; // retained for DLQ on failure
         // Hoisted so the catch below can report what actually happened. Declared inside the try,
@@ -2649,17 +2679,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                             lineageDocumentName, lineageOperationId, connector, request,
                             describeCapturedContent(repositoryId, objectId, computedHash,
                                     dedupeComparison),
-                            // A delegated run's context is SYNTHESIZED from the profile creator,
-                            // so getUsername() names the authority, not the actor. Putting it in
-                            // both fields said "the creator ran it", which is what the split
-                            // exists to stop. A delegated profile can be driven manually by an
-                            // authenticated caller OR autonomously by the scheduler, and this cannot
-                            // currently tell which. Naming a service outright would assert an
-                            // actor we did not observe, so the executor is recorded as unknown
-                            // WITH the reason — an honest gap beats a plausible label
-                            // (external review). Threading execution origin through is P1-1(e).
-                            resolveExecutedBy(profile, callContext),
-                            resolveOnBehalfOf(profile))
+                            // The SAME resolution the capture intent received at describe() —
+                            // one resolver, one call, two records (D7, AC9).
+                            attribution.executedBy(),
+                            attribution.onBehalfOf())
                     : null;
             // The document is committed by now. If provenance could not be recorded, the import
             // is NOT wholly successful: content exists with no evidence of where it came from,
@@ -2715,7 +2738,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // document — with dryRun:true inside it and the buffered bytes attached — into the
             // conf database. Retrying that entry then deletes it without importing anything,
             // because a dry-run result reports success (external review).
-            if (ingestJobService != null && !"manual".equals(request.getExecutionMode())
+            // Autonomy decided by the context's type, not the request's executionMode — a
+            // manual caller could NAME itself "scheduled" and enroll its failure in the DLQ
+            // (P1-1(e) §1.1, Codex L1). executionMode stays informational.
+            if (ingestJobService != null && autonomousExecution(callContext)
                     && !request.isDryRun()) {
                 try {
                     ingestJobService.saveToDlq(request,
@@ -2764,9 +2790,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         private final List<String> warnings = new ArrayList<>();
     }
 
-    private ExternalIngestResult failedAfterEntry(ExternalIngestRequest request, String requestId,
+    private ExternalIngestResult failedAfterEntry(CallContext callContext,
+            ExternalIngestRequest request, String requestId,
             String committedObjectId, List<String> warnings, String prefix, Exception e) {
-        if (ingestJobService != null && !"manual".equals(request.getExecutionMode())
+        if (ingestJobService != null && autonomousExecution(callContext)
                 && !request.isDryRun()) {
             try {
                 ingestJobService.saveToDlq(request,

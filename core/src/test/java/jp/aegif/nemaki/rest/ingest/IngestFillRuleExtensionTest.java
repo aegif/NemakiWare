@@ -150,7 +150,7 @@ class IngestFillRuleExtensionTest {
         req.setMetadata(metadata);
 
         ExternalIngestResult result = service.executeBusinessRecordImport(
-                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class), req);
+                testContext(), req);
 
         assertTrue(result.skipped(), "the fixture must dedupe-skip, or this proves nothing");
         assertEquals("R-CAPTURED", aspectValue("nemaki:businessRecordMetadata", "nemaki:recordId"),
@@ -186,7 +186,7 @@ class IngestFillRuleExtensionTest {
         req.setMetadata(metadata);
 
         ExternalIngestResult result = service.executeNoteImport(
-                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class), req);
+                testContext(), req);
 
         assertTrue(result.skipped(), "the fixture must dedupe-skip: " + result.errors());
         assertEquals("otsuka", aspectValue("nemaki:noteMetadata", "nemaki:noteAuthor"),
@@ -221,7 +221,7 @@ class IngestFillRuleExtensionTest {
 
         IngestMetadataService.FillOutcome outcome = metadataService.fillMissingNoteMetadata(
                 "bedroom", "page-obj",
-                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class), req, null);
+                testContext(), req, null);
 
         assertTrue(outcome.error() != null && !outcome.error().isBlank(),
                 "the write failed; the outcome must say so");
@@ -256,7 +256,7 @@ class IngestFillRuleExtensionTest {
                         .getBytes(java.nio.charset.StandardCharsets.UTF_8)));
 
         ExternalIngestResult result = service.executeMailImport(
-                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class), req);
+                testContext(), req);
 
         assertTrue(result.skipped(), "the fixture must dedupe-skip: " + result.errors());
         assertEquals("captured-subject", aspectValue("nemaki:messageMetadata", "nemaki:mailSubject"),
@@ -265,4 +265,11 @@ class IngestFillRuleExtensionTest {
         assertEquals("otsuka@example.com", aspectValue("nemaki:messageMetadata", "nemaki:mailFrom"),
                 "the gap (mailFrom was never captured) must still be filled from the eml");
     }
+    private static org.apache.chemistry.opencmis.commons.server.CallContext testContext() {
+        org.apache.chemistry.opencmis.commons.server.CallContext ctx = mock(
+                org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        org.mockito.Mockito.when(ctx.getUsername()).thenReturn("test-user");
+        return ctx;
+    }
+
 }

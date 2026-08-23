@@ -19,9 +19,11 @@
 - **他の secondary type を外せなくするとは言わない。** 証拠でない型の付け外しは
   CMIS の正当な操作で、そのまま通す
 - **これ以前に外された aspect は戻らない。** 遡って復元する手段は無い
-- **複製した文書からは剥がせなくなる。** `buildCopyDocument` が aspect と `secondaryIds` を
-  複写するので、copy / checkOut / checkIn の産物は**そのオブジェクトについては起きていない
-  capture** を記述する証拠を持つ。今は secondary 型リストで剥がせるが、この変更後はできない
+- ~~**複製した文書からは剥がせなくなる。**~~ **2026-08-24 解消**: 新 objectId を鋳造する
+  唯一の経路 `createDocumentFromSource` が copy 時に証拠を strip する
+  (`CopyDoesNotCarryEvidenceTest`)。checkOut / checkIn / setContentStream /
+  updateWithoutCheckInOut は同一オブジェクトの版系譜で、台帳が主張を裏づけ続けるため証拠を
+  保持する — zip import (D-6) と同じ分裂
 - **削除しても証拠は消えない。** §4.1 のとおり — 初稿はここを逆に書いていた
 
 ---
@@ -208,7 +210,7 @@ meta.json に書かないため、製品の export→import 往復では殻は�
   通常の削除は archive に証拠ごと複写し、restore で戻る (§4.1)
 - **来歴イベントは削除では消えない。** 別 DB に残る
 - **これ以前に外された aspect は戻らない**
-- **複製した文書は、そのオブジェクトについては起きていない capture の証拠を持つ。**
+- ~~**複製した文書は、そのオブジェクトについては起きていない capture の証拠を持つ。**~~ (2026-08-24 解消 — §0)
   この変更後は剥がせない (§0)
 
 ---

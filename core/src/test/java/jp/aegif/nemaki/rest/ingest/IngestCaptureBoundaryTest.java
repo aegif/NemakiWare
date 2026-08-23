@@ -62,8 +62,11 @@ class IngestCaptureBoundaryTest {
         boolean openSucceeds = true;
         boolean active = true;
 
+        CaptureIntent lastOpened;
+
         @Override public boolean openIntent(CaptureIntent intent) {
             events.add("openIntent");
+            lastOpened = intent;
             return openSucceeds;
         }
 
@@ -194,6 +197,48 @@ class IngestCaptureBoundaryTest {
         service.execute(ctx(), request("src-1"));
 
         assertEquals(List.of("openIntent", "createDocument", "completeIntent"), store.events);
+    }
+
+    @Test
+    @DisplayName("intent row and lineage event carry the SAME attribution — one resolution (AC9)")
+    void intentAndEventShareTheAttribution() {
+        wire();
+        String[] emitted = new String[2];
+        service.setIngestLineageEmitter(new IngestLineageEmitter() {
+            @Override
+            public String emitLineageEvent(String repositoryId, String objectId,
+                    String targetFolderId, String documentName, String operationId,
+                    ConnectorDefinition connector, ExternalIngestRequest request,
+                    CapturedContent content, String executedBy, String onBehalfOf,
+                    java.util.Map<CaptureEvidenceField, String> passOutcome) {
+                emitted[0] = executedBy;
+                emitted[1] = onBehalfOf;
+                return "ev-1";
+            }
+        });
+
+        // The DISCRIMINATING shape is a delegated autonomous run: the provisional intent
+        // actor (the synthetic context's raw username = the profile CREATOR) and the resolved
+        // one ("scheduler: …") differ, so losing the describe() confirmation makes the two
+        // records disagree. A manual run's provisional and resolved values coincide and would
+        // pin nothing (the first draft of this test did exactly that).
+        ImportProfileDefinition delegated = profileService.get("p1");
+        delegated.setDelegated(true);
+        delegated.setCreatedByUserId("otsuka");
+        delegated.setScheduleConfiguredByUserId("ishii");
+        CallContext synthetic =
+                new DelegatedCallContextFactory.SyntheticCallContext("bedroom", "otsuka");
+
+        assertTrue(service.execute(synthetic, request("f-attrib")).isSuccess(), "control");
+
+        assertTrue(store.lastOpened != null, "the intent row must have been written");
+        assertEquals("scheduler: delegated profile p1, schedule configured by ishii",
+                emitted[0], "the event must carry the resolved autonomous actor");
+        assertEquals(emitted[0], store.lastOpened.executedBy(),
+                "outbox and event answered 'who ran this' differently — D7, the exact defect");
+        assertEquals("otsuka", store.lastOpened.onBehalfOf());
+        assertEquals(emitted[1], store.lastOpened.onBehalfOf(),
+                "outbox and event answered 'on whose authority' differently");
     }
 
     @Test

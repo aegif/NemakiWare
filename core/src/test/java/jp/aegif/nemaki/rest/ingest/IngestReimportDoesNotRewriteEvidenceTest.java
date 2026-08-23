@@ -183,7 +183,7 @@ class IngestReimportDoesNotRewriteEvidenceTest {
     @DisplayName("a second poll does not replace evidence the first capture stored")
     void capturedValuesSurviveAReimport() {
         ExternalIngestResult result = service.executeChatContextImport(
-                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class), secondPoll());
+                testContext(), secondPoll());
 
         assertTrue(result.skipped(), "the fixture must produce a dedupe skip, or this proves nothing");
         assertEquals("C-CAPTURED", chatValue("nemaki:chatChannelId"),
@@ -237,7 +237,7 @@ class IngestReimportDoesNotRewriteEvidenceTest {
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
 
         service.executeChatContextImport(
-                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class), secondPoll());
+                testContext(), secondPoll());
 
         int open = order.indexOf("open");
         int write = order.indexOf("write");
@@ -284,7 +284,7 @@ class IngestReimportDoesNotRewriteEvidenceTest {
         service.setCaptureIntentStore(store);
 
         service.executeChatContextImport(
-                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class), secondPoll());
+                testContext(), secondPoll());
 
         Map<String, Object> evidence = completedEvidence[0];
         assertNotNull(evidence, "the fill pass must complete a row");
@@ -320,7 +320,7 @@ class IngestReimportDoesNotRewriteEvidenceTest {
     @DisplayName("but a gap the first capture left IS filled — the retry still works")
     void aMissingValueIsStillFilled() {
         service.executeChatContextImport(
-                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class), secondPoll());
+                testContext(), secondPoll());
 
         assertEquals("general", chatValue("nemaki:chatChannelName"),
                 "the fix turned into 'never write on a re-import', which breaks the retry that "
@@ -345,7 +345,7 @@ class IngestReimportDoesNotRewriteEvidenceTest {
         service.setIngestLineageEmitter(emitter);
 
         service.executeChatContextImport(
-                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class), secondPoll());
+                testContext(), secondPoll());
 
         @SuppressWarnings("unchecked")
         org.mockito.ArgumentCaptor<Map<CaptureEvidenceField, String>> outcome =
@@ -379,7 +379,7 @@ class IngestReimportDoesNotRewriteEvidenceTest {
         service.setIngestLineageEmitter(emitter);
 
         service.executeChatContextImport(
-                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class),
+                testContext(),
                 identicalPoll());
 
         org.mockito.Mockito.verifyNoInteractions(emitter);
@@ -393,7 +393,7 @@ class IngestReimportDoesNotRewriteEvidenceTest {
         service.setIngestLineageEmitter(emitter);
 
         ExternalIngestResult result = service.executeChatContextImport(
-                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class), secondPoll());
+                testContext(), secondPoll());
 
         String all = String.join(" | ", result.warnings());
         assertTrue(all.contains("NOT written"),
@@ -404,7 +404,7 @@ class IngestReimportDoesNotRewriteEvidenceTest {
     @DisplayName("the caller is told which values were kept rather than replaced")
     void theCallerIsToldWhatWasKept() {
         ExternalIngestResult result = service.executeChatContextImport(
-                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class), secondPoll());
+                testContext(), secondPoll());
 
         assertNotNull(result.warnings());
         String all = String.join(" | ", result.warnings());
@@ -413,4 +413,11 @@ class IngestReimportDoesNotRewriteEvidenceTest {
         assertTrue(all.contains("nemaki:chatCaptureWindowStart"),
                 "nothing told the caller its capture window was ignored: " + all);
     }
+    private static org.apache.chemistry.opencmis.commons.server.CallContext testContext() {
+        org.apache.chemistry.opencmis.commons.server.CallContext ctx = mock(
+                org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        org.mockito.Mockito.when(ctx.getUsername()).thenReturn("test-user");
+        return ctx;
+    }
+
 }
