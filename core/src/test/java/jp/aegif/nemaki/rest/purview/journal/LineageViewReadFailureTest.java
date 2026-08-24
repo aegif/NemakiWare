@@ -85,6 +85,43 @@ class LineageViewReadFailureTest {
     }
 
     @Test
+    @DisplayName("a document-fetching view read asks for reduce=false")
+    void documentReadsTurnTheReduceOff() {
+        // Found by reading the running deployment's log, not by a test: three capture views
+        // gained a _count reduce, and CouchDB refuses `include_docs` on a reduce query
+        // ("query_parse_error: `include_docs` is invalid for reduce"). Every document-fetching
+        // read of those views had been failing every five minutes — the sweeper never swept,
+        // the unresolved listing never listed, and the evidence report's custody section
+        // reported unavailable.
+        CouchLineageJournalStore store = new CouchLineageJournalStore();
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper client =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+        com.ibm.cloud.cloudant.v1.model.ViewResult result =
+                mock(com.ibm.cloud.cloudant.v1.model.ViewResult.class);
+        when(result.getRows()).thenReturn(java.util.List.of());
+        when(client.queryView(anyString(), anyString(), org.mockito.ArgumentMatchers.anyMap()))
+                .thenReturn(result);
+        setField(store, "lineageClient", client);
+
+        store.queryRawView("lineage_capture", "open_by_opened_at", Map.of("limit", 10));
+
+        @SuppressWarnings("unchecked")
+        org.mockito.ArgumentCaptor<Map<String, Object>> params =
+                org.mockito.ArgumentCaptor.forClass(Map.class);
+        org.mockito.Mockito.verify(client)
+                .queryView(anyString(), anyString(), params.capture());
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.FALSE,
+                params.getValue().get("reduce"),
+                "the query did not ask for reduce=false; CouchDB rejects include_docs on a "
+                        + "reduce view, so any view with a _count reduce becomes unreadable");
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.TRUE,
+                params.getValue().get("include_docs"),
+                "the query stopped asking for documents, which is all this method is for");
+        org.junit.jupiter.api.Assertions.assertEquals(10, params.getValue().get("limit"),
+                "the caller's own parameters were dropped");
+    }
+
+    @Test
     @DisplayName("a view that answers with no rows IS an empty result — the control")
     void emptyRowsIsEmpty() {
         // Without this, throwing unconditionally would pass the test above while making an

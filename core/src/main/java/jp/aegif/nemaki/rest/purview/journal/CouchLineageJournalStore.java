@@ -670,6 +670,15 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
             }
             Map<String, Object> p = new HashMap<>(params == null ? Map.of() : params);
             p.put("include_docs", true);
+            // reduce=false is NOT optional once any of these views carries a reduce. CouchDB
+            // refuses `include_docs` on a reduce query outright — "query_parse_error:
+            // `include_docs` is invalid for reduce" — so adding the _count reduces to the three
+            // counted capture views silently broke EVERY document-fetching read of them: the
+            // sweeper stopped sweeping, the unresolved listing stopped listing, and
+            // listCapturedForObject (which the evidence report's custody section reads) started
+            // reporting unavailable. This method always wants documents, never a total, so the
+            // flag belongs here rather than at each call site where the next one would forget it.
+            p.put("reduce", false);
             ViewResult result = lineageClient.queryView(designDocName, viewName, p);
             if (result == null) {
                 // The wrapper collapses NotFoundException — what CouchDB returns for a MISSING
