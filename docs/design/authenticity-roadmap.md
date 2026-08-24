@@ -818,6 +818,38 @@ PREMIS 3」と明記。取込時に SIP 形式 (素のファイル / E-ARK / Bag
 IP 操作には commons-ip を使用。**未確認**: RODA の特定リリースがどの CSIP 版を受け入れるかの
 対応表は取得できていない (同梱 commons-ip 版に依存するはず) — **相互運用の保証には実機受入試験が必要**。
 
+#### 実機受入試験は**ローカルで立てられる** (2026-08-25 実測)
+
+「相手側環境が無いのでオーナー判断待ち」としていたが、**RODA は Atlas と同じく
+コンテナで立つ**。公式 `deploys/standalone/docker-compose.yaml` は 9 サービス構成で、
+**全イメージが arm64 ネイティブ**である (Apple Silicon で QEMU 不要):
+
+| サービス | イメージ | arm64 |
+|---|---|---|
+| roda | `keeps/roda:v6.3.0` (410 MB, 2026-08-03) | **✅** |
+| solr | `solr:10.0.0` | ✅ |
+| zoo | `zookeeper:3.9.5-jre-17` | ✅ |
+| postgres | `postgres:17` | ✅ |
+| clamd | `clamav/clamav:1.5.3-debian` | ✅ |
+| siegfried | `ghcr.io/keeps/siegfried:v1.11.6` | ✅ |
+| swagger / mailpit / openldap | — | ✅ (受入試験には不要、削れる) |
+
+**ポート衝突に注意**: RODA は 8080 (core と同じ) と Solr 8983 (こちらの Solr と同じ) を
+publish する。検証用オーバーレイでは remap するか publish しない。
+
+**Archivematica は事情が違う (2026-08-25 実測)**:
+
+| | arm64 |
+|---|---|
+| `artefactual/archivematica-{dashboard,mcp-server,mcp-client,storage-service}:v1.18.0` | **✗ amd64 のみ** |
+| 依存 (percona 8.4 / gearmand / nginx / elasticsearch 8.19) | ✅ いずれも arm64 あり |
+
+**アプリ側 4 イメージだけが amd64 単独**。`hack/docker-compose.yml` は
+ubuntu:24.04 (multi-arch) から**ソースビルドする**ので arm64 で通る可能性はあるが、
+**未検証** (保存ツール群の apt / wheel が arm64 で揃うかは確かめていない)。
+なお **P3-1 に必要なのは RODA 側**であり、Archivematica は P3-4 (custody transfer) の
+話で、そこは**どのみち BagIt に包む接続層が要る** (§9-4)。
+
 ### §9-4. Archivematica 受入 API (P3-4 の前提確認)
 
 **版**: Archivematica **1.18.0** (2025-09-26) / Storage Service **0.24.0** (2025-10-07)。
