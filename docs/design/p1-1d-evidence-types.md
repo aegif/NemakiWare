@@ -158,20 +158,47 @@ meta.json に書かないため、製品の export→import 往復では殻は�
 | **(A) 黙って保つ** | リストから外れていても aspect と id を残す。リクエストは成功する | クライアントは「外した」と思っている。**CMIS の「リストが真」という契約から外れる** |
 | (B) 拒否する | `CmisConstraintException` を投げる | 証拠型を含まない更新が**全部落ちる** — 証拠に触るつもりのないクライアントまで巻き込む |
 
-**(A) を採る。** 理由は 2 つ:
+**初稿は (A) を採った。** 理由は 2 つだった:
 
-- (c) §5.1 が**プロパティについて既に (A) を選んでいる** — READONLY のプロパティは
-  リクエストに載っていても引き継ぐ。型だけ (B) にすると、同じ「証拠を守る」動作が
-  経路によって成功したり失敗したりする
-- (B) は**証拠に無関係な更新を壊す**。`cmis:secondaryObjectTypeIds` を送るクライアントは
-  自分が触っている型のことしか考えていない
+- (c) §5.1 が**プロパティについて既に (A) を選んでいる**
+- (B) は**証拠に無関係な更新を壊す**
 
 **ただし沈黙はしない。** WARN を出し、運用文書に書く (§6)。
 
-> **CMIS 仕様本文は確認していない。** OpenCMIS の add/remove secondary type は
-> クライアント側の糖衣で、完全なリストを送る — **wire の挙動は確認した**。
-> しかし外せない場合に仕様が `CmisConstraintException` を**要求している**なら、
-> (A) は「選択」ではなく「逸脱」になる。**未確認と書いておく。**
+### 4.1 仕様を読んだ結果 — **(A) は逸脱だった** (2026-08-24)
+
+初稿は「CMIS 仕様本文は確認していない。外せない場合に仕様が `CmisConstraintException` を
+**要求している**なら、(A) は『選択』ではなく『逸脱』になる。**未確認と書いておく**」と
+記録していた。一次資料 (OASIS CMIS 1.1 errata01 の data model TeX、§2.1.9
+Secondary Object-Types) を読んだ:
+
+> A repository MAY not allow applying or removing certain secondary object-types to certain
+> objects based on rules that are not determined in this specification. The repository
+> **SHOULD** throw a constraint exception if such an operation is not allowed.
+
+> (§2.1.9.1 Secondary Type Application) Secondary types can be added and removed later by
+> changing the `cmis:secondaryObjectTypeIds` property, either through the updateProperties
+> service or the checkIn service. … **A repository MUST throw a constraint exception if a
+> secondary type cannot be added or removed.**
+
+**仕様は我々の場合を明示的に想定している** — 「この仕様が定めない規則に基づいて、
+リポジトリは特定の secondary type の適用・除去を許さなくてよい」。禁じているのではなく、
+**答え方を固定している**。しかも `updateProperties` 経由の除去については **MUST**。
+
+**したがって (B) へ変える。ただし「明示的な除去要求」に限る**:
+
+| 経路 | 挙動 | 根拠 |
+|---|---|---|
+| リクエストが `cmis:secondaryObjectTypeIds` を**送っており**、証拠型を含まない | **`CmisConstraintException`** | §2.1.9.1 の MUST。クライアントは除去を要求しており、それは実行できない |
+| リクエストが id リストを**送っていない** | 従来どおり**黙って保つ** | 誰も除去を要求していない。リストはオブジェクト自身の aspect から組み直され、型キャッシュが解決できないだけで型が落ちうる (§1.1 のローリング再起動の形)。ここで投げると**デプロイ中に無関係な更新が全部落ちる** |
+
+初稿の「(B) は無関係な更新を壊す」という懸念は、この分割で解ける — 壊れるのは
+**証拠型を名指しで外そうとした更新だけ**である。そして (c) §5.1 との非対称も問題ない:
+READONLY プロパティを黙って無視するのは CMIS の**通常の挙動**であり、仕様は
+そこに例外を要求していない。型の除去だけが MUST を持つ。
+
+**利用者から見た変化**: 管理 UI の型セレクタで証拠型を外すと、これまでは「成功したのに
+戻っている」という無言の失敗だった。今は理由付きで拒否される。
 
 ### 4.1 逃げ道について — **初稿は事実を取り違えていた**
 

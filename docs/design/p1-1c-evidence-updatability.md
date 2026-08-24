@@ -338,3 +338,31 @@ tripwire は**そのまま残す** — constraint が誤って外された日に
 これら 3 型の aspect はまだイベントに載っていない。**開示の判断はイベント被覆 (A-3(ii))
 と同時**に行う — 載せる先が無いうちに INTERNAL_ONLY だけ宣言しても、表と実装が食い違う。
 現状は chat と同様「オブジェクトを読める者には見える」+ Solr には索引される。
+
+### 8.2 実装後レビューの対応 (Codex, 2026-08-24)
+
+**major 3 / minor 3。全件対応・判別テスト付き。**
+
+- **major: note の `files_only` 経路が hook から漏れていた。** files_only は note の
+  **既定**で、そこでは添付が (ページ本体ではなく) ページの出所の担い手になる。
+  `executeNoteAttachment` だけ aspect 書き込みが `execute()` の後に残り、
+  イベントが hash 無しで出ていた。hook 化 + 判別テスト
+  (`theNoteAttachmentEventCarriesTheArchetypeHash`)。**テストが無かったから見落とした**
+  という指摘はそのとおりで、mail/business record にはあった。
+- **major: retry ガードが部分可視性を受け入れていた。** 「1 個でも見つかれば適用済み」
+  だと、11 個中 1 個しか答えない view で残り 10 個が恒久に書き換え可能なまま
+  「適用済み」になる。**ロスター全件**を要求する形に変更。
+- **major: creator パッチが失敗を握り潰すと恒久 wedge。** `AbstractNemakiPatch` は
+  正常復帰の瞬間に履歴を書くので、型パッチが catch して return すると二度と走らない。
+  その状態で READONLY パッチは毎起動 throw し続ける。**根治は roadmap §2-2**
+  (unprepared-return の throw 化、破壊的として保留中) なので、ここでは
+  **例外メッセージに対処法を書いた** — どの creator パッチか、履歴の行を消して
+  再実行すること。沈黙より毎起動の ERROR の方が正しい側の失敗。
+- **minor: verify の「hash を持つ行」判定が 2 本しか見ていなかった。** archetype hash
+  だけを持つ行が「hash 無し」と読まれ、baseline が見つからないか、本物の MISMATCH が
+  `UNVERIFIABLE` に降格していた。述語 `carriesAHash` に一本化。
+- **minor: イベントテストが business record だけ**なのに表示名が「3 型」と言っていた
+  → 表示名を実態に合わせ、note files_only のテストを追加。
+- **minor: パッチ本体を呼ぶテストが 1 つも無かった** → `ArchetypeEvidenceReadOnlyPatchTest`
+  を新設 (完全ロスター / 冪等性 / 部分可視性の拒否 / 型 1 つ欠落の拒否 /
+  TypeService 不在 / パッチ名の固定)。

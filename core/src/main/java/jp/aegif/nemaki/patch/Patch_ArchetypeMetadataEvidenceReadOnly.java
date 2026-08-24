@@ -104,14 +104,27 @@ public class Patch_ArchetypeMetadataEvidenceReadOnly extends AbstractNemakiPatch
     /**
      * Applies the protection, or throws so that it is retried.
      *
-     * <p>The retry guard is PER TYPE, which is stricter than the chat patch's. That patch could
-     * ask "did I find anything?" because it had one type. Here, a repository that has notes but
-     * has never ingested mail would find plenty and record the patch as applied — leaving
-     * {@code messageMetadata} writable for good the moment the first mail arrives. So every
-     * type must have found at least one property, or the whole patch retries.
+     * <p>The guard is PER TYPE and requires the WHOLE roster, which is stricter than the chat
+     * patch's on both counts.
+     *
+     * <ul>
+     *   <li>Per type, because a repository that found plenty of note properties would otherwise
+     *       record the patch as applied and leave {@code messageMetadata} writable for good.</li>
+     *   <li>The whole roster, because "found one of eleven" is a view answering INCOMPLETELY —
+     *       the same silence the single-property lookup cannot distinguish from absence, one
+     *       level up. Accepting it records partial protection as complete (external review).</li>
+     * </ul>
      *
      * <p>Retrying is cheap and harmless: {@code makeReadOnly} skips definitions that are already
      * READONLY, so a repeat run rewrites nothing and bumps no revisions.
+     *
+     * <p><b>Known limitation.</b> If a creator patch swallowed its own failure — all three
+     * catch and log rather than throw — {@code AbstractNemakiPatch} has already written its
+     * history row, so it will never run again, and this patch then throws on every start for
+     * ever. That is loud (an ERROR per start naming the type and the remedy) rather than
+     * silent, which is the right side to fail on; the underlying swallow is the
+     * unprepared-return work the roadmap holds as a breaking change (§2-2). The message below
+     * says what to do about it.
      */
     @Override
     protected void applyPerRepositoryPatch(String repositoryId) {
@@ -125,12 +138,12 @@ public class Patch_ArchetypeMetadataEvidenceReadOnly extends AbstractNemakiPatch
         List<String> typesWithNothingFound = new ArrayList<>();
 
         for (Map.Entry<String, List<String>> roster : EVIDENCE_PROPERTIES_BY_TYPE.entrySet()) {
-            int foundForType = 0;
+            List<String> absent = new ArrayList<>();
             for (String propertyId : roster.getValue()) {
                 try {
                     Outcome outcome = makeReadOnly(typeService, repositoryId, propertyId);
-                    if (outcome != Outcome.ABSENT) {
-                        foundForType++;
+                    if (outcome == Outcome.ABSENT) {
+                        absent.add(propertyId);
                     }
                     if (outcome == Outcome.CHANGED) {
                         changed++;
@@ -142,8 +155,11 @@ public class Patch_ArchetypeMetadataEvidenceReadOnly extends AbstractNemakiPatch
                     failures.add(propertyId);
                 }
             }
-            if (foundForType == 0) {
-                typesWithNothingFound.add(roster.getKey());
+            if (!absent.isEmpty()) {
+                // ANY absence, not just total absence: one property missing out of eleven is a
+                // view answering incompletely, and recording that as applied leaves the ten
+                // that were found protected and the one that was not writable, permanently.
+                typesWithNothingFound.add(roster.getKey() + " (missing " + absent + ")");
             }
         }
 
@@ -152,10 +168,15 @@ public class Patch_ArchetypeMetadataEvidenceReadOnly extends AbstractNemakiPatch
                     + "; retry on the next start");
         }
         if (!typesWithNothingFound.isEmpty()) {
-            throw new IllegalStateException("no properties were found for " + typesWithNothingFound
-                    + " in " + repositoryId + ". Either the type patches have not run yet or the "
-                    + "property views are not answering; both are retryable, and recording this "
-                    + "as applied would leave that type's evidence writable for good");
+            throw new IllegalStateException("evidence properties were not found for "
+                    + typesWithNothingFound + " in " + repositoryId + ". Either the type patches "
+                    + "have not run yet or the property views are not answering; both are "
+                    + "retryable, and recording this as applied would leave that evidence "
+                    + "writable for good. If this repeats on every start, the creating patch "
+                    + "(Patch_MessageMetadataSecondaryType / Patch_NoteMetadataSecondaryType / "
+                    + "Patch_BusinessRecordMetadataSecondaryType) swallowed its own failure and "
+                    + "will not run again: delete its row from the patch history so it re-runs, "
+                    + "then restart");
         }
         if (changed > 0) {
             log.info("Made " + changed + " archetype evidence property/properties read-only in "

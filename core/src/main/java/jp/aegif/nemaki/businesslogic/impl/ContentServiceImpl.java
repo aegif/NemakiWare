@@ -2662,7 +2662,7 @@ public class ContentServiceImpl implements ContentService {
 				}
 			}
 		}
-		return keepEvidenceAspects(aspects, existingAspectsMap);
+		return keepEvidenceAspects(aspects, existingAspectsMap, secondaryTypeIds != null);
 	}
 
 	/**
@@ -2791,7 +2791,8 @@ public class ContentServiceImpl implements ContentService {
 		return value;
 	}
 
-	private List<Aspect> keepEvidenceAspects(List<Aspect> rebuilt, Map<String, Aspect> existing) {
+	private List<Aspect> keepEvidenceAspects(List<Aspect> rebuilt, Map<String, Aspect> existing,
+			boolean idListWasSupplied) {
 		if (existing == null || existing.isEmpty()) {
 			return rebuilt;
 		}
@@ -2805,6 +2806,33 @@ public class ContentServiceImpl implements ContentService {
 			if (present.contains(entry.getKey())
 					|| !jp.aegif.nemaki.businesslogic.EvidenceTypes.isProtected(entry.getKey())) {
 				continue;
+			}
+			if (idListWasSupplied) {
+				// CMIS 1.1 §2.1.9.1 (Secondary Type Application): "A repository MUST throw a
+				// constraint exception if a secondary type cannot be added or removed." The
+				// spec ANTICIPATES a repository that refuses — the paragraph above it says a
+				// repository MAY disallow applying or removing certain secondary types "based
+				// on rules that are not determined in this specification" — but it fixes the
+				// answer as an exception, not silence.
+				//
+				// Verified against the primary source on 2026-08-24 (the errata01 TeX of the
+				// data model). P1-1(d) evidence-types §4 had chosen silence while recording
+				// "the spec text is unverified; if it REQUIRES constraint then this is a
+				// deviation, not a choice". It requires it. So the deviation is closed here.
+				//
+				// ONLY on an explicit request. When the caller supplied no
+				// cmis:secondaryObjectTypeIds at all, the list is rebuilt from the object's own
+				// aspects and a type can drop out merely because the type cache could not
+				// resolve it (§1.1, the rolling-restart shape) — that is not a removal request,
+				// nobody asked for anything, and throwing would fail unrelated updates during a
+				// deploy. There, keeping silently remains right.
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException(
+						"The secondary type " + entry.getKey() + " records captured evidence and "
+						+ "cannot be removed. An object imported in error needs deleting AND "
+						+ "destroying its archive: a normal delete copies the aspects and "
+						+ "secondaryIds into the archive verbatim and a restore brings them "
+						+ "back. The lineage events live in a separate database and survive "
+						+ "either way.");
 			}
 			log.warn("Keeping evidence secondary type {} that this update would have detached. "
 					+ "Evidence types cannot be removed through CMIS. An object imported in error "

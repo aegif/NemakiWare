@@ -36,6 +36,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -128,23 +129,42 @@ class EvidenceTypeCannotBeDetachedTest {
         Method m = ContentServiceImpl.class.getDeclaredMethod("buildSecondaryTypes",
                 String.class, Properties.class, jp.aegif.nemaki.model.Content.class);
         m.setAccessible(true);
-        return (List<Aspect>) m.invoke(service, "bedroom", properties, content);
+        try {
+            return (List<Aspect>) m.invoke(service, "bedroom", properties, content);
+        } catch (java.lang.reflect.InvocationTargetException wrapped) {
+            // Unwrap: reflection boxes the product's exception, and a test that asserts on
+            // InvocationTargetException would pass for ANY failure inside the method.
+            if (wrapped.getCause() instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            throw wrapped;
+        }
     }
 
     private static List<String> namesOf(List<Aspect> aspects) {
         return aspects.stream().map(Aspect::getName).toList();
     }
 
+    /**
+     * CMIS 1.1 §2.1.9.1: "A repository MUST throw a constraint exception if a secondary type
+     * cannot be added or removed." Verified against the primary source (errata01 TeX) on
+     * 2026-08-24 — evidence-types §4 had chosen SILENCE while recording that it had not read
+     * the spec and that silence would be a deviation if the spec required an exception. It
+     * requires it.
+     */
     @Test
-    @DisplayName("a list that omits the chat evidence type does not detach it")
+    @DisplayName("an explicit list that omits the chat evidence type is REFUSED, per CMIS 1.1")
     void namedRemovalOfChatEvidenceIsRefused() throws Exception {
         ContentServiceImpl service = serviceResolving(CHAT, INTEGRATION, ORDINARY);
 
-        List<Aspect> result = build(service, listing(ORDINARY), documentWithEvidence());
-
-        assertTrue(namesOf(result).contains(CHAT),
-                "one update omitting the type detached eleven read-only evidence properties: "
-                        + namesOf(result));
+        org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException thrown =
+                assertThrows(
+                        org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException
+                                .class,
+                        () -> build(service, listing(ORDINARY), documentWithEvidence()),
+                        "the removal was accepted and silently undone: the client is told it "
+                                + "succeeded while the type is still there");
+        assertTrue(thrown.getMessage().contains(CHAT), thrown.getMessage());
     }
 
     @Test
@@ -152,19 +172,23 @@ class EvidenceTypeCannotBeDetachedTest {
     void namedRemovalOfIntegrationEvidenceIsRefused() throws Exception {
         ContentServiceImpl service = serviceResolving(CHAT, INTEGRATION, ORDINARY);
 
-        List<Aspect> result = build(service, listing(CHAT), documentWithEvidence());
-
-        assertTrue(namesOf(result).contains(INTEGRATION),
-                "nemaki:contentHash was detached; the next poll of this source object will "
-                        + "re-import it as a new version: " + namesOf(result));
+        assertThrows(
+                org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException.class,
+                () -> build(service, listing(CHAT, ORDINARY), documentWithEvidence()),
+                "nemaki:contentHash was detached; the next poll of this source object would "
+                        + "re-import it as a new version");
     }
 
     @Test
     @DisplayName("the evidence properties come back with the aspect, not an empty shell")
     void thePreservedAspectKeepsItsProperties() throws Exception {
-        ContentServiceImpl service = serviceResolving(CHAT, INTEGRATION, ORDINARY);
+        // Exercised on the IMPLICIT path, which is where preservation still happens: an update
+        // that says nothing about secondary types, against a type the cache cannot resolve
+        // (the rolling-restart shape, §1.1). The EXPLICIT path now refuses outright per
+        // CMIS 1.1 §2.1.9.1, so it has no preserved aspect to inspect.
+        ContentServiceImpl service = serviceResolving(ORDINARY);   // CHAT unresolvable
 
-        List<Aspect> result = build(service, listing(ORDINARY), documentWithEvidence());
+        List<Aspect> result = build(service, sayingNothing(), documentWithEvidence());
 
         Aspect chat = result.stream().filter(a -> CHAT.equals(a.getName())).findFirst().orElseThrow();
         assertEquals(1, chat.getProperties().size());
@@ -235,36 +259,35 @@ class EvidenceTypeCannotBeDetachedTest {
     }
 
     @Test
-    @DisplayName("a list that omits the mail evidence type does not detach it")
+    @DisplayName("an explicit list that omits the mail evidence type is refused too")
     void namedRemovalOfMailEvidenceIsRefused() throws Exception {
         // internetMessageId is RFC 2822's Message-ID — the canonical identity of an email, the
         // same position chatMessageId holds. Before (c) §8.1 one update detached it.
         ContentServiceImpl service = serviceResolving(MAIL, NOTE, RECORD, ORDINARY);
 
-        List<Aspect> result = build(service, listing(ORDINARY), documentWithArchetypeEvidence());
-
-        assertTrue(namesOf(result).contains(MAIL),
-                "one update omitting the type detached the Message-ID and the whole envelope: "
-                        + namesOf(result));
+        assertThrows(
+                org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException.class,
+                () -> build(service, listing(ORDINARY), documentWithArchetypeEvidence()),
+                "one update omitting the type detached the Message-ID and the whole envelope");
     }
 
     @Test
-    @DisplayName("nor the note and business-record types — while an omitted ORDINARY type goes")
-    void namedRemovalOfNoteAndRecordEvidenceIsRefused() throws Exception {
+    @DisplayName("an ORDINARY type omitted from the list still detaches — the control")
+    void anOrdinaryTypeStillDetachesFromTheArchetypeDocument() throws Exception {
+        // The counterweight: refusing must be scoped to evidence. A list naming every evidence
+        // type but not ORDINARY must SUCCEED and drop ORDINARY — over-protecting would break
+        // legitimate CMIS use (evidence-types §0), and a rule that throws for everything would
+        // pass the refusal tests above just as well.
         ContentServiceImpl service = serviceResolving(MAIL, NOTE, RECORD, ORDINARY);
 
-        // The list names only MAIL: the two other evidence types must survive being omitted,
-        // and ORDINARY must NOT — that asymmetry is the whole rule. Asserting only the
-        // survivals would pass just as well if buildSecondaryTypes kept everything.
-        List<Aspect> result = build(service, listing(MAIL), documentWithArchetypeEvidence());
+        List<Aspect> result = build(service, listing(MAIL, NOTE, RECORD),
+                documentWithArchetypeEvidence());
 
-        assertTrue(namesOf(result).contains(NOTE),
-                "the page's source identity was detached: " + namesOf(result));
-        assertTrue(namesOf(result).contains(RECORD),
-                "the record's source identity was detached: " + namesOf(result));
+        assertTrue(namesOf(result).contains(MAIL), namesOf(result).toString());
+        assertTrue(namesOf(result).contains(NOTE), namesOf(result).toString());
+        assertTrue(namesOf(result).contains(RECORD), namesOf(result).toString());
         assertTrue(!namesOf(result).contains(ORDINARY),
-                "an ORDINARY type omitted from the list must still detach — over-protecting "
-                        + "breaks legitimate CMIS use: " + namesOf(result));
+                "an ORDINARY type omitted from the list must still detach: " + namesOf(result));
     }
 
     @Test

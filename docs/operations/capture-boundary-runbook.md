@@ -209,6 +209,48 @@ curl -s -u admin:password http://localhost:5984/nemaki_lineage | \
 
 ---
 
+## 5.5 証拠が書き換わっていないか確かめる (verify-metadata)
+
+```
+GET /core/api/v1/admin/capture-intents/verify-metadata?repositoryId=bedroom&objectId={id}
+```
+
+取込のときに記録した**適用済みメタデータの hash (mh1)** と、いま保存されている値から
+計算し直した hash を突き合わせます。応答は**証拠の区画ごとに三値**です。
+
+| 区画 | 何の hash か |
+|---|---|
+| `chatEvidence` | chat の捕獲属性 11 個 |
+| `sourceIdentity` | 取込元同一性 9 個 (`nemaki:externalIntegration`) |
+| `archetypeEvidence` | mail / note / business record の捕獲属性 (2026-08-24 から) |
+
+| 値 | 意味 | すること |
+|---|---|---|
+| `MATCH` | 記録時と同じ | なし |
+| `UNVERIFIABLE` | 判定できない (hash を持つ完了行が無い、オブジェクトが読めない、後続 pass が hash 無しで走った) | §5.5.1 |
+| `MISMATCH` | 記録時と違う | **§5.5.1 を必ず読んでから**報告する |
+
+### 5.5.1 `MISMATCH` は 1 度再検証してから報せる
+
+**並行する取込 pass との競走で、一時的に `MISMATCH` に見えることがあります。**
+比較の基準は「hash を持つ最新の完了行」ですが、別の pass が同じオブジェクトへ書いて
+いる最中は、基準行と現在値が別の瞬間を指します。製品はこれを**降格**で処理します
+(後続 pass が hash 無しで存在すれば `UNVERIFIABLE` に落とす) が、降格が効かない
+タイミングは残ります。
+
+したがって運用手順は:
+
+1. **同じ問い合わせをもう一度引く** — 数十秒あけて。1 回目だけの `MISMATCH` は競走です
+2. **間に pass が無い状態での 2 連続 `MISMATCH` が本物**です
+3. 本物だったら、`GET .../capture-intents/unresolved` と lineage イベント一覧で
+   **その間に何が走ったか**を確かめてから報告してください
+
+**`MISMATCH` は「改竄」を意味しません。** CMIS 経由の書き換えは READONLY で塞いで
+ありますが、CouchDB へ直接届く経路・パッチ適用前に書かれた値・移行作業は、いずれも
+同じ `MISMATCH` を出します。**「記録時と違う」以上のことは、この応答からは言えません。**
+
+---
+
 ## 6. 症状から引く
 
 | 症状 | 見るところ |

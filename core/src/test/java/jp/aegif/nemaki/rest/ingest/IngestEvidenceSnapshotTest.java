@@ -726,7 +726,7 @@ class IngestEvidenceSnapshotTest {
     }
 
     @Test
-    @DisplayName("a business-record import's event carries the archetype hash (D-5, 3 types)")
+    @DisplayName("a business-record import's event carries the archetype hash")
     void theEventCarriesTheArchetypeHash() {
         // (c) §8.1 made the three archetype homes evidence types; metadata-hash §5-6 made the
         // hash conditional on exactly that. For the event to carry it, the aspect must exist
@@ -749,6 +749,136 @@ class IngestEvidenceSnapshotTest {
                 "recomputing from the stored state diverges from the event's copy — a write "
                         + "slipped in after the emit");
         assertEquals("mh1", emitter.passOutcome.get(CaptureEvidenceField.METADATA_HASH_FORMULA));
+    }
+
+    @Test
+    @DisplayName("a files_only note ATTACHMENT's event carries the archetype hash too")
+    void theNoteAttachmentEventCarriesTheArchetypeHash() {
+        // files_only is the DEFAULT note policy, and in it the attachment — not a page-body
+        // document — is the carrier of the page's source identity. That path kept writing the
+        // aspect after execute() returned while the other wrappers moved, so its events went
+        // out without the hash (Codex review of the 2026-08-24 batch). It had no test, which
+        // is why it was missed.
+        RecordingEmitter emitter = new RecordingEmitter();
+        NoteAttachmentStore store = new NoteAttachmentStore();
+
+        ExternalIngestResult r = runNoteFilesOnlyImport(store, emitter);
+        assertTrue(r.isSuccess(), "control");
+
+        assertTrue(store.written,
+                "control: the hook must have written the aspect; warnings=" + r.warnings());
+        String hashOnEvent = emitter.passOutcome == null ? null
+                : emitter.passOutcome.get(CaptureEvidenceField.APPLIED_ARCHETYPE_EVIDENCE_HASH);
+        assertNotNull(hashOnEvent,
+                "the attachment's event does not carry the archetype hash — the note aspect "
+                        + "was written after the emit");
+        assertEquals(EvidenceMetadataHash.compute(store.read().getAspects())
+                        .archetypeEvidenceHash(), hashOnEvent);
+    }
+
+    /** A note attachment whose noteMetadata aspect appears only once the hook writes it. */
+    private static final class NoteAttachmentStore {
+        private boolean written;
+
+        jp.aegif.nemaki.model.Document read() {
+            jp.aegif.nemaki.model.Document doc = new jp.aegif.nemaki.model.Document();
+            doc.setId("att-1");
+            doc.setType("cmis:document");
+            List<Aspect> aspects = new ArrayList<>();
+            if (written) {
+                Aspect note = new Aspect();
+                note.setName("nemaki:noteMetadata");
+                note.setProperties(new ArrayList<>(List.of(
+                        new Property("nemaki:notePageId", "page-1"))));
+                aspects.add(note);
+            }
+            doc.setAspects(aspects);
+            return doc;
+        }
+    }
+
+    private static ExternalIngestResult runNoteFilesOnlyImport(NoteAttachmentStore store,
+            RecordingEmitter emitter) {
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService connectorService =
+                org.mockito.Mockito.mock(
+                        jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService.class);
+        jp.aegif.nemaki.rest.ingest.ImportProfileDefinitionService profileService =
+                org.mockito.Mockito.mock(
+                        jp.aegif.nemaki.rest.ingest.ImportProfileDefinitionService.class);
+        jp.aegif.nemaki.businesslogic.ContentService contentService =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.businesslogic.ContentService.class);
+        jp.aegif.nemaki.cmis.service.ObjectService objectService =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.cmis.service.ObjectService.class);
+        IngestMetadataService metadataService =
+                org.mockito.Mockito.mock(IngestMetadataService.class);
+        org.mockito.Mockito.when(metadataService.willWriteNoteMetadata(
+                org.mockito.ArgumentMatchers.any())).thenReturn(true);
+        org.mockito.Mockito.when(metadataService.applyNoteMetadata(
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> {
+                    store.written = true;
+                    return null;
+                });
+        service.setConnectorDefinitionService(connectorService);
+        service.setImportProfileDefinitionService(profileService);
+        service.setContentService(contentService);
+        service.setObjectService(objectService);
+        service.setIngestMetadataService(metadataService);
+        service.setIngestLineageEmitter(emitter);
+
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        org.mockito.Mockito.when(profileService.get("p1")).thenReturn(profile);
+
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(
+                jp.aegif.nemaki.rest.ingest.SourceArchetype.COMPOUND_NOTE);
+        connector.setSourceSystem("notion");
+        org.mockito.Mockito.when(connectorService.get("c1")).thenReturn(connector);
+        // Every argument matched loosely: an attachment request differs from the page one in
+        // content stream and mime type, and a strict stub silently returns null (the document
+        // "is not found after creation" and the hook never runs).
+        org.mockito.Mockito.when(objectService.createDocument(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.eq("bedroom"),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.eq("folder-1"),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any()))
+                .thenReturn("att-1");
+        org.mockito.Mockito.when(contentService.getContent("bedroom", "att-1"))
+                .thenAnswer(inv -> store.read());
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("page-1");
+        req.setSourceObjectType("page");
+        req.setFileName("page.txt");
+        // No importPolicy => files_only, the default: the ATTACHMENT carries the identity.
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("pageId", "page-1");
+        meta.put("bodyText", "hello");
+        Map<String, Object> att = new LinkedHashMap<>();
+        att.put("filename", "spec.pdf");
+        att.put("contentBase64", java.util.Base64.getEncoder()
+                .encodeToString("attachment bytes".getBytes()));
+        meta.put("attachments", List.of(att));
+        req.setMetadata(meta);
+
+        return service.executeNoteImport(testContext(), req);
     }
 
     /** A document whose businessRecordMetadata aspect appears only once the hook writes it. */

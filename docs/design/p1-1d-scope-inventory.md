@@ -56,6 +56,12 @@
 > 作るのは `execute()` が返った後の wrapper なので、前倒しすると**空振りする**。
 > (d) が決めるのは「aspect 付与を含めて、どの事実がどの時点で確定するか」であって、
 > 順序の入れ替えそのものではない。
+>
+> **2026-08-24 追記**: (d) が決めたとおり「どの時点で確定するか」を動かした結果、
+> 撤回理由そのものが消えた — **aspect 付与を `execute()` の中 (beforeEmit hook) へ
+> 引き込んだ**ので、emit の時点で刻印先が存在する。chat は (e) D-5、mail/note/record は
+> (c) §8.1 の保護拡張と同時。順序の入れ替えを「再提案」したのではなく、
+> 前提が変わった。
 
 ---
 
@@ -94,14 +100,18 @@
 
 ## 7. したがって (d) の設計が対象にするもの
 
-1. **事実が確定する時点** (本体) — [`p1-1d-evidence-data-model.md`](p1-1d-evidence-data-model.md)
-2. 空コンテンツ / version ごとの hash / メタデータ hash — **どれも閉じていない**。
-   一度「閉じた」と書いたが 2 件とも早計だった (§3)
-3. 「どの型が証拠か」 — (c) の 1 番目がこれを待っている
-4. 証拠に PII をどう載せるか — participants / channelName
-5. この取込の判断 (会話の範囲) をどこに置くか
-6. `chatCapturedAt` を含む aspect 付与の位置
-7. (モデルの後) 復元と InterPARES 逐条
+> **この節は着手時点 (2026-08-22) の一覧である。** 現在地は右列に追記した。
+> 額面どおり読むと未着手を過大に見積もる。
+
+| # | 項目 | 現在地 (2026-08-24) |
+|---|---|---|
+| 1 | **事実が確定する時点** (本体) — [`p1-1d-evidence-data-model.md`](p1-1d-evidence-data-model.md) | ✅ モデル本体は通した |
+| 2 | 空コンテンツ / version ごとの hash / メタデータ hash | version ごとの hash (D-3) と メタデータ hash (D-1) は ✅ 2026-08-23。空コンテンツは**記録面のみ ✅** (D-2 — 親 pass の完了 evidence に `attachmentsNotIngested`)。**残るのはモデル側の命名だけ** (`CapturedContent` に `NOT_INGESTED` を足すか) |
+| 3 | 「どの型が証拠か」 — (c) の 1 番目がこれを待っている | ✅ [`p1-1d-evidence-types.md`](p1-1d-evidence-types.md)。2026-08-24 に 2 型 → **5 型** ((c) §8.1) |
+| 4 | 証拠に PII をどう載せるか — participants / channelName | ✅ [`p1-1d-evidence-disclosure.md`](p1-1d-evidence-disclosure.md)。**恒久 none** + Solr 索引時除外。**mail/note/record 側の PII (mailFrom 等) は未判断** — (c) §8.1 の但し書き |
+| 5 | この取込の判断 (会話の範囲) をどこに置くか | ✅ (e) Step 2 — journalFacts (digest 被覆・カタログへ構造的に出ない) |
+| 6 | `chatCapturedAt` を含む aspect 付与の位置 | ✅ (e) D-5 の beforeEmit hook。2026-08-24 に mail/note/record も同じ形へ |
+| 7 | (モデルの後) 復元と InterPARES 逐条 | ✅ D-9 — [`interpares-mapping.md`](interpares-mapping.md) A.1 逐条 + [`restore-drill-runbook.md`](../operations/restore-drill-runbook.md)。**「既存オブジェクトの保管開始」(遡及 custody) は別項目で未着手** |
 
 **対象にしないもの**: Process 属性の v2 供給 (flip の前提)、ローリング再起動の型キャッシュ、
 実行起源 ((e))、timestamp の結び付け (P2)。

@@ -771,15 +771,37 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // close the row BEFORE the metadata update below — putting that change outside the
         // boundary and attributing its failure to the page rather than to this attachment.
         CaptureScope childScope = newCaptureScope(callContext, attReq);
-        ExternalIngestResult attResult = execute(callContext, attReq, childScope);
-        if (attResult.isSuccess() && attResult.objectId() != null && !attReq.isDryRun()) {
-            // Reuse the page's metadata for the note-metadata secondary type.
+        // files_only makes THIS document the carrier of the page's source identity, so its
+        // event needs the archetype hash exactly as the page body's does — which means the
+        // aspect must exist before the emit (Codex review of the 2026-08-24 batch: this path
+        // was left behind while the other three moved).
+        String[] attHookMetaError = {null};
+        BeforeEmitHook noteAttachmentAspect = (objectId, createdObject) -> {
             boolean tracked = openIfWriting(childScope,
                     ingestMetadataService.willWriteNoteMetadata(pageRequest));
-            String metaError = ingestMetadataService.applyNoteMetadata(
-                    attReq.getRepositoryId(), attResult.objectId(), callContext, pageRequest);
+            String err = ingestMetadataService.applyNoteMetadata(
+                    attReq.getRepositoryId(), objectId, callContext, pageRequest);
             if (tracked) {
-                recordWrapperUpdate(childScope, "applyNoteMetadata", metaError);
+                recordWrapperUpdate(childScope, "applyNoteMetadata", err);
+            }
+            attHookMetaError[0] = err;
+            return java.util.Map.of();
+        };
+        ExternalIngestResult attResult = execute(callContext, attReq, childScope,
+                noteAttachmentAspect);
+        if (attResult.isSuccess() && attResult.objectId() != null && !attReq.isDryRun()) {
+            // Written by the hook above, inside execute(). On a dedupe skip the hook does not
+            // run (execute returns before it), and this path keeps the previous behaviour of
+            // re-applying so a late-arriving page context still lands.
+            String metaError = attHookMetaError[0];
+            if (metaError == null && attResult.skipped()) {
+                boolean tracked = openIfWriting(childScope,
+                        ingestMetadataService.willWriteNoteMetadata(pageRequest));
+                metaError = ingestMetadataService.applyNoteMetadata(
+                        attReq.getRepositoryId(), attResult.objectId(), callContext, pageRequest);
+                if (tracked) {
+                    recordWrapperUpdate(childScope, "applyNoteMetadata", metaError);
+                }
             }
             if (metaError != null) {
                 List<String> w = new ArrayList<>(attResult.warnings());

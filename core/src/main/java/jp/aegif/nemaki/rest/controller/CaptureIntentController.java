@@ -192,6 +192,20 @@ public class CaptureIntentController {
      * possible while a pass is in flight, so the operational rule is: re-verify once; two
      * consecutive mismatches with no pass between them are the real thing.
      */
+    /**
+     * Whether a completed capture row carries ANY applied-metadata hash.
+     *
+     * <p>One predicate, used by both the baseline search and the later-activity scan. The two
+     * had the same literal pair inlined, and adding the archetype hash to only the recorders
+     * left a mail/note/record-only row reading as hashless — no baseline, or a real mismatch
+     * downgraded to UNVERIFIABLE (external review of the 2026-08-24 batch).
+     */
+    private static boolean carriesAHash(Map<String, Object> row) {
+        return row.get("appliedChatEvidenceHash") != null
+                || row.get("appliedSourceIdentityHash") != null
+                || row.get("appliedArchetypeEvidenceHash") != null;
+    }
+
     @GetMapping("/verify-metadata")
     public ResponseEntity<Map<String, Object>> verifyMetadata(
             @RequestParam String repositoryId,
@@ -213,8 +227,7 @@ public class CaptureIntentController {
             Map<String, Object> baseline = null;
             int rowsWithoutHash = 0;
             for (Map<String, Object> row : rows) {
-                if (row.get("appliedChatEvidenceHash") != null
-                        || row.get("appliedSourceIdentityHash") != null) {
+                if (carriesAHash(row)) {
                     baseline = row;
                     break;
                 }
@@ -315,8 +328,7 @@ public class CaptureIntentController {
                 Long rowCapturedAt = row.get("capturedAtMs") instanceof Number rc
                         ? rc.longValue() : null;
                 if (rowCapturedAt != null) {
-                    boolean rowHasHash = row.get("appliedChatEvidenceHash") != null
-                            || row.get("appliedSourceIdentityHash") != null;
+                    boolean rowHasHash = carriesAHash(row);
                     if (rowCapturedAt >= baselineAtMs && !rowHasHash) {
                         return true;
                     }

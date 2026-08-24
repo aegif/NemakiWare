@@ -26,6 +26,11 @@ v2 write flip が来ても `contentStored` / `contentHash` / 会話の同一性�
   **残るものは残ると書く**
 - **flip がいつ来るかは、この作業では決まらない。** §7 のとおり、取込から v2 イベントが
   出る経路は**まだ存在しない** (Slice 4 未着)
+  → **2026-08-24 訂正**: 「保存済み v2 行はゼロ」は誤りだった (P1-1(e) 実装前レビュー
+  C1)。**barrier を ACTIVE にした配備と実 CouchDB の IT では既に v2 行が保存されうる**。
+  取込の既定経路がまだ v1 である、が正しい言い方。この誤認のまま digest 式を動かすと
+  保存済み行が読めなくなるところだった — (e) は `creationDigestVersion` を永続化して
+  塞いだ
 
 ---
 
@@ -389,10 +394,16 @@ v1 側には `buildV1Snapshot` という package-private の継ぎ目が在る�
 
 ## 10. やらないこと
 
-- **既存 v1 行の移行**
-- **`executedBy` / `onBehalfOf` の v2 化** — P1-1(e) (§5)
-- **刻印の前倒し** — P1-1(d) (§7)
-- **会話範囲 / participants / channelName の v2 化** — P1-1(d) (§3.3)
+> **この節は着手時点の一覧である。** 送り先で片付いたものには現在地を付けた。
+
+- **既存 v1 行の移行** — 恒久 (読み側が両方読む)
+- ~~**`executedBy` / `onBehalfOf` の v2 化**~~ — P1-1(e) (§5) で ✅ 2026-08-24。
+  `LineageExecutionAttribution` を typed で digest に載せた
+- ~~**刻印の前倒し**~~ — P1-1(d) → 実際には (e) D-5 で ✅ 2026-08-24。
+  §8 の撤回理由 (「刻む先が無い」) は、aspect 付与を `execute()` の中へ
+  引き込んだことで消えた。**撤回を撤回したのではなく前提が変わった**
+- ~~**会話範囲 / participants / channelName の v2 化**~~ — P1-1(d) (§3.3) で判断済み:
+  会話範囲は journalFacts へ ✅、participants / channelName は**恒久 none** (PII)
 
 ### roadmap の更新 (実装と同一コミット)
 
@@ -407,6 +418,8 @@ v1 側には `buildV1Snapshot` という package-private の継ぎ目が在る�
 - **Process 属性の v2 供給** — §3.4。flip すると `folderId` / `importMode` /
   `sourceDescription` の**必須属性が既定値で埋まる**。endpoint attribute では解けないので
   **flip の前提条件**として別途扱う
-- **v2 write 経路の実装** — Slice 4。したがって本作業の end-to-end 検証は
-  **手組みの `LineageEventV2` に対する単体テスト**にとどまる。この限界を条件 2 の
-  対応表で補う (対応表は v2 write 経路の有無に依らず成立する)
+- **v2 write 経路の実装** — Slice 4。**依然として未着手**。したがって本作業の
+  end-to-end 検証は**手組みの `LineageEventV2` に対する単体テスト**にとどまる。
+  この限界を条件 2 の対応表で補う (対応表は v2 write 経路の有無に依らず成立する)。
+  なお flip の前提条件だった Process 属性の v2 供給は (e) で ✅ 2026-08-24 に閉じたので、
+  残っているのは flip の実行そのものである
