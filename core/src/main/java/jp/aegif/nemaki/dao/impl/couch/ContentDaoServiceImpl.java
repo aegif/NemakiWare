@@ -1213,8 +1213,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			return children;
 			
 		} catch (Exception e) {
+			// Fail-fast (roadmap §2-1). An empty list said "this folder has no children",
+			// which is a FACT about the repository, when what happened was "we could not
+			// enumerate them". The two are indistinguishable to every caller, and the
+			// empty-index-reported-complete incident of v3.3 grew from exactly this: a reindex
+			// that walked a folder whose listing had failed recorded it as empty and finished
+			// green. The reindex side got its own guard then; this is the root.
 			log.error("Error retrieving children for parent '" + parentId + "' from repository '" + repositoryId + "': " + e.getMessage(), e);
-			return new ArrayList<Content>(); // Return empty list on error
+			throw new RuntimeException("Failed to enumerate children of '" + parentId
+					+ "' in repository '" + repositoryId + "': " + e.getMessage(), e);
 		}
 	}
 
@@ -1247,8 +1254,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 			return children;
 		} catch (Exception e) {
+			// Same rule as the unpaged form above: an empty page is a fact, a failed read is
+			// not, and callers cannot tell them apart from a list.
 			log.error("Error retrieving paged children for parent '" + parentId + "' from repository '" + repositoryId + "': " + e.getMessage(), e);
-			return new ArrayList<Content>();
+			throw new RuntimeException("Failed to enumerate children of '" + parentId
+					+ "' in repository '" + repositoryId + "': " + e.getMessage(), e);
 		}
 	}
 

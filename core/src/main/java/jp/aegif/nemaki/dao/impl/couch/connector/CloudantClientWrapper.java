@@ -601,11 +601,27 @@ public class CloudantClientWrapper {
 			}
 
 		} catch (NotFoundException e) {
+			// The one legitimate null: the document is not there. Callers read this as absence
+			// and are right to.
 			log.debug("Document not found with ID: " + id);
 			return null;
 		} catch (Exception e) {
-			log.warn("Error retrieving document with ID '" + id + "' from database '" + databaseName + "' - returning null. This is normal during initial startup: " + e.getMessage());
-			return null;
+			// Everything else is "we could not read", which is NOT absence (roadmap §2-1). The
+			// old code returned null here too, so a connection failure and a missing document
+			// were the same answer — and the message said "This is normal during initial
+			// startup" whether or not it was startup.
+			//
+			// Startup stays lenient, for the same reason update() and delete() do: provisioning
+			// runs against a database that may not exist yet.
+			if (isStartupPhase()) {
+				log.warn("Error retrieving document with ID '" + id + "' from database '"
+						+ databaseName + "' during startup - returning null: " + e.getMessage());
+				return null;
+			}
+			log.error("Critical error retrieving document with ID '" + id + "' from database '"
+					+ databaseName + "'", e);
+			throw new RuntimeException("Failed to read document ID '" + id + "' from database '"
+					+ databaseName + "': " + e.getMessage(), e);
 		}
 	}
 
@@ -759,8 +775,25 @@ public class CloudantClientWrapper {
 			return result;
 
 		} catch (Exception e) {
-			log.error("Error updating document in database '" + databaseName + "': " + e.getMessage(), e);
-			return null;
+			// Fail-fast, on the same terms delete() already uses (roadmap §2-1).
+			//
+			// This used to return null for EVERY failure, and not one of the two dozen callers
+			// checked — so "the write did not happen" reached nobody. That is the root the
+			// authenticity work keeps running into: a record's completeness cannot be claimed
+			// on top of a store whose writes can fail silently.
+			//
+			// Startup stays lenient for the same reason delete() does: patches and provisioning
+			// run against a database that may not be ready, and turning those into hard
+			// failures would stop a deployment that has always come up.
+			if (isStartupPhase()) {
+				log.warn("Error updating document in database '" + databaseName
+						+ "' during startup - returning null. This is normal during initial"
+						+ " startup: " + e.getMessage());
+				return null;
+			}
+			log.error("Critical error updating document in database '" + databaseName + "'", e);
+			throw new RuntimeException("Failed to update document in database '" + databaseName
+					+ "': " + e.getMessage(), e);
 		}
 	}
 

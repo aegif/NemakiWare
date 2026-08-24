@@ -100,7 +100,23 @@ BagIt / OAIS 型パッケージ (`bagit|oais` で 0 件)、定期 fixity 再検�
 **いずれも真正性基盤の前提**になる — 「静かに欠ける」経路を持つシステムの上に
 真正性の主張は築けない。
 
-### 2-1. DAO のエラー握り潰しの総点検 (最優先・他の前提)
+### 2-1. DAO のエラー握り潰しの総点検 (最優先・他の前提) — **第 1 段 実施 2026-08-24**
+
+> **名指しされた 3 箇所は fail-fast にした。** 判断の基準は「**無い**」と「**読めなかった**」を
+> 同じ答えにしないこと。leniency は `delete()` が既に使っていた規則をそのまま踏襲し、
+> **startup phase だけ**従来どおり null を返す (パッチと provisioning は準備前の DB に
+> 対して走るので、そこを硬い失敗にすると今まで上がっていた配備が上がらなくなる)。
+>
+> | 箇所 | 前 | 後 |
+> |---|---|---|
+> | `CloudantClientWrapper.update(Map)` | 全例外を握って null。**24 の呼び出し元のうち null を見ているものは 0 件** | startup 外は throw |
+> | `CloudantClientWrapper.get(String)` | `NotFoundException` も他の例外も null。ログは常に「This is normal during initial startup」 | NotFound は null (正当な不在)、他は startup 外で throw |
+> | `ContentDaoServiceImpl.getChildren` (2 経路) | 例外で**空リスト** = 「このフォルダに子は無い」という**事実の主張** | startup 外は throw |
+>
+> `getChildren` の空リストは v3.3 の「空索引が completed と報告された」事件の根でもある
+> (再索引側にはあの時ガードを足した。これが根)。
+> 判別テスト `DaoFailsFastTest` (失敗は throw / 本当に空なら空リストの統制)。
+> **残り**: `null` を Optional / 明示 NotFound に**型で**表す作業と、他の DAO の全数点検。
 
 | 現状 (v3.3.0) | 何が問題か |
 |---|---|
