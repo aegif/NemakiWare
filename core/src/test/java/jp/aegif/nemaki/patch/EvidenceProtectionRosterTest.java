@@ -43,16 +43,64 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class EvidenceProtectionRosterTest {
 
     @Test
-    @DisplayName("PROTECTED is exactly the two types the patches declare")
+    @DisplayName("PROTECTED is exactly the five types the patches declare")
     void protectedMatchesThePatches() {
         assertEquals(Set.of(Patch_ChatContextMetadataSecondaryType.TYPE_ID,
-                        Patch_ExternalIntegrationSecondaryType.TYPE_ID),
+                        Patch_ExternalIntegrationSecondaryType.TYPE_ID,
+                        Patch_MessageMetadataSecondaryType.TYPE_ID,
+                        Patch_NoteMetadataSecondaryType.TYPE_ID,
+                        Patch_BusinessRecordMetadataSecondaryType.TYPE_ID),
                 EvidenceTypes.PROTECTED,
                 "a type patch and the protection registry disagree about WHICH types are "
                         + "evidence");
         assertEquals(Patch_ExternalIntegrationSecondaryType.TYPE_ID,
                 Patch_ExternalIntegrationEvidenceReadOnly.TYPE_ID,
                 "the read-only patch protects a different type than the creator made");
+    }
+
+    @Test
+    @DisplayName("every PROTECTED type has a read-only patch covering its whole roster")
+    void everyProtectedTypeHasAReadOnlyPatch() {
+        // The trap (c) §8.1 names: a type in PROTECTED but with no READONLY patch is protected
+        // against detach-by-type while every property stays writable — the "中途半端" state the
+        // canon says NOT to create. This asserts the pairing for the three archetype types in
+        // both directions.
+        java.util.Map<String, java.util.List<String>> rosters =
+                Patch_ArchetypeMetadataEvidenceReadOnly.EVIDENCE_PROPERTIES_BY_TYPE;
+        assertEquals(Set.of(Patch_MessageMetadataSecondaryType.TYPE_ID,
+                        Patch_NoteMetadataSecondaryType.TYPE_ID,
+                        Patch_BusinessRecordMetadataSecondaryType.TYPE_ID),
+                rosters.keySet(),
+                "the archetype read-only patch covers a different set of types than the three "
+                        + "that joined PROTECTED");
+        for (String typeId : rosters.keySet()) {
+            assertTrue(EvidenceTypes.isProtected(typeId),
+                    typeId + " is made read-only but is not PROTECTED — a client can still "
+                            + "detach the whole aspect and take the evidence with it");
+        }
+
+        assertEquals(new TreeSet<>(concat(
+                        Patch_MessageMetadataSecondaryType.STRING_PROPERTY_IDS,
+                        Patch_MessageMetadataSecondaryType.DATETIME_PROPERTY_IDS)),
+                new TreeSet<>(rosters.get(Patch_MessageMetadataSecondaryType.TYPE_ID)),
+                "the mail roster drifted from what the type patch declares");
+        assertEquals(new TreeSet<>(concat(
+                        Patch_NoteMetadataSecondaryType.STRING_PROPERTY_IDS,
+                        Patch_NoteMetadataSecondaryType.DATETIME_PROPERTY_IDS)),
+                new TreeSet<>(rosters.get(Patch_NoteMetadataSecondaryType.TYPE_ID)),
+                "the note roster drifted");
+        assertEquals(new TreeSet<>(concat(
+                        Patch_BusinessRecordMetadataSecondaryType.STRING_PROPERTY_IDS,
+                        Patch_BusinessRecordMetadataSecondaryType.DATETIME_PROPERTY_IDS)),
+                new TreeSet<>(rosters.get(Patch_BusinessRecordMetadataSecondaryType.TYPE_ID)),
+                "the business-record roster drifted");
+    }
+
+    private static java.util.List<String> concat(java.util.List<String> a,
+            java.util.List<String> b) {
+        java.util.List<String> all = new java.util.ArrayList<>(a);
+        all.addAll(b);
+        return all;
     }
 
     @Test
@@ -100,6 +148,7 @@ class EvidenceProtectionRosterTest {
         roster.addAll(Patch_ExternalIntegrationSecondaryType.PROPERTY_IDS);
         roster.addAll(Patch_ExternalIntegrationSourceFields.PROPERTY_IDS);
         roster.add(Patch_ExternalIntegrationEvidenceReadOnly.CONTENT_HASH_PROPERTY_ID);
+        roster.addAll(Patch_ArchetypeMetadataEvidenceReadOnly.EVIDENCE_PROPERTIES);
 
         assertEquals(roster, new TreeSet<>(ZipImporter.EVIDENCE_PROPERTY_IDS),
                 "an archive can smuggle a declared evidence property past the import strip "
@@ -141,5 +190,9 @@ class EvidenceProtectionRosterTest {
         assertTrue(Patch_ExternalIntegrationSecondaryType.PROPERTY_IDS.size() == 4
                         && Patch_ExternalIntegrationSourceFields.PROPERTY_IDS.size() == 6,
                 "the integration roster shrank");
+        assertEquals(11 + 8 + 8, Patch_ArchetypeMetadataEvidenceReadOnly
+                        .EVIDENCE_PROPERTIES.size(),
+                "the archetype rosters shrank — mail 11 + note 8 + record 8. A derived list "
+                        + "going empty would make every assertion above vacuously true");
     }
 }

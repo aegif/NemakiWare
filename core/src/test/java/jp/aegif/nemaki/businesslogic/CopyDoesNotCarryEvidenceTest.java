@@ -96,11 +96,19 @@ class CopyDoesNotCarryEvidenceTest {
         original.setObjectType("cmis:document");
         original.setName("doc");
         List<String> originalSecondaryIds = new ArrayList<>(List.of(
-                "nemaki:chatContextMetadata", "nemaki:externalIntegration", "nemaki:tagged"));
+                "nemaki:chatContextMetadata", "nemaki:externalIntegration",
+                "nemaki:messageMetadata", "nemaki:noteMetadata",
+                "nemaki:businessRecordMetadata", "nemaki:tagged"));
         original.setSecondaryIds(originalSecondaryIds);
         original.setAspects(new ArrayList<>(List.of(
                 aspect("nemaki:chatContextMetadata", "nemaki:chatChannelId", "C-CAPTURED"),
                 aspect("nemaki:externalIntegration", "nemaki:sourceSystem", "slack"),
+                // The three archetype homes joined PROTECTED on 2026-08-24 ((c) §8.1); the copy
+                // strip is driven by that set, so they must travel the same way — a copy that
+                // kept a Message-ID would assert an email capture that never happened to it.
+                aspect("nemaki:messageMetadata", "nemaki:internetMessageId", "<a@example.com>"),
+                aspect("nemaki:noteMetadata", "nemaki:notePageId", "page-1"),
+                aspect("nemaki:businessRecordMetadata", "nemaki:recordId", "ACC-001"),
                 aspect("nemaki:tagged", "nemaki:tagName", "kept"))));
         original.setSubTypeProperties(new ArrayList<>());
         Folder target = new Folder();
@@ -123,14 +131,21 @@ class CopyDoesNotCarryEvidenceTest {
         assertTrue(!aspectNames.contains("nemaki:externalIntegration"),
                 "the copy carries the dedupe identity of the ORIGINAL's source — the next poll "
                         + "of that source would treat this copy's claims as capture state");
+        assertTrue(!aspectNames.contains("nemaki:messageMetadata"),
+                "the copy carries a Message-ID: it asserts an email capture that never happened "
+                        + "to this NEW object: " + aspectNames);
+        assertTrue(!aspectNames.contains("nemaki:noteMetadata"), aspectNames.toString());
+        assertTrue(!aspectNames.contains("nemaki:businessRecordMetadata"),
+                aspectNames.toString());
         assertTrue(aspectNames.contains("nemaki:tagged"),
                 "ordinary aspects must survive the copy — the strip is evidence-scoped");
         assertEquals(List.of("nemaki:tagged"), captured[0].getSecondaryIds(),
                 "secondaryIds must match the stripped aspects");
         assertEquals(List.of("nemaki:chatContextMetadata", "nemaki:externalIntegration",
-                        "nemaki:tagged"), originalSecondaryIds,
+                        "nemaki:messageMetadata", "nemaki:noteMetadata",
+                        "nemaki:businessRecordMetadata", "nemaki:tagged"), originalSecondaryIds,
                 "buildCopyDocument shares the ORIGINAL's secondaryIds list by reference — the "
                         + "strip must not mutate the original");
-        assertEquals(3, original.getAspects().size(), "the original must be untouched");
+        assertEquals(6, original.getAspects().size(), "the original must be untouched");
     }
 }

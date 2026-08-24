@@ -255,6 +255,16 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- Mail / note / business-record evidence: make the captured properties
+				     read-only through CMIS. MUST come after the three type patches above,
+				     which create them — this one only rewrites what is already there, and it
+				     throws (retrying next start) if any ONE of the three types turned up
+				     nothing. P1-1(c) §8.1. -->
+				<bean class="jp.aegif.nemaki.patch.Patch_ArchetypeMetadataEvidenceReadOnly">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 				<!-- Default cloud drive connector/profile definitions -->
 				<bean class="jp.aegif.nemaki.patch.Patch_DefaultCloudDriveConnectorProfile">
 					<property name="patchUtil">

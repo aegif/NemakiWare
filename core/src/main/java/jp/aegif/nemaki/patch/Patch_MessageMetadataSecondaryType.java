@@ -27,7 +27,41 @@ public class Patch_MessageMetadataSecondaryType extends AbstractNemakiPatch {
     private static final Log log = LogFactory.getLog(Patch_MessageMetadataSecondaryType.class);
     private static final String PATCH_NAME = "message-metadata-secondary-type-20260403";
     private static final String NEMAKI_NAMESPACE = "http://www.aegif.jp/NEMAKI";
-    private static final String TYPE_ID = "nemaki:messageMetadata";
+    /** Public so the type↔property association is mechanically checkable (evidence-types §2.2). */
+    public static final String TYPE_ID = "nemaki:messageMetadata";
+
+    // Class-level (were method-local) so the id lists below DERIVE from the same literals the
+    // patch creates from — the same promotion the chat patch got, for the same reason: the
+    // containment test cannot reach a method body (EvidenceTypes javadoc).
+    private static final String[][] STRING_PROPERTY_DEFS = {
+            {"nemaki:internetMessageId", "internetMessageId", "Internet Message-ID", "RFC 2822 Message-ID header"},
+            {"nemaki:mailSubject", "mailSubject", "Subject", "Email subject line"},
+            {"nemaki:mailFrom", "mailFrom", "From", "Sender address"},
+            {"nemaki:mailTo", "mailTo", "To", "Recipient addresses"},
+            {"nemaki:mailCc", "mailCc", "Cc", "CC addresses"},
+            {"nemaki:mailInReplyTo", "mailInReplyTo", "In-Reply-To", "In-Reply-To header"},
+            {"nemaki:mailReferences", "mailReferences", "References", "References header"},
+            {"nemaki:mailboxId", "mailboxId", "Mailbox ID", "Mailbox identifier (INBOX, folder path, etc.)"},
+            {"nemaki:messageStableId", "messageStableId", "Message Stable ID", "Provider-specific stable message identifier"},
+            };
+
+    private static final String[][] DATETIME_PROPERTY_DEFS = {
+            {"nemaki:mailSentAt", "mailSentAt", "Sent At", "Date the message was sent"},
+            {"nemaki:mailReceivedAt", "mailReceivedAt", "Received At", "Date the message was received"},
+            };
+
+    /** The string property ids this patch declares — derived, so it cannot drift. */
+    public static final List<String> STRING_PROPERTY_IDS = idsOf(STRING_PROPERTY_DEFS);
+    /** The datetime property ids this patch declares — derived, so it cannot drift. */
+    public static final List<String> DATETIME_PROPERTY_IDS = idsOf(DATETIME_PROPERTY_DEFS);
+
+    private static List<String> idsOf(String[][] defs) {
+        List<String> ids = new ArrayList<>(defs.length);
+        for (String[] def : defs) {
+            ids.add(def[0]);
+        }
+        return List.copyOf(ids);
+    }
 
     @Override
     public String getName() { return PATCH_NAME; }
@@ -45,29 +79,14 @@ public class Patch_MessageMetadataSecondaryType extends AbstractNemakiPatch {
             NemakiTypeDefinition existing = ts.getTypeDefinition(repositoryId, TYPE_ID);
             List<String> propIds = new ArrayList<>();
 
-            String[][] props = {
-                {"nemaki:internetMessageId", "internetMessageId", "Internet Message-ID", "RFC 2822 Message-ID header"},
-                {"nemaki:mailSubject", "mailSubject", "Subject", "Email subject line"},
-                {"nemaki:mailFrom", "mailFrom", "From", "Sender address"},
-                {"nemaki:mailTo", "mailTo", "To", "Recipient addresses"},
-                {"nemaki:mailCc", "mailCc", "Cc", "CC addresses"},
-                {"nemaki:mailInReplyTo", "mailInReplyTo", "In-Reply-To", "In-Reply-To header"},
-                {"nemaki:mailReferences", "mailReferences", "References", "References header"},
-                {"nemaki:mailboxId", "mailboxId", "Mailbox ID", "Mailbox identifier (INBOX, folder path, etc.)"},
-                {"nemaki:messageStableId", "messageStableId", "Message Stable ID", "Provider-specific stable message identifier"},
-            };
-            String[][] dateProps = {
-                {"nemaki:mailSentAt", "mailSentAt", "Sent At", "Date the message was sent"},
-                {"nemaki:mailReceivedAt", "mailReceivedAt", "Received At", "Date the message was received"},
-            };
 
-            for (String[] p : props) {
+            for (String[] p : STRING_PROPERTY_DEFS) {
                 String id = createStringProp(ts, repositoryId, p[0], p[1], p[2], p[3],
                         !"nemaki:mailTo".equals(p[0]) && !"nemaki:mailCc".equals(p[0])
                         && !"nemaki:mailInReplyTo".equals(p[0]) && !"nemaki:mailReferences".equals(p[0]));
                 if (id != null) propIds.add(id);
             }
-            for (String[] p : dateProps) {
+            for (String[] p : DATETIME_PROPERTY_DEFS) {
                 String id = createDateTimeProp(ts, repositoryId, p[0], p[1], p[2], p[3]);
                 if (id != null) propIds.add(id);
             }

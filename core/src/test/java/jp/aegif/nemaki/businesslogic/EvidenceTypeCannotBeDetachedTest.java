@@ -214,4 +214,82 @@ class EvidenceTypeCannotBeDetachedTest {
         assertTrue(!EvidenceTypes.isProtected(ORDINARY));
         assertTrue(!EvidenceTypes.isProtected(null));
     }
+
+    // ── The three archetype homes, PROTECTED since 2026-08-24 ((c) §8.1) ──────────────────
+
+    private static final String MAIL = "nemaki:messageMetadata";
+    private static final String NOTE = "nemaki:noteMetadata";
+    private static final String RECORD = "nemaki:businessRecordMetadata";
+
+    private static Document documentWithArchetypeEvidence() {
+        Document doc = new Document();
+        doc.setId("obj-2");
+        doc.setObjectType("cmis:document");
+        doc.setAspects(new ArrayList<>(List.of(
+                aspect(MAIL, "nemaki:internetMessageId", "<abc@example.com>"),
+                aspect(NOTE, "nemaki:notePageId", "page-1"),
+                aspect(RECORD, "nemaki:recordId", "ACC-001"),
+                aspect(ORDINARY, "nemaki:commentText", "hello"))));
+        doc.setSecondaryIds(new ArrayList<>(List.of(MAIL, NOTE, RECORD, ORDINARY)));
+        return doc;
+    }
+
+    @Test
+    @DisplayName("a list that omits the mail evidence type does not detach it")
+    void namedRemovalOfMailEvidenceIsRefused() throws Exception {
+        // internetMessageId is RFC 2822's Message-ID — the canonical identity of an email, the
+        // same position chatMessageId holds. Before (c) §8.1 one update detached it.
+        ContentServiceImpl service = serviceResolving(MAIL, NOTE, RECORD, ORDINARY);
+
+        List<Aspect> result = build(service, listing(ORDINARY), documentWithArchetypeEvidence());
+
+        assertTrue(namesOf(result).contains(MAIL),
+                "one update omitting the type detached the Message-ID and the whole envelope: "
+                        + namesOf(result));
+    }
+
+    @Test
+    @DisplayName("nor the note and business-record types — while an omitted ORDINARY type goes")
+    void namedRemovalOfNoteAndRecordEvidenceIsRefused() throws Exception {
+        ContentServiceImpl service = serviceResolving(MAIL, NOTE, RECORD, ORDINARY);
+
+        // The list names only MAIL: the two other evidence types must survive being omitted,
+        // and ORDINARY must NOT — that asymmetry is the whole rule. Asserting only the
+        // survivals would pass just as well if buildSecondaryTypes kept everything.
+        List<Aspect> result = build(service, listing(MAIL), documentWithArchetypeEvidence());
+
+        assertTrue(namesOf(result).contains(NOTE),
+                "the page's source identity was detached: " + namesOf(result));
+        assertTrue(namesOf(result).contains(RECORD),
+                "the record's source identity was detached: " + namesOf(result));
+        assertTrue(!namesOf(result).contains(ORDINARY),
+                "an ORDINARY type omitted from the list must still detach — over-protecting "
+                        + "breaks legitimate CMIS use: " + namesOf(result));
+    }
+
+    @Test
+    @DisplayName("archetype evidence survives a type that will not resolve, too")
+    void anUnresolvableArchetypeTypeDoesNotDropEvidence() throws Exception {
+        // The rolling-restart shape (evidence-types §1.1): a request that says NOTHING about
+        // secondary types still rebuilds the list, and a type the cache cannot resolve is
+        // dropped. Both rules must reach the new types, not just the named-removal one.
+        ContentServiceImpl service = serviceResolving(ORDINARY);   // MAIL/NOTE/RECORD unresolvable
+
+        List<Aspect> result = build(service, sayingNothing(), documentWithArchetypeEvidence());
+
+        assertTrue(namesOf(result).contains(MAIL), namesOf(result).toString());
+        assertTrue(namesOf(result).contains(NOTE), namesOf(result).toString());
+        assertTrue(namesOf(result).contains(RECORD), namesOf(result).toString());
+    }
+
+    @Test
+    @DisplayName("the protected set names all five, and still refuses an ordinary type")
+    void theProtectedSetNamesAllFive() {
+        assertTrue(EvidenceTypes.isProtected(MAIL));
+        assertTrue(EvidenceTypes.isProtected(NOTE));
+        assertTrue(EvidenceTypes.isProtected(RECORD));
+        assertTrue(!EvidenceTypes.isProtected("nemaki:tagged"),
+                "an ordinary secondary type must stay detachable — over-protecting breaks "
+                        + "legitimate CMIS use (evidence-types §0)");
+    }
 }

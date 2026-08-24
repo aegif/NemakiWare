@@ -15,7 +15,38 @@ import java.util.List;
 public class Patch_BusinessRecordMetadataSecondaryType extends AbstractNemakiPatch {
     private static final Log log = LogFactory.getLog(Patch_BusinessRecordMetadataSecondaryType.class);
     private static final String NS = "http://www.aegif.jp/NEMAKI";
-    private static final String TYPE_ID = "nemaki:businessRecordMetadata";
+    /** Public so the type↔property association is mechanically checkable (evidence-types §2.2). */
+    public static final String TYPE_ID = "nemaki:businessRecordMetadata";
+
+    // Class-level (were method-local) so the id lists below DERIVE from the same literals the
+    // patch creates from — the same promotion the chat patch got, for the same reason: the
+    // containment test cannot reach a method body (EvidenceTypes javadoc).
+    private static final String[][] STRING_PROPERTY_DEFS = {
+            {"nemaki:recordType", "recordType", "Record Type", "CRM/ERP record type (Account, Invoice, Case, etc.)"},
+            {"nemaki:recordId", "recordId", "Record ID", "Stable record identifier in source system"},
+            {"nemaki:recordUrl", "recordUrl", "Record URL", "URL to the record in the source system"},
+            {"nemaki:recordStatus", "recordStatus", "Status", "Current record status"},
+            {"nemaki:recordOwner", "recordOwner", "Owner", "Record owner / responsible party"},
+            {"nemaki:processInstanceId", "processInstanceId", "Process Instance ID", "BPM process/case/ticket ID"},
+            };
+
+    private static final String[][] DATETIME_PROPERTY_DEFS = {
+            {"nemaki:recordCreatedAt", "recordCreatedAt", "Record Created", "Record creation date in source"},
+            {"nemaki:recordModifiedAt", "recordModifiedAt", "Record Modified", "Record last modified date"},
+            };
+
+    /** The string property ids this patch declares — derived, so it cannot drift. */
+    public static final List<String> STRING_PROPERTY_IDS = idsOf(STRING_PROPERTY_DEFS);
+    /** The datetime property ids this patch declares — derived, so it cannot drift. */
+    public static final List<String> DATETIME_PROPERTY_IDS = idsOf(DATETIME_PROPERTY_DEFS);
+
+    private static List<String> idsOf(String[][] defs) {
+        List<String> ids = new ArrayList<>(defs.length);
+        for (String[] def : defs) {
+            ids.add(def[0]);
+        }
+        return List.copyOf(ids);
+    }
 
     @Override public String getName() { return "business-record-metadata-20260403"; }
     @Override protected void applySystemPatch() { }
@@ -28,21 +59,9 @@ public class Patch_BusinessRecordMetadataSecondaryType extends AbstractNemakiPat
             NemakiTypeDefinition existing = ts.getTypeDefinition(repositoryId, TYPE_ID);
             List<String> pids = new ArrayList<>();
 
-            String[][] sp = {
-                {"nemaki:recordType", "recordType", "Record Type", "CRM/ERP record type (Account, Invoice, Case, etc.)"},
-                {"nemaki:recordId", "recordId", "Record ID", "Stable record identifier in source system"},
-                {"nemaki:recordUrl", "recordUrl", "Record URL", "URL to the record in the source system"},
-                {"nemaki:recordStatus", "recordStatus", "Status", "Current record status"},
-                {"nemaki:recordOwner", "recordOwner", "Owner", "Record owner / responsible party"},
-                {"nemaki:processInstanceId", "processInstanceId", "Process Instance ID", "BPM process/case/ticket ID"},
-            };
-            String[][] dp = {
-                {"nemaki:recordCreatedAt", "recordCreatedAt", "Record Created", "Record creation date in source"},
-                {"nemaki:recordModifiedAt", "recordModifiedAt", "Record Modified", "Record last modified date"},
-            };
 
-            for (String[] p : sp) { String id = mkStr(ts, repositoryId, p); if (id != null) pids.add(id); }
-            for (String[] p : dp) { String id = mkDt(ts, repositoryId, p); if (id != null) pids.add(id); }
+            for (String[] p : STRING_PROPERTY_DEFS) { String id = mkStr(ts, repositoryId, p); if (id != null) pids.add(id); }
+            for (String[] p : DATETIME_PROPERTY_DEFS) { String id = mkDt(ts, repositoryId, p); if (id != null) pids.add(id); }
 
             if (existing != null) {
                 List<String> ep = existing.getProperties() != null ? existing.getProperties() : new ArrayList<>();

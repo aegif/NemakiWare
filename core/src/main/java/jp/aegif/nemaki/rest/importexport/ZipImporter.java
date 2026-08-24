@@ -112,6 +112,11 @@ public class ZipImporter {
         ids.addAll(jp.aegif.nemaki.patch.Patch_ChatContextEvidenceReadOnly.EVIDENCE_PROPERTIES);
         ids.addAll(jp.aegif.nemaki.rest.ingest.EvidenceMetadataHash.SOURCE_IDENTITY_PROPERTIES);
         ids.addAll(jp.aegif.nemaki.rest.ingest.EvidenceMetadataHash.EXCLUDED_FROM_METADATA_HASH);
+        // The three archetype homes joined PROTECTED on 2026-08-24 ((c) §8.1). An archive that
+        // asserts a Message-ID or a source record id is making the same kind of claim a forged
+        // chat aspect makes, so it is stripped by the same rule.
+        ids.addAll(jp.aegif.nemaki.patch.Patch_ArchetypeMetadataEvidenceReadOnly
+                .EVIDENCE_PROPERTIES);
         return java.util.Collections.unmodifiableSet(ids);
     }
 

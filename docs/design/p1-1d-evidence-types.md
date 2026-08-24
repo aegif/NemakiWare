@@ -93,12 +93,21 @@ chat だけ」と明記)。規則が「READONLY 化したもの」を起点に�
 新しいガードは通り、`nemaki:externalIntegration` が丸ごと落ちる。`contentHash` が消え、
 **次のポーリングが別バージョンとして再取込する**。
 
-**したがって `PROTECTED` は明示的に 2 つ**:
+**したがって `PROTECTED` は明示的に** — 執筆時 2 つ、**2026-08-24 に 5 つ**:
 
 | 型 | なぜ |
 |---|---|
 | `nemaki:chatContextMetadata` | (c) が READONLY 化した 11 個の家 |
 | `nemaki:externalIntegration` | `contentHash` と source identity の家。執筆時は**保護は無いが証拠である**だった — D-7 (2026-08-23) で READONLY 化済み (externalContext ペアは意図的 READWRITE のまま) |
+| `nemaki:messageMetadata` | **2026-08-24 追加**。`internetMessageId` = RFC 2822 Message-ID はメールの正準識別子で、chat の `chatMessageId` と同じ位置にある。`messageStableId` は再取込の突合に使う。判断の基準と逐条は [(c) §8.1](p1-1c-evidence-updatability.md) |
+| `nemaki:noteMetadata` | **2026-08-24 追加**。`notePageId` / `noteWorkspaceId` がページの出所 |
+| `nemaki:businessRecordMetadata` | **2026-08-24 追加**。`recordType` / `recordId` が源システムのレコード同一性 |
+
+> **なぜ執筆時に 2 つで止めたか、なぜ今 5 つにするか**: 当時は 3 型に READONLY 保護が
+> 無く、「保護されていない型を PROTECTED に入れる」と、型ごと外す経路だけ塞いで
+> プロパティは書き換え放題という**中途半端な状態**になった。(c) §8.1 が 3 型を
+> READONLY 化したので、chat / externalIntegration と**同じ形**が揃った。
+> 導出規則には戻していない — 判断は逐条で、リストは明示のまま (§冒頭の (iii))。
 
 ### 2.2 足し忘れを機械的に止められるか — **できない。そう書く**
 

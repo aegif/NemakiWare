@@ -134,7 +134,7 @@
 | **既存の CMIS クライアントが 400 を受けるようになる** | ならない。`injectPropertyValue` は例外ではなく `continue` するので、**値が黙って無視される**。書けたつもりで書けていない、という状態になる |
 | **その沈黙は問題ではないか** | 問題である。ただし既存 READONLY プロパティと同じ**方針**であり、ここだけ例外にすると CMIS の一貫性が壊れる。**運用文書に書く** (§7)。なお経路は同じではない — §2 の但し書き |
 | **管理画面から証拠を直せなくなる** | そのとおり。それがこの作業の目的である。誤った証拠は**取込をやり直して**上書きするのが正しい経路 |
-| **他の secondary type にも同じ問題が在る** | 在る。`nemaki:noteMetadata` / `nemaki:messageMetadata` / `nemaki:businessRecordMetadata` / `nemaki:externalIntegration`。**この作業では chat だけを対象にする** — roadmap が (c) として名指ししているのが `Patch_ChatContextMetadataSecondaryType` だからで、他は §8 に残す |
+| **他の secondary type にも同じ問題が在る** | 在った。`nemaki:externalIntegration` は D-7 (2026-08-23)、残る 3 型 (`noteMetadata` / `messageMetadata` / `businessRecordMetadata`) は **2026-08-24 に閉じた** (§8.1)。(c) 執筆時点では chat だけを対象にした — roadmap が (c) として名指ししていたのが `Patch_ChatContextMetadataSecondaryType` だから |
 
 ---
 
@@ -296,8 +296,45 @@ tripwire は**そのまま残す** — constraint が誤って外された日に
 
 ## 8. やらないこと
 
-- 他の secondary type (`noteMetadata` / `messageMetadata` / `businessRecordMetadata` /
-  `externalIntegration`) の更新制約。同じ問題が在るが、roadmap が (c) として名指ししたのは
-  chat であり、**まとめて変えると「何を証拠として保護したか」の境界がぼやける**
+- ~~他の secondary type (`noteMetadata` / `messageMetadata` / `businessRecordMetadata` /
+  `externalIntegration`) の更新制約~~ — **すべて実施済み** (§8.1)。(c) 当時の保留理由
+  「まとめて変えると『何を証拠として保護したか』の境界がぼやける」は、境界を
+  §8.1 で**明文化して**から動かすことで解いた
 - 既に書き換えられた値の検出・復元。来歴イベントを読む必要があり **P1-1(d)**
 - 物理的な不変性。**P1-3 の tamper-evident ledger**
+
+## 8.1 残る 3 型への拡張 (2026-08-24)
+
+(c) が chat に絞ったのは、roadmap の名指しがそこだったことと、**「何を証拠として保護したか」
+の境界を曖昧にしないため**だった。境界を先に言葉にする:
+
+> **証拠型とは、取込が外部ソースから観測した事実の家である。** その事実が失われる・書き
+> 換わると、(i) 「この文書がどこから来たか」という主張の裏づけが消えるか、(ii) 取込の
+> 冪等性 (dedupe) が壊れる。**サーバが値を持つ (READONLY) こととは別の基準**である
+> — `cmis:createdBy` は READONLY だが証拠ではない (evidence-types §2 (iii))。
+
+この基準を 3 型に当てると、**3 型とも全プロパティが該当する**:
+
+| 型 | 観測した事実 | 失われると |
+|---|---|---|
+| `nemaki:messageMetadata` (11) | `internetMessageId` は RFC 2822 の Message-ID — **メールの世界における正準識別子**。`mailFrom`/`To`/`Cc`/`Subject`/送受信日時、`messageStableId`、`mailboxId` | 「このメールがどのメールか」が言えなくなる。`messageStableId` は再取込の突合にも使う |
+| `nemaki:noteMetadata` (8) | `notePageId` / `noteWorkspaceId` / `noteParentPageId` がページの出所、`noteAuthor` / `noteLastEditedBy` / 各日時が観測値 | どのワークスペースのどのページか言えなくなる |
+| `nemaki:businessRecordMetadata` (8) | `recordType` / `recordId` が源システムのレコード同一性、`recordUrl` / `recordStatus` / `recordOwner` / 各日時が観測値 | どのレコードの写しか言えなくなる |
+
+**したがって 3 型とも `EvidenceTypes.PROTECTED` に入れる** (evidence-types §2.1 の明示リスト
+を 2 → 5)。READONLY だけでは足りない — §5.2 が示したとおり、型ごと外す経路は
+プロパティ単位の READONLY を素通りするので、**両方入れて初めて (c) の主張が 3 型に及ぶ**。
+
+**帰結として自動的に付いてくるもの** (PROTECTED の既存の意味):
+
+- `keepEvidenceAspects` — 型リストから外れても・型が解決できなくても aspect を保つ
+- `stripEvidenceForNewObject` — copy (新 objectId 鋳造) では証拠を運ばない
+- `ZipImporter.stripEvidenceAssertions` — archive の主張は import 前に除去し警告に名指し
+  (ロスターは定数合成なので、下の public 昇格だけで自動的に広がる)
+
+**この拡張が閉じていないもの**: `mailFrom` / `mailTo` / `mailCc` / `noteAuthor` /
+`noteLastEditedBy` / `recordOwner` は**個人データ**だが、INTERNAL_ONLY の機構
+(`CaptureEvidenceField` 駆動の Solr 索引除外) は**イベントが運ぶ事実**の表であって、
+これら 3 型の aspect はまだイベントに載っていない。**開示の判断はイベント被覆 (A-3(ii))
+と同時**に行う — 載せる先が無いうちに INTERNAL_ONLY だけ宣言しても、表と実装が食い違う。
+現状は chat と同様「オブジェクトを読める者には見える」+ Solr には索引される。

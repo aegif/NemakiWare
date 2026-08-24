@@ -70,7 +70,16 @@ public final class EvidenceTypes {
             // chat before that). The sync-state pair externalContext/externalContextUpdatedAt
             // stays READWRITE deliberately. The dedupe path reads contentHash back, so detaching
             // this type re-imports the next poll as a new version.
-            "nemaki:externalIntegration");
+            "nemaki:externalIntegration",
+            // The three archetype homes, READONLY since Patch_ArchetypeMetadataEvidenceReadOnly
+            // (2026-08-24, same commit). P1-1(c) §8 had held them back so that "what did we
+            // decide is evidence" stayed a decision rather than a sweep; (c) §8.1 writes the
+            // criterion down clause by clause and applies it. internetMessageId (RFC 2822) is
+            // the canonical identity of an email, notePageId and recordId are the source
+            // system's identity for a page and a record — the same position chat's ids hold.
+            "nemaki:messageMetadata",
+            "nemaki:noteMetadata",
+            "nemaki:businessRecordMetadata");
 
     private EvidenceTypes() {
     }

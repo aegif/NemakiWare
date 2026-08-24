@@ -25,7 +25,38 @@ public class Patch_NoteMetadataSecondaryType extends AbstractNemakiPatch {
     private static final Log log = LogFactory.getLog(Patch_NoteMetadataSecondaryType.class);
     private static final String PATCH_NAME = "note-metadata-secondary-type-20260403";
     private static final String NEMAKI_NAMESPACE = "http://www.aegif.jp/NEMAKI";
-    private static final String TYPE_ID = "nemaki:noteMetadata";
+    /** Public so the type↔property association is mechanically checkable (evidence-types §2.2). */
+    public static final String TYPE_ID = "nemaki:noteMetadata";
+
+    // Class-level (were method-local) so the id lists below DERIVE from the same literals the
+    // patch creates from — the same promotion the chat patch got, for the same reason: the
+    // containment test cannot reach a method body (EvidenceTypes javadoc).
+    private static final String[][] STRING_PROPERTY_DEFS = {
+            {"nemaki:notePageId", "notePageId", "Page ID", "External page/note identifier"},
+            {"nemaki:notePageUrl", "notePageUrl", "Page URL", "URL to the page in the source system"},
+            {"nemaki:noteParentPageId", "noteParentPageId", "Parent Page ID", "Parent page/notebook identifier"},
+            {"nemaki:noteWorkspaceId", "noteWorkspaceId", "Workspace ID", "Workspace/database identifier"},
+            {"nemaki:noteAuthor", "noteAuthor", "Author", "Page author"},
+            {"nemaki:noteLastEditedBy", "noteLastEditedBy", "Last Edited By", "Last editor"},
+            };
+
+    private static final String[][] DATETIME_PROPERTY_DEFS = {
+            {"nemaki:noteLastEditedAt", "noteLastEditedAt", "Last Edited At", "Last edit timestamp"},
+            {"nemaki:noteCreatedAt", "noteCreatedAt", "Created At", "Page creation timestamp"},
+            };
+
+    /** The string property ids this patch declares — derived, so it cannot drift. */
+    public static final List<String> STRING_PROPERTY_IDS = idsOf(STRING_PROPERTY_DEFS);
+    /** The datetime property ids this patch declares — derived, so it cannot drift. */
+    public static final List<String> DATETIME_PROPERTY_IDS = idsOf(DATETIME_PROPERTY_DEFS);
+
+    private static List<String> idsOf(String[][] defs) {
+        List<String> ids = new ArrayList<>(defs.length);
+        for (String[] def : defs) {
+            ids.add(def[0]);
+        }
+        return List.copyOf(ids);
+    }
 
     @Override
     public String getName() { return PATCH_NAME; }
@@ -43,24 +74,12 @@ public class Patch_NoteMetadataSecondaryType extends AbstractNemakiPatch {
             NemakiTypeDefinition existing = ts.getTypeDefinition(repositoryId, TYPE_ID);
             List<String> propIds = new ArrayList<>();
 
-            String[][] props = {
-                {"nemaki:notePageId", "notePageId", "Page ID", "External page/note identifier"},
-                {"nemaki:notePageUrl", "notePageUrl", "Page URL", "URL to the page in the source system"},
-                {"nemaki:noteParentPageId", "noteParentPageId", "Parent Page ID", "Parent page/notebook identifier"},
-                {"nemaki:noteWorkspaceId", "noteWorkspaceId", "Workspace ID", "Workspace/database identifier"},
-                {"nemaki:noteAuthor", "noteAuthor", "Author", "Page author"},
-                {"nemaki:noteLastEditedBy", "noteLastEditedBy", "Last Edited By", "Last editor"},
-            };
-            String[][] dateProps = {
-                {"nemaki:noteLastEditedAt", "noteLastEditedAt", "Last Edited At", "Last edit timestamp"},
-                {"nemaki:noteCreatedAt", "noteCreatedAt", "Created At", "Page creation timestamp"},
-            };
 
-            for (String[] p : props) {
+            for (String[] p : STRING_PROPERTY_DEFS) {
                 String id = createStringProp(ts, repositoryId, p[0], p[1], p[2], p[3], true);
                 if (id != null) propIds.add(id);
             }
-            for (String[] p : dateProps) {
+            for (String[] p : DATETIME_PROPERTY_DEFS) {
                 String id = createDateTimeProp(ts, repositoryId, p[0], p[1], p[2], p[3]);
                 if (id != null) propIds.add(id);
             }
