@@ -96,9 +96,22 @@ public class AuthenticationUtil {
 		
 		// 後方互換性：MD5ハッシュの検出と検証（32文字の16進数）
 		if (hashed.length() == 32 && hashed.matches("[a-f0-9]{32}")) {
-			if (log.isDebugEnabled()) {
-				log.debug("Detected MD5 hash format, using legacy verification");
-			}
+			// DEPRECATED in 3.4, to be REMOVED in 3.5 (roadmap §2-5).
+			//
+			// WARN, not debug: an operator has to be able to find out that accounts are still
+			// on MD5 before the path disappears under them. passwordMatchesWithUpgrade
+			// migrates an account to BCrypt the first time it authenticates, so an account
+			// that keeps landing here is one that has NOT logged in since the upgrade
+			// mechanism shipped — exactly the population that breaks in 3.5.
+			//
+			// The account is not named at WARN: usernames in logs are personal data, and the
+			// operator inventory (GET /api/v1/admin/security/legacy-password-hashes) exists to
+			// answer "which ones" behind admin auth instead.
+			log.warn("A legacy MD5 password hash was verified. MD5 verification is DEPRECATED"
+					+ " in 3.4 and will be REMOVED in 3.5; accounts still on it will stop"
+					+ " authenticating. Take an inventory with"
+					+ " GET /api/v1/admin/security/legacy-password-hashes and have those users"
+					+ " sign in once (which upgrades them) or reset their passwords.");
 			return verifyMD5Password(candidate, hashed);
 		}
 		

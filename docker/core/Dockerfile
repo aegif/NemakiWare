@@ -24,7 +24,7 @@ COPY log4j.properties /usr/local/tomcat/conf/log4j.properties
 COPY server.xml /usr/local/tomcat/conf/server.xml
 
 # Java heap and general options (no credentials here)
-ENV JAVA_OPTS="-Xms512m -Xmx1024m -XX:+DisableExplicitGC -Djava.net.preferIPv4Stack=true -Djava.net.preferIPv6Addresses=false -Dnemakiware.properties=/usr/local/tomcat/conf/nemakiware.properties -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Djdk.httpclient.allowRestrictedHeaders=host -DPLANTUML_SECURITY_PROFILE=SANDBOX"
+ENV JAVA_OPTS="-Xms512m -Xmx1024m -XX:+DisableExplicitGC -Djava.net.preferIPv4Stack=true -Djava.net.preferIPv6Addresses=false -Drepositories.yml=/usr/local/tomcat/conf/repositories.yml -Djdk.httpclient.allowRestrictedHeaders=host -DPLANTUML_SECURITY_PROFILE=SANDBOX"
 
 # NO credentials in image layers. Must be provided at runtime:
 #   docker run -e COUCHDB_URL=... -e COUCHDB_USERNAME=... -e COUCHDB_PASSWORD=... ...
