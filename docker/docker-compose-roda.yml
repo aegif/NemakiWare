@@ -1,0 +1,171 @@
+# RODA — E-ARK SIP の受入試験用スタック (P3-1)
+#
+# 何のためにあるか
+# ----------------
+# ロードマップ §9-3 は RODA との相互運用について「**保証には実機受入試験が必要**」と
+# 書き、それを「相手側環境が無い」= オーナー判断待ちとして棚上げしていた。
+# 2026-08-25 に測り直したところ **RODA は Atlas と同じくコンテナで立ち、しかも公式
+# standalone compose の全イメージが arm64 ネイティブ**だったので、その前提は崩れた。
+# これはその受入試験を手元で回すためのスタックである。
+#
+# 公式 (keeps/roda `deploys/standalone/docker-compose.yaml`) との差分
+# ------------------------------------------------------------------
+# 公式は 9 サービス。ここは **7 サービス**で、落としたのは受入試験に要らない 2 つ:
+#
+#   - swagger  : API を人が眺めるための UI。SIP を投げるのは curl と CI
+#   - mailpit  : 通知メールの受け皿。取込可否の判定に関係しない
+# openldap は **落とせなかった** (2026-08-25 実測)。`roda` サービスの environment に
+# LDAP 変数が 1 つも無いので Postgres 側で閉じていると読んだが、実際に外したところ
+# RODA は "Starting up RODA, please wait..." のまま **10 分以上進まなかった**
+# (Solr のコレクション 17 本は作成済みだったので Solr は無関係。ポートは bind される
+# のに何も答えない)。LDAP の接続先は image 内の既定 roda-core.properties が持っている。
+# → 戻した。**落とせるのは swagger と mailpit の 2 つだけ。**
+#
+# 落とさなかったもの: clamd と siegfried は `roda` の depends_on に載っており、
+# 取込パイプライン (ウイルス検査・フォーマット同定) の構成要素なので残す。
+# **clamd は初回起動でウイルス定義を落とす**ので、最初の up は数分かかる。
+#
+# ポートは全部ずらしてある
+# ------------------------
+# 公式は 8080 (NemakiWare core と同じ) と 8983 (こちらの Solr と同じ) を publish する。
+# 同居させると必ず衝突するので、外に出すのは RODA の UI だけにして 18080 に移した。
+# Solr と Postgres は**外に出さない** — このスタックの外から触る用事が無く、
+# 出せば衝突源が 2 つ増えるだけ。JDWP (5005) も落とした。
+#
+# 使い方
+# ------
+#   docker compose -p roda -f docker/docker-compose-roda.yml up -d
+#   open http://localhost:18080        # admin / roda
+#   docker compose -p roda -f docker/docker-compose-roda.yml down    # -v は付けない
+#
+# **プロジェクト名を必ず `-p roda` にすること。** 既定のプロジェクト名は
+# ディレクトリ名から決まり、nb33 スタックと同じ名前空間に入る。
+#
+# 版は固定してある (`latest` を使わない)。受入試験は「どの版が受け入れたか」が
+# 結果の一部であって、次に走らせたときに黙って別の版になってよいものではない。
+#
+# 実測 (2026-08-25、Apple Silicon / arm64)
+# ----------------------------------------
+#   - openldap 込みで **20 秒**で `GET / = 200`、`/actuator/health = UP`
+#   - 中身は本物の GWT アプリ (`<title>RODA</title>` / `RodaWUI.nocache.js`)
+#   - 全コンテナで `uname -m` = **aarch64**。QEMU は挟まっていない
+#   - Solr のコレクション 17 本 (AIP / Job / PreservationEvent 等) が自動作成される
+#
+# **まだ分かっていない 2 点**:
+#
+#   1. **REST API のベースパスが未特定。** v6.3.0 では `/api/v1/**`・`/api/v2/**` とも
+#      404 で、本文は Spring の「No static resource」= 何も mapped されていない。
+#      公式 compose の swagger は `/api/openapi.json` を指しているが、それも 404。
+#      SIP 投入を API でやるなら**着手時にここを解く**こと。UI からのアップロードと、
+#      `roda_data` (= `/roda/data/`) に置く経路は別に在る。
+#   2. **起動時に `groups.keep.pt:443` (KEEP Solutions / リスボン) へ出ていく。**
+#      用途は未確認。閉域で試すときは**この外向き接続が要るかどうかを先に確かめる**こと。
+#
+# なお **停めておくのが既定**。Solr に 2g、clamd にウイルス定義と、常駐させると
+# nb33 スタックと資源を取り合う。Playwright の失敗 21 件のうち 16 件が負荷・干渉
+# 由来だったので、要るときだけ up する。
+
+services:
+  zoo:
+    image: docker.io/zookeeper:3.9.5-jre-17
+    restart: unless-stopped
+    environment:
+      - ZOO_4LW_COMMANDS_WHITELIST=mntr,conf,ruok
+    volumes:
+      - zookeeper_data:/data
+      - zookeeper_datalog:/datalog
+
+  solr:
+    image: docker.io/solr:10.0.0
+    restart: unless-stopped
+    # ports は publish しない: こちらの Solr が 8983 を使っている
+    environment:
+      SOLR_HEAP: 2g
+      ZK_HOST: zoo:2181
+    volumes:
+      - solr_data:/var/solr
+    depends_on:
+      - zoo
+
+  clamd:
+    image: docker.io/clamav/clamav:1.5.3-debian
+    restart: unless-stopped
+    volumes:
+      - clam_data:/var/lib/clamav
+      - roda_data:/roda/data/
+
+  siegfried:
+    image: ghcr.io/keeps/siegfried:v1.11.6
+    restart: unless-stopped
+    environment:
+      SIEGFRIED_HOST: 0.0.0.0
+      SIEGFRIED_PORT: 5138
+    volumes:
+      - siegfried_data:/root/siegfried/
+      - roda_data:/roda/data/
+
+  openldap:
+    # 落とせない。上の但し書きを参照 — 外すと RODA の起動が終わらない。
+    image: docker.io/bitnamilegacy/openldap:2.6
+    restart: unless-stopped
+    user: 1001:root
+    # ports は publish しない: このスタックの外から LDAP を触る用事が無い
+    environment:
+      - LDAP_ROOT=dc=roda,dc=org
+      - LDAP_SKIP_DEFAULT_TREE=yes
+      - LDAP_ADMIN_USERNAME=admin
+      - LDAP_ADMIN_PASSWORD=roda
+      - LDAP_EXTRA_SCHEMAS=cosine,inetorgperson,nis,pbkdf2
+    volumes:
+      - ./roda/ldap/ldif/pbkdf2.ldif:/opt/bitnami/openldap/etc/schema/pbkdf2.ldif:ro
+
+  postgres:
+    image: docker.io/postgres:17
+    restart: unless-stopped
+    # container_name は付けない: 公式は `postgres` 固定だが、それだと他スタックの
+    # postgres と名前が衝突する。compose のサービス名で引ければ足りる。
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: roda
+      POSTGRES_DB: roda_core_db
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  roda:
+    # v6.3.0 固定。公式 compose は `latest` を使うが、受入試験の結果は
+    # 「どの RODA 版が受け入れたか」まで含めて初めて意味を持つ。
+    image: docker.io/keeps/roda:v6.3.0
+    restart: unless-stopped
+    ports:
+      - "18080:8080"
+    depends_on:
+      - solr
+      - clamd
+      - siegfried
+      - postgres
+      - openldap
+    volumes:
+      - roda_data:/roda/data/
+      # 公式が mount する roda-core.properties は SMTP の 2 行だけで、その値は
+      # 落とした mailpit を指している。mount しない = RODA の既定に任せる。
+    environment:
+      # Spring configuration
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/roda_core_db
+      # Solr Cloud configuration
+      - RODA_CORE_SOLR_TYPE=CLOUD
+      - RODA_CORE_SOLR_CLOUD_URLS=zoo:2181
+      - SOLR_NUM_SHARDS=4
+      - SOLR_REPLICATION_FACTOR=1
+      # Base plugin services configuration
+      - SIEGFRIED_SERVER_URL=http://siegfried:5138
+      - CLAMD_TCPADDR=clamd
+      - CLAMD_TCPSOCKET=3310
+
+volumes:
+  zookeeper_data:
+  zookeeper_datalog:
+  solr_data:
+  clam_data:
+  siegfried_data:
+  roda_data:
+  pg_data:
