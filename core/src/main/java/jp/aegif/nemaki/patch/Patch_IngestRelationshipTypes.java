@@ -110,6 +110,12 @@ public class Patch_IngestRelationshipTypes extends AbstractNemakiPatch {
             log.info("Created relationship type: " + typeId);
         } catch (Exception e) {
             log.warn("Failed to create relationship type " + typeId + ": " + e.getMessage());
+            // Roadmap 2-2: the ingest relationships are how a captured object is tied to what
+            // it came from. A missing type does not fail loudly at ingest — the relationship
+            // silently does not exist, which is the one outcome the capture boundary is built
+            // to prevent. Retry next start rather than burn the history row.
+            reportIncomplete("ingest relationship type " + typeId + " could not be created ("
+                    + e.getMessage() + ")");
         }
     }
 }

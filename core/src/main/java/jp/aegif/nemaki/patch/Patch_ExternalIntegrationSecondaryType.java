@@ -96,6 +96,15 @@ public class Patch_ExternalIntegrationSecondaryType extends AbstractNemakiPatch 
 
 		} catch (Exception e) {
 			log.error("=== ERROR DURING EXTERNAL INTEGRATION SECONDARY TYPE PATCH for repository: " + repositoryId + " ===", e);
+			// Roadmap 2-2: withhold the history row so the next start retries, WITHOUT stopping
+			// this one. Two later patches read the type this one creates
+			// (Patch_ExternalIntegrationEvidenceReadOnly, Patch_ExternalIntegrationSourceFields);
+			// burning the history row after a failure meant the type never appeared and those two
+			// had nothing to work on, permanently. Not a throw: the deployment was starting
+			// before and must keep starting.
+			reportIncomplete("the external-integration secondary type could not be created for "
+					+ repositoryId + " (" + e.getMessage() + "); the evidence-readonly and "
+					+ "source-fields patches depend on it");
 		}
 	}
 
@@ -207,6 +216,8 @@ public class Patch_ExternalIntegrationSecondaryType extends AbstractNemakiPatch 
 
 		} catch (Exception e) {
 			log.error("Failed to create type: " + TYPE_ID, e);
+			reportIncomplete("type " + TYPE_ID + " could not be created (" + e.getMessage()
+					+ "); patches that extend it have nothing to extend");
 		}
 	}
 

@@ -161,7 +161,24 @@ BagIt / OAIS 型パッケージ (`bagit|oais` で 0 件)、定期 fixity 再検�
 > **収束するようになった** (同 javadoc の但し書きは撤回済み)。
 > 判別テスト `PatchIncompleteWorkIsRetriedTest` (履歴を書かない / 正常時は書く統制 /
 > リポジトリ間で漏れない / throw は従来どおり)。
-> **残り**: 他の握り潰しパッチの接続 (機構は在るので 1 本ずつ判断できる)。
+> **判断基準を決めて 3 本追加 (2026-08-25)**。基準は狭く、議論できる形で書く:
+>
+> > **他のパッチや機能が後から読むものを「作る」パッチは、作成に失敗したら
+> > incomplete を報告する。** 失敗後に履歴行を書くと**不在が恒久化**する —
+> > 型は永久に現れず、依存するものは永久に動かず、何も再試行しない。
+>
+> 追加: `Patch_ExternalIntegrationSecondaryType` (2 本のパッチが読む) /
+> `Patch_CloudDriveMetadataSecondaryType` (実行時に cloud-drive 取込が読む) /
+> `Patch_IngestRelationshipTypes` (捕獲した対象と出所を結ぶ関係。**失敗しても
+> 取込は静かに成功し、関係だけが存在しない** — capture boundary が防ごうとしている
+> まさにその形)。
+>
+> **全部には広げない。** view 作成パッチ等は不在が騒がしく次回デプロイで直るので
+> 対象外。`TypeCreatingPatchesReportIncompleteTest` がこの**集合そのもの**を
+> ソース走査で固定し、統制テストが「全パッチ規則」への変質を落とす
+> (view パッチを混ぜると落ちる)。負のコントロール 2 本実測。
+>
+> **残り**: 上記基準に当てはまらない握り潰しは、当てはまる根拠が出たときに個別に判断する。
 
 ### 2-2 (原文). 残り 16 パッチの unprepared-return → throw 化 (件数は台帳 `v3.3-release-plan.md` の「残る 16 本」に一致させた)
 

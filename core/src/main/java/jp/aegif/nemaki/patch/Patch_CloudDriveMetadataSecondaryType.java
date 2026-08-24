@@ -82,6 +82,11 @@ public class Patch_CloudDriveMetadataSecondaryType extends AbstractNemakiPatch {
 
 		} catch (Exception e) {
 			log.error("=== ERROR DURING CLOUD DRIVE METADATA SECONDARY TYPE PATCH for repository: " + repositoryId + " ===", e);
+			// Roadmap 2-2. No later patch reads this type, but the cloud-drive feature does at
+			// RUNTIME: without it, ingesting from a drive fails with a type error that gives no
+			// hint the type was never created. Burning the history row made that permanent.
+			reportIncomplete("the cloud-drive metadata secondary type could not be created for "
+					+ repositoryId + " (" + e.getMessage() + "); cloud-drive ingest needs it");
 		}
 	}
 
@@ -209,6 +214,7 @@ public class Patch_CloudDriveMetadataSecondaryType extends AbstractNemakiPatch {
 
 		} catch (Exception e) {
 			log.error("Failed to create type: " + TYPE_ID, e);
+			reportIncomplete("type " + TYPE_ID + " could not be created (" + e.getMessage() + ")");
 		}
 	}
 
