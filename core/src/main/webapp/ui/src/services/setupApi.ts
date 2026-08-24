@@ -93,6 +93,12 @@ export interface ApplyRequest {
     accessKeyId?: string;
     secretAccessKey?: string;
   };
+  /**
+   * Whether to record provenance. OMITTED means "leave the stored value alone" — the server
+   * reads absence that way on purpose, because provenance cannot be reconstructed after the
+   * fact and silently switching it off is not recoverable.
+   */
+  lineageJournaled?: boolean;
   adminPassword?: string;
 }
 

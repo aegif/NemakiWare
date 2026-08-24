@@ -297,6 +297,27 @@ public class SetupApplyResource {
             }
         }
 
+        // 5b. Provenance recording (roadmap §2-3).
+        //
+        // ABSENCE LEAVES IT ALONE. A null here means the wizard did not ask — an older UI, or a
+        // scripted apply — and writing a default would switch lineage OFF for a deployment that
+        // had turned it on. Provenance cannot be reconstructed after the fact, so that loss is
+        // not recoverable; "the wizard said nothing" must never mean "turn it off".
+        //
+        // The SHIPPED fallback (@Value("${lineage.mode:disabled}")) is unchanged. Moving it is
+        // §2-3's other half and is gated on the write-overhead and journal-growth measurements
+        // the roadmap requires first; this is the half that does not need them.
+        if (req.getLineageJournaled() != null) {
+            try {
+                String mode = req.getLineageJournaled() ? "journaled" : "disabled";
+                CouchDbConfigWriter.putConfigValue(couchUrl, authHeader, "lineage.mode", mode);
+                System.setProperty("lineage.mode", mode);
+                logger.info("Setup: lineage.mode set to " + mode);
+            } catch (Exception e) {
+                return error(500, "Failed to persist lineage.mode: " + e.getMessage());
+            }
+        }
+
         // 6. Persist vector settings to nemaki_conf
         VectorTestRequest vector = req.getVector();
         if (vector != null) {

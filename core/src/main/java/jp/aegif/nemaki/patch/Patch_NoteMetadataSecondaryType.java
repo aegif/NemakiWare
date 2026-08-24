@@ -69,7 +69,13 @@ public class Patch_NoteMetadataSecondaryType extends AbstractNemakiPatch {
         log.info("=== NOTE METADATA SECONDARY TYPE PATCH for " + repositoryId + " ===");
         try {
             TypeService ts = patchUtil.getTypeService();
-            if (ts == null) { log.error("TypeService not available"); return; }
+            if (ts == null) {
+                // Reported, not just logged: returning here used to record the patch as applied,
+                // so the type was never created and never retried (roadmap §2-2).
+                log.error("TypeService not available");
+                reportIncomplete("TypeService was not available, so noteMetadata was not created");
+                return;
+            }
 
             NemakiTypeDefinition existing = ts.getTypeDefinition(repositoryId, TYPE_ID);
             List<String> propIds = new ArrayList<>();
@@ -120,6 +126,8 @@ public class Patch_NoteMetadataSecondaryType extends AbstractNemakiPatch {
             }
         } catch (Exception e) {
             log.error("Error in noteMetadata patch for " + repositoryId, e);
+            // Same reason: a swallowed failure that is recorded as applied never runs again.
+            reportIncomplete("noteMetadata patch failed: " + e.getMessage());
         }
     }
 

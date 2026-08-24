@@ -514,6 +514,58 @@ public class SetupApplyResourceTest {
         }
 
         @Test
+        @DisplayName("provenance: an ABSENT choice leaves lineage.mode alone (roadmap §2-3)")
+        public void testLineageAbsentLeavesConfigAlone() {
+            // The one that matters. A null means the wizard did not ask — an older UI, or a
+            // scripted apply — and writing a default would switch lineage OFF for a deployment
+            // that had turned it on. Provenance cannot be reconstructed after the fact, so that
+            // loss is not recoverable.
+            SetupApplyRequest req = validRequest();
+            req.setLineageJournaled(null);
+            when(probeService.getCurrentState())
+                    .thenReturn(StartupProbeService.StartupState.DB_CONNECTED_CURRENT);
+
+            try (MockedStatic<CouchDbConfigWriter> mocked = mockStatic(CouchDbConfigWriter.class)) {
+                mocked.when(() -> CouchDbConfigWriter.putConfigValue(anyString(), anyString(),
+                        anyString(), anyString())).then(invocation -> null);
+                mocked.when(() -> CouchDbConfigWriter.basicAuth(anyString(), anyString()))
+                        .thenCallRealMethod();
+                mocked.when(() -> CouchDbConfigWriter.escapeJson(anyString()))
+                        .thenCallRealMethod();
+
+                resource.apply(req);
+
+                mocked.verify(() -> CouchDbConfigWriter.putConfigValue(anyString(), anyString(),
+                        eq("lineage.mode"), anyString()), org.mockito.Mockito.never());
+            }
+        }
+
+        @Test
+        @DisplayName("provenance: an explicit choice IS written — the control")
+        public void testLineageChoiceIsWritten() {
+            // Without this, an apply() that never wrote lineage.mode at all would pass the
+            // test above.
+            SetupApplyRequest req = validRequest();
+            req.setLineageJournaled(Boolean.TRUE);
+            when(probeService.getCurrentState())
+                    .thenReturn(StartupProbeService.StartupState.DB_CONNECTED_CURRENT);
+
+            try (MockedStatic<CouchDbConfigWriter> mocked = mockStatic(CouchDbConfigWriter.class)) {
+                mocked.when(() -> CouchDbConfigWriter.putConfigValue(anyString(), anyString(),
+                        anyString(), anyString())).then(invocation -> null);
+                mocked.when(() -> CouchDbConfigWriter.basicAuth(anyString(), anyString()))
+                        .thenCallRealMethod();
+                mocked.when(() -> CouchDbConfigWriter.escapeJson(anyString()))
+                        .thenCallRealMethod();
+
+                resource.apply(req);
+
+                mocked.verify(() -> CouchDbConfigWriter.putConfigValue(anyString(), anyString(),
+                        eq("lineage.mode"), eq("journaled")));
+            }
+        }
+
+        @Test
         @DisplayName("SAML enabled with real PEM certificate → passes validation")
         public void testSamlWithRealCertificate() {
             SetupApplyRequest req = validRequest();

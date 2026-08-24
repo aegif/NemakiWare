@@ -6,16 +6,18 @@ import type { CouchDbConfig } from './CouchDbStep';
 import type { AuthConfig } from './AuthStep';
 import type { AdminConfig } from './AdminStep';
 import type { VectorConfig } from './VectorStep';
+import type { ProvenanceConfig } from './ProvenanceStep';
 
 interface ConfirmStepProps {
   couchdb: CouchDbConfig;
   auth: AuthConfig;
   admin: AdminConfig;
   vector: VectorConfig;
+  provenance: ProvenanceConfig;
   onComplete: () => void;
 }
 
-export function ConfirmStep({ couchdb, auth, admin, vector, onComplete }: ConfirmStepProps) {
+export function ConfirmStep({ couchdb, auth, admin, vector, provenance, onComplete }: ConfirmStepProps) {
   const { t } = useTranslation();
   const [applying, setApplying] = useState(false);
   const [proceeding, setProceeding] = useState(false);
@@ -57,6 +59,7 @@ export function ConfirmStep({ couchdb, auth, admin, vector, onComplete }: Confir
           accessKeyId: vector.type === 'bedrock' && vector.accessKeyId ? vector.accessKeyId : undefined,
           secretAccessKey: vector.type === 'bedrock' && vector.secretAccessKey ? vector.secretAccessKey : undefined,
         },
+        lineageJournaled: provenance.journaled,
         adminPassword: admin.newPassword || undefined,
       });
       setResult(res);

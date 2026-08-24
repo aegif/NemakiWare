@@ -118,13 +118,12 @@ public class Patch_ArchetypeMetadataEvidenceReadOnly extends AbstractNemakiPatch
      * <p>Retrying is cheap and harmless: {@code makeReadOnly} skips definitions that are already
      * READONLY, so a repeat run rewrites nothing and bumps no revisions.
      *
-     * <p><b>Known limitation.</b> If a creator patch swallowed its own failure — all three
-     * catch and log rather than throw — {@code AbstractNemakiPatch} has already written its
-     * history row, so it will never run again, and this patch then throws on every start for
-     * ever. That is loud (an ERROR per start naming the type and the remedy) rather than
-     * silent, which is the right side to fail on; the underlying swallow is the
-     * unprepared-return work the roadmap holds as a breaking change (§2-2). The message below
-     * says what to do about it.
+     * <p><b>The creator-swallow wedge is closed</b> (roadmap §2-1/§2-2, 2026-08-24). All three
+     * creator patches now call {@code reportIncomplete} from their catch blocks instead of only
+     * logging, so a failed creation withholds its own history row and is retried on the next
+     * start — which means this patch's retry converges instead of throwing for ever. The
+     * message below still says what to do if it somehow does not, because a wedged deployment
+     * needs the remedy in the log rather than in a design document.
      */
     @Override
     protected void applyPerRepositoryPatch(String repositoryId) {

@@ -15,6 +15,43 @@ public abstract class AbstractNemakiPatch {
 	@Autowired
 	protected PrincipalService principalService;
 
+	/**
+	 * What the patch currently running reported as NOT done, if anything.
+	 *
+	 * <p>Per thread because patches run on the startup thread and nothing runs two at once,
+	 * but a ThreadLocal costs nothing and removes the question.
+	 */
+	private static final ThreadLocal<java.util.List<String>> incomplete = new ThreadLocal<>();
+
+	/**
+	 * Says "I returned, but I did not do my work" — without throwing.
+	 *
+	 * <h2>The hole this closes</h2>
+	 *
+	 * <p>{@link #apply} writes the patch-history row the moment
+	 * {@link #applyPerRepositoryPatch} returns without throwing, and never calls it again. Most
+	 * patches in this package catch their own failures and log them, so a patch that failed
+	 * entirely is recorded as applied and <b>never runs again</b>: the thing it was supposed to
+	 * do never happens, silently, for the life of the deployment (roadmap §2-2, "残り 16 パッチ
+	 * の unprepared-return").
+	 *
+	 * <p>Throwing from every catch was the obvious fix and is why this was held as a breaking
+	 * change: some of those catches exist because the failure genuinely is tolerable, and
+	 * turning them all into startup errors would stop deployments that have always come up.
+	 * This gives a third answer between "threw" and "returned normally" — <b>the history row is
+	 * withheld, so the patch is retried on the next start</b>, and the run reports itself
+	 * unsuccessful, but startup continues.
+	 *
+	 * <p>Additive: a patch that never calls this behaves exactly as before.
+	 *
+	 * @param reason what was not done, in words. It goes in the log; keep it actionable.
+	 */
+	protected void reportIncomplete(String reason) {
+		java.util.List<String> reasons = incomplete.get();
+		if (reasons != null) {
+			reasons.add(reason);
+		}
+	}
 
 	public boolean apply(){
 		log.info("Applying patch: " + getName());
@@ -54,7 +91,24 @@ public abstract class AbstractNemakiPatch {
 					if (log.isDebugEnabled()) {
 						log.debug("[patch=" + getName() + "] Calling applyPerRepositoryPatch for repository: " + repositoryId);
 					}
-					applyPerRepositoryPatch(repositoryId);
+					java.util.List<String> reasons = new java.util.ArrayList<>();
+					incomplete.set(reasons);
+					try {
+						applyPerRepositoryPatch(repositoryId);
+					} finally {
+						incomplete.remove();
+					}
+
+					if (!reasons.isEmpty()) {
+						// Returned, but told us it did not finish. Writing the history row here
+						// would record it as applied and it would never run again — the exact
+						// silent-permanent-skip §2-2 is about.
+						log.error("[patch=" + getName() + ", repositoryId=" + repositoryId
+								+ "] reported incomplete work; NOT recording it as applied so"
+								+ " that it is retried on the next start: " + reasons);
+						allSucceeded = false;
+						continue;
+					}
 
 					patchUtil.createPathHistory(repositoryId, getName());
 					if (log.isDebugEnabled()) {

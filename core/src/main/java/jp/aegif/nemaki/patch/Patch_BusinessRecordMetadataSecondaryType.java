@@ -55,7 +55,11 @@ public class Patch_BusinessRecordMetadataSecondaryType extends AbstractNemakiPat
     protected void applyPerRepositoryPatch(String repositoryId) {
         try {
             TypeService ts = patchUtil.getTypeService();
-            if (ts == null) return;
+            if (ts == null) {
+                reportIncomplete("TypeService was not available, so businessRecordMetadata was"
+                        + " not created");
+                return;
+            }
             NemakiTypeDefinition existing = ts.getTypeDefinition(repositoryId, TYPE_ID);
             List<String> pids = new ArrayList<>();
 
@@ -86,7 +90,12 @@ public class Patch_BusinessRecordMetadataSecondaryType extends AbstractNemakiPat
                 patchUtil.getTypeManager().invalidateTypeCache(repositoryId);
                 try { patchUtil.getTypeManager().refreshTypes(); } catch (Exception e) { /* */ }
             }
-        } catch (Exception e) { log.error("businessRecordMetadata patch error for " + repositoryId, e); }
+        } catch (Exception e) {
+            log.error("businessRecordMetadata patch error for " + repositoryId, e);
+            // Reported, not just logged: a swallowed failure that is recorded as applied never
+            // runs again, so the type would never be created (roadmap §2-2).
+            reportIncomplete("businessRecordMetadata patch failed: " + e.getMessage());
+        }
     }
 
     private String mkStr(TypeService ts, String r, String[] p) {

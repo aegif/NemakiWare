@@ -7,6 +7,7 @@ import { ProbeStep } from './steps/ProbeStep';
 import { AuthStep, AuthConfig } from './steps/AuthStep';
 import { AdminStep, AdminConfig } from './steps/AdminStep';
 import { VectorStep, VectorConfig } from './steps/VectorStep';
+import { ProvenanceStep, ProvenanceConfig } from './steps/ProvenanceStep';
 import { ConfirmStep } from './steps/ConfirmStep';
 import { setupApi } from '../../services/setupApi';
 
@@ -21,6 +22,7 @@ interface WizardState {
   auth: AuthConfig;
   admin: AdminConfig;
   vector: VectorConfig;
+  provenance: ProvenanceConfig;
 }
 
 const initialState: WizardState = {
@@ -44,6 +46,10 @@ const initialState: WizardState = {
   },
   admin: { newPassword: '', confirmPassword: '' },
   vector: { type: 'none', url: '', region: '', modelId: '', accessKeyId: '', secretAccessKey: '' },
+  // Recommended ON (roadmap §2-3): provenance cannot be reconstructed after the fact, so the
+  // default has to be the one that can be undone. The SHIPPED fallback for deployments that
+  // never run the wizard is unchanged.
+  provenance: { journaled: true },
 };
 
 export function SetupWizard({ onComplete }: SetupWizardProps) {
@@ -180,6 +186,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     { title: t('setup.steps.auth'), key: 'auth' },
     { title: t('setup.steps.admin'), key: 'admin' },
     { title: t('setup.steps.vector'), key: 'vector' },
+    { title: t('setup.steps.provenance'), key: 'provenance' },
     { title: t('setup.steps.confirm'), key: 'confirm' },
   ];
 
@@ -228,11 +235,19 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         );
       case 5:
         return (
+          <ProvenanceStep
+            value={state.provenance}
+            onChange={(provenance) => setState(prev => ({ ...prev, provenance }))}
+          />
+        );
+      case 6:
+        return (
           <ConfirmStep
             couchdb={state.couchdb}
             auth={state.auth}
             admin={state.admin}
             vector={state.vector}
+            provenance={state.provenance}
             onComplete={onComplete}
           />
         );

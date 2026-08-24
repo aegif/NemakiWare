@@ -358,10 +358,12 @@ tripwire は**そのまま残す** — constraint が誤って外された日に
   「適用済み」になる。**ロスター全件**を要求する形に変更。
 - **major: creator パッチが失敗を握り潰すと恒久 wedge。** `AbstractNemakiPatch` は
   正常復帰の瞬間に履歴を書くので、型パッチが catch して return すると二度と走らない。
-  その状態で READONLY パッチは毎起動 throw し続ける。**根治は roadmap §2-2**
-  (unprepared-return の throw 化、破壊的として保留中) なので、ここでは
-  **例外メッセージに対処法を書いた** — どの creator パッチか、履歴の行を消して
-  再実行すること。沈黙より毎起動の ERROR の方が正しい側の失敗。
+  その状態で READONLY パッチは毎起動 throw し続ける。
+  → **2026-08-24 根治**: roadmap §2-2 を実施し、`reportIncomplete` を追加した。
+  「throw した」と「正常に返った」の**третий の答え**で、履歴行を書かずに次回起動で
+  再試行させる (起動は止めない)。3 つの creator パッチを接続したので、READONLY
+  パッチの retry は収束する。例外メッセージの対処法はそのまま残した — wedge した
+  配備は設計書ではなくログに手当てが要る。
 - **minor: verify の「hash を持つ行」判定が 2 本しか見ていなかった。** archetype hash
   だけを持つ行が「hash 無し」と読まれ、baseline が見つからないか、本物の MISMATCH が
   `UNVERIFIABLE` に降格していた。述語 `carriesAHash` に一本化。
