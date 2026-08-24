@@ -335,12 +335,16 @@ diff したとき、起きていない変化が見えないように)。
 
 ### R5 — 確定した事実は、記録なしに上書きされない (**D6 の本体**)
 
-> **範囲は chat の 11 個に限る。** 「証拠が記録なしに消える経路」は D6 だけではない —
-> (c) §5.2 の `cmis:secondaryObjectTypeIds` はまだ開いているし、同じ
-> 「skip 落ち + `mergeAspect`」は mail (`:295`) / note (`:509`) / record (`:725`) にもある。
-> ただし (c) が READONLY にしたのは chat の 11 個だけなので、**保護された証拠の
-> 取込上書き**としては D6 が残件である (外部レビュー)。他の 3 つは同じ形の穴だが、
-> 保護がまだ無いので「確定した事実が壊れる」とはまだ言えない。
+> **初稿の範囲は chat の 11 個に限っていた** — (c) が READONLY にしたのがそれだけで、
+> mail (`:295`) / note (`:509`) / record (`:725`) の同じ「skip 落ち + `mergeAspect`」は
+> 保護が無く「確定した事実が壊れる」とまだ言えなかったため。
+>
+> **2026-08-23 (D-7) に両方とも閉じた**: `Patch_ExternalIntegrationEvidenceReadOnly` が
+> source identity 側を READONLY にし、fill 規則 (fill / refuse / reimport イベント +
+> intent-before-write hook) を mail / note / record へ広げた。(c) §5.2 の
+> `cmis:secondaryObjectTypeIds` も 2026-08-22 に (d) で閉じている
+> (`EvidenceTypes.PROTECTED` はリストから外れても・型が解決できなくても保たれる)。
+> **この段落を「未対応」として読まないこと。**
 
 再取込が既存の証拠を書き換えるなら、**それは新しい取込であって、イベントが要る**。
 選択肢は 2 つ:
