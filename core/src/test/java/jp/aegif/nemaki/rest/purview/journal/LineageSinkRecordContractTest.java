@@ -246,7 +246,8 @@ public class LineageSinkRecordContractTest {
         assertEquals("slack:1720000000.000200", processAttrs.get("sourceDescription"),
                 "the emitter-precomputed sourceDescription must be read, not re-derived");
         assertEquals("stored nothing", processAttrs.get("reimportOutcome"),
-                "the per-pass facts are declared in the catalog type since SCHEMA_VERSION 17 (18 now) "
+                "the per-pass facts are declared in the catalog type since SCHEMA_VERSION 17 "
+                        + "(manifest is at 18 now — see PurviewSchemaManifestFactory) "
                         + "and must be delivered");
         assertEquals("acme-chat://org/W1/channels/C1", processAttrs.get("externalStableKey"),
                 "the raw stable key comes from the typed input endpoint (Codex M4)");

@@ -271,6 +271,37 @@ class ImportProfileSchedulerGateTest {
     }
 
     @Test
+    void update_stampsTheOperator_onTargetFolderPathChange() {
+        // The id-only test above leaves the path comparison unpinned: dropping the
+        // targetFolderPath clause keeps it green (external review). A profile can name its
+        // landing folder by PATH instead of id, and repointing it that way is the same
+        // schedule-relevant change.
+        CallContext admin = mock(CallContext.class);
+        when(admin.getUsername()).thenReturn("admin");
+        lenient().when(admin.getRepositoryId()).thenReturn(REPO);
+        lenient().when(admin.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(httpRequest.getAttribute("CallContext")).thenReturn(admin);
+        when(authService.isAdmin(admin)).thenReturn(true);
+
+        ImportProfileDefinition existing = scheduledDelegatedDraft();
+        existing.setProfileId("p-folder-path");
+        existing.setTargetFolderPath("/imports/team-a");
+        existing.setScheduleConfiguredByUserId("previous-operator");
+        existing.setScheduleConfiguredAtMs(1L);
+        when(profileService.get("p-folder-path")).thenReturn(existing);
+
+        ImportProfileDefinition update = scheduledDelegatedDraft();
+        update.setProfileId("p-folder-path");
+        update.setTargetFolderPath("/imports/team-b");   // id unchanged, path repointed
+
+        controller.update("p-folder-path", update);
+
+        org.junit.jupiter.api.Assertions.assertEquals("admin",
+                update.getScheduleConfiguredByUserId(),
+                "repointing the landing folder BY PATH left the previous operator on record");
+    }
+
+    @Test
     void update_preservesThePriorStamp_whenNothingScheduleRelevantChanged() {
         CallContext admin = mock(CallContext.class);
         when(admin.getUsername()).thenReturn("admin");

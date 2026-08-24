@@ -423,7 +423,9 @@ public class PurviewLineageSink implements LineageTargetSink {
                                 : supply.getOrDefault("sourceSystem", "") + ":"
                                         + supply.getOrDefault("sourceObjectId", ""));
                 // The per-pass facts, when the record carries them (declared in the catalog
-                // type since SCHEMA_VERSION 17 — same commit, (b) §4's rule).
+                // type since SCHEMA_VERSION 17 — same commit, (b) §4's rule. The manifest is
+                // at 18 now: the contentHash triple was added a commit later under an
+                // unchanged 17 and the bump caught up with it).
                 for (String passFact : java.util.List.of("reimportOutcome", "reimportFilled",
                         "reimportRefused", "assuranceAsserted")) {
                     if (supply.containsKey(passFact)) {
