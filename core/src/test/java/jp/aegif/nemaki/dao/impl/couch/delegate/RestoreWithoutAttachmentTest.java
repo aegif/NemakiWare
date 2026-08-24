@@ -102,6 +102,31 @@ class RestoreWithoutAttachmentTest {
     }
 
     @Test
+    @DisplayName("NOTHING is restored when the attachment cannot be got")
+    void nothingIsRestoredWhenTheAttachmentIsUnavailable() {
+        // The ordering, not just the verdict. Restoring the document FIRST and then throwing
+        // reproduces exactly the defect this work started from: the document is back and the
+        // caller is told the restore failed (external review of the first fix). The earlier
+        // tests here checked only the lookup, so they passed with the wrong order.
+        jp.aegif.nemaki.model.Archive doc = new jp.aegif.nemaki.model.Archive();
+        doc.setId("arc-1");
+        doc.setAttachmentNodeId("att-node-1");
+        CloudantClientPool pool = mock(CloudantClientPool.class);
+        RepositoryInfoMap infoMap = mock(RepositoryInfoMap.class);
+        when(infoMap.getArchiveId("bedroom")).thenReturn("bedroom_archive");
+        when(pool.getClient("bedroom_archive")).thenThrow(new RuntimeException("db down"));
+        ArchiveDaoDelegate delegate =
+                org.mockito.Mockito.spy(new ArchiveDaoDelegate(pool, infoMap, null));
+
+        org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                () -> delegate.restoreDocumentWithArchive("bedroom", doc));
+
+        org.mockito.Mockito.verify(delegate, org.mockito.Mockito.never())
+                .restoreContent(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     @DisplayName("a null attachment archive is nothing to restore, not a failure")
     void nullAttachmentArchiveIsNotAFailure() {
         CloudantClientPool pool = mock(CloudantClientPool.class);

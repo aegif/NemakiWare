@@ -1189,9 +1189,19 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "children", queryParams);
 
+			// A null result is "the view could not answer" — an undeployed design document, or
+			// a store that decided to be lenient. Treating it as an empty folder is the same
+			// lie the catch below refuses, arriving by the other door (roadmap §2-1). An EMPTY
+			// folder is a result with no rows, which falls through normally.
+			if (result == null) {
+				throw new IllegalStateException("the children view did not answer for parent '"
+						+ parentId + "' in repository '" + repositoryId + "'; that is not the "
+						+ "same as the folder being empty");
+			}
+
 			List<Content> children = new ArrayList<Content>();
 
-			if (result != null && result.getRows() != null) {
+			if (result.getRows() != null) {
 				if (log.isDebugEnabled()) {
 					log.debug("DEBUG getChildren: found " + result.getRows().size() + " raw rows");
 				}
@@ -1286,10 +1296,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					}
 				}
 			}
+			// The view answered and had nothing to reduce: genuinely no children.
 			return 0;
 		} catch (Exception e) {
+			// Fail-fast (roadmap §2-1). Zero here meant three different things at once —
+			// "no children", "we could not count" and "the reduce is not deployed" — and a
+			// caller that only asks for the COUNT has no probe to fall back on. That is the
+			// "empty index reported complete" lie in its arithmetic form.
 			log.error("Error counting children for parent '" + parentId + "' from repository '" + repositoryId + "': " + e.getMessage(), e);
-			return 0;
+			throw new RuntimeException("Failed to count children of '" + parentId
+					+ "' in repository '" + repositoryId + "': " + e.getMessage(), e);
 		}
 	}
 

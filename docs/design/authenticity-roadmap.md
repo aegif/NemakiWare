@@ -115,7 +115,18 @@ BagIt / OAIS 型パッケージ (`bagit|oais` で 0 件)、定期 fixity 再検�
 >
 > `getChildren` の空リストは v3.3 の「空索引が completed と報告された」事件の根でもある
 > (再索引側にはあの時ガードを足した。これが根)。
-> 判別テスト `DaoFailsFastTest` (失敗は throw / 本当に空なら空リストの統制)。
+>
+> **第 2 段 (同日、外部レビュー)**: 例外経路を閉じても **null 経路が開いたまま**だった。
+>
+> | 箇所 | 前 | 後 |
+> |---|---|---|
+> | `queryView` の `NotFoundException` | startup 外でも null。呼び出し側は空フォルダと読む | startup 外は throw |
+> | `getChildren` の `result == null` | 空リスト | throw (「答えなかった」と「空」は別) |
+> | `getChildrenCount` | 例外で **0** = 「子は居ない」という事実の主張 | throw |
+>
+> **初稿の統制テストが穴の形を pin していた** — `queryView → null` を「空フォルダ」と
+> して固定していた。空フォルダは**行 0 の ViewResult** であって null ではない。
+> 判別テスト 6 本、統制で 4 件とも落ちることを実測。
 > **残り**: `null` を Optional / 明示 NotFound に**型で**表す作業と、他の DAO の全数点検。
 
 | 現状 (v3.3.0) | 何が問題か |

@@ -102,6 +102,37 @@ class DaoFailsFastTest {
     @DisplayName("an empty folder is still an empty list — the control")
     void anEmptyFolderIsStillEmpty() throws Exception {
         // Without this, a dao that threw for everything would pass the test above.
+        //
+        // An EMPTY folder is a view that ANSWERED with no rows — not a null. The first draft
+        // of this test stubbed null and asserted an empty list, which pinned the very hole the
+        // rest of the class exists to close: an undeployed design document read as an empty
+        // folder (external review). The stub is now the shape the store actually returns when
+        // there is nothing there.
+        offStartupThread(() -> {
+            ContentDaoServiceImpl dao = new ContentDaoServiceImpl();
+            CloudantClientPool pool = mock(CloudantClientPool.class);
+            CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+            when(pool.getClient(anyString())).thenReturn(client);
+            com.ibm.cloud.cloudant.v1.model.ViewResult empty =
+                    mock(com.ibm.cloud.cloudant.v1.model.ViewResult.class);
+            when(empty.getRows()).thenReturn(java.util.List.of());
+            when(client.queryView(anyString(), anyString(),
+                    org.mockito.ArgumentMatchers.<java.util.Map<String, Object>>any()))
+                    .thenReturn(empty);
+            dao.setConnectorPool(pool);
+
+            assertTrue(dao.getChildren("bedroom", "folder-1").isEmpty(),
+                    "a folder that genuinely has no children must still answer with an empty "
+                            + "list — over-throwing would break every empty folder");
+        });
+    }
+
+    @Test
+    @DisplayName("counting children refuses rather than answering zero")
+    void countingChildrenFailsFast() throws Exception {
+        // Zero meant three things at once: "no children", "we could not count", and "the
+        // reduce is not deployed". A caller that only asks for the COUNT has no probe to fall
+        // back on, so it writes the same lie the empty index wrote (external review).
         offStartupThread(() -> {
             ContentDaoServiceImpl dao = new ContentDaoServiceImpl();
             CloudantClientPool pool = mock(CloudantClientPool.class);
@@ -109,12 +140,77 @@ class DaoFailsFastTest {
             when(pool.getClient(anyString())).thenReturn(client);
             when(client.queryView(anyString(), anyString(),
                     org.mockito.ArgumentMatchers.<java.util.Map<String, Object>>any()))
-                    .thenReturn(null);
+                    .thenThrow(new RuntimeException("connection reset"));
             dao.setConnectorPool(pool);
 
-            assertTrue(dao.getChildren("bedroom", "folder-1").isEmpty(),
-                    "a folder that genuinely has no children must still answer with an empty "
-                            + "list — over-throwing would break every empty folder");
+            assertThrows(RuntimeException.class,
+                    () -> dao.getChildrenCount("bedroom", "folder-1"),
+                    "a failed count was reported as zero children");
         });
+    }
+
+    @Test
+    @DisplayName("a folder that really is empty still counts zero — the control")
+    void anEmptyFolderStillCountsZero() throws Exception {
+        offStartupThread(() -> {
+            ContentDaoServiceImpl dao = new ContentDaoServiceImpl();
+            CloudantClientPool pool = mock(CloudantClientPool.class);
+            CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+            when(pool.getClient(anyString())).thenReturn(client);
+            com.ibm.cloud.cloudant.v1.model.ViewResult empty =
+                    mock(com.ibm.cloud.cloudant.v1.model.ViewResult.class);
+            when(empty.getRows()).thenReturn(java.util.List.of());
+            when(client.queryView(anyString(), anyString(),
+                    org.mockito.ArgumentMatchers.<java.util.Map<String, Object>>any()))
+                    .thenReturn(empty);
+            dao.setConnectorPool(pool);
+
+            org.junit.jupiter.api.Assertions.assertEquals(0,
+                    dao.getChildrenCount("bedroom", "folder-1"));
+        });
+    }
+
+    @Test
+    @DisplayName("a write that failed is reported — the 24 callers that never checked null")
+    void updateFailsFast() throws Exception {
+        // CloudantClientWrapper.update(Map) caught every exception and returned null, and of
+        // the two dozen call sites not one checked. "The write did not happen" reached nobody.
+        //
+        // Driven through the real method with no client behind it, which is the cheapest way
+        // to make the write fail. What is under test is the CATCH — that a failure leaves by
+        // the exception path rather than as a null every caller reads as success.
+        offStartupThread(() -> {
+            CloudantClientWrapper wrapper = mock(CloudantClientWrapper.class);
+            when(wrapper.update(
+                    org.mockito.ArgumentMatchers.<java.util.Map<String, Object>>any()))
+                    .thenCallRealMethod();
+
+            assertThrows(RuntimeException.class,
+                    () -> wrapper.update(new java.util.HashMap<>(
+                            java.util.Map.of("_id", "doc-1", "type", "x"))),
+                    "a failed write returned null, which every caller reads as success");
+        });
+    }
+
+    @Test
+    @DisplayName("a view that is NOT DEPLOYED is refused, not read as an empty folder")
+    void anUndeployedViewIsRefused() {
+        // The other door into the same lie (external review). The exception path was closed
+        // first, and queryView kept turning a NotFoundException — a design document that is
+        // not there — into a null, which getChildren turned into an empty folder. Startup
+        // stays lenient because provisioning legitimately runs before the views exist.
+        ContentDaoServiceImpl dao = new ContentDaoServiceImpl();
+        CloudantClientPool pool = mock(CloudantClientPool.class);
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(pool.getClient(anyString())).thenReturn(client);
+        when(client.queryView(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.<java.util.Map<String, Object>>any()))
+                .thenReturn(null);
+        dao.setConnectorPool(pool);
+
+        // Not on a worker thread on purpose: getChildren's own guard is what must reject a
+        // null view result, whatever the wrapper decided to do about startup.
+        assertThrows(RuntimeException.class, () -> dao.getChildren("bedroom", "folder-1"),
+                "an undeployed view was reported as a folder with no children");
     }
 }

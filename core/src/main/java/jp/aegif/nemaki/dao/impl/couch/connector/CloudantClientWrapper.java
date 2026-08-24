@@ -937,11 +937,22 @@ public class CloudantClientWrapper {
 			return result;
 
 		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
-			// View or design document does not exist — this is expected during initial
-			// startup before design documents are created. Return null so callers treat
-			// it as "no data yet".
-			log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found - returning null. This is normal during initial startup.");
-			return null;
+			// A missing view is "we cannot answer", not "there is no data" (roadmap §2-1).
+			//
+			// Returning null here let getChildren turn an undeployed design document into an
+			// EMPTY FOLDER — the same lie the exception path was just closed against, arriving
+			// by the other door. Startup keeps the old behaviour because provisioning legitimately
+			// runs before the design documents exist.
+			if (isStartupPhase()) {
+				log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found"
+						+ " during startup - returning null. This is normal before design"
+						+ " documents are created.");
+				return null;
+			}
+			log.error("Design document '" + designDoc + "' or view '" + viewName + "' is not"
+					+ " deployed; a caller would otherwise read that as 'no data'");
+			throw new RuntimeException("View " + designDoc + "/" + viewName + " is not deployed"
+					+ " in database '" + databaseName + "', so it cannot answer", e);
 		} catch (Exception e) {
 			// Transient errors (network timeout, server 500, etc.) must NOT be silently
 			// swallowed as "no data". Propagate so callers can distinguish "data absent"

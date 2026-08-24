@@ -683,8 +683,27 @@ public class RepositoryServiceImpl implements RepositoryService,
 			ntd.setControllablePolicy(false);
 			ntd.setControllableACL(false);
 			log.debug("TCK SPEC COMPLIANCE: Enforced secondary type constraints (creatable=false, fileable=false, controllablePolicy=false, controllableAcl=false) for type: " + requestedTypeId);
+		} else if (BaseTypeId.CMIS_FOLDER.equals(typeDefinition.getBaseTypeId())) {
+			// Folder types: fileable is FIXED at TRUE by the specification (CMIS 1.1, the
+			// cmis:folder attribute table: "fileable — TRUE"), for the same reason it is fixed
+			// at FALSE for secondary types. A folder that cannot be filed has no place in the
+			// folder graph, and every child-binding operation on it is undefined.
+			//
+			// Accepting a client's FALSE here left a type in the repository that the TCK's own
+			// spec-compliance check rejects — permanently, because the type outlives the run
+			// that created it. Found when exactly that debris (test:requiredPropFolder) kept
+			// baseTypesTest red long after the run that made it.
+			if (!typeDefinition.isFileable()) {
+				log.warn("TCK SPEC COMPLIANCE: folder type " + requestedTypeId
+						+ " was requested with fileable=false, which the specification fixes at"
+						+ " true; enforcing true");
+			}
+			ntd.setCreatable(typeDefinition.isCreatable());
+			ntd.setFilable(true);
+			ntd.setControllablePolicy(typeDefinition.isControllablePolicy());
+			ntd.setControllableACL(typeDefinition.isControllableAcl());
 		} else {
-			// Non-secondary types: use client-provided values
+			// Other primary types: use client-provided values
 			ntd.setCreatable(typeDefinition.isCreatable());
 			ntd.setFilable(typeDefinition.isFileable());
 			ntd.setControllablePolicy(typeDefinition.isControllablePolicy());

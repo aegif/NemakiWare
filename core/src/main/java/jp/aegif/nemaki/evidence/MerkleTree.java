@@ -42,6 +42,13 @@ import java.util.List;
  *       value happens to be a concatenation of two hashes can be presented as an interior node
  *       — a second-preimage attack that is a textbook property of naive Merkle trees (RFC 6962
  *       §2.1 spells out the same rule).</li>
+ *   <li><b>Nodes concatenate hex, not raw bytes.</b> RFC 6962 hashes the 32 raw bytes; this
+ *       hashes the 64-character lowercase hex. That is a deliberate divergence — the ledger's
+ *       hashes travel as hex strings everywhere else, and converting at the boundary would add
+ *       a second representation to get wrong. It is unambiguous for the same reason the raw
+ *       form is: every input is FIXED-LENGTH (64 hex chars), so a concatenation has exactly one
+ *       split. It does mean a proof from this tree is not interchangeable with an RFC 6962 one,
+ *       which is why the vectors are pinned here and computed independently.</li>
  *   <li><b>An odd node is PROMOTED, never duplicated.</b> Duplicating the last node to pad a
  *       level makes two different leaf lists produce the same root (CVE-2012-2459's shape), so
  *       an attacker can construct a second list that a checkpoint appears to commit to.</li>

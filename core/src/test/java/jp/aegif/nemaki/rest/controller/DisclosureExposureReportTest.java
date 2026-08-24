@@ -97,7 +97,7 @@ class DisclosureExposureReportTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> scan() {
         ResponseEntity<Map<String, Object>> response =
-                controller.disclosureExposure("bedroom", 500);
+                controller.disclosureExposure("bedroom", 500, 0);
         return response.getBody();
     }
 
@@ -155,6 +155,29 @@ class DisclosureExposureReportTest {
     }
 
     @Test
+    @DisplayName("a truncated scan hands back the offset to continue from")
+    void truncationOffersAWayToFinish() {
+        // The rows this report is about are the OLD v1 events. A fixed offset of 0 over a
+        // store that answers newest-first scans exactly the events that CANNOT be exposed and
+        // never reaches the ones that can — so "truncated: true" has to come with a way to
+        // carry on, or the sweep can only ever describe one page (external review).
+        List<LineageJournalRow> page = new java.util.ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            page.add(v1RowWith("chat.channelId", "C" + i));
+        }
+        when(store.findByRepositoryId(anyString(), anyInt(), anyInt())).thenReturn(page);
+
+        Map<String, Object> body = controller.disclosureExposure("bedroom", 5, 10).getBody();
+
+        assertEquals(Boolean.TRUE, body.get("truncated"));
+        assertEquals(10, body.get("offset"), "the requested offset must be reported back");
+        assertEquals(15, body.get("nextOffset"),
+                "a truncated scan with no way to continue is a dead end");
+        assertTrue(String.valueOf(body.get("note")).contains("does not mean the repository is "
+                + "clean"), String.valueOf(body.get("note")));
+    }
+
+    @Test
     @DisplayName("a full page says so — a truncated scan must not read as a clean bill")
     void truncationIsReported() {
         List<LineageJournalRow> page = new java.util.ArrayList<>();
@@ -164,7 +187,7 @@ class DisclosureExposureReportTest {
         when(store.findByRepositoryId(anyString(), anyInt(), anyInt())).thenReturn(page);
 
         ResponseEntity<Map<String, Object>> response =
-                controller.disclosureExposure("bedroom", 5);
+                controller.disclosureExposure("bedroom", 5, 0);
 
         assertEquals(Boolean.TRUE, response.getBody().get("truncated"),
                 "a scan that hit its limit reported as if it had seen everything");

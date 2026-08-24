@@ -82,7 +82,8 @@ public class LineageJournalController {
     @GetMapping("/disclosure-exposure")
     public ResponseEntity<Map<String, Object>> disclosureExposure(
             @RequestParam String repositoryId,
-            @RequestParam(defaultValue = "500") int scanLimit) {
+            @RequestParam(defaultValue = "500") int scanLimit,
+            @RequestParam(defaultValue = "0") int offset) {
 
         ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
         if (forbidden != null) return forbidden;
@@ -95,8 +96,14 @@ public class LineageJournalController {
                 jp.aegif.nemaki.rest.ingest.CaptureEvidenceField.internalOnlyV1Keys();
         Map<String, Object> body = new LinkedHashMap<>();
         try {
+            // Paged, not "the first page". The rows this report is about are the OLD v1
+            // events, and a fixed offset of 0 over a store that answers newest-first would
+            // scan exactly the events that cannot be exposed (v2 carries nothing) and never
+            // reach the ones that can (external review). The caller pages with `offset` and
+            // `nextOffset` says whether there is more.
+            int safeOffset = Math.max(offset, 0);
             List<jp.aegif.nemaki.rest.purview.journal.LineageJournalRow> rows =
-                    journalStore.findByRepositoryId(repositoryId, capped, 0);
+                    journalStore.findByRepositoryId(repositoryId, capped, safeOffset);
             List<Map<String, Object>> findings = new java.util.ArrayList<>();
             java.util.TreeMap<String, Integer> byKey = new java.util.TreeMap<>();
             int scanned = 0;
@@ -144,13 +151,20 @@ public class LineageJournalController {
             body.put("scannedEvents", scanned);
             body.put("undecodableRows", undecodable);
             body.put("scanLimit", capped);
-            body.put("truncated", rows.size() >= capped);
+            body.put("offset", safeOffset);
+            boolean more = rows.size() >= capped;
+            body.put("truncated", more);
+            // The caller must be able to finish the sweep. Without this, "truncated: true" is
+            // a dead end and the report can only ever describe one page.
+            body.put("nextOffset", more ? safeOffset + rows.size() : null);
             body.put("exposedEventCount", findings.size());
             body.put("countByKey", byKey);
             body.put("events", findings);
             body.put("note", "v1 events only: a v2 record cannot carry an INTERNAL_ONLY fact to "
                     + "a sink. This endpoint reports; it deletes nothing, here or in the "
-                    + "catalog. Values are omitted on purpose.");
+                    + "catalog. Values are omitted on purpose. ONE PAGE: when truncated is "
+                    + "true, call again with offset=nextOffset until it is false — a single "
+                    + "page finding nothing does not mean the repository is clean.");
             return ResponseEntity.ok(body);
         } catch (Exception e) {
             logger.warn("disclosure-exposure scan failed for {}: {}", repositoryId,

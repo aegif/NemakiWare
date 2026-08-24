@@ -768,14 +768,16 @@ public class ArchiveDaoDelegate {
 	}
 
 	public void restoreDocumentWithArchive(String repositoryId, Archive contentArchive) {
-		restoreContent(repositoryId, contentArchive);
-		// Restore its attachment — but only after separating "there is none" from "we could
-		// not get it". Both used to arrive here as null (see AttachmentArchiveLookup).
+		// LOOK BEFORE RESTORING. Separating "there is none" from "we could not get it" has to
+		// happen before the document is written, or the failure this method reports is the
+		// exact shape it was written to fix: the document is back and the caller is told the
+		// restore failed (external review of the first fix).
 		AttachmentArchiveLookup lookup = lookupAttachmentArchive(repositoryId, contentArchive);
 		if (lookup instanceof AttachmentArchiveLookup.Unavailable unavailable) {
 			throw new RuntimeException("Failed to restore attachment from archive: "
-					+ unavailable.reason());
+					+ unavailable.reason() + " — nothing was restored");
 		}
+		restoreContent(repositoryId, contentArchive);
 		Archive attachmentArchive = lookup instanceof AttachmentArchiveLookup.Found found
 				? found.archive() : null;
 		restoreAttachment(repositoryId, attachmentArchive);
