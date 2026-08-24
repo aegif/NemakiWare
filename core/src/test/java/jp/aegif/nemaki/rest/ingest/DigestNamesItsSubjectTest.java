@@ -53,18 +53,33 @@ class DigestNamesItsSubjectTest {
     @Test
     @DisplayName("no subject can mean the stored bytes — the enum has no such member")
     void thereIsNoStoredSubject() {
-        // The load-bearing assertion. Everything else here is about emitting the subject
-        // correctly; this is about not being ABLE to claim the strong one. A member added here
-        // without a path that re-reads and re-hashes would let the claim back in silently.
+        // The load-bearing assertion, and it did NOT go away when P1-2 landed — it moved.
+        //
+        // The rule was never "no member may mean the stored bytes"; it was "no member may make
+        // that claim without a path that re-reads and re-hashes". FixityVerifier is that path
+        // (2026-08-24), so the claim is now available — under a name that says what was done.
+        //
+        // A bare "stored" is still refused: it reads as "we stored it", which is the ingest's
+        // claim, not fixity's. Only "stored-reverified" earns it.
         for (DigestSubject subject : DigestSubject.values()) {
             assertFalse(subject.wireValue().toLowerCase(Locale.ROOT).equals("stored"),
-                    "a digest subject meaning 'the bytes the repository holds' was added, but "
-                            + "nothing in the ingest path reads those bytes back. That claim needs "
-                            + "fixity (P1-2), not an enum constant.");
+                    "a digest subject meaning 'the bytes the repository holds' was added under "
+                            + "a name that does not say they were RE-READ. 'stored' alone reads "
+                            + "as the ingest's claim; use stored-reverified, and only from the "
+                            + "fixity path.");
         }
-        assertEquals(2, DigestSubject.values().length,
-                "the subjects are exactly input and input-matched-recorded: "
+        assertEquals(3, DigestSubject.values().length,
+                "the subjects are exactly input, input-matched-recorded and stored-reverified: "
                         + Arrays.toString(DigestSubject.values()));
+
+        // And the strong one must not be reachable from an ingest. The ingest path never reads
+        // bytes back, so any ingest-side producer of this value would be asserting something it
+        // did not do.
+        assertEquals("stored-reverified", DigestSubject.STORED_REVERIFIED.wireValue());
+        assertEquals(DigestSubject.STORED_REVERIFIED.wireValue(),
+                jp.aegif.nemaki.fixity.FixityVerifier.SUBJECT_STORED_REVERIFIED,
+                "the fixity path and the evidence vocabulary disagree about what to call the "
+                        + "re-read subject, so a consumer cannot match them up");
     }
 
     @Test

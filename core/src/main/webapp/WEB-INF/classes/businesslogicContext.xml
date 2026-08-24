@@ -40,6 +40,16 @@
 			<ref bean="contentService" />
 		</property>
 	</bean>
+	<!-- P1-2 fixity: re-reads stored bytes and checks them against the recorded digest.
+	     No scheduler here — a whole-repository pass re-reads every attachment, and the
+	     roadmap holds that until the volume has been measured. The admin API drives
+	     scoped passes (one object, one folder). -->
+	<bean id="fixityScanService" class="jp.aegif.nemaki.fixity.FixityScanService">
+		<property name="contentService">
+			<ref bean="contentService" />
+		</property>
+	</bean>
+
 	<bean id="contentService" class="jp.aegif.nemaki.businesslogic.impl.ContentServiceImpl" destroy-method="destroy">
 		<property name="repositoryInfoMap">
 			<ref bean="repositoryInfoMap" />

@@ -210,12 +210,16 @@ public class IngestLineageEmitter {
         /**
          * What a recorded digest is a digest OF (P1-1(d) R3).
          *
-         * <p>There is no {@code STORED} member, and that is the point. The digest is computed
-         * from the bytes the connector fetched, immediately before they are handed to
-         * {@code createDocument} — nothing reads back what the repository ended up holding. A
-         * bare {@code contentHash} beside a {@code contentStored=true} reads as though it did,
-         * which is the substitution this whole work item exists to avoid. Adding a member here
-         * requires a path that actually re-reads and re-hashes: fixity, P1-2.
+         * <p>For the INGEST members there is no {@code STORED}, and that is the point. Their
+         * digest is computed from the bytes the connector fetched, immediately before they are
+         * handed to {@code createDocument} — nothing in that path reads back what the
+         * repository ended up holding. A bare {@code contentHash} beside a
+         * {@code contentStored=true} reads as though it did, which is the substitution this
+         * whole work item exists to avoid.
+         *
+         * <p>{@code STORED_REVERIFIED} (2026-08-24) is the exception R3 anticipated: a path
+         * that actually re-reads and re-hashes, which is fixity (P1-2). It is not reachable
+         * from an ingest.
          */
         public enum DigestSubject {
             /** The bytes this import fetched and supplied. */
@@ -228,7 +232,21 @@ public class IngestLineageEmitter {
              * thrown away: the unchanged-content branch reported "neither supplied nor verified"
              * about a pass that had done both (external review, P1-1(d) D2).
              */
-            INPUT_MATCHED_RECORDED("input-matched-recorded");
+            INPUT_MATCHED_RECORDED("input-matched-recorded"),
+            /**
+             * The bytes the REPOSITORY holds, read back and re-hashed — P1-2 fixity.
+             *
+             * <p>The member this enum deliberately did not have. R3's note said adding one
+             * "requires a path that actually re-reads and re-hashes: fixity, P1-2"; that path
+             * exists now ({@code FixityVerifier}). Named {@code STORED_REVERIFIED} rather than
+             * {@code STORED} because "stored" alone can be read as "we stored it", which is
+             * exactly the claim R3 refused — having RE-READ it is the whole of what this value
+             * means.
+             *
+             * <p>Produced only by the fixity path. An ingest cannot make this claim: it has not
+             * read anything back.
+             */
+            STORED_REVERIFIED("stored-reverified");
 
             private final String wireValue;
 
