@@ -193,6 +193,62 @@ class DaoFailsFastTest {
     }
 
     @Test
+    @DisplayName("a create that failed is reported, not returned as null")
+    void createFailsFast() throws Exception {
+        // The last fail-open on the write path, and the reason an extra existence GET follows
+        // every attachment create (redundant-round-trips V2): create() caught everything and
+        // returned null with the comment "This is normal during initial startup" — true during
+        // startup, and a lie for every request after it. A create that never happened reached
+        // callers as an ordinary result, and the whole system paid a verification read to
+        // notice.
+        offStartupThread(() -> {
+            CloudantClientWrapper wrapper = mock(CloudantClientWrapper.class);
+            when(wrapper.create(
+                    org.mockito.ArgumentMatchers.<java.util.Map<String, Object>>any()))
+                    .thenCallRealMethod();
+
+            assertThrows(RuntimeException.class,
+                    () -> wrapper.create(new java.util.HashMap<>(
+                            java.util.Map.of("type", "x"))),
+                    "a failed create returned null, which callers read as a created document");
+        });
+    }
+
+    @Test
+    @DisplayName("a create during STARTUP is still lenient — the control")
+    void createStaysLenientDuringStartup() {
+        // Provisioning runs against a database that may not exist yet. Making this a hard
+        // failure would stop deployments that have always come up — the reason roadmap 2-2
+        // refused "convert all sixteen" applies here too.
+        CloudantClientWrapper wrapper = mock(CloudantClientWrapper.class);
+        when(wrapper.create(org.mockito.ArgumentMatchers.<java.util.Map<String, Object>>any()))
+                .thenCallRealMethod();
+
+        // The current thread is the test runner's; isStartupPhase() keys on the thread NAME,
+        // so run it on one that looks like startup.
+        java.util.concurrent.atomic.AtomicReference<Object> result =
+                new java.util.concurrent.atomic.AtomicReference<>("not-run");
+        Thread startup = new Thread(() -> {
+            try {
+                result.set(wrapper.create(new java.util.HashMap<>(
+                        java.util.Map.of("type", "x"))));
+            } catch (Throwable t) {
+                result.set(t);
+            }
+        }, "main");
+        startup.start();
+        try {
+            startup.join(10_000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        org.junit.jupiter.api.Assertions.assertNull(result.get(),
+                "startup stopped being lenient (" + result.get() + "); provisioning would fail "
+                        + "on a database that does not exist yet");
+    }
+
+    @Test
     @DisplayName("a view that is NOT DEPLOYED is refused, not read as an empty folder")
     void anUndeployedViewIsRefused() {
         // The other door into the same lie (external review). The exception path was closed

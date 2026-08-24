@@ -374,8 +374,22 @@ public class CloudantClientWrapper {
 			return result;
 
 		} catch (Exception e) {
-			log.warn("Error creating document in database '" + databaseName + "' - returning null. This is normal during initial startup: " + e.getMessage());
-			return null;
+			// Startup stays lenient, for the same reason get()/update()/delete() do:
+			// provisioning runs against a database that may not exist yet.
+			if (isStartupPhase()) {
+				log.warn("Error creating document in database '" + databaseName
+						+ "' during startup - returning null. This is normal during initial"
+						+ " startup: " + e.getMessage());
+				return null;
+			}
+			// Outside startup a failed write must not look like a write (roadmap 2-1). Returning
+			// null here is how a create that never happened reached callers as an ordinary
+			// result — and the only thing catching it downstream was an extra existence GET
+			// after every attachment create (redundant-round-trips V2), which is a read the
+			// whole system pays for because this line lied.
+			log.error("Critical error creating document in database '" + databaseName + "'", e);
+			throw new RuntimeException("Failed to create a document in database '" + databaseName
+					+ "': " + e.getMessage(), e);
 		}
 	}
 
