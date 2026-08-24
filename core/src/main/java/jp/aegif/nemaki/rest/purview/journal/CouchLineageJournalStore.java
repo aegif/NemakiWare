@@ -510,8 +510,10 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
         // produces one design-document signature per view and CouchDB discards the index it just
         // built each time — five successive full passes over nemaki_lineage on first start, and
         // the listing answers 200 + empty throughout (design §6.8-3, external review).
-        client.putDesignDocumentIfChanged(CouchCaptureIntentStore.DESIGN_DOC,
-                CouchCaptureIntentStore.views());
+        // WithReduces: the three counted states carry a _count reduce (AC 13), and they must
+        // land in the SAME single put as the maps — one put, one index build.
+        client.putDesignDocumentWithReducesIfChanged(CouchCaptureIntentStore.DESIGN_DOC,
+                CouchCaptureIntentStore.viewSources());
         logger.info("Capture intent views deployed to design document '{}'",
                 CouchCaptureIntentStore.DESIGN_DOC);
     }
@@ -711,6 +713,34 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
 
         public LineageViewUnreadableException(String message, Throwable cause) {
             super(message, cause);
+        }
+    }
+
+    @Override
+    public Long reduceCount(String designDocName, String viewName) {
+        if (!ensureClientForRead()) {
+            return null;
+        }
+        try {
+            Map<String, Object> p = new HashMap<>();
+            p.put("reduce", true);
+            p.put("group", false);
+            ViewResult result = lineageClient.queryView(designDocName, viewName, p);
+            if (result == null || result.getRows() == null || result.getRows().isEmpty()) {
+                // An EMPTY view answers a group=false reduce with no rows at all, which is a
+                // legitimate zero — not "cannot answer". Distinguishing the two matters: a
+                // null here sends the caller to a scan that would also find zero, so the
+                // answer is the same but the reported `truncated` flag would not be.
+                return 0L;
+            }
+            Object value = result.getRows().get(0).getValue();
+            return value instanceof Number n ? n.longValue() : null;
+        } catch (Exception e) {
+            // No reduce on this view (an older design document), or the view group is still
+            // building. Either way the caller falls back to the bounded scan.
+            logger.debug("Reduce count unavailable for {}/{}: {}", designDocName, viewName,
+                    e.toString());
+            return null;
         }
     }
 

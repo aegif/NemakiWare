@@ -1113,13 +1113,22 @@ scope に記録する。子の処理で作る relationship は、親のフレー
 
 ### なお未対応
 
-- **AC 13 の exact count** — 一覧は `count` にページ内件数を返す。`_count` reduce view による
-  正確な総数ではない (`UnresolvedPage` の javadoc に明記)。`/counts` は状態別の概数を返すが、
-  こちらも走査上限つき
+- ~~**AC 13 の exact count**~~ — **2026-08-24 解消**。数える 3 状態の view に `_count`
+  reduce を付け (dead-letter 一覧と同じ形 — AC 13 が指定していた方式)、`/counts` は
+  B-tree の総数をそのまま返す。reduce が答えられない配備 (旧 design document、索引構築中)
+  は従来の走査へ落ち、`truncated` を返し続ける。**map と reduce の両方**を比較して
+  変更判定する — map だけ見ると reduce の増減が「変更なし」に見え、正確な件数が
+  黙って走査のままになる
 - **O1 (掃引速度の上限)** — 1 回 200 行 × 5 分、レプリカを増やしても並列にならない。
-  runbook に所要時間の見積もりを書いた
-- **O3 (jitter が実質固定)** — `System.identityHashCode` は同一バイナリでは同じ値を返しうる。
-  0〜59 秒は 300 秒周期の 20% でしかないので、効果自体が小さい
+  runbook に所要時間の見積もりを書いた。**設計として受容** (掃引は正しさではなく
+  可視化の速度であり、急ぐときは batch と interval で調整できる)
+- ~~**O3 (jitter が実質固定)**~~ — **2026-08-24 解消**。`System.identityHashCode` は
+  確保アドレス由来で、同じバイナリ・同じヒープ配置のレプリカでは同じ値になりうる
+  (= ずらせていない)。`ThreadLocalRandom` に変更。掃引の正しさは冪等性と CAS で
+  取れているので、乱数源に seeding の規律は要らない
+- **M4 (wrapper テストの範囲)** — **2026-08-24 解消**。mail / chat / business record の
+  入口に「metadata 失敗は capture を完成させない」を固定し、business record には
+  「正常 pass は完成する」統制も付けた (これが無いと、何も完成しない実装でも通る)
 
 ## 9.10 実装後レビュー 3・4 巡目 (2026-08-21)
 
@@ -1159,7 +1168,8 @@ scope に記録する。子の処理で作る relationship は、親のフレー
 - **AC 13 の exact count** — 一覧の `count` はページ内件数。`/counts` は走査上限つきの概数
 - **O1 掃引速度** — 1 回 200 行 × 5 分。レプリカを増やしても並列にならない
 - **O3 jitter** — `identityHashCode` は同一バイナリで同じ値を返しうる
-- **M4 wrapper テストの範囲** — mail / chat / business record の入口は未固定のまま。
+- ~~**M4 wrapper テストの範囲**~~ — **2026-08-24 解消** (上記)。旧記述: mail / chat /
+  business record の入口は未固定のまま。
   ただし設計 §5.0 が名指しした **`checkOut`** は固定した (`intentPrecedesCheckOut` /
   `unwritableIntentStopsCheckOut`)。version-up 経路では checkOut が最初の変更であり、
   さらに **checkOut が成功して checkIn が走らないと文書が CHECKED OUT で固まり、

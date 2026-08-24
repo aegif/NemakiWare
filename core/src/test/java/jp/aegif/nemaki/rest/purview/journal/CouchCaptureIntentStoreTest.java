@@ -125,6 +125,13 @@ class CouchCaptureIntentStoreTest {
             return out;
         }
 
+        /** When non-null, the _count reduce answers with this; otherwise it cannot answer. */
+        Map<String, Long> reduceCounts;
+
+        @Override public Long reduceCount(String designDocName, String viewName) {
+            return reduceCounts == null ? null : reduceCounts.get(viewName);
+        }
+
         @Override public int countRawView(String designDocName, String viewName, int limit) {
             lastCountLimit = limit;
             if (viewThrows != null) {
@@ -426,6 +433,46 @@ class CouchCaptureIntentStoreTest {
         assertEquals(2, counts.unresolved());
         assertEquals(2, counts.captured());
         assertFalse(counts.truncated());
+    }
+
+    @Test
+    @DisplayName("the _count reduce gives an EXACT total, never truncated (AC 13)")
+    void exactCountsComeFromTheReduce() {
+        // A bounded scan says the same thing at 10,001 rows and at ten million, which is the
+        // wrong shape for "is CAPTURED growing without bound?". The B-tree already holds these
+        // totals — AC 13 asked for the same _count reduce the dead-letter listing uses.
+        FakeSupport support = new FakeSupport();
+        support.reduceCounts = Map.of(
+                CouchCaptureIntentStore.VIEW_OPEN_BY_OPENED_AT, 3L,
+                CouchCaptureIntentStore.VIEW_UNRESOLVED, 7L,
+                CouchCaptureIntentStore.VIEW_CAPTURED_BY_CAPTURED_AT, 12_345_678L);
+
+        var counts = new CouchCaptureIntentStore(support).countByState(100);
+
+        assertEquals(3, counts.captureIntent());
+        assertEquals(7, counts.unresolved());
+        assertEquals(12_345_678L, counts.captured(),
+                "a total far past any scan limit was reported — the scan was used instead");
+        assertFalse(counts.truncated(), "an exact count must not be reported as a lower bound");
+    }
+
+    @Test
+    @DisplayName("a view whose reduce cannot answer falls back to the bounded scan")
+    void reduceUnavailableFallsBackToScan() {
+        // An older design document has no reduce, and a view group that is still building
+        // cannot answer one. Reporting nothing there would be worse than a lower bound.
+        FakeSupport support = new FakeSupport();
+        support.reduceCounts = Map.of(
+                CouchCaptureIntentStore.VIEW_OPEN_BY_OPENED_AT, 3L);   // the other two: null
+        for (int i = 0; i < 5; i++) {
+            support.viewRows.add(row("lineage_capture:i-" + i, CaptureState.CAPTURED, "bedroom"));
+        }
+
+        var counts = new CouchCaptureIntentStore(support).countByState(5);
+
+        assertTrue(counts.truncated(),
+                "the fallback scan hit its limit and did not say so");
+        assertEquals(5, counts.captured());
     }
 
     @Test

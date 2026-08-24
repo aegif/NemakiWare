@@ -2972,6 +2972,69 @@ public class CloudantClientWrapper {
 		}
 	}
 
+	/**
+	 * A view's map function and, optionally, its reduce.
+	 *
+	 * <p>Exists so a caller can deploy {@code _count} reduces in the SAME single put as its map
+	 * functions. Looping {@code createOrUpdateView} per view would rebuild the design
+	 * document's index once per view, and while a group rebuilds, its views answer from an
+	 * incomplete index rather than failing — indistinguishable from "nothing to report" at
+	 * exactly the moment an operator is looking (capture-outbox §6.8-3, O8).
+	 */
+	public record ViewSource(String map, String reduce) {
+		public ViewSource(String map) {
+			this(map, null);
+		}
+	}
+
+	/** As {@link #putDesignDocumentIfChanged(String, Map)}, for views that carry a reduce. */
+	public boolean putDesignDocumentWithReducesIfChanged(String designDocId,
+			Map<String, ViewSource> viewSources) {
+		try {
+			DesignDocument existingDoc = getDesignDocument(designDocId);
+			Map<String, DesignDocumentViewsMapReduce> views = new HashMap<>();
+			if (existingDoc != null && existingDoc.getViews() != null) {
+				views.putAll(existingDoc.getViews());
+			}
+
+			boolean changed = false;
+			for (Map.Entry<String, ViewSource> entry : viewSources.entrySet()) {
+				ViewSource source = entry.getValue();
+				DesignDocumentViewsMapReduce current = views.get(entry.getKey());
+				// BOTH halves compared. Comparing only the map would leave a view whose reduce
+				// was added or removed looking unchanged, so the deployment would keep the old
+				// one and every exact count would silently stay a scan.
+				if (current != null && source.map().equals(current.map())
+						&& java.util.Objects.equals(source.reduce(), current.reduce())) {
+					continue;
+				}
+				DesignDocumentViewsMapReduce.Builder viewBuilder =
+						new DesignDocumentViewsMapReduce.Builder().map(source.map());
+				if (source.reduce() != null) {
+					viewBuilder.reduce(source.reduce());
+				}
+				views.put(entry.getKey(), viewBuilder.build());
+				changed = true;
+			}
+			if (!changed) {
+				return false;
+			}
+
+			DesignDocument.Builder builder = new DesignDocument.Builder();
+			if (existingDoc != null) {
+				if (existingDoc.getId() != null) builder.id(existingDoc.getId());
+				if (existingDoc.getRev() != null) builder.rev(existingDoc.getRev());
+			}
+			builder.views(views);
+			putDesignDocument(designDocId, builder.build());
+			log.info("Deployed " + viewSources.size() + " view(s) to design document: " + designDocId);
+			return true;
+		} catch (Exception e) {
+			log.error("Error deploying views to design document '" + designDocId + "'", e);
+			throw new RuntimeException("Failed to deploy views to " + designDocId, e);
+		}
+	}
+
 	public boolean putDesignDocumentIfChanged(String designDocId, Map<String, String> mapFunctions) {
 		try {
 			DesignDocument existingDoc = getDesignDocument(designDocId);

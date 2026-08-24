@@ -404,6 +404,92 @@ class IngestCaptureWrapperScopeTest {
 
     // ── AC 19 through a real entry point ─────────────────────────────────────────────────
 
+    // ── M4: the OTHER three entry points, not just note ──────────────────────────────────
+
+    @Test
+    @DisplayName("business record: a metadata failure stops the capture completing")
+    void businessRecordMetadataFailureBlocksCapture() {
+        // capture-outbox M4: the wrapper layer was tested through the note entry point only,
+        // and every defect that round (F3–F5, F7, F8) lived in that untested layer. The rule
+        // under test is the layer's whole point — CAPTURED means every tracked change
+        // succeeded — so it must hold at each entry, not at the one that has a test.
+        wire(SourceArchetype.BUSINESS_RECORD, null);
+        when(metadataService.willWriteArchetypeMetadata(any(), any())).thenReturn(true);
+        when(metadataService.applyArchetypeMetadata(any(), any(), any(), any(), any(), any()))
+                .thenReturn("record metadata failed: conflict");
+
+        ExternalIngestResult result =
+                service.executeBusinessRecordImport(ctx(), recordRequest("rec-1"));
+
+        assertTrue(store.completed.isEmpty(),
+                "the row must stay open so the sweeper reports it as unresolved");
+        assertTrue(result.warnings().stream().anyMatch(w -> w.contains("record metadata failed")),
+                result.warnings().toString());
+    }
+
+    @Test
+    @DisplayName("business record: a clean pass DOES complete — the control")
+    void businessRecordCleanPassCompletes() {
+        // Without this, an entry point that never completed anything would pass the test above.
+        wire(SourceArchetype.BUSINESS_RECORD, null);
+        when(metadataService.willWriteArchetypeMetadata(any(), any())).thenReturn(true);
+        when(metadataService.applyArchetypeMetadata(any(), any(), any(), any(), any(), any()))
+                .thenReturn(null);
+
+        assertTrue(service.executeBusinessRecordImport(ctx(), recordRequest("rec-2")).isSuccess());
+
+        assertFalse(store.completed.isEmpty(),
+                "a pass whose every tracked change succeeded did not complete its row");
+    }
+
+    @Test
+    @DisplayName("chat: a metadata failure stops the capture completing")
+    void chatMetadataFailureBlocksCapture() {
+        wire(SourceArchetype.CHAT_CONTEXT, null);
+        when(metadataService.willWriteArchetypeMetadata(any(), any())).thenReturn(true);
+        when(metadataService.applyArchetypeMetadata(any(), any(), any(), any(), any(), any()))
+                .thenReturn("chat metadata failed: conflict");
+
+        ExternalIngestResult result =
+                service.executeChatContextImport(ctx(), chatRequest("chat-1"));
+
+        assertTrue(store.completed.isEmpty(),
+                "the row must stay open so the sweeper reports it as unresolved");
+        assertTrue(result.warnings().stream().anyMatch(w -> w.contains("chat metadata failed"))
+                        || !result.isSuccess(),
+                "the failure was neither reported nor fatal: " + result.warnings());
+    }
+
+    private ExternalIngestRequest recordRequest(String sourceObjectId) {
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId(sourceObjectId);
+        req.setSourceObjectType("record");
+        req.setFileName("record.txt");
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("recordId", sourceObjectId);
+        meta.put("recordType", "Account");
+        req.setMetadata(meta);
+        return req;
+    }
+
+    private ExternalIngestRequest chatRequest(String sourceObjectId) {
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId(sourceObjectId);
+        req.setSourceObjectType("message");
+        req.setFileName("message.txt");
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("channelId", "C-1");
+        meta.put("messageId", sourceObjectId);
+        req.setMetadata(meta);
+        return req;
+    }
+
     @Test
     @DisplayName("a repository the boundary does not cover is untouched by any wrapper")
     void notApplicableRepositoryIsUntouchedByWrappers() {

@@ -115,8 +115,15 @@ public class CaptureIntentSweeper {
         });
         long intervalMinutes = intervalMinutes();
         // Offset the first run per JVM so replicas do not all walk the same batch at the same
-        // instant. Derived from the identity hash, which needs no clock and no randomness.
-        long jitterSeconds = Math.abs(System.identityHashCode(this) % 60);
+        // instant.
+        //
+        // NOT System.identityHashCode: it is derived from the allocation address, and replicas
+        // running the same binary with the same heap layout get the same value — so the
+        // "jitter" was frequently zero spread (external review, O3). A random offset is the
+        // only thing here that is actually independent per process; the sweeper's correctness
+        // does not depend on it (each transition is idempotent and CAS-guarded), so a random
+        // source needs no seeding discipline.
+        long jitterSeconds = java.util.concurrent.ThreadLocalRandom.current().nextInt(60);
         scheduler.scheduleWithFixedDelay(this::runOnce, jitterSeconds,
                 intervalMinutes * 60, TimeUnit.SECONDS);
         logger.info("Capture intent sweeper started (every {} min, stale after {} min)",

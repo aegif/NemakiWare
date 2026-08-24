@@ -106,6 +106,21 @@ interface LineageStoreSupport {
     int countRawView(String designDocName, String viewName, int limit);
 
     /**
+     * The EXACT number of rows a view holds, from its {@code _count} reduce.
+     *
+     * <p>Not a bounded scan: the B-tree already carries the total, so this is O(1) and — the
+     * point — is a number rather than a lower bound. A bound that stops at 10,000 says the same
+     * thing at 10,001 rows and at ten million, which is the wrong shape for "is CAPTURED
+     * growing without bound?" (AC 13).
+     *
+     * <p>Default: {@code null}, meaning "this store cannot answer" — an implementation whose
+     * design document predates the reduce, or a test double. Callers fall back to the scan.
+     */
+    default Long reduceCount(String designDocName, String viewName) {
+        return null;
+    }
+
+    /**
      * Deletes a document ONLY if it is still at the revision in the given map.
      *
      * <p>{@code false} when it was not deleted — including when the revision has moved on, which

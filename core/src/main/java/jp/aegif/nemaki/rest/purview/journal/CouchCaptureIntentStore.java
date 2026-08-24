@@ -425,12 +425,33 @@ public class CouchCaptureIntentStore implements CaptureIntentStore, CaptureMaint
 
     @Override
     public CaptureCounts countByState(int scanLimit) {
+        // Exact first, via the _count reduce (AC 13). The B-tree already holds these totals, so
+        // the answer is O(1) and — the point — is a NUMBER rather than a lower bound.
+        Long open = reduceCount(VIEW_OPEN_BY_OPENED_AT);
+        Long unresolved = reduceCount(VIEW_UNRESOLVED);
+        Long captured = reduceCount(VIEW_CAPTURED_BY_CAPTURED_AT);
+        if (open != null && unresolved != null && captured != null) {
+            return new CaptureCounts(open, unresolved, captured, false);
+        }
+        // The reduce is not answering — an older design document that predates it, or a view
+        // group still building. Fall back to the bounded scan rather than reporting nothing,
+        // and keep saying `truncated` so the caller still knows it is a lower bound.
         int limit = scanLimit <= 0 ? DEFAULT_COUNT_LIMIT : Math.min(scanLimit, MAX_COUNT_LIMIT);
-        long open = countView(VIEW_OPEN_BY_OPENED_AT, limit);
-        long unresolved = countView(VIEW_UNRESOLVED, limit);
-        long captured = countView(VIEW_CAPTURED_BY_CAPTURED_AT, limit);
-        boolean truncated = open >= limit || unresolved >= limit || captured >= limit;
-        return new CaptureCounts(open, unresolved, captured, truncated);
+        long openScan = countView(VIEW_OPEN_BY_OPENED_AT, limit);
+        long unresolvedScan = countView(VIEW_UNRESOLVED, limit);
+        long capturedScan = countView(VIEW_CAPTURED_BY_CAPTURED_AT, limit);
+        boolean truncated = openScan >= limit || unresolvedScan >= limit || capturedScan >= limit;
+        return new CaptureCounts(openScan, unresolvedScan, capturedScan, truncated);
+    }
+
+    /** The exact total from the view's {@code _count} reduce, or null when it cannot answer. */
+    private Long reduceCount(String view) {
+        try {
+            return support.reduceCount(DESIGN_DOC, view);
+        } catch (Exception e) {
+            logger.debug("Reduce count unavailable for {}: {}", view, e.toString());
+            return null;
+        }
     }
 
     private long countView(String view, int limit) {
@@ -469,7 +490,33 @@ public class CouchCaptureIntentStore implements CaptureIntentStore, CaptureMaint
      * The views, keyed by name. Every one is guarded by the intent type, so no journal row can
      * ever appear in them and no intent row can appear in a journal view.
      */
+    /**
+     * The map source of every view, for signature verification.
+     *
+     * <p>Kept as a plain string map because that is what the readiness gate compares against the
+     * deployed design document. {@link #viewSources()} is what gets DEPLOYED, and carries the
+     * reduces too.
+     */
     static Map<String, String> views() {
+        Map<String, String> maps = new LinkedHashMap<>();
+        viewSources().forEach((name, source) -> maps.put(name, source.map()));
+        return maps;
+    }
+
+    /**
+     * The views as deployed: map, plus a {@code _count} reduce on the three counted states.
+     *
+     * <p>The reduces are AC 13's ("dead-letter 一覧と同じく `_count` reduce を持つ view にする").
+     * Without them the counts walk the view up to a scan limit and report {@code truncated} —
+     * a lower bound, which is exactly the wrong shape for the question they exist to answer
+     * ("is the sweeper stuck?", "is CAPTURED growing without bound?"): a bound that stops at
+     * 10,000 says the same thing at 10,001 rows and at ten million.
+     *
+     * <p>Only the three states that get counted carry a reduce. Adding one everywhere would
+     * cost index space for views nobody counts.
+     */
+    static Map<String, jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.ViewSource>
+            viewSources() {
         Map<String, String> views = new LinkedHashMap<>();
         views.put(VIEW_UNRESOLVED,
                 "function(doc) { if (doc.type === 'lineage_capture_intent'"
@@ -503,6 +550,14 @@ public class CouchCaptureIntentStore implements CaptureIntentStore, CaptureMaint
                         + " && doc.repositoryId && doc.sourceObjectId) {"
                         + " emit([doc.repositoryId, doc.sourceObjectId,"
                         + " doc.intentOpenedAtMs || 0], null); } }");
-        return views;
+        Map<String, jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.ViewSource>
+                sources = new LinkedHashMap<>();
+        java.util.Set<String> counted = java.util.Set.of(
+                VIEW_OPEN_BY_OPENED_AT, VIEW_UNRESOLVED, VIEW_CAPTURED_BY_CAPTURED_AT);
+        views.forEach((name, map) -> sources.put(name,
+                new jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.ViewSource(
+                        map, counted.contains(name) ? "_count" : null)));
+        return sources;
+
     }
 }
