@@ -139,6 +139,63 @@ B7 proof を digest 自身にする。
 
 ---
 
+## 5.6. 受領証の永続化と配線 (2026-08-25)
+
+**段の実装は 2026-08-18 に揃っていたが、誰も呼んでいなかった**のが実体だった。
+本増分でその環を閉じた。
+
+| 物 | 場所 |
+|---|---|
+| 受領証の契約 | `evidence/anchor/AnchorReceiptStore.java` |
+| 受領証の CouchDB 実装 | `evidence/anchor/CouchAnchorReceiptStore.java` |
+| 受領証の符号化 | `rest/purview/anchor/AnchorReceiptCodec.java` |
+| 段の Spring 配線 | `rest/purview/anchor/AnchorWiringConfig.java` |
+| 運用 API | `rest/controller/AnchorController.java` |
+| テスト | `AnchorReceiptPersistenceTest` (8) |
+
+### 永続化が段 2 の要である
+
+OTS は PENDING を返し、数時間後に確定する。`upgrade()` には**保留中の proof の
+バイト列**が要る。メモリだけに持つと**再起動のたびに全消滅**し、カレンダーは
+commitment を持ちブロックは確定しているのに、こちらは proof を出せなくなる。
+段 2 が「設定済みに見えて何も生まない」= **装飾**になる、最も静かな失敗の形。
+
+受領証は台帳と**同じ DB / 別 type**。ただし `EvidenceLedgerStore` には**入れない** —
+あちらは意図的に update を持たない。受領証は pending → confirmed と**その場で
+変わる**ので、追記専用インタフェースの裏に可変行を置くと、嘘のインタフェースか
+「台帳の行も更新してよい」という誤学習のどちらかになる。
+
+### 再読込で受領証が**強くなってはならない**
+
+`status: CONFIRMED` なのに proof が無い / anchoredAt が無い行は、**FAILED として
+読む**。CONFIRMED として復元すると、**DB を編集できる者が、どの機関も発行して
+いないアンカーを製造できる**。`timeSemantics` が壊れている場合も kind の既定に
+戻さず `UPPER_BOUND_ONLY` に落とす — accuracy の無い RFC 3161 トークンの
+意図的な格下げが、再読込のたびに取り消されてしまうため。
+
+### `upgrade()` が別の段を返したら無視する
+
+実装中にテストが捕まえた。別 kind を保存すると**もう一方の段のキーに行が書かれ**、
+元の行は永久に pending のまま残る — 確定済みの proof が、誰も見に行かない名前で
+1 行隣に座っている状態になる。
+
+### 段は既定で全部 off
+
+既定のエンドポイントを持たない。アンカー先は「証拠を誰に見せるか」の決定であり、
+既定を置くと段 2 では**公開カレンダーへ黙って commitment を送る**ことになる。
+
+### 定期実行はまだ入れない
+
+アンカーの頻度は**台帳がまだ書き直せる窓の幅**である。運用者に代わって決めるのは
+リスクを代わりに決めることなので、API を用意して cron / runbook / 人が駆動できる形に
+留めた。既定は checkpoint の定期化と同じ増分で決める。
+
+負のコントロール **7 本実測** (P1 受領証を保存しない / P2 upgrade を書き戻さない /
+P3 孤児 pending を failed にする / P4 kind ガードを外す / P5 proof 無し CONFIRMED を
+復元 / P6 semantics を kind 既定に戻す / P7 proof バイト列を落とす)。
+
+---
+
 ## 6. やらないこと (この増分では)
 
 - **OTS の実送信** — P2-1 (sidecar が要る)

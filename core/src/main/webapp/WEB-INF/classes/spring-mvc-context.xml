@@ -36,10 +36,9 @@
 	<!-- Component scanning for REST controllers only -->
 	<!-- Purview @Service beans are in root context (serviceContext.xml) and visible to MVC via parent -->
 	<context:component-scan base-package="jp.aegif.nemaki.rest.controller" />
-	<!-- P1-4: the evidence-report assembler lives beside the controller that serves it,
-	     so its optional dependencies (capture store, ledger store) resolve the same way
-	     CaptureIntentController's already do. -->
-	<context:component-scan base-package="jp.aegif.nemaki.evidence" />
+	<!-- jp.aegif.nemaki.evidence is scanned in serviceContext.xml (post-refresh) so its
+	     stores can see CloudantClientPool, and so the anchor wiring in the ROOT context
+	     can see them in turn. Controllers here are in the child and see up. -->
 	<context:component-scan base-package="jp.aegif.nemaki.rest.ingest" />
 
 	<!-- Multipart resolver for file upload via /api/v1/repo/{repoId}/ingest -->

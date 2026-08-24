@@ -34,6 +34,7 @@ import java.util.Map;
  * silent: {@link AppendOutcome} says whether the entry landed, and a caller that ignores it is
  * making the same mistake the DAO's null-returning update made (roadmap §2-1).
  */
+@org.springframework.stereotype.Component
 public class EvidenceLedgerService {
 
     private static final Logger logger = LoggerFactory.getLogger(EvidenceLedgerService.class);
@@ -46,6 +47,7 @@ public class EvidenceLedgerService {
 
     private EvidenceLedgerStore store;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
     public void setStore(EvidenceLedgerStore store) {
         this.store = store;
     }

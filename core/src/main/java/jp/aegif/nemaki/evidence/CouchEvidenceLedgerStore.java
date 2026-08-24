@@ -26,6 +26,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
+import jp.aegif.nemaki.evidence.anchor.CouchAnchorReceiptStore;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,7 +67,7 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
     private static final Logger logger = LoggerFactory.getLogger(CouchEvidenceLedgerStore.class);
 
     static final String DB_NAME = "nemaki_evidence_ledger";
-    static final String DESIGN_DOC = "evidence_ledger";
+    public static final String DESIGN_DOC = "evidence_ledger";
     static final String VIEW_ENTRIES = "entries_by_domain_sequence";
     static final String VIEW_CHECKPOINTS = "checkpoints_by_domain_to";
 
@@ -106,6 +107,16 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
         return client;
     }
 
+    /**
+     * The provisioned client, for stores that share this database.
+     *
+     * <p>Anchor receipts live here too: a receipt is evidence ABOUT the ledger, and giving it a
+     * second database would mean two retention policies for one story.
+     */
+    public CloudantClientWrapper clientForSiblingStores() {
+        return client();
+    }
+
     /** For tests: use an already-built client and skip provisioning. */
     void useClientForTests(CloudantClientWrapper wrapper) {
         this.client = wrapper;
@@ -140,6 +151,14 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
             }
             wrapper.createOrUpdateView(DESIGN_DOC, VIEW_ENTRIES, MAP_ENTRIES, null);
             wrapper.createOrUpdateView(DESIGN_DOC, VIEW_CHECKPOINTS, MAP_CHECKPOINTS, null);
+            // The anchor-receipt views live in the SAME design document, and are deployed here
+            // rather than by their own store: createOrUpdateView does a get-modify-put per
+            // view, so deploying them separately would change the design document's signature
+            // again and make CouchDB discard the index it had just built.
+            wrapper.createOrUpdateView(DESIGN_DOC, CouchAnchorReceiptStore.VIEW_BY_CHECKPOINT,
+                    CouchAnchorReceiptStore.MAP_BY_CHECKPOINT, null);
+            wrapper.createOrUpdateView(DESIGN_DOC, CouchAnchorReceiptStore.VIEW_PENDING,
+                    CouchAnchorReceiptStore.MAP_PENDING, null);
             client = wrapper;
             provisioned.set(true);
         }

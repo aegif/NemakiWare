@@ -1341,4 +1341,10 @@
     <!-- so that ContentDaoService, ContentService, and CloudantClientPool are available -->
     <context:component-scan base-package="jp.aegif.nemaki.rest.purview" />
 
+    <!-- Evidence ledger, anchor receipts and the P1-4 report assembler. Here rather than in
+         spring-mvc-context.xml for two reasons: the stores need CloudantClientPool (available
+         only post-refresh), and AnchorWiringConfig lives in the ROOT context, which cannot
+         see beans defined in the MVC child. Controllers are in the child and see up. -->
+    <context:component-scan base-package="jp.aegif.nemaki.evidence" />
+
 </beans>

@@ -61,6 +61,7 @@ public class AnchorService {
 
     private final List<AnchorTarget> targets = new ArrayList<>();
     private EvidenceLedgerStore store;
+    private AnchorReceiptStore receiptStore;
 
     public void setTargets(List<AnchorTarget> targets) {
         this.targets.clear();
@@ -71,6 +72,10 @@ public class AnchorService {
 
     public void setStore(EvidenceLedgerStore store) {
         this.store = store;
+    }
+
+    public void setReceiptStore(AnchorReceiptStore receiptStore) {
+        this.receiptStore = receiptStore;
     }
 
     /**
@@ -164,10 +169,88 @@ public class AnchorService {
         }
         List<AnchorReceipt> receipts = new ArrayList<>(targets.size());
         for (AnchorTarget target : targets) {
-            receipts.add(receiptFrom(target, checkpoint.merkleRoot()));
+            AnchorReceipt receipt = receiptFrom(target, checkpoint.merkleRoot());
+            receipts.add(receipt);
+            persist(checkpoint.domain(), checkpoint.toSequence(), receipt);
         }
         return new Outcome(checkpoint.domain(), checkpoint.toSequence(), checkpoint.merkleRoot(),
                 receipts, null);
+    }
+
+    /**
+     * Re-checks pending receipts and stores any that have settled.
+     *
+     * <p>This is the other half of rung 2. Without it an OpenTimestamps commitment stays
+     * {@code PENDING} for ever: the calendar has it, a block confirmed it, and the deployment
+     * never asked — so the anchor exists and the proof does not.
+     *
+     * @return the receipts that CHANGED. An empty list means nothing had settled yet, which is
+     *         the ordinary answer during the hours a block takes and not a failure.
+     */
+    public List<AnchorReceipt> upgradePending(String domain, int limit) {
+        List<AnchorReceipt> upgraded = new ArrayList<>();
+        if (receiptStore == null) {
+            logger.warn("No anchor receipt store: pending commitments cannot be upgraded");
+            return upgraded;
+        }
+        for (AnchorReceiptStore.PendingReceipt pending : receiptStore.pending(domain, limit)) {
+            AnchorTarget target = targetFor(pending.receipt().kind());
+            if (target == null) {
+                // The rung that made this receipt is no longer configured. Leaving the row
+                // pending is right: deleting it would lose a proof the calendar still holds,
+                // and marking it failed would assert something about an anchor nobody checked.
+                continue;
+            }
+            AnchorReceipt after;
+            try {
+                after = target.upgrade(pending.receipt());
+            } catch (RuntimeException e) {
+                logger.warn("Upgrade of a pending {} receipt failed: {}",
+                        pending.receipt().kind(), e.getMessage());
+                continue;
+            }
+            if (after == null || after.status() == AnchorStatus.PENDING) {
+                continue;
+            }
+            if (after.kind() != pending.receipt().kind()) {
+                // Not an upgrade of THIS receipt. Saving it would write a row under the other
+                // rung's key and leave this one pending for ever — the commitment would look
+                // unsettled while a settled proof sat one row away under the wrong name.
+                logger.warn("Rung {} returned an upgrade of kind {}; ignoring it",
+                        pending.receipt().kind(), after.kind());
+                continue;
+            }
+            receiptStore.save(pending.domain(), pending.toSequence(), after);
+            upgraded.add(after);
+        }
+        return upgraded;
+    }
+
+    private AnchorTarget targetFor(AnchorKind kind) {
+        for (AnchorTarget target : targets) {
+            if (target.kind() == kind && target.isConfigured()) {
+                return target;
+            }
+        }
+        return null;
+    }
+
+    private void persist(String domain, long toSequence, AnchorReceipt receipt) {
+        if (receiptStore == null) {
+            if (receipt.status() == AnchorStatus.PENDING) {
+                // Worth saying loudly: a pending commitment that is never written down can
+                // never be upgraded, so rung 2 silently becomes decorative.
+                logger.warn("A PENDING {} receipt was not stored (no receipt store); it can "
+                        + "never be upgraded and the proof will be lost", receipt.kind());
+            }
+            return;
+        }
+        try {
+            receiptStore.save(domain, toSequence, receipt);
+        } catch (RuntimeException e) {
+            logger.warn("Could not store the {} anchor receipt for {}@{}: {}", receipt.kind(),
+                    domain, toSequence, e.getMessage());
+        }
     }
 
     private AnchorReceipt receiptFrom(AnchorTarget target, String merkleRoot) {
