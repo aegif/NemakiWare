@@ -21,6 +21,7 @@ import jp.aegif.nemaki.evidence.EvidenceLedgerService;
 import jp.aegif.nemaki.evidence.EvidenceLedgerStore;
 import jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore;
 import jp.aegif.nemaki.evidence.anchor.AnchorService;
+import jp.aegif.nemaki.evidence.validity.LongTermValidityService;
 import jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 
@@ -38,6 +39,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -74,6 +76,9 @@ public class AnchorController {
 
     @Autowired(required = false)
     private AnchorReceiptStore receiptStore;
+
+    @Autowired(required = false)
+    private LongTermValidityService validityService;
 
     private HttpServletRequest httpRequest;
 
@@ -205,6 +210,37 @@ public class AnchorController {
                 + "back; it does not prevent it, and it says nothing about whether what was "
                 + "recorded was complete or true.");
         return ResponseEntity.ok(body);
+    }
+
+    /**
+     * What is going stale, and which renewal it needs (P2-3).
+     *
+     * @param asOf ISO date to judge against; defaults to today. A parameter because the only
+     *             useful question is the forward-looking one: renewal applied after a break
+     *             re-dates the evidence to the renewal and cannot recover the original time.
+     */
+    @GetMapping("/long-term-validity")
+    public ResponseEntity<Map<String, Object>> longTermValidity(
+            @RequestParam String repositoryId,
+            @RequestParam(required = false) String asOf) {
+
+        ResponseEntity<Map<String, Object>> forbidden = requireAdmin();
+        if (forbidden != null) {
+            return forbidden;
+        }
+        if (validityService == null) {
+            return unavailable("the long-term validity service is not wired on this node");
+        }
+        LocalDate when;
+        try {
+            when = asOf == null || asOf.isBlank() ? LocalDate.now() : LocalDate.parse(asOf);
+        } catch (RuntimeException e) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("status", "error");
+            body.put("message", "asOf must be an ISO date (yyyy-MM-dd); got '" + asOf + "'");
+            return ResponseEntity.badRequest().body(body);
+        }
+        return ResponseEntity.ok(validityService.assess(repositoryId, when));
     }
 
     private ResponseEntity<Map<String, Object>> unavailable(String message) {
