@@ -777,15 +777,28 @@ RODA 側は「PREMIS 3」と明記している。**一次文書で要裏取り�
 5 リリース、open issues 6) / Java **17+** (21 で可) / Maven 座標
 `org.roda-community:commons-ip2` / CSIP は **2.0.4・2.1.0・2.2.0** に対応。
 
-**配布経路がここの最大の落とし穴**:
+**配布経路** — **2026-08-25 に再測し、この節の記述を訂正した**:
 
-- **Maven Central に存在しない** (`a:commons-ip2` → 0 件)。`distributionManagement` は
-  **GitHub Packages 単独**で、**公開パッケージでも匿名 GET は 401** (PAT が要る)。
-  → `<dependency>` で引くと **fork PR の CI がシークレット不在で必ず落ちる**。
-- **回避策**: CLI fat-jar が **GitHub Release アセットとして匿名取得できる**
-  (`commons-ip2-cli-2.12.0.jar` / 10,895,225 B、HTTP 200 実測)。
-  → **CI 検証は fat-jar を CLI として叩く。** ライブラリとして SIP を「作る」側だけ
-  GitHub Packages 認証を使うか、社内リポジトリにミラーする。
+> **「Maven Central に存在しない」は誤りだった。** 元の判定は
+> `search.maven.org/solrsearch` (`a:commons-ip2` → 0 件) に依っていたが、**この検索
+> インデックスは Central 本体と別物で遅延する** (再測時は応答すらしなかった)。
+> リポジトリのディレクトリ一覧が正典で、そこには **9 版が並んでいる**。
+
+| 実測 (2026-08-25) | 結果 |
+|---|---|
+| `repo1.maven.org/.../commons-ip2/` の版一覧 | 2.9.3 / 2.10.0 / 2.10.0-RC1 / 2.10.1 / 2.11.0〜2.11.3 / **2.12.0** |
+| `commons-ip2-2.12.0.jar` の匿名 GET | **200**、911,814 B、`last-modified 2026-08-14` |
+| `commons-ip2-cli` (fat-jar) の Central | **404** — CLI は Central に居ない |
+| GitHub Packages への匿名 GET | **401** (従来どおり) |
+| GitHub Release の CLI fat-jar 匿名 GET | **200**、10,895,225 B (従来どおり) |
+
+**したがって落とし穴は 1 つ減り、1 つ残る**:
+
+- **ライブラリ (SIP を作る側) は Maven Central から普通に引ける。** GitHub Packages 認証も
+  社内ミラーも要らない。**fork PR の CI が落ちる問題は消えた。**
+- **CLI fat-jar は Central に無い** (`commons-ip2-cli` は 404)。CI で CLI として
+  叩くなら **GitHub Release からの取得のまま**で、これはバージョン固定した URL を
+  そのまま使う。あるいはライブラリ API を直接呼ぶテストにすれば Central だけで閉じる。
 
 **Python 版 eark-validator は CI ゲートに使えない** (重要):
 
