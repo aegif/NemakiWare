@@ -52,8 +52,8 @@ HEAD `246a0e03f` + 自己レビュー修正パスに対する、Codex + サブ�
 | 項目 | 根拠 |
 |---|---|
 | ✅ 2026-08-24 **Process 属性の v2 供給** — v2 record の digest 被覆 processFacts を sink が読む (必須 2 つが `""` にならないことを pin)。externalStableKey は typed input endpoint が正典、sourceDescription は emitter 産出の派生エントリ | (b) §3.4、`PurviewLineageSink` v2 分岐 |
-| ✅ 2026-08-24 D-4 の会話範囲 (journalFacts — INTERNAL_ONLY はカタログに構造的に出ない) + `REIMPORT_*` + `assuranceAsserted` (processFacts — SCHEMA_VERSION 17 で宣言) の v2 home | 恒久 none は participants / channelName のみ |
-| ✅ 2026-08-24 `contentHashSubject` / `contentHash` / `contentHashAlgorithm` を `nemaki_import_process` に宣言 (SCHEMA_VERSION 17) — **v1 の配送が今日から開通** (sink は送信済みだった)。v2 は endpoint 属性経由 | Codex P1、data-model R3 |
+| ✅ 2026-08-24 D-4 の会話範囲 (journalFacts — INTERNAL_ONLY はカタログに構造的に出ない) + `REIMPORT_*` + `assuranceAsserted` (processFacts — SCHEMA_VERSION 17 で宣言、現行 18) の v2 home | 恒久 none は participants / channelName のみ |
+| ✅ 2026-08-24 `contentHashSubject` / `contentHash` / `contentHashAlgorithm` を `nemaki_import_process` に宣言 — **v1 の配送が今日から開通** (sink は送信済みだった)。v2 は endpoint 属性経由。**宣言時に version を 17 のまま据え置いた誤りを敵対レビューが捕捉し 18 へ bump** (適用済みカタログは 17 のままだと属性が生えない) | Codex P1、data-model R3、敵対レビュー finding 3 |
 
 ## 5. 独立チケット (どのフェーズにも属さない)
 

@@ -81,6 +81,15 @@ public final class CatalogSecretBoundary {
     /** A scheme that names a local file even without an authority. */
     private static final Pattern FILE_SCHEME = Pattern.compile("(?i)^file:");
 
+    /**
+     * http(s), case-insensitively, ANYWHERE in the value — the §4 shape inside the identity
+     * exemption. {@code startsWith("http://")} was the first draft and had two holes an
+     * external review named: {@code HTTPS://…} (schemes are case-insensitive, RFC 3986 §3.1)
+     * and Dataplex's {@code nemakiware:{repo}:{qualifiedName}} form, which embeds the inner
+     * name MID-string where a prefix check never looks.
+     */
+    private static final Pattern HTTP_SCHEME_ANYWHERE = Pattern.compile("(?i)\\bhttps?://");
+
     /** Attribute names that admit to holding a secret, whatever the value looks like. */
     private static final List<String> SECRET_NAMES =
             List.of("token", "secret", "credential", "password", "apikey", "sas", "signature");
@@ -95,11 +104,14 @@ public final class CatalogSecretBoundary {
      * links, and both are the asset's identity — refusing them would not remove a secret, it
      * would break the identity every archive's lineage already resolves through.
      *
-     * <p>The exemption is only for the scheme and the path. Query, fragment and userinfo are
-     * still refused here, because those are where a credential rides. And it does not reopen the
-     * sharing-link case §4 was written for: a cloud object's stable key is
-     * {@code {provider}:{fileId}} with no authority at all, so a drive URL has no attribute to
-     * arrive in whether or not this list exists.
+     * <p>The exemption is only for the scheme and the path, and NEVER for http(s) — no
+     * legitimate identity uses it, and a sharing link (§4) is an http(s) URL with its token in
+     * the path, invisible to the query/fragment/userinfo refusal. Query, fragment and userinfo
+     * are refused too, because those are where a credential rides. So the exemption cannot
+     * reopen the sharing-link case §4 was written for, for ANY of these names — not merely
+     * because today's producers put {@code {provider}:{fileId}} here, but because the §4 shape
+     * itself is refused inside the exemption (external review: the first draft refused it only
+     * for the two qualified names, and only lower-case).
      */
     private static final List<String> IDENTITY_ATTRIBUTES = List.of(
             "externalStableKey", "externalPath", "targetDescription", "sourceDescription",
@@ -110,9 +122,9 @@ public final class CatalogSecretBoundary {
             // it would not remove a secret; it would break the identity every process reference
             // resolves through — the same reasoning externalStableKey has carried all along.
             // The credential-bearing parts (query / fragment / userinfo) stay refused — and so
-            // do http(s) values (see the qualified-name branch in check): a sharing link is an
-            // http(s) URL with its token in the PATH, and no legitimate sink identity is ever
-            // http(s), so the §4 threat class stays closed for exactly these two names.
+            // do http(s) values (for EVERY identity name, case-insensitively — see check):
+            // a sharing link is an http(s) URL with its token in the PATH, and no legitimate
+            // sink identity is ever http(s), so the §4 threat class stays closed.
             "qualifiedName",
             // Dataplex's identity form: "nemakiware:{repo}:{qualifiedName}" — embeds a scheme
             // mid-string, which the stored-URL check would refuse; same identity reasoning.
@@ -199,14 +211,18 @@ public final class CatalogSecretBoundary {
             return;
         }
         if (IDENTITY_ATTRIBUTES.contains(leafName)) {
-            // A qualified name is never legitimately http(s) — canonical source URIs use the
-            // source system as the scheme, and every other identity is nemaki:// or colon-form.
-            // A sharing link, the §4 threat, IS http(s) with its token in the path; keeping
-            // this refusal is what lets the rest of the exemption exist.
-            if (("qualifiedName".equals(leafName) || "fullyQualifiedName".equals(leafName))
-                    && (text.startsWith("http://") || text.startsWith("https://"))) {
-                throw refusal(name, text, "a qualified name is never http(s); a stored URL's"
-                        + " token can be in the path (§4)");
+            // No identity is ever legitimately http(s) — canonical source URIs use the source
+            // system as the scheme (ExternalSourceUri.build), stable keys are s3:// /
+            // filesystem:/ / {provider}:{fileId}, and everything else is nemaki:// or
+            // colon-form. A sharing link, the §4 threat, IS http(s) with its token in the
+            // PATH, which the query/fragment/userinfo refusal below cannot see — so this
+            // check is what keeps §4 closed across the WHOLE exemption, not just the two
+            // qualified names the first draft covered (external review). Case-insensitive and
+            // anywhere in the value: HTTPS:// is the same scheme, and Dataplex embeds the
+            // inner name mid-string.
+            if (HTTP_SCHEME_ANYWHERE.matcher(text).find()) {
+                throw refusal(name, text, "an external identity is never http(s); a stored"
+                        + " URL's token can be in the path (§4)");
             }
             // Scheme and path allowed; the credential-bearing parts are not.
             if (text.indexOf('?') >= 0 || text.indexOf('#') >= 0 || hasUserinfo(text)) {

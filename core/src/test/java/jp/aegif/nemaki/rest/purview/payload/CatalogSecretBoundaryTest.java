@@ -187,6 +187,41 @@ public class CatalogSecretBoundaryTest {
             assertDoesNotThrow(() -> CatalogSecretBoundary.sealed(
                     attributes("externalStableKey", "google:cloud-001")));
         }
+
+        /**
+         * The §4 shape — http(s), token in the PATH — is refused inside the exemption, for
+         * every identity name. The first draft refused it only for the two qualified names,
+         * so a token-in-path sharing link rode externalStableKey through the gate untouched
+         * (external review): query/fragment/userinfo checks cannot see a path.
+         */
+        @Test
+        @DisplayName("never keep an http(s) value — the token can be in the path")
+        void httpIsRefusedForEveryIdentityName() {
+            refusalFor("externalStableKey", "https://contoso.sharepoint.com/:x:/g/EtokenXY");
+            refusalFor("externalPath", "http://host/share/guestaccess.aspx");
+            refusalFor("sourceDescription", "https://host/:x:/g/EtokenXY");
+            refusalFor("targetDescription", "https://host/:x:/g/EtokenXY");
+        }
+
+        /** RFC 3986 §3.1: schemes are case-insensitive; HTTPS:// is the same scheme. */
+        @Test
+        @DisplayName("refuse the scheme whatever its case")
+        void httpRefusalIsCaseInsensitive() {
+            refusalFor("qualifiedName", "HTTPS://contoso.sharepoint.com/:x:/g/EtokenXY");
+            refusalFor("fullyQualifiedName", "Https://host/path");
+            refusalFor("externalStableKey", "HTTP://host/path");
+        }
+
+        /**
+         * Dataplex's identity form embeds the inner name MID-string
+         * ("nemakiware:{repo}:{qualifiedName}") — a prefix check never looks there.
+         */
+        @Test
+        @DisplayName("catch http(s) embedded mid-string, the Dataplex form")
+        void httpRefusalSeesMidStringEmbedding() {
+            refusalFor("fullyQualifiedName", "nemakiware:bedroom:https://host/:x:/g/Etoken");
+            refusalFor("fullyQualifiedName", "nemakiware:bedroom:HTTPS://host/x");
+        }
     }
 
     @Nested

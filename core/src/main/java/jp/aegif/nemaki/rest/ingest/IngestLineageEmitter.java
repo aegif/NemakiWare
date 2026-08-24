@@ -446,14 +446,14 @@ public class IngestLineageEmitter {
         }
         // participants was stored on the object but left out of the evidence, so the record
         // said which channel a message came from without saying who was in it (external review).
-        // NOT here: nemaki:chatCapturedAt. It is stamped AFTER the import returns, so at this
-        // point it does not exist yet — the one of the eleven this event cannot repeat.
-        //
-        // Moving the stamp ahead of emission does NOT fix that; it was retracted in
-        // p1-1b-v2-evidence-home.md §8, because the aspect it stamps into is created by the
-        // wrapper after execute() returns, so an earlier stamp hits nothing. What the other ten
+        // NOT in this loop: nemaki:chatCapturedAt. It is server-stamped, not request metadata,
+        // so it has no metadata key to read here. Since P1-1(e) D-5 the beforeEmit hook runs
+        // the wrapper's aspect work BEFORE emission, and the stamped value arrives through
+        // passOutcome — the event carries it after all ((b) §8's retraction reason, "the
+        // aspect does not exist yet at emit", was dissolved by making it exist). What the ten
         // below carry is the REQUESTED value, read from the same request metadata the wrapper
-        // reads — not a confirmation that it reached the object (P1-1(d) D1).
+        // reads — not a confirmation that it reached the object (P1-1(d) D1); the CONFIRMED
+        // copies are the passOutcome entries and the applied hashes appended at emit.
         for (CaptureEvidenceField field : new CaptureEvidenceField[]{
                 CaptureEvidenceField.CHAT_WORKSPACE_ID, CaptureEvidenceField.CHAT_CHANNEL_ID,
                 CaptureEvidenceField.CHAT_CHANNEL_NAME, CaptureEvidenceField.CHAT_THREAD_ID,

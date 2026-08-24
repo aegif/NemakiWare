@@ -246,7 +246,7 @@ public class LineageSinkRecordContractTest {
         assertEquals("slack:1720000000.000200", processAttrs.get("sourceDescription"),
                 "the emitter-precomputed sourceDescription must be read, not re-derived");
         assertEquals("stored nothing", processAttrs.get("reimportOutcome"),
-                "the per-pass facts are declared in the catalog type since SCHEMA_VERSION 17 "
+                "the per-pass facts are declared in the catalog type since SCHEMA_VERSION 17 (18 now) "
                         + "and must be delivered");
         assertEquals("acme-chat://org/W1/channels/C1", processAttrs.get("externalStableKey"),
                 "the raw stable key comes from the typed input endpoint (Codex M4)");
@@ -330,6 +330,22 @@ public class LineageSinkRecordContractTest {
                 () -> atlas.buildAtlasPayload(poisoned),
                 "a query-bearing stable key rode an input reference into the Atlas payload — "
                         + "the seal ran before the references existed");
+
+        // The §4 shape proper: an UPPER-CASE http(s) sharing link with the token in the PATH.
+        // The query check above cannot see it, and the first http(s) refusal was a lower-case
+        // prefix match (external review) — this pins the case-insensitive form end to end.
+        LineageRecord tokenInPath = LineageRecord.fromV1(new LineageEventBuilder()
+                .repositoryId(REPO)
+                .processType(LineageProcessType.ARCHIVE_LOCAL)
+                .addInput("HTTPS://contoso.sharepoint.com/:x:/g/EtokenXY")
+                .addOutput("nemaki://" + REPO + "/archives/doc-1")
+                .targets(List.of("atlas"))
+                .build());
+        assertThrows(
+                jp.aegif.nemaki.rest.purview.payload.CatalogSecretBoundary
+                        .SecretAtBoundaryException.class,
+                () -> atlas.buildAtlasPayload(tokenInPath),
+                "an upper-case token-in-path sharing link passed the reference seal");
     }
 
     /** The Process name comes from processIdentity, which differs per version by design (§3). */

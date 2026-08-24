@@ -218,7 +218,16 @@ public class ImportProfileDefinitionController {
                 || !java.util.Objects.equals(def.getAllowedConnectorIds(),
                         existingForRepo.getAllowedConnectorIds())
                 || !java.util.Objects.equals(def.getSchedulerParams(),
-                        existingForRepo.getSchedulerParams());
+                        existingForRepo.getSchedulerParams())
+                // The target folder is where every autonomous run LANDS — repointing it is a
+                // schedule-relevant change of the same kind as swapping the connector, and
+                // leaving the prior operator on record for it was H3's defect in one more
+                // field (external review). Representation changes (path ↔ id for the same
+                // folder) over-stamp at worst, which records the operator who touched it.
+                || !java.util.Objects.equals(def.getTargetFolderId(),
+                        existingForRepo.getTargetFolderId())
+                || !java.util.Objects.equals(def.getTargetFolderPath(),
+                        existingForRepo.getTargetFolderPath());
         if (scheduleChanged) {
             def.setScheduleConfiguredByUserId(ctx.getUsername());
             def.setScheduleConfiguredAtMs(System.currentTimeMillis());

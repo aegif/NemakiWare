@@ -241,6 +241,36 @@ class ImportProfileSchedulerGateTest {
     }
 
     @Test
+    void update_stampsTheOperator_onTargetFolderChange() {
+        // The folder is where every autonomous run LANDS. The first handshake diffed only
+        // enabled/scheduler/delegated/connector/params, so repointing the target folder kept
+        // the previous operator on record for a schedule someone else just redirected —
+        // H3's defect in one more field (external review).
+        CallContext admin = mock(CallContext.class);
+        when(admin.getUsername()).thenReturn("admin");
+        lenient().when(admin.getRepositoryId()).thenReturn(REPO);
+        lenient().when(admin.get(CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(httpRequest.getAttribute("CallContext")).thenReturn(admin);
+        when(authService.isAdmin(admin)).thenReturn(true);
+
+        ImportProfileDefinition existing = scheduledDelegatedDraft();
+        existing.setProfileId("p-folder");
+        existing.setScheduleConfiguredByUserId("previous-operator");
+        existing.setScheduleConfiguredAtMs(1L);
+        when(profileService.get("p-folder")).thenReturn(existing);
+
+        ImportProfileDefinition update = scheduledDelegatedDraft();
+        update.setProfileId("p-folder");
+        update.setTargetFolderId("F-ELSEWHERE");
+
+        controller.update("p-folder", update);
+
+        org.junit.jupiter.api.Assertions.assertEquals("admin",
+                update.getScheduleConfiguredByUserId(),
+                "repointing the landing folder left the previous operator on record");
+    }
+
+    @Test
     void update_preservesThePriorStamp_whenNothingScheduleRelevantChanged() {
         CallContext admin = mock(CallContext.class);
         when(admin.getUsername()).thenReturn("admin");

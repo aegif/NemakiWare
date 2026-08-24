@@ -264,3 +264,27 @@ attribution 無しが構築可能で codec 内 NPE — fact と payload の comp
 レビューが「攻めて何も出なかった」と確認した面: Solr の別ドア (再駆動経路・ACL writer・RAG)、
 describe() 順序 (ensureIntentOpened 全呼出箇所が describe 後)、version-up の等価性、compartment
 整合 (両方向 pin)、削除語彙の残骸、AC1–12/14 の判別性。
+
+## 9. オーナーレビューの記録 (3 巡目, 2026-08-24)
+
+§8 のバッチ確認後に P2 2 件 + P3:
+
+- **P2 identity 免除の §4 形すり抜け**: http(s) 拒否が `startsWith` (小文字・qualifiedName 2 語
+  のみ) だった。`HTTPS://…` (RFC 3986 §3.1: scheme は大小文字非依存) と、exempt 4 語
+  (externalStableKey / externalPath / source・targetDescription) の token-in-path 共有リンクが
+  通っていた。**修正**: `(?i)\bhttps?://` を identity 全名に、文字列中どこでも
+  (Dataplex の mid-string 埋め込み `nemakiware:{repo}:{qualifiedName}` も捕まえる)。正当な
+  http(s) identity は存在しないことを確認済み (ExternalSourceUri は {system}:// 形、stable key
+  は s3:// / filesystem:/ / {provider}:{fileId})。判別テスト 3 本 + Atlas pin に大文字
+  token-in-path 形を追加。
+- **P2 PUT の folder 変更が stamp されない**: `scheduleChanged` の差分に
+  `targetFolderId` / `targetFolderPath` を追加 (着地先の付け替えは connector 差し替えと同種の
+  schedule-relevant 変更 — H3 と同型の抜け)。表現の揺れ (path↔id) は過剰 stamp 側に倒れる
+  (触った運用者が記録される — 許容)。判別テスト
+  `update_stampsTheOperator_onTargetFolderChange`。
+- **P3**: `buildV1Snapshot` の chatCapturedAt コメント (D-5 前の「emit 時点に無い」記述) を
+  passOutcome 実装に追随 / 計画 §4 とテストコメントの SCHEMA_VERSION 17 表記を 18 に整合。
+
+2 件とも revert→fail 実測済み (revert で該当 5 テスト + folder テストだけが落ちる)。
+AC 表の追補: §5 の AC13 は「pin が version 議論を強制する」形に更新済み (§8)、identity 免除の
+§4 形拒否はこの節が AC として立つ。
