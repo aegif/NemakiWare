@@ -27,6 +27,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -71,6 +76,14 @@ public class AnchorWiringConfig {
     @Value("${anchor.rfc3161.accreditation:}")
     private String tsaAccreditation;
 
+    /**
+     * PEM file the TSA signer must chain to. Without it the signature is checked against the
+     * certificate the responder itself supplied, which establishes internal consistency and not
+     * that an independent party issued the token.
+     */
+    @Value("${anchor.rfc3161.trust-anchor.path:}")
+    private String tsaTrustAnchorPath;
+
     @Bean
     public OpenTimestampsAnchorTarget openTimestampsAnchorTarget() {
         // Constructed either way so the rung can report NOT_CONFIGURED for itself. Returning
@@ -90,7 +103,37 @@ public class AnchorWiringConfig {
         }
         return new Rfc3161AnchorTarget(isBlank(tsaUrl) ? null : tsaUrl,
                 isBlank(tsaPolicyOid) ? null : tsaPolicyOid,
-                isBlank(tsaAccreditation) ? null : tsaAccreditation);
+                isBlank(tsaAccreditation) ? null : tsaAccreditation,
+                loadTrustAnchor(tsaTrustAnchorPath));
+    }
+
+    /**
+     * Reads the configured trust anchor, or throws.
+     *
+     * <p>Deliberately not lenient. An operator who set this path believes their tokens are
+     * checked against an authority they chose; falling back to "no anchor" on an unreadable file
+     * would leave them believing it while every receipt quietly reported a weaker check. A
+     * startup failure is the only outcome that cannot be mistaken for success.
+     */
+    static X509Certificate loadTrustAnchor(String path) {
+        if (isBlank(path)) {
+            return null;
+        }
+        try (InputStream in = Files.newInputStream(Path.of(path.trim()))) {
+            X509Certificate certificate = (X509Certificate) CertificateFactory
+                    .getInstance("X.509").generateCertificate(in);
+            if (certificate == null) {
+                throw new IllegalStateException("the file contains no certificate");
+            }
+            logger.info("Anchor rung 3 trust anchor loaded: {}",
+                    certificate.getSubjectX500Principal());
+            return certificate;
+        } catch (Exception e) {
+            throw new IllegalStateException("anchor.rfc3161.trust-anchor.path is set to '" + path
+                    + "' but no certificate could be read from it (" + e.getMessage() + "). "
+                    + "Refusing to start rather than falling back to an unanchored check, which "
+                    + "would look configured and verify less than the operator expects.", e);
+        }
     }
 
     /**
