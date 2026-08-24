@@ -18,31 +18,42 @@ package jp.aegif.nemaki.evidence.anchor;
 
 import jp.aegif.nemaki.evidence.EvidenceCheckpoint;
 import jp.aegif.nemaki.evidence.EvidenceLedgerStore;
+import jp.aegif.nemaki.rest.purview.anchor.AnchorKind;
+import jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt;
+import jp.aegif.nemaki.rest.purview.anchor.AnchorStatus;
+import jp.aegif.nemaki.rest.purview.anchor.AnchorTarget;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Sends one checkpoint's root to every enabled tier (P2-0).
+ * Sends one checkpoint's Merkle root to every configured rung (P2-0).
  *
- * <h2>Two refusals</h2>
+ * <p>The rungs themselves are {@code jp.aegif.nemaki.rest.purview.anchor}: {@link AnchorKind}
+ * carries what each one's time may be read as, so this class never has to hold that in prose.
+ * What it adds is the two refusals that only make sense once there is a LEDGER behind the digest.
  *
- * <ul>
- *   <li><b>It will not anchor over an unsettled tail.</b> If the ledger's highest sequence has
- *       moved past the checkpoint's, entries are still landing behind the root — and the claim
- *       "this root is the ledger as it stood" is false the moment it is made. The service
- *       returns a reason instead of anchoring and apologising later (P1-3's
- *       "no anchor while unsequenced backlog exists", implemented here).</li>
- *   <li><b>It will not let one tier's failure stop another.</b> Each target is called inside its
- *       own try, because the tiers exist precisely so a customer can rely on a different one.
- *       A tier that throws is reported {@code FAILED}; it does not become an exception the
- *       caller sees instead of the other tiers' results.</li>
- * </ul>
+ * <h2>It will not anchor over an unsettled tail</h2>
+ *
+ * <p>If the ledger's highest sequence has moved past the checkpoint's, entries are still landing
+ * behind the root — and "this root is the ledger as it stood" is already false at the moment it
+ * would be fixed somewhere unrewritable. So the service returns a reason instead of anchoring
+ * and apologising afterwards. An unreadable head refuses too: not knowing whether anything is
+ * behind the root is not the same as knowing nothing is.
+ *
+ * <h2>It will not let one rung's failure take another down</h2>
+ *
+ * <p>The ladder exists so a customer can lean on a different rung. {@link AnchorTarget} already
+ * promises not to throw for ordinary failure; this contains the rest anyway, because a rung that
+ * breaks its promise must not be able to hide the rungs that kept theirs.
+ *
+ * <p>Design: {@code docs/design/p2-0-anchor-targets.md}.
  */
 public class AnchorService {
 
@@ -62,17 +73,45 @@ public class AnchorService {
         this.store = store;
     }
 
-    /** Every tier's receipt, plus what the set of them does and does not amount to. */
-    public record Outcome(String domain, long toSequence, List<AnchorReceipt> receipts,
-                          String refusedReason) {
+    /**
+     * What a claim built on this rung may and may not say.
+     *
+     * <p>Derived from the enum rather than supplied as text, so a new {@code TimeSemantics}
+     * cannot be added without the compiler demanding a sentence for it. A blank-able string
+     * field would eventually be left blank on exactly the rung that most needed it.
+     */
+    public static String claimLimitsFor(AnchorKind kind) {
+        return switch (kind.timeSemantics()) {
+            case NOT_A_TIME_PROOF -> "This is NOT a time proof and NOT independent evidence. It "
+                    + "records when the destination was TOLD, not when the data existed, and a "
+                    + "destination the same party administers can be rewritten by that party "
+                    + "along with the ledger.";
+            case UPPER_BOUND_ONLY -> "This establishes only that the COMMITMENT existed no later "
+                    + "than that time — nothing about how much earlier, and nothing about the "
+                    + "record itself. The subject is the commitment, not the document, and it "
+                    + "says nothing about whether the metadata was true or the capture complete.";
+            case BIDIRECTIONAL_WITHIN_ACCURACY -> "This binds a message imprint to the "
+                    + "authority's stated time, within the accuracy the token itself states, "
+                    + "and only under the trust and policy checks the deployment chose. The "
+                    + "protocol alone implies no accreditation, and none of it establishes that "
+                    + "the record or its metadata are true.";
+        };
+    }
 
-        /** Tiers that actually confirmed. {@code SUBMITTED} is excluded — see {@link
-         *  AnchorState}. */
-        public List<String> confirmedTiers() {
+    /** Every rung's receipt, plus what the set of them does and does not amount to. */
+    public record Outcome(String domain, long toSequence, String merkleRoot,
+                          List<AnchorReceipt> receipts, String refusedReason) {
+
+        /**
+         * Rungs that actually confirmed. {@code PENDING} is excluded — an OpenTimestamps
+         * commitment is legitimately pending for hours, and during those hours nothing has been
+         * proved.
+         */
+        public List<String> confirmedRungs() {
             List<String> confirmed = new ArrayList<>();
             for (AnchorReceipt receipt : receipts) {
-                if (receipt.counts()) {
-                    confirmed.add(receipt.tierId());
+                if (receipt.status() == AnchorStatus.CONFIRMED) {
+                    confirmed.add(receipt.kind().name());
                 }
             }
             return confirmed;
@@ -82,14 +121,27 @@ public class AnchorService {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("domain", domain);
             m.put("toSequence", toSequence);
+            m.put("merkleRoot", merkleRoot);
             m.put("refused", refusedReason != null);
             m.put("refusedReason", refusedReason);
-            // The list, never a single flag: "anchored" as one word lets a deployment with only
-            // the catalog tier borrow the sentence that belongs to a TSA.
-            m.put("confirmedTiers", confirmedTiers());
+            // The list, never a single flag: "anchored" as one word lets a deployment running
+            // only the catalog rung borrow the sentence that belongs to a timestamp authority.
+            m.put("confirmedRungs", confirmedRungs());
             List<Map<String, Object>> rows = new ArrayList<>(receipts.size());
             for (AnchorReceipt receipt : receipts) {
-                rows.add(receipt.asMap());
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("rung", receipt.kind().name());
+                row.put("status", receipt.status().name());
+                row.put("timeSemantics", receipt.timeSemantics().name());
+                // Immediately after the status, so a reader cannot take the status alone.
+                row.put("claimLimits", claimLimitsFor(receipt.kind()));
+                row.put("anchoredDigest", receipt.anchoredDigest());
+                row.put("attemptedAt", String.valueOf(receipt.attemptedAt()));
+                row.put("anchoredAt", String.valueOf(receipt.anchoredAt()));
+                row.put("proofDigest", receipt.proofDigest());
+                row.put("attributes", receipt.attributes());
+                row.put("failureReason", receipt.failureReason());
+                rows.add(row);
             }
             m.put("receipts", rows);
             return m;
@@ -98,7 +150,7 @@ public class AnchorService {
 
     public Outcome anchor(EvidenceCheckpoint checkpoint) {
         if (checkpoint == null) {
-            return new Outcome(null, -1, List.of(), "there is no checkpoint to anchor");
+            return new Outcome(null, -1, null, List.of(), "there is no checkpoint to anchor");
         }
         String refusal = refusalFor(checkpoint);
         if (refusal != null) {
@@ -107,48 +159,33 @@ public class AnchorService {
             // it was made.
             logger.warn("Refusing to anchor {} at {}: {}", checkpoint.domain(),
                     checkpoint.toSequence(), refusal);
-            return new Outcome(checkpoint.domain(), checkpoint.toSequence(), List.of(), refusal);
+            return new Outcome(checkpoint.domain(), checkpoint.toSequence(),
+                    checkpoint.merkleRoot(), List.of(), refusal);
         }
         List<AnchorReceipt> receipts = new ArrayList<>(targets.size());
         for (AnchorTarget target : targets) {
-            receipts.add(receiptFrom(target, checkpoint));
+            receipts.add(receiptFrom(target, checkpoint.merkleRoot()));
         }
-        return new Outcome(checkpoint.domain(), checkpoint.toSequence(), receipts, null);
+        return new Outcome(checkpoint.domain(), checkpoint.toSequence(), checkpoint.merkleRoot(),
+                receipts, null);
     }
 
-    private AnchorReceipt receiptFrom(AnchorTarget target, EvidenceCheckpoint checkpoint) {
-        String limits;
+    private AnchorReceipt receiptFrom(AnchorTarget target, String merkleRoot) {
         try {
-            limits = target.claimLimits();
-        } catch (RuntimeException e) {
-            limits = null;
-        }
-        if (limits == null || limits.isBlank()) {
-            // A tier that cannot say what it does not establish is not usable as evidence, and
-            // the receipt type would refuse to be built anyway. Say which tier, once.
-            limits = "tier '" + target.tierId() + "' did not declare what it does not establish, "
-                    + "so nothing here may be read as a claim of any kind";
-            return AnchorReceipt.failed(target.tierId(), checkpoint.domain(),
-                    checkpoint.merkleRoot(), "the tier declared no claimLimits", limits);
-        }
-        if (!target.isEnabled()) {
-            return AnchorReceipt.notAttempted(target.tierId(), limits);
-        }
-        try {
-            AnchorReceipt receipt = target.submit(checkpoint.domain(), checkpoint.fromSequence(),
-                    checkpoint.toSequence(), checkpoint.merkleRoot(), checkpoint.createdAt());
+            if (!target.isConfigured()) {
+                return AnchorReceipt.notConfigured(target.kind(), merkleRoot);
+            }
+            AnchorReceipt receipt = target.anchor(merkleRoot);
             if (receipt == null) {
-                return AnchorReceipt.failed(target.tierId(), checkpoint.domain(),
-                        checkpoint.merkleRoot(), "the tier returned no receipt", limits);
+                return AnchorReceipt.failed(target.kind(), merkleRoot, Instant.now(),
+                        "the rung returned no receipt");
             }
             return receipt;
         } catch (RuntimeException e) {
-            // Contained here on purpose. The tiers exist so that one being unavailable does not
-            // take the others with it.
-            logger.warn("Anchor tier {} failed for {}: {}", target.tierId(), checkpoint.domain(),
-                    e.getMessage());
-            return AnchorReceipt.failed(target.tierId(), checkpoint.domain(),
-                    checkpoint.merkleRoot(), e.getMessage(), limits);
+            // Contained on purpose. AnchorTarget promises not to throw for ordinary failure;
+            // a rung that breaks that promise must not be able to hide the rungs that kept it.
+            logger.warn("Anchor rung {} failed: {}", target.kind(), e.getMessage());
+            return AnchorReceipt.failed(target.kind(), merkleRoot, Instant.now(), e.getMessage());
         }
     }
 

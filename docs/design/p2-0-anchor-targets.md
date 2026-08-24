@@ -88,27 +88,54 @@ OpenTimestamps は**送信直後は pending** で、Bitcoin ブロック確定�
 
 ---
 
-## 5.5. 実装 (2026-08-24)
+## 5.5. 実装 (2026-08-25)
+
+### 既存の抽象に載せた (重複を作った訂正)
+
+**段の型は 2026-08-18 の `7997bfd57` で既に存在していた** — 探さずに書き始めて
+`jp.aegif.nemaki.evidence.anchor` に 2 つ目の抽象を作ってしまい、統合した。
+既存側の方が優れている:
+
+- `AnchorKind` が**独立性と時刻の意味を型で運ぶ** (`NOT_A_TIME_PROOF` /
+  `UPPER_BOUND_ONLY` / `BIDIRECTIONAL_WITHIN_ACCURACY`)。散文の
+  `claimLimits` フィールドはいずれ**最も必要な段で空になる**が、enum は空にできない
+- `AnchorTarget.anchor(String hexDigest)` は **digest しか受け取らない** —
+  「原文もメタデータも識別子も外に出ない」がインタフェースの性質になっている
+- 段 2 (OTS) と段 3 (RFC 3161) は実装済み
+
+したがって本増分の**新規は 2 つだけ**である。
 
 | 物 | 場所 |
 |---|---|
-| 段の契約 | `core/.../evidence/anchor/AnchorTarget.java` |
-| 4 状態 | `AnchorState.java` |
-| 受領証 | `AnchorReceipt.java` (`claimLimits` が空なら**構築できない**) |
-| 送出 | `AnchorService.java` |
-| 段 1 | `CatalogAnchorTarget.java` |
-| テスト | `AnchorServiceTest` (14) |
+| 送出 (台帳を見る 2 つの拒否 + 段ごとの封じ込め) | `core/.../evidence/anchor/AnchorService.java` |
+| 段 1 の実装 | `core/.../rest/purview/anchor/CatalogAnchorTarget.java` |
+| テスト | `AnchorServiceTest` (13) |
 
-負のコントロール **7 本実測** (A1 SUBMITTED を成功に含める / A2 claimLimits 空を許す /
-A3 段の例外を伝播 / A4a 陳腐化 root をアンカー / A4b 読めない head を settled 扱い /
-A5 無効な段を FAILED / A6 段を 1 語に潰す) — いずれも意図したテストを落とす。
+`claimLimitsFor(AnchorKind)` は `TimeSemantics` の**網羅 switch** (default 無し)。
+新しい意味を足すとコンパイラが文を要求する。
 
-**段 1 は publisher の seam を持つが、Atlas への配線はまだ**。publisher 未設定なら
-`isEnabled()` は false を返す — enabled と報告して毎回 FAILED にすると、
-「誰もカタログを設定していない」という本当の原因が障害の見た目の下に埋まる。
+### 負のコントロール 8 本実測
 
-**カタログが entity id を返さなかったら FAILED。** 書けたという証拠が無いものを
-CONFIRMED にすると、レポートに**照合しようのないアンカー**が載る。
+B1 PENDING を成功に含める / B2 全段に同じ文 / B3 段の例外を伝播 /
+B4a 陳腐化 root をアンカー / B4b 読めない head を settled 扱い /
+B5 未配線カタログを configured と報告 / B6 entity id 無しを CONFIRMED /
+B7 proof を digest 自身にする。
+
+**B6 は最初落ちなかった。** `AnchorReceipt.confirmed` が既に空 proof を
+拒否していて、私のチェックではなく**既存の不変条件**がテストを支えていた。
+理由文 (`entity id`) を assert する形に直して測り直した。
+
+### 段 1 の proof は entity 参照であって digest 自身ではない
+
+アンカー対象の値そのものを proof にすると、**アンカーされる当の値から
+アンカーを証明する**ことになる。検証者に要るのは「どこへ行けば同じ digest が
+見えるか」である。
+
+### 未確認
+
+`7997bfd57` のコミットメッセージは `AnchorReceipt.supportsIndependenceClaim()`
+に言及しているが、**現在のコードに該当メソッドは無い**。意図が実装に落ちて
+いないのか、後で別名になったのかは未確認。
 
 ---
 

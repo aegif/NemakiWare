@@ -18,17 +18,22 @@ package jp.aegif.nemaki.evidence.anchor;
 
 import jp.aegif.nemaki.evidence.EvidenceCheckpoint;
 import jp.aegif.nemaki.evidence.EvidenceLedgerStore;
+import jp.aegif.nemaki.rest.purview.anchor.AnchorKind;
+import jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt;
+import jp.aegif.nemaki.rest.purview.anchor.AnchorStatus;
+import jp.aegif.nemaki.rest.purview.anchor.AnchorTarget;
+import jp.aegif.nemaki.rest.purview.anchor.CatalogAnchorTarget;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -41,15 +46,20 @@ import static org.mockito.Mockito.when;
  *
  * <p>Design: {@code docs/design/p2-0-anchor-targets.md}. The failure this layer is built against
  * is not "the anchor did not go out" — that one is loud. It is the quiet one: a submission that
- * is pending for the hours a Bitcoin block takes, reported as though the proof were already in
- * hand; or three tiers with very different meanings flattened into the single word "anchored",
- * so a deployment running only a catalog can borrow the sentence that belongs to a timestamp
- * authority.
+ * stays pending for the hours a Bitcoin block takes, reported as though the proof were in hand;
+ * three rungs with very different meanings flattened into the single word "anchored"; or a root
+ * anchored after the ledger has already moved past it, fixing a false claim somewhere it cannot
+ * be taken back.
+ *
+ * <p>The rung types themselves ({@code AnchorKind}, {@code AnchorReceipt}) are covered by
+ * {@code Rfc3161AnchorTargetTest} and {@code OpenTimestampsAnchorTargetTest}. These tests are
+ * about what the ledger adds on top.
  */
 class AnchorServiceTest {
 
     private static final String DOMAIN = "bedroom";
-    private static final String ROOT = "abc123";
+    private static final String ROOT =
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     private static EvidenceCheckpoint checkpoint(long toSequence) {
         return EvidenceCheckpoint.of(DOMAIN, 0, toSequence, ROOT, null, "2026-08-24T00:00:00Z");
@@ -68,151 +78,137 @@ class AnchorServiceTest {
         return service;
     }
 
-    /** A tier that answers with whatever state the test wants. */
-    private static AnchorTarget tier(String id, AnchorState state) {
+    /** A rung that answers with whatever status the test wants. */
+    private static AnchorTarget rung(AnchorKind kind, AnchorStatus status) {
         return new AnchorTarget() {
             @Override
-            public String tierId() {
-                return id;
+            public AnchorKind kind() {
+                return kind;
             }
 
             @Override
-            public boolean isEnabled() {
+            public boolean isConfigured() {
                 return true;
             }
 
             @Override
-            public String claimLimits() {
-                return "tier " + id + " does not establish the truth of the record";
-            }
-
-            @Override
-            public AnchorReceipt submit(String domain, long from, long to, String root,
-                    String createdAt) {
-                return new AnchorReceipt(id, state, domain, from, to, root, createdAt,
-                        state == AnchorState.CONFIRMED ? createdAt : null,
-                        state == AnchorState.CONFIRMED ? "proof-" + id : null, null,
-                        claimLimits());
+            public AnchorReceipt anchor(String hexDigest) {
+                return switch (status) {
+                    case PENDING -> AnchorReceipt.pending(kind, hexDigest, Instant.now(),
+                            new byte[] { 1 }, "proofdigest", Map.of());
+                    case FAILED -> AnchorReceipt.failed(kind, hexDigest, Instant.now(), "no");
+                    case NOT_CONFIGURED -> AnchorReceipt.notConfigured(kind, hexDigest);
+                    case CONFIRMED -> confirmedFor(kind, hexDigest);
+                };
             }
         };
     }
 
-    // ---- AC 1: SUBMITTED is not confirmed ----
+    /** CONFIRMED receipts can only be built inside the anchor package, so borrow a real rung. */
+    private static AnchorReceipt confirmedFor(AnchorKind kind, String hexDigest) {
+        CatalogAnchorTarget catalog = new CatalogAnchorTarget();
+        catalog.setEnabled(true);
+        catalog.setPublisher(digest -> "entity-" + kind.name());
+        AnchorReceipt receipt = catalog.anchor(hexDigest);
+        assertEquals(AnchorStatus.CONFIRMED, receipt.status(), "fixture is not confirmed");
+        return receipt;
+    }
+
+    // ---- AC 1: PENDING is not confirmed ----
 
     @Test
-    @DisplayName("AC1: a pending submission is not counted as an anchor")
-    void submittedDoesNotCount() {
+    @DisplayName("AC1: a pending commitment is not counted as an anchor")
+    void pendingDoesNotCount() {
         AnchorService.Outcome outcome = serviceWith(storeAt(5),
-                tier("opentimestamps", AnchorState.SUBMITTED)).anchor(checkpoint(5));
+                rung(AnchorKind.OPENTIMESTAMPS, AnchorStatus.PENDING)).anchor(checkpoint(5));
 
-        assertEquals(List.of(), outcome.confirmedTiers(),
-                "a pending OpenTimestamps submission was counted as anchored; nothing is proved "
-                        + "until a block confirms it, which takes hours");
-        assertEquals(AnchorState.SUBMITTED, outcome.receipts().get(0).state(),
-                "the pending state was not even reported");
-        assertFalse(outcome.receipts().get(0).counts());
+        assertEquals(List.of(), outcome.confirmedRungs(),
+                "a pending OpenTimestamps commitment was counted as anchored; nothing is "
+                        + "proved until a block confirms it, which takes hours");
+        assertEquals(AnchorStatus.PENDING, outcome.receipts().get(0).status(),
+                "the pending status was not even reported");
     }
 
     @Test
-    @DisplayName("AC1 control: a confirmed submission IS counted")
+    @DisplayName("AC1 control: a confirmed anchor IS counted")
     void confirmedCounts() {
         // Without this, counting nothing at all would pass the test above.
         AnchorService.Outcome outcome = serviceWith(storeAt(5),
-                tier("rfc3161", AnchorState.CONFIRMED)).anchor(checkpoint(5));
+                rung(AnchorKind.ATLAS_CATALOG, AnchorStatus.CONFIRMED)).anchor(checkpoint(5));
 
-        assertEquals(List.of("rfc3161"), outcome.confirmedTiers());
+        assertEquals(List.of("ATLAS_CATALOG"), outcome.confirmedRungs());
     }
 
-    // ---- AC 2: a tier must say what it does not establish ----
+    // ---- AC 2: every rung's claim travels with it ----
 
     @Test
-    @DisplayName("AC2: a receipt cannot be built without claimLimits")
-    void aReceiptNeedsItsLimits() {
-        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                () -> new AnchorReceipt("rfc3161", AnchorState.CONFIRMED, DOMAIN, 0, 5, ROOT,
-                        "t", "t", "token", null, "  "));
-        assertTrue(e.getMessage().contains("claimLimits"), e.getMessage());
-    }
+    @DisplayName("AC2: each rung's limits come from its TimeSemantics, and differ")
+    void everyRungCarriesItsOwnClaim() {
+        String catalog = AnchorService.claimLimitsFor(AnchorKind.ATLAS_CATALOG);
+        String ots = AnchorService.claimLimitsFor(AnchorKind.OPENTIMESTAMPS);
+        String tsa = AnchorService.claimLimitsFor(AnchorKind.RFC3161_TSA);
 
-    @Test
-    @DisplayName("AC2: a tier that declares no limits is FAILED, not silently anchored")
-    void aTierWithoutLimitsCannotAnchor() {
-        AnchorTarget mute = new AnchorTarget() {
-            @Override
-            public String tierId() {
-                return "mute";
-            }
-
-            @Override
-            public boolean isEnabled() {
-                return true;
-            }
-
-            @Override
-            public String claimLimits() {
-                return "";
-            }
-
-            @Override
-            public AnchorReceipt submit(String d, long f, long t, String r, String c) {
-                throw new AssertionError("submit must not be reached: a tier that cannot state "
-                        + "its limits must not be allowed to produce an anchor at all");
-            }
-        };
-
-        AnchorService.Outcome outcome = serviceWith(storeAt(5), mute).anchor(checkpoint(5));
-
-        assertEquals(AnchorState.FAILED, outcome.receipts().get(0).state());
-        assertEquals(List.of(), outcome.confirmedTiers());
+        // Three different statements. One sentence reused would let the weakest rung borrow
+        // the strongest one's meaning, which is the whole hazard of the word "anchored".
+        assertTrue(catalog.contains("NOT a time proof"), catalog);
+        assertTrue(ots.contains("no later than") && ots.contains("commitment"), ots);
+        assertTrue(tsa.contains("accuracy") && tsa.contains("no accreditation"), tsa);
+        assertEquals(3, java.util.Set.of(catalog, ots, tsa).size(),
+                "two rungs share a limits sentence");
     }
 
     @Test
-    @DisplayName("AC2: a CONFIRMED receipt must carry a confirmedAt")
-    void confirmedNeedsATime() {
-        assertThrows(IllegalArgumentException.class,
-                () -> new AnchorReceipt("rfc3161", AnchorState.CONFIRMED, DOMAIN, 0, 5, ROOT,
-                        "t", null, "token", null, "limits"),
-                "a confirmation with no time was accepted; that is what copying the pending "
-                        + "branch produces");
+    @DisplayName("AC2: the limits reach the report next to the status")
+    void theLimitsAreInTheOutput() {
+        AnchorService.Outcome outcome = serviceWith(storeAt(5),
+                rung(AnchorKind.ATLAS_CATALOG, AnchorStatus.CONFIRMED),
+                rung(AnchorKind.OPENTIMESTAMPS, AnchorStatus.PENDING)).anchor(checkpoint(5));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> receipts =
+                (List<Map<String, Object>>) outcome.asMap().get("receipts");
+
+        for (Map<String, Object> receipt : receipts) {
+            assertNotNull(receipt.get("claimLimits"),
+                    "a receipt reached the report without its limits: " + receipt);
+            List<String> keys = new java.util.ArrayList<>(receipt.keySet());
+            assertTrue(keys.indexOf("claimLimits") < keys.indexOf("proofDigest"),
+                    "the limits come after the proof (" + keys + "); a reader who stops at the "
+                            + "hash takes away the number alone");
+        }
     }
 
-    // ---- AC 3: one tier's failure does not stop another ----
+    // ---- AC 3: one rung's failure does not stop another ----
 
     @Test
-    @DisplayName("AC3: a throwing tier is reported FAILED and the others still run")
-    void oneTierCannotTakeTheOthersDown() {
+    @DisplayName("AC3: a throwing rung is reported FAILED and the others still run")
+    void oneRungCannotTakeTheOthersDown() {
         AnchorTarget broken = new AnchorTarget() {
             @Override
-            public String tierId() {
-                return "opentimestamps";
+            public AnchorKind kind() {
+                return AnchorKind.OPENTIMESTAMPS;
             }
 
             @Override
-            public boolean isEnabled() {
+            public boolean isConfigured() {
                 return true;
             }
 
             @Override
-            public String claimLimits() {
-                return "the subject is the commitment, not the record";
-            }
-
-            @Override
-            public AnchorReceipt submit(String d, long f, long t, String r, String c) {
+            public AnchorReceipt anchor(String hexDigest) {
                 throw new IllegalStateException("calendar server unreachable");
             }
         };
 
         AnchorService.Outcome outcome = serviceWith(storeAt(5), broken,
-                tier("rfc3161", AnchorState.CONFIRMED)).anchor(checkpoint(5));
+                rung(AnchorKind.ATLAS_CATALOG, AnchorStatus.CONFIRMED)).anchor(checkpoint(5));
 
         // The whole point of the ladder is that a customer can lean on a different rung.
         assertEquals(2, outcome.receipts().size());
-        assertEquals(AnchorState.FAILED, outcome.receipts().get(0).state());
-        assertEquals(List.of("rfc3161"), outcome.confirmedTiers(),
-                "a broken tier stopped a working one");
-        assertTrue(outcome.receipts().get(0).reason().contains("unreachable"),
-                "the failure reason was lost: " + outcome.receipts().get(0).reason());
+        assertEquals(AnchorStatus.FAILED, outcome.receipts().get(0).status());
+        assertEquals(List.of("ATLAS_CATALOG"), outcome.confirmedRungs(),
+                "a broken rung stopped a working one");
+        assertTrue(outcome.receipts().get(0).failureReason().contains("unreachable"),
+                "the failure reason was lost: " + outcome.receipts().get(0).failureReason());
     }
 
     // ---- AC 4: no anchoring over an unsettled tail ----
@@ -220,10 +216,10 @@ class AnchorServiceTest {
     @Test
     @DisplayName("AC4: a checkpoint the ledger has already moved past is not anchored")
     void aStaleRootIsRefused() {
-        AnchorTarget target = tier("rfc3161", AnchorState.CONFIRMED);
-        AnchorService.Outcome outcome = serviceWith(storeAt(9), target).anchor(checkpoint(5));
+        AnchorService.Outcome outcome = serviceWith(storeAt(9),
+                rung(AnchorKind.RFC3161_TSA, AnchorStatus.CONFIRMED)).anchor(checkpoint(5));
 
-        // Anchoring here would fix, in a place we cannot rewrite, an assertion that was already
+        // Anchoring here would fix, somewhere we cannot rewrite, an assertion that was already
         // false when it was made: that this root was the ledger.
         assertNotNull(outcome.refusedReason());
         assertTrue(outcome.refusedReason().contains("9"), outcome.refusedReason());
@@ -238,82 +234,62 @@ class AnchorServiceTest {
         when(store.highestSequence(anyString()))
                 .thenThrow(new RuntimeException("couchdb is down"));
 
-        AnchorService.Outcome outcome =
-                serviceWith(store, tier("rfc3161", AnchorState.CONFIRMED)).anchor(checkpoint(5));
+        AnchorService.Outcome outcome = serviceWith(store,
+                rung(AnchorKind.RFC3161_TSA, AnchorStatus.CONFIRMED)).anchor(checkpoint(5));
 
         assertNotNull(outcome.refusedReason(),
                 "an unreadable head was treated as 'nothing is behind this root'");
-        assertEquals(List.of(), outcome.confirmedTiers());
+        assertEquals(List.of(), outcome.confirmedRungs());
     }
 
     @Test
     @DisplayName("AC4 control: a current checkpoint IS anchored")
     void aCurrentRootGoesOut() {
         AnchorService.Outcome outcome = serviceWith(storeAt(5),
-                tier("rfc3161", AnchorState.CONFIRMED)).anchor(checkpoint(5));
+                rung(AnchorKind.ATLAS_CATALOG, AnchorStatus.CONFIRMED)).anchor(checkpoint(5));
 
-        assertEquals(null, outcome.refusedReason(),
+        assertNull(outcome.refusedReason(),
                 "a current checkpoint was refused, so the refusal tests above prove nothing");
-        assertEquals(List.of("rfc3161"), outcome.confirmedTiers());
+        assertEquals(List.of("ATLAS_CATALOG"), outcome.confirmedRungs());
     }
 
     // ---- AC 5 / AC 6 ----
 
     @Test
-    @DisplayName("AC5: a disabled tier is NOT_ATTEMPTED, not FAILED")
-    void aDisabledTierIsNotAFailure() {
+    @DisplayName("AC5: an unconfigured rung is NOT_CONFIGURED, not FAILED")
+    void anUnconfiguredRungIsNotAFailure() {
         CatalogAnchorTarget catalog = new CatalogAnchorTarget();
         catalog.setEnabled(false);
 
         AnchorService.Outcome outcome = serviceWith(storeAt(5), catalog).anchor(checkpoint(5));
 
         // FAILED reads as an outage somebody has to investigate. "Off" is a choice.
-        assertEquals(AnchorState.NOT_ATTEMPTED, outcome.receipts().get(0).state());
+        assertEquals(AnchorStatus.NOT_CONFIGURED, outcome.receipts().get(0).status());
     }
 
     @Test
-    @DisplayName("AC5: an enabled catalog with no publisher is also NOT_ATTEMPTED")
+    @DisplayName("AC5: an enabled catalog with no publisher is also NOT_CONFIGURED")
     void anUnwiredCatalogIsNotAFailure() {
         CatalogAnchorTarget catalog = new CatalogAnchorTarget();
         catalog.setEnabled(true);
 
         AnchorService.Outcome outcome = serviceWith(storeAt(5), catalog).anchor(checkpoint(5));
 
-        assertEquals(AnchorState.NOT_ATTEMPTED, outcome.receipts().get(0).state(),
+        assertEquals(AnchorStatus.NOT_CONFIGURED, outcome.receipts().get(0).status(),
                 "an enabled-but-unwired catalog reported FAILED, which buries the real cause "
                         + "(nobody configured a catalog) under an apparent outage");
     }
 
     @Test
-    @DisplayName("AC6: the result is per-tier, and every tier's limits come with it")
+    @DisplayName("AC6: the result is per-rung, not one word")
     void theResultIsNotOneFlag() {
         AnchorService.Outcome outcome = serviceWith(storeAt(5),
-                tier("catalog", AnchorState.CONFIRMED),
-                tier("opentimestamps", AnchorState.SUBMITTED)).anchor(checkpoint(5));
-        Map<String, Object> body = outcome.asMap();
+                rung(AnchorKind.ATLAS_CATALOG, AnchorStatus.CONFIRMED),
+                rung(AnchorKind.OPENTIMESTAMPS, AnchorStatus.PENDING)).anchor(checkpoint(5));
 
-        assertEquals(List.of("catalog"), body.get("confirmedTiers"),
-                "the confirmed tiers were not enumerated; 'anchored' as one word lets a "
+        assertEquals(List.of("ATLAS_CATALOG"), outcome.asMap().get("confirmedRungs"),
+                "the confirmed rungs were not enumerated; 'anchored' as one word lets a "
                         + "catalog-only deployment borrow a timestamp authority's sentence");
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> receipts = (List<Map<String, Object>>) body.get("receipts");
-        assertEquals(2, receipts.size());
-        for (Map<String, Object> receipt : receipts) {
-            assertNotNull(receipt.get("claimLimits"),
-                    "a receipt reached the report without its limits: " + receipt);
-        }
-    }
-
-    @Test
-    @DisplayName("the catalog tier says it is neither a time proof nor independent")
-    void theCatalogTierAdmitsWhatItIs() {
-        String limits = new CatalogAnchorTarget().claimLimits().toLowerCase();
-
-        assertTrue(limits.contains("not a time proof") || limits.contains("not") && limits
-                .contains("time proof"), limits);
-        assertTrue(limits.contains("both"),
-                "the catalog tier does not say an administrator who reaches both systems "
-                        + "defeats it: " + limits);
     }
 
     @Test
@@ -321,12 +297,35 @@ class AnchorServiceTest {
     void aSilentCatalogWriteIsNotAnAnchor() {
         CatalogAnchorTarget catalog = new CatalogAnchorTarget();
         catalog.setEnabled(true);
-        catalog.setPublisher((d, f, t, r, c) -> null);
+        catalog.setPublisher(digest -> null);
 
         AnchorService.Outcome outcome = serviceWith(storeAt(5), catalog).anchor(checkpoint(5));
+        AnchorReceipt receipt = outcome.receipts().get(0);
 
-        assertEquals(AnchorState.FAILED, outcome.receipts().get(0).state(),
+        assertEquals(AnchorStatus.FAILED, receipt.status(),
                 "a catalog that returned no entity id was recorded as a confirmed anchor; "
                         + "there would be nothing to check it against");
+        // The status alone is held up by AnchorReceipt's own refusal of an empty proof, which
+        // surfaces as a generic argument error. Asserting the REASON is what pins this class's
+        // own check — and the reason is the line an operator actually reads.
+        assertTrue(receipt.failureReason().contains("entity id"),
+                "the failure says only that something was wrong, not that the catalog returned "
+                        + "no entity id: " + receipt.failureReason());
+    }
+
+    @Test
+    @DisplayName("the catalog rung's proof is the entity reference, not the digest itself")
+    void theCatalogProofIsNotTheDigest() {
+        CatalogAnchorTarget catalog = new CatalogAnchorTarget();
+        catalog.setEnabled(true);
+        catalog.setPublisher(digest -> "atlas-entity-77");
+
+        AnchorReceipt receipt = catalog.anchor(ROOT);
+
+        // A "proof" that is the anchored value would prove the anchor from the thing being
+        // anchored. What a checker needs is where to go and see the same digest.
+        assertEquals("atlas-entity-77", receipt.attributes().get("catalogEntityId"));
+        assertEquals("atlas-entity-77", new String(receipt.proof(),
+                java.nio.charset.StandardCharsets.UTF_8));
     }
 }
