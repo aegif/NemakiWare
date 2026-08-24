@@ -179,6 +179,7 @@ golden vector は式の外 (python hashlib) で計算し、**エスケープ無�
 6. mail/note/record への拡張は **D-7 (保護拡張) と同時** — 保護の無い型の hash は
    「変わりうるものの写真」でしかない。**§2.3 のとおり同じ批判は day-1 の
    `appliedSourceIdentityHash` にも当てはまり、D-7 で昇格する**
+   → **2026-08-24 実施** (§8)。条件は (c) §8.1 の READONLY 化 + PROTECTED 昇格で満たした
 
 ## 6. 受入条件 (負のコントロールつき)
 
@@ -201,3 +202,35 @@ golden vector は式の外 (python hashlib) で計算し、**エスケープ無�
 - アンカー・追記専用化 — **P1-3**
 - 遡及計算
 - `externalContext` の内容検査
+
+## 8. mail/note/record への拡張 (2026-08-24)
+
+§5-6 が課した条件 (「保護と同時」) は (c) §8.1 で満たされたので、実施した。
+
+**hash は 3 本目を 1 つだけ足す**。`AppliedHashes(chat, sourceIdentity, archetype)`:
+
+- **3 型で 3 本ではなく 1 本**。オブジェクトが持つ archetype aspect は高々 1 つ
+  (`applyArchetypeMetadata` は型 id を 1 つ受け取って 1 回呼ばれる) で、3 型の
+  プロパティ id 名前空間は重ならないため、和集合は多重に存在しても一意に定まる。
+  3 本にすると record・完了 evidence・journal fact キー・verify 応答の 4 箇所が
+  同じことを 3 倍の幅で言うことになる。
+- ただし「高々 1 つ」に**依存はしない** — 2 つ在る場合に片方を黙って選ぶ実装を
+  排除するため、和集合の golden vector を別に固定した。
+- **datetime 正規化の集合が 6 個増える** (mailSentAt / mailReceivedAt /
+  noteLastEditedAt / noteCreatedAt / recordCreatedAt / recordModifiedAt)。ここを
+  忘れると、キャッシュヒットの `Calendar` と CouchDB 往復後の `Long` が同じ保存済み
+  時刻に対して別 digest になる — F1 の再演。ロスターテストが 4 型の宣言と
+  `DATETIME_EVIDENCE_PROPERTIES` の一致を両方向で固定する。
+
+**イベント被覆は「27 個の事実」ではなく「適用済み hash 1 本」**。D-5 が chat で
+やったのと同じ形で、`appliedArchetypeEvidenceHash` を journalFacts (digest 被覆・
+INTERNAL_ONLY) に載せる。個々の事実 (mailFrom 等) をイベントに載せるのは別の判断で、
+個人データの開示問題を伴うため (c) §8.1 の但し書きどおり保留する。
+
+**そのために create 経路の aspect 書き込みを 3 wrapper とも beforeEmit hook へ移した**
+(mail / note / business record)。移さないと emit が先に走り、読み戻しは archetype
+aspect を見つけられないので、この事実が黙って欠ける。skip 経路の fill 規則は不変。
+
+golden vector 3 本 (mail 単体 / mail+note 和集合 / LF 注入の単射性) は python で外部
+計算し、Java と一致を確認。hook を外すと `theEventCarriesTheArchetypeHash` だけが
+落ちることを実測した。

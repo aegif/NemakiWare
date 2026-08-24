@@ -112,6 +112,7 @@ public record LineageEventV2(
             "chat.selectionReason", "chat.evidenceScope",
             "chat.captureWindowStart", "chat.captureWindowEnd", "chat.capturedAt",
             "appliedChatEvidenceHash", "appliedSourceIdentityHash",
+            "appliedArchetypeEvidenceHash",
             "metadataHashSubject", "metadataHashFormula");
 
     /** The pre-(e) shape: digest version 1, no attribution, no fact compartments. */

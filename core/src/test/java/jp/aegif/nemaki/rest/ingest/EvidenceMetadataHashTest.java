@@ -55,6 +55,83 @@ class EvidenceMetadataHashTest {
         return a;
     }
 
+    private static final String MAIL = "nemaki:messageMetadata";
+    private static final String NOTE = "nemaki:noteMetadata";
+
+    @Test
+    @DisplayName("golden vector: the archetype hash of a fixed mail fixture")
+    void goldenArchetypeVector() {
+        // Computed OUTSIDE this codebase (python hashlib over the canonical form), like every
+        // other golden value here — a vector produced by the code it pins proves nothing.
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("nemaki:internetMessageId", "<abc@example.com>");
+        values.put("nemaki:mailSubject", "Q3 review");
+        values.put("nemaki:mailFrom", "otsuka@example.com");
+        // Stored shape: epoch millis as a Double, which is what the CouchDB round trip yields.
+        values.put("nemaki:mailSentAt", 1.7839944E12d);
+
+        String hash = EvidenceMetadataHash.hashOf(List.of(aspect(MAIL, values)),
+                EvidenceMetadataHash.ARCHETYPE_ASPECT_NAMES,
+                jp.aegif.nemaki.patch.Patch_ArchetypeMetadataEvidenceReadOnly
+                        .EVIDENCE_PROPERTIES);
+
+        assertEquals("mh1:4d729a2389b0d94021f1f94816b50ab64c1a092fd89f5414e4ab9a0e78d2de31", hash,
+                "the canonical form moved. If this is deliberate, the formula version must move "
+                        + "too (mh2), or rows recorded under mh1 become unverifiable without "
+                        + "saying so.");
+    }
+
+    @Test
+    @DisplayName("golden vector: two archetype aspects on one object union deterministically")
+    void goldenArchetypeUnionVector() {
+        // The product applies at most one archetype aspect per object, but the hash must not
+        // silently pick one if two ever arrive. The union is what the design promises, and its
+        // value is pinned so "pick the first" cannot pass.
+        Map<String, Object> mail = new LinkedHashMap<>();
+        mail.put("nemaki:internetMessageId", "<abc@example.com>");
+        mail.put("nemaki:mailSubject", "Q3 review");
+        mail.put("nemaki:mailFrom", "otsuka@example.com");
+        mail.put("nemaki:mailSentAt", 1.7839944E12d);
+        Map<String, Object> note = new LinkedHashMap<>();
+        note.put("nemaki:notePageId", "page-1");
+        note.put("nemaki:noteCreatedAt", 1.7839944E12d);
+
+        String hash = EvidenceMetadataHash.hashOf(
+                List.of(aspect(MAIL, mail), aspect(NOTE, note)),
+                EvidenceMetadataHash.ARCHETYPE_ASPECT_NAMES,
+                jp.aegif.nemaki.patch.Patch_ArchetypeMetadataEvidenceReadOnly
+                        .EVIDENCE_PROPERTIES);
+
+        assertEquals("mh1:03df624aaf794f128451303fb10f59ccae7cfe1174cfd3d3ed4a0e92a093d027", hash);
+    }
+
+    @Test
+    @DisplayName("the archetype hash escapes LF too — a value cannot swallow a line")
+    void archetypeEscapingIsInjective() {
+        Map<String, Object> forged = new LinkedHashMap<>();
+        forged.put("nemaki:internetMessageId",
+                "<abc@example.com>\nnemaki:mailSubject=FORGED");
+        Map<String, Object> honest = new LinkedHashMap<>();
+        honest.put("nemaki:internetMessageId", "<abc@example.com>");
+        honest.put("nemaki:mailSubject", "FORGED");
+
+        String forgedHash = EvidenceMetadataHash.hashOf(List.of(aspect(MAIL, forged)),
+                EvidenceMetadataHash.ARCHETYPE_ASPECT_NAMES,
+                jp.aegif.nemaki.patch.Patch_ArchetypeMetadataEvidenceReadOnly
+                        .EVIDENCE_PROPERTIES);
+        String honestHash = EvidenceMetadataHash.hashOf(List.of(aspect(MAIL, honest)),
+                EvidenceMetadataHash.ARCHETYPE_ASPECT_NAMES,
+                jp.aegif.nemaki.patch.Patch_ArchetypeMetadataEvidenceReadOnly
+                        .EVIDENCE_PROPERTIES);
+
+        assertEquals("mh1:5283633d4626a1834c6b1af95b0df7bf95cc1bb28fe9b7d5f21611d6caf4284f",
+                forgedHash);
+        assertEquals("mh1:a9451c5aba3a874f96ec8a8dd122d864baf4fd3fc08428c4db656a87175b3b90",
+                honestHash);
+        assertTrue(!forgedHash.equals(honestHash),
+                "a value swallowed a line boundary: a forged object would verify as MATCH");
+    }
+
     @Test
     @DisplayName("golden vector: the chat hash of a fixed fixture is this exact value")
     void goldenChatVector() {

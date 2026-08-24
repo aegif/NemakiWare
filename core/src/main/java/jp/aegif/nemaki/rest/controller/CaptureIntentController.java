@@ -223,6 +223,7 @@ public class CaptureIntentController {
             if (baseline == null) {
                 body.put("chatEvidence", "UNVERIFIABLE");
                 body.put("sourceIdentity", "UNVERIFIABLE");
+                body.put("archetypeEvidence", "UNVERIFIABLE");
                 body.put("reason", rows.isEmpty()
                         ? "no completed capture row exists for this object"
                         : "completed rows exist but none carries a metadata hash (recorded "
@@ -234,6 +235,7 @@ public class CaptureIntentController {
             if (content == null) {
                 body.put("chatEvidence", "UNVERIFIABLE");
                 body.put("sourceIdentity", "UNVERIFIABLE");
+                body.put("archetypeEvidence", "UNVERIFIABLE");
                 body.put("reason", "the object could not be read");
                 return ResponseEntity.ok(body);
             }
@@ -261,6 +263,9 @@ public class CaptureIntentController {
             body.put("sourceIdentity", verdict(
                     (String) baseline.get("appliedSourceIdentityHash"),
                     current.sourceIdentityHash(), laterActivity));
+            body.put("archetypeEvidence", verdict(
+                    (String) baseline.get("appliedArchetypeEvidenceHash"),
+                    current.archetypeEvidenceHash(), laterActivity));
             body.put("comparedIntentId", baseline.get("intentId"));
             body.put("comparedCapturedAtMs", baselineAtMs);
             if (laterActivity) {

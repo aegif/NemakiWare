@@ -18,7 +18,12 @@ package jp.aegif.nemaki.rest.ingest;
 
 import jp.aegif.nemaki.model.Aspect;
 import jp.aegif.nemaki.model.Property;
+import jp.aegif.nemaki.patch.Patch_ArchetypeMetadataEvidenceReadOnly;
+import jp.aegif.nemaki.patch.Patch_BusinessRecordMetadataSecondaryType;
 import jp.aegif.nemaki.patch.Patch_ChatContextEvidenceReadOnly;
+import jp.aegif.nemaki.patch.Patch_ChatContextMetadataSecondaryType;
+import jp.aegif.nemaki.patch.Patch_MessageMetadataSecondaryType;
+import jp.aegif.nemaki.patch.Patch_NoteMetadataSecondaryType;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -112,18 +117,51 @@ public final class EvidenceMetadataHash {
      * {@code Patch_ChatContextMetadataSecondaryType}; the golden-vector test pins the equality
      * of forms per id.
      */
-    public static final List<String> DATETIME_EVIDENCE_PROPERTIES = List.of(
-            "nemaki:chatCapturedAt",
-            "nemaki:chatCaptureWindowStart",
-            "nemaki:chatCaptureWindowEnd");
+    public static final List<String> DATETIME_EVIDENCE_PROPERTIES = buildDatetimeProperties();
+
+    private static List<String> buildDatetimeProperties() {
+        List<String> ids = new ArrayList<>(
+                Patch_ChatContextMetadataSecondaryType.DATETIME_PROPERTY_IDS);
+        // The archetype homes joined the hash on 2026-08-24. Their datetime properties MUST be
+        // here: without normalization a Calendar from a cache hit and a Long from the CouchDB
+        // round trip hash differently, so the same stored instant would read as MISMATCH — the
+        // F1 regression, one archetype over.
+        ids.addAll(Patch_MessageMetadataSecondaryType.DATETIME_PROPERTY_IDS);
+        ids.addAll(Patch_NoteMetadataSecondaryType.DATETIME_PROPERTY_IDS);
+        ids.addAll(Patch_BusinessRecordMetadataSecondaryType.DATETIME_PROPERTY_IDS);
+        return List.copyOf(ids);
+    }
+
+    /**
+     * The archetype evidence homes — mail, note and business record.
+     *
+     * <p>One hash across the three rather than three hashes: an object carries at most one
+     * archetype aspect ({@code applyArchetypeMetadata} is called once, with one type id), and
+     * the property-id namespaces do not overlap, so a union is unambiguous even in the case the
+     * product does not produce. Three near-empty fields would say the same thing at four times
+     * the width, in the record, in the completion evidence, in the journal fact keys and in the
+     * verify response.
+     */
+    public static final List<String> ARCHETYPE_ASPECT_NAMES = List.of(
+            Patch_MessageMetadataSecondaryType.TYPE_ID,
+            Patch_NoteMetadataSecondaryType.TYPE_ID,
+            Patch_BusinessRecordMetadataSecondaryType.TYPE_ID);
 
     private EvidenceMetadataHash() {
     }
 
-    /** Both hashes for one object's aspects, or null where nothing was there to hash. */
-    public record AppliedHashes(String chatEvidenceHash, String sourceIdentityHash) {
+    /** The hashes for one object's aspects, null where nothing was there to hash. */
+    public record AppliedHashes(String chatEvidenceHash, String sourceIdentityHash,
+                                String archetypeEvidenceHash) {
+
+        /** Pre-archetype shape, kept so callers that only know the two need not change. */
+        public AppliedHashes(String chatEvidenceHash, String sourceIdentityHash) {
+            this(chatEvidenceHash, sourceIdentityHash, null);
+        }
+
         public boolean isEmpty() {
-            return chatEvidenceHash == null && sourceIdentityHash == null;
+            return chatEvidenceHash == null && sourceIdentityHash == null
+                    && archetypeEvidenceHash == null;
         }
     }
 
@@ -137,15 +175,22 @@ public final class EvidenceMetadataHash {
         return new AppliedHashes(
                 hashOf(aspects, "nemaki:chatContextMetadata",
                         Patch_ChatContextEvidenceReadOnly.EVIDENCE_PROPERTIES),
-                hashOf(aspects, "nemaki:externalIntegration", SOURCE_IDENTITY_PROPERTIES));
+                hashOf(aspects, "nemaki:externalIntegration", SOURCE_IDENTITY_PROPERTIES),
+                hashOf(aspects, ARCHETYPE_ASPECT_NAMES,
+                        Patch_ArchetypeMetadataEvidenceReadOnly.EVIDENCE_PROPERTIES));
     }
 
     /** One hash, or null when the aspect holds none of the target properties. */
     static String hashOf(List<Aspect> aspects, String aspectName, List<String> propertyIds) {
+        return hashOf(aspects, List.of(aspectName), propertyIds);
+    }
+
+    /** As above, across several aspect names whose property-id namespaces do not overlap. */
+    static String hashOf(List<Aspect> aspects, List<String> aspectNames, List<String> propertyIds) {
         Map<String, String> canonical = new TreeMap<>();
         if (aspects != null) {
             for (Aspect aspect : aspects) {
-                if (aspect == null || !aspectName.equals(aspect.getName())
+                if (aspect == null || !aspectNames.contains(aspect.getName())
                         || aspect.getProperties() == null) {
                     continue;
                 }

@@ -185,6 +185,19 @@ public enum CaptureEvidenceField {
     APPLIED_SOURCE_IDENTITY_HASH("appliedSourceIdentityHash", V2Home.journalFact(),
             Assurance.OBSERVED, Disclosure.INTERNAL_ONLY),
 
+    /**
+     * As above, for the archetype evidence (mail / note / business record).
+     *
+     * <p>One fact, not three: an object carries at most one archetype aspect, and the hash is a
+     * union over the three homes whose property-id namespaces do not overlap
+     * ({@code EvidenceMetadataHash.ARCHETYPE_ASPECT_NAMES}). INTERNAL_ONLY for the same reason
+     * the other two are — a digest of evidence is a journal fact, and the archetype homes hold
+     * personal data (mailFrom/To/Cc, noteAuthor, recordOwner) whose disclosure question is open
+     * ((c) §8.1); a hash of it does not belong in a catalog either way.
+     */
+    APPLIED_ARCHETYPE_EVIDENCE_HASH("appliedArchetypeEvidenceHash", V2Home.journalFact(),
+            Assurance.OBSERVED, Disclosure.INTERNAL_ONLY),
+
     /** What the hashes are OF ("applied") — carried so rows outlive the formula's subject. */
     METADATA_HASH_SUBJECT("metadataHashSubject", V2Home.journalFact(),
             Assurance.OBSERVED, Disclosure.INTERNAL_ONLY),

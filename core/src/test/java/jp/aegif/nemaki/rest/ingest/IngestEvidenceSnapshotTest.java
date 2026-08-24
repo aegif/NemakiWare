@@ -726,6 +726,132 @@ class IngestEvidenceSnapshotTest {
     }
 
     @Test
+    @DisplayName("a business-record import's event carries the archetype hash (D-5, 3 types)")
+    void theEventCarriesTheArchetypeHash() {
+        // (c) §8.1 made the three archetype homes evidence types; metadata-hash §5-6 made the
+        // hash conditional on exactly that. For the event to carry it, the aspect must exist
+        // BEFORE the emit — so the create-path write moved into a beforeEmit hook, the same
+        // move D-5 made for chat. Without the hook the emit runs first and the read-back finds
+        // no archetype aspect, so this fact is simply absent.
+        RecordingEmitter emitter = new RecordingEmitter();
+        ArchetypeStore store = new ArchetypeStore();
+
+        assertTrue(runBusinessRecordImport(store, emitter).isSuccess(), "control");
+
+        assertTrue(store.written, "control: the hook must have written the aspect");
+        String hashOnEvent = emitter.passOutcome == null ? null
+                : emitter.passOutcome.get(CaptureEvidenceField.APPLIED_ARCHETYPE_EVIDENCE_HASH);
+        assertNotNull(hashOnEvent,
+                "the event does not carry the archetype evidence hash — the aspect was written "
+                        + "after the emit, so the read-back saw nothing");
+        assertEquals(EvidenceMetadataHash.compute(store.read().getAspects())
+                        .archetypeEvidenceHash(), hashOnEvent,
+                "recomputing from the stored state diverges from the event's copy — a write "
+                        + "slipped in after the emit");
+        assertEquals("mh1", emitter.passOutcome.get(CaptureEvidenceField.METADATA_HASH_FORMULA));
+    }
+
+    /** A document whose businessRecordMetadata aspect appears only once the hook writes it. */
+    private static final class ArchetypeStore {
+        private boolean written;
+
+        jp.aegif.nemaki.model.Document read() {
+            jp.aegif.nemaki.model.Document doc = new jp.aegif.nemaki.model.Document();
+            doc.setId("rec-1");
+            doc.setType("cmis:document");
+            List<Aspect> aspects = new ArrayList<>();
+            if (written) {
+                Aspect record = new Aspect();
+                record.setName("nemaki:businessRecordMetadata");
+                record.setProperties(new ArrayList<>(List.of(
+                        new Property("nemaki:recordId", "ACC-001"),
+                        new Property("nemaki:recordType", "Account"))));
+                aspects.add(record);
+            }
+            doc.setAspects(aspects);
+            return doc;
+        }
+    }
+
+    private static ExternalIngestResult runBusinessRecordImport(ArchetypeStore store,
+            RecordingEmitter emitter) {
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService connectorService =
+                org.mockito.Mockito.mock(
+                        jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService.class);
+        jp.aegif.nemaki.rest.ingest.ImportProfileDefinitionService profileService =
+                org.mockito.Mockito.mock(
+                        jp.aegif.nemaki.rest.ingest.ImportProfileDefinitionService.class);
+        jp.aegif.nemaki.businesslogic.ContentService contentService =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.businesslogic.ContentService.class);
+        jp.aegif.nemaki.cmis.service.ObjectService objectService =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.cmis.service.ObjectService.class);
+        IngestMetadataService metadataService =
+                org.mockito.Mockito.mock(IngestMetadataService.class);
+        // The real write is what makes the read-back non-empty; the mock stands in for it.
+        org.mockito.Mockito.when(metadataService.willWriteArchetypeMetadata(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(true);
+        org.mockito.Mockito.when(metadataService.applyArchetypeMetadata(
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> {
+                    store.written = true;
+                    return null;
+                });
+        service.setConnectorDefinitionService(connectorService);
+        service.setImportProfileDefinitionService(profileService);
+        service.setContentService(contentService);
+        service.setObjectService(objectService);
+        service.setIngestMetadataService(metadataService);
+        service.setIngestLineageEmitter(emitter);
+
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        org.mockito.Mockito.when(profileService.get("p1")).thenReturn(profile);
+
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(
+                jp.aegif.nemaki.rest.ingest.SourceArchetype.BUSINESS_RECORD);
+        connector.setSourceSystem("salesforce");
+        org.mockito.Mockito.when(connectorService.get("c1")).thenReturn(connector);
+        org.mockito.Mockito.when(objectService.createDocument(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.eq("bedroom"),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.eq("folder-1"),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        org.mockito.ArgumentMatchers.isNull(),
+                        org.mockito.ArgumentMatchers.isNull()))
+                .thenReturn("rec-1");
+        org.mockito.Mockito.when(contentService.getContent("bedroom", "rec-1"))
+                .thenAnswer(inv -> store.read());
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("ACC-001");
+        req.setSourceObjectType("record");
+        req.setFileName("account.txt");
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("recordId", "ACC-001");
+        metadata.put("recordType", "Account");
+        req.setMetadata(metadata);
+
+        return service.executeBusinessRecordImport(testContext(), req);
+    }
+
+    @Test
     @DisplayName("a hook failure fails the import — not a warning on a success")
     void hookFailurePropagates() {
         // Codex H5: catching the hook's exception and emitting anyway would let a pass whose

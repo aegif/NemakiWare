@@ -196,6 +196,7 @@ class IngestEvidenceCorrespondenceTest {
                         CaptureEvidenceField.CHAT_CAPTURED_AT, "2026-08-24T00:00:00Z",
                         CaptureEvidenceField.APPLIED_CHAT_EVIDENCE_HASH, "mh1:aa",
                         CaptureEvidenceField.APPLIED_SOURCE_IDENTITY_HASH, "mh1:bb",
+                        CaptureEvidenceField.APPLIED_ARCHETYPE_EVIDENCE_HASH, "mh1:cc",
                         CaptureEvidenceField.METADATA_HASH_SUBJECT, "applied",
                         CaptureEvidenceField.METADATA_HASH_FORMULA, "mh1")).keySet());
 

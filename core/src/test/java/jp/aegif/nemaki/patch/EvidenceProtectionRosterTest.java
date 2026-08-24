@@ -114,9 +114,19 @@ class EvidenceProtectionRosterTest {
                 patchRoster,
                 "the type patch declares a property the READONLY patch does not protect (or "
                         + "vice versa) — a new chat property would ship writable, silently");
+        // The datetime pin now spans all FOUR hashed homes (chat + the three archetypes that
+        // joined on 2026-08-24). A datetime declared by a type patch but missing here hashes as
+        // raw text, so a Calendar from a cache hit and a Long from the CouchDB round trip give
+        // different digests for the same stored instant — the F1 regression.
+        TreeSet<String> declaredDatetimes = new TreeSet<>();
+        declaredDatetimes.addAll(Patch_ChatContextMetadataSecondaryType.DATETIME_PROPERTY_IDS);
+        declaredDatetimes.addAll(Patch_MessageMetadataSecondaryType.DATETIME_PROPERTY_IDS);
+        declaredDatetimes.addAll(Patch_NoteMetadataSecondaryType.DATETIME_PROPERTY_IDS);
+        declaredDatetimes.addAll(
+                Patch_BusinessRecordMetadataSecondaryType.DATETIME_PROPERTY_IDS);
         assertEquals(new TreeSet<>(EvidenceMetadataHash.DATETIME_EVIDENCE_PROPERTIES),
-                new TreeSet<>(Patch_ChatContextMetadataSecondaryType.DATETIME_PROPERTY_IDS),
-                "the hash normalizes datetimes for a different set than the patch declares "
+                declaredDatetimes,
+                "the hash normalizes datetimes for a different set than the patches declare "
                         + "as DATETIME — a datetime added to one but not the other hashes as "
                         + "raw text on one side");
     }

@@ -282,7 +282,20 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 request.setSourceObjectType("message");
             }
 
-            ExternalIngestResult messageResult = execute(callContext, request, captureScope);
+            // (c) §8.1: messageMetadata is an evidence type since 2026-08-24 — the home of
+            // the RFC 2822 Message-ID — so the event must be able to carry its applied hash,
+            // which needs the aspect to exist BEFORE the emit. Same move D-5 made for chat.
+            String[] mailHookMetaError = {null};
+            BeforeEmitHook messageAspectApplication = (objectId, createdObject) -> {
+                captureScope.ensureIntentOpened();
+                String err = ingestMetadataService.applyMessageMetadata(
+                        request.getRepositoryId(), objectId, callContext, parsed, request);
+                recordWrapperUpdate(captureScope, "applyMessageMetadata", err);
+                mailHookMetaError[0] = err;
+                return java.util.Map.of();
+            };
+            ExternalIngestResult messageResult = execute(callContext, request, captureScope,
+                    messageAspectApplication);
             if (!messageResult.isSuccess()) {
                 return messageResult;
             }
@@ -336,10 +349,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                             fill.refused(), warnings);
                 }
             } else {
-                captureScope.ensureIntentOpened();
-                metaError = ingestMetadataService.applyMessageMetadata(
-                        request.getRepositoryId(), messageObjectId, callContext, parsed, request);
-                recordWrapperUpdate(captureScope, "applyMessageMetadata", metaError);
+                // Already written, inside execute(), as the beforeEmit hook — that is what lets
+                // the event carry the applied hash.
+                metaError = mailHookMetaError[0];
             }
             if (metaError != null) warnings.add(metaError);
 
@@ -527,10 +539,29 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         String pageSkipReason = null;
 
         if (importBody) {
-            ExternalIngestResult pageResult = execute(callContext, request, captureScope);
+            // (c) §8.1: noteMetadata is an evidence type since 2026-08-24, so the event must be
+            // able to carry its applied-metadata hash — which needs the aspect to exist BEFORE
+            // the emit. Same move D-5 made for chat. Dry runs never reach the hook (execute()
+            // does not call it on a dry run), so the guard below stays as it is.
+            List<String> noteHookWarnings = new ArrayList<>();
+            String[] noteHookMetaError = {null};
+            BeforeEmitHook noteAspectApplication = (objectId, createdObject) -> {
+                boolean tracked = openIfWriting(captureScope,
+                        ingestMetadataService.willWriteNoteMetadata(request));
+                String err = ingestMetadataService.applyNoteMetadata(request.getRepositoryId(),
+                        objectId, callContext, request);
+                if (tracked) {
+                    recordWrapperUpdate(captureScope, "applyNoteMetadata", err);
+                }
+                noteHookMetaError[0] = err;
+                return java.util.Map.of();
+            };
+            ExternalIngestResult pageResult = execute(callContext, request, captureScope,
+                    noteAspectApplication);
             if (!pageResult.isSuccess()) {
                 return pageResult;
             }
+            warnings.addAll(noteHookWarnings);
             pageObjectId = pageResult.objectId();
             pageVersionLabel = pageResult.versionLabel();
             pageNewVersion = pageResult.isNewVersion();
@@ -570,12 +601,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                                 fill.refused(), warnings);
                     }
                 } else {
-                    boolean tracked = openIfWriting(captureScope,
-                            ingestMetadataService.willWriteNoteMetadata(request));
-                    metaError = ingestMetadataService.applyNoteMetadata(request.getRepositoryId(), pageObjectId, callContext, request);
-                    if (tracked) {
-                        recordWrapperUpdate(captureScope, "applyNoteMetadata", metaError);
-                    }
+                    // Already written, inside execute(), as the beforeEmit hook — that is what
+                    // lets the event carry the applied hash.
+                    metaError = noteHookMetaError[0];
                 }
                 if (metaError != null) warnings.add(metaError);
             }
@@ -803,7 +831,33 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (request.getSourceObjectType() == null || request.getSourceObjectType().isBlank()) {
             request.setSourceObjectType("record");
         }
-        ExternalIngestResult result = execute(callContext, request, captureScope);
+        String[][] brFields = {
+                {"nemaki:recordType", "recordType"}, {"nemaki:recordId", "recordId"},
+                {"nemaki:recordUrl", "recordUrl"}, {"nemaki:recordStatus", "recordStatus"},
+                {"nemaki:recordOwner", "recordOwner"}, {"nemaki:processInstanceId", "processInstanceId"},
+        };
+        // P1-1(c) §8.1 / metadata-hash §5-6: the archetype homes became evidence types on
+        // 2026-08-24, so the event must be able to carry their applied-metadata hash. That
+        // needs the aspect to EXIST before the emit — the same move D-5 made for chat. The
+        // create-path aspect write therefore runs inside execute(), as a beforeEmit hook.
+        // The hook returns no facts of its own: the hash is read back by
+        // appendAppliedHashFacts, from the object, after this has written to it.
+        List<String> hookWarnings = new ArrayList<>();
+        String[] hookMetaError = {null};
+        BeforeEmitHook archetypeAspectApplication = (objectId, createdObject) -> {
+            boolean tracked = openIfWriting(captureScope,
+                    ingestMetadataService.willWriteArchetypeMetadata(request, brFields));
+            String err = ingestMetadataService.applyArchetypeMetadata(request.getRepositoryId(),
+                    objectId, callContext, "nemaki:businessRecordMetadata", request, brFields);
+            if (tracked) {
+                recordWrapperUpdate(captureScope, "applyArchetypeMetadata", err);
+            }
+            hookMetaError[0] = err;
+            return java.util.Map.of();
+        };
+
+        ExternalIngestResult result = execute(callContext, request, captureScope,
+                archetypeAspectApplication);
         if (!result.isSuccess()) return result;
         // An empty/pseudo-file skip (objectId == null) has no object to decorate;
         // return it verbatim. A dedupe skip (objectId != null) falls through to
@@ -817,11 +871,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         failureState.committedObjectId = result.objectId();
         List<String> warnings = failureState.warnings;
         warnings.addAll(result.warnings());
-        String[][] brFields = {
-                {"nemaki:recordType", "recordType"}, {"nemaki:recordId", "recordId"},
-                {"nemaki:recordUrl", "recordUrl"}, {"nemaki:recordStatus", "recordStatus"},
-                {"nemaki:recordOwner", "recordOwner"}, {"nemaki:processInstanceId", "processInstanceId"},
-        };
+        warnings.addAll(hookWarnings);
         // D-7: D6's rule, extended — on a skip pass no event was emitted, so fill gaps and
         // refuse changes; on a real capture, write as before.
         String metaError;
@@ -847,13 +897,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         warnings);
             }
         } else {
-            boolean brFieldsTracked = openIfWriting(captureScope,
-                    ingestMetadataService.willWriteArchetypeMetadata(request, brFields));
-            metaError = ingestMetadataService.applyArchetypeMetadata(request.getRepositoryId(), result.objectId(), callContext,
-                    "nemaki:businessRecordMetadata", request, brFields);
-            if (brFieldsTracked) {
-                recordWrapperUpdate(captureScope, "applyArchetypeMetadata", metaError);
-            }
+            // The real-capture write already happened, inside execute(), as the beforeEmit
+            // hook — that is what lets the event carry the applied hash. Repeating it here
+            // would be a second write of the same values.
+            metaError = hookMetaError[0];
         }
         if (metaError != null) warnings.add(metaError);
 
@@ -1075,6 +1122,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (hashes.sourceIdentityHash() != null) {
                 facts.put(CaptureEvidenceField.APPLIED_SOURCE_IDENTITY_HASH,
                         hashes.sourceIdentityHash());
+            }
+            if (hashes.archetypeEvidenceHash() != null) {
+                facts.put(CaptureEvidenceField.APPLIED_ARCHETYPE_EVIDENCE_HASH,
+                        hashes.archetypeEvidenceHash());
             }
             facts.put(CaptureEvidenceField.METADATA_HASH_SUBJECT, EvidenceMetadataHash.SUBJECT);
             facts.put(CaptureEvidenceField.METADATA_HASH_FORMULA, EvidenceMetadataHash.FORMULA);
@@ -2057,6 +2108,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             }
             if (hashes.sourceIdentityHash() != null) {
                 evidence.put("appliedSourceIdentityHash", hashes.sourceIdentityHash());
+            }
+            if (hashes.archetypeEvidenceHash() != null) {
+                evidence.put("appliedArchetypeEvidenceHash", hashes.archetypeEvidenceHash());
             }
             evidence.put("metadataHashSubject", EvidenceMetadataHash.SUBJECT);
             evidence.put("metadataHashFormula", EvidenceMetadataHash.FORMULA);
