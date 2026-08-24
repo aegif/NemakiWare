@@ -136,7 +136,19 @@ export const SecondaryTypeSelector: React.FC<SecondaryTypeSelectorProps> = ({
           onUpdate?.(updated);
         } catch (error) {
           console.error('Failed to remove secondary type:', error);
-          message.error(t('secondaryTypes.messages.removeError'));
+          // Show the SERVER's reason when it gave one. Since 2026-08-24 a capture-evidence
+          // type is refused with a CMIS constraint exception whose message says why and what
+          // to do instead (delete AND destroy the archive). Collapsing that into the generic
+          // "removal failed" leaves the operator to guess — and this is the one removal that
+          // is refused on purpose.
+          const reason =
+            (error as { response?: { data?: { message?: string } }; message?: string })
+              ?.response?.data?.message ??
+            (error as { message?: string })?.message;
+          message.error(
+            reason ? `${t('secondaryTypes.messages.removeError')}: ${reason}`
+                   : t('secondaryTypes.messages.removeError')
+          );
         } finally {
           setUpdating(false);
         }

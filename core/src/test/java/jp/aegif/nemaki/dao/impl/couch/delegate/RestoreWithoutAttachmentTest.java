@@ -23,6 +23,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -42,6 +45,61 @@ import static org.mockito.Mockito.verifyNoInteractions;
  * purpose. This pins it.
  */
 class RestoreWithoutAttachmentTest {
+
+    @Test
+    @DisplayName("a document that names no attachment: nothing to restore")
+    void namesNoAttachmentIsNone() {
+        jp.aegif.nemaki.model.Archive doc = new jp.aegif.nemaki.model.Archive();
+        doc.setId("arc-1");
+        doc.setAttachmentNodeId(null);
+        ArchiveDaoDelegate delegate = new ArchiveDaoDelegate(mock(CloudantClientPool.class),
+                mock(RepositoryInfoMap.class), null);
+
+        assertInstanceOf(ArchiveDaoDelegate.AttachmentArchiveLookup.None.class,
+                delegate.lookupAttachmentArchive("bedroom", doc),
+                "the case the restore drill hit: a normal document with no attachment");
+    }
+
+    @Test
+    @DisplayName("a document that NAMES an attachment the archive does not hold is UNAVAILABLE")
+    void namedButMissingAttachmentIsUnavailable() {
+        // The hole the first fix opened (external review): guarding the dereference made this
+        // case — and an unreadable archive database — restore "successfully" without content.
+        // Absent and could-not-read must not be the same answer (roadmap §2-1, at the restore
+        // door).
+        jp.aegif.nemaki.model.Archive doc = new jp.aegif.nemaki.model.Archive();
+        doc.setId("arc-1");
+        doc.setAttachmentNodeId("att-node-1");
+        CloudantClientPool pool = mock(CloudantClientPool.class);
+        RepositoryInfoMap infoMap = mock(RepositoryInfoMap.class);
+        when(infoMap.getArchiveId("bedroom")).thenReturn("bedroom_archive");
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper client =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+        when(pool.getClient("bedroom_archive")).thenReturn(client);
+        when(client.queryView(any(), any(), any(), any())).thenReturn(java.util.List.of());
+        ArchiveDaoDelegate delegate = new ArchiveDaoDelegate(pool, infoMap, null);
+
+        assertInstanceOf(ArchiveDaoDelegate.AttachmentArchiveLookup.Unavailable.class,
+                delegate.lookupAttachmentArchive("bedroom", doc),
+                "a document whose content is missing from the archive restored as a success");
+    }
+
+    @Test
+    @DisplayName("a lookup that THREW is UNAVAILABLE, not 'there is none'")
+    void aFailedLookupIsUnavailable() {
+        jp.aegif.nemaki.model.Archive doc = new jp.aegif.nemaki.model.Archive();
+        doc.setId("arc-1");
+        doc.setAttachmentNodeId("att-node-1");
+        CloudantClientPool pool = mock(CloudantClientPool.class);
+        RepositoryInfoMap infoMap = mock(RepositoryInfoMap.class);
+        when(infoMap.getArchiveId("bedroom")).thenReturn("bedroom_archive");
+        when(pool.getClient("bedroom_archive")).thenThrow(new RuntimeException("db down"));
+        ArchiveDaoDelegate delegate = new ArchiveDaoDelegate(pool, infoMap, null);
+
+        assertInstanceOf(ArchiveDaoDelegate.AttachmentArchiveLookup.Unavailable.class,
+                delegate.lookupAttachmentArchive("bedroom", doc),
+                "an unreadable archive database read as 'this document has no attachment'");
+    }
 
     @Test
     @DisplayName("a null attachment archive is nothing to restore, not a failure")

@@ -225,7 +225,7 @@ READONLY プロパティを黙って無視するのは CMIS の**通常の挙動
 
 | # | 条件 | 負のコントロール |
 |---|---|---|
-| 1 | 証拠型を**含まない** `cmis:secondaryObjectTypeIds` を送っても、aspect が**残る** | 保護を外すと落ちる |
+| 1 | 証拠型を**含まない** `cmis:secondaryObjectTypeIds` を**明示的に送ると `CmisConstraintException`** (§4.1、CMIS 1.1 §2.1.9.1 の MUST)。id リストを**送らない**更新では、型が解決できなくても aspect が**残る** | 明示経路: 例外を外すと落ちる / 暗黙経路: 保護を外すと落ちる。**2 つは別の条件**で、片方だけ実装すると他方が落ちる |
 | 2 | **型定義が解決できなくても**証拠 aspect が残る (§1.1 の第 3 の経路) | 解決失敗時の引き継ぎを外すと落ちる。`getTypeDefinition` に null を返させて確かめる |
 | 3 | `secondaryIds` と aspect が**食い違わない** (更新経路) | `modifyProperties` は aspect リストから id を導出するので**構造的に真**。**弱い条件だと明記する**。作成経路 (`setBaseProperties`) は生のリクエスト値を id に書くので食い違いを作れるが、**作成時には守るべき既存の証拠が無い**ので、この増分では触らない |
 | 4 | **証拠でない** secondary type は**従来どおり外せる** — 条件 1 の control | 全 aspect を保つ実装にすると落ちる |
@@ -240,8 +240,14 @@ READONLY プロパティを黙って無視するのは CMIS の**通常の挙動
 
 ## 6. 運用文書に書くこと
 
-- **証拠型は `cmis:secondaryObjectTypeIds` から外せない。** リクエストは 400 にならず、
-  **その型だけが黙って残る**。プロパティの READONLY と同じ挙動 ((c) §7)
+- **証拠型は `cmis:secondaryObjectTypeIds` から外せない。** 外そうとした更新は
+  **`CmisConstraintException` で拒否される** (§4.1)。CMIS 1.1 §2.1.9.1 が
+  「secondary type を add / remove できないなら constraint 例外を投げなければならない」と
+  MUST で定めており、初稿の「黙って残る」は**仕様からの逸脱だった**。
+  - **プロパティの READONLY とは挙動が違う** ((c) §7)。READONLY 値を黙って無視するのは
+    CMIS の通常の挙動で、仕様は例外を要求していない。型の除去だけが MUST を持つ
+  - **拒否されるのは「明示的に外そうとした」ときだけ**。id リストを送らない更新は
+    誰も除去を要求していないので、型が解決できなくても aspect は黙って保たれる
 - **誤って取り込んだものを片付けるには `destroyArchive` まで必要である。**
   通常の削除は archive に証拠ごと複写し、restore で戻る (§4.1)
 - **来歴イベントは削除では消えない。** 別 DB に残る
@@ -268,7 +274,11 @@ READONLY プロパティを黙って無視するのは CMIS の**通常の挙動
 - 型定義への印 ((ii))。型システム変更を伴うので、必要になったときに別途
 - 他の secondary type の保護。**証拠型だけ**が対象
 - 削除・archive・`destroyArchive` の挙動の変更。**事実として記録するだけ** (§4.1)
-- `bulkUpdateProperties` の `removeSecondaryTypeIds` — **現状そもそも読まれていない**
-  (既存の不具合)。この作業では触らない
+- ~~`bulkUpdateProperties` の `removeSecondaryTypeIds` — 現状そもそも読まれていない
+  (既存の不具合)。この作業では触らない~~ → **2026-08-23 解消**:
+  `withSecondaryTypeChanges` が add/remove を `cmis:secondaryObjectTypeIds` に畳んでから
+  `updateProperties` へ渡すので、要求どおり `modifyProperties` →
+  `keepEvidenceAspects` 経由になる (`BulkUpdateSecondaryTypeChangesTest`)。
+  したがって bulk 経由の証拠型除去も §4.1 の拒否に従う
 - 「分かち難く結合した保護属性」(A.1) の主張そのもの。**この作業が済んだら
   改めて範囲を確かめて名乗る** — 先に名乗らない

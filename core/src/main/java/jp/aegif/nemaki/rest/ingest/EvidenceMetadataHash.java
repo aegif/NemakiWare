@@ -42,10 +42,14 @@ import java.util.TreeMap;
  *   <li><b>Applied values, read back — never the request.</b> The lineage event carries what was
  *       REQUESTED ({@code assuranceAsserted} names it), and the wrapper's writes can fail into a
  *       warning. Hashing the request would notarize a claim.</li>
- *   <li><b>Two hashes, not one.</b> The chat properties are READONLY through CMIS, so a mismatch
- *       there means an unrecorded change from day one. The source-identity properties stay
- *       CMIS-writable until their own read-only migration, so their mismatch means "changed
- *       since capture" — mixing the two would let a legitimate edit read as tampering.</li>
+ *   <li><b>Separate hashes, not one.</b> THREE since 2026-08-24: chat, source identity, and the
+ *       archetype homes (mail / note / business record). The original reason was that chat was
+ *       READONLY from day one while the source-identity properties were still CMIS-writable, so
+ *       "an unrecorded change" and "changed since capture" were different claims and mixing them
+ *       would let a legitimate edit read as tampering. <b>All three compartments are READONLY
+ *       now</b> — source identity since D-7, the archetypes since (c) §8.1 — so the reason is
+ *       narrower today: a mismatch has to name WHICH evidence moved, and one digest over
+ *       everything cannot.</li>
  * </ul>
  *
  * <h2>What the escaping guarantees — and what it does not</h2>

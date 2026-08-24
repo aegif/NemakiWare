@@ -74,30 +74,73 @@ public class ArchiveDaoDelegate {
 		}
 	}
 
+	/**
+	 * The three answers a lookup for an archived attachment can give.
+	 *
+	 * <h2>Why this is not just {@code null}</h2>
+	 *
+	 * <p>It used to be. One {@code null} meant all three of "this document never had an
+	 * attachment", "it names one but no archive row exists" and "the lookup failed" — and the
+	 * caller dereferenced it, so all three became an NPE that was rethrown as "Failed to restore
+	 * attachment". That reported a failure for the first case, which is not one (found by the
+	 * first restore drill, 2026-08-24).
+	 *
+	 * <p>Guarding the dereference fixed that case and made the OTHER two silently succeed:
+	 * an unreadable archive database, or a document whose attachment row is missing, would
+	 * restore "successfully" without its content. That is the same collapse of "absent" into
+	 * "could not read" the roadmap holds as the DAO fail-fast work (§2-1) — reproduced at the
+	 * restore door by the guard that was supposed to fix it (external review).
+	 */
+	public sealed interface AttachmentArchiveLookup {
+		/** The document names no attachment. There is nothing to restore, and that is normal. */
+		record None() implements AttachmentArchiveLookup { }
+
+		/** The document names an attachment whose archive row is missing, or the read failed. */
+		record Unavailable(String reason) implements AttachmentArchiveLookup { }
+
+		/** Found. */
+		record Found(Archive archive) implements AttachmentArchiveLookup { }
+	}
+
+	/** As {@link #lookupAttachmentArchive}, but collapsing every answer to the archive or null. */
 	public Archive getAttachmentArchive(String repositoryId, Archive archive) {
+		AttachmentArchiveLookup lookup = lookupAttachmentArchive(repositoryId, archive);
+		return lookup instanceof AttachmentArchiveLookup.Found found ? found.archive() : null;
+	}
+
+	/** Which of the three answers this lookup has — see {@link AttachmentArchiveLookup}. */
+	public AttachmentArchiveLookup lookupAttachmentArchive(String repositoryId, Archive archive) {
+		if (archive == null) {
+			return new AttachmentArchiveLookup.Unavailable("no document archive was given");
+		}
 		try {
 			// Use the archive's attachmentNodeId to find the attachment archive.
 			// The "attachments" view emits by originalId, and attachmentNodeId is
 			// the originalId of the attachment that was archived alongside the document.
 			String attachmentNodeId = archive.getAttachmentNodeId();
 			if (attachmentNodeId == null || attachmentNodeId.isEmpty()) {
-				log.warn("No attachmentNodeId on archive: " + archive.getId());
-				return null;
+				log.info("Archive " + archive.getId() + " names no attachment; nothing to restore");
+				return new AttachmentArchiveLookup.None();
 			}
-
 
 			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
 			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
 			List<CouchArchive> couchArchives = client.queryView("_repo", "attachments", attachmentNodeId, CouchArchive.class);
 
-			if (!couchArchives.isEmpty()) {
-				return couchArchives.get(0).convert();
+			if (couchArchives != null && !couchArchives.isEmpty()) {
+				return new AttachmentArchiveLookup.Found(couchArchives.get(0).convert());
 			}
 
-			return null;
+			// The document SAYS it has an attachment and the archive does not hold it. Restoring
+			// the document without it and calling that success would hand back a document whose
+			// content is gone, silently.
+			return new AttachmentArchiveLookup.Unavailable("archive " + archive.getId()
+					+ " names attachment " + attachmentNodeId + " but no archived attachment "
+					+ "row exists for it");
 		} catch (Exception e) {
 			log.error("Error getting attachment archive for: " + archive.getId() + " in repository: " + repositoryId, e);
-			return null;
+			return new AttachmentArchiveLookup.Unavailable("the attachment archive could not be "
+					+ "read: " + e.getClass().getSimpleName() + ": " + e.getMessage());
 		}
 	}
 
@@ -726,8 +769,15 @@ public class ArchiveDaoDelegate {
 
 	public void restoreDocumentWithArchive(String repositoryId, Archive contentArchive) {
 		restoreContent(repositoryId, contentArchive);
-		// Restore its attachment
-		Archive attachmentArchive = getAttachmentArchive(repositoryId, contentArchive);
+		// Restore its attachment — but only after separating "there is none" from "we could
+		// not get it". Both used to arrive here as null (see AttachmentArchiveLookup).
+		AttachmentArchiveLookup lookup = lookupAttachmentArchive(repositoryId, contentArchive);
+		if (lookup instanceof AttachmentArchiveLookup.Unavailable unavailable) {
+			throw new RuntimeException("Failed to restore attachment from archive: "
+					+ unavailable.reason());
+		}
+		Archive attachmentArchive = lookup instanceof AttachmentArchiveLookup.Found found
+				? found.archive() : null;
 		restoreAttachment(repositoryId, attachmentArchive);
 
 		// DEFENSIVE FIX: After both document and attachment are restored,

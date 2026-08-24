@@ -2685,14 +2685,20 @@ public class ContentServiceImpl implements ContentService {
 	 * P1-1(c) §5.1 already decided for properties ("a type we cannot read is not a reason to lose
 	 * evidence"), one level up (external review).
 	 *
-	 * <h2>Why preserve rather than reject</h2>
+	 * <h2>Preserve on the implicit route, REFUSE on the explicit one</h2>
 	 *
-	 * <p>P1-1(c) chose silent preservation for READONLY properties. Throwing here would make the
-	 * same protection succeed on one route and fail the whole request on another, and it would
-	 * break clients that send the list without meaning anything by the evidence type's absence.
+	 * <p>The two are different requests. When the caller supplied no
+	 * {@code cmis:secondaryObjectTypeIds}, nobody asked for a removal — the list was rebuilt
+	 * from the object's own aspects, and a type can drop out of it merely because the cache
+	 * could not resolve it. Preserving is right there, and throwing would fail unrelated
+	 * updates during a rolling restart.
 	 *
-	 * <p>Not silent to an operator, though: it logs. And the caller is not misled about the
-	 * object — a subsequent read shows the type still attached.
+	 * <p>When the caller DID supply the list and left an evidence type out, that is a removal
+	 * request, and CMIS 1.1 §2.1.9.1 requires a constraint exception for a secondary type that
+	 * cannot be removed — MUST, not SHOULD. The first draft chose silence here on the grounds
+	 * that P1-1(c) chose silence for READONLY properties; reading the specification (2026-08-24)
+	 * showed the two are not alike. Ignoring a READONLY value is CMIS's ordinary behaviour and
+	 * carries no required exception; removing a type does. See evidence-types §4.1.
 	 *
 	 * @param rebuilt the aspects this call constructed, which is what would be stored
 	 * @param existing the aspects the object already had, by name

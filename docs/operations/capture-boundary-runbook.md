@@ -120,7 +120,7 @@ curl -u admin:admin -H "X-Requested-With: XMLHttpRequest" \
 
 | 設定 | 既定 | 意味 |
 |---|---|---|
-| `lineage.capture-boundary.stale.minutes` | 15 (**実効下限 = `ingest.scheduler.fetchTimeoutMinutes` + 5 = 既定 35**) | これを超えて開いたままなら `UNRESOLVED`。2026-08-24 から掃引閾値は fetch timeout に**自動連動**し、既定構成で「実行中の取込が死亡判定される」ことは起きません。これより大きい値の設定は従来どおり尊重。**保証ではありません**: timeout は interrupt するだけで join せず、webhook / IMAP IDLE 経路には timeout wrapper が無いため、interrupt を無視する fetch は掃引後に生き残って書き得ます (P1-1(e) §4) |
+| `lineage.capture-boundary.stale.minutes` | 15 (**実効下限 = `ingest.scheduler.fetchTimeoutMinutes` + 5 = 既定 35**) | これを超えて開いたままなら `UNRESOLVED`。2026-08-24 から掃引閾値は fetch timeout に**自動連動**し、既定構成で「実行中の取込が死亡判定される」ことは起きません。これより大きい値の設定は従来どおり尊重。2026-08-24 から**さらに lease** が入り、実行側が進捗のたびに `leaseExpiresAtMs` を前へ押します。**進捗している取込は、どれだけ長くても死亡判定されません**。残る誤差は「延長と延長の間 (最大 5 分) で死んだ pass は、その分だけ遅れて掃かれる」ことだけです。lease を持たない旧行は従来どおり年齢で掃かれます |
 | `lineage.capture-boundary.sweep.interval.minutes` | 5 | 掃引の間隔 |
 | `lineage.capture-boundary.sweep.batch` | 200 | 1 回で触る行数の上限 |
 

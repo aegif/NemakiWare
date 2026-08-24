@@ -629,6 +629,78 @@ class CouchCaptureIntentStoreTest {
     }
 
     @Test
+    @DisplayName("a LIVE lease is not swept — a long healthy pass is not a dead one")
+    void sweepHonoursALiveLease() {
+        // capture-outbox M5's root fix. Age alone cannot tell a mail with fifty attachments
+        // from a process that died: P1-1(e) Step 4 raised the threshold and recorded that as a
+        // MITIGATION, not a guarantee. The lease is the liveness signal — the executing side
+        // pushes it forward as it makes progress.
+        FakeSupport support = new FakeSupport();
+        Map<String, Object> live = row("lineage_capture:i-1", CaptureState.CAPTURE_INTENT,
+                "bedroom");
+        live.put(CaptureIntent.LEASE_FIELD, System.currentTimeMillis() + 60_000L);
+        support.viewRows.add(live);
+
+        assertEquals(0, new CouchCaptureIntentStore(support).sweepExpiredIntents(9_999L, 100),
+                "a pass that is still making progress was reported as unresolved");
+        assertTrue(support.docs.isEmpty(), "and its row must not have been rewritten");
+    }
+
+    @Test
+    @DisplayName("an EXPIRED lease is swept — the pass stopped pushing it forward")
+    void sweepTakesAnExpiredLease() {
+        // The counterweight: honouring any lease at all would make the sweeper useless. A
+        // process that died stops extending, and the row must then be reported.
+        FakeSupport support = new FakeSupport();
+        Map<String, Object> dead = row("lineage_capture:i-1", CaptureState.CAPTURE_INTENT,
+                "bedroom");
+        dead.put(CaptureIntent.LEASE_FIELD, System.currentTimeMillis() - 1L);
+        support.viewRows.add(dead);
+
+        assertEquals(1, new CouchCaptureIntentStore(support).sweepExpiredIntents(9_999L, 100));
+        assertEquals(CaptureState.UNRESOLVED.name(),
+                support.docs.get("lineage_capture:i-1").get("captureState"));
+    }
+
+    @Test
+    @DisplayName("a row written BEFORE the lease existed is still governed by age")
+    void sweepFallsBackToAgeWithoutALease() {
+        // Rows opened by an older binary carry no lease field. Treating "no lease" as "leased
+        // for ever" would strand every one of them in CAPTURE_INTENT permanently.
+        FakeSupport support = new FakeSupport();
+        support.viewRows.add(row("lineage_capture:i-1", CaptureState.CAPTURE_INTENT, "bedroom"));
+
+        assertEquals(1, new CouchCaptureIntentStore(support).sweepExpiredIntents(9_999L, 100));
+    }
+
+    @Test
+    @DisplayName("extendLease pushes an open row forward and leaves a finished row alone")
+    void extendLeaseOnlyTouchesOpenRows() {
+        FakeSupport support = new FakeSupport();
+        Map<String, Object> open = row("lineage_capture:i-1", CaptureState.CAPTURE_INTENT,
+                "bedroom");
+        open.put(CaptureIntent.LEASE_FIELD, 1L);
+        support.docs.put("lineage_capture:i-1", open);
+        CaptureIntent intent = new CaptureIntent("lineage_capture:i-1", "i-1",
+                1_700_000_000_000L, "bedroom", "c1", "slack", "message", "src-1", "req-1",
+                "IMPORT", "admin", null);
+
+        new CouchCaptureIntentStore(support).extendLease(intent);
+        assertTrue(((Number) support.docs.get("lineage_capture:i-1")
+                        .get(CaptureIntent.LEASE_FIELD)).longValue() > 1L,
+                "the open row's lease was not pushed forward");
+
+        // A completed row is not this method's business: extending it would rewrite a finished
+        // record, and extending a swept one would resurrect something already reported.
+        Map<String, Object> done = support.docs.get("lineage_capture:i-1");
+        done.put("captureState", CaptureState.CAPTURED.name());
+        long frozen = ((Number) done.get(CaptureIntent.LEASE_FIELD)).longValue();
+        new CouchCaptureIntentStore(support).extendLease(intent);
+        assertEquals(frozen, ((Number) support.docs.get("lineage_capture:i-1")
+                .get(CaptureIntent.LEASE_FIELD)).longValue());
+    }
+
+    @Test
     @DisplayName("the sweeper re-checks the state instead of trusting the view")
     void sweepRechecksState() {
         // A view group is allowed to answer from a stale index, and the ingest may have completed

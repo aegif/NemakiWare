@@ -287,7 +287,10 @@ tripwire は**そのまま残す** — constraint が誤って外された日に
 - **誤った証拠を直す経路は取込のやり直し**であって、管理画面からの編集ではない
 - **これ以前に書き換えられた値は元に戻らない**
 - ~~**`cmis:secondaryObjectTypeIds` から型ごと外せば aspect ごと消える**~~ — **対応済み**
-  (2026-08-22)。証拠型は外せない。リクエストは 400 にならず、その型だけが黙って残る
+  (2026-08-22)。証拠型は外せない。**2026-08-24 から、明示的に外そうとした更新は
+  `CmisConstraintException` で拒否される** (evidence-types §4.1 — CMIS 1.1 §2.1.9.1 が
+  MUST で要求している)。id リストを送らない更新は従来どおり黙って保たれる。
+  **プロパティ側の「黙って無視」とは別**で、そちらは仕様の通常挙動
 - **古いエクスポートの取り込みは、`updatability` の無い型を拒否する** (§5.3)。
   移行するには archive に `updatability` を足すか、型 API 側で作る
 - **ローリング再起動中は、未再起動のレプリカが保護前の型定義で動く** (§5.4)
@@ -327,7 +330,8 @@ tripwire は**そのまま残す** — constraint が誤って外された日に
 
 **帰結として自動的に付いてくるもの** (PROTECTED の既存の意味):
 
-- `keepEvidenceAspects` — 型リストから外れても・型が解決できなくても aspect を保つ
+- `keepEvidenceAspects` — 型が解決できなくても aspect を保つ。**型リストから
+  明示的に外された場合は保たずに拒否する** (evidence-types §4.1、2026-08-24)
 - `stripEvidenceForNewObject` — copy (新 objectId 鋳造) では証拠を運ばない
 - `ZipImporter.stripEvidenceAssertions` — archive の主張は import 前に除去し警告に名指し
   (ロスターは定数合成なので、下の public 昇格だけで自動的に広がる)

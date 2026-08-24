@@ -1164,11 +1164,20 @@ scope に記録する。子の処理で作る relationship は、親のフレー
   `unwritableIntentStopsCheckOut`)。version-up 経路では checkOut が最初の変更であり、
   さらに **checkOut が成功して checkIn が走らないと文書が CHECKED OUT で固まり、
   同じ項目の以後の取込が永久にそこで落ちる**ため、優先して閉じた
-- **M5 実行中の取込が `UNRESOLVED` に見える** — **2026-08-24 緩和済み** (P1-1(e) Step 4):
-  sweeper の実効 stale 閾値を max(設定値, fetch timeout + 5 分) に接いだ
-  (`CaptureIntentSweeper`、キーと既定値は `IngestSchedulerService` と共有)。これは
-  **既定値の矛盾の解消**であって liveness 保証ではない — §6.9-3 の lease / heartbeat は
-  依然実装していない (fetch timeout を人為的に短く設定すれば誤報は再現しうる)
+- **M5 実行中の取込が `UNRESOLVED` に見える** — **2026-08-24 解消** (2 段階):
+  1. **緩和** (P1-1(e) Step 4): sweeper の実効 stale 閾値を
+     max(設定値, fetch timeout + 5 分) に接いだ (`CaptureIntentSweeper`、キーと既定値は
+     `IngestSchedulerService` と共有)。既定値の矛盾の解消であって liveness 保証ではない
+  2. **根治** (§6.9-3 の lease): intent 行が `leaseExpiresAtMs` を持ち、**実行側が進捗の
+     たびに前へ押す** (`CaptureScope.record` → `store.extendLease`、半 lease 周期で throttle)。
+     sweep は既存の openedAt ページングの後に lease を見て、**生きている行を飛ばす**
+     (新しい view は不要)。年齢規則は**下限として残す** — lease を持たない旧行はそれで
+     掃かれ、「lease 無し = 永久に生きている」にはならない
+
+  **これで言えること**: 進捗している pass は、どれだけ長くかかっても死亡判定されない。
+  **まだ言えないこと**: 延長と延長の**間**で死んだ pass は最大 1 lease 周期 (5 分) 遅れて
+  掃かれる — これは原理的な残余で、年齢規則を下限に残す理由でもある。なお interrupt を
+  無視して走り続ける fetch は lease を押し続けるが、**それは正しい** — 生きているのだから
 
 ---
 

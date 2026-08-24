@@ -183,6 +183,27 @@ class IngestCaptureWrapperScopeTest {
     // ── D5: what a pass decided NOT to take is on its completion row ─────────────────────
 
     @Test
+    @DisplayName("the not-ingested shape is one definition, and blank reasons say so")
+    void notIngestedItemIsCanonical() {
+        // The scope inventory's remaining half of D5: the product had a third answer ("we saw
+        // it and took nothing") with no name in the model — only a hand-built Map, written
+        // separately in the mail wrapper and the note wrapper. Two copies of an untyped shape
+        // drift, and a consumer of attachmentsNotIngested has no way to know which keys to
+        // expect. This pins the canonical shape and the blank-is-absent rule.
+        assertEquals(java.util.Map.of("fileName", "a.txt", "reason", "0 bytes"),
+                new IngestLineageEmitter.NotIngestedItem("a.txt", "0 bytes").asMap());
+
+        // A skip that carried no reason must not record an empty string AS a reason: that
+        // reads as "we recorded why" when we did not.
+        assertEquals("skipped",
+                new IngestLineageEmitter.NotIngestedItem("a.txt", null).reason());
+        assertEquals("skipped",
+                new IngestLineageEmitter.NotIngestedItem("a.txt", "   ").reason());
+        assertEquals("", new IngestLineageEmitter.NotIngestedItem(null, "x").fileName());
+    }
+
+
+    @Test
     @DisplayName("a pseudo-file attachment lands in the page pass's completion evidence")
     void aSkippedAttachmentIsRecordedOnTheParentRow(){
         // A .DS_Store attachment produces no document, no aspect, no event and no row of its

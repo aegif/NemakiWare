@@ -185,6 +185,37 @@ public class CouchCaptureIntentStore implements CaptureIntentStore, CaptureMaint
         }
     }
 
+    /**
+     * Pushes the lease forward on an OPEN row. Never throws into the caller.
+     *
+     * <p>Only while the row is still {@code CAPTURE_INTENT}: once it has been completed or
+     * swept, extending would either rewrite a finished record or resurrect a row the sweeper
+     * has already reported, and neither is this method's business.
+     */
+    @Override
+    public void extendLease(CaptureIntent intent) {
+        if (intent == null) {
+            return;
+        }
+        try {
+            Map<String, Object> raw = support.readRawStrict(intent.documentId());
+            if (raw == null
+                    || !CaptureState.CAPTURE_INTENT.name().equals(raw.get("captureState"))) {
+                return;
+            }
+            raw.put(CaptureIntent.LEASE_FIELD,
+                    System.currentTimeMillis() + CaptureIntent.LEASE_MS);
+            support.updateStrictCas(raw);
+            // A lost CAS needs no retry: either the pass completed (nothing to lease) or
+            // another writer moved the row, and the next progress step will try again.
+        } catch (Exception e) {
+            // Best effort. A failed extension costs at most an early sweep — the behaviour
+            // that was unconditional before the lease existed.
+            logger.debug("Could not extend capture lease for {}: {}", intent.documentId(),
+                    e.toString());
+        }
+    }
+
     @Override
     public CaptureCompletion completeIntent(CaptureIntent intent, Map<String, Object> evidence) {
         if (intent == null) {
@@ -285,6 +316,14 @@ public class CouchCaptureIntentStore implements CaptureIntentStore, CaptureMaint
             // Re-check the state we read. Between the view answering and this write, the ingest
             // may have completed — and a view group is allowed to answer from a stale index.
             if (!CaptureState.CAPTURE_INTENT.name().equals(raw.get("captureState"))) {
+                continue;
+            }
+            // A live lease means the pass is still making progress, however long it is taking.
+            // The age rule that got this row into the page is the FLOOR (P1-1(e) Step 4); the
+            // lease is what tells a slow pass from a dead one (capture-outbox M5). Rows written
+            // before the lease existed have no such field and are governed by age alone.
+            if (raw.get(CaptureIntent.LEASE_FIELD) instanceof Number lease
+                    && lease.longValue() > System.currentTimeMillis()) {
                 continue;
             }
             raw.put("captureState", CaptureState.UNRESOLVED.name());

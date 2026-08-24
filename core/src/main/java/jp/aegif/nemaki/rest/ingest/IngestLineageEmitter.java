@@ -141,6 +141,55 @@ public class IngestLineageEmitter {
     }
 
     /**
+     * An item this pass SAW and deliberately did not ingest.
+     *
+     * <h2>Why this is not a fourth {@code ContentState}</h2>
+     *
+     * <p>{@link CapturedContent} answers "what can this import say about the bytes the
+     * repository now holds" — for a document it produced. A 0-byte attachment or an OS
+     * pseudo-file is refused before any document exists ({@code external-ingest} skip rules), so
+     * there is no object whose content state could be described. Putting {@code NOT_INGESTED}
+     * beside {@code STORED} / {@code NONE} / {@code UNKNOWN} would make every consumer of a
+     * content state handle a case where there is no content to have a state.
+     *
+     * <p>So it is its own shape: a DECISION about an item, carried on the parent pass's
+     * completion evidence, which is the one durable record that says "we saw it and took
+     * nothing, and why" (P1-1(d) D5). The scope inventory left this "the product has a third
+     * answer and the model has no name for it"; this is the name.
+     *
+     * <p>Typed rather than the hand-built {@code Map.of("fileName", …, "reason", …)} the mail
+     * and note wrappers each wrote separately: two copies of an untyped shape drift, and a
+     * consumer reading {@code attachmentsNotIngested} has no way to know which keys to expect.
+     */
+    public record NotIngestedItem(String fileName, String reason) {
+
+        /** The word used when the skip carried no reason of its own. */
+        public static final String UNSPECIFIED_REASON = "skipped";
+
+        public NotIngestedItem {
+            // Blank counts as absent, the same word every other evidence path uses. A blank
+            // reason recorded as a reason would read as "we recorded why" when we did not.
+            fileName = fileName == null ? "" : fileName;
+            reason = reason == null || reason.isBlank() ? UNSPECIFIED_REASON : reason;
+        }
+
+        /** The canonical wire shape — one definition, so the two wrappers cannot disagree. */
+        public java.util.Map<String, String> asMap() {
+            return java.util.Map.of("fileName", fileName, "reason", reason);
+        }
+
+        public static java.util.List<java.util.Map<String, String>> asMaps(
+                java.util.List<NotIngestedItem> items) {
+            java.util.List<java.util.Map<String, String>> maps =
+                    new java.util.ArrayList<>(items.size());
+            for (NotIngestedItem item : items) {
+                maps.add(item.asMap());
+            }
+            return maps;
+        }
+    }
+
+    /**
      * What this import can say about the bytes the repository now holds.
      *
      * <p>Three states, not two. "Stored with a digest" and "nothing stored" are the easy ones;

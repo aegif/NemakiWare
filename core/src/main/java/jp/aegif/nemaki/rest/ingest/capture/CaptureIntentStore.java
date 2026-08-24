@@ -54,6 +54,20 @@ public interface CaptureIntentStore {
      */
     CaptureCompletion completeIntent(CaptureIntent intent, Map<String, Object> evidence);
 
+    /**
+     * Pushes the open row's lease forward, so the sweeper does not call a live pass dead.
+     *
+     * <p>Best effort by design: a failed extension is not a failed ingest. The worst it costs
+     * is a row swept early, which the age floor already allowed before the lease existed — so
+     * this must never throw into the caller and must never be a reason to refuse work.
+     *
+     * <p>Default implementation does nothing, so a store that predates the lease (or a test
+     * double) is unaffected: the sweeper falls back to the age rule for rows with no lease.
+     */
+    default void extendLease(CaptureIntent intent) {
+        // No lease support: the age rule governs, exactly as before.
+    }
+
     /** Whether the collaborator this store needs is actually wired. See {@link CaptureScope}. */
     boolean isActive();
 

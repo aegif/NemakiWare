@@ -229,7 +229,7 @@ class EvidenceTypeCannotBeDetachedTest {
     }
 
     @Test
-    @DisplayName("the protected set names both types, derived from the product")
+    @DisplayName("the protected set names the two original types — five in all since 2026-08-24")
     void theProtectedSetIsBothTypes() {
         assertTrue(EvidenceTypes.isProtected(CHAT));
         assertTrue(EvidenceTypes.isProtected(INTEGRATION),

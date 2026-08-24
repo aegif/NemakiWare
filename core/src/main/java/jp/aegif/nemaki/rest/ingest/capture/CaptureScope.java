@@ -85,6 +85,15 @@ public final class CaptureScope {
     /** Set when the boundary could not be told to apply or not. Reported, not fatal. */
     private String undeterminedReason;
     private final List<Recorded> mutations = new ArrayList<>();
+    /**
+     * When this scope last pushed its lease forward.
+     *
+     * <p>Throttled to half a lease period so that a pass with many small steps (a mail with
+     * fifty attachments records one per link) does not turn each of them into a stored write.
+     * Half, not the whole period, so an extension is always in flight before the previous one
+     * would have expired.
+     */
+    private long leaseExtendedAtMs;
 
     /** One tracked mutation and what we know about it. */
     public record Recorded(String operation, MutationOutcome outcome, String detail) {}
@@ -216,6 +225,9 @@ public final class CaptureScope {
                             + ", repositoryId=" + intent.repositoryId());
         }
         opened = true;
+        // The row was just written with a fresh lease (CaptureIntent.toDocument), so the first
+        // extension is not due until half a period from now.
+        leaseExtendedAtMs = System.currentTimeMillis();
     }
 
     /**
@@ -291,6 +303,27 @@ public final class CaptureScope {
                     intent == null ? "none" : intent.intentId());
         }
         mutations.add(new Recorded(operation, outcome, detail));
+        touchLease();
+    }
+
+    /**
+     * Tells the store this pass is still alive, at most twice per lease period.
+     *
+     * <p>The sweeper cannot tell a long healthy pass from a dead one by age alone — that is why
+     * P1-1(e) Step 4's raised threshold was recorded as a mitigation rather than a guarantee
+     * (capture-outbox M5). Progress is the signal: a pass that is still recording mutations is
+     * still working.
+     */
+    private void touchLease() {
+        if (!opened || completed || store == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - leaseExtendedAtMs < CaptureIntent.LEASE_MS / 2) {
+            return;
+        }
+        leaseExtendedAtMs = now;
+        store.extendLease(intent);
     }
 
     /**

@@ -77,6 +77,31 @@ public record CaptureIntent(
         return ID_PREFIX + intentId;
     }
 
+    /**
+     * The lease field: while it is in the future, the pass that opened this row is ALIVE.
+     *
+     * <h2>Why a lease and not just an age</h2>
+     *
+     * <p>The sweeper's job is to say "this pass died without finishing". Age alone cannot: a
+     * long but healthy pass (a mail with fifty attachments, a large stream) looks exactly like
+     * a dead one. P1-1(e) Step 4 raised the age threshold to {@code fetchTimeout + 5} as a
+     * MITIGATION and said so — it removed a contradiction between two defaults, it did not
+     * establish liveness (capture-outbox M5, §6.9-3).
+     *
+     * <p>The lease does establish it, for the window it covers: the executing side pushes the
+     * expiry forward as it makes progress, so a pass that is still doing things is never called
+     * dead however long it takes, and a process that stopped stops pushing.
+     *
+     * <p><b>What it still does not establish.</b> A pass that dies BETWEEN extensions is swept
+     * up to one lease period late — inherent, and the reason the age rule stays as the floor. A
+     * fetch that ignores its interrupt and keeps working keeps extending, which is correct: it
+     * is alive, and the row should say so.
+     */
+    public static final String LEASE_FIELD = "leaseExpiresAtMs";
+
+    /** How far ahead each extension pushes the lease. */
+    public static final long LEASE_MS = java.util.concurrent.TimeUnit.MINUTES.toMillis(5);
+
     /** The stored form. {@code captureState} because {@code state} is taken by v2 sequencing. */
     public Map<String, Object> toDocument() {
         Map<String, Object> doc = new LinkedHashMap<>();
@@ -93,6 +118,7 @@ public record CaptureIntent(
         doc.put("processType", processType);
         doc.put("executedBy", executedBy);
         doc.put("onBehalfOf", onBehalfOf);
+        doc.put(LEASE_FIELD, intentOpenedAtMs + LEASE_MS);
         return doc;
     }
 }

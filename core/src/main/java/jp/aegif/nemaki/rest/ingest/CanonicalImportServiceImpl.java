@@ -405,7 +405,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
             // 5. Import attachments as separate documents with relationship
             int attachmentCount = 0;
-            List<Map<String, String>> mailNotIngested = new ArrayList<>();
+            List<IngestLineageEmitter.NotIngestedItem> mailNotIngested = new ArrayList<>();
             for (ParsedAttachment att : parsed.attachments()) {
                 try {
                     ExternalIngestRequest attReq = new ExternalIngestRequest();
@@ -434,10 +434,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         // Same rule as the note wrapper: a skip that produced no object goes
                         // into the parent pass's completion evidence — the only durable place
                         // "we saw it and took nothing" can live (D5).
-                        mailNotIngested.add(Map.of(
-                                "fileName", attReq.getFileName() == null ? "" : attReq.getFileName(),
-                                "reason", attResult.skipReason() == null
-                                        ? "skipped" : attResult.skipReason()));
+                        mailNotIngested.add(new IngestLineageEmitter.NotIngestedItem(
+                                attReq.getFileName(), attResult.skipReason()));
                     }
                     if (attResult.isSuccess() || attResult.skipped()) {
                         attachmentCount++;
@@ -473,7 +471,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // a freshly created object as pre-existing, which is what decides whether custody
             // time may be recorded at all (external review).
             if (!mailNotIngested.isEmpty()) {
-                captureScope.notePassFact("attachmentsNotIngested", mailNotIngested);
+                captureScope.notePassFact("attachmentsNotIngested",
+                        IngestLineageEmitter.NotIngestedItem.asMaps(mailNotIngested));
             }
             return new ExternalIngestResult(requestId, messageObjectId, messageResult.versionLabel(),
                     messageResult.isNewVersion(), messageResult.dryRun(), messageResult.skipped(), messageResult.skipReason(),
@@ -613,7 +612,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         int attachmentCount = 0;
         int importedAttachmentCount = 0;   // genuinely new/updated attachments
         int skippedAttachmentCount = 0;    // dedupe-skipped attachments
-        List<Map<String, String>> notIngested = new ArrayList<>();  // 0-byte / pseudo-file skips
+        List<IngestLineageEmitter.NotIngestedItem> notIngested = new ArrayList<>();
         String firstAttachmentObjectId = null;
         boolean firstAttachmentCreated = false;
         if (request.getMetadata() != null && request.getMetadata().get("attachments") instanceof List<?> attList) {
@@ -680,10 +679,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         // it goes into this pass's completion evidence (D5). A dedupe skip has
                         // an objectId and is not this.
                         if (attResult.skipped() && attResult.objectId() == null) {
-                            notIngested.add(Map.of(
-                                    "fileName", attReq.getFileName() == null ? "" : attReq.getFileName(),
-                                    "reason", attResult.skipReason() == null
-                                            ? "skipped" : attResult.skipReason()));
+                            notIngested.add(new IngestLineageEmitter.NotIngestedItem(
+                                    attReq.getFileName(), attResult.skipReason()));
                         }
                         String attObjectId = attResult.objectId();
                         if (attObjectId != null) {
@@ -723,7 +720,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // durable record that "we saw it and took nothing, and why" (D5). On a re-poll
             // whose parent never opens a row, nothing is re-recorded — anti-flood, and the
             // fact is already on the capture-time row.
-            captureScope.notePassFact("attachmentsNotIngested", notIngested);
+            captureScope.notePassFact("attachmentsNotIngested",
+                    IngestLineageEmitter.NotIngestedItem.asMaps(notIngested));
         }
 
         // In files_only mode, if nothing new was imported for this page (no
