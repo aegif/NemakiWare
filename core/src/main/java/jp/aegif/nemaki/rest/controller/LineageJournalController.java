@@ -54,6 +54,114 @@ public class LineageJournalController {
         this.httpRequest = httpRequest;
     }
 
+    // ==================== GET /disclosure-exposure ====================
+
+    /**
+     * Which stored events carry facts the evidence table now classifies as INTERNAL_ONLY.
+     *
+     * <h2>What this closes</h2>
+     *
+     * <p>Disclosure §1.1 recorded a fail-open: the product's retention rules govern the journal,
+     * and <b>the catalog has no such rule</b>. Since P1-1(e) a v2 record structurally cannot
+     * carry an INTERNAL_ONLY fact to a sink ({@code LineageRecord.fromV2} does not project the
+     * journal compartment), so nothing new goes out. But <b>v1 events sent their whole snapshot
+     * map</b>, and "these values are already in a catalog we do not own" was left with no way to
+     * find out which ones.
+     *
+     * <h2>What it does not do</h2>
+     *
+     * <p><b>It does not delete anything, here or in the catalog.</b> Reaching into an operator's
+     * Purview or Atlas to remove entities is their governance decision and their tooling, not a
+     * side effect of a NemakiWare endpoint — and the product has no way to know what else in
+     * that catalog depends on an entity. This reports; the operator acts. The procedure per
+     * catalog is in the disclosure runbook.
+     *
+     * <p>It also does not prove exposure. A row here means the EVENT carried the fact; whether
+     * it was ever delivered depends on the target's publish status, which is on the same row.
+     */
+    @GetMapping("/disclosure-exposure")
+    public ResponseEntity<Map<String, Object>> disclosureExposure(
+            @RequestParam String repositoryId,
+            @RequestParam(defaultValue = "500") int scanLimit) {
+
+        ResponseEntity<Map<String, Object>> forbidden = requireAdminOrForbidden();
+        if (forbidden != null) return forbidden;
+        if (repositoryId == null || repositoryId.isBlank()) {
+            return badRequest("repositoryId is required");
+        }
+
+        int capped = Math.min(Math.max(scanLimit, 1), 5000);
+        java.util.Set<String> internalOnly =
+                jp.aegif.nemaki.rest.ingest.CaptureEvidenceField.internalOnlyV1Keys();
+        Map<String, Object> body = new LinkedHashMap<>();
+        try {
+            List<jp.aegif.nemaki.rest.purview.journal.LineageJournalRow> rows =
+                    journalStore.findByRepositoryId(repositoryId, capped, 0);
+            List<Map<String, Object>> findings = new java.util.ArrayList<>();
+            java.util.TreeMap<String, Integer> byKey = new java.util.TreeMap<>();
+            int scanned = 0;
+            int undecodable = 0;
+            for (var row : rows) {
+                if (row instanceof jp.aegif.nemaki.rest.purview.journal.LineageJournalRow
+                        .Undecodable) {
+                    // Counted, not skipped silently: a row nobody can decode is a row nobody
+                    // can clear either, and reporting "0 exposures" over a pile of them would
+                    // be the same fail-open one level down.
+                    undecodable++;
+                    continue;
+                }
+                scanned++;
+                var entry = ((jp.aegif.nemaki.rest.purview.journal.LineageJournalRow.Decoded) row)
+                        .entry();
+                if (!(entry.envelope()
+                        instanceof jp.aegif.nemaki.rest.purview.journal.LineageJournalEntry.V1 v1)) {
+                    // A v2 event cannot carry these to a sink at all — the compartment is not
+                    // projected onto the record the sinks read.
+                    continue;
+                }
+                java.util.TreeSet<String> hits = new java.util.TreeSet<>();
+                for (String key : v1.event().snapshotAttributes().keySet()) {
+                    if (internalOnly.contains(key)) {
+                        hits.add(key);
+                        byKey.merge(key, 1, Integer::sum);
+                    }
+                }
+                if (!hits.isEmpty()) {
+                    Map<String, Object> finding = new LinkedHashMap<>();
+                    finding.put("eventId", v1.event().eventId());
+                    finding.put("eventKey", v1.event().eventKey());
+                    finding.put("occurredAt", v1.event().occurredAt());
+                    finding.put("processType", String.valueOf(v1.event().processType()));
+                    finding.put("keys", new java.util.ArrayList<>(hits));
+                    // The VALUES are deliberately absent. This report is read and forwarded by
+                    // operators; repeating the personal data in it would spread exactly what it
+                    // exists to help remove.
+                    findings.add(finding);
+                }
+            }
+            body.put("status", "success");
+            body.put("repositoryId", repositoryId);
+            body.put("scannedEvents", scanned);
+            body.put("undecodableRows", undecodable);
+            body.put("scanLimit", capped);
+            body.put("truncated", rows.size() >= capped);
+            body.put("exposedEventCount", findings.size());
+            body.put("countByKey", byKey);
+            body.put("events", findings);
+            body.put("note", "v1 events only: a v2 record cannot carry an INTERNAL_ONLY fact to "
+                    + "a sink. This endpoint reports; it deletes nothing, here or in the "
+                    + "catalog. Values are omitted on purpose.");
+            return ResponseEntity.ok(body);
+        } catch (Exception e) {
+            logger.warn("disclosure-exposure scan failed for {}: {}", repositoryId,
+                    e.getMessage());
+            body.put("status", "error");
+            body.put("message", "the journal could not be scanned: " + e.getMessage());
+            return ResponseEntity.status(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(body);
+        }
+    }
+
     // ==================== GET /events ====================
 
     @GetMapping("/events")

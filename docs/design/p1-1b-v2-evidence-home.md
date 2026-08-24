@@ -418,8 +418,23 @@ v1 側には `buildV1Snapshot` という package-private の継ぎ目が在る�
 - **Process 属性の v2 供給** — §3.4。flip すると `folderId` / `importMode` /
   `sourceDescription` の**必須属性が既定値で埋まる**。endpoint attribute では解けないので
   **flip の前提条件**として別途扱う
-- **v2 write 経路の実装** — Slice 4。**依然として未着手**。したがって本作業の
-  end-to-end 検証は**手組みの `LineageEventV2` に対する単体テスト**にとどまる。
-  この限界を条件 2 の対応表で補う (対応表は v2 write 経路の有無に依らず成立する)。
-  なお flip の前提条件だった Process 属性の v2 供給は (e) で ✅ 2026-08-24 に閉じたので、
-  残っているのは flip の実行そのものである
+- **v2 write 経路の実装** — Slice 4。**2026-08-24 訂正: 実装は在る。**
+  `JournaledLineageEmitter.emit(LineageFact)` が barrier を読み、
+  `writeSchemaVersion == 1` / Pristine / barrier 未配線なら v1 を append、
+  **`== 2` なら spool へ回して materializer が `appendV2` する**。
+  したがって「取込から v2 が出る経路が無い」は**もう真ではない** — 無いのは
+  **その経路を開く操作 (flip) が実行されていない**ことだけである。
+
+  **flip は 4b activation そのもの** ([`lineage-4b-activation-checklist.md`](../operations/lineage-4b-activation-checklist.md))。
+  同一 CAS で `writeSchemaVersion = 2` と `minReaderSchemaVersion = 2` を立てる。
+  **`minReaderSchemaVersion` は二度と下がらない** — 不可逆なのは「v2 を書くこと」ではなく
+  「この配備が二度と v1 専用リーダーを走らせられなくなること」であり、
+  取り消せないのは設計上の意図 (取り消すには「v2 行がどこにも無い」ことの証明が要る)。
+
+  したがって **flip は実装課題ではなく、本番前提条件つきの運用手順**である。
+  前提は checklist §0 と §3 (D-rest readiness の緑・旧 AP 不在・spool の保存時暗号化・
+  鍵の復旧経路・再起動をまたぐ永続性、Purview なら §3.6 の手動測定)。
+
+  本作業の end-to-end 検証が**手組みの `LineageEventV2` に対する単体テスト**に
+  とどまるという限界は、その意味では変わらない — 実配備で v2 を書かせるには
+  上記の運用前提が要るため。条件 2 の対応表で補う。
