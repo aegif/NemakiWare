@@ -1,0 +1,71 @@
+/**
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ */
+package jp.aegif.nemaki.evidence;
+
+import java.util.List;
+
+/**
+ * Where the evidence ledger lives (P1-3).
+ *
+ * <h2>Append-only means append-only</h2>
+ *
+ * <p>There is no update and no delete on this interface, and that is the interface's main
+ * content. It is an application-layer rule — anything with direct database access can still
+ * rewrite a row, which is why the chain exists to DETECT that — but a store that offers no way
+ * to rewrite cannot be used to rewrite by accident, and a future caller looking for
+ * {@code update} finds a deliberate absence rather than a method.
+ *
+ * <p>Design: {@code docs/design/p1-3-evidence-ledger.md}.
+ */
+public interface EvidenceLedgerStore {
+
+    /**
+     * Appends at {@code entry.sequence()}, creating only if that position is free.
+     *
+     * @return {@code true} when this call created the row. {@code false} means the position was
+     *         already taken — which is how a second writer at the same sequence loses instead
+     *         of producing a silent duplicate. The caller re-reads and decides; it must not
+     *         treat a lost race as success.
+     */
+    boolean append(EvidenceLedgerEntry entry);
+
+    /** The highest sequence in this domain, or {@code -1} when the domain has no entries. */
+    long highestSequence(String domain);
+
+    /** Entries in ascending sequence order, inclusive. Duplicates at one sequence are RETURNED
+     *  rather than collapsed — that is what a fork looks like, and hiding it here would make
+     *  the verifier unable to see it. */
+    List<EvidenceLedgerEntry> range(String domain, long fromSequence, long toSequence, int limit);
+
+    /** Writes a checkpoint. Same create-only rule as {@link #append}. */
+    boolean appendCheckpoint(EvidenceCheckpoint checkpoint);
+
+    /** The most recent checkpoint for a domain, or null when there is none. */
+    EvidenceCheckpoint latestCheckpoint(String domain);
+
+    /**
+     * The checkpoint whose span ends just before {@code fromSequence}, or null.
+     *
+     * <p>Used to walk back to the checkpoint that covers an older entry, so an inclusion proof
+     * can be answered without loading every checkpoint.
+     */
+    EvidenceCheckpoint checkpointEndingBefore(String domain, long fromSequence);
+
+    /** Whether the backing store is reachable. A ledger that cannot be read must say so rather
+     *  than answering "no entries", which reads as "nothing has happened". */
+    boolean isActive();
+}
