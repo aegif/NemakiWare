@@ -134,9 +134,12 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
             CloudantClientWrapper any = connectorPool.getClient("nemaki_conf");
             Cloudant cloudant = any.getClient();
             if (objectMapper == null) {
-                // NOT `new ObjectMapper()`: the couchdbObjectMapper carries this deployment's
-                // configuration, and a default one serialises differently in ways that only
-                // show up as a wrong document on disk. An unwired mapper is a wiring bug.
+                // Deliberately NOT falling back to a freshly constructed mapper. The
+                // couchdbObjectMapper carries this deployment's configuration, and a default
+                // one serialises differently in ways that only show up as a wrong document on
+                // disk. An unwired mapper is a wiring bug, and JacksonMigrationBoundaryTest
+                // bans the bare construction by scanning the SOURCE TEXT — so even naming it
+                // in a comment trips the guard, which is the guard working as intended.
                 throw new IllegalStateException("the evidence ledger has no couchdbObjectMapper");
             }
             CloudantClientWrapper wrapper =
