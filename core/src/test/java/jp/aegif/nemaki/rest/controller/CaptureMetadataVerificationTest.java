@@ -322,12 +322,40 @@ class CaptureMetadataVerificationTest {
     @DisplayName("the two hashes are judged independently")
     void theTwoHashesAreIndependent() {
         Map<String, Object> row = completedRow(storedChatHash, 1000L);
-        // No sourceIdentity hash recorded — that half is unverifiable while chat matches.
+        // No sourceIdentity hash recorded, and the fixture object carries no integration
+        // aspect either: nothing of that kind was captured, then or now.
         when(store.listCapturedForObject(REPO, OBJECT, 20)).thenReturn(List.of(row));
 
         Map<String, Object> body = verify();
         assertEquals("MATCH", body.get("chatEvidence"));
-        assertEquals("UNVERIFIABLE", body.get("sourceIdentity"),
-                "a hash that was never recorded must not borrow the other hash's verdict");
+        assertEquals("ABSENT", body.get("sourceIdentity"),
+                "a compartment with nothing in it must not borrow the other's verdict — and "
+                        + "must not claim it could not be checked either");
+    }
+
+    @Test
+    @DisplayName("evidence present now but absent from the baseline is UNVERIFIABLE, not ABSENT")
+    void evidenceWithoutABaselineIsUnverifiable() {
+        // The distinction the first restore drill (2026-08-24) forced. ABSENT means "nothing
+        // of this kind, then or now" — a chat document has no archetype aspect and never had
+        // one, and reporting that as UNVERIFIABLE trains an operator to skip the word. THIS is
+        // the case that genuinely cannot be checked: the object carries integration evidence
+        // that the baseline row does not account for.
+        jp.aegif.nemaki.model.Aspect integration = new jp.aegif.nemaki.model.Aspect();
+        integration.setName("nemaki:externalIntegration");
+        integration.setProperties(new ArrayList<>(List.of(
+                new jp.aegif.nemaki.model.Property("nemaki:sourceObjectId", "1720000000.000200"),
+                new jp.aegif.nemaki.model.Property("nemaki:sourceSystem", "slack"))));
+        jp.aegif.nemaki.model.Document withIntegration = new jp.aegif.nemaki.model.Document();
+        withIntegration.setId(OBJECT);
+        withIntegration.setType("cmis:document");
+        withIntegration.setAspects(new ArrayList<>(List.of(integration)));
+        when(contentService.getContent(REPO, OBJECT)).thenReturn(withIntegration);
+        when(store.listCapturedForObject(REPO, OBJECT, 20))
+                .thenReturn(List.of(completedRow(storedChatHash, 1000L)));
+
+        assertEquals("UNVERIFIABLE", verify().get("sourceIdentity"),
+                "evidence the baseline does not account for is a gap in the record, and must "
+                        + "not be reported as if there were nothing there");
     }
 }

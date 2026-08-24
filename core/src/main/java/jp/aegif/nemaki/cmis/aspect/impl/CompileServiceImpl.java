@@ -2134,15 +2134,21 @@ public class CompileServiceImpl implements CompileService {
 						log.warn("TYPE COERCION FAILED for property '" + propertyId + "': " +
 							"Cannot parse String '" + element + "' as DateTime.");
 					}
-				} else if (element instanceof Long) {
-					// Timestamps stored as Long (milliseconds since epoch)
-					// Apply bounds checking to reject out-of-range values
-					Long timestamp = (Long) element;
+				} else if (element instanceof Number) {
+					// Timestamps stored as epoch millis. Number, not Long: the CouchDB round
+					// trip deserializes a JSON number into a Double, so a value that rendered
+					// fine while it sat in the write-path cache became NULL the moment it was
+					// read back from storage — the property was intact on disk and invisible
+					// to every CMIS client. Found by the first restore drill (2026-08-24),
+					// on nemaki:chatCapturedAt; EvidenceMetadataHash has normalized both
+					// shapes since P1-1(d) D-1, which is why the hash still said MATCH while
+					// the compiled view said "not set".
+					long timestamp = ((Number) element).longValue();
 					
 					// Reject negative timestamps (before 1970-01-01)
 					if (timestamp < 0) {
 						log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
-							"Long value " + timestamp + " is negative (before Unix epoch). " +
+							"numeric value " + timestamp + " is negative (before Unix epoch). " +
 							"Returning null to avoid invalid DateTime.");
 						return null;
 					}
@@ -2152,14 +2158,14 @@ public class CompileServiceImpl implements CompileService {
 					long maxFutureMs = System.currentTimeMillis() + (100L * 365L * 24L * 60L * 60L * 1000L);
 					if (timestamp > maxFutureMs) {
 						log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
-							"Long value " + timestamp + " is too far in the future (>100 years). " +
-							"This may be garbage data. Returning null.");
+							"numeric value " + timestamp + " is too far in the future (>100 "
+							+ "years). This may be garbage data. Returning null.");
 						return null;
 					}
 					
 					GregorianCalendar cal = new GregorianCalendar();
 					cal.setTimeInMillis(timestamp);
-					log.debug("Type coercion: Long (timestamp) → DateTime for property " + propertyId);
+					log.debug("Type coercion: numeric timestamp → DateTime for property " + propertyId);
 					return cal;
 				}
 				break;

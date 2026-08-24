@@ -596,6 +596,21 @@ public class ArchiveDaoDelegate {
 	}
 
 	public void restoreAttachment(String repositoryId, Archive archive) {
+		if (archive == null) {
+			// getAttachmentArchive returns null, by design, when the document archive carries
+			// no attachmentNodeId (it logs a WARN and returns) or when the attachments view
+			// finds no row. There is simply no attachment to restore, and that is not an
+			// error: the DOCUMENT has already been restored by the caller.
+			//
+			// Dereferencing it threw an NPE that the catch below turned into "Failed to
+			// restore attachment from archive", which propagated out of restoreArchive as a
+			// failure — so the REST caller was told the restore failed while the object was in
+			// fact back. Found by the first restore drill (2026-08-24), on a document whose
+			// archive had no attachmentNodeId.
+			log.info("restoreAttachment: nothing to restore — the document archive names no "
+					+ "attachment (repository " + repositoryId + ")");
+			return;
+		}
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			String archiveId = archive.getId();

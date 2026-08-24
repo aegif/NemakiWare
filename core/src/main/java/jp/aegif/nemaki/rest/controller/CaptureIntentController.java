@@ -353,13 +353,36 @@ public class CaptureIntentController {
     }
 
     /** One hash's verdict. Absent on either side is not a mismatch — it is unverifiable. */
+    /**
+     * The verdict for one evidence compartment.
+     *
+     * <h2>Why {@code ABSENT} is not {@code UNVERIFIABLE}</h2>
+     *
+     * <p>A chat document has no archetype aspect and never had one; a mail document has no chat
+     * aspect. Reporting those as {@code UNVERIFIABLE} — "could not be checked" — makes a verdict
+     * that is permanently present and permanently meaningless, and an operator who learns to
+     * skip it will skip a real one. Found by the first restore drill (2026-08-24), where a
+     * healthy chat capture read {@code MATCH / MATCH / UNVERIFIABLE}.
+     *
+     * <p>The distinction is between "nothing of this kind was captured, and nothing is there
+     * now" and "something is there that the baseline does not account for". Only the second is
+     * a gap in the record.
+     */
     private static String verdict(String recorded, String current, boolean laterActivity) {
+        if (recorded == null && current == null) {
+            // Nothing of this kind on this object, then or now. Not a gap.
+            return "ABSENT";
+        }
         if (recorded == null) {
+            // Evidence is there NOW but the baseline row does not account for it: captured
+            // before this hash existed, or by a wrapper that does not hash. A real gap.
             return "UNVERIFIABLE";
         }
         if (recorded.equals(current)) {
             return "MATCH";
         }
+        // Includes current == null: evidence that WAS recorded is gone. That is a mismatch,
+        // not an absence — the whole point of recording it.
         return laterActivity ? "UNVERIFIABLE" : "MISMATCH";
     }
 
