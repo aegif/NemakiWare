@@ -13,6 +13,55 @@
 
 ---
 
+## 2026-08-25 — Playwright トリアージで製品バグ 2 件 (どちらもテストでは出なかった)
+
+**Playwright 完走 (2.6 時間)**: 834 passed / 21 failed / 40 flaky / 106 skipped /
+34 did not run。記録上の基準 (928〜932 passed / 0〜3 failed) より明確に悪い。
+
+**先の仮説は誤りだった。** 前回の 19 failed を「自分のコンテナ再作成による干渉」と
+説明していたが、干渉の無い今回も同率で出たので、その説明は成り立たない。
+
+### 切り分け: 21 件を静かなスタックで単独再実行 → 5 件が再現
+
+再現した 5 件は全部**ユーザー一覧**に集中していた (一覧 / ページング /
+HATEOAS links / グループへのメンバー追加 / admin 権限画面)。
+**5 件の別々の不具合に見えて、1 つ**だった。残り 16 件は単独では通ったので
+負荷・干渉由来。
+
+### バグ 1: ユーザー一覧の N+1 (`UserResource.getUserGroups`)
+
+`GET /api/v1/cmis/repositories/{repo}/users` が**1 ユーザーあたり約 4.6 秒**。
+maxItems=1 で 4.6s / 5 で 22s / 20 で **92.7s** と線形。既定 100 件なら約 460 秒。
+
+原因は所属判定が**ユーザーごとに全グループを取得**していたこと。開発用の
+3 ユーザーでは見えず、テストを 1 週間回した 117 ユーザーのリポジトリで致命的になる。
+
+グループを 1 回読んで索引を作る形に変更。**実測 20 件 92.7s → 3.3s、
+100 件 3.2s** で件数に対して平坦。判別テストは**時間ではなく読み取り回数**を
+assert する (時間の assert は flaky で、しかも何が悪いか言わない)。
+
+### バグ 2: reduce を持つ view の文書読みが全部 400 (`queryRawView`)
+
+**稼働中のログから見つけた** — テストでは出なかった。capture の 3 view に
+`_count` reduce を足したが、`queryRawView` は必ず `include_docs=true` を付ける。
+CouchDB は reduce クエリに `include_docs` を許さない
+(`query_parse_error: include_docs is invalid for reduce`)。結果:
+
+- `CaptureIntentSweeper` が 5 分ごとに失敗し、期限切れ intent を一度も掃除していない
+- `/capture-intent/unresolved` が読めない
+- `listCapturedForObject` が読めない = **P1-4 の custody 節が常に UNAVAILABLE**
+  (その日に作った機能が、それより前の自分の変更で死んでいた)
+
+`reduce=false` を `queryRawView` 側に置いた。呼び出し側に置くと次の 1 件が必ず忘れる。
+
+### 教訓
+
+**単体テストが全部通っていても、動いているものを見ないと分からない種類がある。**
+2 件とも、通ったテストの隙間ではなく**テストが構造的に届かない場所**にあった
+(N+1 はデータ量が要る、reduce 衝突は実 CouchDB が要る)。
+
+---
+
 ## 現在のバージョン
 
 **3.3.0** (2026-07-22、`deps/v3.3-breaking-majors` → master 予定) — breaking-major
