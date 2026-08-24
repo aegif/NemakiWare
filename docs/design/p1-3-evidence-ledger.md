@@ -148,6 +148,26 @@ failover で 2 つの書き手が同じ sequence を主張しうる。
 
 ---
 
+## 7.5. 永続化 (2026-08-24 追加)
+
+`CouchEvidenceLedgerStore` — **専用データベース `nemaki_evidence_ledger`**。
+journal と同居させると `lineage.retention.days` の purge を共有し、
+**保持期限が来た日に連鎖が切れる** (§1 がまさにそれを避けるための節)。
+このクラスに purge 経路は 1 つも無い。
+
+view は 2 本 (`entries_by_domain_sequence` / `checkpoints_by_domain_to`)。
+`_id` は `evidence_ledger:{domain}:{19桁 sequence}` で、同 sequence の 2 人目は
+create-if-absent で **409 に負ける**。
+
+**409 と outage を区別する。** 両方を `false` にすると、DB 停止中に
+「誰かが sequence n を書いた」と読んで n+1 へ進み、**n は永久に空**のまま
+以後の検証がそこで break を報告し続ける。conflict だけが `false`、他は throw。
+
+負のコントロール 3 本実測 (L1 全失敗を conflict 扱い / L2 同 sequence の重複を潰す /
+L3 空ドメインを 0 と報告) — いずれも意図したテストを落とす。
+
+---
+
 ## 8. やらないこと (この増分では)
 
 - **外部アンカー** — P2。この作業はアンカーする対象 (checkpoint) を作るところまで
