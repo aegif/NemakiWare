@@ -83,6 +83,25 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
             "function(doc) { if (doc.type === '" + EvidenceCheckpoint.TYPE + "' && doc.domain) {"
             + " emit([doc.domain, doc.toSequence], null); } }";
 
+    /**
+     * The design document as one map, so it is deployed in a single put.
+     *
+     * <p>Includes the anchor-receipt views: they share this database, and a separate put for
+     * them would change the signature again.
+     */
+    static Map<String, CloudantClientWrapper.ViewSource> viewSources() {
+        Map<String, CloudantClientWrapper.ViewSource> views = new java.util.LinkedHashMap<>();
+        views.put(VIEW_ENTRIES, new CloudantClientWrapper.ViewSource(MAP_ENTRIES));
+        views.put(VIEW_CHECKPOINTS, new CloudantClientWrapper.ViewSource(MAP_CHECKPOINTS));
+        views.put(CouchAnchorReceiptStore.VIEW_BY_CHECKPOINT,
+                new CloudantClientWrapper.ViewSource(CouchAnchorReceiptStore.MAP_BY_CHECKPOINT));
+        views.put(CouchAnchorReceiptStore.VIEW_PENDING,
+                new CloudantClientWrapper.ViewSource(CouchAnchorReceiptStore.MAP_PENDING));
+        views.put(CouchAnchorReceiptStore.VIEW_CONFIRMED,
+                new CloudantClientWrapper.ViewSource(CouchAnchorReceiptStore.MAP_CONFIRMED));
+        return views;
+    }
+
     private final AtomicBoolean provisioned = new AtomicBoolean(false);
 
     private CloudantClientPool connectorPool;
@@ -152,18 +171,13 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
                         .execute();
                 logger.info("Created evidence ledger database '{}'", DB_NAME);
             }
-            wrapper.createOrUpdateView(DESIGN_DOC, VIEW_ENTRIES, MAP_ENTRIES, null);
-            wrapper.createOrUpdateView(DESIGN_DOC, VIEW_CHECKPOINTS, MAP_CHECKPOINTS, null);
-            // The anchor-receipt views live in the SAME design document, and are deployed here
-            // rather than by their own store: createOrUpdateView does a get-modify-put per
-            // view, so deploying them separately would change the design document's signature
-            // again and make CouchDB discard the index it had just built.
-            wrapper.createOrUpdateView(DESIGN_DOC, CouchAnchorReceiptStore.VIEW_BY_CHECKPOINT,
-                    CouchAnchorReceiptStore.MAP_BY_CHECKPOINT, null);
-            wrapper.createOrUpdateView(DESIGN_DOC, CouchAnchorReceiptStore.VIEW_PENDING,
-                    CouchAnchorReceiptStore.MAP_PENDING, null);
-            wrapper.createOrUpdateView(DESIGN_DOC, CouchAnchorReceiptStore.VIEW_CONFIRMED,
-                    CouchAnchorReceiptStore.MAP_CONFIRMED, null);
+            // ONE put for all five. createOrUpdateView does a get-modify-put PER VIEW, so the
+            // previous five calls produced five design-document signatures and CouchDB
+            // discarded the index it had just built four times over — the same lesson the
+            // lineage store already records, repeated here because I wrote the calls one at a
+            // time. On an existing deployment that meant every restart rebuilt every view, and
+            // a view answers 200 with an incomplete index while it rebuilds.
+            wrapper.putDesignDocumentWithReducesIfChanged(DESIGN_DOC, viewSources());
             client = wrapper;
             provisioned.set(true);
         }

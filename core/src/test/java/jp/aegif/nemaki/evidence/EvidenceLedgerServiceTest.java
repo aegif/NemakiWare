@@ -69,13 +69,19 @@ class EvidenceLedgerServiceTest {
                     .mapToLong(EvidenceLedgerEntry::sequence).max().orElse(-1L);
         }
 
+        /** When set, range() drops rows from the end — a view still building, or a limit hit. */
+        int dropFromEnd;
+
         @Override public List<EvidenceLedgerEntry> range(String domain, long from, long to,
                 int limit) {
-            return entries.stream()
+            List<EvidenceLedgerEntry> rows = entries.stream()
                     .filter(e -> e.domain().equals(domain))
                     .filter(e -> e.sequence() >= from && e.sequence() <= to)
                     .sorted(java.util.Comparator.comparingLong(EvidenceLedgerEntry::sequence))
                     .limit(limit).toList();
+            // Applied AFTER the ordinary result, so the switch changes nothing when it is off.
+            return dropFromEnd <= 0 ? rows
+                    : rows.subList(0, Math.max(0, rows.size() - dropFromEnd));
         }
 
         @Override public boolean appendCheckpoint(EvidenceCheckpoint checkpoint) {
@@ -117,6 +123,41 @@ class EvidenceLedgerServiceTest {
             service.append(DOMAIN, SubjectKind.CAPTURE_COMPLETED, "intent-" + i, "mh1:" + i,
                     "2026-08-24T00:00:0" + (i % 10) + "Z");
         }
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("a short read is not sealed as the full range")
+    void aShortReadIsNotSealed() {
+        // The verifier only checks relationships WITHIN the list it is handed. A view still
+        // building returns fewer rows, and without an endpoint/count check a Merkle root over
+        // 0..3 could be sealed as a checkpoint claiming 0..9. Everything downstream then reads
+        // as covered when it is not.
+        FakeStore store = new FakeStore();
+        EvidenceLedgerService service = serviceOver(store);
+        appendSome(service, 10);
+        store.dropFromEnd = 6;
+
+        Map<String, Object> body = service.closeCheckpoint(DOMAIN, "2026-08-24T00:00:00Z");
+
+        org.junit.jupiter.api.Assertions.assertEquals("error", body.get("status"),
+                "a short read was sealed as the full range: " + body);
+        org.junit.jupiter.api.Assertions.assertTrue(
+                String.valueOf(body.get("message")).contains("rows for"),
+                "the failure does not say the span was short: " + body.get("message"));
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("a complete read IS sealed — the control")
+    void aCompleteReadIsSealed() {
+        // Without this, refusing every span would pass the test above and no checkpoint could
+        // ever be closed.
+        FakeStore store = new FakeStore();
+        EvidenceLedgerService service = serviceOver(store);
+        appendSome(service, 10);
+
+        Map<String, Object> body = service.closeCheckpoint(DOMAIN, "2026-08-24T00:00:00Z");
+
+        org.junit.jupiter.api.Assertions.assertEquals("success", body.get("status"), body + "");
     }
 
     @Test

@@ -89,13 +89,21 @@ public final class AnchorReceiptCodec {
             String digest, Instant attemptedAt, byte[] proof, String proofDigest,
             Map<String, String> attributes, Map<String, Object> doc) {
         Instant anchoredAt = instant(doc.get("anchoredAt"));
-        if (proof == null || proof.length == 0 || anchoredAt == null) {
+        if (proofDigest != null && proof != null && proof.length > 0
+                && !proofDigest.equalsIgnoreCase(sha256Hex(proof))) {
+            // The row says CONFIRMED and its own two halves disagree. This catches a partial
+            // write or a corrupted blob; it does NOT stop somebody who can edit the database
+            // from writing a matching pair, and it is not offered as if it did.
+            return AnchorReceipt.failed(kind, digest, attemptedAt,
+                    "the stored proof does not hash to the recorded proofDigest; the row is "
+                            + "inconsistent with itself and is not treated as an anchor");
+        }
+        if (proof == null || proof.length == 0) {
             // The row says confirmed and cannot support it. Rebuilding it as CONFIRMED would let
             // anyone who can edit this database manufacture an anchor no external party made.
             return AnchorReceipt.failed(kind, digest, attemptedAt,
-                    "the stored receipt says CONFIRMED but carries "
-                            + (anchoredAt == null ? "no anchored time" : "no proof")
-                            + "; it is not treated as an anchor");
+                    "the stored receipt says CONFIRMED but carries no proof; it is not treated "
+                            + "as an anchor");
         }
         AnchorKind.TimeSemantics semantics;
         try {
@@ -109,6 +117,15 @@ public final class AnchorReceiptCodec {
         }
         return AnchorReceipt.confirmed(kind, digest, attemptedAt, anchoredAt, proof, proofDigest,
                 attributes, semantics);
+    }
+
+    public static String sha256Hex(byte[] bytes) {
+        try {
+            return java.util.HexFormat.of().formatHex(
+                    java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
     }
 
     private static Instant instant(Object raw) {

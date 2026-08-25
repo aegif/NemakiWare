@@ -138,7 +138,9 @@ class AnchorReceiptPersistenceTest {
         @Override
         public AnchorReceipt anchor(String hexDigest) {
             return AnchorReceipt.pending(kind(), hexDigest, Instant.parse("2026-08-24T00:00:00Z"),
-                    new byte[] { 9, 9, 9 }, "pendingproof", Map.of("calendar", "alice"));
+                    new byte[] { 9, 9, 9 },
+                    AnchorReceiptCodec.sha256Hex(new byte[] { 9, 9, 9 }),
+                    Map.of("calendar", "alice"));
         }
 
         @Override
@@ -439,20 +441,54 @@ class AnchorReceiptPersistenceTest {
     }
 
     @Test
-    @DisplayName("a CONFIRMED row with no anchored time also reloads as FAILED")
-    void aConfirmationWithoutATimeIsRefused() {
-        Map<String, Object> forged = new LinkedHashMap<>();
-        forged.put("kind", "OPENTIMESTAMPS");
-        forged.put("status", "CONFIRMED");
-        forged.put("anchoredDigest", ROOT);
-        forged.put("attemptedAt", "2026-08-24T00:00:00Z");
-        forged.put("proofBase64", java.util.Base64.getEncoder().encodeToString(new byte[] { 1 }));
+    @DisplayName("a proof that does not hash to its recorded digest reloads as FAILED")
+    void aProofInconsistentWithItsDigestIsRefused() {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("kind", "RFC3161_TSA");
+        row.put("status", "CONFIRMED");
+        row.put("anchoredDigest", ROOT);
+        row.put("attemptedAt", "2026-08-24T00:00:00Z");
+        row.put("anchoredAt", "2026-08-24T00:00:00Z");
+        row.put("proofBase64", java.util.Base64.getEncoder().encodeToString(new byte[] { 1, 2 }));
+        row.put("proofDigest", "0000000000000000000000000000000000000000000000000000000000000000");
 
-        AnchorReceipt reloaded = AnchorReceiptCodec.fromDocument(forged);
+        AnchorReceipt reloaded = AnchorReceiptCodec.fromDocument(row);
 
-        assertEquals(AnchorStatus.FAILED, reloaded.status());
-        assertTrue(reloaded.failureReason().contains("no anchored time"),
+        // Catches a partial write or a corrupted blob. It does NOT stop somebody who can edit
+        // the database from writing a matching pair, and the message does not pretend it does.
+        assertEquals(AnchorStatus.FAILED, reloaded.status(),
+                "a row whose two halves disagree was rebuilt as a confirmed anchor");
+        assertTrue(reloaded.failureReason().contains("does not hash to"),
                 reloaded.failureReason());
+    }
+
+    @Test
+    @DisplayName("a CONFIRMED OpenTimestamps receipt with no local time survives a reload")
+    void aConfirmedOtsWithoutALocalTimeRoundTrips() {
+        // The sidecar returns a bitcoinBlockHeight but no block TIME (that needs a Bitcoin
+        // node), so OpenTimestampsAnchorTarget mints CONFIRMED with a null anchoredAt. The
+        // codec used to refuse exactly that, which made the verdict depend on whether anyone
+        // had restarted: confirmed in memory, FAILED after a reload. The factory and the codec
+        // must agree; what the receipt cannot say about time is said in its limits instead.
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("kind", "OPENTIMESTAMPS");
+        row.put("status", "CONFIRMED");
+        row.put("timeSemantics", "UPPER_BOUND_ONLY");
+        row.put("anchoredDigest", ROOT);
+        row.put("attemptedAt", "2026-08-24T00:00:00Z");
+        row.put("anchoredAt", null);
+        byte[] proof = new byte[] { 9, 9, 9, 7 };
+        row.put("proofBase64", java.util.Base64.getEncoder().encodeToString(proof));
+        row.put("proofDigest", AnchorReceiptCodec.sha256Hex(proof));
+
+        AnchorReceipt reloaded = AnchorReceiptCodec.fromDocument(row);
+
+        assertEquals(AnchorStatus.CONFIRMED, reloaded.status(),
+                "a complete .ots proof was downgraded on reload because this deployment has no "
+                        + "Bitcoin node to date the block with; the verdict then depends on "
+                        + "whether anyone restarted");
+        assertNull(reloaded.anchoredAt(),
+                "a time was invented for a receipt that does not have one");
     }
 
     @Test

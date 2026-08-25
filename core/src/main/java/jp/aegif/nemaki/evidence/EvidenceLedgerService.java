@@ -153,6 +153,20 @@ public class EvidenceLedgerService {
         List<EvidenceLedgerEntry> span =
                 store.range(domain, from, to, MAX_CHECKPOINT_SPAN);
 
+        // The span must BE the range this checkpoint claims. The verifier only checks
+        // relationships WITHIN whatever list it was handed, so a short read — a view still
+        // building, a limit reached — would let a Merkle root over 0..50 be sealed as a
+        // checkpoint over 0..100. Everything after that reads as covered when it is not.
+        String coverage = coverageProblem(span, from, to);
+        if (coverage != null) {
+            body.put("status", "error");
+            body.put("message", coverage);
+            body.put("requestedFrom", from);
+            body.put("requestedTo", to);
+            body.put("rowsRead", span.size());
+            return body;
+        }
+
         // A span that does not verify must not be sealed. Sealing it would produce a checkpoint
         // that commits to a chain already known to be broken, and an anchor would then make
         // that permanent.
@@ -186,6 +200,33 @@ public class EvidenceLedgerService {
      * Walking that further is the checkpoint chain, which the caller can verify from the
      * checkpoints alone.
      */
+    /**
+     * Why {@code span} cannot be sealed as {@code [from, to]}, or null when it can.
+     *
+     * <p>Checks the endpoints and the count. A checkpoint's whole meaning is "these sequences,
+     * and this root over them"; a list that is merely internally consistent does not establish
+     * that it IS those sequences.
+     */
+    private static String coverageProblem(List<EvidenceLedgerEntry> span, long from, long to) {
+        long expected = to - from + 1;
+        if (span == null || span.isEmpty()) {
+            return "the ledger returned no rows for " + from + ".." + to + ", so there is "
+                    + "nothing to seal — and an empty span must not be read as an empty range";
+        }
+        if (span.size() != expected) {
+            return "the ledger returned " + span.size() + " rows for " + from + ".." + to
+                    + ", which needs " + expected + "; a short read would seal a root over "
+                    + "fewer entries than the checkpoint claims to cover";
+        }
+        if (span.get(0).sequence() != from) {
+            return "the span starts at " + span.get(0).sequence() + ", not at " + from;
+        }
+        if (span.get(span.size() - 1).sequence() != to) {
+            return "the span ends at " + span.get(span.size() - 1).sequence() + ", not at " + to;
+        }
+        return null;
+    }
+
     public Map<String, Object> inclusionProof(String domain, long sequence) {
         Map<String, Object> body = new LinkedHashMap<>();
         if (store == null || !store.isActive()) {

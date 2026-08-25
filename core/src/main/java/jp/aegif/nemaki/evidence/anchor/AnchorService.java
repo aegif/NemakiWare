@@ -344,6 +344,14 @@ public class AnchorService {
         if (checkpoint.merkleRoot() == null || checkpoint.merkleRoot().isBlank()) {
             return "the checkpoint has no Merkle root";
         }
+        if (!checkpoint.selfVerifies()) {
+            // The method existed with no production caller. A checkpoint row whose root or
+            // range was edited still hashes to something, just not to its own contents — and
+            // anchoring it fixes the edited value somewhere it cannot be taken back.
+            return "the checkpoint does not hash to its own contents (domain, range, root, "
+                    + "previous hash, created-at); it has been altered or was written by a "
+                    + "different version, and anchoring it would make the altered value durable";
+        }
         if (store == null) {
             return "the evidence ledger is not wired, so the checkpoint's currency cannot be "
                     + "established and anchoring it would assert something unverified";

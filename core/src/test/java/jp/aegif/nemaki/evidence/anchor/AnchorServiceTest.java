@@ -243,6 +243,27 @@ class AnchorServiceTest {
     }
 
     @Test
+    @DisplayName("a checkpoint that does not hash to its own contents is not anchored")
+    void anAlteredCheckpointIsRefused() {
+        // EvidenceCheckpoint.selfVerifies() existed with NO production caller. A row whose
+        // root or range was edited still hashes to something — just not to its own contents —
+        // and anchoring it fixes the edited value somewhere it cannot be taken back.
+        EvidenceCheckpoint sound = checkpoint(5);
+        EvidenceCheckpoint altered = new EvidenceCheckpoint(DOMAIN, 0, 5,
+                "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", null,
+                sound.createdAt(), sound.checkpointHash());
+
+        AnchorService.Outcome outcome = serviceWith(storeAt(5),
+                rung(AnchorKind.RFC3161_TSA, AnchorStatus.CONFIRMED)).anchor(altered);
+
+        assertNotNull(outcome.refusedReason(),
+                "an altered checkpoint was sent to an external timestamp service");
+        assertTrue(outcome.refusedReason().contains("does not hash to its own contents"),
+                outcome.refusedReason());
+        assertEquals(List.of(), outcome.receipts());
+    }
+
+    @Test
     @DisplayName("AC4 control: a current checkpoint IS anchored")
     void aCurrentRootGoesOut() {
         AnchorService.Outcome outcome = serviceWith(storeAt(5),

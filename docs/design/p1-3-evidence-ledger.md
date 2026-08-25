@@ -160,8 +160,15 @@ view は **4 本** (`entries_by_domain_sequence` / `checkpoints_by_domain_to` �
 `receipts_confirmed` を足して 5 本)。**同じ design document に置く** —
 `createOrUpdateView` は view ごとに get-modify-put するので、別々に配ると
 CouchDB が直前に作った index を捨てる (journal 側で学んだ形)。
-**現状は逐次呼び出しのままで、1 回の put にまとめる作業は未了**
-(2026-08-25 レビュー指摘)。
+**1 回の put にまとめた (2026-08-25)。** 5 回の get-modify-put は design document の
+署名を 5 回変え、CouchDB が直前に作った index を 4 回捨てていた。既存デプロイでは
+**起動のたびに全 view を再構築**し、再構築中の view は不完全な index のまま 200 を
+返す — 台帳を確認しに来たまさにその瞬間に「空」と読める。
+journal 側で一度学んだ形を、1 本ずつ書いたせいで繰り返していた。
+
+**checkpoint は「請求する範囲」と「実際に読めた行」を突き合わせる。**
+verifier は渡された列の**内部**関係しか見ないので、view の遅延で短く返ると
+0..50 の Merkle を 0..100 の checkpoint として封じられた。端点と件数を照合する。
 `_id` は `evidence_ledger:{domain}:{19桁 sequence}` で、同 sequence の 2 人目は
 create-if-absent で **409 に負ける**。
 

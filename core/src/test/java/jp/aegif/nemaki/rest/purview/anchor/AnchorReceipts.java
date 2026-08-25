@@ -31,9 +31,17 @@ public final class AnchorReceipts {
     private AnchorReceipts() {
     }
 
+    /**
+     * @param proofDigest ignored — the digest is COMPUTED from {@code proof}.
+     *
+     * <p>Fixtures used to pass placeholder strings here ("tokendigest", "p"), which meant every
+     * confirmed fixture was internally inconsistent. That went unnoticed until the codec started
+     * checking, and then five tests failed at once — the tests, not the product. A factory that
+     * cannot produce an inconsistent receipt is better than a comment asking callers not to.
+     */
     public static AnchorReceipt confirmed(AnchorKind kind, String digest, Instant at,
             byte[] proof, String proofDigest, Map<String, String> attributes) {
-        return AnchorReceipt.confirmed(kind, digest, at, at, proof, proofDigest, attributes,
-                kind.timeSemantics());
+        return AnchorReceipt.confirmed(kind, digest, at, at, proof,
+                AnchorReceiptCodec.sha256Hex(proof), attributes, kind.timeSemantics());
     }
 }

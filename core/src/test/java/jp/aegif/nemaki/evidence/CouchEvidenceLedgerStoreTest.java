@@ -156,6 +156,27 @@ class CouchEvidenceLedgerStoreTest {
     }
 
     @Test
+    @DisplayName("all five views go out in ONE design-document put")
+    void theViewsAreDeployedTogether() {
+        // Five createOrUpdateView calls meant five get-modify-puts, five design-document
+        // signatures, and CouchDB discarding the index it had just built four times over.
+        // On an existing deployment every restart rebuilt every view, and a view answers 200
+        // with an incomplete index while it rebuilds — so the ledger could read as empty at
+        // exactly the moment somebody was checking it. The repo learned this once already on
+        // the lineage store; I wrote the calls one at a time anyway.
+        java.util.Map<String, jp.aegif.nemaki.dao.impl.couch.connector
+                .CloudantClientWrapper.ViewSource> views = CouchEvidenceLedgerStore.viewSources();
+
+        assertEquals(5, views.size(),
+                "the design document no longer carries all five views: " + views.keySet());
+        assertTrue(views.containsKey(CouchEvidenceLedgerStore.VIEW_ENTRIES), views.keySet() + "");
+        assertTrue(views.containsKey(
+                jp.aegif.nemaki.evidence.anchor.CouchAnchorReceiptStore.VIEW_CONFIRMED),
+                "the confirmed-receipt view is not in the single put, so deploying it would "
+                        + "change the signature again and rebuild everything: " + views.keySet());
+    }
+
+    @Test
     @DisplayName("sequence 409 is not mistaken for a 409 conflict")
     void aDocumentIdContaining409IsNotAConflict() {
         // The not-written guard's message embeds the document id, and
