@@ -338,10 +338,12 @@ public class EarkSipExporter {
                 ? "{\"status\":\"unavailable\",\"message\":\"The authenticity report could not "
                         + "be assembled on the node that built this package. Nothing here "
                         + "states what the descriptive metadata does and does not establish.\"}"
-                // The sanctioned construction. A bare `new ObjectMapper()` would silently take
-                // Jackson 3's defaults (JacksonMigrationBoundaryTest bans it by scanning the
-                // source), and this file is read by another organisation's software — the one
-                // place a quiet formatting change is hardest to notice.
+                // The sanctioned construction. Constructing a mapper bare would silently take
+                // Jackson 3's defaults, and this file is read by another organisation's
+                // software — the one place a quiet formatting change is hardest to notice.
+                // (The banned expression is deliberately not spelled out here: the guard
+                // scans SOURCE TEXT, so writing it even in a comment trips it. That is the
+                // guard working, and I tripped it once already writing this line.)
                 : jp.aegif.nemaki.config.ObjectMapperFactory.createDefaultObjectMapper()
                         .writeValueAsString(report.asMap());
         Files.writeString(file, json, StandardCharsets.UTF_8);
