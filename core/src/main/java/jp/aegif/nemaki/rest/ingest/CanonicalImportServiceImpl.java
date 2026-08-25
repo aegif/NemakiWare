@@ -2315,12 +2315,20 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * are all skipped finish normally having changed nothing, and a row opened for them could
      * never be completed.
      */
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
     private jp.aegif.nemaki.evidence.EvidenceLedgerRecorder ledgerRecorder;
 
-    /** For tests and for wiring without a container. */
+    /**
+     * Setter injection, and it SAYS so at startup.
+     *
+     * <p>Field injection would have been shorter, but then "is the evidence chain being fed?"
+     * would only be answerable by ingesting something and looking. This project has already
+     * shipped one collaborator that could never work because it was constructed instead of
+     * injected, and no test noticed; a line in the log is the cheapest way to not repeat it.
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
     void setLedgerRecorder(jp.aegif.nemaki.evidence.EvidenceLedgerRecorder ledgerRecorder) {
         this.ledgerRecorder = ledgerRecorder;
+        logger.info("External ingest will chain completed captures into the evidence ledger");
     }
 
     CaptureScope newCaptureScope(CallContext callContext, ExternalIngestRequest request) {
