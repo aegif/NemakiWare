@@ -98,6 +98,64 @@ class CouchEvidenceLedgerStoreTest {
     }
 
     @Test
+    @DisplayName("the REAL create overload throws outside startup — not just the mock")
+    void theRealExplicitIdCreateFailsFast() throws Exception {
+        // Three independent reviews caught the same thing: the two tests above configure a
+        // mock to throw, and for a while the production overload they stand in for
+        // (create(String, Map)) still swallowed everything and returned null. The mock was
+        // teaching itself a contract the real class did not have, so `append` always answered
+        // true and the ledger reported every entry as chained.
+        //
+        // This drives the real method with no client behind it, off a startup-named thread.
+        offStartupThread(() -> {
+            CloudantClientWrapper wrapper = mock(CloudantClientWrapper.class);
+            when(wrapper.create(anyString(),
+                    org.mockito.ArgumentMatchers.<java.util.Map<String, Object>>any()))
+                    .thenCallRealMethod();
+
+            assertThrows(RuntimeException.class,
+                    () -> wrapper.create("evidence_ledger:bedroom:0000000000000000001",
+                            new java.util.HashMap<>(java.util.Map.of("type", "x"))),
+                    "the explicit-id create returned null instead of failing; every store that "
+                            + "uses it then reports a write that never happened as successful");
+        });
+    }
+
+    @Test
+    @DisplayName("a write the database did not accept is not reported as appended")
+    void aNotOkResultIsNotSuccess() {
+        // create() answers null during startup by design. Ignoring the return value made that
+        // indistinguishable from a successful append.
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.create(anyString(), any())).thenReturn(null);
+
+        assertThrows(RuntimeException.class,
+                () -> storeWith(client).append(entryAt(1, "abc", "prev")),
+                "a null answer from the database was reported as a chained entry");
+    }
+
+    /** Runs on a thread whose name does not look like startup, so leniency does not apply. */
+    private static void offStartupThread(Runnable body) throws Exception {
+        java.util.concurrent.atomic.AtomicReference<Throwable> failure =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        Thread thread = new Thread(() -> {
+            try {
+                body.run();
+            } catch (Throwable t) {
+                failure.set(t);
+            }
+        }, "vthread-exec-test");
+        thread.start();
+        thread.join(30_000);
+        if (failure.get() instanceof AssertionError error) {
+            throw error;
+        }
+        if (failure.get() != null) {
+            throw new AssertionError(failure.get());
+        }
+    }
+
+    @Test
     @DisplayName("a fork — two rows at one sequence — comes back as two rows")
     void aForkIsNotCollapsed() {
         EvidenceLedgerEntry one = entryAt(4, "aaa", "prev");

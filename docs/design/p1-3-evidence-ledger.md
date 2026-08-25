@@ -159,6 +159,12 @@ view は 2 本 (`entries_by_domain_sequence` / `checkpoints_by_domain_to`)。
 `_id` は `evidence_ledger:{domain}:{19桁 sequence}` で、同 sequence の 2 人目は
 create-if-absent で **409 に負ける**。
 
+**戻り値も検査する** (2026-08-25 訂正)。初稿は例外の有無だけを見ており、
+`create(String id, Map)` が起動中に既定で返す `null` を成功と読んでいた。
+しかもその時点で当のオーバーロードは**全例外を握っていた**ので、
+`append()` は常に `true` を返していた — テストはモックに実物と違う契約を
+教えていただけだった (レビュー 3 者が同時に指摘)。
+
 **409 と outage を区別する。** 両方を `false` にすると、DB 停止中に
 「誰かが sequence n を書いた」と読んで n+1 へ進み、**n は永久に空**のまま
 以後の検証がそこで break を報告し続ける。conflict だけが `false`、他は throw。

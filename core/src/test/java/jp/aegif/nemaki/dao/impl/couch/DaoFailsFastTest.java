@@ -22,6 +22,7 @@ import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -212,6 +213,37 @@ class DaoFailsFastTest {
                             java.util.Map.of("type", "x"))),
                     "a failed create returned null, which callers read as a created document");
         });
+    }
+
+    @Test
+    @DisplayName("a ConflictException reaches the caller AS a ConflictException")
+    void aConflictKeepsItsType() {
+        // AttachmentDaoDelegate's create loop catches ConflictException BY TYPE and retries.
+        // The first version of the fail-fast change wrapped every exception in a plain
+        // RuntimeException, so that catch stopped matching and an ordinary CAS loss became a
+        // hard failure of the upload. Nothing in the suite noticed, because nothing pinned the
+        // TYPE — only that something was thrown.
+        com.ibm.cloud.sdk.core.service.exception.ConflictException conflict =
+                mock(com.ibm.cloud.sdk.core.service.exception.ConflictException.class);
+
+        RuntimeException thrown = assertThrows(RuntimeException.class,
+                () -> CloudantClientWrapper.rethrowIfUnchecked(conflict));
+
+        assertSame(conflict, thrown,
+                "the conflict was wrapped; AttachmentDaoDelegate catches ConflictException by "
+                        + "type, so its retry loop stops seeing ordinary CAS losses and an "
+                        + "upload that should have retried fails outright");
+    }
+
+    @Test
+    @DisplayName("a checked failure is NOT rethrown as-is — the control")
+    void aCheckedFailureIsNotRethrown() {
+        // Without this, "always rethrow" would pass the test above while handing callers a
+        // checked exception the signature does not declare.
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> CloudantClientWrapper.rethrowIfUnchecked(
+                        new java.io.IOException("disk gone")),
+                "a checked exception was rethrown; the caller cannot catch what is not declared");
     }
 
     @Test

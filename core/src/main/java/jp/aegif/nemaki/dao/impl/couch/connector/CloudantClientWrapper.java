@@ -303,6 +303,21 @@ public class CloudantClientWrapper {
 	/**
 	 * Create a document
 	 */
+	/**
+	 * Rethrows {@code e} unchanged when it is already unchecked; otherwise returns.
+	 *
+	 * <p>Extracted and package-visible so it can be tested directly. The identity of the
+	 * exception matters: {@code AttachmentDaoDelegate}'s create loop catches
+	 * {@code ConflictException} BY TYPE and retries, and the first version of the fail-fast
+	 * change wrapped everything in a plain {@code RuntimeException} — which turned every
+	 * ordinary CAS loss into a hard upload failure that no test noticed.
+	 */
+	public static void rethrowIfUnchecked(Exception e) {
+		if (e instanceof RuntimeException runtime) {
+			throw runtime;
+		}
+	}
+
 	public DocumentResult create(Map<String, Object> document) {
 		try {
 			// CORRECT APPROACH: Remove null _id and _rev from new document creation
@@ -388,6 +403,12 @@ public class CloudantClientWrapper {
 			// after every attachment create (redundant-round-trips V2), which is a read the
 			// whole system pays for because this line lied.
 			log.error("Critical error creating document in database '" + databaseName + "'", e);
+			// Rethrow the ORIGINAL when it is already unchecked. Callers distinguish
+			// ConflictException — an ordinary CAS loss they retry — from an outage, and
+			// AttachmentDaoDelegate's retry loop catches ConflictException by type. Wrapping
+			// turned every conflict into something that loop could not see, which the first
+			// version of this fix did silently.
+			rethrowIfUnchecked(e);
 			throw new RuntimeException("Failed to create a document in database '" + databaseName
 					+ "': " + e.getMessage(), e);
 		}
@@ -438,8 +459,29 @@ public class CloudantClientWrapper {
 			return result;
 
 		} catch (Exception e) {
-			log.warn("Error creating document with ID '" + id + "' in database '" + databaseName + "' - returning null. This is normal during initial startup: " + e.getMessage());
-			return null;
+			// Startup stays lenient, exactly as create(Map)/get/update/delete do.
+			if (isStartupPhase()) {
+				log.warn("Error creating document with ID '" + id + "' in database '"
+						+ databaseName + "' during startup - returning null. This is normal"
+						+ " during initial startup: " + e.getMessage());
+				return null;
+			}
+			// The overload roadmap 2-1's third stage MISSED. create(Map) was fixed and this one
+			// was not, while the comment and the ledger both said "create() throws now" — and
+			// the two stores added in the same batch (CouchEvidenceLedgerStore.append,
+			// CouchAnchorReceiptStore.save) call THIS overload and were written believing it.
+			// An evidence ledger that reports every append as successful is worse than no
+			// ledger, because it is believed.
+			log.error("Critical error creating document with ID '" + id + "' in database '"
+					+ databaseName + "'", e);
+			// Rethrow the ORIGINAL when it is already unchecked. Callers distinguish
+			// ConflictException — an ordinary CAS loss they retry — from an outage, and
+			// AttachmentDaoDelegate's retry loop catches ConflictException by type. Wrapping
+			// turned every conflict into something that loop could not see, which the first
+			// version of this fix did silently.
+			rethrowIfUnchecked(e);
+			throw new RuntimeException("Failed to create document ID '" + id + "' in database '"
+					+ databaseName + "': " + e.getMessage(), e);
 		}
 	}
 

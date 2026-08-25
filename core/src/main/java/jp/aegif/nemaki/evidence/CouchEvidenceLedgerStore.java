@@ -173,7 +173,17 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
             return false;
         }
         try {
-            client().create(entry.documentId(), entry.toDocument());
+            // The RESULT is checked, not just the absence of an exception. create(String, Map)
+            // returns null during startup by design, and returning true for that would report
+            // an entry as chained when nothing was written — the one thing a ledger must never
+            // do. (Review: the first version ignored the return entirely and always said true.)
+            com.ibm.cloud.cloudant.v1.model.DocumentResult result =
+                    client().create(entry.documentId(), entry.toDocument());
+            if (result == null || !Boolean.TRUE.equals(result.isOk())) {
+                throw new IllegalStateException("the ledger entry at " + entry.documentId()
+                        + " was not written (the database answered " + (result == null
+                        ? "nothing" : "not-ok") + "); it must not be reported as appended");
+            }
             return true;
         } catch (RuntimeException e) {
             if (isConflict(e)) {
@@ -241,7 +251,12 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
             return false;
         }
         try {
-            client().create(checkpoint.documentId(), checkpoint.toDocument());
+            com.ibm.cloud.cloudant.v1.model.DocumentResult result =
+                    client().create(checkpoint.documentId(), checkpoint.toDocument());
+            if (result == null || !Boolean.TRUE.equals(result.isOk())) {
+                throw new IllegalStateException("the checkpoint at " + checkpoint.documentId()
+                        + " was not written; it must not be reported as sealed");
+            }
             return true;
         } catch (RuntimeException e) {
             if (isConflict(e)) {

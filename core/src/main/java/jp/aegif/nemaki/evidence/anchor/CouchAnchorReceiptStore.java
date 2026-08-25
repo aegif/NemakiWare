@@ -105,7 +105,13 @@ public class CouchAnchorReceiptStore implements AnchorReceiptStore {
         CloudantClientWrapper client = client();
         Document existing = client.get(id);
         if (existing == null) {
-            client.create(id, doc);
+            com.ibm.cloud.cloudant.v1.model.DocumentResult result = client.create(id, doc);
+            if (result == null || !Boolean.TRUE.equals(result.isOk())) {
+                // A receipt that was not written must not return normally. A PENDING
+                // OpenTimestamps commitment that silently failed to persist can never be
+                // upgraded, and the caller has no way to learn that.
+                throw new IllegalStateException("the anchor receipt " + id + " was not written");
+            }
             return;
         }
         // In place, keeping the revision: a pending commitment becoming confirmed is the same
