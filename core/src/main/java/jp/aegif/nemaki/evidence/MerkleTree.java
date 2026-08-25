@@ -148,11 +148,20 @@ public final class MerkleTree {
         return next;
     }
 
-    static String hashLeaf(String value) {
+    /**
+     * {@code SHA-256(0x00 || value)}.
+     *
+     * <p>Public so a verifier's independent RESTATEMENT of this rule can be checked against it.
+     * {@code SipVerifier} deliberately does not import this class — a tool a third party is
+     * meant to reimplement must not depend on the thing it verifies — and that independence is
+     * only worth having if the restatement is right.
+     */
+    public static String hashLeaf(String value) {
         return sha256(LEAF_PREFIX, value == null ? "" : value);
     }
 
-    static String hashNode(String left, String right) {
+    /** {@code SHA-256(0x01 || left || right)}. Public for the same reason as {@link #hashLeaf}. */
+    public static String hashNode(String left, String right) {
         return sha256(NODE_PREFIX, (left == null ? "" : left) + (right == null ? "" : right));
     }
 

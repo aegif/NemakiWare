@@ -155,9 +155,18 @@ journal と同居させると `lineage.retention.days` の purge を共有し、
 **保持期限が来た日に連鎖が切れる** (§1 がまさにそれを避けるための節)。
 このクラスに purge 経路は 1 つも無い。
 
-view は **4 本** (`entries_by_domain_sequence` / `checkpoints_by_domain_to` に加え、
-アンカー受領証の `receipts_by_checkpoint` / `receipts_pending`。P2-3 で
-`receipts_confirmed` を足して 5 本)。**同じ design document に置く** —
+view は **6 本** (`entries_by_domain_sequence` / `entries_by_domain_subject` /
+`checkpoints_by_domain_to` に加え、アンカー受領証の `receipts_by_checkpoint` /
+`receipts_pending` / `receipts_confirmed`)。
+
+> **`entries_by_domain_subject` は 2026-08-26 に足した。** それまで台帳は
+> **sequence でしか引けなかった**が、読み手が持っているのはオブジェクト id であって
+> sequence ではない。つまり**書いたエントリを誰も見つけられず**、特定の記録に対する
+> inclusion proof が原理的に作れなかった (レビュー指摘)。
+> **既存配備では design document の signature が変わるので view が再構築される** —
+> 再構築中の view は不完全な index のまま 200 を返す。
+
+**同じ design document に置く** —
 `createOrUpdateView` は view ごとに get-modify-put するので、別々に配ると
 CouchDB が直前に作った index を捨てる (journal 側で学んだ形)。
 **1 回の put にまとめた (2026-08-25)。** 5 回の get-modify-put は design document を

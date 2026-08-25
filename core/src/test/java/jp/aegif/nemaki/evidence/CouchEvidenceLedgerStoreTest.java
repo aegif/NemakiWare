@@ -198,10 +198,13 @@ class CouchEvidenceLedgerStoreTest {
         org.mockito.Mockito.verify(client, org.mockito.Mockito.times(1))
                 .putDesignDocumentWithReducesIfChanged(anyString(), views.capture());
 
-        assertEquals(5, views.getValue().size(),
-                "the single put does not carry all five views (" + views.getValue().keySet()
+        assertEquals(6, views.getValue().size(),
+                "the single put does not carry all six views (" + views.getValue().keySet()
                         + "); a view deployed separately changes the design document's "
                         + "signature again and discards the index just built");
+        assertTrue(views.getValue().containsKey("entries_by_domain_subject"),
+                "the subject view is missing, so an entry can be written and never found: "
+                        + views.getValue().keySet());
     }
 
     @Test

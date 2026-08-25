@@ -51,6 +51,19 @@ public interface EvidenceLedgerStore {
      *  the verifier unable to see it. */
     List<EvidenceLedgerEntry> range(String domain, long fromSequence, long toSequence, int limit);
 
+    /**
+     * Every entry ABOUT one subject, in sequence order.
+     *
+     * <p>The only way in that does not require already knowing a sequence number. A reader holds
+     * an object id or a capture id, never a sequence; without this there is no route from one to
+     * the other, and an inclusion proof for a specific record cannot be produced at all. A
+     * design that records evidence nobody can look up is not far from recording none.
+     *
+     * @return possibly empty, never null. Empty means no entry names this subject — a true
+     *         statement about a record that was never chained, not an error
+     */
+    List<EvidenceLedgerEntry> findBySubject(String domain, String subjectId, int limit);
+
     /** Writes a checkpoint. Same create-only rule as {@link #append}. */
     boolean appendCheckpoint(EvidenceCheckpoint checkpoint);
 

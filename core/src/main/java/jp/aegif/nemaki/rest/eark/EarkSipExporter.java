@@ -19,6 +19,7 @@ package jp.aegif.nemaki.rest.eark;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.evidence.AuthenticityReport;
 import jp.aegif.nemaki.evidence.AuthenticityReportAssembler;
+import jp.aegif.nemaki.evidence.EvidenceLedgerEntry;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
@@ -94,8 +95,30 @@ public class EarkSipExporter {
     /** The organisation agent's role. MUST be CREATOR with a TYPE that is not OTHER (SIP15). */
     private static final String SUBMITTER_ROLE = "CREATOR";
 
+    /** What the evidence package does and does not let a third party conclude. */
+    static final String EVIDENCE_PACKAGE_LIMITS =
+            "The audit path proves that the entry named here was in the span its checkpoint "
+                    + "sealed, given the checkpoint. It does NOT prove the checkpoint itself "
+                    + "was not rewritten — that needs the checkpoint hash to exist somewhere "
+                    + "outside this repository's database, which is what an external anchor is "
+                    + "for. It also says nothing about whether the capture was complete or its "
+                    + "metadata true: the chain fixes WHAT WAS RECORDED and WHEN, not whether "
+                    + "the record is accurate.";
+
     private ContentService contentService;
     private AuthenticityReportAssembler reportAssembler;
+    private jp.aegif.nemaki.evidence.EvidenceLedgerStore ledgerStore;
+    private jp.aegif.nemaki.evidence.EvidenceLedgerService ledgerService;
+
+    @Autowired(required = false)
+    public void setLedgerStore(jp.aegif.nemaki.evidence.EvidenceLedgerStore ledgerStore) {
+        this.ledgerStore = ledgerStore;
+    }
+
+    @Autowired(required = false)
+    public void setLedgerService(jp.aegif.nemaki.evidence.EvidenceLedgerService ledgerService) {
+        this.ledgerService = ledgerService;
+    }
 
     @Autowired(required = false)
     public void setContentService(ContentService contentService) {
@@ -189,6 +212,15 @@ public class EarkSipExporter {
             sip.addPreservationMetadata(new IPMetadata(
                     new IPFile(writePremis(workDir, repositoryId, objectId, report, packagedAt)),
                     new MetadataType(MetadataType.MetadataTypeEnum.PREMIS)));
+
+            // The evidence package: the inclusion proof that ties THIS record to the chain,
+            // plus the checkpoint it was sealed under. Without the proof, a package carrying a
+            // checkpoint would only say "this repository's chain was sealed at some point",
+            // which says nothing about the document beside it — decoration, not evidence.
+            Map<String, Object> evidence = evidencePackage(repositoryId, objectId, notes);
+            sip.addOtherMetadata(new IPMetadata(
+                    new IPFile(writeEvidencePackage(workDir, evidence)),
+                    new MetadataType(MetadataType.MetadataTypeEnum.OTHER)));
 
             IPRepresentation representation = new IPRepresentation("rep1");
             representation.addFile(new IPFile(payload));
@@ -457,6 +489,83 @@ public class EarkSipExporter {
         Path metadataDir = Files.createDirectories(workDir.resolve("metadata"));
         Path file = metadataDir.resolve("premis.xml");
         Files.writeString(file, xml, StandardCharsets.UTF_8);
+        return file;
+    }
+
+    /**
+     * What a third party needs to check the chain claim without this server.
+     *
+     * <p>Assembled from the ledger, not from the report: the report RENDERS a ledger section,
+     * and what a verifier needs is the audit path itself. When any of it is missing the package
+     * says so in {@code limits} rather than omitting the file — an absent evidence package and
+     * one that could not be built look identical from the outside, and only one of them means
+     * the record was never chained.
+     */
+    private Map<String, Object> evidencePackage(String repositoryId, String objectId,
+            List<String> notes) {
+        Map<String, Object> evidence = new LinkedHashMap<>();
+        evidence.put("repositoryId", repositoryId);
+        evidence.put("objectId", objectId);
+        evidence.put("chainedEntries", List.of());
+        evidence.put("inclusionProof", null);
+        evidence.put("limits", EVIDENCE_PACKAGE_LIMITS);
+        if (ledgerStore == null || ledgerService == null) {
+            evidence.put("status", "unavailable");
+            evidence.put("message", "the evidence ledger is not wired on the node that built "
+                    + "this package. This is NOT a statement that the record was never chained.");
+            notes.add("This package carries no inclusion proof: the evidence ledger was not "
+                    + "reachable when it was built.");
+            return evidence;
+        }
+        List<Map<String, Object>> chained = new ArrayList<>();
+        List<EvidenceLedgerEntry> entries;
+        try {
+            // Subject id: the capture entry names the CAPTURE, and the exporter is given an
+            // object. Both are tried, because which one applies depends on how the record
+            // arrived and neither is a safe assumption.
+            entries = new ArrayList<>(ledgerStore.findBySubject(repositoryId, objectId, 50));
+        } catch (RuntimeException e) {
+            evidence.put("status", "error");
+            evidence.put("message", "the evidence ledger could not be read (" + e.getMessage()
+                    + "). This is NOT a statement that the record was never chained.");
+            notes.add("This package carries no inclusion proof: the evidence ledger could not "
+                    + "be read when it was built.");
+            return evidence;
+        }
+        if (entries.isEmpty()) {
+            evidence.put("status", "not-chained");
+            evidence.put("message", "no ledger entry names this object. The chain only holds "
+                    + "what was written to it from the day the producer shipped; there is no "
+                    + "back-fill, so this says nothing about whether the record is genuine.");
+            return evidence;
+        }
+        for (EvidenceLedgerEntry entry : entries) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("sequence", entry.sequence());
+            row.put("subjectKind", entry.subjectKind().name());
+            row.put("payloadDigest", entry.payloadDigest());
+            row.put("occurredAt", entry.occurredAt());
+            row.put("entryHash", entry.entryHash());
+            row.put("prevEntryHash", entry.prevEntryHash());
+            chained.add(row);
+        }
+        evidence.put("chainedEntries", chained);
+        evidence.put("status", "success");
+        // The proof for the FIRST entry: the capture. Later entries about the same object are
+        // listed above but not proved individually — a package with fifty audit paths in it
+        // would be no more checkable and much harder to read.
+        evidence.put("inclusionProof",
+                ledgerService.inclusionProof(repositoryId, entries.get(0).sequence()));
+        return evidence;
+    }
+
+    private Path writeEvidencePackage(Path workDir, Map<String, Object> evidence)
+            throws IOException {
+        Path metadataDir = Files.createDirectories(workDir.resolve("metadata"));
+        Path file = metadataDir.resolve("nemaki-evidence.json");
+        Files.writeString(file, jp.aegif.nemaki.config.ObjectMapperFactory
+                .createDefaultObjectMapper().writeValueAsString(evidence),
+                StandardCharsets.UTF_8);
         return file;
     }
 

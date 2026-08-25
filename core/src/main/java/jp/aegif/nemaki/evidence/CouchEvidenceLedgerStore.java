@@ -69,6 +69,17 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
     static final String DB_NAME = "nemaki_evidence_ledger";
     public static final String DESIGN_DOC = "evidence_ledger";
     static final String VIEW_ENTRIES = "entries_by_domain_sequence";
+
+    /**
+     * Entries by what they are ABOUT, which is how a reader arrives.
+     *
+     * <p>Everything else in this store is keyed on sequence, and nobody holds a sequence. What
+     * somebody holds is an object id or a capture id, and until this view existed there was no
+     * way to get from one to the other — so an entry could be written and then never found,
+     * which makes an inclusion proof for a specific record impossible to produce. A design that
+     * records evidence nobody can look up is not far off recording none.
+     */
+    static final String VIEW_ENTRIES_BY_SUBJECT = "entries_by_domain_subject";
     static final String VIEW_CHECKPOINTS = "checkpoints_by_domain_to";
 
     /**
@@ -78,6 +89,11 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
     private static final String MAP_ENTRIES =
             "function(doc) { if (doc.type === '" + EvidenceLedgerEntry.TYPE + "' && doc.domain) {"
             + " emit([doc.domain, doc.sequence], null); } }";
+
+    /** Emits {@code [domain, subjectId, sequence]} so one subject's entries come back in order. */
+    private static final String MAP_ENTRIES_BY_SUBJECT =
+            "function(doc) { if (doc.type === '" + EvidenceLedgerEntry.TYPE + "' && doc.domain"
+            + " && doc.subjectId) { emit([doc.domain, doc.subjectId, doc.sequence], null); } }";
 
     private static final String MAP_CHECKPOINTS =
             "function(doc) { if (doc.type === '" + EvidenceCheckpoint.TYPE + "' && doc.domain) {"
@@ -103,6 +119,8 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
     static Map<String, CloudantClientWrapper.ViewSource> viewSources() {
         Map<String, CloudantClientWrapper.ViewSource> views = new java.util.LinkedHashMap<>();
         views.put(VIEW_ENTRIES, new CloudantClientWrapper.ViewSource(MAP_ENTRIES));
+        views.put(VIEW_ENTRIES_BY_SUBJECT,
+                new CloudantClientWrapper.ViewSource(MAP_ENTRIES_BY_SUBJECT));
         views.put(VIEW_CHECKPOINTS, new CloudantClientWrapper.ViewSource(MAP_CHECKPOINTS));
         views.put(CouchAnchorReceiptStore.VIEW_BY_CHECKPOINT,
                 new CloudantClientWrapper.ViewSource(CouchAnchorReceiptStore.MAP_BY_CHECKPOINT));
@@ -256,6 +274,35 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
             return n.longValue();
         }
         return -1L;
+    }
+
+    @Override
+    public List<EvidenceLedgerEntry> findBySubject(String domain, String subjectId, int limit) {
+        if (subjectId == null || subjectId.isBlank()) {
+            return List.of();
+        }
+        Map<String, Object> params = new HashMap<>();
+        params.put("include_docs", true);
+        // The third key component is the sequence, so an open-ended upper bound collects every
+        // entry for this subject in sequence order. `{}` sorts above every number in CouchDB's
+        // collation, which is what makes the range end where the subject does.
+        params.put("startkey", List.of(domain, subjectId, 0));
+        params.put("endkey", List.of(domain, subjectId, new java.util.HashMap<>()));
+        if (limit > 0) {
+            params.put("limit", limit);
+        }
+        ViewResult result = client().queryView(DESIGN_DOC, VIEW_ENTRIES_BY_SUBJECT, params);
+        List<EvidenceLedgerEntry> entries = new ArrayList<>();
+        if (result == null || result.getRows() == null) {
+            return entries;
+        }
+        for (ViewResultRow row : result.getRows()) {
+            EvidenceLedgerEntry entry = decode(row);
+            if (entry != null) {
+                entries.add(entry);
+            }
+        }
+        return entries;
     }
 
     @Override

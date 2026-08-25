@@ -104,6 +104,16 @@ class EvidenceLedgerServiceTest {
             return rows.size() > limit ? rows.subList(0, limit) : rows;
         }
 
+        @Override public List<EvidenceLedgerEntry> findBySubject(String domain, String subjectId,
+                int limit) {
+            return entries.stream()
+                    .filter(e -> e.domain().equals(domain))
+                    .filter(e -> subjectId != null && subjectId.equals(e.subjectId()))
+                    .sorted(java.util.Comparator.comparingLong(EvidenceLedgerEntry::sequence))
+                    .limit(limit <= 0 ? Long.MAX_VALUE : limit)
+                    .toList();
+        }
+
         @Override public boolean appendCheckpoint(EvidenceCheckpoint checkpoint) {
             for (EvidenceCheckpoint existing : checkpoints) {
                 if (existing.toSequence() == checkpoint.toSequence()) {
