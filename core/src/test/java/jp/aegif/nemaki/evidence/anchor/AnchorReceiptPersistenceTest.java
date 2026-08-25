@@ -344,13 +344,55 @@ class AnchorReceiptPersistenceTest {
 
         assertTrue(shown.contains("NOT a time proof"),
                 "a pending TSA attempt was shown the sentence a CONFIRMED token earns: " + shown);
-        assertEquals(AnchorService.claimLimitsFor(AnchorKind.RFC3161_TSA),
-                AnchorService.claimLimitsFor(
-                        jp.aegif.nemaki.rest.purview.anchor.AnchorReceipts.confirmed(
-                                AnchorKind.RFC3161_TSA, ROOT,
-                                Instant.parse("2026-08-24T00:00:00Z"), new byte[] { 1 }, "p",
-                                Map.of())),
-                "a confirmed token stopped getting its own kind's sentence");
+        // NOT `claimLimitsFor(kind) == claimLimitsFor(confirmedReceipt)` — the test fixture
+        // builds a confirmed receipt with kind.timeSemantics(), so both sides reduce to the
+        // same call and the assertion is a tautology. This is the SECOND time that shape
+        // appeared in this work; assert the content instead.
+        assertTrue(AnchorService.claimLimitsFor(AnchorKind.RFC3161_TSA).contains("accuracy"),
+                "a confirmed TSA token stopped getting the accuracy-bounded sentence");
+    }
+
+    @Test
+    @DisplayName("the RENDERED output uses the receipt's limits, not its rung's")
+    void theRenderedLimitsFollowTheReceipt() {
+        // The helper being right is not enough: both render paths call it, and either could go
+        // back to passing `receipt.kind()`. A reviewer showed that reverting both call sites
+        // left every test passing.
+        AnchorService service = new AnchorService();
+        service.setStore(storeAt(5));
+        service.setTargets(List.of(pendingRung(AnchorKind.RFC3161_TSA)));
+
+        AnchorService.Outcome outcome = service.anchor(
+                EvidenceCheckpoint.of(DOMAIN, 0, 5, ROOT, null, "2026-08-24T00:00:00Z"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> receipts =
+                (List<Map<String, Object>>) outcome.asMap().get("receipts");
+        String rendered = String.valueOf(receipts.get(0).get("claimLimits"));
+
+        assertTrue(rendered.contains("NOT a time proof"),
+                "the report rendered a pending TSA attempt beside the sentence a CONFIRMED "
+                        + "token earns: " + rendered);
+    }
+
+    /** A rung that stays PENDING, for the rendering test. */
+    private static AnchorTarget pendingRung(AnchorKind kind) {
+        return new AnchorTarget() {
+            @Override
+            public AnchorKind kind() {
+                return kind;
+            }
+
+            @Override
+            public boolean isConfigured() {
+                return true;
+            }
+
+            @Override
+            public AnchorReceipt anchor(String hexDigest) {
+                return AnchorReceipt.pending(kind, hexDigest, Instant.now(), new byte[] { 1 },
+                        "p", Map.of());
+            }
+        };
     }
 
     /** A rung that always fails, for the downgrade tests. */

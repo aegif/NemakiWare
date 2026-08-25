@@ -266,7 +266,19 @@ public class AnchorService {
             return;
         }
         try {
-            if (wouldDowngrade(domain, toSequence, receipt)) {
+            // Outside the save's try on purpose. If the downgrade CHECK fails, the honest
+            // outcome is to keep the write, not to drop it: a read failure would otherwise
+            // silently discard a PENDING .ots commitment that could still have been upgraded.
+            boolean downgrade;
+            try {
+                downgrade = wouldDowngrade(domain, toSequence, receipt);
+            } catch (RuntimeException e) {
+                logger.warn("Could not check for a stronger {} receipt at {}@{} ({}); storing "
+                        + "the new one rather than dropping it", receipt.kind(), domain,
+                        toSequence, e.getMessage());
+                downgrade = false;
+            }
+            if (downgrade) {
                 return;
             }
             receiptStore.save(domain, toSequence, receipt);

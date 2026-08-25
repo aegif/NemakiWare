@@ -244,9 +244,18 @@ class LongTermValidityTest {
 
         Map<String, Object> body = service.assess("bedroom", LocalDate.of(2031, 1, 1));
 
-        assertEquals(1, body.get("timestampRenewalsDue"),
-                "a confirmed token signed with a retired algorithm was not reported as needing "
-                        + "renewal; nothing in the deployment would ever notice");
+        // A failing IMPRINT is a HASH_TREE renewal — the value has to be re-hashed, which
+        // needs the archived data. Only a failing SIGNATURE would be a timestamp renewal, and
+        // no rung records the signature algorithm, which is why that count stays 0 and the
+        // response says so rather than leaving the zero to be misread.
+        // 1, not 3: the fixture declares SHA-256 sound, so the ledger and the content
+        // digests are NONE and only the SHA-1 imprint is due.
+        assertEquals(1, body.get("hashTreeRenewalsDue"),
+                "a confirmed token whose imprint algorithm is retired was not reported as "
+                        + "needing renewal; nothing in the deployment would ever notice");
+        assertEquals(0, body.get("timestampRenewalsDue"));
+        assertTrue(String.valueOf(body.get("timestampRenewalsNote")).contains("structurally 0"),
+                "a zero timestamp-renewal count was left to be read as 'nothing is due'");
         assertEquals(0, body.get("undetermined"),
                 "the token's algorithm was not recognised: " + body.get("needs"));
     }
@@ -262,7 +271,8 @@ class LongTermValidityTest {
                         new byte[] { 1 }, "p",
                         Map.of("digestAlgorithm", "SHA-256"))));
 
-        assertEquals(0, service.assess("bedroom", TODAY).get("timestampRenewalsDue"));
+        assertEquals(0, service.assess("bedroom", TODAY).get("hashTreeRenewalsDue"),
+                "a sound imprint produced work");
     }
 
     @Test
@@ -276,9 +286,9 @@ class LongTermValidityTest {
                 "src/main/java/jp/aegif/nemaki/rest/purview/anchor/Rfc3161AnchorTarget.java"));
 
         assertTrue(source.contains("attrs.put(\"" + LongTermValidityService
-                        .TOKEN_ALGORITHM_ATTRIBUTE + "\""),
+                        .IMPRINT_ALGORITHM_ATTRIBUTE + "\""),
                 "LongTermValidityService reads '" + LongTermValidityService
-                        .TOKEN_ALGORITHM_ATTRIBUTE + "' but Rfc3161AnchorTarget never writes it; "
+                        .IMPRINT_ALGORITHM_ATTRIBUTE + "' but Rfc3161AnchorTarget never writes it; "
                         + "every confirmed token would be assessed as UNKNOWN");
     }
 

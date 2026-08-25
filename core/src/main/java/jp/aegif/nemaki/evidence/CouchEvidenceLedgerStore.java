@@ -330,7 +330,34 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
         return new HashMap<String, Object>();
     }
 
+    /**
+     * Whether this failure is an ordinary CAS loss.
+     *
+     * <p>By TYPE first. The string fallback exists for wrappers that lose the type, but it is
+     * checked LAST and never against a message this class composed: the "was not written"
+     * messages below embed a document id, and {@code String.format("%019d", 409)} puts the
+     * literal {@code 409} in it — so sequence 409 (and 4090-4099, and any repository whose name
+     * contains "conflict") turned "the database refused the write" into "somebody already holds
+     * this position". The caller then retries for ever or tells an operator a checkpoint exists
+     * where none does. Found by review, not by a test.
+     */
     private static boolean isConflict(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof com.ibm.cloud.sdk.core.service.exception.ConflictException) {
+                return true;
+            }
+            if (t instanceof IllegalStateException) {
+                // Ours, from the not-written guards. Never a conflict, whatever it says.
+                return false;
+            }
+            if (t.getCause() == t) {
+                break;
+            }
+        }
+        return isConflictByMessage(e);
+    }
+
+    private static boolean isConflictByMessage(Throwable e) {
         for (Throwable t = e; t != null; t = t.getCause()) {
             String message = t.getMessage();
             if (message != null && (message.contains("409") || message.toLowerCase()

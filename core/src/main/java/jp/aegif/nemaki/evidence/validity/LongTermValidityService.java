@@ -46,13 +46,18 @@ public class LongTermValidityService {
     static final String LEDGER_HASH_ALGORITHM = "SHA-256";
 
     /**
-     * The attribute an anchor receipt records its algorithm under.
+     * The attribute an anchor receipt records its MESSAGE IMPRINT algorithm under.
      *
-     * <p>{@code Rfc3161AnchorTarget} writes {@code digestAlgorithm} (the imprint's). There is
-     * no {@code signatureAlgorithm} anywhere in the product, which is what the first version
-     * looked for. Named here so the two cannot drift apart again silently.
+     * <p>{@code Rfc3161AnchorTarget} writes {@code digestAlgorithm}, and that is the imprint —
+     * the hash of the value being stamped. It is NOT the algorithm that signed the token, which
+     * is what RFC 4998's timestamp renewal actually fires on and which nothing in this product
+     * records. Two names, two meanings; treating the first as the second reports a token as
+     * sound because its imprint is, while its CMS signature may already be broken.
      */
-    static final String TOKEN_ALGORITHM_ATTRIBUTE = "digestAlgorithm";
+    static final String IMPRINT_ALGORITHM_ATTRIBUTE = "digestAlgorithm";
+
+    /** How many receipts one assessment reads before it stops — and says that it stopped. */
+    static final int RECEIPT_SCAN_LIMIT = 1000;
 
     private AlgorithmRegistry registry = AlgorithmRegistry.withDefaults();
     private AnchorReceiptStore receiptStore;
@@ -81,7 +86,9 @@ public class LongTermValidityService {
         List<RenewalNeed> needs = new ArrayList<>();
         needs.add(ledgerNeed(when));
         needs.add(fixityNeed(when));
-        needs.addAll(anchorNeeds(repositoryId, when));
+        List<RenewalNeed> anchors = anchorNeeds(repositoryId, when);
+        int assessedReceipts = anchors.size();
+        needs.addAll(anchors);
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("repositoryId", repositoryId);
@@ -103,9 +110,26 @@ public class LongTermValidityService {
             }
         }
         body.put("timestampRenewalsDue", timestampRenewals);
+        // Said out loud rather than left to be inferred from a zero. RFC 4998's timestamp
+        // renewal fires on the TOKEN'S SIGNATURE algorithm, and no rung records that, so this
+        // count can only ever be 0 until one does. A zero here is "not looked at", not "fine".
+        body.put("timestampRenewalsNote", "No rung records the algorithm that SIGNED its token, "
+                + "so signature-driven timestamp renewal is NOT assessed and this count is "
+                + "structurally 0. What is assessed is the message imprint, whose failure is a "
+                + "hash-tree renewal.");
         body.put("hashTreeRenewalsDue", hashTreeRenewals);
         body.put("undetermined", undetermined);
         body.put("needs", rows);
+        if (assessedReceipts >= RECEIPT_SCAN_LIMIT) {
+            // No silent caps. An assessment that stopped at 1000 and reports ordinary totals
+            // reads as "everything is accounted for".
+            body.put("receiptsTruncated", true);
+            body.put("receiptsTruncatedNote", "Only the first " + RECEIPT_SCAN_LIMIT
+                    + " confirmed receipts were assessed; there are more, and they were NOT "
+                    + "looked at.");
+        } else {
+            body.put("receiptsTruncated", false);
+        }
         return body;
     }
 
@@ -140,7 +164,7 @@ public class LongTermValidityService {
             // confirmed receipts and then filtered — a loop whose body could never run, so
             // timestampRenewalsDue was structurally always 0 and no deployed token was ever
             // assessed. Three reviewers found it independently.
-            rows = receiptStore.confirmed(repositoryId, 1000);
+            rows = receiptStore.confirmed(repositoryId, RECEIPT_SCAN_LIMIT);
         } catch (RuntimeException e) {
             needs.add(new RenewalNeed(RenewalNeed.Kind.UNDETERMINED, "anchor receipts", null,
                     null, "the receipts could not be read (" + e.getMessage() + ")"));
@@ -153,15 +177,19 @@ public class LongTermValidityService {
                 // for it would put work on a list that cannot be done.
                 continue;
             }
-            // The attribute the RFC 3161 rung actually records. "signatureAlgorithm" is
-            // written by nothing, so the first version always saw null and reported UNKNOWN.
-            String algorithm = receipt.attributes().get(TOKEN_ALGORITHM_ATTRIBUTE);
+            // The imprint, which is all any rung records.
+            String algorithm = receipt.attributes().get(IMPRINT_ALGORITHM_ATTRIBUTE);
             AlgorithmRegistry.Soundness soundness = registry.soundnessOf(algorithm, when);
-            needs.add(new RenewalNeed(kindForToken(soundness),
-                    "anchor receipt " + receipt.kind() + " @" + row.toSequence(), algorithm,
-                    soundness, algorithm == null
-                            ? "the receipt does not record which algorithm signed it"
-                            : "the token's own signature algorithm"));
+            // A failing IMPRINT means the value has to be re-hashed and re-stamped, which needs
+            // the archived data — the expensive renewal, not the cheap one. Only a failing
+            // SIGNATURE is a timestamp renewal, and no rung records the signature algorithm.
+            needs.add(new RenewalNeed(kindForTree(soundness),
+                    "anchor receipt " + receipt.kind() + " @" + row.toSequence() + " (imprint)",
+                    algorithm, soundness, algorithm == null
+                            ? "this rung records no imprint algorithm"
+                            : "the message imprint's algorithm. The algorithm that SIGNED the "
+                                    + "token is not recorded by any rung, so its state is "
+                                    + "unknown and is not assessed here"));
         }
         return needs;
     }

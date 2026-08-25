@@ -156,6 +156,38 @@ class CouchEvidenceLedgerStoreTest {
     }
 
     @Test
+    @DisplayName("sequence 409 is not mistaken for a 409 conflict")
+    void aDocumentIdContaining409IsNotAConflict() {
+        // The not-written guard's message embeds the document id, and
+        // String.format("%019d", 409) puts the literal 409 in it. isConflict matched on the
+        // STRING, so "the database refused this write" became "somebody already holds this
+        // position" — deterministically, for sequence 409, 4090-4099, and any repository whose
+        // name contains "conflict". The caller then retries for ever or is told a checkpoint
+        // exists where none does. Found by review, not by a test.
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.create(anyString(), any())).thenReturn(null);
+
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> storeWith(client).append(entryAt(409, "abc", "prev")),
+                "a write the database refused at sequence 409 was reported as a lost race");
+        assertTrue(String.valueOf(e.getMessage()).contains("409"),
+                "the fixture no longer exercises an id containing 409: " + e.getMessage());
+    }
+
+    @Test
+    @DisplayName("a real conflict at sequence 409 IS still a lost race — the control")
+    void arealConflictAt409StillLoses() {
+        // Without this, refusing to see any conflict would pass the test above and every CAS
+        // loss would become a hard failure.
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.create(anyString(), any()))
+                .thenThrow(mock(com.ibm.cloud.sdk.core.service.exception.ConflictException.class));
+
+        assertFalse(storeWith(client).append(entryAt(409, "abc", "prev")),
+                "a genuine conflict stopped being reported as a lost race");
+    }
+
+    @Test
     @DisplayName("a fork — two rows at one sequence — comes back as two rows")
     void aForkIsNotCollapsed() {
         EvidenceLedgerEntry one = entryAt(4, "aaa", "prev");

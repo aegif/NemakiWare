@@ -70,7 +70,8 @@ out-of-band で監視せよ**と書いている (ロードマップ §9-5)。つ
 | 対象 | 使っているアルゴリズム | 失効したら要る renewal |
 |---|---|---|
 | evidence ledger の entryHash / Merkle | SHA-256 (`MerkleTree`) | **hash-tree renewal** (元データ必要) |
-| RFC 3161 トークンの imprint | 受領証の `digestAlgorithm` 属性 | **timestamp renewal** |
+| RFC 3161 トークンの **imprint** | 受領証の `digestAlgorithm` 属性 | **hash-tree renewal** (値を再ハッシュするので元データが要る) |
+| RFC 3161 トークンの**署名** | **どの段も記録していない** | timestamp renewal — **評価できない**。§5.5 参照 |
 | OpenTimestamps の commitment | SHA-256 (プロトコル既定) | **hash-tree renewal 相当**。ただし**再アンカーは新しい時刻しか証明しない** — §4 |
 | `nemaki:contentHash` (P1-2) | SHA-256 | 再計算と再記録。**元の取得時刻は証明し直せない** |
 
@@ -137,6 +138,21 @@ V3 境界日を除外 / V4 tree renewal を timestamp と呼ぶ / V5 DEPRECATED 
    (`Rfc3161AnchorTarget` が書くのは `digestAlgorithm`)
 
 `confirmed()` を store に足し (専用 view)、属性名を実在するものに直した。
+
+**さらにもう 1 段の誤りがあった (2 巡目レビュー)。** `digestAlgorithm` は
+**message imprint** のハッシュであって、トークンに**署名**したアルゴリズムではない。
+RFC 4998 の timestamp renewal が発火するのは後者で、**それはどの段も記録していない**。
+imprint の失効は値の再ハッシュ = **hash-tree renewal (高価な方)** である。
+
+したがって:
+
+- imprint は `kindForTree` に載せ、理由文も「imprint の」と書く
+  (初稿の production 文言は "the token's own signature algorithm" のままだった)
+- `timestampRenewalsDue` は**構造的に 0 のまま**である。**0 を黙って出さず**、
+  応答に「署名アルゴリズムを記録している段が無いので評価していない。この 0 は
+  『問題なし』ではなく『見ていない』である」と書く
+- 受領証の走査は 1000 件で打ち切るが、**打ち切ったことを応答に書く**
+  (`receiptsTruncated`)。黙って切った集計は「全部を見た」と読まれる
 **§5 AC4 の「別々に報告される」は片側しか測っていなかった** —
 確定済みトークンを本番の列挙経路に通す判別テストを足し、
 fixture は定数ではなく**実在のリテラル**を使う (定数を両側に使うと同語反復に

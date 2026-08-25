@@ -67,9 +67,20 @@ class AnchorControllerTest {
     private static List<Method> mappedEndpoints() {
         List<Method> endpoints = new ArrayList<>();
         for (Method method : AnchorController.class.getDeclaredMethods()) {
-            if (method.getAnnotation(GetMapping.class) != null
-                    || method.getAnnotation(PostMapping.class) != null) {
-                endpoints.add(method);
+            // EVERY mapping annotation. Limiting this to Get/Post is what made the claim
+            // "a fifth endpoint is covered the day it is written" untrue — this project uses
+            // PATCH, and a @PutMapping/@DeleteMapping/@PatchMapping door would have been
+            // walked past in silence (review).
+            for (Class<? extends java.lang.annotation.Annotation> mapping : List.of(
+                    GetMapping.class, PostMapping.class,
+                    org.springframework.web.bind.annotation.PutMapping.class,
+                    org.springframework.web.bind.annotation.DeleteMapping.class,
+                    org.springframework.web.bind.annotation.PatchMapping.class,
+                    org.springframework.web.bind.annotation.RequestMapping.class)) {
+                if (method.getAnnotation(mapping) != null) {
+                    endpoints.add(method);
+                    break;
+                }
             }
         }
         return endpoints;

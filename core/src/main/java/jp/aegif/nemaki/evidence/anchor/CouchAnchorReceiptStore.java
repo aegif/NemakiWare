@@ -126,7 +126,15 @@ public class CouchAnchorReceiptStore implements AnchorReceiptStore {
         // receipt further along, not a second one.
         doc.put("_id", id);
         doc.put("_rev", existing.getRev());
-        client.update(doc);
+        com.ibm.cloud.cloudant.v1.model.DocumentResult updated = client.update(doc);
+        if (updated == null || !Boolean.TRUE.equals(updated.isOk())) {
+            // The create branch checked its result and this one did not — so the PENDING to
+            // CONFIRMED transition, the single write this class exists for, could fail silently
+            // and `upgradePending` would still list the receipt as upgraded. Reported by two
+            // reviewers against a commit message that said the result WAS checked.
+            throw new IllegalStateException("the anchor receipt " + id + " was not updated; the "
+                    + "settled proof is not stored and would be lost");
+        }
     }
 
     @Override

@@ -236,6 +236,47 @@ class DaoFailsFastTest {
     }
 
     @Test
+    @DisplayName("BOTH create overloads let a ConflictException through by type")
+    void bothCreateOverloadsPreserveConflictType() throws Exception {
+        // The helper being right is not enough. A reviewer showed that deleting the two
+        // `rethrowIfUnchecked(e);` CALL SITES left every test passing — so the regression that
+        // broke AttachmentDaoDelegate's retry loop could return unnoticed. This drives the real
+        // catch blocks: a REAL wrapper over a Cloudant client that throws a conflict.
+        offStartupThread(() -> {
+            for (boolean explicitId : new boolean[] { false, true }) {
+                com.ibm.cloud.sdk.core.service.exception.ConflictException conflict =
+                        mock(com.ibm.cloud.sdk.core.service.exception.ConflictException.class);
+                com.ibm.cloud.cloudant.v1.Cloudant cloudant =
+                        mock(com.ibm.cloud.cloudant.v1.Cloudant.class);
+                // create(Map) posts, create(String, Map) puts. Stubbing one and asserting on
+                // the other is how the first version of this test "failed" against correct code.
+                when(cloudant.postDocument(org.mockito.ArgumentMatchers.any()))
+                        .thenThrow(conflict);
+                when(cloudant.putDocument(org.mockito.ArgumentMatchers.any()))
+                        .thenThrow(conflict);
+                CloudantClientWrapper wrapper = new CloudantClientWrapper(cloudant,
+                        "nemaki_evidence_ledger",
+                        jp.aegif.nemaki.config.ObjectMapperFactory.createCouchdbObjectMapper());
+
+                Throwable thrown = assertThrows(Throwable.class, () -> {
+                    if (explicitId) {
+                        wrapper.create("doc-1",
+                                new java.util.HashMap<>(java.util.Map.of("type", "x")));
+                    } else {
+                        wrapper.create(new java.util.HashMap<>(java.util.Map.of("type", "x")));
+                    }
+                });
+
+                assertSame(conflict, thrown,
+                        (explicitId ? "create(String, Map)" : "create(Map)") + " wrapped the "
+                                + "conflict. AttachmentDaoDelegate catches ConflictException by "
+                                + "TYPE to retry, so an ordinary CAS loss becomes a hard upload "
+                                + "failure — the regression the previous fix introduced.");
+            }
+        });
+    }
+
+    @Test
     @DisplayName("a checked failure is NOT rethrown as-is — the control")
     void aCheckedFailureIsNotRethrown() {
         // Without this, "always rethrow" would pass the test above while handing callers a
