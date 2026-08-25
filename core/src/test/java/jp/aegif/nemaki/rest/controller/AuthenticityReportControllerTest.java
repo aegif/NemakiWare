@@ -118,8 +118,13 @@ class AuthenticityReportControllerTest {
                         false);
         assertEquals(HttpStatus.OK, json.getStatusCode());
         assertNotNull(json.getBody());
-        assertEquals(AuthenticityReport.REPORT_LIMITS,
-                json.getBody().get("whatThisDoesNotEstablish"));
+        // Content, not identity with the constant: comparing REPORT_LIMITS to itself passes
+        // even when the paragraph has been emptied.
+        String limits = String.valueOf(json.getBody().get("whatThisDoesNotEstablish"));
+        assertTrue(limits.contains("faithful recording is not truth")
+                        && limits.contains("not that they were never altered"),
+                "the report served to an admin lost the clauses that keep a digest from "
+                        + "reading as proof: " + limits);
 
         ResponseEntity<String> html =
                 controllerFor(true, assemblerReturningSomething()).reportHtml("bedroom", "doc-1",

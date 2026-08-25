@@ -89,9 +89,24 @@ class AuthenticityReportTest {
                 List.of(new Section("x", Verdict.REPORTED, Map.of(), "nothing at all")));
         Map<String, Object> body = report.asMap();
 
-        assertEquals(AuthenticityReport.REPORT_LIMITS, body.get("whatThisDoesNotEstablish"),
-                "the report-level limits are missing; this is the paragraph the whole design "
-                        + "is built around");
+        // NOT `assertEquals(REPORT_LIMITS, ...)` — that compares the constant with itself and
+        // passes even if the paragraph is emptied. The five numbered clauses are the content
+        // that must survive, so the assertions are about THEM.
+        String limits = String.valueOf(body.get("whatThisDoesNotEstablish"));
+        assertTrue(limits.length() > 400,
+                "the report-level limits are missing or gutted (" + limits.length()
+                        + " chars); this is the paragraph the whole design is built around");
+        for (String clause : new String[] {
+                "faithful recording is not truth",
+                "not that they were never altered",
+                "operations that did not pass through the recording path",
+                "anchored outside this database",
+                "reported BY" }) {
+            assertTrue(limits.contains(clause),
+                    "the report-level limits no longer say \"" + clause + "\"; that clause is "
+                            + "the only thing standing between a number and the reading a "
+                            + "recipient would give it: " + limits);
+        }
         // Ordering matters as much as presence. A reader who stops at the first screen must
         // already have met it, so it cannot sit under the sections.
         List<String> keys = new ArrayList<>(body.keySet());
@@ -151,6 +166,64 @@ class AuthenticityReportTest {
         assertTrue(limits.contains("database"),
                 "a MATCH's limits do not name the thing that defeats it — direct database "
                         + "access changing bytes and digest together: " + section.limits());
+    }
+
+    @Test
+    @DisplayName("AC3: a MISMATCH is FAILED — bytes that do not match are never VERIFIED")
+    void aMismatchIsNeverVerified() {
+        // The fourth fixity value had no test at all: `case MISMATCH -> Verdict.VERIFIED` would
+        // have passed every test in this class. Stored bytes that do not hash to what was
+        // recorded would have been rendered as verified — the exact centre of the 禁じ手 list.
+        Section section = contentSectionFor(new FixityVerifier.Result(FixityOutcome.MISMATCH,
+                "recorded-abc", "computed-xyz", null));
+
+        assertEquals(Verdict.FAILED, section.verdict(),
+                "a content MISMATCH was reported as " + section.verdict());
+        assertEquals(FixityOutcome.MISMATCH.name(), section.content().get("outcome"));
+        assertTrue(section.limits().contains("not by itself evidence of tampering"),
+                "a MISMATCH is stated as tampering; a migration or a restore produces the same "
+                        + "result: " + section.limits());
+    }
+
+    // ---- the ledger section: verdict and truncation ----
+
+    @Test
+    @DisplayName("a broken chain is FAILED, not VERIFIED")
+    void aBrokenChainIsNotVerified() {
+        // Nothing wired a ledgerStore before, so the verdict branch was never exercised and
+        // `Verdict.VERIFIED` hard-coded would have passed. A forked ledger reported as VERIFIED
+        // is the strongest false statement this report can make.
+        Section section = sectionNamed(reportWithLedger(forkedEntries(), 1), "ledger");
+
+        assertEquals(Verdict.FAILED, section.verdict(),
+                "a chain the verifier rejects was reported as " + section.verdict());
+    }
+
+    @Test
+    @DisplayName("an intact chain IS verified — the control")
+    void anIntactChainIsVerified() {
+        // Without this, hard-coding FAILED would pass the test above.
+        Section section = sectionNamed(reportWithLedger(intactEntries(), 2), "ledger");
+
+        assertEquals(Verdict.VERIFIED, section.verdict(),
+                "an intact chain was reported as " + section.verdict() + ": "
+                        + section.content());
+    }
+
+    @Test
+    @DisplayName("a ledger checked only in part says so")
+    void aPartialLedgerCheckSaysSo() {
+        // Verifying the most recent 1000 of 500,000 entries and rendering that as a verdict on
+        // the ledger is the same shape as the reindex COMPLETE lesson.
+        Section section = sectionNamed(
+                reportWithLedger(intactEntries(),
+                        AuthenticityReportAssembler.LEDGER_ENTRY_LIMIT + 5), "ledger");
+
+        assertEquals(Boolean.TRUE, section.content().get("truncated"),
+                "only part of the ledger was checked and the section did not say so");
+        assertTrue(section.limits().contains("earlier entries were NOT"),
+                "the limits do not say the unchecked entries are unaccounted for: "
+                        + section.limits());
     }
 
     // ---- AC 4 / AC 5: custody and environment name their own weakness ----
@@ -362,6 +435,41 @@ class AuthenticityReportTest {
     }
 
     // ---- helpers ----
+
+    private static List<EvidenceLedgerEntry> intactEntries() {
+        List<EvidenceLedgerEntry> entries = new ArrayList<>();
+        String prev = null;
+        for (long i = 0; i < 3; i++) {
+            EvidenceLedgerEntry entry = EvidenceLedgerEntry.of(REPO, i,
+                    EvidenceLedgerEntry.SubjectKind.CAPTURE_COMPLETED, "obj-" + i, "digest-" + i,
+                    "2026-08-24T00:00:00Z", prev);
+            entries.add(entry);
+            prev = entry.entryHash();
+        }
+        return entries;
+    }
+
+    /** Two different entries at one sequence — what a fork looks like to the verifier. */
+    private static List<EvidenceLedgerEntry> forkedEntries() {
+        List<EvidenceLedgerEntry> entries = new ArrayList<>(intactEntries());
+        entries.add(EvidenceLedgerEntry.of(REPO, 1,
+                EvidenceLedgerEntry.SubjectKind.CAPTURE_COMPLETED, "obj-other", "digest-other",
+                "2026-08-24T00:00:00Z", entries.get(0).entryHash()));
+        entries.sort(java.util.Comparator.comparingLong(EvidenceLedgerEntry::sequence));
+        return entries;
+    }
+
+    private static AuthenticityReport reportWithLedger(List<EvidenceLedgerEntry> entries,
+            long highestSequence) {
+        EvidenceLedgerStore ledger = mock(EvidenceLedgerStore.class);
+        when(ledger.highestSequence(anyString())).thenReturn(highestSequence);
+        when(ledger.range(anyString(), org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyLong(), anyInt())).thenReturn(entries);
+        AuthenticityReportAssembler assembler = new AuthenticityReportAssembler();
+        assembler.setContentService(contentServiceReturning(new Document()));
+        assembler.setLedgerStore(ledger);
+        return assembler.assemble(REPO, OBJECT, "2026-08-24T00:00:00Z", false);
+    }
 
     private static List<Map<String, Object>> rows(Map<String, Object> row) {
         List<Map<String, Object>> list = new ArrayList<>();
