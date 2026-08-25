@@ -70,7 +70,7 @@ out-of-band で監視せよ**と書いている (ロードマップ §9-5)。つ
 | 対象 | 使っているアルゴリズム | 失効したら要る renewal |
 |---|---|---|
 | evidence ledger の entryHash / Merkle | SHA-256 (`MerkleTree`) | **hash-tree renewal** (元データ必要) |
-| RFC 3161 トークンの署名・imprint | トークンが宣言する OID | **timestamp renewal** |
+| RFC 3161 トークンの imprint | 受領証の `digestAlgorithm` 属性 | **timestamp renewal** |
 | OpenTimestamps の commitment | SHA-256 (プロトコル既定) | **hash-tree renewal 相当**。ただし**再アンカーは新しい時刻しか証明しない** — §4 |
 | `nemaki:contentHash` (P1-2) | SHA-256 | 再計算と再記録。**元の取得時刻は証明し直せない** |
 
@@ -126,6 +126,22 @@ renewal は破れた後では元の時刻を救えない (§4) ので手遅れ�
 負のコントロール **6 本実測** (V1 未登録を SOUND / V2 DEPRECATED を潰す /
 V3 境界日を除外 / V4 tree renewal を timestamp と呼ぶ / V5 DEPRECATED を
 未着手扱い / V6 未配線 store を「0 件」と報告)。
+
+### 初稿の timestamp renewal は二重に死んでいた (2026-08-25 訂正)
+
+レビュー 3 者が独立に指摘。`timestampRenewalsDue` は**構造的に常に 0**だった:
+
+1. `pending()` (PENDING 行しか index しない) を引いてから `!= CONFIRMED` を
+   `continue` していたので、ループ本体に到達しない
+2. 仮に直しても、探していた `signatureAlgorithm` は**どの段も書いていない**
+   (`Rfc3161AnchorTarget` が書くのは `digestAlgorithm`)
+
+`confirmed()` を store に足し (専用 view)、属性名を実在するものに直した。
+**§5 AC4 の「別々に報告される」は片側しか測っていなかった** —
+確定済みトークンを本番の列挙経路に通す判別テストを足し、
+fixture は定数ではなく**実在のリテラル**を使う (定数を両側に使うと同語反復に
+なる。実際に一度そう書いて落ちなかった)。加えて**生産側がそのリテラルを
+書くこと**をソース走査で別途固定した。
 
 ---
 

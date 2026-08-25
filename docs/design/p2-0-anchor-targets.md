@@ -23,27 +23,39 @@ P1-3 の checkpoint は**我々の DB の中**にある。外部アンカーの�
 ## 1. 4 つの状態 — `PENDING` を成功に含めない
 
 OpenTimestamps は**送信直後は pending** で、Bitcoin ブロック確定まで
-**数時間かかり得る** (ロードマップ P2-1)。これを `SUBMITTED` = 成功にすると、
+**数時間かかり得る** (ロードマップ P2-1)。これを `PENDING` = 成功にすると、
 「アンカーした」と言えるのに**まだ何も証明していない**期間が数時間できる。
 
 | 状態 | 意味 | 「証明」として使えるか |
 |---|---|---|
-| `NOT_ATTEMPTED` | この段は有効化されていない | — |
-| `SUBMITTED` | 送出は成功。**確認はまだ** | **使えない** |
+| `NOT_CONFIGURED` | この段は有効化されていない | — |
+| `PENDING` | 送出は成功。**確認はまだ** | **使えない** |
 | `CONFIRMED` | 外部側で確定し、証明が手元にある | 使える (段ごとの限界つき) |
 | `FAILED` | 送出または確定に失敗 | 使えない |
 
-`SUBMITTED` と `CONFIRMED` を分けない設計は、fixity の
+`PENDING` と `CONFIRMED` を分けない設計は、fixity の
 `NOT_RECORDED` / `UNVERIFIABLE` を潰すのと**同じ誤り**である。
+
+> **名前の訂正 (2026-08-25)**: 初稿はこの表を `NOT_ATTEMPTED` / `SUBMITTED` と
+> 書いていた。**実装にその名前は存在しない** (`AnchorStatus` は 2026-08-18 から
+> `CONFIRMED` / `PENDING` / `FAILED` / `NOT_CONFIGURED`)。この増分の中心規則を
+> 定義している表が、架空の識別子で書かれていた。
 
 ---
 
 ## 2. 段は自分の主張文を持ち歩く
 
 段 1 (Atlas)・段 2 (OTS)・段 3 (TSA) は**証明できることが違う**。
-`AnchorTarget` は `claimLimits()` を持ち、これは**空にできない**
-(P1-4 の `Section.limits` と同じ強制)。レポートはアンカーの verdict と
-一緒にこの文を必ず載せる。
+**`AnchorTarget` に `claimLimits()` は無い** (初稿はそう書いたが実装と違う —
+2026-08-25 訂正)。実際は `AnchorService.claimLimitsFor()` の**網羅 switch**で、
+`AnchorKind.TimeSemantics` から導く。enum なので空にできず、新しい意味を足すと
+コンパイラが文を要求する。散文フィールドより強い。
+
+**引くのは kind ではなく receipt の意味である。** pending / failed の受領証は
+kind によらず `NOT_A_TIME_PROOF` を持ち、accuracy の無い RFC 3161 トークンは
+発行時に `UPPER_BOUND_ONLY` へ格下げされる。初稿は `kind.timeSemantics()` から
+引いており、**まだ何も確定していない TSA の試行の隣に確定済みトークンの文**が
+出ていた (2026-08-25 修正)。レポートはアンカーの状態と一緒にこの文を必ず載せる。
 
 | 段 | tier id | 言えること | 言えないこと |
 |---|---|---|---|
@@ -60,15 +72,23 @@ OpenTimestamps は**送信直後は pending** で、Bitcoin ブロック確定�
 アンカーした Merkle root が**その時点の台帳の root ではなくなる**。
 「この root は当時の台帳である」という主張が最初から偽になる。
 
-`AnchorService` は checkpoint の `toSequence` が
-`store.highestSequence(domain)` と一致することを確認してから送る。
-一致しなければ**送らずに理由を返す** — 送って後で謝るのではなく。
+`AnchorService` は `store.highestSequence(domain)` が checkpoint の
+`toSequence` を**追い越していないこと**を確認してから送る。追い越していれば
+**送らずに理由を返す** — 送って後で謝るのではなく。
+
+**「一致」ではなく「≤」である** (初稿は「一致」と書いていた — 2026-08-25 訂正)。
+台帳の head より**先**の sequence を主張する checkpoint は現状そのまま通る。
+それが起こり得るのは checkpoint 側が壊れているときだけなので、
+**checkpoint の自己検証 (`selfVerifies()`) を通すのが本筋**であり、
+そちらは未実装として残っている。
 
 ---
 
 ## 4. 段の有効化は独立
 
-`anchor.<tier>.enabled`。1 つが落ちても他は進む。**1 段でも
+**`anchor.<tier>.enabled` というキーは無い** (初稿の誤り — 2026-08-25 訂正)。
+実際は段 2/3 が URL の有無、段 1 が publisher bean の有無で決まる。
+正しい一覧は §5.6 の設定キー表。1 つが落ちても他は進む。**1 段でも
 `CONFIRMED` があれば「アンカーあり」だが、レポートは
 どの段が確認済みかを必ず列挙する** — 「アンカー済み」の 1 語に
 まとめると、段 1 だけの顧客が段 3 の文言を使える。
@@ -79,11 +99,11 @@ OpenTimestamps は**送信直後は pending** で、Bitcoin ブロック確定�
 
 | # | 条件 | 負のコントロール |
 |---|---|---|
-| 1 | `SUBMITTED` は「確認済み」に数えられない | 成功に含めると落ちる |
+| 1 | `PENDING` は「確認済み」に数えられない | 成功に含めると落ちる |
 | 2 | 段ごとの `claimLimits()` は空にできない | 空を許すと落ちる |
 | 3 | 1 段の失敗が他段を止めない | 例外を伝播させると落ちる |
 | 4 | 未確定 backlog があるとアンカーしない | 検査を外すと落ちる |
-| 5 | 無効な段は `NOT_ATTEMPTED` で、`FAILED` ではない | 潰すと落ちる |
+| 5 | 無効な段は `NOT_CONFIGURED` で、`FAILED` ではない | 潰すと落ちる |
 | 6 | 結果は段ごとに分かれて出る (単一の boolean にしない) | 潰すと落ちる |
 
 ---
@@ -210,6 +230,22 @@ commitment を持ちブロックは確定しているのに、こちらは proof
 負のコントロール **7 本実測** (P1 受領証を保存しない / P2 upgrade を書き戻さない /
 P3 孤児 pending を failed にする / P4 kind ガードを外す / P5 proof 無し CONFIRMED を
 復元 / P6 semantics を kind 既定に戻す / P7 proof バイト列を落とす)。
+
+> **測っている層の訂正 (2026-08-25)**: この 7 本はいずれも**メモリ実装と codec に
+> 対する測定**であり、`CouchAnchorReceiptStore` には一度も触れていない。
+> 「永続化が段 2 の要である」と書いた当の層が、確認されていなかった
+> (レビュー指摘)。Couch 側で確認済みなのは
+> `CouchEvidenceLedgerStore` の実オーバーロード経路のみ
+> (`theRealExplicitIdCreateFailsFast` / `aNotOkResultIsNotSuccess`)。
+> **受領証 store の実装そのものの実測は未了**として残す。
+
+### 単調性 (2026-08-25 追加)
+
+**CONFIRMED は CONFIRMED でしか置き換えられない。** `persist` は無条件 save、
+store はその場で置換していたので、TSA が一瞬落ちただけの FAILED が既存トークンを
+消し、同じ checkpoint の再アンカーが Bitcoin まで上がった `.ots` を PENDING に
+戻していた。どちらも cron 1 回分の距離にある。**アンカーは証拠であり、
+足すことはできても黙って取り去ってよいものではない。**
 
 ---
 

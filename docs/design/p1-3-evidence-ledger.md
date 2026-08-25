@@ -155,7 +155,13 @@ journal と同居させると `lineage.retention.days` の purge を共有し、
 **保持期限が来た日に連鎖が切れる** (§1 がまさにそれを避けるための節)。
 このクラスに purge 経路は 1 つも無い。
 
-view は 2 本 (`entries_by_domain_sequence` / `checkpoints_by_domain_to`)。
+view は **4 本** (`entries_by_domain_sequence` / `checkpoints_by_domain_to` に加え、
+アンカー受領証の `receipts_by_checkpoint` / `receipts_pending`。P2-3 で
+`receipts_confirmed` を足して 5 本)。**同じ design document に置く** —
+`createOrUpdateView` は view ごとに get-modify-put するので、別々に配ると
+CouchDB が直前に作った index を捨てる (journal 側で学んだ形)。
+**現状は逐次呼び出しのままで、1 回の put にまとめる作業は未了**
+(2026-08-25 レビュー指摘)。
 `_id` は `evidence_ledger:{domain}:{19桁 sequence}` で、同 sequence の 2 人目は
 create-if-absent で **409 に負ける**。
 

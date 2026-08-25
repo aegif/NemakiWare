@@ -846,7 +846,8 @@ IP 操作には commons-ip を使用。**未確認**: RODA の特定リリース
 | postgres | `postgres:17` | ✅ |
 | clamd | `clamav/clamav:1.5.3-debian` | ✅ |
 | siegfried | `ghcr.io/keeps/siegfried:v1.11.6` | ✅ |
-| swagger / mailpit / openldap | — | ✅ (受入試験には不要、削れる) |
+| openldap | `bitnamilegacy/openldap:2.6` | ✅ **削れない** — 外すと RODA の起動が終わらない (実測) |
+| swagger / mailpit | — | ✅ (受入試験には不要、削れる) |
 
 **ポート衝突に注意**: RODA は 8080 (core と同じ) と Solr 8983 (こちらの Solr と同じ) を
 publish する。検証用オーバーレイでは remap するか publish しない。

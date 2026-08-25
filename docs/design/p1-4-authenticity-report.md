@@ -27,8 +27,8 @@ fixity の `PARTIAL` で 2 度学んだ形をここでも適用する。
 |---|---|---|---|
 | **identity** | 証拠 aspect (chat 11 / source identity 9 / archetype) | 取込が観測した出所の属性。CMIS 経路に対して読み取り専用 | それが**真実**であること。属性は取込元が言ったことである |
 | **content** | `nemaki:contentHash` + P1-2 の再検証 | 記録された digest と、**いま**読み直した digest の一致 | 改竄されていないこと (§0 / P1-2 §0)。digest も普通の保存プロパティである |
-| **custody** | capture intent 行 + lineage イベント | 記録された取込・配送の経過 | **記録が完全であること**。台帳に入る経路を通らなかった操作は無い |
-| **integrity of the record** | P1-3 の連鎖検証と inclusion proof | 台帳自身の内部整合。checkpoint 以前の書き換え・削除・並べ替えの検出 | 外部からの独立性 (P2 のアンカー待ち) |
+| **custody** | capture intent 行 (**lineage イベントは読んでいない** — 2026-08-25 訂正) | 記録された取込・配送の経過 | **記録が完全であること**。台帳に入る経路を通らなかった操作は無い |
+| **integrity of the record** (JSON 上の節名は **`ledger`**) | P1-3 の連鎖検証 (**inclusion proof は出していない** — 2026-08-25 訂正) | 台帳自身の内部整合。checkpoint 以前の書き換え・削除・並べ替えの検出 | 外部からの独立性 (P2 のアンカー待ち) |
 | **versions** | CMIS version series | この文書の版系譜 | 版の間で何が変わったか |
 | **access** | 監査ログ | **何も言えない** (§3.5) — ログはプロセス外に出るため読み戻せない | 同左。`ABSENT` ではなく `UNAVAILABLE` |
 | **environment** | barrier の binary digest | 動いていたバイナリの指紋 | **その値を我々自身が報告している**こと (循環) |
@@ -71,10 +71,23 @@ fixity の `PARTIAL` で 2 度学んだ形をここでも適用する。
 | レポート本体 | `core/.../evidence/AuthenticityReport.java` |
 | 集約 | `core/.../evidence/AuthenticityReportAssembler.java` |
 | API | `GET /core/api/v1/admin/authenticity/report` (JSON) / `report.html` |
-| テスト | `AuthenticityReportTest` (14) / `AuthenticityReportControllerTest` (4) |
+| テスト | `AuthenticityReportTest` (20) / `AuthenticityReportControllerTest` (4) |
 
 負のコントロールは **17 本すべて実測**し、各々が意図したテストだけを落とすことを確認した
 (C7 は environment 2 本、C12 は 10 本 — 後者は下記の欠陥が全節に及ぶことを示す)。
+
+> **その 17 本では足りなかった (2026-08-25 訂正)。** レビューが「消しても通る
+> production の編集」を 4 つ挙げ、いずれも実際に通った:
+>
+> - `case MISMATCH -> Verdict.VERIFIED` — **4 値目に一切テストが無かった**。
+>   記録した digest と一致しないバイト列が VERIFIED として報告される
+> - ledger 節の verdict を `VERIFIED` 固定 / truncation 分岐を削除 —
+>   `ledgerStore` を配線するテストが 1 本も無く、`null` 分岐しか通っていなかった
+> - `REPORT_LIMITS` を空にする — assert が**定数を定数自身と比べていた**ため恒真。
+>   「省略できない」と宣言した当のものが無防備だった
+>
+> AC3 を潰す変異が測定集合に入っていなかった、ということである。
+> 5 本足して測り直した。
 
 ### access 節は構造上 `UNAVAILABLE` である
 
