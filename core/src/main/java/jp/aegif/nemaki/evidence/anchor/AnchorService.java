@@ -86,7 +86,24 @@ public class AnchorService {
      * field would eventually be left blank on exactly the rung that most needed it.
      */
     public static String claimLimitsFor(AnchorKind kind) {
-        return switch (kind.timeSemantics()) {
+        return claimLimitsFor(kind.timeSemantics());
+    }
+
+    /**
+     * The limits for a RECEIPT, which may be weaker than its kind's default.
+     *
+     * <p>A pending or failed receipt carries {@code NOT_A_TIME_PROOF} regardless of kind, and an
+     * RFC 3161 token without {@code accuracy} is deliberately downgraded to
+     * {@code UPPER_BOUND_ONLY} when it is issued. Rendering the KIND's sentence undid both:
+     * a pending TSA attempt was shown beside "binds a message imprint to the authority's stated
+     * time", which is what a confirmed token establishes and this one does not.
+     */
+    public static String claimLimitsFor(AnchorReceipt receipt) {
+        return claimLimitsFor(receipt.timeSemantics());
+    }
+
+    private static String claimLimitsFor(AnchorKind.TimeSemantics semantics) {
+        return switch (semantics) {
             case NOT_A_TIME_PROOF -> "This is NOT a time proof and NOT independent evidence. It "
                     + "records when the destination was TOLD, not when the data existed, and a "
                     + "destination the same party administers can be rewritten by that party "
@@ -139,7 +156,10 @@ public class AnchorService {
                 row.put("status", receipt.status().name());
                 row.put("timeSemantics", receipt.timeSemantics().name());
                 // Immediately after the status, so a reader cannot take the status alone.
-                row.put("claimLimits", claimLimitsFor(receipt.kind()));
+                // From the RECEIPT, not the kind: a pending or failed receipt establishes
+                // nothing, and showing the kind's affirmative sentence next to it is exactly
+                // the substitution this whole layer exists to prevent.
+                row.put("claimLimits", claimLimitsFor(receipt));
                 row.put("anchoredDigest", receipt.anchoredDigest());
                 row.put("attemptedAt", String.valueOf(receipt.attemptedAt()));
                 row.put("anchoredAt", String.valueOf(receipt.anchoredAt()));
@@ -246,11 +266,47 @@ public class AnchorService {
             return;
         }
         try {
+            if (wouldDowngrade(domain, toSequence, receipt)) {
+                return;
+            }
             receiptStore.save(domain, toSequence, receipt);
         } catch (RuntimeException e) {
             logger.warn("Could not store the {} anchor receipt for {}@{}: {}", receipt.kind(),
                     domain, toSequence, e.getMessage());
         }
+    }
+
+    /**
+     * Whether writing {@code candidate} would replace a CONFIRMED receipt with a weaker one.
+     *
+     * <p>Storing is otherwise unconditional, and the store replaces the row for a
+     * (domain, sequence, rung) in place. Two ordinary events then destroy real proofs:
+     *
+     * <ul>
+     *   <li>A TSA that is briefly unreachable yields FAILED, which overwrites the RFC 3161
+     *       token that was already obtained.</li>
+     *   <li>OpenTimestamps returns PENDING on every stamp, so re-anchoring the same checkpoint
+     *       turns an {@code .ots} that had reached a Bitcoin block back into an unconfirmed
+     *       commitment.</li>
+     * </ul>
+     *
+     * <p>Both are one cron run away: {@code /checkpoint-and-anchor} re-anchors the current
+     * checkpoint even when nothing new was sealed. An anchor is evidence — it may be added to,
+     * never quietly taken away.
+     */
+    private boolean wouldDowngrade(String domain, long toSequence, AnchorReceipt candidate) {
+        if (candidate.status() == AnchorStatus.CONFIRMED) {
+            return false;
+        }
+        for (AnchorReceipt existing : receiptStore.forCheckpoint(domain, toSequence)) {
+            if (existing.kind() == candidate.kind()
+                    && existing.status() == AnchorStatus.CONFIRMED) {
+                logger.info("Keeping the CONFIRMED {} receipt for {}@{}; the new attempt is {}",
+                        candidate.kind(), domain, toSequence, candidate.status());
+                return true;
+            }
+        }
+        return false;
     }
 
     private AnchorReceipt receiptFrom(AnchorTarget target, String merkleRoot) {

@@ -66,6 +66,14 @@ public class CouchAnchorReceiptStore implements AnchorReceiptStore {
      * Only PENDING rows are indexed. A view over everything filtered in Java would pull every
      * confirmed proof's bytes across the wire to discard them.
      */
+    public static final String VIEW_CONFIRMED = "receipts_confirmed";
+
+    /** Only CONFIRMED rows, for the same reason MAP_PENDING indexes only pending ones. */
+    public static final String MAP_CONFIRMED =
+            "function(doc) { if (doc.type === '" + TYPE + "' && doc.domain"
+            + " && doc.receipt && doc.receipt.status === 'CONFIRMED') {"
+            + " emit([doc.domain, doc.toSequence], null); } }";
+
     public static final String MAP_PENDING =
             "function(doc) { if (doc.type === '" + TYPE + "' && doc.domain"
             + " && doc.receipt && doc.receipt.status === 'PENDING') {"
@@ -143,6 +151,23 @@ public class CouchAnchorReceiptStore implements AnchorReceiptStore {
             if (receipt == null || receipt.status() != AnchorStatus.PENDING) {
                 // The view says pending; the decoded receipt is what actually matters, and a
                 // row that decodes to something else is not one to hand to upgrade().
+                continue;
+            }
+            long toSequence = doc.get("toSequence") instanceof Number n ? n.longValue() : -1L;
+            out.add(new PendingReceipt((String) doc.get("domain"), toSequence, receipt));
+        }
+        return out;
+    }
+
+    @Override
+    public List<PendingReceipt> confirmed(String domain, int limit) {
+        List<PendingReceipt> out = new ArrayList<>();
+        for (Map<String, Object> doc : rows(VIEW_CONFIRMED, domain, 0, Long.MAX_VALUE,
+                limit <= 0 ? 100 : limit)) {
+            AnchorReceipt receipt = decode(doc);
+            if (receipt == null || receipt.status() != AnchorStatus.CONFIRMED) {
+                // The view says confirmed; the DECODED receipt is what counts, and the codec
+                // downgrades a row that says CONFIRMED but cannot support it.
                 continue;
             }
             long toSequence = doc.get("toSequence") instanceof Number n ? n.longValue() : -1L;

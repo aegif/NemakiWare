@@ -162,6 +162,8 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
                     CouchAnchorReceiptStore.MAP_BY_CHECKPOINT, null);
             wrapper.createOrUpdateView(DESIGN_DOC, CouchAnchorReceiptStore.VIEW_PENDING,
                     CouchAnchorReceiptStore.MAP_PENDING, null);
+            wrapper.createOrUpdateView(DESIGN_DOC, CouchAnchorReceiptStore.VIEW_CONFIRMED,
+                    CouchAnchorReceiptStore.MAP_CONFIRMED, null);
             client = wrapper;
             provisioned.set(true);
         }

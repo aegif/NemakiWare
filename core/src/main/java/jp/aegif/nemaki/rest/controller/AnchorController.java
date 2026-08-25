@@ -199,7 +199,7 @@ public class AnchorController {
                 Map<String, Object> row = new LinkedHashMap<>();
                 row.put("rung", receipt.kind().name());
                 row.put("status", receipt.status().name());
-                row.put("claimLimits", AnchorService.claimLimitsFor(receipt.kind()));
+                row.put("claimLimits", AnchorService.claimLimitsFor(receipt));
                 row.put("anchoredAt", String.valueOf(receipt.anchoredAt()));
                 receipts.add(row);
             }

@@ -45,6 +45,15 @@ public class LongTermValidityService {
     /** Where the ledger's own hashes come from, so a rename cannot leave this looking elsewhere. */
     static final String LEDGER_HASH_ALGORITHM = "SHA-256";
 
+    /**
+     * The attribute an anchor receipt records its algorithm under.
+     *
+     * <p>{@code Rfc3161AnchorTarget} writes {@code digestAlgorithm} (the imprint's). There is
+     * no {@code signatureAlgorithm} anywhere in the product, which is what the first version
+     * looked for. Named here so the two cannot drift apart again silently.
+     */
+    static final String TOKEN_ALGORITHM_ATTRIBUTE = "digestAlgorithm";
+
     private AlgorithmRegistry registry = AlgorithmRegistry.withDefaults();
     private AnchorReceiptStore receiptStore;
 
@@ -127,7 +136,11 @@ public class LongTermValidityService {
         }
         List<AnchorReceiptStore.PendingReceipt> rows;
         try {
-            rows = receiptStore.pending(repositoryId, 1000);
+            // confirmed(), NOT pending(). The first version asked the pending-only query for
+            // confirmed receipts and then filtered — a loop whose body could never run, so
+            // timestampRenewalsDue was structurally always 0 and no deployed token was ever
+            // assessed. Three reviewers found it independently.
+            rows = receiptStore.confirmed(repositoryId, 1000);
         } catch (RuntimeException e) {
             needs.add(new RenewalNeed(RenewalNeed.Kind.UNDETERMINED, "anchor receipts", null,
                     null, "the receipts could not be read (" + e.getMessage() + ")"));
@@ -140,7 +153,9 @@ public class LongTermValidityService {
                 // for it would put work on a list that cannot be done.
                 continue;
             }
-            String algorithm = receipt.attributes().get("signatureAlgorithm");
+            // The attribute the RFC 3161 rung actually records. "signatureAlgorithm" is
+            // written by nothing, so the first version always saw null and reported UNKNOWN.
+            String algorithm = receipt.attributes().get(TOKEN_ALGORITHM_ATTRIBUTE);
             AlgorithmRegistry.Soundness soundness = registry.soundnessOf(algorithm, when);
             needs.add(new RenewalNeed(kindForToken(soundness),
                     "anchor receipt " + receipt.kind() + " @" + row.toSequence(), algorithm,

@@ -53,7 +53,17 @@ public interface AnchorReceiptStore {
      */
     List<PendingReceipt> pending(String domain, int limit);
 
-    /** A pending receipt and where it came from. */
+    /**
+     * CONFIRMED receipts, oldest first.
+     *
+     * <p>Separate from {@link #pending} because the two are used by different jobs and the
+     * views that back them are different. The long-term-validity assessment asked
+     * {@code pending()} for confirmed receipts and then filtered — a loop whose body could
+     * never run, so no deployed timestamp token was ever assessed for renewal.
+     */
+    List<PendingReceipt> confirmed(String domain, int limit);
+
+    /** A receipt and where it came from. Named for its first use; {@link #confirmed} shares it. */
     record PendingReceipt(String domain, long toSequence, AnchorReceipt receipt) {
     }
 

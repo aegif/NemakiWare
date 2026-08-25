@@ -98,6 +98,18 @@ class AnchorReceiptPersistenceTest {
         }
 
         @Override
+        public List<PendingReceipt> confirmed(String domain, int limit) {
+            List<PendingReceipt> out = new ArrayList<>();
+            for (PendingReceipt row : rows.values()) {
+                if (row.domain().equals(domain)
+                        && row.receipt().status() == AnchorStatus.CONFIRMED) {
+                    out.add(row);
+                }
+            }
+            return out;
+        }
+
+        @Override
         public boolean isActive() {
             return true;
         }
@@ -252,6 +264,113 @@ class AnchorReceiptPersistenceTest {
         assertEquals(1, stored.size(), "a second row was written under the wrong rung");
         assertEquals(AnchorKind.OPENTIMESTAMPS, stored.get(0).kind());
         assertEquals(AnchorStatus.PENDING, stored.get(0).status());
+    }
+
+    // ---- an anchor may be added to, never quietly taken away ----
+
+    @Test
+    @DisplayName("a FAILED attempt does not erase a CONFIRMED receipt")
+    void aFailureDoesNotEraseAProof() {
+        MemoryStore receipts = new MemoryStore();
+        receipts.save(DOMAIN, 5, jp.aegif.nemaki.rest.purview.anchor.AnchorReceipts.confirmed(
+                AnchorKind.RFC3161_TSA, ROOT, Instant.parse("2026-08-24T00:00:00Z"),
+                new byte[] { 1, 2, 3 }, "tokendigest", Map.of("genTime", "2026-08-24T00:00:00Z")));
+
+        AnchorService service = new AnchorService();
+        service.setStore(storeAt(5));
+        service.setReceiptStore(receipts);
+        service.setTargets(List.of(failingRung(AnchorKind.RFC3161_TSA)));
+        service.anchor(EvidenceCheckpoint.of(DOMAIN, 0, 5, ROOT, null, "2026-08-24T01:00:00Z"));
+
+        // One briefly unreachable TSA would otherwise destroy the token already obtained.
+        List<AnchorReceipt> stored = receipts.forCheckpoint(DOMAIN, 5);
+        assertEquals(1, stored.size());
+        assertEquals(AnchorStatus.CONFIRMED, stored.get(0).status(),
+                "a transient failure overwrote a confirmed RFC 3161 token; the proof is gone "
+                        + "and nothing says it ever existed");
+        assertArrayEquals(new byte[] { 1, 2, 3 }, stored.get(0).proof());
+    }
+
+    @Test
+    @DisplayName("re-anchoring does not turn a settled .ots back into a pending commitment")
+    void reAnchoringDoesNotUnsettleACommitment() {
+        MemoryStore receipts = new MemoryStore();
+        receipts.save(DOMAIN, 5, jp.aegif.nemaki.rest.purview.anchor.AnchorReceipts.confirmed(
+                AnchorKind.OPENTIMESTAMPS, ROOT, Instant.parse("2026-08-24T00:00:00Z"),
+                new byte[] { 9, 9, 9, 7 }, "settledproof", Map.of("block", "912345")));
+
+        AnchorService service = new AnchorService();
+        service.setStore(storeAt(5));
+        service.setReceiptStore(receipts);
+        // OpenTimestamps returns PENDING on EVERY stamp, so this is what one extra cron run does.
+        service.setTargets(List.of(new SettlingRung()));
+        service.anchor(EvidenceCheckpoint.of(DOMAIN, 0, 5, ROOT, null, "2026-08-24T02:00:00Z"));
+
+        assertEquals(AnchorStatus.CONFIRMED, receipts.forCheckpoint(DOMAIN, 5).get(0).status(),
+                "an .ots that had reached a Bitcoin block was replaced by a fresh unconfirmed "
+                        + "commitment; hours of waiting are discarded by re-running a job");
+    }
+
+    @Test
+    @DisplayName("a CONFIRMED receipt still replaces a PENDING one — the control")
+    void confirmationStillOverwritesPending() {
+        // Without this, refusing every write would pass the two tests above and upgrade()
+        // could never record anything.
+        MemoryStore receipts = new MemoryStore();
+        SettlingRung rung = new SettlingRung();
+        AnchorService service = new AnchorService();
+        service.setStore(storeAt(5));
+        service.setReceiptStore(receipts);
+        service.setTargets(List.of(rung));
+        service.anchor(EvidenceCheckpoint.of(DOMAIN, 0, 5, ROOT, null, "2026-08-24T00:00:00Z"));
+        rung.settled = true;
+
+        service.upgradePending(DOMAIN, 10);
+
+        assertEquals(AnchorStatus.CONFIRMED, receipts.forCheckpoint(DOMAIN, 5).get(0).status(),
+                "the settled proof was refused, so nothing can ever be confirmed");
+    }
+
+    @Test
+    @DisplayName("the limits shown come from the RECEIPT, not from its rung's usual meaning")
+    void limitsFollowTheReceiptNotTheKind() {
+        // A pending RFC 3161 attempt carries NOT_A_TIME_PROOF. Rendering the kind's sentence
+        // put "binds a message imprint to the authority's stated time" beside an attempt that
+        // establishes nothing.
+        AnchorReceipt pendingTsa = AnchorReceipt.pending(AnchorKind.RFC3161_TSA, ROOT,
+                Instant.parse("2026-08-24T00:00:00Z"), new byte[] { 1 }, "p", Map.of());
+
+        String shown = AnchorService.claimLimitsFor(pendingTsa);
+
+        assertTrue(shown.contains("NOT a time proof"),
+                "a pending TSA attempt was shown the sentence a CONFIRMED token earns: " + shown);
+        assertEquals(AnchorService.claimLimitsFor(AnchorKind.RFC3161_TSA),
+                AnchorService.claimLimitsFor(
+                        jp.aegif.nemaki.rest.purview.anchor.AnchorReceipts.confirmed(
+                                AnchorKind.RFC3161_TSA, ROOT,
+                                Instant.parse("2026-08-24T00:00:00Z"), new byte[] { 1 }, "p",
+                                Map.of())),
+                "a confirmed token stopped getting its own kind's sentence");
+    }
+
+    /** A rung that always fails, for the downgrade tests. */
+    private static AnchorTarget failingRung(AnchorKind kind) {
+        return new AnchorTarget() {
+            @Override
+            public AnchorKind kind() {
+                return kind;
+            }
+
+            @Override
+            public boolean isConfigured() {
+                return true;
+            }
+
+            @Override
+            public AnchorReceipt anchor(String hexDigest) {
+                return AnchorReceipt.failed(kind, hexDigest, Instant.now(), "TSA unreachable");
+            }
+        };
     }
 
     // ---- the codec must not be able to strengthen a receipt on reload ----

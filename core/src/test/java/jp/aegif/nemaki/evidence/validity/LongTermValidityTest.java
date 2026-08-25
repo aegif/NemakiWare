@@ -222,6 +222,101 @@ class LongTermValidityTest {
     }
 
     @Test
+    @DisplayName("a real CONFIRMED token IS assessed — through the production enumeration")
+    void aConfirmedTokenIsAssessed() {
+        // The path this pins was dead twice over: the service asked pending() for confirmed
+        // receipts (a loop whose body could never run) and then looked for an attribute name
+        // no rung writes. timestampRenewalsDue was structurally always 0, and the test that
+        // asserted 0 was supported by an unwired store rather than by the code being right.
+        AlgorithmRegistry registry = new AlgorithmRegistry();
+        registry.declare(new Declaration("SHA-1", LocalDate.of(2011, 1, 1),
+                LocalDate.of(2030, 1, 1), "test"));
+        // The ledger and the content digests rest on SHA-256; declare it so the assertion
+        // below is about the TOKEN and not about an incomplete fixture.
+        registry.declare(new Declaration("SHA-256", null, null, "test"));
+        LongTermValidityService service = new LongTermValidityService();
+        service.setRegistry(registry);
+        service.setReceiptStore(storeHolding(jp.aegif.nemaki.rest.purview.anchor.AnchorReceipts
+                .confirmed(jp.aegif.nemaki.rest.purview.anchor.AnchorKind.RFC3161_TSA,
+                        "abc", java.time.Instant.parse("2026-08-24T00:00:00Z"),
+                        new byte[] { 1 }, "p",
+                        Map.of("digestAlgorithm", "SHA-1"))));
+
+        Map<String, Object> body = service.assess("bedroom", LocalDate.of(2031, 1, 1));
+
+        assertEquals(1, body.get("timestampRenewalsDue"),
+                "a confirmed token signed with a retired algorithm was not reported as needing "
+                        + "renewal; nothing in the deployment would ever notice");
+        assertEquals(0, body.get("undetermined"),
+                "the token's algorithm was not recognised: " + body.get("needs"));
+    }
+
+    @Test
+    @DisplayName("a CONFIRMED token on a sound algorithm needs nothing — the control")
+    void aSoundTokenIsNotBusywork() {
+        // Without this, reporting every confirmed receipt as due would pass the test above.
+        LongTermValidityService service = new LongTermValidityService();
+        service.setReceiptStore(storeHolding(jp.aegif.nemaki.rest.purview.anchor.AnchorReceipts
+                .confirmed(jp.aegif.nemaki.rest.purview.anchor.AnchorKind.RFC3161_TSA,
+                        "abc", java.time.Instant.parse("2026-08-24T00:00:00Z"),
+                        new byte[] { 1 }, "p",
+                        Map.of("digestAlgorithm", "SHA-256"))));
+
+        assertEquals(0, service.assess("bedroom", TODAY).get("timestampRenewalsDue"));
+    }
+
+    @Test
+    @DisplayName("the attribute this service reads is one the RFC 3161 rung actually writes")
+    void theAttributeNameMatchesTheProducer() throws Exception {
+        // The fixtures above deliberately use the LITERAL "digestAlgorithm", not the constant,
+        // so renaming the constant cannot make them agree with themselves. This pins the other
+        // half: that the literal is what the producing rung really records. The first version
+        // looked for "signatureAlgorithm", which nothing in the product writes.
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(
+                "src/main/java/jp/aegif/nemaki/rest/purview/anchor/Rfc3161AnchorTarget.java"));
+
+        assertTrue(source.contains("attrs.put(\"" + LongTermValidityService
+                        .TOKEN_ALGORITHM_ATTRIBUTE + "\""),
+                "LongTermValidityService reads '" + LongTermValidityService
+                        .TOKEN_ALGORITHM_ATTRIBUTE + "' but Rfc3161AnchorTarget never writes it; "
+                        + "every confirmed token would be assessed as UNKNOWN");
+    }
+
+    /** A store that answers confirmed() with one receipt and pending() with nothing. */
+    private static jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore storeHolding(
+            jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt receipt) {
+        return new jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore() {
+            @Override
+            public void save(String domain, long toSequence,
+                    jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt r) {
+            }
+
+            @Override
+            public List<jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt> forCheckpoint(
+                    String domain, long toSequence) {
+                return List.of(receipt);
+            }
+
+            @Override
+            public List<PendingReceipt> pending(String domain, int limit) {
+                // Deliberately empty: if the service goes back to asking this query for
+                // confirmed receipts, the test above fails rather than quietly passing.
+                return List.of();
+            }
+
+            @Override
+            public List<PendingReceipt> confirmed(String domain, int limit) {
+                return List.of(new PendingReceipt(domain, 5, receipt));
+            }
+
+            @Override
+            public boolean isActive() {
+                return true;
+            }
+        };
+    }
+
+    @Test
     @DisplayName("an unwired receipt store is UNDETERMINED, not 'no anchors need renewal'")
     void anUnwiredStoreDoesNotReportZero() {
         Map<String, Object> body = new LongTermValidityService().assess("bedroom", TODAY);
