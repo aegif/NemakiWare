@@ -121,7 +121,9 @@ class AuthenticityReportControllerTest {
         // Content, not identity with the constant: comparing REPORT_LIMITS to itself passes
         // even when the paragraph has been emptied.
         String limits = String.valueOf(json.getBody().get("whatThisDoesNotEstablish"));
-        assertTrue(limits.contains("faithful recording is not truth")
+        // Reworded with the identity section: it no longer claims "recorded faithfully",
+        // because this path reads the stored aspects without re-checking the capture hash.
+        assertTrue(limits.contains("would not be truth in any case")
                         && limits.contains("not that they were never altered"),
                 "the report served to an admin lost the clauses that keep a digest from "
                         + "reading as proof: " + limits);
