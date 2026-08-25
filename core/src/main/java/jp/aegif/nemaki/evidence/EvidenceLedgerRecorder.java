@@ -69,8 +69,33 @@ public class EvidenceLedgerRecorder {
      */
     static final String CAPTURE_DIGEST_DOMAIN = "LEDGER_CAPTURE_COMPLETED_V1";
 
+    /**
+     * How many gaps go by between log lines once the ledger has started failing.
+     *
+     * <p>The FIRST is always logged, and so is every hundredth after it, with a running count.
+     * The returned warning is unaffected — the caller is told every single time, because that
+     * one is about its own ingest. This is only about the log, where a per-ingest line during a
+     * CouchDB outage buries the line that says the outage started.
+     */
+    private static final int GAP_LOG_EVERY = 100;
+
+    private final java.util.concurrent.atomic.AtomicLong gapCount =
+            new java.util.concurrent.atomic.AtomicLong();
+
     private EvidenceLedgerService ledgerService;
 
+    /**
+     * Optional in shape only.
+     *
+     * <p>{@link EvidenceLedgerService} is a {@code @Component} and
+     * {@code jp.aegif.nemaki.evidence} is component-scanned by {@code serviceContext.xml}, so in
+     * a running deployment this is ALWAYS satisfied and the null branch below is unreachable.
+     * It is kept for the tests that drive this class directly, and because a bean that
+     * disappears from the scan should degrade rather than fail the context.
+     *
+     * <p>The consequence to be honest about: <b>there is no switch</b>. The ledger provisions
+     * its own database on first use, so it is on wherever the ingest path is.
+     */
     @Autowired(required = false)
     public void setLedgerService(EvidenceLedgerService ledgerService) {
         this.ledgerService = ledgerService;
@@ -101,9 +126,8 @@ public class EvidenceLedgerRecorder {
     public Recorded recordCaptureCompleted(String repositoryId, CaptureIntent intent,
             Map<String, Object> evidence, String occurredAt) {
         if (ledgerService == null) {
-            // Not wired. Said once per call at debug, not warn: a deployment that has not
-            // enabled the ledger is not in an error state, and a warning per ingest would
-            // train an operator to ignore the log.
+            // Unreachable where the component scan runs (see the setter). Debug, not warn: this
+            // is a wiring state, not an operational failure, and it does not reach the caller.
             logger.debug("No evidence ledger is wired; capture {} is not chained",
                     intent.intentId());
             return Recorded.gap(null);
@@ -120,8 +144,7 @@ public class EvidenceLedgerRecorder {
         } catch (RuntimeException e) {
             // The capture is already durable. Losing it because the ledger is down would be a
             // far worse outcome than a gap in the chain — but the gap is still reported.
-            logger.warn("Capture {} completed but could not be chained: {}", intent.intentId(),
-                    e.getMessage());
+            logGap(intent.intentId(), e.getMessage());
             return Recorded.gap("This ingest was captured, but its record could not be added to "
                     + "the evidence chain (" + e.getMessage() + "). The capture itself stands; "
                     + "the chain is missing this entry and will not be back-filled.");
@@ -129,11 +152,35 @@ public class EvidenceLedgerRecorder {
         if (result.recorded()) {
             return Recorded.chained();
         }
-        logger.warn("Capture {} completed but was not chained: {}", intent.intentId(),
-                result.reason());
+        logGap(intent.intentId(), result.reason());
         return Recorded.gap("This ingest was captured, but its record was not added to the "
                 + "evidence chain (" + result.reason() + "). The capture itself stands; the "
                 + "chain is missing this entry and will not be back-filled.");
+    }
+
+    /**
+     * Says a gap happened, without letting a long outage bury the line that says it started.
+     *
+     * <p>A CouchDB outage makes EVERY ingest fail to chain. Logging each one at warn turns the
+     * one useful line — the first — into one of ten thousand identical ones, and teaches an
+     * operator to filter the string out. The running count is what an operator actually needs
+     * after the fact: how many entries the chain is missing.
+     *
+     * <p>The caller still gets its warning every time. That one is about its own ingest.
+     */
+    private void logGap(String intentId, String reason) {
+        long total = gapCount.incrementAndGet();
+        if (total == 1 || total % GAP_LOG_EVERY == 0) {
+            logger.warn("Capture {} completed but was not chained: {} (evidence-chain gaps since "
+                    + "startup: {})", intentId, reason, total);
+        } else {
+            logger.debug("Capture {} completed but was not chained: {}", intentId, reason);
+        }
+    }
+
+    /** How many completed captures have failed to reach the chain since startup. */
+    public long gapsSinceStartup() {
+        return gapCount.get();
     }
 
     /**

@@ -229,6 +229,31 @@ ImapIdleMonitor / `IngestDlqController`) は `warnings()` を一度も読まな�
 黙ってはいないが、**運用者が見る場所には出ていない**。
 サマリに畳み込むのは別増分。
 
+### スイッチは無い — それを認める (2026-08-25)
+
+`EvidenceLedgerRecorder.setLedgerService` は `@Autowired(required = false)` だが、
+**`EvidenceLedgerService` は `@Component` で `jp.aegif.nemaki.evidence` は
+`serviceContext.xml` が component-scan する**。したがって
+
+- **「台帳が配線されていない」分岐は稼働中の配備では到達しない。**
+  「台帳を有効にしていない配備は error 状態ではない」というコメントは、
+  **起こらない状態について書いていた**
+- `CouchEvidenceLedgerStore.ensureDatabase()` は `nemaki_evidence_ledger` を
+  **無ければ作る**。`isActive()` は `client()` を呼ぶので、**最初の取込で自分を有効にする**
+- よって**外部取込の経路がある配備では常に有効**で、切る手段は無い
+
+運用者が実際に出会うのは「配線されていない」ではなく **「台帳は在るが届かない」** で、
+そちらは append が `UNAVAILABLE` を返し、**取込ごとに警告が出る**。
+CouchDB の障害中は全取込がそうなるので、**ログは最初の 1 件と以後 100 件ごと**に
+まとめ (`GAP_LOG_EVERY`)、件数を添える。呼び出し元への警告は**間引かない** —
+そちらは自分の取込についての話だから。
+
+負のコントロール 3 本実測 (間引きを外す / 呼び出し元も間引く / 数えない)。
+**間引きは logback の `ListAppender` で実測している** — 捕らえずに
+「ログは間引いてある」と書けば、それは何も裏付けの無い主張になる。
+
+利用者向けの記述は [`RELEASE_NOTES.md`](../../RELEASE_NOTES.md)。
+
 ### 遡らない
 
 backfill は**作らない** (§8)。この class より前の取込は連鎖に入っていない。

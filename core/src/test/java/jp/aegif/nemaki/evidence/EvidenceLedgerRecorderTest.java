@@ -22,6 +22,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -177,9 +178,11 @@ class EvidenceLedgerRecorderTest {
     @Test
     @DisplayName("no ledger wired is not an error, and not a warning either")
     void anUnwiredLedgerIsSilent() {
-        // A deployment that has not enabled the ledger is not in an error state. A warning per
-        // ingest would train an operator to ignore the log, which is how a real warning gets
-        // missed later.
+        // NOTE: unreachable in a running deployment. EvidenceLedgerService is a @Component and
+        // jp.aegif.nemaki.evidence is component-scanned, so the setter always gets a bean and
+        // the ledger provisions its own database on first use — there is no switch. This holds
+        // the shape for direct construction, and the state an operator will actually meet ("the
+        // ledger is there and unreachable") is aRefusedAppendIsReportedNotHidden above.
         EvidenceLedgerRecorder.Recorded recorded = recorderOver(null)
                 .recordCaptureCompleted(REPO, intent("i-4", "src-4"), Map.of(),
                         "2026-08-25T00:00:00Z");
@@ -187,6 +190,77 @@ class EvidenceLedgerRecorderTest {
         assertFalse(recorded.inChain());
         assertNull(recorded.warning(),
                 "an unconfigured ledger produced a per-ingest warning: " + recorded.warning());
+    }
+
+    @Test
+    @DisplayName("a long outage still tells every caller, and counts what the chain is missing")
+    void anOutageWarnsEveryCallerAndCountsTheGaps() {
+        // The real failure state is an unreachable ledger, and it makes EVERY ingest fail to
+        // chain. Two things must hold at once during that: each caller is told about its own
+        // ingest (never suppressed), and the operator can find out afterwards how many entries
+        // the chain is missing without counting log lines.
+        EvidenceLedgerService service = mock(EvidenceLedgerService.class);
+        when(service.append(anyString(), any(), anyString(), anyString(), anyString()))
+                .thenReturn(new EvidenceLedgerService.AppendResult(
+                        EvidenceLedgerService.AppendOutcome.UNAVAILABLE, -1, null,
+                        "the evidence ledger is not available"));
+        EvidenceLedgerRecorder recorder = recorderOver(service);
+
+        for (int i = 0; i < 250; i++) {
+            EvidenceLedgerRecorder.Recorded recorded = recorder.recordCaptureCompleted(REPO,
+                    intent("i-out-" + i, "src-out"), evidenceWithHash("deadbeef"),
+                    "2026-08-25T00:00:00Z");
+            assertNotNull(recorded.warning(),
+                    "ingest " + i + " of an outage was not told its record is missing; "
+                            + "throttling the LOG must never throttle the caller");
+        }
+
+        assertEquals(250, recorder.gapsSinceStartup(),
+                "the count of missing chain entries is wrong, so an operator reading it after "
+                        + "an outage would understate the hole");
+    }
+
+    @Test
+    @DisplayName("a long outage does not bury the line that says it started")
+    void anOutageDoesNotFloodTheLog() {
+        // Measured, not asserted in prose: without capturing the appender, "the log is
+        // throttled" would be a claim with nothing behind it, and the class's own comment
+        // already argues that a per-ingest line teaches an operator to filter the string out.
+        ch.qos.logback.classic.Logger log = (ch.qos.logback.classic.Logger)
+                org.slf4j.LoggerFactory.getLogger(EvidenceLedgerRecorder.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        log.addAppender(appender);
+        try {
+            EvidenceLedgerService service = mock(EvidenceLedgerService.class);
+            when(service.append(anyString(), any(), anyString(), anyString(), anyString()))
+                    .thenReturn(new EvidenceLedgerService.AppendResult(
+                            EvidenceLedgerService.AppendOutcome.UNAVAILABLE, -1, null,
+                            "the evidence ledger is not available"));
+            EvidenceLedgerRecorder recorder = recorderOver(service);
+
+            for (int i = 0; i < 250; i++) {
+                recorder.recordCaptureCompleted(REPO, intent("i-flood-" + i, "src-flood"),
+                        evidenceWithHash("deadbeef"), "2026-08-25T00:00:00Z");
+            }
+
+            List<ch.qos.logback.classic.spi.ILoggingEvent> warns = appender.list.stream()
+                    .filter(e -> e.getLevel() == ch.qos.logback.classic.Level.WARN)
+                    .toList();
+            // 1st, 100th, 200th.
+            assertEquals(3, warns.size(),
+                    "250 unchainable ingests produced " + warns.size() + " WARN lines; the one "
+                            + "that matters is the first, and it is now one of hundreds");
+            assertTrue(warns.get(0).getFormattedMessage().contains("i-flood-0"),
+                    "the FIRST gap was not the first line logged: "
+                            + warns.get(0).getFormattedMessage());
+            assertTrue(warns.get(2).getFormattedMessage().contains("200"),
+                    "the later line does not carry the running count, so an operator cannot see "
+                            + "how big the hole is: " + warns.get(2).getFormattedMessage());
+        } finally {
+            log.detachAppender(appender);
+        }
     }
 
     // ---- the digest ----
