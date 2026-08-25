@@ -150,8 +150,15 @@ public class EvidenceLedgerService {
             return body;
         }
         long to = Math.min(tail, from + MAX_CHECKPOINT_SPAN - 1);
+        // expected + 1, NOT the span cap. At a full span the two were equal, so a fork — two
+        // entries sharing a position, which shows up as MORE rows than sequences — could never
+        // produce more rows than the limit allowed. The "more rows than sequences" branch below
+        // was unreachable at exactly the size where a busy ledger sits, and a fork there was
+        // reported as "the span ends at X, not at to": the wrong explanation, again.
+        // One extra row is all it takes to see the excess; the span is refused either way.
+        long expected = to - from + 1;
         List<EvidenceLedgerEntry> span =
-                store.range(domain, from, to, MAX_CHECKPOINT_SPAN);
+                store.range(domain, from, to, (int) Math.min(expected + 1, Integer.MAX_VALUE));
 
         // The span must BE the range this checkpoint claims. The verifier only checks
         // relationships WITHIN whatever list it was handed, so a short read — a view still
@@ -212,7 +219,16 @@ public class EvidenceLedgerService {
      */
     private static String coverageProblem(List<EvidenceLedgerEntry> span, long from, long to) {
         long expected = to - from + 1;
-        if (span == null || span.isEmpty()) {
+        if (span == null) {
+            // Deliberately NOT the empty-span sentence. "We could not read the range" and "the
+            // range is empty" are different facts, and the second reads as "nothing happened" —
+            // which is the substitution the anchor status endpoint in this same layer already
+            // refuses to make (review).
+            return "the ledger did not answer for " + from + ".." + to + ", so it is unknown "
+                    + "whether there is anything to seal; that is not the same as there being "
+                    + "nothing";
+        }
+        if (span.isEmpty()) {
             return "the ledger returned no rows for " + from + ".." + to + ", so there is "
                     + "nothing to seal — and an empty span must not be read as an empty range";
         }

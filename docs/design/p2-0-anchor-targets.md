@@ -96,9 +96,16 @@ CONFIRMED を作り、codec はそれを拒んでいたので、**再起動し�
 > `UPPER_BOUND_ONLY` の定型文で、本文は「**その時刻**より後ではない」と、
 > **存在しない時刻を指していた**。しかも応答は `String.valueOf(null)` で
 > **文字列 `"null"`** を返しており、時刻として読めた。両方直した —
-> null は JSON null で出し、時刻を持たない確定済み受領証には
-> 「この配備は時刻を持たない。証明は完全で、第三者はコミット先のブロックから
-> 時刻を読めるが、**この応答の中のどの値も時刻として読んではならない**」を付ける。
+> null は JSON null で出し、時刻を持たない確定済み受領証には但し書きを付ける。
+>
+> **その但し書きも段を選んでいなかった** (2026-08-25 再訂正)。上の文は
+> OpenTimestamps 向けで、実装は kind を見ずに全段へ同じ 1 文を付けていた。
+> CATALOG 受領証に付くと存在しない proof と block を発明する。段ごとに分けた
+> (下記「§5.7 但し書きは 1 つの段のもの」)。
+>
+> **`null` が JSON null で出ることは、まだシリアライズ後の body では測っていない。**
+> テストは Java の `Map` に対して assert している。MVC の `serializationInclusion` は
+> コメントアウト済みなので現状は出るが、**測ってはいない**。
 
 ---
 
@@ -257,7 +264,14 @@ P3 孤児 pending を failed にする / P4 kind ガードを外す / P5 proof �
 > (レビュー指摘)。Couch 側で確認済みなのは
 > `CouchEvidenceLedgerStore` の実オーバーロード経路のみ
 > (`theRealExplicitIdCreateFailsFast` / `aNotOkResultIsNotSuccess`)。
-> **受領証 store の実装そのものの実測は未了**として残す。
+> ~~**受領証 store の実装そのものの実測は未了**として残す。~~
+>
+> **これは 2026-08-25 に解消した** (この注記だけが取り残されていた — レビュー指摘)。
+> `CouchAnchorReceiptStoreTest` が 10 本あり、`create` / `update` の戻り値検査、
+> CAS を失った再読込、単調性 (CONFIRMED / PENDING の両方)、有界再試行の
+> 拒否、段ごとの行分けを実測している。`AnchorReceiptPersistenceTest` 側にも
+> 「実際の強制は `CouchAnchorReceiptStoreTest` で測っている」と書いてあり、
+> **同じ commit 範囲の 2 つの文書が逆のことを言っていた**。
 
 ### 単調性は **store の compare-and-set の中**にある (2026-08-25)
 
@@ -306,7 +320,27 @@ PENDING 行を上書きする。そして `pending()` は **PENDING 行しか返
 負のコントロール 2 本実測 (CONFIRMED のみに戻す → `aFailedRecheckDoesNotKillAPendingCommitment` /
 すべての上書きを拒否する → `aPendingCommitmentReplacesAFailedAttempt`)。
 
-### 「時刻を保持していない」但し書きは **1 つの段のもの** (2026-08-25)
+### 封じた checkpoint のアンカーをやり直す道が無くなっていた (2026-08-25)
+
+`checkpoint-and-anchor` は「封じる」と「アンカーする」を 1 回で行う。
+新しいエントリが無い実行を noop にして何もしないようにしたのは正しい
+(余分な cron 実行が確定済み commitment を打ち直すのを止めた) が、
+**封じたが**アンカーが FAILED だった checkpoint (TSA が 1 時間落ちていた等) に
+**戻る道も同時に消えた** — 封は打ち直せず、`upgrade-pending` は PENDING 行しか
+見ず、次の実行はまた「新しいものが無い」。その段は永久に FAILED のまま。
+
+`AnchorService.retryUnsettled` を足した。**受領証を持たない段だけ**に接触する。
+CONFIRMED はもちろん **PENDING も「持っている」に数える** — 送信済みで block を
+待っているものにもう一度出すのは再試行ではなく二重の commitment だから。
+**受領証 store が無ければ拒否する**。どの段が確定済みか分からないことは、
+全部に接触してよい理由にならない。
+
+負のコントロール 3 本実測 (noop から retry を消す / 確定済みも打ち直す /
+error 経路が前の checkpoint をアンカーする)。**3 本目は最初発火しなかった** —
+テストが `ledgerStore` を張っておらず、`never()` を支えていたのは私のコードでは
+なく fixture の欠落だった。張ってから測り直した。
+
+### 5.7. 但し書きは 1 つの段のもの (2026-08-25)
 
 CONFIRMED かつ `anchoredAt` が無い receipt に付けていた但し書きは、
 **kind を問わず同じ 1 文**だった。その文は OpenTimestamps 向けに書かれており

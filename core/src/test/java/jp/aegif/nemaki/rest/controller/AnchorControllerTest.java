@@ -135,13 +135,25 @@ class AnchorControllerTest {
         // outer status said "success" over an inner "error" and then anchored the PREVIOUS
         // checkpoint — so an operator saw 200 for a seal that did not happen (review).
         AnchorController controller = controllerFor(true);
-        setField(controller, "anchorService", mock(
-                jp.aegif.nemaki.evidence.anchor.AnchorService.class));
+        jp.aegif.nemaki.evidence.anchor.AnchorService anchors =
+                mock(jp.aegif.nemaki.evidence.anchor.AnchorService.class);
+        setField(controller, "anchorService", anchors);
         jp.aegif.nemaki.evidence.EvidenceLedgerService ledger =
                 mock(jp.aegif.nemaki.evidence.EvidenceLedgerService.class);
         when(ledger.closeCheckpoint(anyString(), anyString())).thenReturn(
                 java.util.Map.of("status", "error", "message", "the span does not verify"));
         setField(controller, "ledgerService", ledger);
+        // The ledger store MUST be wired here. The defect being guarded against is "anchor the
+        // PREVIOUS checkpoint anyway", and without a store there is no previous checkpoint to
+        // anchor — the never() below would then be held up by the fixture rather than by the
+        // code, and a re-introduced call would sail through. Measured: with the store left
+        // null, putting the anchor call back into the error branch kept every test green.
+        jp.aegif.nemaki.evidence.EvidenceLedgerStore store =
+                mock(jp.aegif.nemaki.evidence.EvidenceLedgerStore.class);
+        when(store.latestCheckpoint(anyString())).thenReturn(
+                jp.aegif.nemaki.evidence.EvidenceCheckpoint.of("bedroom", 0, 5, ROOT, null,
+                        "2026-08-25T00:00:00Z"));
+        setField(controller, "ledgerStore", store);
 
         Object response = AnchorController.class
                 .getDeclaredMethod("checkpointAndAnchor", String.class)
@@ -152,7 +164,61 @@ class AnchorControllerTest {
         assertTrue(code != HttpStatus.OK,
                 "a checkpoint that was not sealed answered " + code + "; the caller reads that "
                         + "as a seal that happened");
+        // The status code was the only thing asserted, and the status code is not the defect.
+        // The defect was anchoring the PREVIOUS checkpoint beside a seal that did not happen —
+        // which survives any amount of correct status code (review).
+        org.mockito.Mockito.verify(anchors, org.mockito.Mockito.never())
+                .anchor(org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.verify(anchors, org.mockito.Mockito.never())
+                .retryUnsettled(org.mockito.ArgumentMatchers.any());
     }
+
+    @Test
+    @DisplayName("nothing new to seal still retries a rung that holds nothing")
+    void aNoopRunRetriesTheRungsThatHoldNothing() throws Exception {
+        // Closing and anchoring are one call, so a checkpoint that WAS sealed but whose anchor
+        // failed had no way back: the seal cannot be redone, upgrade-pending only looks at
+        // PENDING rows, and every later run again has nothing new to seal. The rung stayed
+        // FAILED for ever. Re-anchoring the whole ladder is not the answer either — that mints
+        // a second commitment for a rung that already settled — so only the empty ones are
+        // retried, and AnchorService decides which those are.
+        AnchorController controller = controllerFor(true);
+        jp.aegif.nemaki.evidence.anchor.AnchorService anchors =
+                mock(jp.aegif.nemaki.evidence.anchor.AnchorService.class);
+        when(anchors.retryUnsettled(org.mockito.ArgumentMatchers.any())).thenReturn(
+                new jp.aegif.nemaki.evidence.anchor.AnchorService.Outcome("bedroom", 5, ROOT,
+                        java.util.List.of(), null));
+        setField(controller, "anchorService", anchors);
+        jp.aegif.nemaki.evidence.EvidenceLedgerService ledger =
+                mock(jp.aegif.nemaki.evidence.EvidenceLedgerService.class);
+        when(ledger.closeCheckpoint(anyString(), anyString())).thenReturn(
+                java.util.Map.of("status", "noop", "message", "no entries since the last one"));
+        setField(controller, "ledgerService", ledger);
+        jp.aegif.nemaki.evidence.EvidenceLedgerStore store =
+                mock(jp.aegif.nemaki.evidence.EvidenceLedgerStore.class);
+        when(store.latestCheckpoint(anyString())).thenReturn(
+                jp.aegif.nemaki.evidence.EvidenceCheckpoint.of("bedroom", 0, 5, ROOT, null,
+                        "2026-08-25T00:00:00Z"));
+        setField(controller, "ledgerStore", store);
+
+        Object response = AnchorController.class
+                .getDeclaredMethod("checkpointAndAnchor", String.class)
+                .invoke(controller, "bedroom");
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> body = (java.util.Map<String, Object>) response.getClass()
+                .getMethod("getBody").invoke(response);
+
+        assertEquals("noop", body.get("status"),
+                "a run with nothing to seal was reported as something else: " + body);
+        org.mockito.Mockito.verify(anchors).retryUnsettled(org.mockito.ArgumentMatchers.any());
+        // The half that must NOT come back: re-anchoring everything turns an extra cron run
+        // into a second commitment for a rung that has already settled.
+        org.mockito.Mockito.verify(anchors, org.mockito.Mockito.never())
+                .anchor(org.mockito.ArgumentMatchers.any());
+    }
+
+    private static final String ROOT =
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     @Test
     @DisplayName("an unwired receipt store is not an empty list of receipts")

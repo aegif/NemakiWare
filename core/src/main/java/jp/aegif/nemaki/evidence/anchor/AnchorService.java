@@ -231,6 +231,79 @@ public class AnchorService {
     }
 
     /**
+     * Anchors only the rungs that have nothing to show for this checkpoint yet.
+     *
+     * <p>Closing a checkpoint and anchoring it happen in one call, and a run with no new entries
+     * correctly does neither. That left <b>no way back</b> for a checkpoint that WAS sealed but
+     * whose anchor failed — a TSA that was down for an hour, a calendar that refused. The
+     * checkpoint is sealed for ever, {@code upgrade-pending} only looks at PENDING rows, and the
+     * next run has nothing new to seal. The rung stays FAILED permanently.
+     *
+     * <p>Re-anchoring everything is what was removed, and rightly: contacting a rung that is
+     * already CONFIRMED mints a second commitment nobody needs, and one that is PENDING has a
+     * live submission waiting on a block. So this asks the receipt store which rungs actually
+     * have nothing, and contacts only those.
+     *
+     * <p>Without a receipt store it <b>refuses</b>. Not knowing which rungs are settled is not a
+     * licence to contact all of them.
+     */
+    public Outcome retryUnsettled(EvidenceCheckpoint checkpoint) {
+        if (checkpoint == null) {
+            return new Outcome(null, -1, null, List.of(), "there is no checkpoint to anchor");
+        }
+        if (receiptStore == null) {
+            return new Outcome(checkpoint.domain(), checkpoint.toSequence(),
+                    checkpoint.merkleRoot(), List.of(),
+                    "there is no anchor receipt store, so it is unknown which rungs already hold "
+                            + "a commitment for this checkpoint; contacting them all could mint "
+                            + "a second commitment for one that is already settled");
+        }
+        String refusal = refusalFor(checkpoint);
+        if (refusal != null) {
+            logger.warn("Refusing to re-anchor {} at {}: {}", checkpoint.domain(),
+                    checkpoint.toSequence(), refusal);
+            return new Outcome(checkpoint.domain(), checkpoint.toSequence(),
+                    checkpoint.merkleRoot(), List.of(), refusal);
+        }
+
+        java.util.Set<AnchorKind> settled = new java.util.LinkedHashSet<>();
+        try {
+            for (AnchorReceipt stored
+                    : receiptStore.forCheckpoint(checkpoint.domain(), checkpoint.toSequence())) {
+                // PENDING counts as settled for this purpose: the submission is live and a
+                // second one would be a duplicate commitment, not a retry.
+                if (stored.status() == AnchorStatus.CONFIRMED
+                        || stored.status() == AnchorStatus.PENDING) {
+                    settled.add(stored.kind());
+                }
+            }
+        } catch (RuntimeException e) {
+            return new Outcome(checkpoint.domain(), checkpoint.toSequence(),
+                    checkpoint.merkleRoot(), List.of(),
+                    "the stored receipts could not be read (" + e.getMessage() + "), so it is "
+                            + "unknown which rungs already hold a commitment");
+        }
+
+        List<AnchorReceipt> receipts = new ArrayList<>();
+        for (AnchorTarget target : targets) {
+            if (settled.contains(target.kind())) {
+                continue;
+            }
+            AnchorReceipt receipt = receiptFrom(target, checkpoint.merkleRoot());
+            receipts.add(receipt);
+            persist(checkpoint.domain(), checkpoint.toSequence(), receipt);
+        }
+        if (receipts.isEmpty()) {
+            return new Outcome(checkpoint.domain(), checkpoint.toSequence(),
+                    checkpoint.merkleRoot(), List.of(),
+                    "every configured rung already holds a commitment for this checkpoint, so "
+                            + "nothing was re-anchored. This is NOT a failure.");
+        }
+        return new Outcome(checkpoint.domain(), checkpoint.toSequence(), checkpoint.merkleRoot(),
+                receipts, null);
+    }
+
+    /**
      * Re-checks pending receipts and stores any that have settled.
      *
      * <p>This is the other half of rung 2. Without it an OpenTimestamps commitment stays
@@ -350,6 +423,14 @@ public class AnchorService {
                 return AnchorReceipt.failed(target.kind(), merkleRoot, Instant.now(),
                         "the rung returned a receipt for " + receipt.kind()
                                 + "; a receipt from a different rung says nothing about this one");
+            }
+            if (receipt.anchoredDigest() == null) {
+                // Distinct from the mismatch below on purpose: "it did not say what it
+                // anchored" and "it anchored something else" send an operator to different
+                // places, and collapsing them into the second states more than we know.
+                return AnchorReceipt.failed(target.kind(), merkleRoot, Instant.now(),
+                        "the rung returned a receipt that does not say what it anchored, so "
+                                + "there is nothing to check this checkpoint against");
             }
             if (!merkleRoot.equalsIgnoreCase(receipt.anchoredDigest())) {
                 return AnchorReceipt.failed(target.kind(), merkleRoot, Instant.now(),

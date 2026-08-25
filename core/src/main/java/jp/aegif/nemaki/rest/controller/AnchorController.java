@@ -126,11 +126,19 @@ public class AnchorController {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
         }
         if ("noop".equals(closed.get("status"))) {
-            // Nothing new to seal. Re-anchoring the existing checkpoint here is what turned a
-            // harmless extra cron run into a re-stamp of an already-settled commitment.
+            // Nothing new to seal. Re-anchoring the whole ladder here is what turned a harmless
+            // extra cron run into a re-stamp of an already-settled commitment — but returning
+            // outright left a sealed checkpoint whose anchor FAILED with no way back: the seal
+            // cannot be redone, upgrade-pending only looks at PENDING rows, and the next run
+            // again has nothing new. So the rungs that hold nothing are retried, and only those.
             body.put("status", "noop");
-            body.put("message", "no entries since the last checkpoint, so nothing was sealed "
-                    + "and nothing was anchored. This is NOT a failure.");
+            body.put("message", "no entries since the last checkpoint, so nothing was sealed. "
+                    + "This is NOT a failure.");
+            EvidenceCheckpoint existing = ledgerStore == null ? null
+                    : ledgerStore.latestCheckpoint(repositoryId);
+            if (existing != null) {
+                body.put("anchor", anchorService.retryUnsettled(existing).asMap());
+            }
             return ResponseEntity.ok(body);
         }
         body.put("status", "success");
@@ -221,16 +229,17 @@ public class AnchorController {
             body.put("limits", STATUS_LIMITS);
             return ResponseEntity.ok(body);
         }
-        if (receiptStore != null) {
-            for (AnchorReceipt receipt
-                    : receiptStore.forCheckpoint(repositoryId, latest.toSequence())) {
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put("rung", receipt.kind().name());
-                row.put("status", receipt.status().name());
-                row.put("claimLimits", AnchorService.claimLimitsFor(receipt));
-                row.put("anchoredAt", receipt.anchoredAt() == null ? null : receipt.anchoredAt().toString());
-                receipts.add(row);
-            }
+        // No null guard here: the branch above returns whenever the store is missing or
+        // unreachable. A second check would suggest to a reader that there is another way
+        // through, and the one that matters has already been made.
+        for (AnchorReceipt receipt
+                : receiptStore.forCheckpoint(repositoryId, latest.toSequence())) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("rung", receipt.kind().name());
+            row.put("status", receipt.status().name());
+            row.put("claimLimits", AnchorService.claimLimitsFor(receipt));
+            row.put("anchoredAt", receipt.anchoredAt() == null ? null : receipt.anchoredAt().toString());
+            receipts.add(row);
         }
         body.put("receipts", receipts);
         body.put("limits", STATUS_LIMITS);

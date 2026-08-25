@@ -435,6 +435,158 @@ class AnchorServiceTest {
                 java.nio.charset.StandardCharsets.UTF_8));
     }
 
+    // ---- retrying only the rungs that hold nothing ----
+
+    /** A receipt store holding exactly what the test says, and recording what was written. */
+    private static AnchorReceiptStore receiptsHolding(List<AnchorReceipt> stored,
+            List<AnchorReceipt> written) {
+        return new AnchorReceiptStore() {
+            @Override public SaveOutcome save(String domain, long toSequence,
+                    AnchorReceipt receipt) {
+                written.add(receipt);
+                return SaveOutcome.STORED;
+            }
+
+            @Override public List<AnchorReceipt> forCheckpoint(String domain, long toSequence) {
+                return stored;
+            }
+
+            @Override public List<PendingReceipt> pending(String domain, int limit) {
+                return List.of();
+            }
+
+            @Override public List<PendingReceipt> confirmed(String domain, int limit) {
+                return List.of();
+            }
+
+            @Override public boolean isActive() {
+                return true;
+            }
+        };
+    }
+
+    private static AnchorService serviceWithReceipts(AnchorReceiptStore receipts,
+            AnchorTarget... targets) {
+        AnchorService service = serviceWith(storeAt(5), targets);
+        service.setReceiptStore(receipts);
+        return service;
+    }
+
+    @Test
+    @DisplayName("a rung that already holds a commitment is not contacted again")
+    void aSettledRungIsNotReAnchored() {
+        List<AnchorReceipt> written = new java.util.ArrayList<>();
+        AnchorReceipt alreadyConfirmed = confirmedFor(AnchorKind.ATLAS_CATALOG, ROOT);
+        AnchorService service = serviceWithReceipts(
+                receiptsHolding(List.of(alreadyConfirmed), written),
+                rung(AnchorKind.ATLAS_CATALOG, AnchorStatus.CONFIRMED));
+
+        AnchorService.Outcome outcome = service.retryUnsettled(checkpoint(5));
+
+        assertEquals(List.of(), outcome.receipts(),
+                "a settled rung was contacted again, which mints a second commitment nobody "
+                        + "needs");
+        assertEquals(List.of(), written, "a second receipt was written for a settled rung");
+        assertNotNull(outcome.refusedReason(),
+                "nothing was re-anchored and the response did not say why");
+    }
+
+    @Test
+    @DisplayName("a rung that failed IS retried — the control")
+    void aFailedRungIsRetried() {
+        // Without this, refusing to contact anything would pass the test above while leaving
+        // the original hole: a sealed checkpoint whose anchor failed can never be anchored.
+        List<AnchorReceipt> written = new java.util.ArrayList<>();
+        AnchorService service = serviceWithReceipts(
+                receiptsHolding(List.of(AnchorReceipt.failed(AnchorKind.ATLAS_CATALOG, ROOT,
+                        Instant.now(), "the catalog was down")), written),
+                rung(AnchorKind.ATLAS_CATALOG, AnchorStatus.CONFIRMED));
+
+        AnchorService.Outcome outcome = service.retryUnsettled(checkpoint(5));
+
+        assertEquals(List.of("ATLAS_CATALOG"), outcome.confirmedRungs(),
+                "a rung whose earlier attempt FAILED was not retried, so the checkpoint stays "
+                        + "unanchored for ever: the seal cannot be redone and upgrade-pending "
+                        + "only looks at PENDING rows");
+        assertEquals(1, written.size(), "the retry's receipt was not stored");
+    }
+
+    @Test
+    @DisplayName("a PENDING commitment counts as held — a second submission is not a retry")
+    void aPendingRungIsNotReSubmitted() {
+        List<AnchorReceipt> written = new java.util.ArrayList<>();
+        AnchorService service = serviceWithReceipts(
+                receiptsHolding(List.of(AnchorReceipt.pending(AnchorKind.OPENTIMESTAMPS, ROOT,
+                        Instant.now(), new byte[] { 1 }, "proofdigest", Map.of())), written),
+                rung(AnchorKind.OPENTIMESTAMPS, AnchorStatus.PENDING));
+
+        AnchorService.Outcome outcome = service.retryUnsettled(checkpoint(5));
+
+        assertEquals(List.of(), outcome.receipts(),
+                "a live commitment waiting on a block was submitted a second time");
+    }
+
+    @Test
+    @DisplayName("without a receipt store it refuses rather than contacting every rung")
+    void noReceiptStoreMeansNoBlanketRetry() {
+        // Not knowing which rungs are settled is not a licence to contact all of them: that is
+        // exactly the re-stamp of an already-settled commitment this path was built to avoid.
+        AnchorService.Outcome outcome = serviceWith(storeAt(5),
+                rung(AnchorKind.ATLAS_CATALOG, AnchorStatus.CONFIRMED))
+                .retryUnsettled(checkpoint(5));
+
+        assertEquals(List.of(), outcome.receipts());
+        assertNotNull(outcome.refusedReason());
+        assertTrue(outcome.refusedReason().contains("second commitment"),
+                "the refusal does not say what it is protecting: " + outcome.refusedReason());
+    }
+
+    @Test
+    @DisplayName("a stale root is refused on the retry path too")
+    void aStaleRootIsNotReAnchoredEither() {
+        // The retry path is a second way to reach anchoring, and the first thing it must not do
+        // is become a way around the refusals the ordinary path makes.
+        AnchorService.Outcome outcome = serviceWithReceipts(
+                receiptsHolding(List.of(), new java.util.ArrayList<>()),
+                rung(AnchorKind.ATLAS_CATALOG, AnchorStatus.CONFIRMED))
+                .retryUnsettled(EvidenceCheckpoint.of(DOMAIN, 0, 3, ROOT, null,
+                        "2026-08-24T00:00:00Z"));
+
+        assertEquals(List.of(), outcome.receipts(),
+                "a root the ledger has already moved past was anchored through the retry path");
+        assertTrue(outcome.refusedReason().contains("already is not"),
+                "the refusal is not the currency one: " + outcome.refusedReason());
+    }
+
+    // ---- a rung that does not say what it anchored ----
+
+    @Test
+    @DisplayName("a receipt that names no digest is not called 'a different value'")
+    void aReceiptWithNoDigestSaysThat() {
+        AnchorTarget silent = new AnchorTarget() {
+            @Override public AnchorKind kind() {
+                return AnchorKind.ATLAS_CATALOG;
+            }
+
+            @Override public boolean isConfigured() {
+                return true;
+            }
+
+            @Override public AnchorReceipt anchor(String hexDigest) {
+                return AnchorReceipt.pending(AnchorKind.ATLAS_CATALOG, null, Instant.now(),
+                        new byte[] { 1 }, "proofdigest", Map.of());
+            }
+        };
+
+        AnchorReceipt receipt = serviceWith(storeAt(5), silent).anchor(checkpoint(5))
+                .receipts().get(0);
+
+        assertEquals(AnchorStatus.FAILED, receipt.status());
+        assertTrue(receipt.failureReason().contains("does not say what it anchored"),
+                "'it did not say' was reported as 'it anchored something else', which states "
+                        + "more than is known: " + receipt.failureReason());
+    }
+
     // ---- the missing-anchoring-time note belongs to ONE rung ----
 
     /**

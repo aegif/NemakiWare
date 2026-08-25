@@ -75,26 +75,33 @@ class EvidenceLedgerServiceTest {
         /** When set, range() answers null — what a store that could not read looks like. */
         boolean rangeAnswersNull;
 
+        /** The limit the service asked for, so a test can pin what it is allowed to see. */
+        int lastLimit = -1;
+
         @Override public List<EvidenceLedgerEntry> range(String domain, long from, long to,
                 int limit) {
+            lastLimit = limit;
             if (rangeAnswersNull) {
                 return null;
             }
-            List<EvidenceLedgerEntry> rows = entries.stream()
+            List<EvidenceLedgerEntry> rows = new java.util.ArrayList<>(entries.stream()
                     .filter(e -> e.domain().equals(domain))
                     .filter(e -> e.sequence() >= from && e.sequence() <= to)
                     .sorted(java.util.Comparator.comparingLong(EvidenceLedgerEntry::sequence))
-                    .limit(limit).toList();
-            // Applied AFTER the ordinary result, so the switch changes nothing when it is off.
+                    .toList());
             if (dropFromEnd < 0 && !rows.isEmpty()) {
                 // Negative means the opposite: hand back one row twice, which is what a fork
                 // looks like from here.
-                List<EvidenceLedgerEntry> forked = new java.util.ArrayList<>(rows);
-                forked.add(rows.get(rows.size() - 1));
-                return forked;
+                rows.add(rows.get(rows.size() - 1));
+            } else if (dropFromEnd > 0) {
+                rows = new java.util.ArrayList<>(
+                        rows.subList(0, Math.max(0, rows.size() - dropFromEnd)));
             }
-            return dropFromEnd <= 0 ? rows
-                    : rows.subList(0, Math.max(0, rows.size() - dropFromEnd));
+            // The limit is applied LAST, as a view does. It used to be applied before the fork
+            // row was added, so this fake could show an excess the real store would have
+            // truncated away — the fake was more forgiving than CouchDB about the one thing
+            // these tests are for.
+            return rows.size() > limit ? rows.subList(0, limit) : rows;
         }
 
         @Override public boolean appendCheckpoint(EvidenceCheckpoint checkpoint) {
@@ -175,6 +182,36 @@ class EvidenceLedgerServiceTest {
         org.junit.jupiter.api.Assertions.assertEquals("error", body.get("status"), body + "");
         org.junit.jupiter.api.Assertions.assertNull(body.get("rowsRead"),
                 "a null span reported a row count");
+        // "We could not read it" is not "there was nothing". The second reads as "nothing
+        // happened", which is the substitution the anchor status endpoint in this same layer
+        // already refuses to make.
+        org.junit.jupiter.api.Assertions.assertTrue(
+                String.valueOf(body.get("message")).contains("did not answer"),
+                "a store that could not answer was reported as a store with no rows: "
+                        + body.get("message"));
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("the span is read with room to SEE one row too many")
+    void theSpanIsReadWithRoomToSeeAnExcess() {
+        // A fork shows up as MORE rows than sequences. The read used to be capped at
+        // MAX_CHECKPOINT_SPAN, and at a full span that equals the expected count exactly — so
+        // the extra row was truncated away before anyone could count it, and the fork was
+        // reported as "the span ends at X, not at to". The branch that names it a fork was
+        // unreachable at precisely the size a busy ledger sits at.
+        //
+        // Pinned as expected + 1, not merely "> expected": with a small fixture the old cap
+        // (10,000) also satisfies "> expected", so only the exact value measures the full-span
+        // case without building a full span.
+        FakeStore store = new FakeStore();
+        EvidenceLedgerService service = serviceOver(store);
+        appendSome(service, 3);
+
+        service.closeCheckpoint(DOMAIN, "2026-08-25T00:00:00Z");
+
+        org.junit.jupiter.api.Assertions.assertEquals(4, store.lastLimit,
+                "the span was read with a limit of " + store.lastLimit + " for 3 sequences; a "
+                        + "limit that cannot exceed the expected count can never reveal a fork");
     }
 
     @Test
