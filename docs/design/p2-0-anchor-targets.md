@@ -306,19 +306,35 @@ store は以前からそれを送っていた。欠けていたのは (a) 判断
 上の判定は `candidate` が CONFIRMED でなく `stored` が CONFIRMED のときだけ拒否していた。
 **proof を失うのはそこではない。**
 
-`upgradePending` は rung が返した receipt をそのまま store に渡す。rung が一過性の
-再確認失敗 (calendar が 500、timeout) を **FAILED receipt として返す**と、それが
-PENDING 行を上書きする。そして `pending()` は **PENDING 行しか返さない**ので、
-その commitment は**二度と再確認されない**。calendar は今も持っていて block も
-やがて確定するのに、**この配備が訊くのをやめただけ**で、どこにもエラーは出ない。
+**現状の段はどれもこれを起こせない** (2026-08-25 訂正 — 初稿は「起きている proof
+喪失」として書いていた。**起きていない障害を書くのは、この層が防ごうとしている
+過大表現そのもの**である。同じ増分で `range` が null を返す本番実装は無いと自己訂正
+しながら、隣で同じ罠に落ちていた)。製品の `upgrade()` は**すべて**、渡された receipt
+か CONFIRMED のどちらかを返す — インタフェース既定が `return pending;` で、
+`OpenTimestampsAnchorTarget` が FAILED を組むのは `anchor()` の中だけである。
+
+守っているのは**次に足す段**である。`upgradePending` は rung が返した receipt を
+そのまま store に渡し、`pending()` は **PENDING 行しか返さない**。したがって一過性の
+再確認失敗 (calendar が 500、timeout) を **FAILED receipt として返す段**を足した日に、
+それが PENDING 行を上書きし、その commitment は**二度と再確認されない**。
+calendar は今も持っていて block もやがて確定するのに、**この配備が訊くのをやめただけ**で、
+どこにもエラーは出ない。ここで不可能にするのは安く、他所で気づくのは高い。
 
 したがって順序を `CONFIRMED > PENDING > FAILED > NOT_CONFIGURED` とし、
 **弱くなる書き込みを一律に拒否する**。逆向きの代償は、本当に死んだ commitment に
 対する 1 回分の無駄な再確認と、永久に PENDING と読める行だけ。PENDING は
 `NOT_A_TIME_PROOF` を伴うので、待っている間に何かを主張することはない。
 
-負のコントロール 2 本実測 (CONFIRMED のみに戻す → `aFailedRecheckDoesNotKillAPendingCommitment` /
-すべての上書きを拒否する → `aPendingCommitmentReplacesAFailedAttempt`)。
+負のコントロール 4 本実測: CONFIRMED のみに戻す → `aFailedRecheckDoesNotKillAPendingCommitment` /
+すべての上書きを拒否する → `aPendingCommitmentReplacesAFailedAttempt` /
+`NOT_CONFIGURED` を FAILED と同値にする → `anUnconfiguredReceiptDoesNotReplaceAFailedOne` /
+FAILED が NOT_CONFIGURED を置けなくする → `aFailedAttemptReplacesAnUnconfiguredRow`。
+
+> **初稿は「2 本実測」で 4 段すべてを主張していた** (2026-08-25 訂正)。実際に測れて
+> いたのは `PENDING > FAILED` の 1 段だけで、`NOT_CONFIGURED` を使うテストが 1 本も
+> 無かった。`NOT_CONFIGURED` は到達可能である — 段は必ず生成され `isConfigured()` は
+> 設定で答えるので、URL を外す・publisher bean がまだ上がっていない、で
+> 生存中に NOT_CONFIGURED 受領証が出る。
 
 ### 封じた checkpoint のアンカーをやり直す道が無くなっていた (2026-08-25)
 
@@ -332,11 +348,28 @@ PENDING 行を上書きする。そして `pending()` は **PENDING 行しか返
 `AnchorService.retryUnsettled` を足した。**受領証を持たない段だけ**に接触する。
 CONFIRMED はもちろん **PENDING も「持っている」に数える** — 送信済みで block を
 待っているものにもう一度出すのは再試行ではなく二重の commitment だから。
-**受領証 store が無ければ拒否する**。どの段が確定済みか分からないことは、
-全部に接触してよい理由にならない。
+**未設定の段にも接触しない**。**受領証 store が無ければ拒否する** — どの段が確定済みか
+分からないことは、全部に接触してよい理由にならない。
 
-負のコントロール 3 本実測 (noop から retry を消す / 確定済みも打ち直す /
-error 経路が前の checkpoint をアンカーする)。**3 本目は最初発火しなかった** —
+### これを cron 経路に置いたのは間違いだった (同日中に訂正)
+
+初稿は `checkpoint-and-anchor` の **noop 分岐から呼んでいた**。これは 3 つ壊した:
+
+1. **未設定の段は永久に「持っていない」**。既定配備は 3 段とも生成されるが未設定なので、
+   毎分の cron が **NOT_CONFIGURED 行を 3 本書き直し続ける** (1 回 7 往復、
+   1 日 4,320 write、情報は 1 bit も増えない)
+2. **失敗した段を無 backoff で叩き続ける**。それが段 3 なら**毎分 TSA トークンを買う**
+3. **健全な定常状態が `refused: true` になる**。全段が settled なら receipts が空で、
+   空を refusal として返していた — 運用者が `refused` を見なくなる作り方そのもの
+
+`POST /v1/admin/anchor/retry-unsettled` に切り出した。**再試行は commitment を作り、
+段によっては課金される。timer ではなく人が押す場所に置く。** backoff は無いので、
+間隔は呼ぶ側が決める。空の結果は refusal ではなく、**「打つべき段が無かった」のか
+「拒否した」のかは controller の `message` が言う**。
+
+負のコントロール 6 本実測 (noop が retry する / 確定済みも打ち直す /
+未設定の段も打つ / PENDING も再送信する / stale root を retry 経路が通す /
+error 経路が前の checkpoint をアンカーする)。**最後の 1 本は最初発火しなかった** —
 テストが `ledgerStore` を張っておらず、`never()` を支えていたのは私のコードでは
 なく fixture の欠落だった。張ってから測り直した。
 

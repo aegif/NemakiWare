@@ -215,6 +215,26 @@ class EvidenceLedgerServiceTest {
     }
 
     @Test
+    @org.junit.jupiter.api.DisplayName("an inclusion proof reads its span with the same room")
+    void theProofSpanIsReadWithRoomToSeeAnExcess() {
+        // The sealing path was fixed and this one was not, though the reasoning is identical:
+        // at a full span the cap equals the covered count, so a fork's extra row is truncated
+        // before anything can notice it. Same fixture shape as the sealing test, same pin.
+        FakeStore store = new FakeStore();
+        EvidenceLedgerService service = serviceOver(store);
+        appendSome(service, 3);
+        service.closeCheckpoint(DOMAIN, "2026-08-25T00:00:00Z");
+        store.lastLimit = -1;
+
+        service.inclusionProof(DOMAIN, 2);
+
+        org.junit.jupiter.api.Assertions.assertEquals(4, store.lastLimit,
+                "the proof's span was read with a limit of " + store.lastLimit + " for 3 "
+                        + "sequences; a limit that cannot exceed the covered count can never "
+                        + "reveal a fork inside the range the proof claims");
+    }
+
+    @Test
     @org.junit.jupiter.api.DisplayName("more rows than sequences is called a fork, not a short read")
     void aForkIsNotDescribedAsAShortRead() {
         // Running the coverage check before the verifier means the verifier's FORK finding —

@@ -491,8 +491,46 @@ class AnchorServiceTest {
                 "a settled rung was contacted again, which mints a second commitment nobody "
                         + "needs");
         assertEquals(List.of(), written, "a second receipt was written for a settled rung");
-        assertNotNull(outcome.refusedReason(),
-                "nothing was re-anchored and the response did not say why");
+        // NOT a refusal. Reporting "everything is already settled" as refused meant a healthy
+        // deployment answered refused:true on every call, which is how an operator learns to
+        // ignore the field. Nothing stopped us; there was nothing to do. Which of the two an
+        // empty list means is said by the controller, in its message.
+        assertNull(outcome.refusedReason(),
+                "a healthy checkpoint with every rung settled was reported as a refusal: "
+                        + outcome.refusedReason());
+    }
+
+    @Test
+    @DisplayName("an unconfigured rung is not 'holding nothing' — it is not contacted")
+    void anUnconfiguredRungIsNotRetried() {
+        // Every rung is constructed and answers isConfigured() from configuration, so a default
+        // deployment has three rungs that are not configured. Without this they qualify as
+        // "holds nothing" for ever: the retry rewrote three NOT_CONFIGURED rows on every call,
+        // adding revisions and no information.
+        List<AnchorReceipt> written = new java.util.ArrayList<>();
+        AnchorTarget unconfigured = new AnchorTarget() {
+            @Override public AnchorKind kind() {
+                return AnchorKind.RFC3161_TSA;
+            }
+
+            @Override public boolean isConfigured() {
+                return false;
+            }
+
+            @Override public AnchorReceipt anchor(String hexDigest) {
+                throw new AssertionError("an unconfigured rung was contacted");
+            }
+        };
+        AnchorService service = serviceWithReceipts(
+                receiptsHolding(List.of(), written), unconfigured);
+
+        AnchorService.Outcome outcome = service.retryUnsettled(checkpoint(5));
+
+        assertEquals(List.of(), outcome.receipts(),
+                "an unconfigured rung produced a receipt on the retry path");
+        assertEquals(List.of(), written,
+                "a NOT_CONFIGURED row was rewritten; on a timer that is one write per rung per "
+                        + "call for ever, with no information added");
     }
 
     @Test

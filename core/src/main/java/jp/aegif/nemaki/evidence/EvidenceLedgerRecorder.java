@@ -70,16 +70,30 @@ public class EvidenceLedgerRecorder {
     static final String CAPTURE_DIGEST_DOMAIN = "LEDGER_CAPTURE_COMPLETED_V1";
 
     /**
-     * How many gaps go by between log lines once the ledger has started failing.
+     * How many gaps go by between WARN lines once the ledger has started failing.
      *
-     * <p>The FIRST is always logged, and so is every hundredth after it, with a running count.
-     * The returned warning is unaffected — the caller is told every single time, because that
-     * one is about its own ingest. This is only about the log, where a per-ingest line during a
-     * CouchDB outage buries the line that says the outage started.
+     * <p>Only the WARN channel is thinned. Every gap is still logged — the ones in between go
+     * out at INFO, which every shipped logback configuration enables. The first version dropped
+     * them to DEBUG, and all three shipped configurations set {@code jp.aegif.nemaki} to INFO
+     * or WARN, so 99 gaps in every 100 were <b>lost entirely</b>: the fetch orchestrators
+     * discard the returned warning, so the log was the only place left and it was empty. A
+     * throttle that silences the thing it is throttling is not a throttle.
      */
     private static final int GAP_LOG_EVERY = 100;
 
+    /** Gaps since startup. Only ever grows; this is the "how big is the hole" number. */
     private final java.util.concurrent.atomic.AtomicLong gapCount =
+            new java.util.concurrent.atomic.AtomicLong();
+
+    /**
+     * Gaps in the CURRENT run of them, reset by any capture that reaches the chain.
+     *
+     * <p>The WARN decision is made on this, not on the lifetime total. Keyed on the total, an
+     * outage in the morning that left 250 gaps meant a single unrelated gap that afternoon
+     * landed on count 251 — neither the first nor a multiple of a hundred — and never reached
+     * WARN at all. "The first one is always logged" has to mean the first of THIS trouble.
+     */
+    private final java.util.concurrent.atomic.AtomicLong gapStreak =
             new java.util.concurrent.atomic.AtomicLong();
 
     private EvidenceLedgerService ledgerService;
@@ -168,6 +182,7 @@ public class EvidenceLedgerRecorder {
                     + "the chain is missing this entry and will not be back-filled.");
         }
         if (result.recorded()) {
+            gapStreak.set(0);
             return Recorded.chained();
         }
         logGap(intent.intentId(), result.reason());
@@ -188,11 +203,14 @@ public class EvidenceLedgerRecorder {
      */
     private void logGap(String intentId, String reason) {
         long total = gapCount.incrementAndGet();
-        if (total == 1 || total % GAP_LOG_EVERY == 0) {
-            logger.warn("Capture {} completed but was not chained: {} (evidence-chain gaps since "
-                    + "startup: {})", intentId, reason, total);
+        long streak = gapStreak.incrementAndGet();
+        if (streak == 1 || streak % GAP_LOG_EVERY == 0) {
+            logger.warn("Capture {} completed but was not chained: {} (gaps in this run: {}; "
+                    + "since startup: {})", intentId, reason, streak, total);
         } else {
-            logger.debug("Capture {} completed but was not chained: {}", intentId, reason);
+            // INFO, not DEBUG. The orchestrators that drive scheduled fetches discard the
+            // returned warning, so if this line is not emitted the gap leaves no trace at all.
+            logger.info("Capture {} completed but was not chained: {}", intentId, reason);
         }
     }
 

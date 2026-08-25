@@ -257,9 +257,26 @@ CouchDB の障害中は全取込がそうなるので、**ログは最初の 1 �
 まとめ (`GAP_LOG_EVERY`)、件数を添える。呼び出し元への警告は**間引かない** —
 そちらは自分の取込についての話だから。
 
-負のコントロール 3 本実測 (間引きを外す / 呼び出し元も間引く / 数えない)。
-**間引きは logback の `ListAppender` で実測している** — 捕らえずに
-「ログは間引いてある」と書けば、それは何も裏付けの無い主張になる。
+> **初稿の間引きは「間引き」ではなく「消音」だった** (2026-08-25 訂正)。
+> 間の 99 件を `logger.debug` に落としていたが、**出荷している logback 設定 3 本とも
+> `jp.aegif.nemaki` は INFO か WARN** なので、その行は 1 本も出ない。fetch
+> オーケストレータは返り値の warning を捨てるので、**ログが唯一の残り場所であり、
+> そこが空だった** — 100 件のうち 98 件の穴がどこにも残らない。
+> 間引くべきは **WARN チャンネルだけ**で、間の分は **INFO** に出す。
+>
+> **判定を通算件数でしていたのも誤りだった。** 朝の障害で 250 件空いた後、午後に
+> 別原因で 1 件だけ空くと 251 件目 = 「最初でも 100 の倍数でもない」となり
+> **WARN に一度も出ない**。「最初の 1 件は必ず出す」は「**この障害の**最初」で
+> なければ意味がない。連鎖に載った時点で run をリセットする。
+
+負のコントロール 6 本実測 (間引きを外す / 間の分を DEBUG に落とす /
+呼び出し元も間引く / 数えない / 判定を通算にする / 成功でリセットしない)。
+**間引きも水準も logback の `ListAppender` で実測している** — WARN の本数だけ数えて
+いた初稿は、**間の分が DEBUG に落ちても緑のままだった**。
+
+`gapsSinceStartup()` は `GET /v1/admin/anchor/status` の
+`chainGapsOnThisReplicaSinceStartup` で読める。**JVM 内・レプリカ内の数**なので、
+名前でそう言っている。
 
 利用者向けの記述は [`RELEASE_NOTES.md`](../../RELEASE_NOTES.md)。
 
@@ -323,7 +340,7 @@ wrapper が付けた自由文は pass ごとに変わるので入れない。
 | `digest` を空文字にする | `aCaptureIsChained` |
 | subject を `intentId` → `sourceObjectId` に | `aCaptureIsChained` |
 | digest 計算を try の外に戻す | `aFailingDigestDoesNotFailTheCapture` |
-| ドメイン分離を落とす | `theDigestIsDomainSeparated` |
+| ドメインを空にする / 落とす / フィールドを並べ替える | `theDigestIsDomainSeparated` |
 
 先行して 4 本 (穴を握り潰す / 失敗を伝播させる /
 digest が適用済み hash を無視する / 未配線でも毎回警告する) も実測済み。

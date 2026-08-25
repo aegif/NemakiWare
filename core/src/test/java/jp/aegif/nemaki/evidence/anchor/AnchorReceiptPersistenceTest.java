@@ -75,9 +75,13 @@ class AnchorReceiptPersistenceTest {
             // (aWeakerReceiptIsRefusedOnTheFirstRead, aRaceLostToAConfirmedWriterIsRespected).
             // A stand-in that stored unconditionally would be worse still — the service's
             // tests would then pass against a store that does not keep the rule at all.
+            //
+            // It ALSO went stale: this mirrored "CONFIRMED is protected" long after the real
+            // store grew a full ordering, so the fake accepted a FAILED receipt over a PENDING
+            // one — precisely the write the real store now refuses — while the comment above
+            // said it mirrored it. A fake more permissive than production is worse than none.
             PendingReceipt held = rows.get(key);
-            if (receipt.status() != AnchorStatus.CONFIRMED && held != null
-                    && held.receipt().status() == AnchorStatus.CONFIRMED) {
+            if (held != null && strength(receipt.status()) < strength(held.receipt().status())) {
                 return SaveOutcome.KEPT_STRONGER;
             }
             // Round-trip through the codec, because the point of storing is to get it back and
@@ -86,6 +90,16 @@ class AnchorReceiptPersistenceTest {
                     AnchorReceiptCodec.fromDocument(AnchorReceiptCodec.toDocument(receipt));
             rows.put(key, new PendingReceipt(domain, toSequence, reloaded));
             return SaveOutcome.STORED;
+        }
+
+        /** The real store's ordering, kept in step with {@code CouchAnchorReceiptStore}. */
+        private static int strength(AnchorStatus status) {
+            return switch (status) {
+                case CONFIRMED -> 3;
+                case PENDING -> 2;
+                case FAILED -> 1;
+                case NOT_CONFIGURED -> 0;
+            };
         }
 
         @Override

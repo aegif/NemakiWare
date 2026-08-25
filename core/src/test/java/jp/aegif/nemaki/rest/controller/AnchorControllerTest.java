@@ -113,8 +113,8 @@ class AnchorControllerTest {
 
         // A count guard, so an endpoint that stops being mapped (and therefore stops being
         // checked) is visible rather than silently reducing the coverage of this test.
-        assertEquals(4, endpoints.size(),
-                "the anchor API has " + endpoints.size() + " mapped endpoints, not 4; if one "
+        assertEquals(5, endpoints.size(),
+                "the anchor API has " + endpoints.size() + " mapped endpoints, not 5; if one "
                         + "was added, confirm it is gated and update this number");
 
         for (Method endpoint : endpoints) {
@@ -174,20 +174,16 @@ class AnchorControllerTest {
     }
 
     @Test
-    @DisplayName("nothing new to seal still retries a rung that holds nothing")
-    void aNoopRunRetriesTheRungsThatHoldNothing() throws Exception {
-        // Closing and anchoring are one call, so a checkpoint that WAS sealed but whose anchor
-        // failed had no way back: the seal cannot be redone, upgrade-pending only looks at
-        // PENDING rows, and every later run again has nothing new to seal. The rung stayed
-        // FAILED for ever. Re-anchoring the whole ladder is not the answer either — that mints
-        // a second commitment for a rung that already settled — so only the empty ones are
-        // retried, and AnchorService decides which those are.
+    @DisplayName("the scheduled endpoint never retries — that costs money and is called by hand")
+    void aNoopRunDoesNotRetryAnything() throws Exception {
+        // This was the other way round for one commit: the noop branch retried the rungs that
+        // held nothing. But an unconfigured rung holds nothing for ever, so a default
+        // deployment rewrote three NOT_CONFIGURED rows a minute, and a rung that had genuinely
+        // failed was contacted on a one-minute timer with no backoff — on rung 3 that is a
+        // timestamp token bought every minute. Retrying belongs behind a deliberate call.
         AnchorController controller = controllerFor(true);
         jp.aegif.nemaki.evidence.anchor.AnchorService anchors =
                 mock(jp.aegif.nemaki.evidence.anchor.AnchorService.class);
-        when(anchors.retryUnsettled(org.mockito.ArgumentMatchers.any())).thenReturn(
-                new jp.aegif.nemaki.evidence.anchor.AnchorService.Outcome("bedroom", 5, ROOT,
-                        java.util.List.of(), null));
         setField(controller, "anchorService", anchors);
         jp.aegif.nemaki.evidence.EvidenceLedgerService ledger =
                 mock(jp.aegif.nemaki.evidence.EvidenceLedgerService.class);
@@ -208,11 +204,54 @@ class AnchorControllerTest {
         java.util.Map<String, Object> body = (java.util.Map<String, Object>) response.getClass()
                 .getMethod("getBody").invoke(response);
 
-        assertEquals("noop", body.get("status"),
-                "a run with nothing to seal was reported as something else: " + body);
-        org.mockito.Mockito.verify(anchors).retryUnsettled(org.mockito.ArgumentMatchers.any());
-        // The half that must NOT come back: re-anchoring everything turns an extra cron run
-        // into a second commitment for a rung that has already settled.
+        assertEquals("noop", body.get("status"), body + "");
+        org.mockito.Mockito.verify(anchors, org.mockito.Mockito.never())
+                .anchor(org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.verify(anchors, org.mockito.Mockito.never())
+                .retryUnsettled(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("the deliberate endpoint retries THIS checkpoint and shows what came back")
+    void theRetryEndpointPassesTheLatestCheckpointAndPublishesTheOutcome() throws Exception {
+        // Closing and anchoring are one call, so a checkpoint that WAS sealed but whose anchor
+        // failed had no way back: the seal cannot be redone, upgrade-pending only looks at
+        // PENDING rows, and every later run again has nothing new to seal. The rung stayed
+        // FAILED for ever. Re-anchoring the whole ladder is not the answer either — that mints
+        // a second commitment for a rung that already settled — so only the empty ones are
+        // retried, and AnchorService decides which those are.
+        AnchorController controller = controllerFor(true);
+        jp.aegif.nemaki.evidence.anchor.AnchorService anchors =
+                mock(jp.aegif.nemaki.evidence.anchor.AnchorService.class);
+        when(anchors.retryUnsettled(org.mockito.ArgumentMatchers.any())).thenReturn(
+                new jp.aegif.nemaki.evidence.anchor.AnchorService.Outcome("bedroom", 5, ROOT,
+                        java.util.List.of(), null));
+        setField(controller, "anchorService", anchors);
+        jp.aegif.nemaki.evidence.EvidenceLedgerStore store =
+                mock(jp.aegif.nemaki.evidence.EvidenceLedgerStore.class);
+        jp.aegif.nemaki.evidence.EvidenceCheckpoint latest =
+                jp.aegif.nemaki.evidence.EvidenceCheckpoint.of("bedroom", 0, 5, ROOT, null,
+                        "2026-08-25T00:00:00Z");
+        when(store.latestCheckpoint(anyString())).thenReturn(latest);
+        setField(controller, "ledgerStore", store);
+
+        Object response = AnchorController.class
+                .getDeclaredMethod("retryUnsettled", String.class)
+                .invoke(controller, "bedroom");
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> body = (java.util.Map<String, Object>) response.getClass()
+                .getMethod("getBody").invoke(response);
+
+        assertEquals("success", body.get("status"), body + "");
+        // same(), not any(): any() matches null too, so passing null — retrying nothing at all
+        // — would have satisfied the earlier version of this check.
+        org.mockito.Mockito.verify(anchors)
+                .retryUnsettled(org.mockito.ArgumentMatchers.same(latest));
+        assertNotNull(body.get("anchor"),
+                "the retry ran and the caller was shown nothing of what came back, so a "
+                        + "refusal or a failed rung is invisible: " + body);
+        assertNotNull(body.get("message"),
+                "an empty receipt list has two very different causes and nothing said which");
         org.mockito.Mockito.verify(anchors, org.mockito.Mockito.never())
                 .anchor(org.mockito.ArgumentMatchers.any());
     }

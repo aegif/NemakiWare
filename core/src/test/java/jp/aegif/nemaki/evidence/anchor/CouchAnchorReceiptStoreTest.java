@@ -217,6 +217,49 @@ class CouchAnchorReceiptStoreTest {
     }
 
     @Test
+    @DisplayName("a rung that went unconfigured does not erase what an attempt found out")
+    void anUnconfiguredReceiptDoesNotReplaceAFailedOne() throws Exception {
+        // The ordering has four steps and only PENDING > FAILED was measured; the doc claimed
+        // the whole ordering was. NOT_CONFIGURED is reachable in production — every rung is
+        // constructed and isConfigured() answers on configuration, so a URL removed or a
+        // publisher bean that has not come up yet turns a rung's receipt into NOT_CONFIGURED
+        // mid-life. "We did not try" must not overwrite "we tried and it did not work".
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        Document failedRow = rowHolding(AnchorReceipt.failed(AnchorKind.RFC3161_TSA, ROOT,
+                Instant.parse("2026-08-24T00:00:00Z"), "the TSA refused the request"));
+        when(client.get(anyString())).thenReturn(failedRow);
+
+        AnchorReceiptStore.SaveOutcome outcome = storeWith(client).save(DOMAIN, 5,
+                AnchorReceipt.notConfigured(AnchorKind.RFC3161_TSA, ROOT));
+
+        assertEquals(AnchorReceiptStore.SaveOutcome.KEPT_STRONGER, outcome,
+                "a NOT_CONFIGURED receipt erased a FAILED one, so the reason the rung did not "
+                        + "work is gone and the row reads as though nobody ever tried");
+        org.mockito.Mockito.verify(client, org.mockito.Mockito.never()).update(any());
+    }
+
+    @Test
+    @DisplayName("a FAILED attempt DOES replace a NOT_CONFIGURED row — the control")
+    void aFailedAttemptReplacesAnUnconfiguredRow() throws Exception {
+        // Without this, ranking the two equally (or refusing both directions) would pass the
+        // test above while freezing a rung at NOT_CONFIGURED once it had ever been unconfigured.
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        Document unconfiguredRow = rowHolding(
+                AnchorReceipt.notConfigured(AnchorKind.RFC3161_TSA, ROOT));
+        when(client.get(anyString())).thenReturn(unconfiguredRow);
+        DocumentResult ok = mock(DocumentResult.class);
+        when(ok.isOk()).thenReturn(true);
+        when(client.update(any())).thenReturn(ok);
+
+        AnchorReceiptStore.SaveOutcome outcome = storeWith(client).save(DOMAIN, 5,
+                AnchorReceipt.failed(AnchorKind.RFC3161_TSA, ROOT, Instant.now(),
+                        "the TSA refused the request"));
+
+        assertEquals(AnchorReceiptStore.SaveOutcome.STORED, outcome,
+                "an actual attempt could not replace 'nobody tried', so the rung is stuck");
+    }
+
+    @Test
     @DisplayName("a PENDING commitment still replaces a FAILED attempt — the control")
     void aPendingCommitmentReplacesAFailedAttempt() throws Exception {
         // Without this, refusing every write over an existing row would pass the test above and

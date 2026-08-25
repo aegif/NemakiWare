@@ -169,13 +169,21 @@ public class CouchAnchorReceiptStore implements AnchorReceiptStore {
     /**
      * How much a status is worth, for the one comparison this store makes.
      *
-     * <p>CONFIRMED above everything was here from the start. <b>PENDING above FAILED was not,
-     * and that is the rung that loses proofs.</b> {@code AnchorService.upgradePending} stores
-     * whatever the rung hands back, so a rung that reports a transient re-check failure as a
-     * FAILED receipt overwrites the PENDING row — and {@code pending()} only ever returns
-     * PENDING rows, so that commitment is never re-checked again. The calendar still holds it
-     * and a block still confirms it; this deployment has simply stopped asking, and the proof
-     * is lost with no error anywhere.
+     * <p>CONFIRMED above everything was here from the start. PENDING above FAILED was not.
+     *
+     * <p><b>No rung shipped today can trigger it</b>, and the first version of this comment
+     * said otherwise — describing a proof-loss that is not occurring, which is the same
+     * overstatement this layer exists to prevent. Every {@code upgrade()} in the product
+     * returns either the receipt it was given or a CONFIRMED one: the interface default is
+     * {@code return pending;}, and {@code OpenTimestampsAnchorTarget} builds a FAILED receipt
+     * only in {@code anchor()}, never in {@code upgrade()}.
+     *
+     * <p>What it guards is the next rung. {@code AnchorService.upgradePending} stores whatever
+     * a rung hands back, and {@code pending()} only ever returns PENDING rows — so a rung that
+     * reported a transient re-check failure as FAILED would overwrite the PENDING row and that
+     * commitment would never be re-checked again. The calendar would still hold it and a block
+     * would still confirm it; this deployment would simply have stopped asking. That is cheap
+     * to make impossible here and expensive to notice anywhere else.
      *
      * <p>The cost of the other direction is one wasted re-check per run for a commitment that
      * really is dead, and a row that reads PENDING for ever. PENDING already carries

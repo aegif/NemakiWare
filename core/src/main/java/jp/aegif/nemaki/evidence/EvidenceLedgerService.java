@@ -156,9 +156,11 @@ public class EvidenceLedgerService {
         // was unreachable at exactly the size where a busy ledger sits, and a fork there was
         // reported as "the span ends at X, not at to": the wrong explanation, again.
         // One extra row is all it takes to see the excess; the span is refused either way.
-        long expected = to - from + 1;
-        List<EvidenceLedgerEntry> span =
-                store.range(domain, from, to, (int) Math.min(expected + 1, Integer.MAX_VALUE));
+        // 1..MAX_CHECKPOINT_SPAN by construction: `tail < from` returned above and `to` is
+        // clamped to `from + MAX - 1`. No Integer.MAX_VALUE guard, which would only suggest to
+        // a reader that overflow is reachable here.
+        int expected = (int) (to - from + 1);
+        List<EvidenceLedgerEntry> span = store.range(domain, from, to, expected + 1);
 
         // The span must BE the range this checkpoint claims. The verifier only checks
         // relationships WITHIN whatever list it was handed, so a short read — a view still
@@ -274,8 +276,12 @@ public class EvidenceLedgerService {
                     + "after the last checkpoint are not committed to by anything");
             return body;
         }
+        // expected + 1, for the same reason closeCheckpoint reads that way: at a full span the
+        // cap equals the expected count, so a fork's extra row is truncated before anyone can
+        // count it. The fix was applied to the sealing path and not to this one.
+        int covered = (int) (covering.toSequence() - covering.fromSequence() + 1);
         List<EvidenceLedgerEntry> span = store.range(domain, covering.fromSequence(),
-                covering.toSequence(), MAX_CHECKPOINT_SPAN);
+                covering.toSequence(), covered + 1);
         List<String> leaves = new ArrayList<>(span.size());
         int index = -1;
         for (int i = 0; i < span.size(); i++) {

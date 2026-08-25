@@ -258,6 +258,77 @@ class EvidenceLedgerRecorderTest {
             assertTrue(warns.get(2).getFormattedMessage().contains("200"),
                     "the later line does not carry the running count, so an operator cannot see "
                             + "how big the hole is: " + warns.get(2).getFormattedMessage());
+
+            // The other 247 must still be SOMEWHERE, at a level the product actually emits.
+            // The first version dropped them to DEBUG, and all three shipped logback
+            // configurations set jp.aegif.nemaki to INFO or WARN — so 99 gaps in every 100
+            // vanished completely, and the orchestrators that discard the returned warning
+            // meant the log was the only place left. This assertion is the whole reason the
+            // throttle can be trusted; without it, "throttled" and "silenced" look the same.
+            long infos = appender.list.stream()
+                    .filter(e -> e.getLevel() == ch.qos.logback.classic.Level.INFO)
+                    .count();
+            assertEquals(247, infos,
+                    "the gaps between WARN lines were logged at a level the shipped "
+                            + "configuration does not emit, so they leave no trace at all");
+        } finally {
+            log.detachAppender(appender);
+        }
+    }
+
+    @Test
+    @DisplayName("a second, unrelated outage is announced too")
+    void aLaterOutageIsAnnouncedAgain() {
+        // The WARN decision used to be made on the lifetime total. After a morning outage left
+        // 250 gaps, a single unrelated gap that afternoon landed on count 251 — neither the
+        // first nor a multiple of a hundred — and never reached WARN at all. "The first one is
+        // always logged" has to mean the first of THIS trouble, so the run resets whenever a
+        // capture reaches the chain.
+        ch.qos.logback.classic.Logger log = (ch.qos.logback.classic.Logger)
+                org.slf4j.LoggerFactory.getLogger(EvidenceLedgerRecorder.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        log.addAppender(appender);
+        try {
+            EvidenceLedgerService service = mock(EvidenceLedgerService.class);
+            EvidenceLedgerRecorder recorder = recorderOver(service);
+
+            when(service.append(anyString(), any(), anyString(), anyString(), anyString()))
+                    .thenReturn(new EvidenceLedgerService.AppendResult(
+                            EvidenceLedgerService.AppendOutcome.UNAVAILABLE, -1, null, "down"));
+            for (int i = 0; i < 250; i++) {
+                recorder.recordCaptureCompleted(REPO, intent("morning-" + i, "src"),
+                        evidenceWithHash("deadbeef"), "2026-08-25T00:00:00Z");
+            }
+
+            // The ledger comes back, and one ingest chains successfully.
+            when(service.append(anyString(), any(), anyString(), anyString(), anyString()))
+                    .thenReturn(new EvidenceLedgerService.AppendResult(
+                            EvidenceLedgerService.AppendOutcome.APPENDED, 1, "hash", null));
+            recorder.recordCaptureCompleted(REPO, intent("recovered", "src"),
+                    evidenceWithHash("deadbeef"), "2026-08-25T00:00:00Z");
+
+            // Hours later, one gap from an unrelated cause.
+            when(service.append(anyString(), any(), anyString(), anyString(), anyString()))
+                    .thenReturn(new EvidenceLedgerService.AppendResult(
+                            EvidenceLedgerService.AppendOutcome.CONTENDED, -1, null, "contended"));
+            recorder.recordCaptureCompleted(REPO, intent("afternoon-1", "src"),
+                    evidenceWithHash("deadbeef"), "2026-08-25T12:00:00Z");
+
+            List<ch.qos.logback.classic.spi.ILoggingEvent> warns = appender.list.stream()
+                    .filter(e -> e.getLevel() == ch.qos.logback.classic.Level.WARN)
+                    .toList();
+            assertTrue(warns.stream().anyMatch(
+                            e -> e.getFormattedMessage().contains("afternoon-1")),
+                    "the first gap of a NEW incident did not reach WARN, because the count it "
+                            + "was judged against had not been reset by the recovery: "
+                            + warns.stream().map(
+                                    ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                                    .toList());
+            assertEquals(251, recorder.gapsSinceStartup(),
+                    "the lifetime total must keep counting across incidents — it is the "
+                            + "'how big is the hole' number, not the 'is this new' number");
         } finally {
             log.detachAppender(appender);
         }
@@ -323,20 +394,43 @@ class EvidenceLedgerRecorderTest {
     @Test
     @DisplayName("the digest is domain-separated from every other digest in the product")
     void theDigestIsDomainSeparated() {
-        // Without the domain, a digest computed over the same fields elsewhere would collide
-        // with this one and a value could be carried between contexts.
-        // Comparing the two constants only checks that two literals differ, and the domain
-        // could be dropped from the hash entirely without either changing. Compare the VALUES
-        // the two domains produce from the same inputs.
+        // Two earlier versions of this test did not discriminate. The first compared two
+        // CONSTANTS, which only says two literals differ. The second compared this digest with
+        // one taken under EvidenceLedgerEntry's domain — which still passes if the domain is
+        // set to "" or dropped from the hash entirely, because any two different domains
+        // differ. It also deleted the startsWith("LEDGER_") check that HAD caught the empty
+        // case, so the rewrite was weaker than what it replaced.
+        //
+        // The literal is written out here on purpose. Production reads the constant; this side
+        // must not, or changing the constant moves both halves and nothing can ever fail.
         CaptureIntent intent = intent("i-8", "src-8");
-        String withOurDomain = EvidenceLedgerRecorder.captureDigest(REPO, intent, Map.of());
-        String withAnother = jp.aegif.nemaki.rest.purview.journal.LineageCanonicalHash.hash(
-                EvidenceLedgerEntry.HASH_DOMAIN, REPO, intent.intentId(), intent.connectorId(),
-                intent.sourceObjectId(), null, null, null);
+        Map<String, Object> evidence = evidenceWithHash("deadbeef");
 
-        assertNotEquals(withAnother, withOurDomain,
-                "the capture digest is not domain-separated: the same fields hashed for "
-                        + "another purpose produce the same value, so a digest can be carried "
-                        + "between contexts");
+        String expected = jp.aegif.nemaki.rest.purview.journal.LineageCanonicalHash.hash(
+                "LEDGER_CAPTURE_COMPLETED_V1", REPO, intent.intentId(), intent.connectorId(),
+                intent.sourceObjectId(),
+                evidence.get("appliedChatEvidenceHash"),
+                evidence.get("appliedSourceIdentityHash"),
+                evidence.get("appliedArchetypeEvidenceHash"));
+
+        assertEquals(expected,
+                EvidenceLedgerRecorder.captureDigest(REPO, intent, evidence),
+                "the capture digest is no longer H(LEDGER_CAPTURE_COMPLETED_V1, repositoryId, "
+                        + "intentId, connectorId, sourceObjectId, the three applied hashes). "
+                        + "Emptying or removing the domain lands here, and so does reordering "
+                        + "or dropping a field — every one of those either lets a digest taken "
+                        + "for another purpose collide with this one, or stops a verifier "
+                        + "holding the stored row from reproducing it");
+
+        // And still, separately, that it is not the ledger entry's own domain.
+        assertNotEquals(
+                jp.aegif.nemaki.rest.purview.journal.LineageCanonicalHash.hash(
+                        EvidenceLedgerEntry.HASH_DOMAIN, REPO, intent.intentId(),
+                        intent.connectorId(), intent.sourceObjectId(),
+                        evidence.get("appliedChatEvidenceHash"),
+                        evidence.get("appliedSourceIdentityHash"),
+                        evidence.get("appliedArchetypeEvidenceHash")),
+                EvidenceLedgerRecorder.captureDigest(REPO, intent, evidence),
+                "the capture digest shares the ledger entry's domain");
     }
 }

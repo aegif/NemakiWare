@@ -80,6 +80,9 @@ public class AnchorController {
     @Autowired(required = false)
     private LongTermValidityService validityService;
 
+    @Autowired(required = false)
+    private jp.aegif.nemaki.evidence.EvidenceLedgerRecorder ledgerRecorder;
+
     private HttpServletRequest httpRequest;
 
     @Autowired
@@ -126,19 +129,15 @@ public class AnchorController {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
         }
         if ("noop".equals(closed.get("status"))) {
-            // Nothing new to seal. Re-anchoring the whole ladder here is what turned a harmless
-            // extra cron run into a re-stamp of an already-settled commitment — but returning
-            // outright left a sealed checkpoint whose anchor FAILED with no way back: the seal
-            // cannot be redone, upgrade-pending only looks at PENDING rows, and the next run
-            // again has nothing new. So the rungs that hold nothing are retried, and only those.
+            // Nothing new to seal, and nothing sent. Retrying a failed rung from here was tried
+            // and taken back out: this endpoint is the one a cron drives, and a retry on a
+            // one-minute timer contacts an unconfigured rung for ever and buys a TSA token
+            // every minute. The way back for a checkpoint whose anchor failed is
+            // /retry-unsettled below, which an operator calls on purpose.
             body.put("status", "noop");
-            body.put("message", "no entries since the last checkpoint, so nothing was sealed. "
-                    + "This is NOT a failure.");
-            EvidenceCheckpoint existing = ledgerStore == null ? null
-                    : ledgerStore.latestCheckpoint(repositoryId);
-            if (existing != null) {
-                body.put("anchor", anchorService.retryUnsettled(existing).asMap());
-            }
+            body.put("message", "no entries since the last checkpoint, so nothing was sealed "
+                    + "and nothing was anchored. This is NOT a failure. A checkpoint whose "
+                    + "anchor failed earlier is retried by POST /retry-unsettled, not here.");
             return ResponseEntity.ok(body);
         }
         body.put("status", "success");
@@ -155,6 +154,61 @@ public class AnchorController {
         }
         body.put("anchor", anchorService.anchor(checkpoint).asMap());
         return ResponseEntity.ok(body);
+    }
+
+    /**
+     * Anchors the rungs that hold nothing for the latest checkpoint.
+     *
+     * <p>The way back for a checkpoint that WAS sealed but whose anchor failed. Closing and
+     * anchoring happen together, so once a checkpoint is sealed there is no second seal to
+     * carry a retry, {@code upgrade-pending} only looks at PENDING rows, and every later run
+     * has nothing new to seal — the rung would stay FAILED for ever.
+     *
+     * <p><b>Deliberately not on a timer.</b> Each call can mint a commitment and, on rung 3,
+     * buy a timestamp token. {@link AnchorService#retryUnsettled} skips whatever already holds
+     * a CONFIRMED or PENDING receipt and whatever is not configured, but it has no backoff:
+     * a rung that keeps failing is contacted once per call, so the caller sets the pace.
+     */
+    @PostMapping("/retry-unsettled")
+    public ResponseEntity<Map<String, Object>> retryUnsettled(
+            @RequestParam String repositoryId) {
+
+        ResponseEntity<Map<String, Object>> forbidden = requireAdmin();
+        if (forbidden != null) {
+            return forbidden;
+        }
+        if (anchorService == null || ledgerStore == null) {
+            return unavailable("the anchor service is not wired on this node");
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        EvidenceCheckpoint latest;
+        try {
+            latest = ledgerStore.latestCheckpoint(repositoryId);
+        } catch (RuntimeException e) {
+            body.put("status", "error");
+            body.put("message", "the latest checkpoint could not be read: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+        }
+        if (latest == null) {
+            body.put("status", "noop");
+            body.put("message", "this repository has no checkpoint yet, so there is nothing to "
+                    + "anchor. This is NOT a statement that anchoring failed.");
+            return ResponseEntity.ok(body);
+        }
+        AnchorService.Outcome outcome = anchorService.retryUnsettled(latest);
+        body.put("status", outcome.refusedReason() == null ? "success" : "error");
+        body.put("anchor", outcome.asMap());
+        // Said out loud, because an empty receipt list has two very different causes and the
+        // list alone cannot tell them apart.
+        body.put("message", outcome.refusedReason() != null
+                ? "nothing was retried: " + outcome.refusedReason()
+                : outcome.receipts().isEmpty()
+                        ? "no rung needed retrying: every configured rung already holds a "
+                                + "CONFIRMED or PENDING receipt for this checkpoint, or no rung "
+                                + "is configured. This is NOT a failure."
+                        : "the rungs that held nothing were contacted again");
+        return ResponseEntity.status(outcome.refusedReason() == null
+                ? HttpStatus.OK : HttpStatus.CONFLICT).body(body);
     }
 
     /** Re-checks commitments made earlier. Safe to call as often as an operator likes. */
@@ -217,6 +271,14 @@ public class AnchorController {
         // The gap IS the exposure: entries after the last anchored checkpoint are held only by
         // this database, so an operator should be able to see it without computing it.
         body.put("unanchoredEntries", Math.max(0, highest - latest.toSequence()));
+        if (ledgerRecorder != null) {
+            // Captures that completed but never reached the chain. Counted in memory, so it is
+            // per-replica and per-restart — said in the field name, because a number that looks
+            // repository-wide and is not would understate the hole on a multi-replica
+            // deployment. Without this the count had no reader outside its own test, while the
+            // design document claimed an operator could see it.
+            body.put("chainGapsOnThisReplicaSinceStartup", ledgerRecorder.gapsSinceStartup());
+        }
         List<Map<String, Object>> receipts = new ArrayList<>();
         if (receiptStore == null || !receiptStore.isActive()) {
             // "We could not ask" is not "there are none". An empty list beside status:success

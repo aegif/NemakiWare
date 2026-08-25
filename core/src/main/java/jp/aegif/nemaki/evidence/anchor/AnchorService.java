@@ -246,6 +246,16 @@ public class AnchorService {
      *
      * <p>Without a receipt store it <b>refuses</b>. Not knowing which rungs are settled is not a
      * licence to contact all of them.
+     *
+     * <h2>Why this is not wired into the scheduled path</h2>
+     *
+     * <p>It was, briefly — the {@code noop} branch of {@code checkpoint-and-anchor} called it.
+     * That made every idle cron run contact every rung that had no CONFIRMED or PENDING row,
+     * and an unconfigured rung never has one: a default deployment writes three NOT_CONFIGURED
+     * receipts a minute for ever. Worse, a rung whose earlier attempt failed is exactly the
+     * case this exists for, and retrying it on a one-minute timer with no backoff means buying
+     * an RFC 3161 token every minute. Retrying costs money and makes commitments; it belongs
+     * behind a call an operator makes on purpose.
      */
     public Outcome retryUnsettled(EvidenceCheckpoint checkpoint) {
         if (checkpoint == null) {
@@ -289,16 +299,20 @@ public class AnchorService {
             if (settled.contains(target.kind())) {
                 continue;
             }
+            // An unconfigured rung has nothing to retry. Without this it qualified as "holds
+            // nothing" for ever, so a default deployment — where all three rungs are
+            // constructed but none is configured — rewrote three NOT_CONFIGURED rows on every
+            // call, and the row's revision history grew with no information added.
+            if (!target.isConfigured()) {
+                continue;
+            }
             AnchorReceipt receipt = receiptFrom(target, checkpoint.merkleRoot());
             receipts.add(receipt);
             persist(checkpoint.domain(), checkpoint.toSequence(), receipt);
         }
-        if (receipts.isEmpty()) {
-            return new Outcome(checkpoint.domain(), checkpoint.toSequence(),
-                    checkpoint.merkleRoot(), List.of(),
-                    "every configured rung already holds a commitment for this checkpoint, so "
-                            + "nothing was re-anchored. This is NOT a failure.");
-        }
+        // An empty result is NOT a refusal. Reporting it as one made a healthy deployment —
+        // every rung settled — answer refused:true on every call, which is how an operator
+        // learns to ignore the field. Nothing stopped us; there was nothing to do.
         return new Outcome(checkpoint.domain(), checkpoint.toSequence(), checkpoint.merkleRoot(),
                 receipts, null);
     }

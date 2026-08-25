@@ -690,8 +690,12 @@ class IngestCaptureBoundaryTest {
     @Test
     @DisplayName("no ledger wired leaves the ingest exactly as it was")
     void anUnwiredLedgerChangesNothing() {
-        // The optional collaborator has to stay optional: a deployment without the ledger must
-        // not gain a warning per ingest, or an operator learns to ignore the warning list.
+        // Holds ONE line: `if (ledgerRecorder == null) return CaptureResult.success();` in
+        // CaptureScope.chain. Note what it does NOT hold — "a deployment without the ledger"
+        // cannot occur: EvidenceLedgerRecorder is a @Component in a component-scanned package,
+        // so the recorder is always injected and the ledger provisions its own database on
+        // first use. The state an operator meets is "the ledger is there and unreachable",
+        // which is aChainGapReachesTheCaller above.
         wire();
 
         ExternalIngestResult result = service.execute(ctx(), request("src-1"));
