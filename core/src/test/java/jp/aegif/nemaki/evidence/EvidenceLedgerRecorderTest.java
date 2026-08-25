@@ -299,7 +299,25 @@ class EvidenceLedgerRecorderTest {
                 EvidenceLedgerRecorder.captureDigest(REPO, intent("i-7", "src-7"),
                         evidenceWithHash("deadbeef")),
                 EvidenceLedgerRecorder.captureDigest(REPO, intent("i-7", "src-7"),
-                        evidenceWithHash("deadbeef")));
+                        evidenceWithHash("deadbeef")),
+                "the same capture digested differently twice, so a verifier holding the stored "
+                        + "row can never reproduce what the chain committed to and the chain "
+                        + "cannot be checked at all");
+    }
+
+    @Test
+    @DisplayName("a chained result cannot also carry a gap warning")
+    void aChainedResultCannotAlsoWarn() {
+        // The flag had no reader — CaptureScope branched on the warning alone — so "flag +
+        // warning" described an API that was really warning-only. The flag is read now, which
+        // makes a disagreeing pair a real hazard rather than a theoretical one: a chained
+        // result with an advisory note would tell the caller its record is missing. Refuse the
+        // combination instead of picking a winner at each call site.
+        IllegalArgumentException refused = org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> new EvidenceLedgerRecorder.Recorded(true, "an advisory note"));
+
+        assertTrue(refused.getMessage().contains("cannot also carry"), refused.getMessage());
     }
 
     @Test

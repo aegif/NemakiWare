@@ -158,16 +158,35 @@ class CouchEvidenceLedgerStoreTest {
     @Test
     @DisplayName("provisioning puts the design document ONCE, not once per view")
     void theViewsAreDeployedInOnePut() throws Exception {
-        // The first version of this test read viewSources() and counted five entries — which
-        // is a literal compared with itself, and never touched ensureDatabase() where the
-        // deployment actually happens. Reverting to five createOrUpdateView calls left it
-        // green. A reviewer named exactly that edit.
+        // Two versions of this test have missed the point. The first read viewSources() and
+        // counted five entries — a literal compared with itself. The second called deployViews
+        // by reflection, which still never touched ensureDatabase(), so reverting THAT to five
+        // createOrUpdateView calls left it green: the defect the test names could come back
+        // untouched. This one drives ensureDatabase() itself, through the wrapper seam.
         CloudantClientWrapper client = mock(CloudantClientWrapper.class);
-        CouchEvidenceLedgerStore store = new CouchEvidenceLedgerStore();
-        java.lang.reflect.Method deploy = CouchEvidenceLedgerStore.class
-                .getDeclaredMethod("deployViews", CloudantClientWrapper.class);
-        deploy.setAccessible(true);
-        deploy.invoke(store, client);
+        com.ibm.cloud.cloudant.v1.Cloudant cloudant =
+                mock(com.ibm.cloud.cloudant.v1.Cloudant.class);
+        when(cloudant.getDatabaseInformation(any())).thenReturn(
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class));
+        CloudantClientWrapper pooled = mock(CloudantClientWrapper.class);
+        when(pooled.getClient()).thenReturn(cloudant);
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool pool =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);
+        when(pool.getClient(anyString())).thenReturn(pooled);
+
+        CouchEvidenceLedgerStore store = new CouchEvidenceLedgerStore() {
+            @Override
+            CloudantClientWrapper newWrapper(com.ibm.cloud.cloudant.v1.Cloudant unused) {
+                return client;
+            }
+        };
+        store.setConnectorPool(pool);
+        // A mock, not a real mapper: the wrapper is mocked so nothing is ever serialised here,
+        // and constructing a bare one is what JacksonMigrationBoundaryTest bans (it adopts
+        // Jackson 3 defaults). All ensureDatabase wants is a non-null one.
+        store.setObjectMapper(mock(tools.jackson.databind.ObjectMapper.class));
+
+        store.ensureDatabase();
 
         org.mockito.Mockito.verify(client, org.mockito.Mockito.never())
                 .createOrUpdateView(anyString(), anyString(), anyString(),

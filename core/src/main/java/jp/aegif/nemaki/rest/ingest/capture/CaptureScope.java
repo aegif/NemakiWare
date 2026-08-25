@@ -443,6 +443,11 @@ public final class CaptureScope {
         }
         EvidenceLedgerRecorder.Recorded recorded = ledgerRecorder.recordCaptureCompleted(
                 intent.repositoryId(), intent, body, java.time.Instant.now().toString());
+        if (recorded.inChain()) {
+            return CaptureResult.success();
+        }
+        // Not chained. A warning only when there is something to say: a deployment with no
+        // ledger reachable at all reports the gap, one that never had a recorder does not.
         return recorded.warning() == null
                 ? CaptureResult.success()
                 : CaptureResult.capturedWithGap(recorded.warning());

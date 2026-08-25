@@ -153,6 +153,19 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
         this.provisioned.set(true);
     }
 
+    /**
+     * The one place the wrapper is constructed — a seam, and it earns its keep.
+     *
+     * <p>{@code ensureDatabase} used to {@code new} it inline, which meant no test could reach
+     * the provisioning path: the view-deployment test called {@code deployViews} by reflection
+     * instead, so it went on passing while {@code ensureDatabase} could have been reverted to
+     * five separate {@code createOrUpdateView} calls — the very defect the test was written
+     * for. Overriding this in a subclass lets a test drive the real method.
+     */
+    CloudantClientWrapper newWrapper(Cloudant cloudant) {
+        return new CloudantClientWrapper(cloudant, DB_NAME, objectMapper);
+    }
+
     void ensureDatabase() {
         if (provisioned.get()) {
             return;
@@ -172,8 +185,7 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
                 // in a comment trips the guard, which is the guard working as intended.
                 throw new IllegalStateException("the evidence ledger has no couchdbObjectMapper");
             }
-            CloudantClientWrapper wrapper =
-                    new CloudantClientWrapper(cloudant, DB_NAME, objectMapper);
+            CloudantClientWrapper wrapper = newWrapper(cloudant);
             try {
                 cloudant.getDatabaseInformation(
                         new GetDatabaseInformationOptions.Builder().db(DB_NAME).build()).execute();

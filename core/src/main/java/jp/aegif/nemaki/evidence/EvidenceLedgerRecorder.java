@@ -101,8 +101,26 @@ public class EvidenceLedgerRecorder {
         this.ledgerService = ledgerService;
     }
 
-    /** What happened, and what the caller has to be told. */
+    /**
+     * What happened, and what the caller has to be told.
+     *
+     * <p>The two are not independent, and the constructor says so. Nothing downstream read the
+     * flag — {@code CaptureScope.chain} branched on the warning alone — so "flag + warning"
+     * described an API that was really warning-only, and the day something returned a chained
+     * result with an advisory note attached, the caller would have been told the chain had a
+     * hole. Now the flag is what is read, and a combination that would make the two disagree
+     * cannot be built.
+     */
     public record Recorded(boolean inChain, String warning) {
+
+        public Recorded {
+            if (inChain && warning != null) {
+                throw new IllegalArgumentException(
+                        "a capture that reached the chain cannot also carry a gap warning; the "
+                                + "caller reads one of these and would be told the opposite of "
+                                + "the other");
+            }
+        }
 
         static Recorded chained() {
             return new Recorded(true, null);

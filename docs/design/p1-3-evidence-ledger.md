@@ -186,6 +186,15 @@ create-if-absent で **409 に負ける**。
 `append()` は常に `true` を返していた — テストはモックに実物と違う契約を
 教えていただけだった (レビュー 3 者が同時に指摘)。
 
+> **`range` が null を返す本番実装は無い** (2026-08-25 訂正)。
+> 「呼び出し元は HTTP 500 『could not be closed: null』になる」と commit message に
+> 書いたが、`CouchEvidenceLedgerStore.range` は null を返さず、
+> `EvidenceLedgerStore` のインタフェースも null を許していない。
+> `aNullSpanIsRefusedNotACrash` が固定しているのは**テストの fake でしか作れない
+> 状態**である。防御的分岐の pin としては妥当だが、**起きた本番障害ではない**。
+> 同じテストが測っている「読めなかった ≠ 0 件だった」の文言のほうは実在の取り違えで、
+> そちらは実測している。
+
 **409 と outage を区別する。** 両方を `false` にすると、DB 停止中に
 「誰かが sequence n を書いた」と読んで n+1 へ進み、**n は永久に空**のまま
 以後の検証がそこで break を報告し続ける。conflict だけが `false`、他は throw。
@@ -253,6 +262,35 @@ CouchDB の障害中は全取込がそうなるので、**ログは最初の 1 �
 「ログは間引いてある」と書けば、それは何も裏付けの無い主張になる。
 
 利用者向けの記述は [`RELEASE_NOTES.md`](../../RELEASE_NOTES.md)。
+
+### flag は誰も読んでいなかった (2026-08-25)
+
+`Recorded` は「flag + warning」を返すと書いてあったが、**`CaptureScope.chain` は
+warning しか見ていなかった**ので、実際には warning のみの API だった。
+flag を読むように直したうえで、**compact constructor で
+`inChain ⇒ warning == null` を強制**した。
+
+**正直に言うと、「flag を読むようにした」側は測れない。** 不変条件を入れた時点で
+`inChain()` と `warning() == null` は構築可能なすべての値について等価になるからで、
+**それこそが不変条件が保護である理由**である。負のコントロールで落ちるのは
+不変条件を外したときだけ (`aChainedResultCannotAlsoWarn`)。
+`chain()` の書き換えを測れる保護として数えてはいない。
+
+### 取込 1 件あたりの費用と、恒久的な穴 (2026-08-25・未計測)
+
+`append` は 1 回あたり **3 往復** (`highestSequence` の view / `range` の view /
+`create`) で、`evidence_ledger:{domain}:{19桁 sequence}` という**単一 id を
+全ライタが奪い合う直列鎖**である。競合したライタは 5 回まで読み直して
+先へ進み、**尽きると `CONTENDED`**。§8 のとおり backfill はしないので、
+**それはそのまま恒久的な穴**になる。
+
+したがって**並列取込や multi-replica では、負荷が上がるほど穴が増える構造**である。
+穴は取込ごとに呼び出し元へ warning として返り、`gapsSinceStartup()` に数えられる
+(黙ってはいない)。
+
+**この費用と競合率は計測していない。** 実測なしに「問題ない」とも「問題がある」とも
+書かない。単一 id の奪い合いを緩める案 (ドメイン内シャーディング、
+書き込みのバッチ化) は別増分。
 
 ### 遡らない
 

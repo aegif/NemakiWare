@@ -218,7 +218,9 @@ class AnchorServiceTest {
 
         // The whole point of the ladder is that a customer can lean on a different rung.
         assertEquals(2, outcome.receipts().size());
-        assertEquals(AnchorStatus.FAILED, outcome.receipts().get(0).status());
+        assertEquals(AnchorStatus.FAILED, outcome.receipts().get(0).status(),
+                "a receipt from another rung was accepted as this rung's own, so a buggy rung "
+                        + "could report CONFIRMED for a digest nobody asked it about");
         assertEquals(List.of("ATLAS_CATALOG"), outcome.confirmedRungs(),
                 "a broken rung stopped a working one");
         assertTrue(outcome.receipts().get(0).failureReason().contains("unreachable"),
@@ -315,7 +317,9 @@ class AnchorServiceTest {
 
         assertEquals(List.of(), outcome.confirmedRungs(),
                 "a receipt from another rung was counted as this rung's anchor");
-        assertEquals(AnchorStatus.FAILED, outcome.receipts().get(0).status());
+        assertEquals(AnchorStatus.FAILED, outcome.receipts().get(0).status(),
+                "a receipt from another rung was accepted as this rung's own, so a buggy rung "
+                        + "could report CONFIRMED for a digest nobody asked it about");
     }
 
     @Test
