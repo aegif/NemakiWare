@@ -317,6 +317,20 @@ public class AnchorService {
                 return AnchorReceipt.failed(target.kind(), merkleRoot, Instant.now(),
                         "the rung returned no receipt");
             }
+            // The receipt must be about what we asked. `upgradePending` already checked the
+            // kind; the first anchoring accepted whatever came back, so a buggy rung could
+            // return CONFIRMED for another digest and this Outcome would still name our root
+            // and count that rung as confirmed (review).
+            if (receipt.kind() != target.kind()) {
+                return AnchorReceipt.failed(target.kind(), merkleRoot, Instant.now(),
+                        "the rung returned a receipt for " + receipt.kind()
+                                + "; a receipt from a different rung says nothing about this one");
+            }
+            if (!merkleRoot.equalsIgnoreCase(receipt.anchoredDigest())) {
+                return AnchorReceipt.failed(target.kind(), merkleRoot, Instant.now(),
+                        "the rung anchored a different value than the one it was given; the "
+                                + "receipt is not about this checkpoint");
+            }
             return receipt;
         } catch (RuntimeException e) {
             // Contained on purpose. AnchorTarget promises not to throw for ordinary failure;

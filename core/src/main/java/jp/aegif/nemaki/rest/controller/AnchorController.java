@@ -115,8 +115,25 @@ public class AnchorController {
             body.put("message", "the checkpoint could not be closed: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
         }
-        body.put("status", "success");
         body.put("checkpoint", closed);
+        // closeCheckpoint reports expected failures in its RETURNED map, not by throwing. The
+        // outer status used to say "success" over an inner "error" — and then anchored the
+        // PREVIOUS checkpoint, so an operator saw 200 for a seal that did not happen (review).
+        if ("error".equals(closed.get("status"))) {
+            body.put("status", "error");
+            body.put("message", "the checkpoint was not sealed, so nothing was anchored: "
+                    + closed.get("message"));
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+        }
+        if ("noop".equals(closed.get("status"))) {
+            // Nothing new to seal. Re-anchoring the existing checkpoint here is what turned a
+            // harmless extra cron run into a re-stamp of an already-settled commitment.
+            body.put("status", "noop");
+            body.put("message", "no entries since the last checkpoint, so nothing was sealed "
+                    + "and nothing was anchored. This is NOT a failure.");
+            return ResponseEntity.ok(body);
+        }
+        body.put("status", "success");
 
         EvidenceCheckpoint checkpoint = ledgerStore == null ? null
                 : ledgerStore.latestCheckpoint(repositoryId);
@@ -193,6 +210,17 @@ public class AnchorController {
         // this database, so an operator should be able to see it without computing it.
         body.put("unanchoredEntries", Math.max(0, highest - latest.toSequence()));
         List<Map<String, Object>> receipts = new ArrayList<>();
+        if (receiptStore == null || !receiptStore.isActive()) {
+            // "We could not ask" is not "there are none". An empty list beside status:success
+            // reads as "this checkpoint was never anchored", which is a claim about the
+            // deployment made on the strength of a missing bean (review).
+            body.put("receipts", null);
+            body.put("receiptsUnavailable", receiptStore == null
+                    ? "the anchor receipt store is not wired on this node"
+                    : "the anchor receipt store could not be reached");
+            body.put("limits", STATUS_LIMITS);
+            return ResponseEntity.ok(body);
+        }
         if (receiptStore != null) {
             for (AnchorReceipt receipt
                     : receiptStore.forCheckpoint(repositoryId, latest.toSequence())) {
@@ -205,12 +233,15 @@ public class AnchorController {
             }
         }
         body.put("receipts", receipts);
-        body.put("limits", "Entries after the last anchored checkpoint are held only by this "
-                + "database. A confirmed anchor makes rewriting DETECTABLE from that point "
-                + "back; it does not prevent it, and it says nothing about whether what was "
-                + "recorded was complete or true.");
+        body.put("limits", STATUS_LIMITS);
         return ResponseEntity.ok(body);
     }
+
+    private static final String STATUS_LIMITS = "Entries after the last anchored checkpoint are "
+            + "held only by this "
+            + "database. A confirmed anchor makes rewriting DETECTABLE from that point "
+            + "back; it does not prevent it, and it says nothing about whether what was "
+            + "recorded was complete or true.";
 
     /**
      * What is going stale, and which renewal it needs (P2-3).

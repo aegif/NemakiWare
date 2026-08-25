@@ -31,7 +31,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -123,6 +126,65 @@ class AnchorControllerTest {
                             + "root, the ledger's head sequence and every anchor receipt, and "
                             + "checkpoint-and-anchor SENDS data to an external service.");
         }
+    }
+
+    @Test
+    @DisplayName("a checkpoint that was NOT sealed does not answer 200 success")
+    void aFailedSealIsNotReportedAsSuccess() throws Exception {
+        // closeCheckpoint reports expected failures in its RETURNED map, not by throwing. The
+        // outer status said "success" over an inner "error" and then anchored the PREVIOUS
+        // checkpoint — so an operator saw 200 for a seal that did not happen (review).
+        AnchorController controller = controllerFor(true);
+        setField(controller, "anchorService", mock(
+                jp.aegif.nemaki.evidence.anchor.AnchorService.class));
+        jp.aegif.nemaki.evidence.EvidenceLedgerService ledger =
+                mock(jp.aegif.nemaki.evidence.EvidenceLedgerService.class);
+        when(ledger.closeCheckpoint(anyString(), anyString())).thenReturn(
+                java.util.Map.of("status", "error", "message", "the span does not verify"));
+        setField(controller, "ledgerService", ledger);
+
+        Object response = AnchorController.class
+                .getDeclaredMethod("checkpointAndAnchor", String.class)
+                .invoke(controller, "bedroom");
+        HttpStatus code = (HttpStatus) response.getClass()
+                .getMethod("getStatusCode").invoke(response);
+
+        assertTrue(code != HttpStatus.OK,
+                "a checkpoint that was not sealed answered " + code + "; the caller reads that "
+                        + "as a seal that happened");
+    }
+
+    @Test
+    @DisplayName("an unwired receipt store is not an empty list of receipts")
+    void anUnwiredReceiptStoreIsNotAnEmptyResult() throws Exception {
+        // "We could not ask" is not "there are none". An empty list beside status:success reads
+        // as "this checkpoint was never anchored" — a claim about the deployment made on the
+        // strength of a missing bean.
+        AnchorController controller = controllerFor(true);
+        jp.aegif.nemaki.evidence.EvidenceLedgerStore ledger =
+                mock(jp.aegif.nemaki.evidence.EvidenceLedgerStore.class);
+        when(ledger.latestCheckpoint(anyString())).thenReturn(
+                jp.aegif.nemaki.evidence.EvidenceCheckpoint.of("bedroom", 0, 5,
+                        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                        null, "2026-08-25T00:00:00Z"));
+        setField(controller, "ledgerStore", ledger);
+
+        Object response = AnchorController.class.getDeclaredMethod("status", String.class)
+                .invoke(controller, "bedroom");
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> body = (java.util.Map<String, Object>) response.getClass()
+                .getMethod("getBody").invoke(response);
+
+        assertNull(body.get("receipts"),
+                "an unwired receipt store answered with an empty receipt list: " + body);
+        assertNotNull(body.get("receiptsUnavailable"),
+                "nothing said why the receipts are missing: " + body);
+    }
+
+    private static void setField(Object target, String name, Object value) throws Exception {
+        java.lang.reflect.Field field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(target, value);
     }
 
     @Test

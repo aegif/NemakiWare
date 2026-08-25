@@ -68,9 +68,13 @@ class AnchorReceiptPersistenceTest {
         @Override
         public SaveOutcome save(String domain, long toSequence, AnchorReceipt receipt) {
             String key = domain + ":" + toSequence + ":" + receipt.kind();
-            // The same monotonicity rule the real store enforces inside its CAS. A stand-in
-            // that stored unconditionally would let the service's tests pass against a store
-            // that does not keep the rule.
+            // MIRRORS the monotonicity rule the real store enforces inside its CAS, so the
+            // service can be exercised whole. Be clear about what that costs: the two tests
+            // below therefore measure THIS mirror, not production. The enforcement itself is
+            // measured against the real store in CouchAnchorReceiptStoreTest
+            // (aWeakerReceiptIsRefusedOnTheFirstRead, aRaceLostToAConfirmedWriterIsRespected).
+            // A stand-in that stored unconditionally would be worse still — the service's
+            // tests would then pass against a store that does not keep the rule at all.
             PendingReceipt held = rows.get(key);
             if (receipt.status() != AnchorStatus.CONFIRMED && held != null
                     && held.receipt().status() == AnchorStatus.CONFIRMED) {
@@ -164,7 +168,7 @@ class AnchorReceiptPersistenceTest {
                             + "to send back to the calendar");
             return jp.aegif.nemaki.rest.purview.anchor.AnchorReceipts.confirmed(kind(),
                     pending.anchoredDigest(), Instant.parse("2026-08-24T06:00:00Z"),
-                    new byte[] { 9, 9, 9, 7 }, "settledproof", Map.of("block", "912345"));
+                    new byte[] { 9, 9, 9, 7 }, Map.of("block", "912345"));
         }
     }
 
@@ -258,7 +262,7 @@ class AnchorReceiptPersistenceTest {
             public AnchorReceipt upgrade(AnchorReceipt pending) {
                 return jp.aegif.nemaki.rest.purview.anchor.AnchorReceipts.confirmed(
                         AnchorKind.RFC3161_TSA, pending.anchoredDigest(), Instant.now(),
-                        new byte[] { 2 }, "q", Map.of());
+                        new byte[] { 2 }, Map.of());
             }
         };
         AnchorService service = new AnchorService();
@@ -281,12 +285,12 @@ class AnchorReceiptPersistenceTest {
     // ---- an anchor may be added to, never quietly taken away ----
 
     @Test
-    @DisplayName("a FAILED attempt does not erase a CONFIRMED receipt")
+    @DisplayName("the service does not bypass the store's monotonicity rule (via the double)")
     void aFailureDoesNotEraseAProof() {
         MemoryStore receipts = new MemoryStore();
         receipts.save(DOMAIN, 5, jp.aegif.nemaki.rest.purview.anchor.AnchorReceipts.confirmed(
                 AnchorKind.RFC3161_TSA, ROOT, Instant.parse("2026-08-24T00:00:00Z"),
-                new byte[] { 1, 2, 3 }, "tokendigest", Map.of("genTime", "2026-08-24T00:00:00Z")));
+                new byte[] { 1, 2, 3 }, Map.of("genTime", "2026-08-24T00:00:00Z")));
 
         AnchorService service = new AnchorService();
         service.setStore(storeAt(5));
@@ -304,12 +308,12 @@ class AnchorReceiptPersistenceTest {
     }
 
     @Test
-    @DisplayName("re-anchoring does not turn a settled .ots back into a pending commitment")
+    @DisplayName("re-anchoring goes through save, so a settled .ots is not unsettled (via the double)")
     void reAnchoringDoesNotUnsettleACommitment() {
         MemoryStore receipts = new MemoryStore();
         receipts.save(DOMAIN, 5, jp.aegif.nemaki.rest.purview.anchor.AnchorReceipts.confirmed(
                 AnchorKind.OPENTIMESTAMPS, ROOT, Instant.parse("2026-08-24T00:00:00Z"),
-                new byte[] { 9, 9, 9, 7 }, "settledproof", Map.of("block", "912345")));
+                new byte[] { 9, 9, 9, 7 }, Map.of("block", "912345")));
 
         AnchorService service = new AnchorService();
         service.setStore(storeAt(5));
@@ -544,7 +548,7 @@ class AnchorReceiptPersistenceTest {
         // RFC 3161 token would read as though its time were missing.
         AnchorReceipt timed = jp.aegif.nemaki.rest.purview.anchor.AnchorReceipts.confirmed(
                 AnchorKind.RFC3161_TSA, ROOT, Instant.parse("2026-08-24T00:00:00Z"),
-                new byte[] { 1 }, "ignored", Map.of());
+                new byte[] { 1 }, Map.of());
 
         assertFalse(AnchorService.claimLimitsFor(timed).contains("does not hold the anchoring"),
                 "a token that DOES state its time was described as not stating one");

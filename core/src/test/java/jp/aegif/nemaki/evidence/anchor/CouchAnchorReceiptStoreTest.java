@@ -71,7 +71,7 @@ class CouchAnchorReceiptStoreTest {
 
     private static AnchorReceipt confirmed() {
         return AnchorReceipts.confirmed(AnchorKind.RFC3161_TSA, ROOT,
-                Instant.parse("2026-08-24T00:00:00Z"), new byte[] { 1, 2, 3 }, "tokendigest",
+                Instant.parse("2026-08-24T00:00:00Z"), new byte[] { 1, 2, 3 },
                 Map.of("digestAlgorithm", "SHA-256"));
     }
 

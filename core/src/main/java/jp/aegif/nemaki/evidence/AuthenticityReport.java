@@ -109,8 +109,9 @@ public record AuthenticityReport(String repositoryId, String objectId, String ge
     public static final String REPORT_LIMITS =
             "This report gathers evidence; it does not decide whether a record is authentic — "
             + "that judgement is a person's, made with these limits in view. Specifically: "
-            + "(1) the identity attributes are what the SOURCE SYSTEM said, recorded faithfully "
-            + "— faithful recording is not truth; (2) a matching content digest means the bytes "
+            + "(1) the identity attributes are shown AS STORED NOW and attributed to what the "
+            + "source system said — this report does not re-check them against the capture "
+            + "hash, and faithful recording would not be truth in any case; (2) a matching content digest means the bytes "
             + "are what this repository recorded, not that they were never altered: the digest "
             + "is an ordinary stored property and anything with direct database access can "
             + "change both and keep them agreeing; (3) the custody chain shows what was "

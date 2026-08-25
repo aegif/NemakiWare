@@ -97,7 +97,11 @@ class AuthenticityReportTest {
                 "the report-level limits are missing or gutted (" + limits.length()
                         + " chars); this is the paragraph the whole design is built around");
         for (String clause : new String[] {
-                "faithful recording is not truth",
+                // Reworded when the identity section stopped claiming more than it checks:
+                // it now says AS STORED NOW and admits it does not re-check the capture hash.
+                // The clause that has to survive is that recording is not truth.
+                "would not be truth in any case",
+                "does not re-check them against the capture hash",
                 "not that they were never altered",
                 "operations that did not pass through the recording path",
                 "anchored outside this database",
@@ -342,6 +346,38 @@ class AuthenticityReportTest {
                         + "truncated list that does not say so is read as complete");
         assertTrue(section.limits().toLowerCase().contains("truncated"),
                 "the truncation is in the content but not in the limits: " + section.limits());
+    }
+
+    @Test
+    @DisplayName("an empty custody result does not offer a two-way explanation")
+    void anEmptyCustodyResultDoesNotGuessWhy() {
+        // "It did not come in through external ingest, or it predates it" excluded a third
+        // production cause — the row was purged by retention — and stated a dichotomy an
+        // empty result cannot establish (review).
+        Section section = sectionNamed(assembleWith(List.of(), null), "custody");
+
+        assertEquals(Verdict.ABSENT, section.verdict());
+        assertTrue(section.limits().contains("purged"),
+                "an empty custody result still rules out retention purge, which it cannot: "
+                        + section.limits());
+        assertTrue(section.limits().contains("cannot tell them apart"), section.limits());
+    }
+
+    @Test
+    @DisplayName("the identity section does not say the attributes were recorded faithfully")
+    void identityDoesNotClaimFaithfulRecording() {
+        // This path READS the stored aspects. It never compares them with the capture hash, so
+        // "recorded faithfully" claimed more than it checked — and the report-level paragraph
+        // repeated it.
+        Document document = documentWith("nemaki:sourceSystem", "slack");
+        Section section = sectionNamed(assembleWith(List.of(), document, false), "identity");
+
+        assertFalse(section.limits().contains("recorded faithfully"),
+                "the identity section still claims faithful recording without checking it: "
+                        + section.limits());
+        assertTrue(section.limits().contains("AS STORED NOW"), section.limits());
+        assertFalse(AuthenticityReport.REPORT_LIMITS.contains("recorded faithfully"),
+                "the report-level paragraph still claims faithful recording");
     }
 
     // ---- AC 6: unreadable is UNAVAILABLE, never empty ----

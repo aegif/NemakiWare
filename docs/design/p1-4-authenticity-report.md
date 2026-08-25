@@ -25,7 +25,7 @@ fixity の `PARTIAL` で 2 度学んだ形をここでも適用する。
 
 | 節 | 出所 | その節が言えること | 言えないこと |
 |---|---|---|---|
-| **identity** | 証拠 aspect (chat 11 / source identity 9 / archetype) | 取込が観測した出所の属性。CMIS 経路に対して読み取り専用 | それが**真実**であること。属性は取込元が言ったことである |
+| **identity** | 証拠 aspect (chat 11 / source identity 9 / archetype) | **いま保存されている値**と、それが取込元の申告に帰属すること | 取込時から**変わっていない**こと (capture hash と突き合わせていない — 2026-08-25 訂正)。CMIS 経路に対する読み取り専用は**変更不能ではない**。そして真実であること |
 | **content** | `nemaki:contentHash` + P1-2 の再検証 | 記録された digest と、**いま**読み直した digest の一致 | 改竄されていないこと (§0 / P1-2 §0)。digest も普通の保存プロパティである |
 | **custody** | capture intent 行 (**lineage イベントは読んでいない** — 2026-08-25 訂正) | 記録された取込・配送の経過 | **記録が完全であること**。台帳に入る経路を通らなかった操作は無い |
 | **integrity of the record** (JSON 上の節名は **`ledger`**) | P1-3 の連鎖検証 (**inclusion proof は出していない** — 2026-08-25 訂正) | 台帳自身の内部整合。checkpoint 以前の書き換え・削除・並べ替えの検出 | 外部からの独立性 (P2 のアンカー待ち) |

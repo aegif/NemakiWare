@@ -239,7 +239,7 @@ class LongTermValidityTest {
         service.setReceiptStore(storeHolding(jp.aegif.nemaki.rest.purview.anchor.AnchorReceipts
                 .confirmed(jp.aegif.nemaki.rest.purview.anchor.AnchorKind.RFC3161_TSA,
                         "abc", java.time.Instant.parse("2026-08-24T00:00:00Z"),
-                        new byte[] { 1 }, "p",
+                        new byte[] { 1 },
                         Map.of("digestAlgorithm", "SHA-1"))));
 
         Map<String, Object> body = service.assess("bedroom", LocalDate.of(2031, 1, 1));
@@ -268,7 +268,7 @@ class LongTermValidityTest {
         service.setReceiptStore(storeHolding(jp.aegif.nemaki.rest.purview.anchor.AnchorReceipts
                 .confirmed(jp.aegif.nemaki.rest.purview.anchor.AnchorKind.RFC3161_TSA,
                         "abc", java.time.Instant.parse("2026-08-24T00:00:00Z"),
-                        new byte[] { 1 }, "p",
+                        new byte[] { 1 },
                         Map.of("digestAlgorithm", "SHA-256"))));
 
         assertEquals(0, service.assess("bedroom", TODAY).get("hashTreeRenewalsDue"),

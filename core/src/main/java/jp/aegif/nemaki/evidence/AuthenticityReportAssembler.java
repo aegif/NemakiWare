@@ -179,9 +179,13 @@ public class AuthenticityReportAssembler {
             body.put("includesPersonalData", true);
         }
         return new Section("identity", Verdict.REPORTED, body,
-                "These are the attributes the SOURCE SYSTEM reported at capture, recorded "
-                        + "faithfully and read-only through CMIS since. Faithful recording is "
-                        + "not truth: nothing here checks that the source told the truth."
+                "These are the attributes AS STORED NOW, attributed to what the source "
+                        + "system reported at capture. This section READS them; it does not "
+                        + "compare them with the capture hash, so it does not establish that "
+                        + "they are unchanged since. They are read-only through CMIS, which is "
+                        + "not the same as unchangeable — direct database access is outside "
+                        + "that guarantee. And faithful recording would not be truth in any "
+                        + "case: nothing here checks that the source told the truth."
                         + (withheld > 0 ? " " + withheld + " propert(y/ies) the disclosure "
                         + "table marks INTERNAL_ONLY are withheld from this report by default."
                         : ""));
@@ -262,8 +266,11 @@ public class AuthenticityReportAssembler {
         }
         if (rows == null || rows.isEmpty()) {
             return new Section("custody", Verdict.ABSENT, Map.of(),
-                    "No capture row exists for this object — it did not come in through the "
-                            + "external-ingest boundary, or it predates it. " + silenceIsNotAbsence);
+                    "No RETAINED capture row was found for this object. That has more than one "
+                            + "cause: it may not have come in through the external-ingest "
+                            + "boundary, it may predate that boundary, its row may have been "
+                            + "purged by retention, or the recording may have failed. An empty "
+                            + "result cannot tell them apart. " + silenceIsNotAbsence);
         }
         List<Map<String, Object>> events = new ArrayList<>(rows.size());
         for (Map<String, Object> row : rows) {

@@ -274,6 +274,77 @@ class AnchorServiceTest {
         assertEquals(List.of("ATLAS_CATALOG"), outcome.confirmedRungs());
     }
 
+    @Test
+    @DisplayName("a receipt for a DIFFERENT rung is refused")
+    void aReceiptFromAnotherRungIsRefused() {
+        // upgradePending already checked the kind; the first anchoring accepted whatever came
+        // back, so a buggy rung could return CONFIRMED for another rung and the Outcome would
+        // still name our root and count it (review).
+        AnchorTarget confused = new AnchorTarget() {
+            @Override
+            public AnchorKind kind() {
+                return AnchorKind.OPENTIMESTAMPS;
+            }
+
+            @Override
+            public boolean isConfigured() {
+                return true;
+            }
+
+            @Override
+            public AnchorReceipt anchor(String hexDigest) {
+                return confirmedFor(AnchorKind.ATLAS_CATALOG, hexDigest);
+            }
+        };
+
+        AnchorService.Outcome outcome = serviceWith(storeAt(5), confused).anchor(checkpoint(5));
+
+        assertEquals(List.of(), outcome.confirmedRungs(),
+                "a receipt from another rung was counted as this rung's anchor");
+        assertEquals(AnchorStatus.FAILED, outcome.receipts().get(0).status());
+    }
+
+    @Test
+    @DisplayName("a receipt for a DIFFERENT value is refused")
+    void aReceiptForAnotherDigestIsRefused() {
+        AnchorTarget wanderer = new AnchorTarget() {
+            @Override
+            public AnchorKind kind() {
+                return AnchorKind.ATLAS_CATALOG;
+            }
+
+            @Override
+            public boolean isConfigured() {
+                return true;
+            }
+
+            @Override
+            public AnchorReceipt anchor(String hexDigest) {
+                // Anchors something else entirely.
+                return confirmedFor(AnchorKind.ATLAS_CATALOG,
+                        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+            }
+        };
+
+        AnchorService.Outcome outcome = serviceWith(storeAt(5), wanderer).anchor(checkpoint(5));
+
+        assertEquals(List.of(), outcome.confirmedRungs(),
+                "an anchor of a different value was reported as this checkpoint's anchor, "
+                        + "beside this checkpoint's root");
+        assertTrue(outcome.receipts().get(0).failureReason().contains("different value"),
+                outcome.receipts().get(0).failureReason());
+    }
+
+    @Test
+    @DisplayName("a matching receipt is still accepted — the control")
+    void aMatchingReceiptIsAccepted() {
+        // Without this, refusing everything would pass the two tests above.
+        AnchorService.Outcome outcome = serviceWith(storeAt(5),
+                rung(AnchorKind.ATLAS_CATALOG, AnchorStatus.CONFIRMED)).anchor(checkpoint(5));
+
+        assertEquals(List.of("ATLAS_CATALOG"), outcome.confirmedRungs());
+    }
+
     // ---- AC 5 / AC 6 ----
 
     @Test
