@@ -17,6 +17,7 @@
 package jp.aegif.nemaki.rest.controller;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.evidence.FixityLedgerRecorder;
 import jp.aegif.nemaki.fixity.FixityScanReport;
 import jp.aegif.nemaki.fixity.FixityScanService;
 import jp.aegif.nemaki.fixity.FixityVerifier;
@@ -142,6 +143,20 @@ public class FixityController {
             Map<String, Object> out = new LinkedHashMap<>(report.asMap());
             out.put("status", "success");
             out.put("folderId", folderId);
+            // The pass goes into the evidence chain (P1-3 §2). Fail-open, like capture and
+            // unlike disposition: the scan has already run and its results are already in this
+            // response, so refusing would throw away a completed pass to protect a record of
+            // it. A gap is reported instead — never hidden, because a chain read as a complete
+            // history of what was checked is worse than no chain.
+            if (fixityLedgerRecorder != null) {
+                FixityLedgerRecorder.Recorded recorded = fixityLedgerRecorder.recordPass(
+                        repositoryId, "folder:" + folderId, report,
+                        java.time.Instant.now().toString());
+                out.put("chained", recorded.inChain());
+                if (recorded.warning() != null) {
+                    out.put("chainWarning", recorded.warning());
+                }
+            }
             return ResponseEntity.ok(out);
         } catch (Exception e) {
             logger.warn("Fixity folder scan failed for {}/{}: {}", repositoryId, folderId,
@@ -154,6 +169,18 @@ public class FixityController {
             out.put("status", "error");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(out);
         }
+    }
+
+    private FixityLedgerRecorder fixityLedgerRecorder;
+
+    /**
+     * Optional: a deployment without the evidence ledger still runs fixity passes; it simply
+     * does not chain them, and {@code chained} is then absent from the response rather than
+     * present and false. "We did not try" and "we tried and failed" must not read alike.
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setFixityLedgerRecorder(FixityLedgerRecorder fixityLedgerRecorder) {
+        this.fixityLedgerRecorder = fixityLedgerRecorder;
     }
 
     static final String LIMITS =
