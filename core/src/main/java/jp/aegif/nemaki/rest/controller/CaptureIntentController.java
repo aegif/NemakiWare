@@ -201,9 +201,9 @@ public class CaptureIntentController {
      * downgraded to UNVERIFIABLE (external review of the 2026-08-24 batch).
      */
     private static boolean carriesAHash(Map<String, Object> row) {
-        return row.get("appliedChatEvidenceHash") != null
-                || row.get("appliedSourceIdentityHash") != null
-                || row.get("appliedArchetypeEvidenceHash") != null;
+        // The producer's predicate. Two copies of these three names is how the evidence
+        // report ended up looking for a set that nothing writes.
+        return jp.aegif.nemaki.rest.ingest.capture.CaptureIntent.carriesAppliedHash(row);
     }
 
     @GetMapping("/verify-metadata")

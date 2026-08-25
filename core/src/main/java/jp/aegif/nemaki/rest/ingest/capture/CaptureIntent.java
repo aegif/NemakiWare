@@ -102,21 +102,66 @@ public record CaptureIntent(
     /** How far ahead each extension pushes the lease. */
     public static final long LEASE_MS = java.util.concurrent.TimeUnit.MINUTES.toMillis(5);
 
+    /**
+     * The names a stored row actually uses.
+     *
+     * <p>Constants rather than literals at each site, and {@link #toDocument} writes THROUGH
+     * them, so a reader that uses one cannot drift from the writer. The evidence report's
+     * custody section was written against guessed names ({@code connector}, {@code state},
+     * {@code capturedAt}) and matched nothing but {@code sourceObjectId} — every production
+     * report showed a capture with no connector, no state and no time, and said it carried no
+     * metadata hash when it did. Three reviewers found it; one table, several doors.
+     */
+    public static final String FIELD_CAPTURE_STATE = "captureState";
+    public static final String FIELD_CONNECTOR_ID = "connectorId";
+    public static final String FIELD_SOURCE_SYSTEM = "sourceSystem";
+    public static final String FIELD_SOURCE_OBJECT_ID = "sourceObjectId";
+    public static final String FIELD_INTENT_OPENED_AT_MS = "intentOpenedAtMs";
+    public static final String FIELD_PROCESS_TYPE = "processType";
+    public static final String FIELD_EXECUTED_BY = "executedBy";
+
+    /** Written by the store when the capture completes, not by {@link #toDocument}. */
+    public static final String FIELD_CAPTURED_AT_MS = "capturedAtMs";
+
+    /**
+     * The metadata-hash facts appended after the aspects are applied.
+     *
+     * <p>The {@code applied} prefix is load-bearing: it distinguishes what was actually written
+     * onto the object from what the request asked for.
+     */
+    public static final java.util.List<String> APPLIED_HASH_FIELDS = java.util.List.of(
+            "appliedChatEvidenceHash", "appliedSourceIdentityHash",
+            "appliedArchetypeEvidenceHash");
+
+    /** Whether a stored row carries any applied metadata hash. */
+    public static boolean carriesAppliedHash(Map<String, Object> row) {
+        if (row == null) {
+            return false;
+        }
+        for (String field : APPLIED_HASH_FIELDS) {
+            Object value = row.get(field);
+            if (value != null && !String.valueOf(value).isBlank()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** The stored form. {@code captureState} because {@code state} is taken by v2 sequencing. */
     public Map<String, Object> toDocument() {
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("type", TYPE);
-        doc.put("captureState", CaptureState.CAPTURE_INTENT.name());
+        doc.put(FIELD_CAPTURE_STATE, CaptureState.CAPTURE_INTENT.name());
         doc.put("intentId", intentId);
-        doc.put("intentOpenedAtMs", intentOpenedAtMs);
+        doc.put(FIELD_INTENT_OPENED_AT_MS, intentOpenedAtMs);
         doc.put("repositoryId", repositoryId);
-        doc.put("connectorId", connectorId);
-        doc.put("sourceSystem", sourceSystem);
+        doc.put(FIELD_CONNECTOR_ID, connectorId);
+        doc.put(FIELD_SOURCE_SYSTEM, sourceSystem);
         doc.put("sourceObjectType", sourceObjectType);
-        doc.put("sourceObjectId", sourceObjectId);
+        doc.put(FIELD_SOURCE_OBJECT_ID, sourceObjectId);
         doc.put("requestId", requestId);
-        doc.put("processType", processType);
-        doc.put("executedBy", executedBy);
+        doc.put(FIELD_PROCESS_TYPE, processType);
+        doc.put(FIELD_EXECUTED_BY, executedBy);
         doc.put("onBehalfOf", onBehalfOf);
         doc.put(LEASE_FIELD, intentOpenedAtMs + LEASE_MS);
         return doc;

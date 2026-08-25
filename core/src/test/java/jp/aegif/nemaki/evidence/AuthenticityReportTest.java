@@ -26,6 +26,7 @@ import jp.aegif.nemaki.model.Aspect;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.rest.ingest.CaptureEvidenceField;
+import jp.aegif.nemaki.rest.ingest.capture.CaptureIntent;
 import jp.aegif.nemaki.rest.ingest.capture.CaptureMaintenanceStore;
 import jp.aegif.nemaki.rest.purview.journal.LineageBinaryDigest;
 
@@ -204,6 +205,52 @@ class AuthenticityReportTest {
 
         assertEquals(Verdict.UNAVAILABLE, section.verdict());
         assertTrue(section.limits().toLowerCase().contains("circular"), section.limits());
+    }
+
+    @Test
+    @DisplayName("AC4: custody reads the keys the PRODUCER actually writes")
+    void custodyReadsRealProductionRows() {
+        // Built from CaptureIntent.toDocument() itself, not from names invented here. The first
+        // version of this test wrote the assembler's guessed names into the fixture, so it
+        // pinned the mismatch instead of catching it: in production the section matched only
+        // sourceObjectId and reported carriesMetadataHash=false on captures that had one.
+        Map<String, Object> row = new LinkedHashMap<>(new CaptureIntent(
+                "lineage_capture:intent-1", "intent-1", 1750000000000L, REPO, "slack", "Slack",
+                "message", "src-42", "req-1", "chatImport", "admin", null).toDocument());
+        row.put(CaptureIntent.FIELD_CAPTURED_AT_MS, 1750000009999L);
+        row.put(CaptureIntent.APPLIED_HASH_FIELDS.get(0), "deadbeef");
+
+        Section section = sectionNamed(assembleWith(rows(row), null), "custody");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> events =
+                (List<Map<String, Object>>) section.content().get("events");
+        Map<String, Object> event = events.get(0);
+
+        assertEquals("slack", event.get(CaptureIntent.FIELD_CONNECTOR_ID),
+                "the connector is missing from the custody event: " + event);
+        assertNotNull(event.get(CaptureIntent.FIELD_CAPTURE_STATE),
+                "the capture state is missing: " + event);
+        assertNotNull(event.get(CaptureIntent.FIELD_CAPTURED_AT_MS),
+                "the capture time is missing: " + event);
+        assertEquals(Boolean.TRUE, event.get("carriesMetadataHash"),
+                "a row carrying an applied metadata hash was reported as carrying none — the "
+                        + "report says a hashed capture was not hashed");
+    }
+
+    @Test
+    @DisplayName("AC4 control: a row with no applied hash reports none")
+    void aRowWithoutAHashSaysSo() {
+        // Without this, hard-coding carriesMetadataHash=true would pass the test above.
+        Map<String, Object> row = new LinkedHashMap<>(new CaptureIntent(
+                "lineage_capture:intent-2", "intent-2", 1750000000000L, REPO, "slack", "Slack",
+                "message", "src-43", "req-2", "chatImport", "admin", null).toDocument());
+
+        Section section = sectionNamed(assembleWith(rows(row), null), "custody");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> events =
+                (List<Map<String, Object>>) section.content().get("events");
+
+        assertEquals(Boolean.FALSE, events.get(0).get("carriesMetadataHash"));
     }
 
     @Test

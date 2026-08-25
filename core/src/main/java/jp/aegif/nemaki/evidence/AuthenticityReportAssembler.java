@@ -26,6 +26,7 @@ import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.rest.ingest.CaptureEvidenceField;
+import jp.aegif.nemaki.rest.ingest.capture.CaptureIntent;
 import jp.aegif.nemaki.rest.ingest.capture.CaptureMaintenanceStore;
 import jp.aegif.nemaki.rest.purview.journal.LineageBinaryDigest;
 
@@ -267,8 +268,14 @@ public class AuthenticityReportAssembler {
         List<Map<String, Object>> events = new ArrayList<>(rows.size());
         for (Map<String, Object> row : rows) {
             Map<String, Object> event = new LinkedHashMap<>();
-            for (String key : new String[] { "connector", "state", "capturedAt", "openedAt",
-                    "sourceObjectId", "scheduleConfiguredBy" }) {
+            // The producer's own constants, not literals. The first version guessed the names
+            // (`connector`, `state`, `capturedAt`) and matched nothing but sourceObjectId, so
+            // every production report showed a capture with no connector, no state and no time.
+            for (String key : new String[] { CaptureIntent.FIELD_CONNECTOR_ID,
+                    CaptureIntent.FIELD_CAPTURE_STATE, CaptureIntent.FIELD_SOURCE_SYSTEM,
+                    CaptureIntent.FIELD_CAPTURED_AT_MS,
+                    CaptureIntent.FIELD_INTENT_OPENED_AT_MS,
+                    CaptureIntent.FIELD_SOURCE_OBJECT_ID, CaptureIntent.FIELD_PROCESS_TYPE }) {
                 Object value = row.get(key);
                 if (value != null) {
                     event.put(key, String.valueOf(value));
@@ -276,7 +283,7 @@ public class AuthenticityReportAssembler {
             }
             // The recorded hashes are named, never their values' provenance re-asserted: this
             // says a hash was recorded, not that it still matches. That check is /verify-metadata.
-            event.put("carriesMetadataHash", carriesAHash(row));
+            event.put("carriesMetadataHash", CaptureIntent.carriesAppliedHash(row));
             events.add(event);
         }
         Map<String, Object> body = new LinkedHashMap<>();
@@ -293,17 +300,6 @@ public class AuthenticityReportAssembler {
             body.put("truncated", false);
         }
         return new Section("custody", Verdict.REPORTED, body, limits);
-    }
-
-    private static boolean carriesAHash(Map<String, Object> row) {
-        for (String key : new String[] { "chatEvidenceHash", "sourceIdentityHash",
-                "archetypeEvidenceHash" }) {
-            Object value = row.get(key);
-            if (value != null && !String.valueOf(value).isBlank()) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**
