@@ -106,6 +106,24 @@ public record AuthenticityReport(String repositoryId, String objectId, String ge
      * every future edit of the assembler, and a caller that could choose it could choose to
      * leave it out.
      */
+    /**
+     * The identity section's bookkeeping key for how many properties were withheld.
+     *
+     * <p>A constant because a second reader appeared: {@code EarkSipExporter} both skips this
+     * key when building descriptive metadata and reads it to report the omission. With the
+     * literal duplicated, renaming it here would have published the bookkeeping key to a
+     * receiving archive AND silently made the withheld count zero — a package that withholds
+     * without saying it withheld.
+     */
+    public static final String WITHHELD_COUNT_KEY = "withheldInternalOnlyCount";
+
+    /** The identity section's marker that personal data was deliberately included. */
+    public static final String INCLUDES_PERSONAL_DATA_KEY = "includesPersonalData";
+
+    /** Keys in the identity section that are ABOUT the section, not attributes of the record. */
+    public static final java.util.Set<String> IDENTITY_BOOKKEEPING_KEYS =
+            java.util.Set.of(WITHHELD_COUNT_KEY, INCLUDES_PERSONAL_DATA_KEY);
+
     public static final String REPORT_LIMITS =
             "This report gathers evidence; it does not decide whether a record is authentic — "
             + "that judgement is a person's, made with these limits in view. Specifically: "

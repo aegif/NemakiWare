@@ -174,9 +174,9 @@ public class AuthenticityReportAssembler {
                             + "where it came from.");
         }
         Map<String, Object> body = new LinkedHashMap<>(values);
-        body.put("withheldInternalOnlyCount", withheld);
+        body.put(AuthenticityReport.WITHHELD_COUNT_KEY, withheld);
         if (includeInternalOnly) {
-            body.put("includesPersonalData", true);
+            body.put(AuthenticityReport.INCLUDES_PERSONAL_DATA_KEY, true);
         }
         return new Section("identity", Verdict.REPORTED, body,
                 "These are the attributes AS STORED NOW, attributed to what the source "

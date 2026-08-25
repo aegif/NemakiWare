@@ -126,6 +126,11 @@ public class EarkSipExporter {
         public ExportRefusedException(String message) {
             super(message);
         }
+
+        /** Keeps the cause. A refusal reading "could not be built: null" wastes a day. */
+        public ExportRefusedException(String message, Throwable cause) {
+            super(message, cause);
+        }
     }
 
     /**
@@ -192,6 +197,15 @@ public class EarkSipExporter {
                         + "are NOT in this package. A receiver reading it as a complete record "
                         + "of what was captured would be wrong.");
             }
+            if (options.includeInternalOnly()) {
+                // The guarantee has to run both ways. Without this, "nothing was withheld" and
+                // "everything was deliberately included" produce an identical Exported and an
+                // identical dc.xml, and the one that carries personal data is the one nobody
+                // is told about.
+                notes.add("This package was built with includeInternalOnly=true: it CONTAINS "
+                        + "the properties the disclosure table marks as personal data. Once it "
+                        + "has been handed over there is no recall.");
+            }
             logger.info("Exported {}/{} as an E-ARK SIP ({} propert(y/ies) withheld)",
                     repositoryId, objectId, withheld);
             return new Exported(built, withheld, List.copyOf(notes));
@@ -201,7 +215,8 @@ public class EarkSipExporter {
             // Wrapped, never swallowed: a half-built package on disk that nobody was told about
             // is the one outcome worse than no package.
             throw new ExportRefusedException("the SIP for " + repositoryId + "/" + objectId
-                    + " could not be built: " + e.getMessage());
+                    + " could not be built: " + (e.getMessage() == null
+                            ? e.getClass().getName() : e.getMessage()), e);
         }
     }
 
@@ -238,8 +253,8 @@ public class EarkSipExporter {
             }
             for (Map.Entry<String, Object> entry : section.content().entrySet()) {
                 if (entry.getValue() == null
-                        || "withheldInternalOnlyCount".equals(entry.getKey())
-                        || "includesPersonalData".equals(entry.getKey())) {
+                        || AuthenticityReport.IDENTITY_BOOKKEEPING_KEYS.contains(
+                                entry.getKey())) {
                     continue;
                 }
                 values.put(entry.getKey(), String.valueOf(entry.getValue()));
@@ -254,7 +269,8 @@ public class EarkSipExporter {
         }
         for (AuthenticityReport.Section section : report.sections()) {
             if ("identity".equals(section.name())
-                    && section.content().get("withheldInternalOnlyCount") instanceof Number n) {
+                    && section.content().get(AuthenticityReport.WITHHELD_COUNT_KEY)
+                            instanceof Number n) {
                 return n.intValue();
             }
         }
@@ -286,23 +302,98 @@ public class EarkSipExporter {
         return payload;
     }
 
-    /** A file name safe on every filesystem a receiving archive might unpack onto. */
+    /**
+     * Windows refuses these names, with or without an extension, on every drive.
+     *
+     * <p>An archive unpacked onto Windows would fail on the file, not on the package, which is
+     * the kind of failure that gets blamed on the receiver.
+     */
+    private static final java.util.Set<String> RESERVED_DEVICE_NAMES = java.util.Set.of(
+            "CON", "PRN", "AUX", "NUL",
+            "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+            "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9");
+
+    /** Bytes, not chars: this is about NAME_MAX (255 on ext4/APFS), which counts bytes. */
+    private static final int MAX_FILE_NAME_BYTES = 200;
+
+    /**
+     * A file name for a payload inside a package somebody else unpacks.
+     *
+     * <p>The first version stripped everything outside {@code [A-Za-z0-9._-]}, which is safe and
+     * <b>destroys every Japanese file name in a Japanese ECM</b>: 議事録.txt became ___.txt, and
+     * 議事録.txt and 報告書.txt became the same file. Non-ASCII is kept. What is removed is what
+     * actually breaks something:
+     *
+     * <ul>
+     *   <li>path separators and traversal — this ends up as a path inside an archive</li>
+     *   <li>characters no Windows filesystem accepts, and control characters</li>
+     *   <li>reserved device names, trailing dots and spaces (Windows silently drops them)</li>
+     *   <li>length beyond {@value #MAX_FILE_NAME_BYTES} bytes, keeping the extension</li>
+     * </ul>
+     *
+     * <p>Normalised to NFC so that the same name typed two ways is the same file.
+     */
     private static String fileName(Document document, AttachmentNode attachment) {
         String candidate = attachment.getName() != null && !attachment.getName().isBlank()
                 ? attachment.getName() : document.getName();
         if (candidate == null || candidate.isBlank()) {
             return "content.bin";
         }
-        // Separators and traversal removed BEFORE anything else touches it: this string comes
-        // from a source system, and it ends up as a path inside an archive somebody else
-        // unpacks.
-        String cleaned = candidate.replace('\\', '/');
+        String cleaned = java.text.Normalizer.normalize(candidate,
+                java.text.Normalizer.Form.NFC);
+        // Separators FIRST, before anything else can reintroduce one.
+        cleaned = cleaned.replace('\\', '/');
         cleaned = cleaned.substring(cleaned.lastIndexOf('/') + 1);
-        cleaned = cleaned.replaceAll("[^A-Za-z0-9._-]", "_");
+        // Characters Windows rejects, plus control characters. Colon also covers the "C:name"
+        // alternate-data-stream shape once the separators are gone.
+        cleaned = cleaned.replaceAll("[\\u0000-\\u001f\\u007f<>:\"|?*]", "_");
+        // Leading dots would make it hidden, or be "." / ".." outright.
         while (cleaned.startsWith(".")) {
             cleaned = cleaned.substring(1);
         }
-        return cleaned.isBlank() ? "content.bin" : cleaned;
+        // Trailing dots and spaces: Windows drops them on extraction, so two names that differ
+        // only there would collide after the fact rather than here.
+        while (cleaned.endsWith(".") || cleaned.endsWith(" ")) {
+            cleaned = cleaned.substring(0, cleaned.length() - 1);
+        }
+        cleaned = truncateToBytes(cleaned, MAX_FILE_NAME_BYTES);
+        if (cleaned.isBlank()) {
+            return "content.bin";
+        }
+        String stem = cleaned.contains(".")
+                ? cleaned.substring(0, cleaned.indexOf('.')) : cleaned;
+        if (RESERVED_DEVICE_NAMES.contains(stem.toUpperCase(java.util.Locale.ROOT))) {
+            return "_" + cleaned;
+        }
+        return cleaned;
+    }
+
+    /** Truncates on a character boundary so the result is still valid UTF-8. */
+    private static String truncateToBytes(String value, int maxBytes) {
+        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length <= maxBytes) {
+            return value;
+        }
+        String extension = value.contains(".")
+                ? value.substring(value.lastIndexOf('.')) : "";
+        if (extension.getBytes(StandardCharsets.UTF_8).length > 32) {
+            extension = "";
+        }
+        int room = maxBytes - extension.getBytes(StandardCharsets.UTF_8).length;
+        StringBuilder kept = new StringBuilder();
+        int used = 0;
+        for (int i = 0; i < value.length(); ) {
+            int codePoint = value.codePointAt(i);
+            int width = new String(Character.toChars(codePoint))
+                    .getBytes(StandardCharsets.UTF_8).length;
+            if (used + width > room) {
+                break;
+            }
+            kept.appendCodePoint(codePoint);
+            used += width;
+            i += Character.charCount(codePoint);
+        }
+        return kept + extension;
     }
 
     private Path writeDublinCore(Path workDir, String repositoryId, String objectId,
@@ -363,6 +454,19 @@ public class EarkSipExporter {
         StringBuilder out = new StringBuilder(value.length() + 16);
         for (int i = 0; i < value.length(); i++) {
             char c = value.charAt(i);
+            // A well-formed pair is a legal supplementary character and is kept whole; a lone
+            // half is not encodable as UTF-8 and is dropped rather than allowed to fail the
+            // write with "Input length = 1".
+            if (Character.isHighSurrogate(c)) {
+                if (i + 1 < value.length() && Character.isLowSurrogate(value.charAt(i + 1))) {
+                    out.append(c).append(value.charAt(i + 1));
+                    i++;
+                }
+                continue;
+            }
+            if (Character.isLowSurrogate(c)) {
+                continue;
+            }
             switch (c) {
                 case '&' -> out.append("&amp;");
                 case '<' -> out.append("&lt;");
@@ -370,15 +474,32 @@ public class EarkSipExporter {
                 case '"' -> out.append("&quot;");
                 case '\'' -> out.append("&apos;");
                 default -> {
-                    // XML 1.0 forbids most control characters outright; a source system that
-                    // put one in a title must not make the whole package unparseable.
-                    if (c == '\t' || c == '\n' || c == '\r' || c >= 0x20) {
+                    if (isLegalXml10(c)) {
                         out.append(c);
                     }
                 }
             }
         }
         return out.toString();
+    }
+
+    /**
+     * Whether a char may appear in an XML 1.0 document at all.
+     *
+     * <p>Wider than "not a control character", which is where the first version stopped: it let
+     * <b>U+FFFE and U+FFFF</b> through, and both make the written {@code dc.xml} unparseable at
+     * the far end — the exact outcome the escaping exists to prevent, reached by the escaping.
+     * Unpaired surrogates go too; they cannot be encoded as UTF-8 and would otherwise fail the
+     * whole export at the file write, with a message about input length.
+     *
+     * <p>Per XML 1.0 §2.2: tab, LF, CR, U+0020..U+D7FF, U+E000..U+FFFD, U+10000..U+10FFFF.
+     * Surrogate code units are legal only as a pair, which is handled by the caller checking
+     * each unit — a lone one of either half is dropped.
+     */
+    static boolean isLegalXml10(char c) {
+        return c == '\t' || c == '\n' || c == '\r'
+                || (c >= 0x20 && c <= 0xD7FF)
+                || (c >= 0xE000 && c <= 0xFFFD);
     }
 
     private static String sipId(String repositoryId, String objectId) {

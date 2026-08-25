@@ -10,6 +10,19 @@
 **主張する** (第 2 段まで): **保存されている記録 1 件を、本文・記述メタデータ・
 真正性レポートごと SIP にでき、CSIP 2.2.0 のリファレンス検証器を通る**。
 検証は CI のユニットテストで、外部プロセス無しで回る。
+**admin 限定の REST エンドポイント `POST /core/api/v1/admin/eark/export` から呼べる。**
+
+> **初稿の時点では呼べなかった** (2026-08-26 訂正・レビュー指摘)。
+> `EarkSipExporter` は `@Component` を付けて `jp.aegif.nemaki.rest.eark` に置いたが、
+> **そのパッケージを scan する context が本番に存在しなかった** —
+> `applicationContext.xml` の `jp.aegif.nemaki.rest` scan は
+> `NemakiApplicationContextLoader` が `configLocations`
+> (**applicationContext.xml を含まない**) で refresh し直した時点で消える。
+> つまり bean にすらならず、呼び出し元も 0 だった。
+> **`@Component` が付いているぶん「配線済み」に見える**という点で、
+> 以前 anchor 層で見つけた「本番呼び出し元のない型」より悪い。
+> `serviceContext.xml` (refresh 後に生きる) に scan を足し、
+> `EarkSipExportController` を置いた。
 
 **主張しない**:
 
@@ -22,6 +35,16 @@
   クロスウォークは §4。現在の記述メタデータは Dublin Core だけである
 - **`.ots` / TSA トークン / inclusion proof はまだ同梱していない** (§4)
 - **AIP / DIP は作らない** (ロードマップ §3.1 の「軽量 Archive」責務を決めてから)
+- **エクスポートは custody chain に残らない。** この製品でいちばん取り消せない操作が、
+  真正性レポートの custody 節からは見えない (`logger.info` だけ)。
+  記録経路を通していないので、**「エクスポートされていない」と「記録が残っていない」が
+  見分けられない** — custody 節自身の但し書きが言っているとおりの状態である。別増分
+- **`dc.xml` のルート要素 `dc:record` は Dublin Core の語彙に無い。**
+  DCMES 1.1 は 15 要素しか定義しておらず `record` は含まれない。
+  `MDTYPE=DC` と宣言しているので、**DC スキーマで検証する受入側には通らない可能性が高い**。
+  `dc:relation` に `key=value` を詰めているのも独自符号化である。
+  正確には「**DC 名前空間の要素を使った独自 XML**」であって Dublin Core ではない。
+  commons-ip2 の検証器は中身のスキーマ検証をしないので CI では捕まらない
 
 ---
 
@@ -38,26 +61,42 @@
 - **プロジェクトの README は GitHub Packages を案内している** (token が要る)。
   README のほうが古く、Central には 2.9.3〜2.12.0 が署名付きで載っている
 
-### 実測した footprint
+### 実測した footprint (2026-08-26 に `dependency:tree -Dverbose` で測り直した)
 
-推移依存 27 個のうち **17 個は同一〜互換版が既に WAR に入っていた**
-(logback / slf4j / commons-lang3 3.20.0 / commons-io / commons-beanutils 1.11.0 /
-commons-collections 3.2.2 / jdom2 2.0.6.1 / jackson 2.x / joda-time 2.14.0 /
-picocli / jakarta.xml.bind / jaxb-runtime / angus-activation / commons-text 1.15.0)。
+> **初稿の数字は誤っていた** (レビュー指摘)。「新規 6 個」「重複バージョン無し」と
+> 書き、同じ文書の 3 行差で `jdom2` と `picocli` を**「既に在る」側にも「新規」側にも**
+> 載せていた。以下が実測である。
 
-**新規は 6 個**: `gov.loc:bagit` / `commons-configuration2` / `jdom2` / `picocli` /
-`jackson-datatype-threetenbp` / `threetenbp`。
+**真に新規なのは 4 個**: `gov.loc:bagit:5.2.0` /
+`org.apache.commons:commons-configuration2:2.15.0` /
+`com.github.joschi.jackson:jackson-datatype-threetenbp:2.18.2` /
+`org.threeten:threetenbp:1.7.0`。
 
-**除外が 2 個** (`<exclusions>`):
+**`jdom2:2.0.6.1` と `picocli` は元から在った** — jdom2 は
+`tika-parser-news-module → rome`、picocli は
+`tika-parsers-standard-package → tika-parser-pdf-module → pdfbox-tools` 経由。
+
+**`picocli` は 4.7.6 → 4.7.7 に上がった。** commons-ip2 のほうが依存の深さで勝つ。
+patch bump なので実害は小さいが、**既存依存の版が黙って動いた**ことは
+このプロジェクトが何度も焼かれてきた形なので明記する。
+それ以外の既存依存は 1 つも動いていない (commons-io / slf4j / jakarta.xml.bind /
+jaxb-runtime はいずれも既存版が勝って omitted)。
+
+commons-ip2 のサブツリーは 25 ノード。**「27 個」は数え方を示せない数字だったので撤回する。**
+
+**除外が 2 個** (`<exclusions>`) — 両方とも実効あり (ツリーで確認):
 
 | 除外 | 理由 |
 |---|---|
-| `javax.activation:activation:1.1.1` | **Jakarta EE 10 の WAR に javax が混ざる**。`jakarta.activation-api` + `angus-activation` が既に同じ役目を果たしている |
-| `commons-logging` | 既に `jcl-over-slf4j` が入っており、**1 クラスパスに JCL が 2 つ**は典型的なログ分裂 |
+| `javax.activation:activation:1.1.1` | **Jakarta EE 10 の WAR に javax が混ざる**。`jakarta.activation-api` + `angus-activation` が既に同じ役目を果たしている。ツリーに不在を確認 |
+| `commons-logging` | 既に `jcl-over-slf4j` が入っており、**1 クラスパスに JCL が 2 つ**は典型的なログ分裂。残るのは `spring-core` の `provided` のみで WAR には入らない |
 
-解決後に重複バージョンが出ていないことを確認済み (`jackson-databind` の 2.x/3.x
-併存はこの変更の前からある)。残る `commons-logging` は **spring-core の `provided`** で、
-WAR には入らない。
+**WAR は約 +2.3MB** (commons-ip2 912K + commons-configuration2 689K +
+threetenbp 515K + bagit 140K)。CLI fat jar 10.9MB が要らない、という節約側だけを
+書いていたので、実コストも書く。
+
+`gov.loc:bagit` は commons-ip2 の**旧 v1 パッケージの BagIt 経路でしか使われず**、
+E-ARK SIP 経路は触らない。除外できる可能性が高いが、**未検証なので入れたままにする**。
 
 ---
 
@@ -151,6 +190,39 @@ sidecar も 10.9 MB の CLI fat jar も要らない (CLI 経由を検討して�
 > **それを呼ぶ側が無防備でも緑のまま**だった (ヘルパを直して呼び出し側を裸にする、
 > このプロジェクトが繰り返し見つけている形)。実際の export を通して
 > **書かれた XML を読む**テストに替えてから測り直した。
+
+### 第 2 段のレビューで見つかった「測ったと書いて測っていなかった」3 件 (2026-08-26)
+
+初稿はこの 3 つを主張していたが、どれもテストが支えていなかった。
+
+| 主張 | 生き残った本番編集 | 追加した測定 |
+|---|---|---|
+| 「既定は伏せる。呼び出し元が明示的に opt-in する」 | `options.includeInternalOnly()` を `true` 固定にする | `theDisclosureChoiceIsPassedThrough` — assembler に渡る boolean を捕まえる。stub が `anyBoolean()` だったので何を渡しても同じレポートが返っていた |
+| 「identity 属性から Dublin Core を作る」 | `disclosableIdentity` を空 Map にする | `identityAttributesReachTheDublinCore` — **dc.xml への肯定的 assert**。それまでの dc.xml の assert は全部「X を含まない」という否定形だったので、identity が消えれば当然通っていた |
+| 「開示の判断はレポートから読む。aspect を直接読み直さない」 | aspect 直読みを足す | `theExporterDoesNotGoBehindTheReport` — **レポートが伏せた aspect を持つ Document** を渡す。旧テストの Document は aspects が空だったので、直読み実装でも同じ空の結果になっていた |
+
+**負のコントロール 6 本を実測** (上の 3 本 + 非文字フィルタを弱める / 非 ASCII を潰す /
+CSIP 版を落とす)。**うち「非 ASCII を潰す」は 1 度目の細工が当たっておらず、
+`sabotage: 2` という誤解を招く数字を見て「発火しなかった」と読んだ。**
+細工が入ったことを grep で確認してから測り直した。
+
+### 実装側で直したもの
+
+- **U+FFFE / U+FFFF が通っていた** — 制御文字ではないので `c >= 0x20` を素通りし、
+  **書かれた `dc.xml` が受け側で parse 不能になる**。エスケープが、
+  エスケープの目的そのものを壊していた。XML 1.0 §2.2 の許容範囲で判定するようにした
+- **対にならないサロゲート** — UTF-8 に符号化できず `Files.writeString` が投げ、
+  **題名の 1 文字で export 全体が拒否**されていた。落とす
+- **非 ASCII のファイル名が全滅していた** — `[A-Za-z0-9._-]` 以外を潰すので
+  **日本語 ECM で `議事録.txt` が `___.txt` になり、`報告書.txt` と同じ名前に潰れる**。
+  非 ASCII は保つ。代わりに実際に壊れるものだけを扱う (Windows 予約デバイス名・
+  末尾のドットと空白・長さ上限 200 byte・NFC 正規化)
+- **例外の cause を捨てていた** — `"could not be built: null"` になり得た
+- **記帳キーが 2 か所でリテラル管理**だった — assembler が改名すると、
+  記帳キーが受入側に公開され、かつ「伏せた件数」が 0 になって
+  **伏せているのに伏せたと言わなくなる**。共有定数にした
+- **opt-in 側に印が無かった** — 「伏せるものが無かった package」と
+  「意図的に全部載せた package」が区別できなかった。note を足した
 
 ---
 

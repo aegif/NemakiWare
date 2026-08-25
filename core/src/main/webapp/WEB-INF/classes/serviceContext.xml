@@ -1238,6 +1238,13 @@
         <property name="propertyManager" ref="propertyManager" />
         <!-- Multi-replica safety: defer to LeaderElection. -->
         <property name="leaderElection" ref="leaderElection" />
+        <!-- P3-3: explicit, not @Autowired. This bean is XML-wired, so annotation injection
+             here would depend on a component-scan element elsewhere in this file continuing to
+             exist. If that ever stopped registering the annotation post-processor, the recorder
+             would be null and moveToCold would REFUSE every MOVE-mode deletion for ever —
+             silently, because refusing is the correct behaviour when it cannot record. A
+             missing bean must fail the context at startup instead. -->
+        <property name="dispositionRecorder" ref="dispositionRecorder" />
     </bean>
 
     <!-- Cloud Directory Sync REST API -->
@@ -1346,5 +1353,11 @@
          only post-refresh), and AnchorWiringConfig lives in the ROOT context, which cannot
          see beans defined in the MVC child. Controllers are in the child and see up. -->
     <context:component-scan base-package="jp.aegif.nemaki.evidence" />
+    <!-- P3-1. Scanned HERE, not in applicationContext.xml: that file's scan of
+         jp.aegif.nemaki.rest does not survive, because NemakiApplicationContextLoader
+         re-refreshes the context from a configLocations list that does not include it. A
+         @Component in an unscanned package is worse than no annotation — it reads as wired
+         while never becoming a bean, which is exactly how EarkSipExporter shipped. -->
+    <context:component-scan base-package="jp.aegif.nemaki.rest.eark" />
 
 </beans>

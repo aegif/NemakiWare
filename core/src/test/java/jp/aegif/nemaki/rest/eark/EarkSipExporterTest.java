@@ -208,6 +208,235 @@ class EarkSipExporterTest {
                 "the refusal does not say what was missing: " + refused.getMessage());
     }
 
+    // ---- the things the design document claims, now measured ----
+
+    @Test
+    @DisplayName("the caller's disclosure choice is the one the report is built with")
+    void theDisclosureChoiceIsPassedThrough(@TempDir Path tmp) throws Exception {
+        // The design document says "the default withholds; the caller has to opt in". Nothing
+        // held it: the assembler was stubbed with anyBoolean(), so hard-coding `true` at the
+        // call site — an exporter that ALWAYS asks for personal data — left every test green.
+        ContentService contentService = mock(ContentService.class);
+        Document document = new Document();
+        document.setId(OBJECT);
+        document.setName("minutes.txt");
+        document.setType("cmis:document");
+        document.setAttachmentNodeId("att-1");
+        when(contentService.getContent(REPO, OBJECT)).thenReturn(document);
+        AttachmentNode attachment = mock(AttachmentNode.class);
+        when(attachment.getName()).thenReturn("minutes.txt");
+        when(attachment.getInputStream()).thenReturn(
+                new ByteArrayInputStream("x".getBytes(StandardCharsets.UTF_8)));
+        when(contentService.getAttachment(REPO, "att-1")).thenReturn(attachment);
+        AuthenticityReportAssembler assembler = mock(AuthenticityReportAssembler.class);
+        when(assembler.assemble(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(reportWith(Map.of("nemaki:sourceSystem", "acme"), 0));
+        EarkSipExporter exporter = new EarkSipExporter();
+        exporter.setContentService(contentService);
+        exporter.setReportAssembler(assembler);
+
+        exporter.export(REPO, OBJECT, EarkSipExporter.Options.withholdingPersonalData(), tmp);
+
+        org.mockito.ArgumentCaptor<Boolean> asked =
+                org.mockito.ArgumentCaptor.forClass(Boolean.class);
+        org.mockito.Mockito.verify(assembler).assemble(org.mockito.ArgumentMatchers.eq(REPO),
+                org.mockito.ArgumentMatchers.eq(OBJECT), anyString(), asked.capture());
+        assertFalse(asked.getValue(),
+                "the default export asked the report for INTERNAL_ONLY properties, so personal "
+                        + "data would be in a package that cannot be recalled");
+    }
+
+    @Test
+    @DisplayName("opting in reaches the report AND the package says it carries personal data")
+    void optingInIsPassedThroughAndDeclared(@TempDir Path tmp) throws Exception {
+        // The other half of the guarantee. Without the note, "nothing was withheld" and
+        // "everything was deliberately included" produce an identical result, and the one
+        // carrying personal data is the one nobody is told about.
+        ContentService contentService = mock(ContentService.class);
+        Document document = new Document();
+        document.setId(OBJECT);
+        document.setName("minutes.txt");
+        document.setType("cmis:document");
+        document.setAttachmentNodeId("att-1");
+        when(contentService.getContent(REPO, OBJECT)).thenReturn(document);
+        AttachmentNode attachment = mock(AttachmentNode.class);
+        when(attachment.getName()).thenReturn("minutes.txt");
+        when(attachment.getInputStream()).thenReturn(
+                new ByteArrayInputStream("x".getBytes(StandardCharsets.UTF_8)));
+        when(contentService.getAttachment(REPO, "att-1")).thenReturn(attachment);
+        AuthenticityReportAssembler assembler = mock(AuthenticityReportAssembler.class);
+        when(assembler.assemble(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(reportWith(Map.of("nemaki:sourceSystem", "acme"), 0));
+        EarkSipExporter exporter = new EarkSipExporter();
+        exporter.setContentService(contentService);
+        exporter.setReportAssembler(assembler);
+
+        EarkSipExporter.Exported exported = exporter.export(REPO, OBJECT,
+                new EarkSipExporter.Options(true, "Acme Ltd"), tmp);
+
+        org.mockito.ArgumentCaptor<Boolean> asked =
+                org.mockito.ArgumentCaptor.forClass(Boolean.class);
+        org.mockito.Mockito.verify(assembler).assemble(anyString(), anyString(), anyString(),
+                asked.capture());
+        assertTrue(asked.getValue(), "opting in did not reach the report");
+        assertTrue(exported.notes().stream().anyMatch(n -> n.contains("personal data")),
+                "a package built with includeInternalOnly=true says nothing about it: "
+                        + exported.notes());
+    }
+
+    @Test
+    @DisplayName("the identity attributes actually reach the descriptive metadata")
+    void identityAttributesReachTheDublinCore(@TempDir Path tmp) throws Exception {
+        // The commit's central deliverable, and every earlier assertion about dc.xml was
+        // NEGATIVE ("does not contain X"). Emptying disclosableIdentity, or deleting the
+        // dc:relation loop, left all of them green while the package carried no identity at all.
+        EarkSipExporter.Exported exported = exporterOver(
+                reportWith(Map.of("nemaki:sourceSystem", "acme",
+                        "nemaki:sourceObjectId", "SRC-42"), 0),
+                "the minutes".getBytes(StandardCharsets.UTF_8))
+                .export(REPO, OBJECT, EarkSipExporter.Options.withholdingPersonalData(), tmp);
+
+        String dc = entriesOf(exported.sip()).entrySet().stream()
+                .filter(e -> e.getKey().endsWith("dc.xml"))
+                .map(Map.Entry::getValue).findFirst().orElse("");
+
+        assertTrue(dc.contains("acme"),
+                "the source system did not reach the descriptive metadata, so the package "
+                        + "carries a payload and no statement of where it came from:\n" + dc);
+        assertTrue(dc.contains("SRC-42"),
+                "the source object id did not reach the descriptive metadata:\n" + dc);
+        assertTrue(dc.contains("nemaki:sourceSystem="),
+                "the attribute is not keyed by its property id, so a receiver cannot tell "
+                        + "which attribute it is reading:\n" + dc);
+    }
+
+    @Test
+    @DisplayName("the exporter reads the report's decision, not the object's aspects")
+    void theExporterDoesNotGoBehindTheReport(@TempDir Path tmp) throws Exception {
+        // The design document says the disclosure decision is made in ONE place. The earlier
+        // test claimed to pin this and did not: its Document had no aspects at all, so an
+        // implementation that read them directly would produce the same empty result.
+        // Here the object carries an aspect the report does NOT report.
+        ContentService contentService = mock(ContentService.class);
+        Document document = new Document();
+        document.setId(OBJECT);
+        document.setName("minutes.txt");
+        document.setType("cmis:document");
+        document.setAttachmentNodeId("att-1");
+        jp.aegif.nemaki.model.Aspect aspect = new jp.aegif.nemaki.model.Aspect();
+        aspect.setName("nemaki:chatContextMetadata");
+        jp.aegif.nemaki.model.Property participants = new jp.aegif.nemaki.model.Property();
+        participants.setKey("nemaki:chatParticipants");
+        participants.setValue("alice@example.com,bob@example.com");
+        aspect.setProperties(List.of(participants));
+        document.setAspects(new java.util.ArrayList<>(List.of(aspect)));
+        when(contentService.getContent(REPO, OBJECT)).thenReturn(document);
+        AttachmentNode attachment = mock(AttachmentNode.class);
+        when(attachment.getName()).thenReturn("minutes.txt");
+        when(attachment.getInputStream()).thenReturn(
+                new ByteArrayInputStream("x".getBytes(StandardCharsets.UTF_8)));
+        when(contentService.getAttachment(REPO, "att-1")).thenReturn(attachment);
+        AuthenticityReportAssembler assembler = mock(AuthenticityReportAssembler.class);
+        // The report withheld it — one property, not reported.
+        when(assembler.assemble(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(reportWith(Map.of("nemaki:sourceSystem", "acme"), 1));
+        EarkSipExporter exporter = new EarkSipExporter();
+        exporter.setContentService(contentService);
+        exporter.setReportAssembler(assembler);
+
+        EarkSipExporter.Exported exported = exporter.export(REPO, OBJECT,
+                EarkSipExporter.Options.withholdingPersonalData(), tmp);
+
+        String dc = entriesOf(exported.sip()).entrySet().stream()
+                .filter(e -> e.getKey().endsWith("dc.xml"))
+                .map(Map.Entry::getValue).findFirst().orElse("");
+        assertFalse(dc.contains("alice@example.com"),
+                "a property the report withheld reached the package anyway, so the export "
+                        + "applies a second and laxer disclosure rule of its own:\n" + dc);
+        assertTrue(dc.contains("acme"), "the reported attribute did not travel:\n" + dc);
+    }
+
+    @Test
+    @DisplayName("the package is validated against the version it was generated for")
+    void theCsipVersionIsPinned(@TempDir Path tmp) throws Exception {
+        // Using EarkSipExporter.CSIP_VERSION on BOTH sides is self-referential: setting it to
+        // 2.1.0 keeps the exporter's tests green, because the validator accepts 2.0.4 and
+        // 2.1.0 too. The literal is written out here so a change to the constant lands.
+        assertEquals("2.2.0", EarkSipExporter.CSIP_VERSION,
+                "the exporter no longer targets CSIP 2.2.0. That may be intended, but the "
+                        + "roadmap and the design document both name 2.2.0, and a silent move "
+                        + "to an older profile is not something a passing validator would show");
+
+        EarkSipExporter.Exported exported = exporterOver(
+                reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
+                "x".getBytes(StandardCharsets.UTF_8))
+                .export(REPO, OBJECT, EarkSipExporter.Options.withholdingPersonalData(), tmp);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        assertTrue(new EARKSIPValidator(new ValidationReportOutputJson(exported.sip(), out),
+                        "2.2.0").validate("2.2.0"),
+                "the package does not pass the 2.2.0 profile:\n"
+                        + out.toString(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    @DisplayName("a Japanese file name survives; a hostile one is made safe")
+    void fileNamesAreMadeSafeWithoutDestroyingThem(@TempDir Path tmp) throws Exception {
+        // The first sanitiser kept only [A-Za-z0-9._-], which is safe and destroys every
+        // Japanese file name in a Japanese ECM: 議事録.txt and 報告書.txt both became ___.txt.
+        EarkSipExporter.Exported exported = exporterWithAttachmentNamed("議事録.txt", tmp);
+        assertTrue(entriesOf(exported.sip()).keySet().stream()
+                        .anyMatch(n -> n.endsWith("議事録.txt")),
+                "a Japanese file name was destroyed: "
+                        + entriesOf(exported.sip()).keySet());
+    }
+
+    @Test
+    @DisplayName("a traversal attempt in a file name never becomes a path")
+    void aTraversalFileNameIsFlattened(@TempDir Path tmp) throws Exception {
+        EarkSipExporter.Exported exported =
+                exporterWithAttachmentNamed("../../../etc/passwd", tmp);
+        assertTrue(entriesOf(exported.sip()).keySet().stream().noneMatch(n -> n.contains("..")),
+                "a payload path escaped its representation: "
+                        + entriesOf(exported.sip()).keySet());
+        assertTrue(entriesOf(exported.sip()).keySet().stream().anyMatch(n -> n.endsWith("passwd")),
+                entriesOf(exported.sip()).keySet().toString());
+    }
+
+    @Test
+    @DisplayName("a reserved Windows device name does not survive as itself")
+    void aReservedDeviceNameIsRenamed(@TempDir Path tmp) throws Exception {
+        // An archive unpacked onto Windows fails on the FILE, not the package, and the receiver
+        // gets blamed for it.
+        EarkSipExporter.Exported exported = exporterWithAttachmentNamed("CON.txt", tmp);
+        assertTrue(entriesOf(exported.sip()).keySet().stream()
+                        .noneMatch(n -> n.endsWith("/CON.txt")),
+                "a reserved device name was packaged verbatim: "
+                        + entriesOf(exported.sip()).keySet());
+    }
+
+    private static EarkSipExporter.Exported exporterWithAttachmentNamed(String name, Path tmp) {
+        ContentService contentService = mock(ContentService.class);
+        Document document = new Document();
+        document.setId(OBJECT);
+        document.setName(name);
+        document.setType("cmis:document");
+        document.setAttachmentNodeId("att-1");
+        when(contentService.getContent(REPO, OBJECT)).thenReturn(document);
+        AttachmentNode attachment = mock(AttachmentNode.class);
+        when(attachment.getName()).thenReturn(name);
+        when(attachment.getInputStream()).thenReturn(
+                new ByteArrayInputStream("x".getBytes(StandardCharsets.UTF_8)));
+        when(contentService.getAttachment(REPO, "att-1")).thenReturn(attachment);
+        AuthenticityReportAssembler assembler = mock(AuthenticityReportAssembler.class);
+        when(assembler.assemble(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(reportWith(Map.of("nemaki:sourceSystem", "acme"), 0));
+        EarkSipExporter exporter = new EarkSipExporter();
+        exporter.setContentService(contentService);
+        exporter.setReportAssembler(assembler);
+        return exporter.export(REPO, OBJECT,
+                EarkSipExporter.Options.withholdingPersonalData(), tmp);
+    }
+
     @Test
     @DisplayName("a hostile document name cannot break out of the REAL package's XML")
     void aHostileNameCannotBreakTheWrittenXml(@TempDir Path tmp) throws Exception {
@@ -256,6 +485,59 @@ class EarkSipExporterTest {
         factory.setNamespaceAware(true);
         factory.newDocumentBuilder().parse(new java.io.ByteArrayInputStream(
                 dc.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    @Test
+    @DisplayName("a non-character in a title does not make the REAL package unparseable")
+    void aNonCharacterDoesNotBreakTheWrittenXml(@TempDir Path tmp) throws Exception {
+        // The helper test below checks control characters and was written where the injection
+        // test had already been moved to the call site — so the same gap was left open twice.
+        // U+FFFE and U+FFFF are not control characters and passed the `c >= 0x20` filter, and
+        // both make dc.xml unparseable at the far end: the escaping producing the exact outcome
+        // it exists to prevent. Driven through the real export, and PARSED.
+        ContentService contentService = mock(ContentService.class);
+        Document document = new Document();
+        document.setId(OBJECT);
+        document.setName("minutes\uFFFF\uFFFE.txt");
+        document.setType("cmis:document");
+        document.setAttachmentNodeId("att-1");
+        when(contentService.getContent(REPO, OBJECT)).thenReturn(document);
+        AttachmentNode attachment = mock(AttachmentNode.class);
+        when(attachment.getName()).thenReturn("minutes.txt");
+        when(attachment.getInputStream()).thenReturn(
+                new ByteArrayInputStream("x".getBytes(StandardCharsets.UTF_8)));
+        when(contentService.getAttachment(REPO, "att-1")).thenReturn(attachment);
+        AuthenticityReportAssembler assembler = mock(AuthenticityReportAssembler.class);
+        when(assembler.assemble(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(reportWith(Map.of("nemaki:sourceSystem",
+                        "acme\uFFFFsuffix"), 0));
+        EarkSipExporter exporter = new EarkSipExporter();
+        exporter.setContentService(contentService);
+        exporter.setReportAssembler(assembler);
+
+        EarkSipExporter.Exported exported = exporter.export(REPO, OBJECT,
+                EarkSipExporter.Options.withholdingPersonalData(), tmp);
+
+        String dc = entriesOf(exported.sip()).entrySet().stream()
+                .filter(e -> e.getKey().endsWith("dc.xml"))
+                .map(Map.Entry::getValue).findFirst().orElse("");
+        javax.xml.parsers.DocumentBuilderFactory factory =
+                javax.xml.parsers.DocumentBuilderFactory.newInstance();
+        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        factory.setNamespaceAware(true);
+        factory.newDocumentBuilder().parse(new java.io.ByteArrayInputStream(
+                dc.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    @Test
+    @DisplayName("an unpaired surrogate is dropped, not left to fail the whole export")
+    void anUnpairedSurrogateIsDropped() {
+        // A lone half cannot be encoded as UTF-8. Left in, it fails the file write with
+        // "Input length = 1" and the whole export is refused over one bad character in a title.
+        assertEquals("ab", EarkSipExporter.escapeXml("a\uD800b"));
+        assertEquals("ab", EarkSipExporter.escapeXml("a\uDC00b"));
+        // A well-formed pair is a legal supplementary character and survives whole.
+        assertEquals("a\uD83D\uDE00b", EarkSipExporter.escapeXml("a\uD83D\uDE00b"));
     }
 
     @Test

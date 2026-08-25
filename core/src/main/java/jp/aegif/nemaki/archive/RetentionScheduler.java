@@ -821,7 +821,15 @@ public class RetentionScheduler {
 
     private jp.aegif.nemaki.evidence.DispositionRecorder dispositionRecorder;
 
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    /**
+     * Wired explicitly in {@code serviceContext.xml}, deliberately NOT by annotation.
+     *
+     * <p>Every other dependency of this bean is an explicit {@code <property>}, and this one has
+     * to be too: a null recorder makes {@code moveToCold} refuse every MOVE-mode deletion, and
+     * it refuses QUIETLY because refusing is the right answer when a disposition cannot be
+     * recorded. An annotation that stopped firing would look exactly like a healthy deployment
+     * that simply never disposes of anything.
+     */
     public void setDispositionRecorder(
             jp.aegif.nemaki.evidence.DispositionRecorder dispositionRecorder) {
         this.dispositionRecorder = dispositionRecorder;
