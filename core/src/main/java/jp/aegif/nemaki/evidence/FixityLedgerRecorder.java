@@ -19,6 +19,8 @@ package jp.aegif.nemaki.evidence;
 import jp.aegif.nemaki.fixity.FixityScanReport;
 import jp.aegif.nemaki.rest.purview.journal.LineageCanonicalHash;
 
+import java.util.List;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -154,7 +156,11 @@ public class FixityLedgerRecorder {
      */
     static String passDigest(String repositoryId, String scope, FixityScanReport report) {
         StringBuilder findings = new StringBuilder();
-        for (FixityScanReport.Finding finding : report.findings()) {
+        // The record does not stop a null list reaching it, and a digest that threw here would
+        // take down the pass it exists to record.
+        List<FixityScanReport.Finding> found =
+                report.findings() == null ? List.of() : report.findings();
+        for (FixityScanReport.Finding finding : found) {
             // Length-prefixed for the same reason the disposition rule is: without it, two
             // different finding lists can flatten to one string.
             String objectId = String.valueOf(finding.objectId());
@@ -173,7 +179,7 @@ public class FixityLedgerRecorder {
                 // The finding COUNT as well as the flattened list: the list is capped at
                 // MAX_FINDINGS, so a pass with 600 mismatches and one with 500 would otherwise
                 // commit to the same value once truncated.
-                String.valueOf(report.findings().size()),
+                String.valueOf(found.size()),
                 findings.toString());
     }
 }

@@ -78,10 +78,48 @@ public class RetentionSchedulerColdMoveTest {
 
         assertFalse(result, "an unrecordable disposition was reported as a completed cold move");
         verify(contentService, never()).deleteArchiveContent(anyString(), anyString());
-        // The cold copy IS written by this point and is immutable, so the archive must not be
-        // left saying MOVE with its local content still present. COPY is a state this product
-        // actually supports and it is what the deployment now has.
-        verify(contentService).updateArchiveColdMoveMode("bedroom", "arch-refused", "COPY");
+        // And the archive goes BACK IN THE POOL.
+        //
+        // The first version relabelled it COPY and returned, which quietly took it out of the
+        // pool for ever: updateArchiveState stamps coldArchivedAt, and the candidate filter
+        // skips anything that has one. Every statement this product makes about a refusal —
+        // the design document, the javadoc, and the sentence an operator reads in the log
+        // ("the next run will try again") — was false, and a test asserted the message that
+        // said so. resetColdMoveMetadata is what actually makes it true; it is the same undo
+        // the delete-failure path beside it already performs.
+        verify(contentService).resetColdMoveMetadata("bedroom", "arch-refused");
+    }
+
+    @Test
+    public void testMoveMode_ruleRecordsTheThresholdTheJobActuallyApplied() throws Exception {
+        // The entry has to commit to the rule the run ACTED UNDER. executeColdMoveInternal
+        // falls back to 90 when the property will not parse, so recording the raw string would
+        // say the run acted under "abc" when it acted under 90 — a record of a rule that was
+        // never applied, in the one field the whole digest exists to carry.
+        Archive archive = createTestArchive("arch-rule", "doc-rule");
+        InputStream content = new ByteArrayInputStream("test".getBytes(StandardCharsets.UTF_8));
+        when(contentService.getArchiveContentStream("bedroom", "arch-rule")).thenReturn(content);
+        when(propertyManager.readBoolean(PropertyKey.RETENTION_COLD_KEEP_LOCAL_COPY))
+                .thenReturn(false);
+        when(propertyManager.readValue(PropertyKey.LONGTERM_STORAGE_TYPE)).thenReturn("s3");
+        when(propertyManager.readValue(PropertyKey.RETENTION_ARCHIVE_COLD_AFTER_DAYS))
+                .thenReturn("not-a-number");
+        when(contentService.deleteArchiveContent("bedroom", "arch-rule")).thenReturn(true);
+
+        Method moveToCold = getMoveToColdMethod();
+        moveToCold.invoke(scheduler, "bedroom", archive, adapter);
+
+        @SuppressWarnings("unchecked")
+        org.mockito.ArgumentCaptor<java.util.Map<String, String>> rule =
+                org.mockito.ArgumentCaptor.forClass(java.util.Map.class);
+        verify(dispositionRecorder).authoriseDisposition(anyString(), any(), anyString(),
+                rule.capture(), anyString());
+
+        assertEquals("90", rule.getValue().get("retention.archive.cold.after.days"),
+                "the entry records the threshold as written rather than as applied: "
+                        + rule.getValue());
+        assertEquals("false", rule.getValue().get("retention.cold.keep.local.copy"),
+                rule.getValue().toString());
     }
 
     @Test

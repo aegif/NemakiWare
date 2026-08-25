@@ -182,6 +182,14 @@ public class EarkSipExporter {
                     new IPFile(writeReport(workDir, report)),
                     new MetadataType(MetadataType.MetadataTypeEnum.OTHER)));
 
+            // PREMIS, as PRESERVATION metadata rather than "other": a receiving archive looks
+            // for provenance there, and a standard vocabulary filed under a non-standard place
+            // is only marginally better than not writing it.
+            String packagedAt = java.time.Instant.now().toString();
+            sip.addPreservationMetadata(new IPMetadata(
+                    new IPFile(writePremis(workDir, repositoryId, objectId, report, packagedAt)),
+                    new MetadataType(MetadataType.MetadataTypeEnum.PREMIS)));
+
             IPRepresentation representation = new IPRepresentation("rep1");
             representation.addFile(new IPFile(payload));
             sip.addRepresentation(representation);
@@ -419,6 +427,36 @@ public class EarkSipExporter {
         Path metadataDir = Files.createDirectories(workDir.resolve("metadata"));
         Path file = metadataDir.resolve("dc.xml");
         Files.writeString(file, xml.toString(), StandardCharsets.UTF_8);
+        return file;
+    }
+
+    /**
+     * The PREMIS document for this object.
+     *
+     * <p>The content digest comes from the report's content section rather than being
+     * recomputed: the point is to state what this repository RECORDED, and a fresh computation
+     * would silently paper over the case where the two disagree — which is exactly the case a
+     * receiving archive most needs to see.
+     */
+    private Path writePremis(Path workDir, String repositoryId, String objectId,
+            AuthenticityReport report, String packagedAt) throws IOException {
+        String digest = null;
+        String algorithm = null;
+        if (report != null) {
+            for (AuthenticityReport.Section section : report.sections()) {
+                if ("content".equals(section.name())) {
+                    Object recorded = section.content().get("recordedDigest");
+                    digest = recorded == null ? null : String.valueOf(recorded);
+                    Object algo = section.content().get("algorithm");
+                    algorithm = algo == null ? null : String.valueOf(algo);
+                }
+            }
+        }
+        String xml = PremisWriter.toXml(repositoryId + "/" + objectId, digest, algorithm,
+                PremisWriter.eventsFor(report, packagedAt), "NemakiWare");
+        Path metadataDir = Files.createDirectories(workDir.resolve("metadata"));
+        Path file = metadataDir.resolve("premis.xml");
+        Files.writeString(file, xml, StandardCharsets.UTF_8);
         return file;
     }
 

@@ -62,6 +62,15 @@ import jp.aegif.nemaki.util.spring.SpringContext;
 public class RetentionScheduler {
 
     private static final Log log = LogFactory.getLog(RetentionScheduler.class);
+
+    /**
+     * Used when {@code retention.archive.cold.after.days} will not parse.
+     *
+     * <p>A constant because the disposition entry has to commit to the threshold the run
+     * ACTUALLY applied. Two literal 90s would drift, and the entry would then record a rule the
+     * job did not act under.
+     */
+    static final int COLD_AFTER_DAYS_FALLBACK = 90;
     private static final long CONFIG_CHECK_INTERVAL_SECONDS = 60;
 
     private ContentService contentService;
@@ -373,13 +382,14 @@ public class RetentionScheduler {
         log.info("Starting scheduled cold-move job");
 
         String coldAfterDaysStr = propertyManager.readValue(PropertyKey.RETENTION_ARCHIVE_COLD_AFTER_DAYS);
-        int coldAfterDays = 90;
+        int coldAfterDays = COLD_AFTER_DAYS_FALLBACK;
         try {
             if (coldAfterDaysStr != null) {
                 coldAfterDays = Integer.parseInt(coldAfterDaysStr.trim());
             }
         } catch (NumberFormatException e) {
-            log.warn("Invalid retention.archive.cold.after.days value, using default 90");
+            log.warn("Invalid retention.archive.cold.after.days value, using default "
+                    + COLD_AFTER_DAYS_FALLBACK);
         }
 
         GregorianCalendar cutoffDate = new GregorianCalendar();
@@ -406,7 +416,7 @@ public class RetentionScheduler {
                         result.incrementProcessed();
 
                         try {
-                            boolean moved = moveToCold(repositoryId, archive, adapter);
+                            boolean moved = moveToCold(repositoryId, archive, adapter, result);
                             if (moved) {
                                 result.incrementSucceeded();
                             } else {
@@ -444,6 +454,7 @@ public class RetentionScheduler {
             migrationLog.setProcessed(result.getProcessed());
             migrationLog.setSucceeded(result.getSucceeded());
             migrationLog.setFailed(result.getFailed());
+            migrationLog.setRefused(result.getRefused());
             migrationLog.setStatus(migrationLog.computeStatus());
 
             if (!result.getSkippedDocumentIds().isEmpty()) {
@@ -541,7 +552,18 @@ public class RetentionScheduler {
         }
     }
 
-    private boolean moveToCold(String repositoryId, Archive archive, LongTermStorageAdapter adapter) {
+    private boolean moveToCold(String repositoryId, Archive archive,
+            LongTermStorageAdapter adapter) {
+        return moveToCold(repositoryId, archive, adapter, null);
+    }
+
+    /**
+     * @param result may be null. When present, a disposition the ledger would not record is
+     *        counted separately from an ordinary skip, so the job's status can say that nothing
+     *        was disposed of rather than reporting SUCCESS over a skip count
+     */
+    private boolean moveToCold(String repositoryId, Archive archive,
+            LongTermStorageAdapter adapter, RetentionJobResult result) {
         String archiveId = archive.getId();
         String originalId = archive.getOriginalId();
         // §3: the lineage operation id is issued when the business operation starts (the state
@@ -603,17 +625,38 @@ public class RetentionScheduler {
                     // would leave, on a crash in between, content deleted that nothing records
                     // disposing of, with no object left for anyone to notice.
                     jp.aegif.nemaki.evidence.DispositionRecorder.Authorisation authorisation =
-                            authoriseColdDisposition(repositoryId, archiveId, originalId);
+                            authoriseColdDisposition(repositoryId, archiveId, originalId,
+                                    coldAfterDaysAsRead(), keepLocalCopy);
                     if (!authorisation.mayProceed()) {
                         log.warn("MOVE mode: not deleting local archive content for " + archiveId
-                                + " — " + authorisation.refusedReason());
-                        // The cold copy is already written and immutable. Leaving the local
-                        // copy is the COPY-mode state, which is a real state this product
-                        // supports, so the archive is marked accordingly rather than left
-                        // saying MOVE with content still present.
-                        contentService.updateArchiveState(repositoryId, archiveId,
-                                Archive.STATE_ARCHIVED_LOCAL, contentRef, now);
-                        contentService.updateArchiveColdMoveMode(repositoryId, archiveId, "COPY");
+                                + " — " + authorisation.refusedReason()
+                                + " Undoing the cold write so the next run retries.");
+                        // Undone exactly as the delete-failure path below undoes it, because it
+                        // is the same situation: the cold copy is written and the local delete
+                        // did not happen.
+                        //
+                        // The first version relabelled the archive as COPY and returned. That
+                        // was WRONG in a way the design document, the javadoc and the message
+                        // an operator reads all denied: `updateArchiveState` stamps
+                        // coldArchivedAt, and the candidate filter skips anything with one, so
+                        // "the next run will try again" was false — the archive left the pool
+                        // for ever, with no API to put it back.
+                        try {
+                            adapter.removeProtection(repositoryId, originalId);
+                        } catch (Exception rpEx) {
+                            log.warn("removeProtection failed while undoing a refused cold move "
+                                    + "(will still attempt delete): " + rpEx.getMessage());
+                        }
+                        try {
+                            adapter.delete(repositoryId, originalId, storageRef);
+                        } catch (Exception delEx) {
+                            log.error("Failed to delete the cold object while undoing a refused "
+                                    + "cold move: " + delEx.getMessage());
+                        }
+                        contentService.resetColdMoveMetadata(repositoryId, archiveId);
+                        if (result != null) {
+                            result.incrementRefused();
+                        }
                         return false;
                     }
                     boolean deleted = contentService.deleteArchiveContent(repositoryId, archiveId);
@@ -798,7 +841,8 @@ public class RetentionScheduler {
      * configured when somebody later looks.
      */
     private jp.aegif.nemaki.evidence.DispositionRecorder.Authorisation authoriseColdDisposition(
-            String repositoryId, String archiveId, String originalId) {
+            String repositoryId, String archiveId, String originalId, String afterDays,
+            boolean keepLocalCopy) {
         if (dispositionRecorder == null) {
             // Same refusal as an unreachable ledger, for the same reason: an irreversible act
             // with no record of it is the outcome this whole path exists to prevent.
@@ -806,8 +850,7 @@ public class RetentionScheduler {
                     "the disposition recorder is not wired on this node");
         }
         Map<String, String> rule = jp.aegif.nemaki.evidence.DispositionRecorder.coldMoveRule(
-                propertyManager.readValue(PropertyKey.RETENTION_ARCHIVE_COLD_AFTER_DAYS),
-                propertyManager.readBoolean(PropertyKey.RETENTION_COLD_KEEP_LOCAL_COPY),
+                afterDays, keepLocalCopy,
                 propertyManager.readValue(PropertyKey.LONGTERM_STORAGE_TYPE),
                 propertyManager.readValue(PropertyKey.RETENTION_SCHEDULE_ARCHIVE_COLD));
         // The ORIGINAL object id is the subject, not the archive row id: that is the id a
@@ -817,6 +860,22 @@ public class RetentionScheduler {
                 jp.aegif.nemaki.evidence.DispositionRecorder.Act
                         .LOCAL_CONTENT_DELETED_AFTER_COLD_MOVE,
                 subject, rule, java.time.Instant.now().toString());
+    }
+
+    /**
+     * The threshold AS THE JOB USES IT, not as it is written.
+     *
+     * <p>{@code executeColdMoveInternal} falls back to 90 when the property will not parse. An
+     * entry that committed to the raw string would say the run acted under {@code "abc"} when
+     * it acted under 90 — a record of a rule that was not applied.
+     */
+    private String coldAfterDaysAsRead() {
+        String raw = propertyManager.readValue(PropertyKey.RETENTION_ARCHIVE_COLD_AFTER_DAYS);
+        try {
+            return String.valueOf(Integer.parseInt(raw.trim()));
+        } catch (RuntimeException e) {
+            return String.valueOf(COLD_AFTER_DAYS_FALLBACK);
+        }
     }
 
     private jp.aegif.nemaki.evidence.DispositionRecorder dispositionRecorder;

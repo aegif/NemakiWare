@@ -164,9 +164,18 @@ fixity の結果は journal イベントとして残す (`FIXITY_VERIFIED` proce
 読み手が要るのは「火曜にオブジェクト 47 が無事だった」ではなく
 **「火曜にこの範囲を走査し、こう出た」**である。パスが事実で、件数と findings がその中身。
 
-digest は verdict / scope / 全件数 / **findings の同一性** / findings の**件数**に
-コミットする。件数が別に要るのは `MAX_FINDINGS` で切られるからで、
-無いと mismatch 600 件と 500 件が切り詰め後に同じ値になる。
+digest は verdict / scope / 全件数 / **findings の同一性** / findings の件数に
+コミットする。
+
+> **件数を足した理由は初稿では誤っていた** (2026-08-26 訂正・レビュー指摘)。
+> 「`MAX_FINDINGS` で切られるので mismatch 600 件と 500 件が同じ値になる」と書いたが、
+> `mismatch` は上限と**独立に**数えられていて既に digest に入っているので、
+> それは起こり得ない。
+>
+> 実際に件数が効くのは「**id に区切り文字を含む findings 1 件が 2 件に化ける**」形だが、
+> それは長さ前置でも防げる。**両者は冗長**で、片方だけ外しても collide しない。
+> 実測もそうなった (片方ずつ外すと緑、両方外すと落ちる)。件数は defence in depth として
+> 残すが、load-bearing ではない。
 
 ### `PARTIAL` を digest に入れる理由
 

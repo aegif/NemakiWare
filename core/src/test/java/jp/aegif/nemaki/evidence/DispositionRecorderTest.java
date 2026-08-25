@@ -201,22 +201,48 @@ class DispositionRecorderTest {
     }
 
     @Test
-    @DisplayName("two rules that differ only in where a boundary falls digest differently")
+    @DisplayName("a value containing the separators cannot forge a second rule entry")
     void theRuleFlatteningIsInjective() {
-        // Without length prefixes, {"ab":"c"} and {"a":"bc"} flatten to the same string and a
-        // deployment could be shown a rule it never had.
-        Map<String, String> left = new LinkedHashMap<>();
-        left.put("ab", "c");
-        Map<String, String> right = new LinkedHashMap<>();
-        right.put("a", "bc");
+        // The first version of this test used {"ab":"c"} vs {"a":"bc"} and did NOT measure
+        // anything: with `=` and `;` already between the parts, those two do not collide even
+        // with the length prefixes removed, so deleting them left all eight tests green. A
+        // reviewer named the surviving edit.
+        //
+        // What the prefixes actually prevent is a VALUE that contains the separators. Without
+        // them both of these flatten to "a=b;c=d;", so a deployment could be shown a rule it
+        // never had — one setting pretending to be two.
+        Map<String, String> oneSettingWithSeparators = new LinkedHashMap<>();
+        oneSettingWithSeparators.put("a", "b;c=d");
+        Map<String, String> twoSettings = new LinkedHashMap<>();
+        twoSettings.put("a", "b");
+        twoSettings.put("c", "d");
 
         assertNotEquals(
                 DispositionRecorder.dispositionDigest(REPO,
-                        Act.LOCAL_CONTENT_DELETED_AFTER_COLD_MOVE, "obj-8", left),
+                        Act.LOCAL_CONTENT_DELETED_AFTER_COLD_MOVE, "obj-8",
+                        oneSettingWithSeparators),
                 DispositionRecorder.dispositionDigest(REPO,
-                        Act.LOCAL_CONTENT_DELETED_AFTER_COLD_MOVE, "obj-8", right),
-                "two different rules produce the same digest, so the entry does not identify "
-                        + "which one authorised the disposal");
+                        Act.LOCAL_CONTENT_DELETED_AFTER_COLD_MOVE, "obj-8", twoSettings),
+                "one setting whose value contains the separators digests the same as two "
+                        + "separate settings, so the entry can be read as authorising a rule "
+                        + "the deployment never had");
+    }
+
+    @Test
+    @DisplayName("the rule keys are the product's real settings, not invented labels")
+    void theRuleKeysAreRealSettings() {
+        // The digest exists so an outside verifier can recompute it from the configuration
+        // file. A key that names no setting makes that impossible while looking fine: the first
+        // version wrote `retention.longterm.storage.type`, which this product does not have.
+        // The value was right and the label pointed at nothing.
+        Map<String, String> rule = DispositionRecorder.coldMoveRule("365", false, "s3", "0 0 3 * * ?");
+
+        assertTrue(rule.containsKey("retention.archive.cold.after.days"), rule.toString());
+        assertTrue(rule.containsKey("retention.cold.keep.local.copy"), rule.toString());
+        assertTrue(rule.containsKey("longterm.storage.type"),
+                "the storage-type key is not the one this product reads, so a verifier looking "
+                        + "it up in nemakiware.properties finds nothing: " + rule.keySet());
+        assertTrue(rule.containsKey("retention.schedule.archive.cold"), rule.toString());
     }
 
     @Test

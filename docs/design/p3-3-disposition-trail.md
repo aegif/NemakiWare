@@ -44,12 +44,32 @@
 なお **capture 境界が intent を先に書くのと同じ理屈**でもある: 本文と証拠は
 別の DB にあり、跨るトランザクションが無い。**後に書くほうが落ちる**。
 
-### 拒否したときの状態
+### 拒否したときの状態 (2026-08-26 訂正 — 初稿は嘘をついていた)
 
-cold へのコピーは**既に書かれていて immutable** である。したがって
-「MOVE と言いながらローカル本文が在る」という状態には置かない。
-**COPY モード (この製品が実際に持つ状態) に印を付け直し**、`false` を返す。
-次回の実行でまた試みる。
+> **初稿は「COPY モードに印を付け直して次回また試みる」と書いた。後半が偽だった。**
+> `updateArchiveState` は `coldArchivedAt` を打ち、候補抽出は
+> `coldArchivedAt != null` を飛ばす。つまりその archive は**候補プールから永久に外れ**、
+> 戻す API も無い (CouchDB を直接触るしかない)。
+> 設計文書・javadoc・**運用者がログで読む文言**「The content is untouched and the next
+> run will try again.」の 3 つが揃って偽で、しかも**その文言を assert するテストが
+> 嘘を固定していた**。
+
+cold へのコピーは既に書かれて immutable である。したがって拒否時は、
+**隣の「ローカル削除に失敗した」経路がすでにやっているのと同じ後始末**をする —
+`removeProtection` → `adapter.delete` → `resetColdMoveMetadata`。
+状況が同じ (cold は書けた、ローカル削除はしていない) なので処理も同じでよい。
+これで初めて「次回また試みる」が真になる。
+
+### 拒否は SUCCESS ではない
+
+`computeStatus` は `failed == 0` なら SUCCESS を返し、skipped は見ていなかった。
+**全 archive が拒否された実行が「SUCCESS」**になる。これは CLAUDE.md が繰り返し
+警告している `verdict: COMPLETE` の罠そのもので、「全部順調」と読める状態表示の下で
+**保持処理が一切動いていない**。
+
+`refused` を skipped と別に数え、1 件でもあれば `REFUSED_NOT_RECORDABLE` を返す。
+skip は「ここには何もすることが無かった」、拒否は「することが在って、記録できないので
+しなかった」であり、同じ数字に畳んではいけない。
 
 ---
 
@@ -64,8 +84,23 @@ H(LEDGER_DISPOSITION_V1, repositoryId, act, subjectId, flatten(rule))
 
 - `act` は enum (`LOCAL_CONTENT_DELETED_AFTER_COLD_MOVE`)。自由文にすると比較できない
 - `rule` は**この実行が実際に読んだ設定値** — 後から誰かが見たときの設定ではない
-- `flatten` は **key/value を長さ前置で連結**する。前置が無いと
-  `{"ab":"c"}` と `{"a":"bc"}` が同じ文字列に潰れ、**在りもしない規則を見せられる**
+- `flatten` は **key/value を長さ前置で連結**する。
+
+  > **初稿の例は誤っていた** (2026-08-26 訂正)。`{"ab":"c"}` と `{"a":"bc"}` は
+  > **区切り文字 `=` `;` がある以上、前置が無くても衝突しない** — つまり
+  > あの例を使ったテストは長さ前置を測っていなかった (実測: 前置を全部外しても緑)。
+  > 実際に前置が防ぐのは「**値が区切り文字を含む**」形で、
+  > `{"a":"b;c=d"}` と `{"a":"b","c":"d"}` はどちらも `a=b;c=d;` に潰れる。
+  > **1 つの設定が 2 つのふりをする。** 例を直して測り直した
+
+- **キー名は `PropertyKey` の定数を使う。** 初稿は
+  `retention.longterm.storage.type` と書いていたが、**この製品にそんな設定は無い**
+  (実物は `longterm.storage.type`)。値は正しく**ラベルだけが何も指していない**状態で、
+  「設定ファイルと設計文書だけ見て外部検証者が digest を再計算できる」という
+  この digest の存在理由をそのまま壊していた
+- **閾値は「実際に適用された値」を書く。** `retention.archive.cold.after.days` が
+  parse できないとき job は 90 にフォールバックするので、生文字列を記録すると
+  **適用されなかった規則を記録する**ことになる
 - `TreeMap` で並べ替える。Map の反復順は commit している事実の一部ではないので、
   それで変わる digest は再計算できない
 
@@ -102,6 +137,10 @@ H(LEDGER_DISPOSITION_V1, repositoryId, act, subjectId, flatten(rule))
 | archive の物理削除 | **未** |
 | `lineage.retention.days` による journal purge | **未**。P1-3 §5 は「purge しても連鎖は切れない」と言うが、**purge したこと自体**は記録していない |
 | 削除失敗後のクリーンアップで cold 側を消す経路 | **未** (`adapter.delete` — 補償動作なので処分ではないが、cold のバイト列は消える) |
+| `deleteContentStream` — オブジェクトを残したまま**添付の実体だけ**破棄する | **未**。CMIS の `deleteObject` とは別操作で、上の行では覆えない |
+| `deleteAttachment` | **未** |
+| **capture 記録の purge** (`purgeUnresolvedOlderThan` / `purgeCapturedOlderThan`) — 取込境界の**証拠そのもの**を消す | **未** |
+| `retentionLogDaoService.deleteOldLogs(repositoryId, 100)` — 上限 100 で古い job log を消す。**「処分が拒否された」ことの唯一の永続記録**がこれなので、自己言及的に効く | **未** |
 
 保持期間と inclusion proof の定義もまだである (ロードマップ P3-3 の後半)。
 台帳のエントリは P1-3 の checkpoint に載るので inclusion proof は**機構としては

@@ -27,6 +27,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -138,20 +139,76 @@ class FixityLedgerRecorderTest {
     }
 
     @Test
-    @DisplayName("a truncated finding list is not the same as a shorter one")
-    void theFindingCountIsInTheDigest() {
-        // findings are capped at MAX_FINDINGS. Without the count, a pass with 600 mismatches
-        // and one with 500 commit to the same value once the list is truncated.
-        List<FixityScanReport.Finding> five = List.of(finding("a"), finding("b"), finding("c"),
-                finding("d"), finding("e"));
+    @DisplayName("a finding id containing the separators cannot forge a second finding")
+    void theFindingFlatteningIsInjective() {
+        // This replaces a test called theFindingCountIsInTheDigest, which measured neither the
+        // count nor anything else: its two fixtures had DIFFERENT flattened finding strings, so
+        // it passed with or without the count field. Its stated justification was wrong too —
+        // `mismatch` is counted independently of the MAX_FINDINGS cap and is already in the
+        // digest, so 600 mismatches and 500 could never have collided.
+        //
+        // What the length prefixes prevent is this: an object id carrying the separators, with
+        // the SAME number of findings on both sides. Equal counts matter — a first attempt used
+        // one finding against two, and the count field alone distinguished them, so the test
+        // passed with the prefixes removed and measured the count instead.
         assertNotEquals(
                 FixityLedgerRecorder.passDigest(REPO, "repository",
-                        new FixityScanReport(FixityScanReport.Verdict.COMPLETE, REPO, 10, 5, 5,
-                                0, 0, five, null)),
+                        new FixityScanReport(FixityScanReport.Verdict.COMPLETE, REPO, 3, 0, 3,
+                                0, 0, List.of(finding("a"), finding("b=MISMATCH;c")), null)),
                 FixityLedgerRecorder.passDigest(REPO, "repository",
-                        new FixityScanReport(FixityScanReport.Verdict.COMPLETE, REPO, 10, 5, 5,
-                                0, 0, five.subList(0, 4), null)),
-                "two different finding lists digest the same");
+                        new FixityScanReport(FixityScanReport.Verdict.COMPLETE, REPO, 3, 0, 3,
+                                0, 0, List.of(finding("a=MISMATCH;b"), finding("c")), null)),
+                "two findings whose ids differ only in where the boundary falls digest the "
+                        + "same, so the entry can be read as naming objects it does not");
+    }
+
+    @Test
+    @DisplayName("one finding cannot pass for two — by the prefixes OR the count")
+    void oneFindingCannotPassForTwo() {
+        // Two guards against the same forgery, and be exact about what that means: they are
+        // REDUNDANT. Removing either one alone leaves this green, because the other still
+        // separates the two sides. Only removing both together makes them collide, and that is
+        // what was measured.
+        //
+        // The review that prompted this said the count adds nothing. Given the prefixes, that
+        // is right, and the first rebuttal here — "the count is the ONLY thing separating
+        // them" — was true only of a build with no prefixes. The count stays as defence in
+        // depth, not because it is load-bearing.
+        assertNotEquals(
+                FixityLedgerRecorder.passDigest(REPO, "repository",
+                        new FixityScanReport(FixityScanReport.Verdict.COMPLETE, REPO, 2, 0, 2,
+                                0, 0, List.of(finding("a=MISMATCH;b")), null)),
+                FixityLedgerRecorder.passDigest(REPO, "repository",
+                        new FixityScanReport(FixityScanReport.Verdict.COMPLETE, REPO, 2, 0, 2,
+                                0, 0, List.of(finding("a"), finding("b")), null)),
+                "one finding whose id contains the separators digests the same as two findings");
+    }
+
+    @Test
+    @DisplayName("a pass with no findings list at all is not a crash")
+    void aNullFindingsListIsHandled() {
+        // FixityScanReport is a record and nothing stops a null list reaching it. A digest that
+        // threw here would take down the pass it was supposed to record.
+        assertNotNull(FixityLedgerRecorder.passDigest(REPO, "repository",
+                new FixityScanReport(FixityScanReport.Verdict.FAILED, REPO, 0, 0, 0, 0, 0,
+                        null, "the pass failed")));
+    }
+
+    @Test
+    @DisplayName("a RUNNING pass is not chained either")
+    void aRunningPassIsNotChained() {
+        // The sibling test covers NOT_RUN only; removing `|| RUNNING` left it green.
+        EvidenceLedgerService service = mock(EvidenceLedgerService.class);
+
+        FixityLedgerRecorder.Recorded recorded = recorderOver(service).recordPass(REPO,
+                "repository",
+                new FixityScanReport(FixityScanReport.Verdict.RUNNING, REPO, 0, 0, 0, 0, 0,
+                        List.of(), null),
+                "2026-08-26T00:00:00Z");
+
+        assertFalse(recorded.inChain());
+        org.mockito.Mockito.verify(service, org.mockito.Mockito.never())
+                .append(anyString(), any(), anyString(), anyString(), anyString());
     }
 
     @Test

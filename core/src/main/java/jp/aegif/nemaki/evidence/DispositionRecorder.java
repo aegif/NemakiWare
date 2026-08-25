@@ -48,6 +48,12 @@ import java.util.Map;
  * is a permanent gap in the one record that says what happened to a record. Those are not
  * comparable.
  *
+ * <p><b>"The job runs again next cycle" is a promise the CALLER has to keep.</b> It was not kept
+ * at first: the retention job relabelled the refused archive and returned, which stamped
+ * {@code coldArchivedAt} and took it out of the candidate pool for ever — while this class's
+ * refusal message told the operator the opposite. A caller that cannot put the work back must
+ * not use this method's refusal as though it could.
+ *
  * <h2>The entry commits to the rule, not just the object</h2>
  *
  * <p>"This was deleted" is not a disposition trail. B.2 wants what, when, and <b>under which
@@ -171,14 +177,28 @@ public class DispositionRecorder {
                 subjectId, flattened.toString());
     }
 
-    /** The retention settings that authorised a cold move, as they were read for THIS run. */
+    /**
+     * The retention settings that authorised a cold move, as they were read for THIS run.
+     *
+     * <p>The KEYS come from {@link jp.aegif.nemaki.util.constant.PropertyKey}, not from string
+     * literals. The first version spelled one of them {@code retention.longterm.storage.type},
+     * which is not a setting this product has — the value was right and the label named nothing.
+     * That breaks the one thing this digest is for: an outside verifier reading the design
+     * document and the configuration file would look up a key that does not exist, get a
+     * different value, and compute a different digest. "A rule you never had" was supposed to
+     * be what the length prefixes prevent; a wrong key name is the same failure by another door.
+     */
     public static Map<String, String> coldMoveRule(String afterDays, boolean keepLocalCopy,
             String storageType, String schedule) {
         Map<String, String> rule = new LinkedHashMap<>();
-        rule.put("retention.archive.cold.after.days", String.valueOf(afterDays));
-        rule.put("retention.cold.keep.local.copy", String.valueOf(keepLocalCopy));
-        rule.put("retention.longterm.storage.type", String.valueOf(storageType));
-        rule.put("retention.schedule.archive.cold", String.valueOf(schedule));
+        rule.put(jp.aegif.nemaki.util.constant.PropertyKey.RETENTION_ARCHIVE_COLD_AFTER_DAYS,
+                String.valueOf(afterDays));
+        rule.put(jp.aegif.nemaki.util.constant.PropertyKey.RETENTION_COLD_KEEP_LOCAL_COPY,
+                String.valueOf(keepLocalCopy));
+        rule.put(jp.aegif.nemaki.util.constant.PropertyKey.LONGTERM_STORAGE_TYPE,
+                String.valueOf(storageType));
+        rule.put(jp.aegif.nemaki.util.constant.PropertyKey.RETENTION_SCHEDULE_ARCHIVE_COLD,
+                String.valueOf(schedule));
         return rule;
     }
 }

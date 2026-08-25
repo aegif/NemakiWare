@@ -1238,13 +1238,6 @@
         <property name="propertyManager" ref="propertyManager" />
         <!-- Multi-replica safety: defer to LeaderElection. -->
         <property name="leaderElection" ref="leaderElection" />
-        <!-- P3-3: explicit, not @Autowired. This bean is XML-wired, so annotation injection
-             here would depend on a component-scan element elsewhere in this file continuing to
-             exist. If that ever stopped registering the annotation post-processor, the recorder
-             would be null and moveToCold would REFUSE every MOVE-mode deletion for ever —
-             silently, because refusing is the correct behaviour when it cannot record. A
-             missing bean must fail the context at startup instead. -->
-        <property name="dispositionRecorder" ref="dispositionRecorder" />
     </bean>
 
     <!-- Cloud Directory Sync REST API -->
@@ -1325,6 +1318,13 @@
         <property name="nemakiCachePool" ref="nemakiCachePool" />
         <!-- Multi-replica safety: defer to LeaderElection. -->
         <property name="leaderElection" ref="leaderElection" />
+        <!-- P3-3: explicit, not @Autowired. This bean is XML-wired, so annotation injection
+             here would depend on a component-scan element elsewhere in this file continuing to
+             exist. If that ever stopped registering the annotation post-processor, the recorder
+             would be null and moveToCold would REFUSE every MOVE-mode deletion for ever —
+             silently, because refusing is the correct behaviour when it cannot record. A
+             missing bean must fail the context at startup instead. -->
+        <property name="dispositionRecorder" ref="dispositionRecorder" />
     </bean>
 
     <!-- Archive Search Resource -->

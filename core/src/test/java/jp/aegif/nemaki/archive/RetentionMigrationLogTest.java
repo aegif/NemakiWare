@@ -196,4 +196,36 @@ public class RetentionMigrationLogTest {
         assertEquals(2, result.getSkipped());
         assertEquals(2, result.getSkippedDocumentIds().size());
     }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("a run that could not record any disposition is NOT a success")
+    void aRefusedRunIsNotASuccess() {
+        // The trap this repository keeps relearning: a status that reads "everything is fine"
+        // for a state that needs an operator. computeStatus keyed on `failed` only, and a
+        // refused disposition is not a failure — the job ran correctly and disposed of nothing,
+        // because it could not record doing so. Every archive refused, and the answer was
+        // SUCCESS with a skip count nobody reads.
+        RetentionMigrationLog log = new RetentionMigrationLog("cold-move", "bedroom");
+        log.setProcessed(5);
+        log.setSucceeded(0);
+        log.setFailed(0);
+        log.setRefused(5);
+
+        org.junit.jupiter.api.Assertions.assertNotEquals("SUCCESS", log.computeStatus(),
+                "a run in which nothing could be disposed of reported SUCCESS; retention has "
+                        + "not been running and the log says it has");
+        org.junit.jupiter.api.Assertions.assertEquals("REFUSED_NOT_RECORDABLE",
+                log.computeStatus());
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("an ordinary clean run is still a success — the control")
+    void aCleanRunIsStillASuccess() {
+        RetentionMigrationLog log = new RetentionMigrationLog("cold-move", "bedroom");
+        log.setProcessed(5);
+        log.setSucceeded(5);
+        log.setFailed(0);
+
+        org.junit.jupiter.api.Assertions.assertEquals("SUCCESS", log.computeStatus());
+    }
 }

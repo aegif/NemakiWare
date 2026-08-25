@@ -16,6 +16,9 @@ public class RetentionMigrationLog {
     private int processed;
     private int succeeded;
     private int failed;
+
+    /** See {@code RetentionJobResult.refused}: recorded, and not rounded down into SUCCESS. */
+    private int refused;
     private String status;        // "SUCCESS", "PARTIAL_FAILURE", "FAILURE"
     private String details;
 
@@ -28,6 +31,14 @@ public class RetentionMigrationLog {
     }
 
     public String computeStatus() {
+        if (refused > 0) {
+            // A refusal is not a failure of the job and it is certainly not a success: the job
+            // ran correctly and DID NOT DISPOSE OF ANYTHING, because it could not record doing
+            // so. Reporting SUCCESS here is the "verdict: COMPLETE" trap this repository keeps
+            // relearning — a status that reads as "everything is fine" for a state that needs
+            // an operator.
+            return "REFUSED_NOT_RECORDABLE";
+        }
         if (failed == 0 && processed > 0) {
             return "SUCCESS";
         } else if (failed > 0 && succeeded > 0) {
@@ -100,6 +111,14 @@ public class RetentionMigrationLog {
 
     public int getFailed() {
         return failed;
+    }
+
+    public int getRefused() {
+        return refused;
+    }
+
+    public void setRefused(int refused) {
+        this.refused = refused;
     }
 
     public void setFailed(int failed) {

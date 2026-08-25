@@ -15,6 +15,17 @@ public class RetentionJobResult {
     private int succeeded;
     private int failed;
     private int skipped;
+
+    /**
+     * Dispositions the evidence ledger would not record, so they did not happen.
+     *
+     * <p>Counted apart from {@code skipped} because they are not the same fact. A skip is
+     * "there was nothing to do here"; a refusal is "there was something to do and this
+     * deployment could not record it, so it was not done". Folded together, a run in which
+     * NOTHING could be disposed of reports SUCCESS with a skip count, which is how an operator
+     * finds out months later that retention has not been running.
+     */
+    private int refused;
     private final List<String> skippedDocumentIds = new ArrayList<>();
 
     public RetentionJobResult(String jobName, String repositoryId) {
@@ -26,6 +37,8 @@ public class RetentionJobResult {
     public void incrementSucceeded() { succeeded++; }
     public void incrementFailed() { failed++; }
     public void incrementSkipped() { skipped++; }
+    public void incrementRefused() { refused++; skipped++; }
+    public int getRefused() { return refused; }
 
     public String getJobName() { return jobName; }
     public String getRepositoryId() { return repositoryId; }
