@@ -84,6 +84,17 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
             + " emit([doc.domain, doc.toSequence], null); } }";
 
     /**
+     * Deploys every view in ONE put.
+     *
+     * <p>Its own method so a test can drive the deployment itself. Asserting on
+     * {@code viewSources()} instead only compares a literal with itself and leaves the thing
+     * being protected — that this is one put and not five — untested.
+     */
+    static void deployViews(CloudantClientWrapper wrapper) {
+        wrapper.putDesignDocumentWithReducesIfChanged(DESIGN_DOC, viewSources());
+    }
+
+    /**
      * The design document as one map, so it is deployed in a single put.
      *
      * <p>Includes the anchor-receipt views: they share this database, and a separate put for
@@ -177,7 +188,7 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
             // lineage store already records, repeated here because I wrote the calls one at a
             // time. On an existing deployment that meant every restart rebuilt every view, and
             // a view answers 200 with an incomplete index while it rebuilds.
-            wrapper.putDesignDocumentWithReducesIfChanged(DESIGN_DOC, viewSources());
+            deployViews(wrapper);
             client = wrapper;
             provisioned.set(true);
         }

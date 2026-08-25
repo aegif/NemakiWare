@@ -72,14 +72,27 @@ class EvidenceLedgerServiceTest {
         /** When set, range() drops rows from the end — a view still building, or a limit hit. */
         int dropFromEnd;
 
+        /** When set, range() answers null — what a store that could not read looks like. */
+        boolean rangeAnswersNull;
+
         @Override public List<EvidenceLedgerEntry> range(String domain, long from, long to,
                 int limit) {
+            if (rangeAnswersNull) {
+                return null;
+            }
             List<EvidenceLedgerEntry> rows = entries.stream()
                     .filter(e -> e.domain().equals(domain))
                     .filter(e -> e.sequence() >= from && e.sequence() <= to)
                     .sorted(java.util.Comparator.comparingLong(EvidenceLedgerEntry::sequence))
                     .limit(limit).toList();
             // Applied AFTER the ordinary result, so the switch changes nothing when it is off.
+            if (dropFromEnd < 0 && !rows.isEmpty()) {
+                // Negative means the opposite: hand back one row twice, which is what a fork
+                // looks like from here.
+                List<EvidenceLedgerEntry> forked = new java.util.ArrayList<>(rows);
+                forked.add(rows.get(rows.size() - 1));
+                return forked;
+            }
             return dropFromEnd <= 0 ? rows
                     : rows.subList(0, Math.max(0, rows.size() - dropFromEnd));
         }
@@ -144,6 +157,43 @@ class EvidenceLedgerServiceTest {
         org.junit.jupiter.api.Assertions.assertTrue(
                 String.valueOf(body.get("message")).contains("rows for"),
                 "the failure does not say the span was short: " + body.get("message"));
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("a null span is refused, not a crash")
+    void aNullSpanIsRefusedNotACrash() {
+        // coverageProblem was written to handle a null span, and the line that REPORTED the
+        // refusal then dereferenced it — so the defence fell over exactly when it was used.
+        // The caller turned that into HTTP 500 "could not be closed: null".
+        FakeStore store = new FakeStore();
+        EvidenceLedgerService service = serviceOver(store);
+        appendSome(service, 3);
+        store.rangeAnswersNull = true;
+
+        Map<String, Object> body = service.closeCheckpoint(DOMAIN, "2026-08-25T00:00:00Z");
+
+        org.junit.jupiter.api.Assertions.assertEquals("error", body.get("status"), body + "");
+        org.junit.jupiter.api.Assertions.assertNull(body.get("rowsRead"),
+                "a null span reported a row count");
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("more rows than sequences is called a fork, not a short read")
+    void aForkIsNotDescribedAsAShortRead() {
+        // Running the coverage check before the verifier means the verifier's FORK finding —
+        // which names both competing hashes — never reaches the operator. The least this can
+        // do is not describe the opposite of what happened.
+        FakeStore store = new FakeStore();
+        EvidenceLedgerService service = serviceOver(store);
+        appendSome(service, 3);
+        store.dropFromEnd = -1;
+
+        Map<String, Object> body = service.closeCheckpoint(DOMAIN, "2026-08-25T00:00:00Z");
+
+        org.junit.jupiter.api.Assertions.assertEquals("error", body.get("status"), body + "");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                String.valueOf(body.get("message")).contains("fork"),
+                "more rows than sequences was reported as a short read: " + body.get("message"));
     }
 
     @Test

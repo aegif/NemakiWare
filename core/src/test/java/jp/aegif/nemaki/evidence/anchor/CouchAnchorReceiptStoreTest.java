@@ -137,8 +137,12 @@ class CouchAnchorReceiptStoreTest {
         Document confirmedRow = rowHolding(confirmed());
         // First read: PENDING. Second read (after the lost race): CONFIRMED.
         when(client.get(anyString())).thenReturn(pendingRow, confirmedRow);
-        when(client.update(any()))
-                .thenThrow(jp.aegif.nemaki.dao.impl.couch.connector.CouchConflicts.conflict());
+        // WRAPPED, as production delivers it: CloudantClientWrapper.update always wraps in a
+        // plain RuntimeException, so a raw conflict here would let isConflict degrade to a
+        // bare instanceof while the real retry died silently (review).
+        when(client.update(any())).thenThrow(new RuntimeException(
+                "Failed to update document in database 'nemaki_evidence_ledger': conflict",
+                jp.aegif.nemaki.dao.impl.couch.connector.CouchConflicts.conflict()));
 
         AnchorReceiptStore.SaveOutcome outcome = storeWith(client).save(DOMAIN, 5, pending());
 
@@ -169,6 +173,27 @@ class CouchAnchorReceiptStoreTest {
     }
 
     @Test
+    @DisplayName("a weaker receipt is refused WITHOUT any contention, and nothing is written")
+    void aWeakerReceiptIsRefusedOnTheFirstRead() throws Exception {
+        // The ordinary path: a FAILED attempt arrives while a CONFIRMED token is already
+        // stored, with no race at all. Every other monotonicity test here relies on a lost
+        // race, so making the check fire only from the second attempt onwards left them all
+        // green (review).
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        Document confirmedRow = rowHolding(confirmed());
+        when(client.get(anyString())).thenReturn(confirmedRow);
+
+        AnchorReceiptStore.SaveOutcome outcome = storeWith(client).save(DOMAIN, 5,
+                AnchorReceipt.failed(AnchorKind.RFC3161_TSA, ROOT, Instant.now(),
+                        "TSA unreachable"));
+
+        assertEquals(AnchorReceiptStore.SaveOutcome.KEPT_STRONGER, outcome);
+        org.mockito.Mockito.verify(client, org.mockito.Mockito.never()).update(any());
+        org.mockito.Mockito.verify(client, org.mockito.Mockito.never())
+                .create(anyString(), any());
+    }
+
+    @Test
     @DisplayName("endless contention REFUSES rather than forcing the write")
     void endlessContentionRefuses() throws Exception {
         CloudantClientWrapper client = mock(CloudantClientWrapper.class);
@@ -183,6 +208,11 @@ class CouchAnchorReceiptStoreTest {
         assertThrows(RuntimeException.class,
                 () -> storeWith(client).save(DOMAIN, 5, pending()),
                 "the store gave up and forced the write after exhausting its retries");
+        // And it really RETRIED. Without this the test passes for an implementation that
+        // throws on the first conflict and never loops at all.
+        org.mockito.Mockito.verify(client,
+                        org.mockito.Mockito.times(CouchAnchorReceiptStore.MAX_SAVE_ATTEMPTS))
+                .update(any());
     }
 
     private static AnchorReceipt pending() {

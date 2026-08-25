@@ -99,7 +99,19 @@ public class AnchorService {
      * time", which is what a confirmed token establishes and this one does not.
      */
     public static String claimLimitsFor(AnchorReceipt receipt) {
-        return claimLimitsFor(receipt.timeSemantics());
+        String base = claimLimitsFor(receipt.timeSemantics());
+        if (receipt.status() == AnchorStatus.CONFIRMED && receipt.anchoredAt() == null) {
+            // The UPPER_BOUND_ONLY sentence says the commitment existed "no later than that
+            // time" — and for a confirmed OpenTimestamps proof on a deployment with no Bitcoin
+            // node there IS no such time here. Leaving the sentence as it stands points a
+            // reader at a value the response does not carry, which is the substitution this
+            // whole layer exists to prevent (review).
+            return base + " NOTE: this deployment does not hold the anchoring time. The proof "
+                    + "is complete and a third party can read the time from the block it "
+                    + "commits to, but nothing here states it, and no time in this response "
+                    + "should be read as the anchoring time.";
+        }
+        return base;
     }
 
     private static String claimLimitsFor(AnchorKind.TimeSemantics semantics) {
@@ -161,8 +173,8 @@ public class AnchorService {
                 // the substitution this whole layer exists to prevent.
                 row.put("claimLimits", claimLimitsFor(receipt));
                 row.put("anchoredDigest", receipt.anchoredDigest());
-                row.put("attemptedAt", String.valueOf(receipt.attemptedAt()));
-                row.put("anchoredAt", String.valueOf(receipt.anchoredAt()));
+                row.put("attemptedAt", receipt.attemptedAt() == null ? null : receipt.attemptedAt().toString());
+                row.put("anchoredAt", receipt.anchoredAt() == null ? null : receipt.anchoredAt().toString());
                 row.put("proofDigest", receipt.proofDigest());
                 row.put("attributes", receipt.attributes());
                 row.put("failureReason", receipt.failureReason());
@@ -240,7 +252,20 @@ public class AnchorService {
                         pending.receipt().kind(), after.kind());
                 continue;
             }
-            receiptStore.save(pending.domain(), pending.toSequence(), after);
+            try {
+                if (receiptStore.save(pending.domain(), pending.toSequence(), after)
+                        == AnchorReceiptStore.SaveOutcome.KEPT_STRONGER) {
+                    // Something stronger is already there. Reporting this one as upgraded would
+                    // name a change that did not happen.
+                    continue;
+                }
+            } catch (RuntimeException e) {
+                // One contended row must not abandon the rest of the batch: the others are
+                // still upgradable and the next run is not guaranteed to come sooner.
+                logger.warn("Could not store the upgraded {} receipt for {}@{}: {}",
+                        after.kind(), pending.domain(), pending.toSequence(), e.getMessage());
+                continue;
+            }
             upgraded.add(after);
         }
         return upgraded;

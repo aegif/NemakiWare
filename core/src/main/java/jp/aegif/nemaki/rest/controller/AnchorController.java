@@ -200,7 +200,7 @@ public class AnchorController {
                 row.put("rung", receipt.kind().name());
                 row.put("status", receipt.status().name());
                 row.put("claimLimits", AnchorService.claimLimitsFor(receipt));
-                row.put("anchoredAt", String.valueOf(receipt.anchoredAt()));
+                row.put("anchoredAt", receipt.anchoredAt() == null ? null : receipt.anchoredAt().toString());
                 receipts.add(row);
             }
         }

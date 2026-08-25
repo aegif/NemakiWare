@@ -160,11 +160,19 @@ view は **4 本** (`entries_by_domain_sequence` / `checkpoints_by_domain_to` �
 `receipts_confirmed` を足して 5 本)。**同じ design document に置く** —
 `createOrUpdateView` は view ごとに get-modify-put するので、別々に配ると
 CouchDB が直前に作った index を捨てる (journal 側で学んだ形)。
-**1 回の put にまとめた (2026-08-25)。** 5 回の get-modify-put は design document の
-署名を 5 回変え、CouchDB が直前に作った index を 4 回捨てていた。既存デプロイでは
-**起動のたびに全 view を再構築**し、再構築中の view は不完全な index のまま 200 を
-返す — 台帳を確認しに来たまさにその瞬間に「空」と読める。
-journal 側で一度学んだ形を、1 本ずつ書いたせいで繰り返していた。
+**1 回の put にまとめた (2026-08-25)。** 5 回の get-modify-put は design document を
+5 回書き、view の集合が変わる場面では CouchDB が直前に作った index を捨てる。
+再構築中の view は不完全な index のまま 200 を返す — 台帳を確認しに来たまさにその
+瞬間に「空」と読める。journal 側で一度学んだ形を、1 本ずつ書いたせいで繰り返していた。
+
+> **初稿は「起動のたびに全 view を再構築」と書いた。過大である** (2026-08-25 訂正)。
+> view group の signature は **view の定義**から計算され、design document の `_rev` は
+> 入らない。5 本とも同一内容で既に入っているデプロイでは、5 回書いても内容は毎回
+> 同じなので signature は変わらず、**index は捨てられない**。実際に効くのは
+> **初回配備と、view を足すアップグレードのとき**である。
+> journal 側の記録 (`CouchLineageJournalStore`) も "on first start" と限定しており、
+> 私はそれを「起動のたび」に格上げしていた。変更 (冪等な 1 回 put) 自体は改善だが、
+> 正当化を強くしすぎた。
 
 **checkpoint は「請求する範囲」と「実際に読めた行」を突き合わせる。**
 verifier は渡された列の**内部**関係しか見ないので、view の遅延で短く返ると

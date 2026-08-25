@@ -110,7 +110,9 @@ public class CouchAnchorReceiptStore implements AnchorReceiptStore {
     @Override
     public SaveOutcome save(String domain, long toSequence, AnchorReceipt receipt) {
         if (receipt == null) {
-            return SaveOutcome.STORED;
+            // STORED means "the receipt is now the stored one". Saying it about nothing is the
+            // very confusion this enum was introduced to end (review).
+            throw new IllegalArgumentException("there is no receipt to store");
         }
         String id = documentId(domain, toSequence, receipt.kind().name());
         CloudantClientWrapper client = client();
@@ -258,6 +260,9 @@ public class CouchAnchorReceiptStore implements AnchorReceiptStore {
 
     @SuppressWarnings("unchecked")
     private AnchorReceipt decode(Map<String, Object> doc) {
+        if (doc == null) {
+            return null;
+        }
         Object nested = doc.get("receipt");
         if (!(nested instanceof Map)) {
             return null;

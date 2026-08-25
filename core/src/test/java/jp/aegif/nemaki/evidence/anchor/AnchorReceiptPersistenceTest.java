@@ -37,6 +37,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -498,6 +499,69 @@ class AnchorReceiptPersistenceTest {
                         + "whether anyone restarted");
         assertNull(reloaded.anchoredAt(),
                 "a time was invented for a receipt that does not have one");
+    }
+
+    @Test
+    @DisplayName("a CONFIRMED row with no proofDigest reloads as FAILED")
+    void aConfirmedRowWithNoProofDigestIsRefused() {
+        // Every rung records a proofDigest when it mints a confirmed receipt, so a row without
+        // one was written by something else. The first version skipped the comparison when the
+        // field was absent, which let through exactly the "partial write" case it named.
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("kind", "RFC3161_TSA");
+        row.put("status", "CONFIRMED");
+        row.put("anchoredDigest", ROOT);
+        row.put("attemptedAt", "2026-08-24T00:00:00Z");
+        row.put("anchoredAt", "2026-08-24T00:00:00Z");
+        row.put("proofBase64", java.util.Base64.getEncoder().encodeToString(new byte[] { 1, 2 }));
+
+        AnchorReceipt reloaded = AnchorReceiptCodec.fromDocument(row);
+
+        assertEquals(AnchorStatus.FAILED, reloaded.status(),
+                "a proof with nothing to check it against was rebuilt as a confirmed anchor");
+        assertTrue(reloaded.failureReason().contains("no proofDigest"),
+                reloaded.failureReason());
+    }
+
+    @Test
+    @DisplayName("a confirmed receipt with no local time says the time is not here")
+    void aConfirmedReceiptWithoutATimeSaysSo() {
+        // The UPPER_BOUND_ONLY sentence says the commitment existed "no later than that time".
+        // For a confirmed OpenTimestamps proof on a deployment with no Bitcoin node there is no
+        // such time in the response, so the sentence pointed at a value that is not there.
+        AnchorReceipt timeless = AnchorReceiptCodec.fromDocument(otsConfirmedWithoutATime());
+
+        String limits = AnchorService.claimLimitsFor(timeless);
+
+        assertTrue(limits.contains("does not hold the anchoring time"),
+                "the limits point at an anchoring time this response does not carry: " + limits);
+    }
+
+    @Test
+    @DisplayName("a confirmed receipt WITH a time does not carry that note — the control")
+    void aTimedReceiptDoesNotCarryTheNote() {
+        // Without this, appending the note unconditionally would pass the test above and every
+        // RFC 3161 token would read as though its time were missing.
+        AnchorReceipt timed = jp.aegif.nemaki.rest.purview.anchor.AnchorReceipts.confirmed(
+                AnchorKind.RFC3161_TSA, ROOT, Instant.parse("2026-08-24T00:00:00Z"),
+                new byte[] { 1 }, "ignored", Map.of());
+
+        assertFalse(AnchorService.claimLimitsFor(timed).contains("does not hold the anchoring"),
+                "a token that DOES state its time was described as not stating one");
+    }
+
+    private static Map<String, Object> otsConfirmedWithoutATime() {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("kind", "OPENTIMESTAMPS");
+        row.put("status", "CONFIRMED");
+        row.put("timeSemantics", "UPPER_BOUND_ONLY");
+        row.put("anchoredDigest", ROOT);
+        row.put("attemptedAt", "2026-08-24T00:00:00Z");
+        row.put("anchoredAt", null);
+        byte[] proof = { 9, 9, 9, 7 };
+        row.put("proofBase64", java.util.Base64.getEncoder().encodeToString(proof));
+        row.put("proofDigest", AnchorReceiptCodec.sha256Hex(proof));
+        return row;
     }
 
     @Test

@@ -89,6 +89,16 @@ public final class AnchorReceiptCodec {
             String digest, Instant attemptedAt, byte[] proof, String proofDigest,
             Map<String, String> attributes, Map<String, Object> doc) {
         Instant anchoredAt = instant(doc.get("anchoredAt"));
+        if (proof != null && proof.length > 0 && proofDigest == null) {
+            // Every rung records a proofDigest when it mints a confirmed receipt, so a row
+            // missing one is a row that was written by something else — which is precisely the
+            // "partial write or corrupted blob" this check claims to catch. Skipping the
+            // comparison when the field is absent let exactly that case through (review).
+            return AnchorReceipt.failed(kind, digest, attemptedAt,
+                    "the stored receipt says CONFIRMED but records no proofDigest, so its proof "
+                            + "cannot be checked against anything; it is not treated as an "
+                            + "anchor");
+        }
         if (proofDigest != null && proof != null && proof.length > 0
                 && !proofDigest.equalsIgnoreCase(sha256Hex(proof))) {
             // The row says CONFIRMED and its own two halves disagree. This catches a partial

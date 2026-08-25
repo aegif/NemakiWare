@@ -163,7 +163,10 @@ public class EvidenceLedgerService {
             body.put("message", coverage);
             body.put("requestedFrom", from);
             body.put("requestedTo", to);
-            body.put("rowsRead", span.size());
+            // span may be null — coverageProblem exists BECAUSE it may be. The first version
+            // guarded for null and then dereferenced it one line later, so the defence fell
+            // over exactly when it was used.
+            body.put("rowsRead", span == null ? null : span.size());
             return body;
         }
 
@@ -213,10 +216,20 @@ public class EvidenceLedgerService {
             return "the ledger returned no rows for " + from + ".." + to + ", so there is "
                     + "nothing to seal — and an empty span must not be read as an empty range";
         }
-        if (span.size() != expected) {
+        if (span.size() < expected) {
             return "the ledger returned " + span.size() + " rows for " + from + ".." + to
                     + ", which needs " + expected + "; a short read would seal a root over "
                     + "fewer entries than the checkpoint claims to cover";
+        }
+        if (span.size() > expected) {
+            // MORE rows than sequences: two entries at one position, which is a fork. Calling
+            // that a "short read" told an operator the opposite of what happened, and running
+            // this check before the verifier threw away the verifier's own FORK finding — which
+            // names both hashes. Say what it is and let the verifier speak.
+            return "the ledger returned " + span.size() + " rows for " + from + ".." + to
+                    + ", which spans " + expected + " sequences; more rows than sequences means "
+                    + "two entries share a position (a fork). The chain verifier's findings, "
+                    + "which name the competing hashes, are the place to look";
         }
         if (span.get(0).sequence() != from) {
             return "the span starts at " + span.get(0).sequence() + ", not at " + from;
@@ -227,6 +240,7 @@ public class EvidenceLedgerService {
         return null;
     }
 
+    /** An inclusion proof for one entry, against the checkpoint that covers it. */
     public Map<String, Object> inclusionProof(String domain, long sequence) {
         Map<String, Object> body = new LinkedHashMap<>();
         if (store == null || !store.isActive()) {
