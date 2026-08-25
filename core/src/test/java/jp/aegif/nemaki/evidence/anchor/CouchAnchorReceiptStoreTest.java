@@ -31,6 +31,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -119,6 +120,92 @@ class CouchAnchorReceiptStoreTest {
                 () -> storeWith(client).save(DOMAIN, 5, confirmed()),
                 "a create the database refused returned normally; a PENDING commitment that "
                         + "was never written can never be upgraded");
+    }
+
+    // ---- the compare-and-set window ----
+
+    @Test
+    @DisplayName("a CONFIRMED receipt written DURING our write is not overwritten")
+    void aRaceLostToAConfirmedWriterIsRespected() throws Exception {
+        // The race a service-level read-then-write cannot close: this writer reads PENDING,
+        // another writer stores CONFIRMED, and this writer's update then lands on top. Here
+        // the rule is inside the same compare-and-set as the write, so the stale revision is
+        // rejected, the row is read AGAIN, and the CONFIRMED receipt that arrived meanwhile is
+        // seen and kept.
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        Document pendingRow = rowHolding(pending());
+        Document confirmedRow = rowHolding(confirmed());
+        // First read: PENDING. Second read (after the lost race): CONFIRMED.
+        when(client.get(anyString())).thenReturn(pendingRow, confirmedRow);
+        when(client.update(any()))
+                .thenThrow(jp.aegif.nemaki.dao.impl.couch.connector.CouchConflicts.conflict());
+
+        AnchorReceiptStore.SaveOutcome outcome = storeWith(client).save(DOMAIN, 5, pending());
+
+        assertEquals(AnchorReceiptStore.SaveOutcome.KEPT_STRONGER, outcome,
+                "a PENDING receipt overwrote a CONFIRMED one that arrived between our read and "
+                        + "our write; hours of waiting on a Bitcoin block are discarded by a "
+                        + "concurrent job");
+    }
+
+    @Test
+    @DisplayName("a lost race with no stronger receipt is simply retried — the control")
+    void aLostRaceWithoutAStrongerReceiptRetries() throws Exception {
+        // Without this, answering KEPT_STRONGER to every conflict would pass the test above
+        // while making ordinary contention silently lose writes.
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        Document pendingRow = rowHolding(pending());
+        when(client.get(anyString())).thenReturn(pendingRow);
+        DocumentResult ok = mock(DocumentResult.class);
+        when(ok.isOk()).thenReturn(true);
+        when(client.update(any()))
+                .thenThrow(jp.aegif.nemaki.dao.impl.couch.connector.CouchConflicts.conflict())
+                .thenReturn(ok);
+
+        AnchorReceiptStore.SaveOutcome outcome = storeWith(client).save(DOMAIN, 5, pending());
+
+        assertEquals(AnchorReceiptStore.SaveOutcome.STORED, outcome,
+                "an ordinary lost race was not retried, so the receipt was dropped");
+    }
+
+    @Test
+    @DisplayName("endless contention REFUSES rather than forcing the write")
+    void endlessContentionRefuses() throws Exception {
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        // Built BEFORE the stubbing: rowHolding() creates mocks of its own, and doing that
+        // inside when(...) leaves Mockito with an unfinished stub.
+        Document row = rowHolding(pending());
+        when(client.get(anyString())).thenReturn(row);
+        when(client.update(any()))
+                .thenThrow(jp.aegif.nemaki.dao.impl.couch.connector.CouchConflicts.conflict());
+
+        // Giving up and forcing the write is the one outcome this method exists to prevent.
+        assertThrows(RuntimeException.class,
+                () -> storeWith(client).save(DOMAIN, 5, pending()),
+                "the store gave up and forced the write after exhausting its retries");
+    }
+
+    private static AnchorReceipt pending() {
+        byte[] proof = { 9, 9, 9 };
+        return AnchorReceipt.pending(AnchorKind.RFC3161_TSA, ROOT,
+                Instant.parse("2026-08-24T00:00:00Z"), proof,
+                jp.aegif.nemaki.rest.purview.anchor.AnchorReceiptCodec.sha256Hex(proof),
+                Map.of());
+    }
+
+    /** A stored row carrying this receipt, as CouchDB would hand it back. */
+    private static Document rowHolding(AnchorReceipt receipt) {
+        Map<String, Object> row = new java.util.LinkedHashMap<>();
+        row.put("type", "anchor_receipt");
+        row.put("domain", DOMAIN);
+        row.put("toSequence", 5L);
+        row.put("rung", receipt.kind().name());
+        row.put("receipt", jp.aegif.nemaki.rest.purview.anchor.AnchorReceiptCodec
+                .toDocument(receipt));
+        Document doc = mock(Document.class);
+        when(doc.getRev()).thenReturn("1-abc");
+        when(doc.getProperties()).thenReturn(row);
+        return doc;
     }
 
     @Test

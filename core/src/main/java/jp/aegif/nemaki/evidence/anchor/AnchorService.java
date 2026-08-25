@@ -266,59 +266,20 @@ public class AnchorService {
             return;
         }
         try {
-            // Outside the save's try on purpose. If the downgrade CHECK fails, the honest
-            // outcome is to keep the write, not to drop it: a read failure would otherwise
-            // silently discard a PENDING .ots commitment that could still have been upgraded.
-            boolean downgrade;
-            try {
-                downgrade = wouldDowngrade(domain, toSequence, receipt);
-            } catch (RuntimeException e) {
-                logger.warn("Could not check for a stronger {} receipt at {}@{} ({}); storing "
-                        + "the new one rather than dropping it", receipt.kind(), domain,
-                        toSequence, e.getMessage());
-                downgrade = false;
+            // The monotonicity rule lives in the STORE, inside the same compare-and-set as the
+            // write. It used to be here, as a read then a write, which left a window: a weak
+            // writer reads PENDING, a concurrent writer stores CONFIRMED, the weak writer
+            // overwrites it. A service-level check cannot close that; only the store can.
+            AnchorReceiptStore.SaveOutcome outcome =
+                    receiptStore.save(domain, toSequence, receipt);
+            if (outcome == AnchorReceiptStore.SaveOutcome.KEPT_STRONGER) {
+                logger.info("Kept the CONFIRMED {} receipt for {}@{}; the new attempt is {}",
+                        receipt.kind(), domain, toSequence, receipt.status());
             }
-            if (downgrade) {
-                return;
-            }
-            receiptStore.save(domain, toSequence, receipt);
         } catch (RuntimeException e) {
             logger.warn("Could not store the {} anchor receipt for {}@{}: {}", receipt.kind(),
                     domain, toSequence, e.getMessage());
         }
-    }
-
-    /**
-     * Whether writing {@code candidate} would replace a CONFIRMED receipt with a weaker one.
-     *
-     * <p>Storing is otherwise unconditional, and the store replaces the row for a
-     * (domain, sequence, rung) in place. Two ordinary events then destroy real proofs:
-     *
-     * <ul>
-     *   <li>A TSA that is briefly unreachable yields FAILED, which overwrites the RFC 3161
-     *       token that was already obtained.</li>
-     *   <li>OpenTimestamps returns PENDING on every stamp, so re-anchoring the same checkpoint
-     *       turns an {@code .ots} that had reached a Bitcoin block back into an unconfirmed
-     *       commitment.</li>
-     * </ul>
-     *
-     * <p>Both are one cron run away: {@code /checkpoint-and-anchor} re-anchors the current
-     * checkpoint even when nothing new was sealed. An anchor is evidence — it may be added to,
-     * never quietly taken away.
-     */
-    private boolean wouldDowngrade(String domain, long toSequence, AnchorReceipt candidate) {
-        if (candidate.status() == AnchorStatus.CONFIRMED) {
-            return false;
-        }
-        for (AnchorReceipt existing : receiptStore.forCheckpoint(domain, toSequence)) {
-            if (existing.kind() == candidate.kind()
-                    && existing.status() == AnchorStatus.CONFIRMED) {
-                logger.info("Keeping the CONFIRMED {} receipt for {}@{}; the new attempt is {}",
-                        candidate.kind(), domain, toSequence, candidate.status());
-                return true;
-            }
-        }
-        return false;
     }
 
     private AnchorReceipt receiptFrom(AnchorTarget target, String merkleRoot) {

@@ -224,7 +224,7 @@ class DaoFailsFastTest {
         // hard failure of the upload. Nothing in the suite noticed, because nothing pinned the
         // TYPE — only that something was thrown.
         com.ibm.cloud.sdk.core.service.exception.ConflictException conflict =
-                mock(com.ibm.cloud.sdk.core.service.exception.ConflictException.class);
+                jp.aegif.nemaki.dao.impl.couch.connector.CouchConflicts.conflict();
 
         RuntimeException thrown = assertThrows(RuntimeException.class,
                 () -> CloudantClientWrapper.rethrowIfUnchecked(conflict));
@@ -245,7 +245,7 @@ class DaoFailsFastTest {
         offStartupThread(() -> {
             for (boolean explicitId : new boolean[] { false, true }) {
                 com.ibm.cloud.sdk.core.service.exception.ConflictException conflict =
-                        mock(com.ibm.cloud.sdk.core.service.exception.ConflictException.class);
+                        jp.aegif.nemaki.dao.impl.couch.connector.CouchConflicts.conflict();
                 com.ibm.cloud.cloudant.v1.Cloudant cloudant =
                         mock(com.ibm.cloud.cloudant.v1.Cloudant.class);
                 // create(Map) posts, create(String, Map) puts. Stubbing one and asserting on

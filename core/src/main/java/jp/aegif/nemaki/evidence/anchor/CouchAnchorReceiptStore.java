@@ -98,43 +98,105 @@ public class CouchAnchorReceiptStore implements AnchorReceiptStore {
         return TYPE + ":" + domain + ":" + String.format("%019d", toSequence) + ":" + rung;
     }
 
+    /**
+     * How many times a lost compare-and-set is retried before the write is refused.
+     *
+     * <p>Bounded, and exhaustion REFUSES rather than forcing the write. Under contention the
+     * thing being contended is an anchor; giving up and overwriting would be the one outcome
+     * this method exists to prevent.
+     */
+    static final int MAX_SAVE_ATTEMPTS = 5;
+
     @Override
-    public void save(String domain, long toSequence, AnchorReceipt receipt) {
+    public SaveOutcome save(String domain, long toSequence, AnchorReceipt receipt) {
         if (receipt == null) {
-            return;
+            return SaveOutcome.STORED;
         }
+        String id = documentId(domain, toSequence, receipt.kind().name());
+        CloudantClientWrapper client = client();
+
+        for (int attempt = 1; attempt <= MAX_SAVE_ATTEMPTS; attempt++) {
+            Document existing = client.get(id);
+
+            // The monotonicity decision, INSIDE the window that ends with the write below.
+            // Made in the service it left a gap: a weak writer reads PENDING, a concurrent
+            // writer stores CONFIRMED, the weak writer then overwrites it.
+            if (existing != null && wouldDowngrade(existing, receipt)) {
+                return SaveOutcome.KEPT_STRONGER;
+            }
+
+            Map<String, Object> doc = document(domain, toSequence, receipt);
+            try {
+                if (existing == null) {
+                    com.ibm.cloud.cloudant.v1.model.DocumentResult created =
+                            client.create(id, doc);
+                    if (created == null || !Boolean.TRUE.equals(created.isOk())) {
+                        throw new IllegalStateException("the anchor receipt " + id
+                                + " was not written");
+                    }
+                } else {
+                    doc.put("_id", id);
+                    doc.put("_rev", existing.getRev());
+                    com.ibm.cloud.cloudant.v1.model.DocumentResult updated = client.update(doc);
+                    if (updated == null || !Boolean.TRUE.equals(updated.isOk())) {
+                        throw new IllegalStateException("the anchor receipt " + id
+                                + " was not updated; the settled proof is not stored and would "
+                                + "be lost");
+                    }
+                }
+                return SaveOutcome.STORED;
+            } catch (RuntimeException e) {
+                if (!isConflict(e) || attempt == MAX_SAVE_ATTEMPTS) {
+                    throw e;
+                }
+                // Somebody wrote between our read and our write. Read again and decide again —
+                // what they wrote may be exactly the CONFIRMED receipt we must not replace.
+                logger.debug("Lost a race writing {} (attempt {}); re-reading", id, attempt);
+            }
+        }
+        throw new IllegalStateException("could not store the anchor receipt " + id + " after "
+                + MAX_SAVE_ATTEMPTS + " attempts; refusing rather than forcing the write");
+    }
+
+    /** Whether writing {@code candidate} over {@code existing} would weaken it. */
+    private boolean wouldDowngrade(Document existing, AnchorReceipt candidate) {
+        if (candidate.status() == AnchorStatus.CONFIRMED) {
+            return false;
+        }
+        AnchorReceipt stored = decode(propertiesOf(existing));
+        return stored != null && stored.status() == AnchorStatus.CONFIRMED;
+    }
+
+    private Map<String, Object> document(String domain, long toSequence, AnchorReceipt receipt) {
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("type", TYPE);
         doc.put("domain", domain);
         doc.put("toSequence", toSequence);
         doc.put("rung", receipt.kind().name());
         doc.put("receipt", AnchorReceiptCodec.toDocument(receipt));
-        String id = documentId(domain, toSequence, receipt.kind().name());
-        CloudantClientWrapper client = client();
-        Document existing = client.get(id);
-        if (existing == null) {
-            com.ibm.cloud.cloudant.v1.model.DocumentResult result = client.create(id, doc);
-            if (result == null || !Boolean.TRUE.equals(result.isOk())) {
-                // A receipt that was not written must not return normally. A PENDING
-                // OpenTimestamps commitment that silently failed to persist can never be
-                // upgraded, and the caller has no way to learn that.
-                throw new IllegalStateException("the anchor receipt " + id + " was not written");
+        return doc;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> propertiesOf(Document doc) {
+        Object properties = doc == null ? null : doc.getProperties();
+        return properties instanceof Map ? (Map<String, Object>) properties : null;
+    }
+
+    /** By TYPE. A message-only test would misread our own "was not written" text. */
+    private static boolean isConflict(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof com.ibm.cloud.sdk.core.service.exception.ConflictException) {
+                return true;
             }
-            return;
+            if (t instanceof IllegalStateException) {
+                return false;
+            }
+            if (t.getCause() == t) {
+                break;
+            }
         }
-        // In place, keeping the revision: a pending commitment becoming confirmed is the same
-        // receipt further along, not a second one.
-        doc.put("_id", id);
-        doc.put("_rev", existing.getRev());
-        com.ibm.cloud.cloudant.v1.model.DocumentResult updated = client.update(doc);
-        if (updated == null || !Boolean.TRUE.equals(updated.isOk())) {
-            // The create branch checked its result and this one did not — so the PENDING to
-            // CONFIRMED transition, the single write this class exists for, could fail silently
-            // and `upgradePending` would still list the receipt as upgraded. Reported by two
-            // reviewers against a commit message that said the result WAS checked.
-            throw new IllegalStateException("the anchor receipt " + id + " was not updated; the "
-                    + "settled proof is not stored and would be lost");
-        }
+        return false;
     }
 
     @Override

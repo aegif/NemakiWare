@@ -39,8 +39,32 @@ import java.util.List;
  */
 public interface AnchorReceiptStore {
 
-    /** Records a receipt, replacing any earlier one for the same (domain, sequence, rung). */
-    void save(String domain, long toSequence, AnchorReceipt receipt);
+    /**
+     * Records a receipt for a (domain, sequence, rung), and enforces monotonicity while doing it.
+     *
+     * <p><b>A CONFIRMED receipt is never replaced by a weaker one.</b> The rule lives HERE and
+     * not in the caller because the caller cannot enforce it: a read-then-write in the service
+     * leaves a window in which another writer stores CONFIRMED and this one overwrites it. The
+     * decision has to be made inside the same compare-and-set as the write.
+     *
+     * <p>Nothing about the stored document changes for this — CouchDB's {@code _rev} already IS
+     * the compare-and-set, and the previous code already sent it. What was missing was making
+     * the decision inside that window and retrying when the revision turned out to be stale.
+     *
+     * @return {@link SaveOutcome#STORED} when the receipt was written, or
+     *         {@link SaveOutcome#KEPT_STRONGER} when a CONFIRMED receipt was already there.
+     *         Real failures THROW: "we chose not to write" and "we could not write" are
+     *         different answers and a boolean would merge them.
+     */
+    SaveOutcome save(String domain, long toSequence, AnchorReceipt receipt);
+
+    /** What {@link #save} did. */
+    enum SaveOutcome {
+        /** The receipt is now the stored one. */
+        STORED,
+        /** A CONFIRMED receipt was already there and was left alone. Not a failure. */
+        KEPT_STRONGER
+    }
 
     /** Every receipt for one checkpoint. */
     List<AnchorReceipt> forCheckpoint(String domain, long toSequence);

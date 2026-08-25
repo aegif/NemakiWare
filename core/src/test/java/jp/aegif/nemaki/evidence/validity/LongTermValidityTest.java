@@ -297,8 +297,9 @@ class LongTermValidityTest {
             jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt receipt) {
         return new jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore() {
             @Override
-            public void save(String domain, long toSequence,
+            public SaveOutcome save(String domain, long toSequence,
                     jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt r) {
+                return SaveOutcome.STORED;
             }
 
             @Override

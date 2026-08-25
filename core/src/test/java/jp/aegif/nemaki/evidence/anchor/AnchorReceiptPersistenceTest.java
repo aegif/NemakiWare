@@ -65,13 +65,22 @@ class AnchorReceiptPersistenceTest {
         private final Map<String, PendingReceipt> rows = new LinkedHashMap<>();
 
         @Override
-        public void save(String domain, long toSequence, AnchorReceipt receipt) {
+        public SaveOutcome save(String domain, long toSequence, AnchorReceipt receipt) {
+            String key = domain + ":" + toSequence + ":" + receipt.kind();
+            // The same monotonicity rule the real store enforces inside its CAS. A stand-in
+            // that stored unconditionally would let the service's tests pass against a store
+            // that does not keep the rule.
+            PendingReceipt held = rows.get(key);
+            if (receipt.status() != AnchorStatus.CONFIRMED && held != null
+                    && held.receipt().status() == AnchorStatus.CONFIRMED) {
+                return SaveOutcome.KEPT_STRONGER;
+            }
             // Round-trip through the codec, because the point of storing is to get it back and
             // a stand-in that hands back the same object would test nothing about that.
             AnchorReceipt reloaded =
                     AnchorReceiptCodec.fromDocument(AnchorReceiptCodec.toDocument(receipt));
-            rows.put(domain + ":" + toSequence + ":" + receipt.kind(),
-                    new PendingReceipt(domain, toSequence, reloaded));
+            rows.put(key, new PendingReceipt(domain, toSequence, reloaded));
+            return SaveOutcome.STORED;
         }
 
         @Override

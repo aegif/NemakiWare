@@ -202,7 +202,7 @@ class CouchEvidenceLedgerStoreTest {
         // loss would become a hard failure.
         CloudantClientWrapper client = mock(CloudantClientWrapper.class);
         when(client.create(anyString(), any()))
-                .thenThrow(mock(com.ibm.cloud.sdk.core.service.exception.ConflictException.class));
+                .thenThrow(jp.aegif.nemaki.dao.impl.couch.connector.CouchConflicts.conflict());
 
         assertFalse(storeWith(client).append(entryAt(409, "abc", "prev")),
                 "a genuine conflict stopped being reported as a lost race");
