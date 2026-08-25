@@ -596,6 +596,26 @@ public class RetentionScheduler {
 
                 // Delete local content only in MOVE mode
                 if (!keepLocalCopy) {
+                    // P3-3: the disposition is recorded BEFORE the bytes go, and a ledger that
+                    // cannot be written refuses the deletion. The asymmetry with the capture
+                    // boundary is deliberate — there a refusal would destroy content already
+                    // fetched, here it costs a delay and nothing else. Recording afterwards
+                    // would leave, on a crash in between, content deleted that nothing records
+                    // disposing of, with no object left for anyone to notice.
+                    jp.aegif.nemaki.evidence.DispositionRecorder.Authorisation authorisation =
+                            authoriseColdDisposition(repositoryId, archiveId, originalId);
+                    if (!authorisation.mayProceed()) {
+                        log.warn("MOVE mode: not deleting local archive content for " + archiveId
+                                + " — " + authorisation.refusedReason());
+                        // The cold copy is already written and immutable. Leaving the local
+                        // copy is the COPY-mode state, which is a real state this product
+                        // supports, so the archive is marked accordingly rather than left
+                        // saying MOVE with content still present.
+                        contentService.updateArchiveState(repositoryId, archiveId,
+                                Archive.STATE_ARCHIVED_LOCAL, contentRef, now);
+                        contentService.updateArchiveColdMoveMode(repositoryId, archiveId, "COPY");
+                        return false;
+                    }
                     boolean deleted = contentService.deleteArchiveContent(repositoryId, archiveId);
                     if (!deleted) {
                         log.error("MOVE mode: failed to delete local archive content for " + archiveId
@@ -770,6 +790,43 @@ public class RetentionScheduler {
     }
 
     // Setters for Spring DI
+    /**
+     * Builds the disposition entry for a cold MOVE and says whether the delete may proceed.
+     *
+     * <p>The rule is read HERE, from the same property manager the job read it from, so the
+     * entry commits to the settings this run actually acted under rather than to whatever is
+     * configured when somebody later looks.
+     */
+    private jp.aegif.nemaki.evidence.DispositionRecorder.Authorisation authoriseColdDisposition(
+            String repositoryId, String archiveId, String originalId) {
+        if (dispositionRecorder == null) {
+            // Same refusal as an unreachable ledger, for the same reason: an irreversible act
+            // with no record of it is the outcome this whole path exists to prevent.
+            return new jp.aegif.nemaki.evidence.DispositionRecorder.Authorisation(false,
+                    "the disposition recorder is not wired on this node");
+        }
+        Map<String, String> rule = jp.aegif.nemaki.evidence.DispositionRecorder.coldMoveRule(
+                propertyManager.readValue(PropertyKey.RETENTION_ARCHIVE_COLD_AFTER_DAYS),
+                propertyManager.readBoolean(PropertyKey.RETENTION_COLD_KEEP_LOCAL_COPY),
+                propertyManager.readValue(PropertyKey.LONGTERM_STORAGE_TYPE),
+                propertyManager.readValue(PropertyKey.RETENTION_SCHEDULE_ARCHIVE_COLD));
+        // The ORIGINAL object id is the subject, not the archive row id: that is the id a
+        // reader looking for "what happened to this record" would have.
+        String subject = originalId != null && !originalId.isBlank() ? originalId : archiveId;
+        return dispositionRecorder.authoriseDisposition(repositoryId,
+                jp.aegif.nemaki.evidence.DispositionRecorder.Act
+                        .LOCAL_CONTENT_DELETED_AFTER_COLD_MOVE,
+                subject, rule, java.time.Instant.now().toString());
+    }
+
+    private jp.aegif.nemaki.evidence.DispositionRecorder dispositionRecorder;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setDispositionRecorder(
+            jp.aegif.nemaki.evidence.DispositionRecorder dispositionRecorder) {
+        this.dispositionRecorder = dispositionRecorder;
+    }
+
     public void setContentService(ContentService contentService) {
         this.contentService = contentService;
     }

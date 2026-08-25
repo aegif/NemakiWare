@@ -32,6 +32,7 @@ public class RetentionSchedulerColdMoveTest {
     private ContentService contentService;
     private PropertyManager propertyManager;
     private InMemoryStorageAdapter adapter;
+    private jp.aegif.nemaki.evidence.DispositionRecorder dispositionRecorder;
 
     @BeforeEach
     public void setUp() {
@@ -42,6 +43,66 @@ public class RetentionSchedulerColdMoveTest {
 
         scheduler.setContentService(contentService);
         scheduler.setPropertyManager(propertyManager);
+        // MOVE mode deletes content, and P3-3 refuses to delete anything it cannot record.
+        // Granting by default here keeps these tests about COPY/MOVE; the refusal is its own
+        // test below. Note what happened when this line did not exist: both MOVE-mode tests
+        // failed, which is the wiring being real rather than decorative.
+        dispositionRecorder = mock(jp.aegif.nemaki.evidence.DispositionRecorder.class);
+        when(dispositionRecorder.authoriseDisposition(anyString(), any(), anyString(), any(),
+                anyString())).thenReturn(
+                new jp.aegif.nemaki.evidence.DispositionRecorder.Authorisation(true, null));
+        scheduler.setDispositionRecorder(dispositionRecorder);
+    }
+
+    @Test
+    public void testMoveMode_unrecordableDisposition_doesNotDeleteLocalContent() throws Exception {
+        // The rule that inverts the capture boundary: a capture that cannot be chained still
+        // happened and must not be undone; a deletion that cannot be recorded has NOT happened
+        // and must not be allowed to. Deleting here would leave content gone with nothing
+        // recording that it went, and no object left for anyone to notice.
+        Archive archive = createTestArchive("arch-refused", "doc-refused");
+        InputStream content = new ByteArrayInputStream("test".getBytes(StandardCharsets.UTF_8));
+        when(contentService.getArchiveContentStream("bedroom", "arch-refused"))
+                .thenReturn(content);
+        when(propertyManager.readBoolean(PropertyKey.RETENTION_COLD_KEEP_LOCAL_COPY))
+                .thenReturn(false);
+        when(propertyManager.readValue(PropertyKey.LONGTERM_STORAGE_TYPE)).thenReturn("s3");
+        when(dispositionRecorder.authoriseDisposition(anyString(), any(), anyString(), any(),
+                anyString())).thenReturn(
+                new jp.aegif.nemaki.evidence.DispositionRecorder.Authorisation(false,
+                        "this disposition could not be recorded, so it did not happen. The "
+                                + "content is untouched and the next run will try again."));
+
+        Method moveToCold = getMoveToColdMethod();
+        boolean result = (boolean) moveToCold.invoke(scheduler, "bedroom", archive, adapter);
+
+        assertFalse(result, "an unrecordable disposition was reported as a completed cold move");
+        verify(contentService, never()).deleteArchiveContent(anyString(), anyString());
+        // The cold copy IS written by this point and is immutable, so the archive must not be
+        // left saying MOVE with its local content still present. COPY is a state this product
+        // actually supports and it is what the deployment now has.
+        verify(contentService).updateArchiveColdMoveMode("bedroom", "arch-refused", "COPY");
+    }
+
+    @Test
+    public void testMoveMode_dispositionIsRecordedBeforeTheDelete() throws Exception {
+        // Order is the whole design. Recording afterwards would leave, on a crash in between,
+        // content deleted that nothing records disposing of.
+        Archive archive = createTestArchive("arch-order", "doc-order");
+        InputStream content = new ByteArrayInputStream("test".getBytes(StandardCharsets.UTF_8));
+        when(contentService.getArchiveContentStream("bedroom", "arch-order")).thenReturn(content);
+        when(propertyManager.readBoolean(PropertyKey.RETENTION_COLD_KEEP_LOCAL_COPY))
+                .thenReturn(false);
+        when(propertyManager.readValue(PropertyKey.LONGTERM_STORAGE_TYPE)).thenReturn("s3");
+        when(contentService.deleteArchiveContent("bedroom", "arch-order")).thenReturn(true);
+
+        Method moveToCold = getMoveToColdMethod();
+        moveToCold.invoke(scheduler, "bedroom", archive, adapter);
+
+        org.mockito.InOrder order = inOrder(dispositionRecorder, contentService);
+        order.verify(dispositionRecorder).authoriseDisposition(eq("bedroom"), any(),
+                eq("doc-order"), any(), anyString());
+        order.verify(contentService).deleteArchiveContent("bedroom", "arch-order");
     }
 
     private Archive createTestArchive(String id, String originalId) {
