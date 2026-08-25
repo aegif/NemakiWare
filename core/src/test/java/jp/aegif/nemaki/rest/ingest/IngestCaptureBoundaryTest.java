@@ -634,4 +634,70 @@ class IngestCaptureBoundaryTest {
         assertEquals("src-1", opened.get(0).sourceObjectId());
         assertEquals("admin", opened.get(0).executedBy());
     }
+
+    // ── The evidence chain is actually fed ────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("a completed ingest reaches the evidence ledger, naming the capture it made")
+    void aCompletedIngestIsChained() {
+        // The claim this whole change exists to make: the ledger has a PRODUCER. It was true
+        // and no test held it — deleting the one line that hands the recorder to the scope left
+        // every test green and put the chain back to zero writers, which is the defect that was
+        // supposedly being fixed. Drive the real ingest, not newCaptureScope in isolation:
+        // the wiring line and `case COMPLETED -> chain(body)` are two separate ways to break it.
+        wire();
+        jp.aegif.nemaki.evidence.EvidenceLedgerRecorder recorder =
+                mock(jp.aegif.nemaki.evidence.EvidenceLedgerRecorder.class);
+        when(recorder.recordCaptureCompleted(any(), any(), any(), any()))
+                .thenReturn(new jp.aegif.nemaki.evidence.EvidenceLedgerRecorder.Recorded(
+                        true, null));
+        service.setLedgerRecorder(recorder);
+
+        ExternalIngestResult result = service.execute(ctx(), request("src-1"));
+        assertTrue(result.isSuccess(), "errors=" + result.errors());
+
+        org.mockito.ArgumentCaptor<CaptureIntent> chained =
+                org.mockito.ArgumentCaptor.forClass(CaptureIntent.class);
+        verify(recorder).recordCaptureCompleted(org.mockito.ArgumentMatchers.eq("bedroom"),
+                chained.capture(), any(), any());
+        assertEquals(store.lastOpened.intentId(), chained.getValue().intentId(),
+                "the chain was told about a different capture than the one this ingest opened");
+    }
+
+    @Test
+    @DisplayName("an ingest the chain could not record says so to the caller")
+    void aChainGapReachesTheCaller() {
+        // The gap must not fail the ingest — the content is already committed — and must not be
+        // swallowed either. Both halves in one assertion pair.
+        wire();
+        jp.aegif.nemaki.evidence.EvidenceLedgerRecorder recorder =
+                mock(jp.aegif.nemaki.evidence.EvidenceLedgerRecorder.class);
+        when(recorder.recordCaptureCompleted(any(), any(), any(), any()))
+                .thenReturn(new jp.aegif.nemaki.evidence.EvidenceLedgerRecorder.Recorded(
+                        false, "the ledger is unreachable and this entry will not be back-filled"));
+        service.setLedgerRecorder(recorder);
+
+        ExternalIngestResult result = service.execute(ctx(), request("src-1"));
+
+        assertTrue(result.isSuccess(),
+                "a chain gap failed the ingest, which destroys the thing the record was about: "
+                        + result.errors());
+        assertTrue(result.warnings().stream().anyMatch(w -> w.contains("not be back-filled")),
+                "the chain is missing this entry and the caller was not told: "
+                        + result.warnings());
+    }
+
+    @Test
+    @DisplayName("no ledger wired leaves the ingest exactly as it was")
+    void anUnwiredLedgerChangesNothing() {
+        // The optional collaborator has to stay optional: a deployment without the ledger must
+        // not gain a warning per ingest, or an operator learns to ignore the warning list.
+        wire();
+
+        ExternalIngestResult result = service.execute(ctx(), request("src-1"));
+
+        assertTrue(result.isSuccess(), "errors=" + result.errors());
+        assertTrue(result.warnings() == null || result.warnings().isEmpty(),
+                "an unconfigured ledger produced a warning: " + result.warnings());
+    }
 }

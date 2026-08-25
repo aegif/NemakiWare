@@ -162,11 +162,33 @@ public class CouchAnchorReceiptStore implements AnchorReceiptStore {
 
     /** Whether writing {@code candidate} over {@code existing} would weaken it. */
     private boolean wouldDowngrade(Document existing, AnchorReceipt candidate) {
-        if (candidate.status() == AnchorStatus.CONFIRMED) {
-            return false;
-        }
         AnchorReceipt stored = decode(propertiesOf(existing));
-        return stored != null && stored.status() == AnchorStatus.CONFIRMED;
+        return stored != null && strength(candidate.status()) < strength(stored.status());
+    }
+
+    /**
+     * How much a status is worth, for the one comparison this store makes.
+     *
+     * <p>CONFIRMED above everything was here from the start. <b>PENDING above FAILED was not,
+     * and that is the rung that loses proofs.</b> {@code AnchorService.upgradePending} stores
+     * whatever the rung hands back, so a rung that reports a transient re-check failure as a
+     * FAILED receipt overwrites the PENDING row — and {@code pending()} only ever returns
+     * PENDING rows, so that commitment is never re-checked again. The calendar still holds it
+     * and a block still confirms it; this deployment has simply stopped asking, and the proof
+     * is lost with no error anywhere.
+     *
+     * <p>The cost of the other direction is one wasted re-check per run for a commitment that
+     * really is dead, and a row that reads PENDING for ever. PENDING already carries
+     * {@code NOT_A_TIME_PROOF}, so it claims nothing while it waits.
+     */
+    private static int strength(AnchorStatus status) {
+        return switch (status) {
+            case CONFIRMED -> 3;
+            case PENDING -> 2;
+            // More informative than NOT_CONFIGURED: an attempt was made and it did not work.
+            case FAILED -> 1;
+            case NOT_CONFIGURED -> 0;
+        };
     }
 
     private Map<String, Object> document(String domain, long toSequence, AnchorReceipt receipt) {

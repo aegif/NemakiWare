@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -104,8 +105,21 @@ class AnchorServiceTest {
         };
     }
 
-    /** CONFIRMED receipts can only be built inside the anchor package, so borrow a real rung. */
+    /**
+     * CONFIRMED receipts can only be built inside the anchor package, so borrow a real rung.
+     *
+     * <p>The borrowed rung stamps its OWN kind on the receipt, so this fixture can only make a
+     * confirmed ATLAS_CATALOG one. It used to take {@code kind} and ignore it everywhere except
+     * a label, which meant asking for a confirmed OPENTIMESTAMPS rung silently produced a
+     * catalog receipt — and {@code AnchorService} now (rightly) turns that mismatch into FAILED,
+     * so the test would have been measuring a kind mismatch it never meant to write. Refuse
+     * instead of substituting.
+     */
     private static AnchorReceipt confirmedFor(AnchorKind kind, String hexDigest) {
+        assertEquals(AnchorKind.ATLAS_CATALOG, kind,
+                "this fixture can only produce a CONFIRMED ATLAS_CATALOG receipt, because it "
+                        + "builds one with a real CatalogAnchorTarget; a confirmed receipt for "
+                        + "another rung needs a fixture in that rung's own package");
         CatalogAnchorTarget catalog = new CatalogAnchorTarget();
         catalog.setEnabled(true);
         catalog.setPublisher(digest -> "entity-" + kind.name());
@@ -419,5 +433,80 @@ class AnchorServiceTest {
         assertEquals("atlas-entity-77", receipt.attributes().get("catalogEntityId"));
         assertEquals("atlas-entity-77", new String(receipt.proof(),
                 java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    // ---- the missing-anchoring-time note belongs to ONE rung ----
+
+    /**
+     * A CONFIRMED receipt carrying no anchoring time, for whichever rung the test names.
+     *
+     * <p>Built through the real decode path because that is the only way one can occur: every
+     * rung that mints a confirmed receipt records a time, so this shape arrives from a STORED
+     * row whose {@code anchoredAt} is absent or unparseable — {@code instant()} swallows a bad
+     * value and hands back null, and {@code confirmedOrRefuse} rebuilds the row as CONFIRMED.
+     */
+    private static AnchorReceipt confirmedWithNoAnchoringTime(AnchorKind kind,
+            AnchorKind.TimeSemantics semantics) {
+        CatalogAnchorTarget catalog = new CatalogAnchorTarget();
+        catalog.setEnabled(true);
+        catalog.setPublisher(digest -> "atlas-entity-1");
+        Map<String, Object> doc = new java.util.LinkedHashMap<>(
+                jp.aegif.nemaki.rest.purview.anchor.AnchorReceiptCodec.toDocument(
+                        catalog.anchor(ROOT)));
+        doc.put("anchoredAt", "not-a-timestamp");
+        doc.put("kind", kind.name());
+        doc.put("timeSemantics", semantics.name());
+
+        AnchorReceipt receipt =
+                jp.aegif.nemaki.rest.purview.anchor.AnchorReceiptCodec.fromDocument(doc);
+        assertEquals(AnchorStatus.CONFIRMED, receipt.status(), "fixture is not confirmed");
+        assertNull(receipt.anchoredAt(), "fixture still carries an anchoring time");
+        return receipt;
+    }
+
+    @Test
+    @DisplayName("a timeless CATALOG receipt does not borrow OpenTimestamps' block")
+    void aTimelessCatalogReceiptDoesNotBorrowTheBlock() {
+        // The note was one sentence for every kind, and the sentence was written for
+        // OpenTimestamps. On a catalog receipt it invents a complete proof and a block that do
+        // not exist, and promotes a rung whose own limits open with "this is NOT a time proof".
+        // A note whose job is to stop a weaker fact reading as a stronger one must not be the
+        // thing that does it.
+        String limits = AnchorService.claimLimitsFor(confirmedWithNoAnchoringTime(
+                AnchorKind.ATLAS_CATALOG, AnchorKind.TimeSemantics.NOT_A_TIME_PROOF));
+
+        assertTrue(limits.contains("NOT a time proof"),
+                "the catalog rung stopped saying what it is not: " + limits);
+        assertFalse(limits.contains("block"),
+                "a catalog receipt was told a third party can read its time from a block; there "
+                        + "is no block and no proof: " + limits);
+        assertFalse(limits.contains("The proof is complete"),
+                "a catalog entry was called a complete proof: " + limits);
+    }
+
+    @Test
+    @DisplayName("a timeless OPENTIMESTAMPS receipt still says where the time can be read")
+    void aTimelessOpenTimestampsReceiptStillPointsAtTheBlock() {
+        // The control for the test above: removing the note entirely would also make that one
+        // pass, and would drop the one rung the sentence was true for.
+        String limits = AnchorService.claimLimitsFor(confirmedWithNoAnchoringTime(
+                AnchorKind.OPENTIMESTAMPS, AnchorKind.TimeSemantics.UPPER_BOUND_ONLY));
+
+        assertTrue(limits.contains("block"),
+                "the reader is not told the time is in the block: " + limits);
+        assertTrue(limits.contains("no time in this response"),
+                "the reader is not warned off the times that ARE in the response: " + limits);
+    }
+
+    @Test
+    @DisplayName("a timeless RFC 3161 receipt points at the token, not at a block")
+    void aTimelessTsaReceiptPointsAtTheToken() {
+        String limits = AnchorService.claimLimitsFor(confirmedWithNoAnchoringTime(
+                AnchorKind.RFC3161_TSA, AnchorKind.TimeSemantics.BIDIRECTIONAL_WITHIN_ACCURACY));
+
+        assertTrue(limits.contains("inside the token"),
+                "the reader is not told where the authority's time actually is: " + limits);
+        assertFalse(limits.contains("read the time from the block"),
+                "a TSA token was described as committing to a block: " + limits);
     }
 }

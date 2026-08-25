@@ -108,9 +108,12 @@ public class EvidenceLedgerRecorder {
                     intent.intentId());
             return Recorded.gap(null);
         }
-        String digest = captureDigest(repositoryId, intent, evidence);
         EvidenceLedgerService.AppendResult result;
+        // The digest is computed INSIDE the guard on purpose. It reads a caller-supplied map and
+        // hashes it; if that throws, the exception would leave this method and fail an ingest
+        // whose capture row is already durable — the exact outcome the rule above forbids.
         try {
+            String digest = captureDigest(repositoryId, intent, evidence);
             result = ledgerService.append(repositoryId,
                     EvidenceLedgerEntry.SubjectKind.CAPTURE_COMPLETED, intent.intentId(), digest,
                     occurredAt);

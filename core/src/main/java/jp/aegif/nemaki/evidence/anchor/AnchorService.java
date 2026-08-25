@@ -100,18 +100,39 @@ public class AnchorService {
      */
     public static String claimLimitsFor(AnchorReceipt receipt) {
         String base = claimLimitsFor(receipt.timeSemantics());
-        if (receipt.status() == AnchorStatus.CONFIRMED && receipt.anchoredAt() == null) {
-            // The UPPER_BOUND_ONLY sentence says the commitment existed "no later than that
-            // time" — and for a confirmed OpenTimestamps proof on a deployment with no Bitcoin
-            // node there IS no such time here. Leaving the sentence as it stands points a
-            // reader at a value the response does not carry, which is the substitution this
-            // whole layer exists to prevent (review).
-            return base + " NOTE: this deployment does not hold the anchoring time. The proof "
-                    + "is complete and a third party can read the time from the block it "
+        if (receipt.status() != AnchorStatus.CONFIRMED || receipt.anchoredAt() != null) {
+            return base;
+        }
+        String note = missingTimeNoteFor(receipt.kind());
+        return note == null ? base : base + " " + note;
+    }
+
+    /**
+     * What to add when a CONFIRMED receipt carries no anchoring time — <b>per rung</b>.
+     *
+     * <p>This was one sentence for every kind, and the sentence was written for OpenTimestamps:
+     * it said the proof was complete and a third party could read the time from the block it
+     * commits to. Appended to a confirmed CATALOG receipt that sentence invents a proof and a
+     * block that do not exist, and promotes a rung whose own limits begin "this is NOT a time
+     * proof". A note whose job is to stop a weaker fact reading as a stronger one must not be
+     * the thing that does it.
+     *
+     * @return the note, or {@code null} when the base sentence already says everything true
+     */
+    private static String missingTimeNoteFor(AnchorKind kind) {
+        return switch (kind) {
+            // Says outright that it is not a time proof. There is no anchoring time to be
+            // missing, so a note about one would only suggest that somewhere there is.
+            case ATLAS_CATALOG -> null;
+            case OPENTIMESTAMPS -> "NOTE: this deployment does not hold the anchoring time. The "
+                    + "proof is complete and a third party can read the time from the block it "
                     + "commits to, but nothing here states it, and no time in this response "
                     + "should be read as the anchoring time.";
-        }
-        return base;
+            case RFC3161_TSA -> "NOTE: this response does not carry the authority's stated time. "
+                    + "It is inside the token, not in a block and not in any field here, so it "
+                    + "can only be obtained by parsing the token; no time in this response "
+                    + "should be read as the timestamp.";
+        };
     }
 
     private static String claimLimitsFor(AnchorKind.TimeSemantics semantics) {
@@ -298,8 +319,12 @@ public class AnchorService {
             AnchorReceiptStore.SaveOutcome outcome =
                     receiptStore.save(domain, toSequence, receipt);
             if (outcome == AnchorReceiptStore.SaveOutcome.KEPT_STRONGER) {
-                logger.info("Kept the CONFIRMED {} receipt for {}@{}; the new attempt is {}",
-                        receipt.kind(), domain, toSequence, receipt.status());
+                // Deliberately does NOT name what was kept. The store refuses any weakening,
+                // not only over CONFIRMED — a PENDING row is kept against a FAILED attempt so
+                // the commitment stays re-checkable — and this side does not read the row back.
+                logger.info("Kept the stored {} receipt for {}@{}; the new attempt is {} and "
+                        + "would have weakened it", receipt.kind(), domain, toSequence,
+                        receipt.status());
             }
         } catch (RuntimeException e) {
             logger.warn("Could not store the {} anchor receipt for {}@{}: {}", receipt.kind(),

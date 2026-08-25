@@ -213,8 +213,21 @@ L3 空ドメインを 0 と報告) — いずれも意図したテストを落�
 | **黙ってもいけない** | fail-open の教訓そのもの。**誰にも告げられない連鎖の穴は、連鎖が無いより悪い** — 連鎖は信じられるから |
 
 したがって結果は boolean ではなく **flag + warning** を返し、
-`CaptureResult.capturedWithGap(...)` として呼び出し元に届く。
+`CaptureResult.capturedWithGap(...)` として直接の呼び出し元に届く。
 `captured` は true のまま — 実際に captured だからである。
+
+**ただし「届く」の範囲を正確に言う。** `withCaptureOutcome` は
+`newCaptureScope` の全 9 か所と対で呼ばれており (grep 済み)、warning は
+`ExternalIngestResult.warnings` に入る。REST 経由 (`ExternalIngestController`) は
+結果オブジェクトをそのまま返すので、**API 呼び出し側の応答本文には載る**。
+
+一方、**定期取得の fetch オーケストレータ 9 本
+(Slack / Teams / Chatwork / Mattermost / Dropbox / Box / Salesforce /
+ImapIdleMonitor / `IngestDlqController`) は `warnings()` を一度も読まない**。
+`isSuccess()` / `skipped()` / `errors()` だけを見て件数を数えるので、
+**連鎖の穴はそれらの取得サマリには現れず、サーバログの `WARN` だけに残る**。
+黙ってはいないが、**運用者が見る場所には出ていない**。
+サマリに畳み込むのは別増分。
 
 ### 遡らない
 
@@ -230,8 +243,27 @@ repositoryId / intentId / connectorId / sourceObjectId / 適用済みメタデ�
 **保存された capture 行から検証者が再計算できる**ことが要点で、
 wrapper が付けた自由文は pass ごとに変わるので入れない。
 
-負のコントロール 4 本実測 (穴を握り潰す / 失敗を伝播させる /
-digest が適用済み hash を無視する / 未配線でも毎回警告する)。
+### この節の主張を守っているテスト
+
+最初の実装には**「台帳に書く者がいる」ことを守るテストが 1 本も無かった**。
+`newCaptureScope` の `scope.setLedgerRecorder(ledgerRecorder)` の 1 行を消しても、
+`case COMPLETED -> chain(body)` を戻しても、**全テストが緑のまま**で、
+連鎖の書き手は再びゼロになる — この節が直したと言っている当の欠陥に戻れた。
+起動ログ (`setLedgerRecorder` の `logger.info`) は **bean が在ることしか言わない**。
+
+負のコントロール 6 本を実測 (コンパイルエラー 0 と落ちたテスト名まで確認):
+
+| 壊した箇所 | 落ちたテスト |
+|---|---|
+| `scope.setLedgerRecorder(...)` を削除 | `aCompletedIngestIsChained` / `aChainGapReachesTheCaller` |
+| `case COMPLETED -> chain(body)` を戻す | 同上 |
+| `digest` を空文字にする | `aCaptureIsChained` |
+| subject を `intentId` → `sourceObjectId` に | `aCaptureIsChained` |
+| digest 計算を try の外に戻す | `aFailingDigestDoesNotFailTheCapture` |
+| ドメイン分離を落とす | `theDigestIsDomainSeparated` |
+
+先行して 4 本 (穴を握り潰す / 失敗を伝播させる /
+digest が適用済み hash を無視する / 未配線でも毎回警告する) も実測済み。
 
 ---
 

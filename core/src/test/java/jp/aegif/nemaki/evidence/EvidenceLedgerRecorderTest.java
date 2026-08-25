@@ -78,13 +78,38 @@ class EvidenceLedgerRecorderTest {
                 .thenReturn(new EvidenceLedgerService.AppendResult(
                         EvidenceLedgerService.AppendOutcome.APPENDED, 1, "hash", null));
 
+        CaptureIntent intent = intent("i-1", "src-1");
+        Map<String, Object> evidence = evidenceWithHash("deadbeef");
+
         EvidenceLedgerRecorder.Recorded recorded = recorderOver(service)
-                .recordCaptureCompleted(REPO, intent("i-1", "src-1"),
-                        evidenceWithHash("deadbeef"), "2026-08-25T00:00:00Z");
+                .recordCaptureCompleted(REPO, intent, evidence, "2026-08-25T00:00:00Z");
 
         assertTrue(recorded.inChain(), "the capture was not added to the chain");
         assertNull(recorded.warning(), "a successful append produced a warning: "
                 + recorded.warning());
+
+        // WHAT was appended, not merely that something was. Stubbing with anyString() and
+        // never capturing let `digest = ""` pass every test in this class — the chain would
+        // have committed to nothing about the capture. Reviewers named that exact edit.
+        org.mockito.ArgumentCaptor<String> subjectId =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.ArgumentCaptor<String> payloadDigest =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.ArgumentCaptor<EvidenceLedgerEntry.SubjectKind> kind =
+                org.mockito.ArgumentCaptor.forClass(EvidenceLedgerEntry.SubjectKind.class);
+        org.mockito.Mockito.verify(service).append(org.mockito.ArgumentMatchers.eq(REPO),
+                kind.capture(), subjectId.capture(), payloadDigest.capture(),
+                org.mockito.ArgumentMatchers.eq("2026-08-25T00:00:00Z"));
+
+        assertEquals(EvidenceLedgerEntry.SubjectKind.CAPTURE_COMPLETED, kind.getValue());
+        assertEquals(intent.intentId(), subjectId.getValue(),
+                "the entry does not name the capture it is about, so a verifier holding the "
+                        + "capture row cannot find its chain entry");
+        assertEquals(EvidenceLedgerRecorder.captureDigest(REPO, intent, evidence),
+                payloadDigest.getValue(),
+                "the chain committed to something other than this capture's digest");
+        assertFalse(payloadDigest.getValue().isBlank(),
+                "the chain committed to an empty digest, which is to say to nothing");
     }
 
     @Test
@@ -123,6 +148,29 @@ class EvidenceLedgerRecorderTest {
 
         assertFalse(recorded.inChain());
         assertTrue(recorded.warning().contains("couchdb is down"),
+                "the cause was swallowed: " + recorded.warning());
+    }
+
+    @Test
+    @DisplayName("a digest that cannot be computed does not fail the capture either")
+    void aFailingDigestDoesNotFailTheCapture() {
+        // Same rule as the throwing ledger, one step earlier: the digest reads a caller-supplied
+        // map. Computing it outside the guard would let a bad map fail an ingest whose capture
+        // row is already durable.
+        EvidenceLedgerService service = mock(EvidenceLedgerService.class);
+        Map<String, Object> hostile = new LinkedHashMap<>() {
+            @Override
+            public Object get(Object key) {
+                throw new IllegalStateException("this evidence map cannot be read");
+            }
+        };
+
+        EvidenceLedgerRecorder.Recorded recorded = recorderOver(service)
+                .recordCaptureCompleted(REPO, intent("i-9", "src-9"), hostile,
+                        "2026-08-25T00:00:00Z");
+
+        assertFalse(recorded.inChain());
+        assertTrue(recorded.warning().contains("cannot be read"),
                 "the cause was swallowed: " + recorded.warning());
     }
 
@@ -185,10 +233,18 @@ class EvidenceLedgerRecorderTest {
     void theDigestIsDomainSeparated() {
         // Without the domain, a digest computed over the same fields elsewhere would collide
         // with this one and a value could be carried between contexts.
-        assertTrue(EvidenceLedgerRecorder.CAPTURE_DIGEST_DOMAIN.startsWith("LEDGER_"),
-                EvidenceLedgerRecorder.CAPTURE_DIGEST_DOMAIN);
-        assertNotEquals(EvidenceLedgerRecorder.CAPTURE_DIGEST_DOMAIN,
-                EvidenceLedgerEntry.HASH_DOMAIN,
-                "the capture digest shares a domain with the ledger entry hash");
+        // Comparing the two constants only checks that two literals differ, and the domain
+        // could be dropped from the hash entirely without either changing. Compare the VALUES
+        // the two domains produce from the same inputs.
+        CaptureIntent intent = intent("i-8", "src-8");
+        String withOurDomain = EvidenceLedgerRecorder.captureDigest(REPO, intent, Map.of());
+        String withAnother = jp.aegif.nemaki.rest.purview.journal.LineageCanonicalHash.hash(
+                EvidenceLedgerEntry.HASH_DOMAIN, REPO, intent.intentId(), intent.connectorId(),
+                intent.sourceObjectId(), null, null, null);
+
+        assertNotEquals(withAnother, withOurDomain,
+                "the capture digest is not domain-separated: the same fields hashed for "
+                        + "another purpose produce the same value, so a digest can be carried "
+                        + "between contexts");
     }
 }

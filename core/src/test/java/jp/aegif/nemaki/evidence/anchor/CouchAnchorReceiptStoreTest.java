@@ -194,6 +194,48 @@ class CouchAnchorReceiptStoreTest {
     }
 
     @Test
+    @DisplayName("a FAILED re-check does not replace a PENDING commitment")
+    void aFailedRecheckDoesNotKillAPendingCommitment() throws Exception {
+        // The rule used to protect CONFIRMED and nothing else, and that is the rung that loses
+        // proofs. AnchorService.upgradePending stores whatever the rung hands back, and
+        // pending() only ever returns PENDING rows — so one FAILED re-check (a timeout, a
+        // calendar that answered 500) permanently removes the commitment from the list of
+        // things this deployment will ever ask about again. The calendar still holds it and a
+        // block still confirms it; we have simply stopped asking, with no error anywhere.
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        Document pendingRow = rowHolding(pending());
+        when(client.get(anyString())).thenReturn(pendingRow);
+
+        AnchorReceiptStore.SaveOutcome outcome = storeWith(client).save(DOMAIN, 5,
+                AnchorReceipt.failed(AnchorKind.RFC3161_TSA, ROOT, Instant.now(),
+                        "the calendar did not answer"));
+
+        assertEquals(AnchorReceiptStore.SaveOutcome.KEPT_STRONGER, outcome,
+                "a transient re-check failure overwrote a live commitment; it can never be "
+                        + "re-checked, so the proof is lost silently");
+        org.mockito.Mockito.verify(client, org.mockito.Mockito.never()).update(any());
+    }
+
+    @Test
+    @DisplayName("a PENDING commitment still replaces a FAILED attempt — the control")
+    void aPendingCommitmentReplacesAFailedAttempt() throws Exception {
+        // Without this, refusing every write over an existing row would pass the test above and
+        // freeze the first attempt for ever: a rung that failed once could never come back.
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        Document failedRow = rowHolding(AnchorReceipt.failed(AnchorKind.RFC3161_TSA, ROOT,
+                Instant.parse("2026-08-24T00:00:00Z"), "the calendar did not answer"));
+        when(client.get(anyString())).thenReturn(failedRow);
+        DocumentResult ok = mock(DocumentResult.class);
+        when(ok.isOk()).thenReturn(true);
+        when(client.update(any())).thenReturn(ok);
+
+        AnchorReceiptStore.SaveOutcome outcome = storeWith(client).save(DOMAIN, 5, pending());
+
+        assertEquals(AnchorReceiptStore.SaveOutcome.STORED, outcome,
+                "a new commitment could not replace an earlier failure, so the rung is stuck");
+    }
+
+    @Test
     @DisplayName("endless contention REFUSES rather than forcing the write")
     void endlessContentionRefuses() throws Exception {
         CloudantClientWrapper client = mock(CloudantClientWrapper.class);

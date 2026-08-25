@@ -2318,17 +2318,26 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     private jp.aegif.nemaki.evidence.EvidenceLedgerRecorder ledgerRecorder;
 
     /**
-     * Setter injection, and it SAYS so at startup.
+     * Setter injection, and it says at startup that a recorder was FOUND.
      *
-     * <p>Field injection would have been shorter, but then "is the evidence chain being fed?"
-     * would only be answerable by ingesting something and looking. This project has already
-     * shipped one collaborator that could never work because it was constructed instead of
-     * injected, and no test noticed; a line in the log is the cheapest way to not repeat it.
+     * <p>That is all the line establishes: a bean exists and was handed over. It does not
+     * establish that a completed capture reaches the chain — the wiring line below and the
+     * {@code COMPLETED} branch in {@link CaptureScope#complete} are two further places the path
+     * can be cut, and both were cut in a measurement while every test stayed green. What holds
+     * the path is {@code IngestCaptureBoundaryTest#aCompletedIngestIsChained}, which drives a
+     * real ingest and asserts the recorder was told about the capture this ingest opened.
+     *
+     * <p>The line is still worth having, because "not wired at all" is the one failure a test
+     * cannot see: this project has already shipped a collaborator that could never work because
+     * it was constructed instead of injected.
      */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     void setLedgerRecorder(jp.aegif.nemaki.evidence.EvidenceLedgerRecorder ledgerRecorder) {
         this.ledgerRecorder = ledgerRecorder;
-        logger.info("External ingest will chain completed captures into the evidence ledger");
+        if (ledgerRecorder != null) {
+            logger.info("Evidence ledger recorder found; completed captures will be offered to "
+                    + "the chain");
+        }
     }
 
     CaptureScope newCaptureScope(CallContext callContext, ExternalIngestRequest request) {

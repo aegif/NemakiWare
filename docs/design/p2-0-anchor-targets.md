@@ -287,6 +287,45 @@ store は以前からそれを送っていた。欠けていたのは (a) 判断
 それが伝播すると surefire が NPE でクラスごと落ち、**どのテストが落ちたのか
 読めない赤**になっていた。測定として弱い。
 
+### 単調性は CONFIRMED だけを守っていた — PENDING も守る (2026-08-25)
+
+上の判定は `candidate` が CONFIRMED でなく `stored` が CONFIRMED のときだけ拒否していた。
+**proof を失うのはそこではない。**
+
+`upgradePending` は rung が返した receipt をそのまま store に渡す。rung が一過性の
+再確認失敗 (calendar が 500、timeout) を **FAILED receipt として返す**と、それが
+PENDING 行を上書きする。そして `pending()` は **PENDING 行しか返さない**ので、
+その commitment は**二度と再確認されない**。calendar は今も持っていて block も
+やがて確定するのに、**この配備が訊くのをやめただけ**で、どこにもエラーは出ない。
+
+したがって順序を `CONFIRMED > PENDING > FAILED > NOT_CONFIGURED` とし、
+**弱くなる書き込みを一律に拒否する**。逆向きの代償は、本当に死んだ commitment に
+対する 1 回分の無駄な再確認と、永久に PENDING と読める行だけ。PENDING は
+`NOT_A_TIME_PROOF` を伴うので、待っている間に何かを主張することはない。
+
+負のコントロール 2 本実測 (CONFIRMED のみに戻す → `aFailedRecheckDoesNotKillAPendingCommitment` /
+すべての上書きを拒否する → `aPendingCommitmentReplacesAFailedAttempt`)。
+
+### 「時刻を保持していない」但し書きは **1 つの段のもの** (2026-08-25)
+
+CONFIRMED かつ `anchoredAt` が無い receipt に付けていた但し書きは、
+**kind を問わず同じ 1 文**だった。その文は OpenTimestamps 向けに書かれており
+「proof は完全で、第三者は commit 先の block から時刻を読める」と言う。
+
+これが **CATALOG receipt に付くと、存在しない proof と存在しない block を発明する**。
+しかもその段自身の limits は「これは時刻の証明では**ない**」で始まる。
+**弱い事実が強く読めるのを止めるための但し書きが、その当人になっていた。**
+
+到達経路は「保存行の `anchoredAt` が読めない」場合である。
+`AnchorReceiptCodec.instant()` は解析失敗を握って null を返し、
+`confirmedOrRefuse` は proof が揃っていれば CONFIRMED として組み直すので、
+**壊れた 1 行が catalog receipt を OTS の文で飾る**。
+
+段ごとに分けた: CATALOG は但し書き無し (基文が既に全部言っている)、
+OTS は block を指す、RFC 3161 は **token の中**を指す (block ではない)。
+
+負のコントロール 2 本実測 (全 kind に 1 文 / 但し書きを消す)。
+
 ---
 
 ## 6. やらないこと (この増分では)
