@@ -2315,6 +2315,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * are all skipped finish normally having changed nothing, and a row opened for them could
      * never be completed.
      */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private jp.aegif.nemaki.evidence.EvidenceLedgerRecorder ledgerRecorder;
+
+    /** For tests and for wiring without a container. */
+    void setLedgerRecorder(jp.aegif.nemaki.evidence.EvidenceLedgerRecorder ledgerRecorder) {
+        this.ledgerRecorder = ledgerRecorder;
+    }
+
     CaptureScope newCaptureScope(CallContext callContext, ExternalIngestRequest request) {
         if (captureIntentStore == null || request == null) {
             if (captureIntentStore == null) {
@@ -2328,7 +2336,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             return CaptureScope.inactive();
         }
         String intentId = java.util.UUID.randomUUID().toString();
-        return new CaptureScope(captureIntentStore, new CaptureIntent(
+        CaptureScope scope = new CaptureScope(captureIntentStore, new CaptureIntent(
                 CaptureIntent.documentIdFor(intentId),
                 intentId,
                 System.currentTimeMillis(),
@@ -2348,6 +2356,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 // caller-supplied JSON no production code writes: the forgeable leftover the
                 // post-implementation review flagged (Codex H2/L2 residual).
                 null));
+        // Optional: a deployment without the evidence ledger simply does not chain captures,
+        // and the scope says so by leaving the warning empty rather than inventing one.
+        scope.setLedgerRecorder(ledgerRecorder);
+        return scope;
     }
 
     /**

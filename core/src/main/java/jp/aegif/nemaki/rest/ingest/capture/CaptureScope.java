@@ -16,6 +16,8 @@
  */
 package jp.aegif.nemaki.rest.ingest.capture;
 
+import jp.aegif.nemaki.evidence.EvidenceLedgerRecorder;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -102,6 +104,13 @@ public final class CaptureScope {
      * @param store  the write seam, or {@code null} for an inert scope
      * @param intent what would be written; not written until {@link #ensureIntentOpened}
      */
+    /** Optional: absent means this deployment does not chain captures. */
+    private EvidenceLedgerRecorder ledgerRecorder;
+
+    public void setLedgerRecorder(EvidenceLedgerRecorder ledgerRecorder) {
+        this.ledgerRecorder = ledgerRecorder;
+    }
+
     public CaptureScope(CaptureIntentStore store, CaptureIntent intent) {
         this.store = store;
         this.intent = intent;
@@ -400,7 +409,7 @@ public final class CaptureScope {
         CaptureIntentStore.CaptureCompletion outcome = store.completeIntent(intent, body);
         completed = outcome == CaptureIntentStore.CaptureCompletion.COMPLETED;
         return switch (outcome) {
-            case COMPLETED -> CaptureResult.success();
+            case COMPLETED -> chain(body);
             case ROW_UNREADABLE -> CaptureResult.notEstablished(
                     // Deliberately an observation with no cause attached: the layers below
                     // collapse a missing document, a transient failure and a write that never
@@ -418,6 +427,25 @@ public final class CaptureScope {
                             + "remained completable each time it was read, so this is contention "
                             + "rather than a state problem.");
         };
+    }
+
+    /**
+     * Adds the completed capture to the evidence chain, and reports a gap without hiding it.
+     *
+     * <p>The capture is ALREADY durable when this runs. Failing the ingest because a second
+     * record could not be written would destroy the thing the record was about — so a failure
+     * here never changes {@code captured}. It does change what the caller is told: a chain with
+     * a hole nobody mentioned is worse than no chain, because the chain is believed.
+     */
+    private CaptureResult chain(Map<String, Object> body) {
+        if (ledgerRecorder == null) {
+            return CaptureResult.success();
+        }
+        EvidenceLedgerRecorder.Recorded recorded = ledgerRecorder.recordCaptureCompleted(
+                intent.repositoryId(), intent, body, java.time.Instant.now().toString());
+        return recorded.warning() == null
+                ? CaptureResult.success()
+                : CaptureResult.capturedWithGap(recorded.warning());
     }
 
     /** The outcome of completing, and anything the caller has to be told. */
@@ -438,6 +466,17 @@ public final class CaptureScope {
 
         static CaptureResult notEstablished(String warning) {
             return new CaptureResult(false, warning);
+        }
+
+        /**
+         * Captured, and NOT in the evidence chain.
+         *
+         * <p>{@code captured} stays true because it is: the capture row is durable. The warning
+         * is the only thing that says the chain is missing this entry — and it will not be
+         * back-filled, because evidence made after the fact is not evidence.
+         */
+        static CaptureResult capturedWithGap(String warning) {
+            return new CaptureResult(true, warning);
         }
     }
 
