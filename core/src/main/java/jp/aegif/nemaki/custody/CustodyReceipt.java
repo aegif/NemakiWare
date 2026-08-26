@@ -99,6 +99,22 @@ public record CustodyReceipt(
         return null;
     }
 
+    /**
+     * Whether the far end says it accepted the package.
+     *
+     * <p>Unknown counts as NOT success. A receipt whose outcome is missing, or a word this
+     * build does not recognise, is not evidence that things went well — and the state it would
+     * unlock is the one before custody passes.
+     */
+    public boolean reportsSuccess() {
+        if (verificationOutcome == null || verificationOutcome.isBlank()) {
+            return false;
+        }
+        String outcome = verificationOutcome.trim().toUpperCase(java.util.Locale.ROOT);
+        return outcome.equals("PASSED") || outcome.equals("PASS") || outcome.equals("VALID")
+                || outcome.equals("SUCCESS") || outcome.equals("ACCEPTED") || outcome.equals("OK");
+    }
+
     /** Whether this receipt refers to the package this transfer actually sent. */
     public boolean isAbout(String expectedSipDigest) {
         return refusalReasonFor(expectedSipDigest) == null;

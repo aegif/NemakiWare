@@ -28,6 +28,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -392,6 +393,52 @@ class EvidenceLedgerServiceTest {
         assertTrue(MerkleTree.verify((String) proof.get("leafHash"), steps,
                         (String) proof.get("merkleRoot")),
                 "the proof the service handed out does not verify against the root it names");
+    }
+
+    @Test
+    @DisplayName("a proof over a span that does not verify is refused, not handed out")
+    void aProofOverABrokenSpanIsRefused() {
+        // The sealing path refuses a span that does not walk; this one used to build the audit
+        // path anyway and label it success. A Merkle proof is honest about ONE thing — the leaf
+        // is under the root — and says nothing about the neighbours it hashes with. So a forged
+        // row inside the sealed range came back as a clean proof, which is the strongest-reading
+        // failure this ledger has: the reader takes "success" for "the chain here is sound".
+        FakeStore store = new FakeStore();
+        EvidenceLedgerService service = serviceOver(store);
+        appendSome(service, 5);
+        service.closeCheckpoint(DOMAIN, "2026-08-24T01:00:00Z");
+        EvidenceLedgerEntry victim = store.entries.get(1);
+        store.entries.set(1, new EvidenceLedgerEntry(victim.domain(), victim.sequence(),
+                victim.subjectKind(), victim.subjectId(), "mh1:FORGED", victim.occurredAt(),
+                victim.prevEntryHash(), victim.entryHash()));
+
+        Map<String, Object> proof = service.inclusionProof(DOMAIN, 3);
+
+        assertEquals("error", proof.get("status"),
+                "a proof was handed out over a span already known to be broken");
+        assertNull(proof.get("auditPath"), "the audit path was returned alongside the error");
+        assertTrue(String.valueOf(proof.get("message")).contains("does not verify"),
+                String.valueOf(proof.get("message")));
+    }
+
+    @Test
+    @DisplayName("the refusal says the ENTRY may be fine — only the span is broken")
+    void theRefusalDoesNotAccuseTheEntry() {
+        // "No proof" is easily read as "that entry is not in the ledger", which is a statement
+        // about the record. What is broken is the range it would be proved against.
+        FakeStore store = new FakeStore();
+        EvidenceLedgerService service = serviceOver(store);
+        appendSome(service, 5);
+        service.closeCheckpoint(DOMAIN, "2026-08-24T01:00:00Z");
+        EvidenceLedgerEntry victim = store.entries.get(0);
+        store.entries.set(0, new EvidenceLedgerEntry(victim.domain(), victim.sequence(),
+                victim.subjectKind(), victim.subjectId(), "mh1:FORGED", victim.occurredAt(),
+                victim.prevEntryHash(), victim.entryHash()));
+
+        Map<String, Object> proof = service.inclusionProof(DOMAIN, 3);
+
+        assertTrue(String.valueOf(proof.get("message")).contains("may well be there"),
+                String.valueOf(proof.get("message")));
     }
 
     @Test

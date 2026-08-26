@@ -101,6 +101,22 @@ public enum CustodyState {
     FAILED;
 
     /**
+     * Whether {@code next} is reachable from {@code from} by any means, including
+     * {@link CustodyTransfer#verifyReceipt}.
+     *
+     * <p>Separate from {@link #allowedNext} because two different questions get asked: "what may
+     * a caller ASK for" and "what can happen at all". Folding them together is what let
+     * RECEIPT_VERIFIED be walked into by an ordinary advance.
+     */
+    public boolean isReachableFrom(CustodyState from) {
+        if (from == null) {
+            return this == PACKAGE_CREATED;
+        }
+        return from.allowedNext().contains(this)
+                || (from == AIP_CREATED && this == RECEIPT_VERIFIED);
+    }
+
+    /**
      * The states this one may move to.
      *
      * <p>Declared rather than computed from the ordinal, because the sequence is not the whole
@@ -114,7 +130,12 @@ public enum CustodyState {
             case RECEIVED -> Set.of(VALIDATED, FAILED);
             case VALIDATED -> Set.of(INGEST_ACCEPTED, FAILED);
             case INGEST_ACCEPTED -> Set.of(AIP_CREATED, FAILED);
-            case AIP_CREATED -> Set.of(RECEIPT_VERIFIED, FAILED);
+            // NOT RECEIPT_VERIFIED. That state means "we CHECKED", and the only thing that
+            // can check is verifyReceipt — so it is not an ordinary move and advance() must not
+            // offer it. Leaving it here let a caller walk the sequence and arrive at a state
+            // named "verified" with no receipt in it: the machine whose whole claim is that the
+            // state you are stuck in IS the diagnosis, giving a false diagnosis.
+            case AIP_CREATED -> Set.of(FAILED);
             case RECEIPT_VERIFIED -> Set.of(CUSTODY_TRANSFERRED, FAILED);
             case CUSTODY_TRANSFERRED -> Set.of(LOCAL_DISPOSITION);
             // Both are ends. A transfer that has been disposed of locally cannot be re-driven,

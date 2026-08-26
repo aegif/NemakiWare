@@ -3832,7 +3832,12 @@ public class ContentServiceImpl implements ContentService {
 		rendition.setTitle("PDF Preview");
 		rendition.setKind(RenditionKind.CMIS_PREVIEW.value());
 
-		ContentStream converted = renditionManager.convertToPdf(contentStream, document.getName());
+		// Attributed: the converter that SUCCEEDED comes back with the bytes, in one walk.
+		// Asking separately let the recorded name be a delegate that claimed the type and then
+		// returned null, while a later one did the work.
+		jp.aegif.nemaki.businesslogic.rendition.RenditionManager.Converted attributed =
+				renditionManager.convertToPdfAttributed(contentStream, document.getName());
+		ContentStream converted = attributed == null ? null : attributed.stream();
 
 		setSignature(callContext, rendition);
 		if (converted == null) {
@@ -3869,13 +3874,31 @@ public class ContentServiceImpl implements ContentService {
 							+ "recorded without a produced digest: " + e.getMessage());
 				}
 			}
-			String renditionId = contentDaoService.createRendition(repositoryId, rendition, toStore);
-			// Which converter ACTUALLY ran, asked of the rendition layer rather than assumed.
-			// Hard-coding LibreOffice here attributed every CAD rendition to it — and the
-			// digest commits to the converter, so that was a false attribution written into
-			// the chain, with LibreOffice's losses disclosed instead of the ones that happened.
-			String converterId = renditionManager == null ? null
-					: renditionManager.converterIdFor(contentStream.getMimeType());
+			// The DAO swallows an attachment-write failure and returns an id anyway, so a
+			// rendition can exist with no bytes behind it. The byte count cannot see that: the
+			// SDK may have read the whole stream before the write failed, which looks exactly
+			// like success from here.
+			//
+			// The flag belongs to THIS call, so it is cleared first and removed after. A value
+			// left on a pooled thread by an earlier rendition would otherwise decide this one in
+			// either direction: a stale FALSE silencing a digest that is fine, a stale TRUE
+			// licensing one that is not. Cleared, the only reading is the delegate's own, and
+			// silence means the delegate was never reached — no digest, because "we did not hear
+			// that the bytes were stored" is not "the bytes were stored".
+			jp.aegif.nemaki.dao.impl.couch.delegate.AttachmentDaoDelegate
+					.renditionContentStored.remove();
+			String renditionId;
+			boolean contentStored;
+			try {
+				renditionId = contentDaoService.createRendition(repositoryId, rendition, toStore);
+				contentStored = Boolean.TRUE.equals(
+						jp.aegif.nemaki.dao.impl.couch.delegate.AttachmentDaoDelegate
+								.renditionContentStored.get());
+			} finally {
+				jp.aegif.nemaki.dao.impl.couch.delegate.AttachmentDaoDelegate
+						.renditionContentStored.remove();
+			}
+			String converterId = attributed.converterId();
 			// The byte count decides whether the digest means anything. If the DAO never read
 			// the stream — a path that skips the attachment write, a store that takes the
 			// reference and defers — MessageDigest still answers, with SHA-256 of nothing, and
@@ -3886,7 +3909,10 @@ public class ContentServiceImpl implements ContentService {
 			// not exist, attributed to a conversion that never ran.
 			if (converted != contentStream) {
 				recordFormatDuplication(callContext, repositoryId, document,
-						digestOfWhatWasStored(counted, producedDigest, converted), converterId);
+						contentStored
+								? digestOfWhatWasStored(counted, producedDigest, converted)
+								: null,
+						converterId);
 			}
 			List<String> renditionIds = document.getRenditionIds();
 			if (renditionIds == null) {

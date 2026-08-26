@@ -131,6 +131,103 @@ class CustodyTransferTest {
     }
 
     @Test
+    @DisplayName("RECEIPT_VERIFIED cannot be walked into — only verifyReceipt reaches it")
+    void receiptVerifiedIsNotAnOrdinaryMove() {
+        // The state means "we CHECKED". advance() checks nothing, so a transfer that walked
+        // into it would be named "verified" with no receipt in it — the machine whose whole
+        // claim is that the state you are stuck in IS the diagnosis, giving a false one.
+        // Custody would still be blocked one step later, so the damage is a lying state rather
+        // than a lost record; the natural way to drive a sequence is to advance through it.
+        CustodyTransfer transfer = atAipCreated();
+
+        CustodyTransfer.Moved moved = transfer.advance(CustodyState.RECEIPT_VERIFIED,
+                "2026-08-26T02:00:00Z", "assume it is fine");
+
+        assertFalse(moved.accepted(),
+                "a transfer was advanced into RECEIPT_VERIFIED with nothing checked");
+        assertEquals(CustodyState.AIP_CREATED, transfer.state());
+        assertNull(transfer.receipt());
+        assertFalse(CustodyState.AIP_CREATED.allowedNext()
+                        .contains(CustodyState.RECEIPT_VERIFIED),
+                "the state machine still offers RECEIPT_VERIFIED as an ordinary move");
+        assertTrue(CustodyState.RECEIPT_VERIFIED.isReachableFrom(CustodyState.AIP_CREATED),
+                "verifyReceipt has no route either, so the transfer can never complete");
+    }
+
+    @Test
+    @DisplayName("a receipt reporting REJECTED does not become 'verified'")
+    void aNegativeReceiptIsNotVerification() {
+        // It is about our package, so the digest check passes. It says the far end did not
+        // accept it. Calling that "verified" names a check that came back negative as a step
+        // towards custody passing.
+        CustodyTransfer transfer = atAipCreated();
+
+        CustodyTransfer.Moved moved = transfer.verifyReceipt(
+                new CustodyReceipt("sub-1", "aip-1", "b".repeat(64), SIP_DIGEST, "REJECTED",
+                        "roda-agent", "2026-08-26T01:00:00Z", null, false),
+                "2026-08-26T02:00:00Z");
+
+        assertFalse(moved.accepted(), "a rejection was accepted as a verification");
+        assertEquals(CustodyState.AIP_CREATED, transfer.state());
+        assertTrue(moved.refusedReason().contains("REJECTED"), moved.refusedReason());
+    }
+
+    @Test
+    @DisplayName("an outcome this build does not recognise is not success")
+    void anUnknownOutcomeIsNotSuccess() {
+        // "We do not know what they said" must not unlock the state before custody passes.
+        CustodyTransfer transfer = atAipCreated();
+
+        assertFalse(transfer.verifyReceipt(
+                new CustodyReceipt("sub-1", "aip-1", "b".repeat(64), SIP_DIGEST, "WEIRD",
+                        "roda-agent", "t", null, false), "t").accepted());
+        assertFalse(transfer.verifyReceipt(
+                new CustodyReceipt("sub-1", "aip-1", "b".repeat(64), SIP_DIGEST, null,
+                        "roda-agent", "t", null, false), "t").accepted(),
+                "a receipt with no outcome at all was treated as a pass");
+    }
+
+    @Test
+    @DisplayName("a receipt arriving after custody passed does not rewrite the handover")
+    void aLateReceiptDoesNotRewriteTheHandover() {
+        CustodyTransfer transfer = atAipCreated();
+        transfer.verifyReceipt(receiptFor(SIP_DIGEST), "t");
+        assertTrue(transfer.advance(CustodyState.CUSTODY_TRANSFERRED, "t", "receipt verified")
+                .accepted());
+
+        CustodyTransfer.Moved late = transfer.verifyReceipt(
+                new CustodyReceipt("sub-2", "aip-9", "c".repeat(64), SIP_DIGEST, "PASSED",
+                        "roda-agent", "t", null, false), "t");
+
+        assertFalse(late.accepted(), "a later receipt replaced the one custody passed on");
+        assertEquals("aip-1", transfer.receipt().aipId());
+        // On the REASON, because the state machine refuses this anyway — RECEIPT_VERIFIED is
+        // not reachable from CUSTODY_TRANSFERRED — and would refuse it with "this transfer is
+        // at CUSTODY_TRANSFERRED", which reads as a sequencing slip. It is not one. Somebody
+        // is presenting a receipt for a handover that is over, and the operator needs to be
+        // told that rather than left to work out why the step is out of order.
+        assertTrue(late.refusedReason().contains("custody has already passed"),
+                "the refusal is right but describes it as a wrong-order step: " + late.refusedReason());
+    }
+
+    @Test
+    @DisplayName("a SECOND receipt before custody passes is refused too")
+    void aReplacementReceiptIsRefusedBeforeCustodyPasses() {
+        // The window between verifying and passing custody. Nothing about "custody has already
+        // passed" covers it, so this is the state machine's job: RECEIPT_VERIFIED is not
+        // reachable from RECEIPT_VERIFIED, and the first receipt is the one that was checked.
+        CustodyTransfer transfer = atAipCreated();
+        assertTrue(transfer.verifyReceipt(receiptFor(SIP_DIGEST), "t").accepted());
+
+        CustodyTransfer.Moved second = transfer.verifyReceipt(
+                new CustodyReceipt("sub-2", "aip-9", "c".repeat(64), SIP_DIGEST, "PASSED",
+                        "roda-agent", "t", null, false), "t");
+
+        assertFalse(second.accepted(), "the checked receipt was replaced by a later one");
+        assertEquals("aip-1", transfer.receipt().aipId());
+    }
+
+    @Test
     @DisplayName("custody does NOT pass on the far end's word that an AIP exists")
     void aipCreatedDoesNotTransferCustody() {
         // AIP_CREATED is their claim; RECEIPT_VERIFIED is our finding. Collapsing the two makes

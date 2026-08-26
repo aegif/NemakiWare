@@ -91,6 +91,46 @@ public class RetentionSchedulerColdMoveTest {
     }
 
     @Test
+    public void testMoveMode_refusalIsCountedOnce_notAlsoAsASkip() throws Exception {
+        // A refusal IS a skip — the caller counts it as one when moveToCold returns false —
+        // and `refused` exists to say WHY that skip happened. Bumping skipped a second time
+        // here made the two totals disagree with `processed`, so an operator reconciling the
+        // run sees more outcomes than there were documents and concludes the job double-ran.
+        Archive archive = createTestArchive("arch-count", "doc-count");
+        when(contentService.getArchiveContentStream("bedroom", "arch-count"))
+                .thenReturn(new ByteArrayInputStream("test".getBytes(StandardCharsets.UTF_8)));
+        when(propertyManager.readBoolean(PropertyKey.RETENTION_COLD_KEEP_LOCAL_COPY))
+                .thenReturn(false);
+        when(propertyManager.readValue(PropertyKey.LONGTERM_STORAGE_TYPE)).thenReturn("s3");
+        when(dispositionRecorder.authoriseDisposition(anyString(), any(), anyString(), any(),
+                anyString())).thenReturn(
+                new jp.aegif.nemaki.evidence.DispositionRecorder.Authorisation(false, "no"));
+        RetentionJobResult result = new RetentionJobResult("cold-move", "bedroom");
+
+        Method moveToCold = RetentionScheduler.class.getDeclaredMethod("moveToCold",
+                String.class, Archive.class, LongTermStorageAdapter.class,
+                RetentionJobResult.class);
+        moveToCold.setAccessible(true);
+
+        // What the caller does around it, so the totals are the ones an operator would read.
+        result.incrementProcessed();
+        boolean moved = (boolean) moveToCold.invoke(scheduler, "bedroom", archive, adapter,
+                result);
+        if (!moved) {
+            result.incrementSkipped();
+            result.addSkippedDocumentId(archive.getId());
+        }
+
+        assertEquals(1, result.getRefused(), "the refusal was not counted");
+        assertEquals(1, result.getSkipped(),
+                "one refused document was counted as two skips, so processed and skipped "
+                        + "no longer reconcile");
+        assertEquals(result.getProcessed(),
+                result.getSucceeded() + result.getFailed() + result.getSkipped(),
+                "the outcome counts do not add up to the number of documents processed");
+    }
+
+    @Test
     public void testMoveMode_ruleRecordsTheThresholdTheJobActuallyApplied() throws Exception {
         // The entry has to commit to the rule the run ACTED UNDER. executeColdMoveInternal
         // falls back to 90 when the property will not parse, so recording the raw string would

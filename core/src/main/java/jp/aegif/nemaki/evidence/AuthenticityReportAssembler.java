@@ -129,6 +129,7 @@ public class AuthenticityReportAssembler {
         sections.add(contentSection(repositoryId, content));
         sections.add(custodySection(repositoryId, objectId));
         sections.add(ledgerSection(repositoryId));
+        sections.add(duplicationSection(repositoryId, objectId));
         sections.add(versionsSection(content));
         sections.add(accessSection());
         sections.add(environmentSection());
@@ -381,6 +382,83 @@ public class AuthenticityReportAssembler {
                         + "nothing was audited — and the log itself is silent about any period "
                         + "in which auditing was disabled or its level excluded reads.");
     }
+
+    /**
+     * Copies of this record that exist in another format (P3-2).
+     *
+     * <p>Here because a disclosure nobody reads is not a disclosure. The recorder attaches one
+     * to every duplication and the ledger entry carries only a digest, so until this section
+     * existed the sentence "this is a convenience copy, not a preservation format" lived in a
+     * Java enum and reached no reader. A PDF sitting beside a Word file, both with digests,
+     * both in the chain, is taken for two records — which is the exact reading the disclosure
+     * is written to prevent.
+     *
+     * <p>ABSENT rather than empty when there are none: "no copy was made" and "we could not
+     * look" are different answers, and only one of them is about the record.
+     */
+    private Section duplicationSection(String repositoryId, String objectId) {
+        if (ledgerStore == null) {
+            return new Section("duplications", Verdict.UNAVAILABLE, Map.of(),
+                    "The evidence ledger could not be read, so it is unknown whether copies of "
+                            + "this record exist in other formats. This is NOT a statement that "
+                            + "none do.");
+        }
+        List<EvidenceLedgerEntry> entries;
+        try {
+            entries = ledgerStore.findBySubject(repositoryId, objectId, LEDGER_ENTRY_LIMIT);
+        } catch (RuntimeException e) {
+            return new Section("duplications", Verdict.UNAVAILABLE,
+                    Map.of("reason", String.valueOf(e.getMessage())),
+                    "The evidence ledger could not be read, so it is unknown whether copies of "
+                            + "this record exist in other formats. This is NOT a statement that "
+                            + "none do.");
+        }
+        List<Map<String, Object>> rows = new java.util.ArrayList<>();
+        for (EvidenceLedgerEntry entry : entries) {
+            if (entry.subjectKind() != EvidenceLedgerEntry.SubjectKind.FORMAT_DUPLICATION) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("sequence", entry.sequence());
+            row.put("occurredAt", entry.occurredAt());
+            row.put("payloadDigest", entry.payloadDigest());
+            rows.add(row);
+        }
+        if (rows.isEmpty()) {
+            return new Section("duplications", Verdict.ABSENT, Map.of(),
+                    "No copy of this record in another format is recorded in the chain. Copies "
+                            + "made outside the path that records them would not appear here.");
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        // The disclosure FIRST, before the rows. A reader skimming a block about derived copies
+        // has to meet "these are not the record" before the identifiers, not after them.
+        body.put("disclosure", DUPLICATION_DISCLOSURE);
+        body.put("duplications", rows);
+        body.put("count", rows.size());
+        return new Section("duplications", Verdict.REPORTED, body,
+                "These are copies of this record made in another format, as recorded in the "
+                        + "evidence chain. The chain entry commits to a digest only, so the "
+                        + "converter and the exact losses are not repeated here — the "
+                        + "disclosure above states what every such copy is and is not. A copy "
+                        + "made by a path that does not record duplications would not be "
+                        + "listed, so this is NOT a complete inventory of derived copies.");
+    }
+
+    /**
+     * What every recorded duplication is, said once where a reader will meet it.
+     *
+     * <p>Kept general on purpose: the chain entry carries a digest, not the converter, so this
+     * section cannot state which tool ran. Naming a specific one here would be a guess, and a
+     * guess about what was lost is worse than the general statement that something was.
+     */
+    static final String DUPLICATION_DISCLOSURE =
+            "These are CONVENIENCE COPIES, not preservation formats and not additional records. "
+                    + "This product converts to PDF without requesting or validating a PDF/A "
+                    + "profile, so a copy listed here must not be treated as an archival "
+                    + "rendition. What a conversion preserves depends on the converter and the "
+                    + "source: layout, fonts, comments, tracked changes, embedded objects, CAD "
+                    + "layers and diagram structure are among the things that may not survive. "
+                    + "The ORIGINAL is unchanged and remains the record.";
 
     private Section versionsSection(Content content) {
         if (!(content instanceof Document document)) {

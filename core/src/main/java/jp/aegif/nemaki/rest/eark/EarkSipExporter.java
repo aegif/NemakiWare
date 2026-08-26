@@ -520,9 +520,15 @@ public class EarkSipExporter {
         List<Map<String, Object>> chained = new ArrayList<>();
         List<EvidenceLedgerEntry> entries;
         try {
-            // Subject id: the capture entry names the CAPTURE, and the exporter is given an
-            // object. Both are tried, because which one applies depends on how the record
-            // arrived and neither is a safe assumption.
+            // Looked up by the OBJECT id, which finds the entries whose subject is the object:
+            // fixity passes, format duplications, custody receipts.
+            //
+            // It does NOT find the capture entry. That one's subject is the capture intent id
+            // (EvidenceLedgerRecorder appends under intent.intentId()), and this method is
+            // given an object. The comment here used to say "both are tried"; only one was, so
+            // a package could report "not-chained" for a record whose capture IS in the chain.
+            // Saying which lookup was performed is the honest fix — following the intent id
+            // needs the capture row, which is a different store and a wider change.
             entries = new ArrayList<>(ledgerStore.findBySubject(repositoryId, objectId, 50));
         } catch (RuntimeException e) {
             evidence.put("status", "error");
@@ -534,9 +540,12 @@ public class EarkSipExporter {
         }
         if (entries.isEmpty()) {
             evidence.put("status", "not-chained");
-            evidence.put("message", "no ledger entry names this object. The chain only holds "
-                    + "what was written to it from the day the producer shipped; there is no "
-                    + "back-fill, so this says nothing about whether the record is genuine.");
+            evidence.put("message", "no ledger entry names this OBJECT. Note what that does and "
+                    + "does not cover: the capture entry for an externally ingested record is "
+                    + "filed under its capture intent id, not under the object, so a record "
+                    + "whose capture IS in the chain still reports nothing here. The chain also "
+                    + "only holds what was written to it from the day the producer shipped, "
+                    + "with no back-fill. None of this says the record is not genuine.");
             return evidence;
         }
         for (EvidenceLedgerEntry entry : entries) {

@@ -136,6 +136,15 @@ public final class CustodyTransfer {
                     + "verified: nothing has been checked, and the far end's word that an AIP "
                     + "exists is not a finding of this repository");
         }
+        if (next == CustodyState.RECEIPT_VERIFIED) {
+            // Not an ordinary move at all. "Verified" is a finding, and the only thing that can
+            // make it is verifyReceipt — which refuses a receipt about another package. Reached
+            // by advance(), the state would be named "we checked" with nothing checked.
+            return new Moved(false, state, "RECEIPT_VERIFIED is not reached by advancing: it "
+                    + "means a receipt was CHECKED, and only verifyReceipt can do that. A "
+                    + "transfer walked into this state would be named 'verified' with no "
+                    + "receipt in it.");
+        }
         if (!state.allowedNext().contains(next)) {
             return new Moved(false, state, "a transfer at " + state + " cannot move to " + next
                     + "; the moves available are " + state.allowedNext()
@@ -159,13 +168,29 @@ public final class CustodyTransfer {
         if (candidate == null) {
             return new Moved(false, state, "no receipt was given");
         }
-        if (state != CustodyState.AIP_CREATED) {
+        if (state.custodyHasPassed()) {
+            // Custody has already moved on. Replacing the receipt now would rewrite the record
+            // of a handover that is finished, and the history would show the second one as
+            // though it were the one custody passed on.
+            return new Moved(false, state, "custody has already passed; a receipt arriving now "
+                    + "cannot change the record of the handover that happened");
+        }
+        if (!CustodyState.RECEIPT_VERIFIED.isReachableFrom(state)) {
             return new Moved(false, state, "a receipt can only be verified once the receiving "
                     + "system has reported an AIP; this transfer is at " + state);
         }
         String refusal = candidate.refusalReasonFor(sipDigest);
         if (refusal != null) {
             return new Moved(false, state, refusal);
+        }
+        if (!candidate.reportsSuccess()) {
+            // The receipt is about our package AND says the far end did not accept it. Moving
+            // to RECEIPT_VERIFIED would name the state "we checked" for a check that came back
+            // negative, and the next state along passes custody.
+            return new Moved(false, state, "the receipt is about this package and reports '"
+                    + candidate.verificationOutcome() + "'. A receipt that says the receiving "
+                    + "system did not accept the package is a reason to stop, not a step "
+                    + "towards custody passing.");
         }
         this.receipt = candidate;
         history.add(new Step(state, CustodyState.RECEIPT_VERIFIED, at,

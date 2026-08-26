@@ -110,6 +110,36 @@ custody が渡ることは、**ローカルコピーを消してよくなる直�
 > `CUSTODY_TRANSFERRED` への辺を持ったときに効くからで、
 > **測れた保護としては数えていない** (測れているのは状態機械のほう)。
 
+### 4.1 2026-08-26 レビュー — 「検証済み」に受領証なしで着けた
+
+**`advance(RECEIPT_VERIFIED)` が通っていた。** `allowedNext(AIP_CREATED)` に
+`RECEIPT_VERIFIED` が入っていたので、`advance` を順番に呼ぶだけで
+**受領証を 1 通も見ずに「我々が確かめた」という名前の状態**に着けた。
+`verifyReceipt` の照合はすべて健在だったが、**通らずに済む道**が横に在った。
+この機械の主張は「詰まった状態そのものが診断である」ことなので、
+偽の診断が出せる時点で機械の役目が消えている。
+
+`allowedNext` から外し、`RECEIPT_VERIFIED.isReachableFrom(from)` を新設して
+`verifyReceipt` だけがそこへ行けるようにした。`advance` は明示的に拒否する。
+
+同じレビューで 2 点追加:
+
+- **`verificationOutcome` を誰も読んでいなかった。** `REJECTED` と書かれた受領証でも、
+  digest さえ合えば `RECEIPT_VERIFIED` に進めた。次の 1 手が custody の移転である以上、
+  これは「先方が受け取らなかった」を「受け渡し完了」の 1 歩手前に置くことになる。
+  `CustodyReceipt.reportsSuccess()` を足し、**未知の語・空欄は成功ではない**とした
+  (この build が知らない語を「たぶん成功」と読むと、語彙が増えるたびに緩む)。
+- **custody 通過後の受領証**は状態機械が既に塞いでいたが、その理由は
+  「順番違い」としか言わなかった。終わった受け渡しに後から受領証を出してきたのなら、
+  運用者はそれを**そう**知らされる必要がある。guard は残し、
+  テストは**理由の文面**で判別する (下表の 2 行目)。
+
+| 壊した箇所 | 落ちたテスト |
+|---|---|
+| `allowedNext(AIP_CREATED)` に `RECEIPT_VERIFIED` を戻す | `receiptVerifiedIsNotAnOrdinaryMove` |
+| `custodyHasPassed()` guard を外す | `aLateReceiptDoesNotRewriteTheHandover` |
+| `reportsSuccess()` を読まない | `aNegativeReceiptIsNotVerification` / `anUnknownOutcomeIsNotSuccess` |
+
 ---
 
 ## 5. まだ無いもの

@@ -363,3 +363,26 @@ digest が適用済み hash を無視する / 未配線でも毎回警告する)
 - **ドメイン横断の集約根** — 別増分 (§3 の代償を減らす作業)
 - **既存 journal 行の遡及取り込み** — 台帳は今日から前を向いて積む。
   遡って作った証拠は証拠ではない
+
+
+## 追記 (2026-08-26) — fork した span の上で inclusion proof が success を返していた
+
+`closeCheckpoint` は walk が壊れた span を封鎖しないが、**`inclusionProof` は同じ span の
+上で audit path を作って `success` を返していた**。Merkle proof が正直に語るのは
+1 点だけ — その leaf が root の下に在ること — で、**一緒に hash される隣について何も
+言わない**。したがって封鎖済み範囲の内側に偽造行が在っても、proof は綺麗に通った。
+`status: "success"` は読む人に「ここの連鎖は健全」と読まれるので、
+この台帳が持ち得る最も強い誤読になる。
+
+`EvidenceChainVerifier.verify(span)` を proof 経路にも通し、intact でなければ
+`error` を返す。文面は**その entry を疑っていない**ことを明示する
+(「無い」と読まれると記録そのものについての主張になる。壊れているのは
+照合先の範囲のほうである)。
+
+| 壊した箇所 | 落ちたテスト |
+|---|---|
+| proof 側の `walk.intact()` を外す | `aProofOverABrokenSpanIsRefused` / `theRefusalDoesNotAccuseTheEntry` |
+
+> 封鎖側の `walk.intact()` を外しても落ちるのは `abrokenSpanIsNotSealed` のほうで、
+> proof 側のテストは落ちない。**同じ 1 行が 2 箇所に在る**ので、
+> 負のコントロールは出現位置を指定して壊すこと (1 度目の計測はこれで空振りした)。

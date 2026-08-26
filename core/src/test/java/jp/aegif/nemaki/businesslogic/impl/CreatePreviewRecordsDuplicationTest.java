@@ -17,6 +17,7 @@
 package jp.aegif.nemaki.businesslogic.impl;
 
 import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
+import jp.aegif.nemaki.dao.impl.couch.delegate.AttachmentDaoDelegate;
 import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.evidence.FormatDuplicationRecorder;
 import jp.aegif.nemaki.model.Document;
@@ -109,12 +110,14 @@ class CreatePreviewRecordsDuplicationTest {
         converted.setStream(convertedStream);
 
         RenditionManager renditions = mock(RenditionManager.class);
-        when(renditions.convertToPdf(any(), anyString())).thenReturn(converted);
-        when(renditions.converterIdFor(any())).thenReturn(converterId);
+        when(renditions.convertToPdfAttributed(any(), anyString())).thenReturn(
+                new RenditionManager.Converted(converted, converterId));
         service.setRenditionManager(renditions);
 
         when(dao.createRendition(eq(REPO), any(Rendition.class), any()))
                 .thenAnswer(invocation -> {
+                    // What the real delegate does at entry; the fixture stands in for it.
+                    AttachmentDaoDelegate.renditionContentStored.set(Boolean.TRUE);
                     ContentStream stored = invocation.getArgument(2);
                     if (daoReadsTheStream && stored != null && stored.getStream() != null) {
                         if (shortRead) {
@@ -282,8 +285,8 @@ class CreatePreviewRecordsDuplicationTest {
         ContentStreamImpl source = new ContentStreamImpl("already.pdf",
                 BigInteger.valueOf(PDF.length), "application/pdf", new ByteArrayInputStream(PDF));
         RenditionManager renditions = mock(RenditionManager.class);
-        when(renditions.convertToPdf(any(), anyString())).thenReturn(source);
-        when(renditions.converterIdFor(any())).thenReturn("jodconverter/LibreOffice");
+        when(renditions.convertToPdfAttributed(any(), anyString())).thenReturn(
+                new RenditionManager.Converted(source, "jodconverter/LibreOffice"));
         service.setRenditionManager(renditions);
         FormatDuplicationRecorder recorder = mock(FormatDuplicationRecorder.class);
         service.setFormatDuplicationRecorder(recorder);
@@ -306,7 +309,7 @@ class CreatePreviewRecordsDuplicationTest {
         ContentDaoService dao = mock(ContentDaoService.class);
         service.setContentDaoService(dao);
         RenditionManager renditions = mock(RenditionManager.class);
-        when(renditions.convertToPdf(any(), anyString())).thenReturn(null);
+        when(renditions.convertToPdfAttributed(any(), anyString())).thenReturn(null);
         service.setRenditionManager(renditions);
         FormatDuplicationRecorder recorder = mock(FormatDuplicationRecorder.class);
         service.setFormatDuplicationRecorder(recorder);
@@ -322,5 +325,100 @@ class CreatePreviewRecordsDuplicationTest {
         assertNull(result);
         verify(recorder, never()).recordDuplication(anyString(), anyString(), any(), any(),
                 any(), any(), anyString());
+    }
+
+    @Test
+    @DisplayName("a FULL read whose attachment write failed records no digest")
+    void aSwallowedAttachmentFailureRecordsNoDigest() throws Exception {
+        // The nastiest of the three, because the counting stream sees everything it expects:
+        // AttachmentDaoDelegate reads the whole stream, THEN the attachment write throws and
+        // is swallowed, and the document id comes back regardless. Byte count and declared
+        // length agree, so length alone cannot tell this apart from a successful store — and
+        // the digest would be committed to a rendition whose bytes are not in the repository.
+        ContentServiceImpl service = new ContentServiceImpl();
+        ContentDaoService dao = mock(ContentDaoService.class);
+        service.setContentDaoService(dao);
+        ContentStreamImpl converted = new ContentStreamImpl("preview.pdf",
+                BigInteger.valueOf(PDF.length), "application/pdf", new ByteArrayInputStream(PDF));
+        RenditionManager renditions = mock(RenditionManager.class);
+        when(renditions.convertToPdfAttributed(any(), anyString())).thenReturn(
+                new RenditionManager.Converted(converted, "jodconverter/LibreOffice"));
+        service.setRenditionManager(renditions);
+        when(dao.createRendition(eq(REPO), any(Rendition.class), any()))
+                .thenAnswer(invocation -> {
+                    ContentStream stored = invocation.getArgument(2);
+                    stored.getStream().readAllBytes();
+                    // What the swallowed catch in AttachmentDaoDelegate does.
+                    AttachmentDaoDelegate.renditionContentStored.set(Boolean.FALSE);
+                    return "rend-1";
+                });
+        FormatDuplicationRecorder recorder = mock(FormatDuplicationRecorder.class);
+        when(recorder.recordDuplication(anyString(), anyString(), any(), any(), any(), any(),
+                anyString())).thenReturn(new FormatDuplicationRecorder.Recorded(true, null));
+        service.setFormatDuplicationRecorder(recorder);
+        Document document = new Document();
+        document.setId("doc-1");
+        document.setName("minutes.docx");
+
+        createPreview().invoke(service, mock(CallContext.class), REPO,
+                new ContentStreamImpl("minutes.docx", BigInteger.valueOf(4), "application/x",
+                        new ByteArrayInputStream("srcb".getBytes(StandardCharsets.UTF_8))),
+                document);
+
+        org.mockito.ArgumentCaptor<String> produced =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(recorder).recordDuplication(eq(REPO), eq("doc-1"), any(), produced.capture(),
+                any(), any(), anyString());
+
+        assertNull(produced.getValue(),
+                "the attachment write failed and was swallowed, and a digest of the bytes that "
+                        + "were read was recorded as the digest of a stored rendition");
+    }
+
+    @Test
+    @DisplayName("a stale TRUE from an earlier rendition does not licence this one's digest")
+    void theStoredFlagDoesNotLeakToTheNextRendition() throws Exception {
+        // Request threads are pooled, so whatever the last rendition left behind is still
+        // there. Here the DAO reads every byte — so the byte count is satisfied and cannot be
+        // what decides this — and never reports, which is what a store that does not go
+        // through AttachmentDaoDelegate looks like. The only thing left saying "the bytes were
+        // stored" is the PREVIOUS document's value.
+        AttachmentDaoDelegate.renditionContentStored.set(Boolean.TRUE);
+        ContentServiceImpl service = new ContentServiceImpl();
+        ContentDaoService dao = mock(ContentDaoService.class);
+        service.setContentDaoService(dao);
+        ContentStreamImpl converted = new ContentStreamImpl("preview.pdf",
+                BigInteger.valueOf(PDF.length), "application/pdf", new ByteArrayInputStream(PDF));
+        RenditionManager renditions = mock(RenditionManager.class);
+        when(renditions.convertToPdfAttributed(any(), anyString())).thenReturn(
+                new RenditionManager.Converted(converted, "jodconverter/LibreOffice"));
+        service.setRenditionManager(renditions);
+        when(dao.createRendition(eq(REPO), any(Rendition.class), any()))
+                .thenAnswer(invocation -> {
+                    ContentStream stored = invocation.getArgument(2);
+                    stored.getStream().readAllBytes();
+                    return "rend-1";
+                });
+        FormatDuplicationRecorder recorder = mock(FormatDuplicationRecorder.class);
+        when(recorder.recordDuplication(anyString(), anyString(), any(), any(), any(), any(),
+                anyString())).thenReturn(new FormatDuplicationRecorder.Recorded(true, null));
+        service.setFormatDuplicationRecorder(recorder);
+        Document document = new Document();
+        document.setId("doc-1");
+        document.setName("minutes.docx");
+
+        createPreview().invoke(service, mock(CallContext.class), REPO,
+                new ContentStreamImpl("minutes.docx", BigInteger.valueOf(4), "application/x",
+                        new ByteArrayInputStream("srcb".getBytes(StandardCharsets.UTF_8))),
+                document);
+
+        org.mockito.ArgumentCaptor<String> produced =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(recorder).recordDuplication(eq(REPO), eq("doc-1"), any(), produced.capture(),
+                any(), any(), anyString());
+
+        assertNull(produced.getValue(),
+                "nothing reported that the bytes were stored, and a value left behind by an "
+                        + "earlier rendition was read as this one's outcome");
     }
 }

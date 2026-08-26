@@ -51,35 +51,33 @@ public class CompositeRenditionManagerImpl implements ExtendedRenditionManager {
 	}
 
 	/**
-	 * The delegate that would convert this type — the same first-match walk {@code convertToPdf}
-	 * performs, so the answer is what will actually happen rather than what usually happens.
+	 * The delegate that actually SUCCEEDED, not the first that claimed the type.
+	 *
+	 * <p>The distinction is the whole point. A delegate can claim a mime type and still return
+	 * null — Diagram never converts to PDF, and CAD gives up when it cannot read the extension
+	 * — and this loop then falls through to the next one. Reporting the claimant would name the
+	 * delegate that failed, and that name goes into the evidence chain with the digest
+	 * committing to it.
 	 */
 	@Override
-	public String converterIdFor(String mediatype) {
-		if (delegates == null) {
-			return null;
-		}
-		for (RenditionManager delegate : delegates) {
-			if (delegate.checkConvertible(mediatype)) {
-				return delegate.converterId();
-			}
-		}
-		return null;
-	}
-
-	@Override
-	public ContentStream convertToPdf(ContentStream contentStream, String documentName) {
+	public Converted convertToPdfAttributed(ContentStream contentStream, String documentName) {
 		if (delegates == null) return null;
 		String mimeType = contentStream.getMimeType();
 		for (RenditionManager delegate : delegates) {
 			if (delegate.checkConvertible(mimeType)) {
 				log.info("[CompositeRendition] Delegating PDF conversion to: " + delegate.getClass().getSimpleName());
 				ContentStream result = delegate.convertToPdf(contentStream, documentName);
-				if (result != null) return result;
+				if (result != null) return new Converted(result, delegate.converterId());
 			}
 		}
 		log.warn("[CompositeRendition] No delegate could convert to PDF: " + documentName);
 		return null;
+	}
+
+	@Override
+	public ContentStream convertToPdf(ContentStream contentStream, String documentName) {
+		Converted converted = convertToPdfAttributed(contentStream, documentName);
+		return converted == null ? null : converted.stream();
 	}
 
 	@Override

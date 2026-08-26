@@ -296,6 +296,18 @@ public class EvidenceLedgerService {
                     + "the ledger and the checkpoint disagree about what was covered");
             return body;
         }
+        // A proof over a span that does not verify is a proof of nothing. The sealing path
+        // refuses such a span outright; this one used to hand back an audit path and call it
+        // success, so a fork inside the covered range came out as a clean proof.
+        EvidenceChainVerifier.Report walk = EvidenceChainVerifier.verify(span);
+        if (!walk.intact()) {
+            body.put("status", "error");
+            body.put("message", "the span this checkpoint covers does not verify, so no "
+                    + "inclusion proof over it establishes anything. The entry may well be "
+                    + "there; what is broken is the range it would be proved against.");
+            body.putAll(walk.asMap());
+            return body;
+        }
         List<MerkleTree.ProofStep> path = MerkleTree.proof(leaves, index);
         body.put("status", "success");
         body.put("domain", domain);

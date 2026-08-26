@@ -24,15 +24,25 @@ public interface RenditionManager {
 	}
 
 	/**
-	 * Who would convert {@code mediatype}, or null when nothing here would.
+	 * The PDF conversion, together with WHO did it.
 	 *
-	 * <p>Mirrors {@link #checkConvertible} rather than reporting what the last call happened to
-	 * do: a field remembering the last delegate would be wrong under any concurrency, and this
-	 * dispatch is deterministic.
+	 * <p>One walk, one answer. The first version asked separately — {@code converterIdFor} for
+	 * the name and {@code convertToPdf} for the bytes — and the two disagree: the id side takes
+	 * the first delegate that says it CAN convert, and the bytes side takes the first that
+	 * actually DOES. A delegate that claims the type and returns null (Diagram never converts
+	 * to PDF; CAD returns null when it cannot read the extension) makes the composite fall
+	 * through to the next one, and the recorded converter is then the one that failed.
+	 *
+	 * <p>Attribution is written into the evidence chain and the digest commits to it, so a
+	 * mismatch here is a false record. Two questions that must agree are better asked once.
 	 */
-	default String converterIdFor(String mediatype) {
-		return checkConvertible(mediatype) ? converterId() : null;
+	default Converted convertToPdfAttributed(ContentStream contentStream, String documentName) {
+		ContentStream result = convertToPdf(contentStream, documentName);
+		return result == null ? null : new Converted(result, converterId());
 	}
+
+	/** What came out, and which converter produced it. */
+	public record Converted(ContentStream stream, String converterId) {}
 	
 	public List<String> getSupportedMimeTypes();
 }

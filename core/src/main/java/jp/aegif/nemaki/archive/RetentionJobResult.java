@@ -37,7 +37,14 @@ public class RetentionJobResult {
     public void incrementSucceeded() { succeeded++; }
     public void incrementFailed() { failed++; }
     public void incrementSkipped() { skipped++; }
-    public void incrementRefused() { refused++; skipped++; }
+    /**
+     * Counts a refusal.
+     *
+     * <p>Does NOT also bump {@code skipped}: the caller already does that when moveToCold
+     * returns false, so doing it here counted every refusal twice and the job log overstated
+     * how many archives it had passed over.
+     */
+    public void incrementRefused() { refused++; }
     public int getRefused() { return refused; }
 
     public String getJobName() { return jobName; }

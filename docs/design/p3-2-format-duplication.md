@@ -127,6 +127,43 @@ null になったとき rendition は成功したまま**記録だけが静か�
 | 出力 digest を entry digest から落とす | `theDigestCommitsToBothSides` / `theDigestIsDomainSeparated` |
 | 拒否された追記を chained と報告する | `aRefusedAppendDoesNotFailTheCopy` |
 
+### 4.1 2026-08-26 レビューで塞いだ 3 点 (負のコントロール 4 本追加)
+
+いずれも「弱い事実が強く読める」型で、3 点とも**テストが無かった場所**にあった。
+
+| 壊した箇所 | 落ちたテスト |
+|---|---|
+| 成功した delegate ではなく**名乗り出た** delegate を記録する | `theSucceedingDelegateIsReported` / `nothingConvertedIsNotAConversion` |
+| 開示 section を報告から外す | `DuplicationSectionTest` 4 本全部 |
+| 「何も報告が無い」を「保存された」と読む | `theStoredFlagDoesNotLeakToTheNextRendition` |
+| 呼出し前に ThreadLocal を消さない | 同上 |
+
+**(1) 変換器の帰属 — 名乗ることは変換することではない。**
+`CompositeRenditionManagerImpl` は mime type を**名乗った**最初の delegate に投げるが、
+名乗った delegate が null を返して次に落ちることがある (Diagram は PDF を作らない、
+CAD は読めない拡張子で諦める)。旧 `converterIdFor(mimeType)` は名乗り手を答えていたので、
+**LibreOffice 出力の digest の隣に CAD 経路が落とすものの説明**が並び得た。
+`convertToPdfAttributed` が 1 回の走査で「実際に bytes を返した delegate」を返す形にし、
+`convertToPdf` はそれに委譲する (2 度走査すると 2 度変換され、
+測ったのは 1 度目の bytes で呼び手が持つのは 2 度目になる)。
+
+**(2) 開示が読める成果物に乗っていなかった。**
+変換器ごとの開示文は enum の中にあり、**本番の呼び出し元が 0 件**だった。
+台帳 entry には digest しか入らないので、**読む人が開けるものには何も書かれていない**。
+Word と PDF が両方 digest 付きで chain に居れば 2 つの記録に見える — 開示文が
+防ぐはずだった、まさにその読み方である。`AuthenticityReportAssembler` に
+`duplications` section を足し、`ledger` の直後・**開示文を識別子より先**に置いた。
+台帳が読めないときは `ABSENT` ではなく `UNAVAILABLE`
+(「見に行けなかった」と「無い」は別の答えで、記録について語っているのは後者だけ)。
+
+**(3) 添付書込みが握り潰されたときの digest。**
+`AttachmentDaoDelegate.createRendition` は添付書込みの失敗を握り潰して id を返す。
+SDK が**全部読んでから**落ちることがあるので、バイト数では見分けが付かない。
+delegate 側に `renditionContentStored` (ThreadLocal) を置き、入口で TRUE・
+握り潰す catch で FALSE。読む側 (`createPreview`) は**呼出しの直前に消してから**読み、
+finally で消す。沈黙は「delegate に届かなかった」であって「保存された」ではないので、
+digest は記録しない。消さないと**前の文書の結果**が今回の判定になる。
+
 ---
 
 ## 5. まだ証跡が付いていない複製経路

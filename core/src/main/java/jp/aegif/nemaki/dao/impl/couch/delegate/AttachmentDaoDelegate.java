@@ -523,7 +523,21 @@ public class AttachmentDaoDelegate {
 		}
 	}
 
+	/**
+	 * Whether the last {@link #createRendition} on THIS thread actually stored its bytes.
+	 *
+	 * <p>A thread-local rather than a return value because the signature is on an interface with
+	 * other implementations and several callers, and widening it for one caller's benefit would
+	 * touch all of them. Read immediately after the call, on the calling thread, or not at all.
+	 *
+	 * <p>It exists because this method swallows an attachment-write failure and returns an id
+	 * anyway: without it, "the rendition was created" and "the rendition has its content" are
+	 * the same answer.
+	 */
+	public static final ThreadLocal<Boolean> renditionContentStored = new ThreadLocal<>();
+
 	public String createRendition(String repositoryId, Rendition rendition, ContentStream contentStream) {
+		renditionContentStored.set(Boolean.TRUE);
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 
@@ -572,6 +586,12 @@ public class AttachmentDaoDelegate {
 
 				} catch (Exception attachmentError) {
 					log.warn("Failed to store binary content as attachment for rendition: " + documentId + ". Content stored as metadata only.", attachmentError);
+					// The bytes are NOT stored. Callers that hash the stream as it goes past
+					// would otherwise hold a digest of content nobody has and record it as the
+					// digest of the stored copy — the byte count cannot see this, because the
+					// SDK may have read the whole stream before the write failed. Saying so is
+					// the only way that caller can tell.
+					renditionContentStored.set(Boolean.FALSE);
 				}
 			}
 

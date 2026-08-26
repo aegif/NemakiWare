@@ -244,7 +244,14 @@ public class FormatDuplicationRecorder {
     }
 
     /**
-     * The duplication as a reader sees it — for the authenticity report and the SIP.
+     * The duplication as a reader would see it, for a caller that has the facts to hand.
+     *
+     * <p><b>No production caller today.</b> The javadoc used to name the authenticity report
+     * and the SIP as consumers, which described a wiring that did not exist. What actually
+     * reaches a reader is the report's {@code duplications} section, and it is built from the
+     * LEDGER — where the entry carries a digest and not the converter — so it states the
+     * general disclosure rather than this per-converter one. This method is kept for a caller
+     * that holds the converter at the time of writing.
      *
      * <p>The disclosure is FIRST. A reader skimming a block about a derived copy has to meet
      * "this is not a preservation format" before the identifiers, not after them.
