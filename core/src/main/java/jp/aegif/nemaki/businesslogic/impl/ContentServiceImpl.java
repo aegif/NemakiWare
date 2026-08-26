@@ -3847,22 +3847,36 @@ public class ContentServiceImpl implements ContentService {
 			// rendition back afterwards would be a second trip for a value we are already
 			// holding. A digesting wrapper costs neither.
 			java.security.MessageDigest producedDigest = null;
+			CountingDigestStream counted = null;
 			ContentStream toStore = converted;
-			try {
-				producedDigest = java.security.MessageDigest.getInstance("SHA-256");
-				toStore = new org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl(
-						converted.getFileName(),
-						converted.getBigLength(),
-						converted.getMimeType(),
-						new java.security.DigestInputStream(converted.getStream(), producedDigest));
-			} catch (java.security.NoSuchAlgorithmException e) {
-				// Recorded without the produced digest rather than not recorded at all: the
-				// duplication still happened, and a weaker record of it beats none.
-				log.warn("createRendition: SHA-256 unavailable, the duplication will be recorded "
-						+ "without a produced digest: " + e.getMessage());
+			// Only wrap a stream that exists. The DAO skips the attachment write when
+			// getStream() is null, and a wrapper is non-null even around nothing — so wrapping
+			// unconditionally turns that graceful skip into a read of null, i.e. an NPE where
+			// there used to be a document with no content.
+			if (converted.getStream() != null) {
+				try {
+					producedDigest = java.security.MessageDigest.getInstance("SHA-256");
+					counted = new CountingDigestStream(converted.getStream(), producedDigest);
+					toStore = new org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl(
+							converted.getFileName(),
+							converted.getBigLength(),
+							converted.getMimeType(),
+							counted);
+				} catch (java.security.NoSuchAlgorithmException e) {
+					// Recorded without the produced digest rather than not recorded at all: the
+					// duplication still happened, and a weaker record of it beats none.
+					log.warn("createRendition: SHA-256 unavailable, the duplication will be "
+							+ "recorded without a produced digest: " + e.getMessage());
+				}
 			}
 			String renditionId = contentDaoService.createRendition(repositoryId, rendition, toStore);
-			recordFormatDuplication(callContext, repositoryId, document, producedDigest);
+			// The byte count decides whether the digest means anything. If the DAO never read
+			// the stream — a path that skips the attachment write, a store that takes the
+			// reference and defers — MessageDigest still answers, with SHA-256 of nothing, and
+			// recording THAT as the digest of a converted document is a false record rather
+			// than a missing one.
+			recordFormatDuplication(callContext, repositoryId, document,
+					counted != null && counted.bytesRead() > 0 ? producedDigest : null);
 			List<String> renditionIds = document.getRenditionIds();
 			if (renditionIds == null) {
 				document.setRenditionIds(new ArrayList<String>());
@@ -3910,6 +3924,72 @@ public class ContentServiceImpl implements ContentService {
 		} catch (RuntimeException e) {
 			log.warn("createRendition: the format duplication of " + document.getId()
 					+ " could not be recorded: " + e.getMessage());
+		}
+	}
+
+	/**
+	 * Digests what is read, and remembers how much that was.
+	 *
+	 * <p>The count is not decoration. A {@code MessageDigest} that was never fed still returns a
+	 * value — SHA-256 of the empty input — and nothing about that value says it is not the
+	 * digest of the document. Recording it would be a FALSE record, which is worse than the
+	 * missing one that comes from admitting we did not measure.
+	 */
+	private static final class CountingDigestStream extends java.io.FilterInputStream {
+
+		private final java.security.MessageDigest digest;
+		private long bytesRead;
+
+		CountingDigestStream(java.io.InputStream in, java.security.MessageDigest digest) {
+			super(in);
+			this.digest = digest;
+		}
+
+		long bytesRead() {
+			return bytesRead;
+		}
+
+		@Override
+		public int read() throws java.io.IOException {
+			int b = in.read();
+			if (b >= 0) {
+				digest.update((byte) b);
+				bytesRead++;
+			}
+			return b;
+		}
+
+		@Override
+		public int read(byte[] buffer, int offset, int length) throws java.io.IOException {
+			int read = in.read(buffer, offset, length);
+			if (read > 0) {
+				digest.update(buffer, offset, read);
+				bytesRead += read;
+			}
+			return read;
+		}
+
+		@Override
+		public long skip(long n) throws java.io.IOException {
+			// Skipping past bytes would leave them out of the digest while they still reach
+			// storage, so the recorded value would be of something nobody has. Read them.
+			long skipped = 0;
+			byte[] buffer = new byte[8192];
+			while (skipped < n) {
+				int read = read(buffer, 0, (int) Math.min(buffer.length, n - skipped));
+				if (read < 0) {
+					break;
+				}
+				skipped += read;
+			}
+			return skipped;
+		}
+
+		@Override
+		public boolean markSupported() {
+			// A reset would rewind the stream and not the digest, so the two would disagree
+			// with nothing saying so.
+			return false;
 		}
 	}
 
