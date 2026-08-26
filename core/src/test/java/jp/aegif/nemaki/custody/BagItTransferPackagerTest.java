@@ -86,10 +86,13 @@ class BagItTransferPackagerTest {
         Map<String, byte[]> entries = entriesOf(bagged.zippedBag());
         assertTrue(entries.containsKey("bagit.txt"), entries.keySet().toString());
         assertTrue(entries.containsKey("manifest-sha512.txt"), entries.keySet().toString());
-        assertTrue(entries.containsKey("manifest-sha256.txt"),
-                "only one manifest: a receiver reconciling against this product's SHA-256 "
-                        + "evidence has to recompute a second digest to do it: "
-                        + entries.keySet());
+        // Exactly ONE payload manifest. RFC 8493 allows several, and RODA 6.3.0 adds each
+        // payload file once per manifest — so a second one makes the ingest fail with
+        // "Binary already exists" and roll back. Measured against a live RODA on 2026-08-26;
+        // the identical bag with one manifest produced an AIP.
+        assertFalse(entries.containsKey("manifest-sha256.txt"),
+                "a second payload manifest is back; the tested receiver cannot ingest such a "
+                        + "bag: " + entries.keySet());
         assertTrue(entries.containsKey("bag-info.txt"), entries.keySet().toString());
     }
 
@@ -107,7 +110,10 @@ class BagItTransferPackagerTest {
         assertTrue(info.contains("External-Identifier: " + SUBMISSION), info);
         assertTrue(info.contains(DIGEST),
                 "the bag does not name the package digest, so a bag and a receipt can only be "
-                        + "tied together through a system that holds both: " + info);
+                        + "tied together through a system that holds both — and, since there is "
+                        + "now only one payload manifest, this is also where a receiver finds "
+                        + "the SHA-256 it needs to reconcile against this product's chain: "
+                        + info);
     }
 
     @Test

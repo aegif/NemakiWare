@@ -301,3 +301,96 @@ REST の受け口はリクエスト本文から決して読まない (findings �
 | 既記録の照会を外す | `aRetryDoesNotChainTheHandoverTwice` |
 | subject だけで一致とみなす | `adifferentHandoverIsNotSuppressed` |
 
+---
+
+## 10. RODA 実機受入試験 (2026-08-26 実測)
+
+**RODA 6.3.0 を立てて、NemakiWare が作った本物の SIP / bag を投入した。**
+結果は 2 つとも「相互運用できる」ではなかった。両方とも原因を特定した。
+
+### 投入 API — 前回「未特定」としていたもの
+
+解けた。`/api/v1/**` も `/api/v2/**` も 404 に見えたのは、**存在しないパスを
+叩いていた**だけだった。
+
+```
+POST /api/v2/transfers/create/resource     multipart, part 名は "resource" → 201
+POST /api/v2/transfers/refresh                                            → 204
+POST /api/v2/transfers/find                (検索)                          → 200
+POST /api/v2/jobs                          (取込ジョブ)                    → 201
+```
+
+`POST /api/v2/jobs` の body は `CreateJobRequest`。ハマった点:
+
+- `sourceObjects` の多相判別子は **`@type`** で、値は `"SelectedItemsListRequest"`
+  (`"list"` でも `"object"` でもない。バイトコードの `JsonTypeInfo` から読んだ)
+- **`priority` と `parallelism` は必須**。省略すると enum 変換が
+  `NullPointerException: Name is null` になり、**HTTP 500** が返る
+- `GET /api/v2/jobs/plugin-info` は `plugin-info.json` が未生成だと 404。
+  プラグイン ID は fat jar の中の `roda-core-6.3.0.jar` から読める
+
+### 結果 1 — E-ARK SIP は **取り込めない**
+
+`EARKSIPToAIPPlugin` が拒否する。`Is the package valid? no`。
+
+```
+Element 'note' is a simple type, so it cannot have attributes ...
+However, the attribute, 'csip:NOTETYPE' was found.   (METS.xml 6 行目)
+```
+
+**我々の SIP が壊れているのではない。** 測った:
+
+| 検査したもの | 結果 |
+|---|---|
+| commons-ip2 **2.12.0** (我々が生成に使う) の validator | **valid** (エラー 0) |
+| commons-ip2 **2.11.3** (RODA が積んでいる版) の validator | **valid**、130 検査通過、エラー 0 |
+| commons-ip2 2.11.3 / 2.12.0 の **parser** (`EARKSIP.parse`) | 両方 **成功**、`valid=true` |
+| RODA 6.3.0 の取込プラグイン | **拒否** |
+
+つまり **RODA は commons-ip2 の検証もパースも使っておらず、独自の METS 検証
+(JAXB + 自前スキーマ) で落としている**。そして我々の package が**同梱している**
+`mets1_12.xsd` (DILCIS 修正版) は、`note` を complexType にしたうえで
+`<xsd:attribute ref="csip:NOTETYPE" use="required"/>` — **必須**と宣言している。
+
+> **両方を同時に満たす METS は書けない。** CSIP 準拠なら `csip:NOTETYPE` が要り、
+> RODA の検証はそれを許さない。
+
+`csip:NOTETYPE` を外して再投入すると、今度は
+`METS 'TYPE' attribute does not contain a valid value` で落ちる。
+**1 つ目の後ろに 2 つ目が居る**ので、属性 1 個の問題ではない。
+
+### 結果 2 — BagIt は **取り込める**。ただし manifest は 1 本
+
+`BagitToAIPPlugin` に投げると、最初は失敗した:
+
+```
+Binary already exists: .../representations/rep1/data/nemaki-....zip
+Transaction was rolled back
+```
+
+**原因は我々の側**だった。`BagItTransferPackager` は SHA-512 と SHA-256 の
+**manifest を 2 本**書いていた (RFC 8493 §2.1.3 は複数を許す)。RODA の plugin は
+**manifest ごとに payload を追加する**ので、2 本目で「もう在る」と落ちる。
+
+manifest を 1 本にした同一の bag を投入 → **SUCCESS**。
+`AIP` が 1 件生成され、representation と payload ファイルが入った。
+
+そこで **SHA-512 の 1 本だけを書く**ように変えた。失うものは無い —
+payload の SHA-256 は `bag-info.txt` の `External-Description` に既に入っており、
+受け手が我々の連鎖と突き合わせるのに必要なのはそれである。
+
+**これは受け手 1 つの欠陥に対する回避策**であり、そう明記してある。
+別の受け手が 2 本目を望むなら、それは意図して変え、その受け手に対して測る変更である。
+
+### この試験が確かめたこと / 確かめていないこと
+
+**確かめた**: NemakiWare の bag は RODA 6.3.0 が取り込み、AIP になる。
+E-ARK SIP は RODA 6.3.0 が取り込まない。
+
+**確かめていない**: 他版の RODA、Archivematica、受領証の形式と署名
+(RODA が受領証を返す経路そのものが未調査)、`reportsSuccess()` の語彙。
+**取り込めたことは「先方が保持し続ける」ことでも「AIP が正しい」ことでもない。**
+
+> なお `EXPORT_LIMITS` は最初から「**NOT a statement that any particular archive
+> will accept it**」と書いていた。今回それが必要な但し書きだったことが実測で分かった。
+

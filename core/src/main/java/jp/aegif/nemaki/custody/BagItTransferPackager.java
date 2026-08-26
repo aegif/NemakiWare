@@ -49,13 +49,25 @@ import java.util.zip.ZipOutputStream;
  * true is narrower: a directory with a payload and manifests, zipped, which is what the
  * receiving system's {@code zipped bag} transfer type reads.
  *
- * <h2>SHA-512, and SHA-256 beside it</h2>
+ * <h2>ONE payload manifest — measured, not preferred</h2>
  *
- * <p>Two manifests, not one. SHA-512 because it is what a receiving system is most likely to
- * prefer today, SHA-256 because the rest of this product's evidence is SHA-256 and a receiver
- * reconciling a bag manifest against our chain should not have to compute a second digest to do
- * it. RFC 8493 §2.1.3 allows several manifests, and the cost is one extra pass over bytes that
- * are already being read.
+ * <p>SHA-512 only. The first version wrote SHA-512 <i>and</i> SHA-256: RFC 8493 §2.1.3 allows
+ * several, and the second one meant a receiver reconciling a bag against this product's
+ * SHA-256 evidence would not have to recompute anything.
+ *
+ * <p><b>RODA 6.3.0 cannot ingest such a bag.</b> Measured 2026-08-26 against a live instance:
+ * its {@code BagitToAIPPlugin} adds each payload file once per manifest, so the second add
+ * fails with "Binary already exists" and the whole ingest transaction is rolled back. The
+ * identical bag with one manifest ingests and produces an AIP.
+ *
+ * <p>So one manifest, and nothing is lost by it: {@code bag-info.txt} already carries the
+ * payload's SHA-256 in {@code External-Description}, which is the value a receiver needs to tie
+ * the bag to this product's chain.
+ *
+ * <p>This is a workaround for a defect in one receiver, chosen because a transfer format the
+ * tested receiver cannot read does not do the job the layer exists for. If a deployment's
+ * receiver wants a second manifest, that is a change to make deliberately — and to measure
+ * against that receiver.
  *
  * <p>Design: {@code docs/design/p3-4-custody-transfer.md} §6.
  */
@@ -116,10 +128,10 @@ public final class BagItTransferPackager {
             metadata.add("External-Description",
                     "E-ARK SIP; package digest (SHA-256) " + sipDigest);
         }
-        // Both manifests. See the class javadoc for why two.
+        // ONE manifest. See the class javadoc: two of them make RODA 6.3.0 roll back the
+        // ingest, and the payload's SHA-256 is already in bag-info.txt.
         try {
-            BagCreator.bagInPlace(bagRoot,
-                    List.of(StandardSupportedAlgorithms.SHA512, StandardSupportedAlgorithms.SHA256),
+            BagCreator.bagInPlace(bagRoot, List.of(StandardSupportedAlgorithms.SHA512),
                     false, metadata);
         } catch (java.security.NoSuchAlgorithmException e) {
             // Not swallowed into a generic failure: a JVM without SHA-512 is a deployment
