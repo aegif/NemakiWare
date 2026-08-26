@@ -27,6 +27,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -56,7 +57,19 @@ class DuplicationSectionTest {
 
     private static AuthenticityReport.Section duplications(List<EvidenceLedgerEntry> entries,
             boolean storeWired) {
+        return duplications(entries, storeWired, null);
+    }
+
+    private static AuthenticityReport.Section duplications(List<EvidenceLedgerEntry> entries,
+            boolean storeWired, List<jp.aegif.nemaki.model.Rendition> renditions) {
         AuthenticityReportAssembler assembler = new AuthenticityReportAssembler();
+        if (renditions != null) {
+            jp.aegif.nemaki.businesslogic.ContentService contentService =
+                    mock(jp.aegif.nemaki.businesslogic.ContentService.class);
+            when(contentService.getRenditions(anyString(), anyString()))
+                    .thenReturn(renditions);
+            assembler.setContentService(contentService);
+        }
         if (storeWired) {
             EvidenceLedgerStore store = mock(EvidenceLedgerStore.class);
             when(store.findBySubject(anyString(), anyString(), anyInt())).thenReturn(entries);
@@ -116,6 +129,58 @@ class DuplicationSectionTest {
         // caveat applies".
         assertTrue(disclosure.contains("COMMITS to which converter"), disclosure);
         assertTrue(disclosure.contains("does not carry"), disclosure);
+    }
+
+    private static jp.aegif.nemaki.model.Rendition rendition(String id, String mediaType,
+            String outcome, String flavour) {
+        jp.aegif.nemaki.model.Rendition r = new jp.aegif.nemaki.model.Rendition();
+        r.setId(id);
+        r.setMimetype(mediaType);
+        r.setPdfaOutcome(outcome);
+        r.setPdfaFlavour(flavour);
+        return r;
+    }
+
+    @Test
+    @DisplayName("the PDF/A verdict reaches the report, with where it came from FIRST")
+    void theVerdictIsReadable() {
+        // The chain commits to the verdict and carries only a digest, so for a while the
+        // product checked PDF/A and no reader could see the answer. It is readable because it
+        // is ALSO on the rendition row — and that row is mutable, which is exactly why the
+        // provenance sentence has to arrive before the values.
+        AuthenticityReport.Section section = duplications(
+                List.of(entry(7, EvidenceLedgerEntry.SubjectKind.FORMAT_DUPLICATION)), true,
+                List.of(rendition("rend-1", "application/pdf", "CONFORMS", "1b")));
+
+        List<String> keys = List.copyOf(section.content().keySet());
+        assertEquals("disclosure", keys.get(0), keys.toString());
+        assertEquals("renditionsNowSource", keys.get(1),
+                "the values arrive before the sentence saying where they came from: " + keys);
+        String source = String.valueOf(section.content().get("renditionsNowSource"));
+        assertTrue(source.contains("not from the evidence chain"), source);
+        assertTrue(source.contains("COMMITS"), source);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> now =
+                (List<Map<String, Object>>) section.content().get("renditionsNow");
+        assertEquals("CONFORMS", now.get(0).get("archivalProfileOutcome"));
+        assertEquals("1b", now.get(0).get("archivalProfileFlavour"));
+        assertEquals(Boolean.TRUE, now.get(0).get("archivalProfileChecked"));
+    }
+
+    @Test
+    @DisplayName("an unchecked copy says nothing was checked, not that it failed")
+    void anUncheckedCopyIsNotAFailedOne() {
+        AuthenticityReport.Section section = duplications(
+                List.of(entry(7, EvidenceLedgerEntry.SubjectKind.FORMAT_DUPLICATION)), true,
+                List.of(rendition("rend-1", "application/pdf", null, null)));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> now =
+                (List<Map<String, Object>>) section.content().get("renditionsNow");
+        assertEquals(Boolean.FALSE, now.get(0).get("archivalProfileChecked"),
+                "a copy nobody checked was reported as having a verdict");
+        assertNull(now.get(0).get("archivalProfileOutcome"));
     }
 
     @Test

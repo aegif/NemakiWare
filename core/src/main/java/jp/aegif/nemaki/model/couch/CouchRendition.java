@@ -37,6 +37,15 @@ public class CouchRendition extends CouchNodeBase{
 	private String renditionDocumentId;
 	private InputStream inputStream;
 
+	/**
+	 * What veraPDF found, in the clear. See {@link Rendition#getPdfaOutcome()} for why it is
+	 * here as well as committed to in the evidence chain, and what that does and does not mean.
+	 */
+	private String pdfaOutcome;
+
+	/** The profile it was checked against. Null when nothing was checked. */
+	private String pdfaFlavour;
+
 	// CouchDB _attachments metadata for getting actual content length
 	private Map<String, Object> _attachments;
 
@@ -52,6 +61,8 @@ public class CouchRendition extends CouchNodeBase{
 		setWidth(r.getWidth());
 		setLength(r.getLength());
 		setMimetype(r.getMimetype());
+		setPdfaOutcome(r.getPdfaOutcome());
+		setPdfaFlavour(r.getPdfaFlavour());
 	}
 	
 	public String getKind() {
@@ -158,6 +169,24 @@ public class CouchRendition extends CouchNodeBase{
 		r.setLength(getActualLength());
 		r.setMimetype(getMimetype());
 		r.setRenditionDocumentId(getRenditionDocumentId());
+		r.setPdfaOutcome(getPdfaOutcome());
+		r.setPdfaFlavour(getPdfaFlavour());
 		return r;
+	}
+
+	public String getPdfaOutcome() {
+		return pdfaOutcome;
+	}
+
+	public void setPdfaOutcome(String pdfaOutcome) {
+		this.pdfaOutcome = pdfaOutcome;
+	}
+
+	public String getPdfaFlavour() {
+		return pdfaFlavour;
+	}
+
+	public void setPdfaFlavour(String pdfaFlavour) {
+		this.pdfaFlavour = pdfaFlavour;
 	}
 }

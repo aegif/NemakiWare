@@ -4015,6 +4015,42 @@ public class ContentServiceImpl implements ContentService {
 		// licensing one that is not. Cleared, the only reading is the delegate's own, and
 		// silence means the delegate was never reached — no digest, because "we did not hear
 		// that the bytes were stored" is not "the bytes were stored".
+		// PDF/A mode reads the copy before storing it, so the verdict can go ON the rendition
+		// row. The chain commits to the verdict but carries only a digest, so without a copy in
+		// the clear the product checked PDF/A and no reader could ever see the answer — and
+		// writing it AFTER the store would be a second write, i.e. a second chance to fail,
+		// leaving a rendition the report describes as unchecked when it was checked.
+		//
+		// Only in PDF/A mode. The default path still streams: holding every converted document
+		// in memory to answer a question nobody asked is the cost this design avoids, and the
+		// deployment that turns validation on has already accepted the bounded version of it.
+		jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation pdfa = null;
+		if (counted != null && target == jp.aegif.nemaki.evidence.FormatDuplicationRecorder
+				.TargetFormat.PDF && pdfaFlavour() != null) {
+			try {
+				byte[] produced = counted.readAllForValidation();
+				if (produced == null) {
+					pdfa = jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation.notChecked(
+							counted.whyNotRetained());
+				} else {
+					pdfa = jp.aegif.nemaki.businesslogic.rendition.pdfa.VeraPdfAValidator
+							.validate(produced, pdfaFlavour());
+					toStore = new org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl(
+							converted.getFileName(), java.math.BigInteger.valueOf(produced.length),
+							converted.getMimeType(), new java.io.ByteArrayInputStream(produced));
+				}
+			} catch (java.io.IOException e) {
+				// The copy could not be read here, so it cannot be stored either — but that is
+				// the DAO's problem to report. Not checked, and the stream is spent, so the
+				// store below will fail and say so rather than writing a truncated copy.
+				pdfa = jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation.notChecked(
+						"the produced copy could not be read (" + e.getMessage() + ")");
+			}
+			if (pdfa != null) {
+				rendition.setPdfaOutcome(pdfa.outcome().name());
+				rendition.setPdfaFlavour(pdfa.flavour());
+			}
+		}
 		jp.aegif.nemaki.dao.impl.couch.delegate.AttachmentDaoDelegate
 				.renditionContentStored.remove();
 		String renditionId;
@@ -4056,7 +4092,8 @@ public class ContentServiceImpl implements ContentService {
 						Boolean.TRUE.equals(storeReported)
 								? digestOfWhatWasStored(counted, producedDigest, converted)
 								: null,
-						converterId, target, validatePdfA(counted, target));
+						converterId, target,
+						pdfa != null ? pdfa : validatePdfA(counted, target));
 			}
 		}
 		return renditionId;
@@ -4234,6 +4271,22 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		/** The produced bytes, or null when they were not kept or the cap was passed. */
+		/**
+		 * Reads the whole copy now, so it can be validated before it is stored.
+		 *
+		 * <p>Returns null when the cap was passed — the copy is still stored, and the
+		 * validation reports NOT_CHECKED with the size as the reason. The bytes go through the
+		 * same digest and counter as the streaming path, so the recorded digest is of the same
+		 * thing either way.
+		 */
+		byte[] readAllForValidation() throws java.io.IOException {
+			byte[] buffer = new byte[8192];
+			while (read(buffer, 0, buffer.length) > 0) {
+				// The reads do the digesting and the retaining; nothing to do here.
+			}
+			return retainedBytes();
+		}
+
 		/**
 		 * The produced bytes.
 		 *

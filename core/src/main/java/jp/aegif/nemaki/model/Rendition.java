@@ -37,6 +37,28 @@ public class Rendition extends NodeBase{
 	private String renditionDocumentId;
 	private InputStream inputStream;
 
+	/**
+	 * What veraPDF found about this copy, or null when nothing was checked.
+	 *
+	 * <h2>In the clear, and NOT covered by the evidence chain</h2>
+	 *
+	 * <p>The duplication entry commits to this value — it is an input to the entry's digest —
+	 * but the entry carries a digest and not the value, so a report built from the chain alone
+	 * cannot tell a reader what was found. That left the product checking PDF/A and nobody
+	 * being able to read the answer.
+	 *
+	 * <p>So the answer lives here too, in the clear, on a row that anything with database
+	 * access can edit. That is exactly why the report says where it came from: a reader holding
+	 * both can recompute the entry digest and see whether the two agree, and a reader holding
+	 * only this row has a claim rather than evidence. Putting it INTO the chain instead would
+	 * change what the entry hash covers and invalidate every stored hash.
+	 */
+	private String pdfaOutcome;
+
+	/** The profile it was checked against, e.g. {@code 1b}. Null when nothing was checked. */
+	private String pdfaFlavour;
+
+
 	public Rendition(){
 		super();
 		setType(NodeType.RENDITION.value());
@@ -114,4 +136,21 @@ public class Rendition extends NodeBase{
 	public void setInputStream(InputStream inputStream) {
 		this.inputStream = inputStream;
 	}
+
+	public String getPdfaOutcome() {
+		return pdfaOutcome;
+	}
+
+	public void setPdfaOutcome(String pdfaOutcome) {
+		this.pdfaOutcome = pdfaOutcome;
+	}
+
+	public String getPdfaFlavour() {
+		return pdfaFlavour;
+	}
+
+	public void setPdfaFlavour(String pdfaFlavour) {
+		this.pdfaFlavour = pdfaFlavour;
+	}
+
 }

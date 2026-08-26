@@ -339,3 +339,43 @@ boolean と件数しか無かったので、**呼び手が新アルゴリズム�
 | 未検査を DOES_NOT_MATCH にする | `anUncheckableLinkIsNotClaimed` |
 | 未検査を checked に数える | 同上 |
 
+---
+
+## 9. 生成の自動化と SIP への同梱 (2026-08-26)
+
+### 新しくタイムスタンプは取らない
+
+§8 の帰結。checkpoint hash は **checkpoint の正規化バイト列の SHA-256** であり、
+本製品の RFC 3161 アンカーは **message imprint がちょうどその値の token** である。
+だから evidence record は**既に在るものの組み立て**であって、
+2 度目の TSA 往復も 2 つ目のアンカーも要らず、**新しい主張も生まれない**。
+
+裏返すと、**配備が持っていないものは作れない**。CONFIRMED な RFC 3161 受領証が
+無い checkpoint には evidence record が無く、それは「アンカーが無い」という
+**配備についての言明**であって、checkpoint が覆う記録についての言明ではない。
+OpenTimestamps 受領証は代用にならない (RFC 4998 の timestamp は RFC 3161 token である)。
+
+### 取り違えを防ぐ検査
+
+アンカー層は呼び手から hex digest を受け取る設計で、**merkle root も手元にある**。
+間違ったほうの上の token を包むと、**内部的には検証できて別のものについての記録**が
+出来る — 検証できるので信じられる。だから token の `anchoredDigest` が
+checkpoint hash と一致することを確かめてから組み立てる。
+checkpoint 行自体が自己検証しないときも組み立てない
+(壊れた root を標準の容器に入れると見栄えが良くなるだけである)。
+
+### SIP への同梱
+
+`metadata/preservation/ers.der` — `ErsFormat.CSIP_LOCATION` が宣言している位置。
+PREMIS の隣で、evidence record は保存メタデータだからである。
+
+**受け手が誤読しないように**: `ers.der` は記録の隣に在るが、その data object は
+**checkpoint** であって隣の文書ではない。evidence package の `evidenceRecord` 節と
+`ErsRecord.LIMITS` の両方がそう書く。
+
+| 壊した箇所 | 落ちたテスト |
+|---|---|
+| token の imprint を checkpoint hash と照合しない | `aTokenAboutSomethingElseIsRefused` |
+| OpenTimestamps 受領証を代用にする | `otsDoesNotSubstitute` |
+| 自己検証しない checkpoint の上に組み立てる | `anEditedCheckpointIsNotDressedUp` |
+

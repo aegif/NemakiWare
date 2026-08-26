@@ -257,11 +257,31 @@ public class EarkSipExporter {
                     new IPFile(writePremis(workDir, repositoryId, objectId, report, packagedAt)),
                     new MetadataType(MetadataType.MetadataTypeEnum.PREMIS)));
 
+            // The evidence record, if this deployment has one. It goes in preservation
+            // metadata because that is where ErsFormat.CSIP_LOCATION says an evidence record
+            // belongs, decided once so the exporter does not decide it again.
+            //
+            // Its data object is a CHECKPOINT, not this document — a receiver must not read a
+            // file called ers.der beside a record as a timestamp on the record. The evidence
+            // package below carries that sentence, and the record's own LIMITS repeat it.
+            jp.aegif.nemaki.evidence.validity.EvidenceRecordService.Built evidenceRecord =
+                    evidenceRecordService == null
+                            ? null
+                            : evidenceRecordService.latest(repositoryId);
+            if (evidenceRecord != null && evidenceRecord.present()) {
+                sip.addPreservationMetadata(new IPMetadata(
+                        new IPFile(writeEvidenceRecord(workDir, evidenceRecord.der()))));
+            }
+
             // The evidence package: the inclusion proof that ties THIS record to the chain,
             // plus the checkpoint it was sealed under. Without the proof, a package carrying a
             // checkpoint would only say "this repository's chain was sealed at some point",
             // which says nothing about the document beside it — decoration, not evidence.
             Map<String, Object> evidence = evidencePackage(repositoryId, objectId, notes);
+            evidence.put("evidenceRecord", evidenceRecord == null
+                    ? java.util.Map.of("present", false, "unavailable",
+                            "this node has no evidence record service wired")
+                    : evidenceRecord.asMap());
             sip.addOtherMetadata(new IPMetadata(
                     new IPFile(writeEvidencePackage(workDir, evidence)),
                     new MetadataType(MetadataType.MetadataTypeEnum.OTHER)));
@@ -762,6 +782,31 @@ public class EarkSipExporter {
         CaptureLookupFailed(String message) {
             super(message);
         }
+    }
+
+    /**
+     * The evidence record, at the place {@link ErsFormat#CSIP_LOCATION} names.
+     *
+     * <p>Preservation metadata, beside PREMIS — an evidence record is preservation metadata,
+     * not documentation and not descriptive metadata. The decision is on the enum so that this
+     * method does not make it a second time and disagree.
+     */
+    private Path writeEvidenceRecord(Path workDir, byte[] der) throws IOException {
+        Path dir = Files.createDirectories(
+                workDir.resolve(jp.aegif.nemaki.evidence.validity.ErsFormat.CSIP_LOCATION));
+        Path file = dir.resolve(
+                jp.aegif.nemaki.evidence.validity.ErsFormat.CHOSEN.fileName());
+        Files.write(file, der);
+        return file;
+    }
+
+    private jp.aegif.nemaki.evidence.validity.EvidenceRecordService evidenceRecordService;
+
+    /** Optional: without it a package carries no evidence record and the manifest says so. */
+    @Autowired(required = false)
+    public void setEvidenceRecordService(
+            jp.aegif.nemaki.evidence.validity.EvidenceRecordService evidenceRecordService) {
+        this.evidenceRecordService = evidenceRecordService;
     }
 
     private Path writeEvidencePackage(Path workDir, Map<String, Object> evidence)

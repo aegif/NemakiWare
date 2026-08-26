@@ -182,7 +182,7 @@ digest は記録しない。消さないと**前の文書の結果**が今回の
 | `rest/RenditionResource` / `rest/controller/RenditionController` / `api/v1/resource/RenditionResource` の 3 本 | **実装済み** (2026-08-26)。§7。かつて「永続化しないので対象外」と書いていたのは誤りで、3 本とも永続化していた |
 | `AttachmentServiceDelegate.copyRenditions` (コピー時の rendition 複製) | **実装済み** (2026-08-26)。§8 |
 | ~~cloud drive 側の変換~~ | **該当する経路が存在しない** (2026-08-26 確認)。`createRendition` を呼ぶ業務コードは `ContentServiceImpl` だけで、cloud drive 同期は rendition を作らない。`TextExtractionServiceImpl` は変換器を使うが**何も永続化しない** (索引用のテキストを返すだけ) ので複製ではない。ギャップ行のほうが陳腐化していた |
-| **PDF/A 出力と veraPDF 検証** | **実装済み・未実測** (2026-08-26、§10)。要求は `JodRenditionManagerImpl` に配線済み (`rendition.pdfa.validate.flavour` が設定されたときだけ)、判定は veraPDF、判定は entry の digest にコミット。**未**: LibreOffice を通した実測 (この build に LibreOffice が無い)、報告での判定の開示 (entry が平文を持たないため — §9) |
+| **PDF/A 出力と veraPDF 検証** | **実装済み・未実測** (2026-08-26、§10)。要求は `JodRenditionManagerImpl` に配線済み (`rendition.pdfa.validate.flavour` が設定されたときだけ)、判定は veraPDF、判定は entry の digest にコミット。判定は rendition 行にも平文で入り、報告が出所付きで表示する (§11)。**未**: LibreOffice を通した実測 (この build に LibreOffice が無い。**docker の core イメージには在る**ので実スタックでなら測れる) |
 
 ---
 
@@ -368,4 +368,39 @@ fixture でそれらしく見せることはしない (変換について何も�
 | 適合が内容を保証するかのように書く | `conformanceDoesNotVouchForContent` |
 | 但し書きを置き換えず足す | `aValidatedCopyReportsTheFinding` |
 | PDF の判定を SVG にも付ける | `aPdfFindingIsNotAboutAnSvg` |
+
+---
+
+## 11. 判定が読者に届くようにした (2026-08-26)
+
+§10 の時点では、veraPDF の判定は**複製 entry の digest にコミットされるだけ**だった。
+entry は平文を持たないので、**製品は PDF/A を検査していて、誰もその答えを読めなかった。**
+これは本セッションで 3 度自分で指摘した「本番の呼び出し元が 0 件」と同じ型である。
+
+### 平文をどこに置くか
+
+台帳 entry に足す案は採らない — entry hash の対象が変わり、**保存済みの hash が
+全部無効**になる。hash の**外**に足すのはもっと悪い (連鎖がコミットしていない注釈を、
+しているものの隣に並べる)。
+
+そこで **rendition 行**に置いた。連鎖は判定にコミットし (digest の入力)、行は平文で持つ。
+**両方を持つ読み手は entry digest を再計算して一致を確かめられる**。行だけを持つ読み手が
+持っているのは主張であって証拠ではない。報告はどちらであるかを**値より先に**書く
+(`renditionsNowSource`)。
+
+### 保存の順序
+
+判定にはバイト列が要るので、素朴にやると「保存 → 判定 → 行を更新」になる。
+更新は 2 度目の書き込みで、**2 度目の失敗機会**である。落ちれば「検査したのに
+検査していないと報告される rendition」が残る。
+
+そこで **PDF/A 有効時だけ、保存の前に読み切って判定し、判定を載せてから保存**する。
+既定の経路は従来どおり stream する — 誰も訊いていない問いに答えるために全変換文書を
+メモリに載せるのがこの設計の避けたい費用で、検証を有効にした配備は既にその
+(上限付きの) 費用を受け入れている。
+
+| 壊した箇所 | 落ちたテスト |
+|---|---|
+| 出所の文を値の後ろに回す | `theVerdictIsReadable` |
+| 未検査を「検査済み」と出す | `anUncheckedCopyIsNotAFailedOne` |
 

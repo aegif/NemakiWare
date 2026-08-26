@@ -450,6 +450,14 @@ public class AuthenticityReportAssembler {
         // The disclosure FIRST, before the rows. A reader skimming a block about derived copies
         // has to meet "these are not the record" before the identifiers, not after them.
         body.put("disclosure", DUPLICATION_DISCLOSURE);
+        List<Map<String, Object>> present = renditionsNow(repositoryId, objectId);
+        if (!present.isEmpty()) {
+            // Where these came from, BEFORE the values. They are read from the rendition rows,
+            // which the chain does not cover — so a reader must not take them for chained
+            // facts, and the sentence saying so has to arrive first.
+            body.put("renditionsNowSource", RENDITIONS_NOW_SOURCE);
+            body.put("renditionsNow", present);
+        }
         body.put("duplications", rows);
         body.put("count", rows.size());
         body.put("truncated", truncated);
@@ -491,6 +499,28 @@ public class AuthenticityReportAssembler {
      * OUTSIDE the hash would be worse than not having it: an annotation the chain does not
      * commit to, presented in a report next to things it does.
      */
+    /**
+     * Where the in-the-clear rendition facts come from, and what that costs them.
+     *
+     * <p>The chain commits to the archival-profile verdict — it is an input to the duplication
+     * entry's digest — and carries only that digest. So the verdict cannot be read out of the
+     * chain, and for a while this report could not tell anyone what the product had found. It
+     * is readable here because it is ALSO stored on the rendition row, in the clear.
+     *
+     * <p>That row is mutable. A reader holding both can recompute the entry digest and see
+     * whether the two agree; a reader holding only this row has a claim. Saying which is which
+     * is the whole point — the alternative was putting the verdict into the entry, which
+     * changes what the entry hash covers and invalidates every stored hash.
+     */
+    static final String RENDITIONS_NOW_SOURCE =
+            "These are read from the rendition rows AS THEY STAND NOW, not from the evidence "
+                    + "chain. The chain COMMITS to each copy's archival-profile verdict — it is "
+                    + "an input to the corresponding entry's digest — but does not carry it in "
+                    + "the clear, so these values can be checked against the chain by anyone "
+                    + "holding both, and are otherwise a claim by this repository rather than "
+                    + "chained evidence. A row edited after the fact would show here and would "
+                    + "NOT match the entry.";
+
     static final String DUPLICATION_DISCLOSURE =
             "These are CONVENIENCE COPIES, not preservation formats and not additional records. "
                     + "What a copy preserves depends on the converter and on the format it was "
@@ -504,6 +534,42 @@ public class AuthenticityReportAssembler {
                     + "against an archival profile such as PDF/A, and of what that check found. "
                     + "This report therefore does NOT say a copy failed such a check, and does "
                     + "NOT say one passed. The ORIGINAL is unchanged and remains the record.";
+
+    /**
+     * The derived copies this object carries now, with what was found about each.
+     *
+     * <p>Deliberately separate from the chained entries above: those are what was recorded,
+     * these are what is here. Merging them would let a mutable row borrow the chain's standing.
+     */
+    private List<Map<String, Object>> renditionsNow(String repositoryId, String objectId) {
+        if (contentService == null) {
+            return List.of();
+        }
+        List<jp.aegif.nemaki.model.Rendition> renditions;
+        try {
+            renditions = contentService.getRenditions(repositoryId, objectId);
+        } catch (RuntimeException e) {
+            logger.warn("The renditions of {}/{} could not be read for the report: {}",
+                    repositoryId, objectId, e.getMessage());
+            return List.of();
+        }
+        if (renditions == null) {
+            return List.of();
+        }
+        List<Map<String, Object>> rows = new java.util.ArrayList<>();
+        for (jp.aegif.nemaki.model.Rendition rendition : renditions) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("renditionId", rendition.getId());
+            row.put("mediaType", rendition.getMimetype());
+            // Absent is NOT "it failed": nothing was checked, which is a statement about this
+            // deployment's configuration and not about the copy.
+            row.put("archivalProfileChecked", rendition.getPdfaOutcome() != null);
+            row.put("archivalProfileOutcome", rendition.getPdfaOutcome());
+            row.put("archivalProfileFlavour", rendition.getPdfaFlavour());
+            rows.add(row);
+        }
+        return rows;
+    }
 
     private Section versionsSection(Content content) {
         if (!(content instanceof Document document)) {
