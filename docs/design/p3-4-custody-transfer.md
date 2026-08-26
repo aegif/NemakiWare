@@ -153,5 +153,6 @@ custody が渡ることは、**ローカルコピーを消してよくなる直�
 | **永続化** (transfer の store) | **未**。現状はメモリ上の型のみ |
 | **fail-closed を強制する呼び出し元** | **未**。`recordVerifiedReceipt` の戻り値を読んで `CUSTODY_TRANSFERRED` へ進む/進まないを決めるコードが無い。型は在るが規則は誰も執行していない |
 | **スレッド安全性** | **未**。`state` / `receipt` / `history` は非同期化で、`advance` は check-then-act。呼び出し元が無いので現時点で実害は無いが、"workflow object" と説明する以上は同期か明記が要る |
+| **`reportsSuccess()` の語彙を実機で確認** | **未**。`PASSED/PASS/VALID/SUCCESS/ACCEPTED/OK` は**こちらが決めた綴り**で、RODA / Archivematica が実際に何を返すか照合していない。未知語は成功ではないので**外れても fail-closed** (受け入れてしまうのではなく、正当な受領証を拒否する) が、そのままでは使えない。実機受入試験で語彙を固定すること |
 | **submission agreement の明文化** (失敗・再送・重複取込・部分受入・先方 AIP 再生成) | **未** |
 | 実機受入試験 | **未**。RODA は arm64 で起動することだけ確認済み |

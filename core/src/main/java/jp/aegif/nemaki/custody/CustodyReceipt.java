@@ -105,6 +105,12 @@ public record CustodyReceipt(
      * <p>Unknown counts as NOT success. A receipt whose outcome is missing, or a word this
      * build does not recognise, is not evidence that things went well — and the state it would
      * unlock is the one before custody passes.
+     *
+     * <p><b>The spellings below have not been checked against a real receiving system.</b> They
+     * are what this product decided to accept, not what RODA or Archivematica were observed to
+     * send. Being wrong about them costs a refusal of a genuine receipt, not an acceptance of a
+     * bad one, which is the direction to be wrong in — but it does mean this list has to be
+     * pinned during acceptance testing before the feature is usable.
      */
     public boolean reportsSuccess() {
         if (verificationOutcome == null || verificationOutcome.isBlank()) {

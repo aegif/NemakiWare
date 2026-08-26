@@ -413,6 +413,15 @@ public class AuthenticityReportAssembler {
                             + "this record exist in other formats. This is NOT a statement that "
                             + "none do.");
         }
+        // The read comes back in ASCENDING sequence order with the limit applied by the view,
+        // so a full result means the entries that were dropped are the LATEST ones — the
+        // opposite of the ledger section, which asks for the most recent window on purpose.
+        // Fixity results accumulate on every scan, so a long-lived record reaches the limit
+        // without anything being wrong; and then a duplication recorded last week is simply
+        // not in what we read. Answering ABSENT there would say "no copy of this record in
+        // another format is recorded" with the PDF sitting beside it, which is the reading
+        // this whole section exists to prevent.
+        boolean truncated = entries.size() >= LEDGER_ENTRY_LIMIT;
         List<Map<String, Object>> rows = new java.util.ArrayList<>();
         for (EvidenceLedgerEntry entry : entries) {
             if (entry.subjectKind() != EvidenceLedgerEntry.SubjectKind.FORMAT_DUPLICATION) {
@@ -425,6 +434,14 @@ public class AuthenticityReportAssembler {
             rows.add(row);
         }
         if (rows.isEmpty()) {
+            if (truncated) {
+                return new Section("duplications", Verdict.UNAVAILABLE,
+                        Map.of("truncated", true, "entriesRead", entries.size()),
+                        "The first " + LEDGER_ENTRY_LIMIT + " chain entries for this record were "
+                                + "read and none of them is a duplication, but there are more "
+                                + "entries than that and the ones NOT read are the most recent. "
+                                + "So this is not an answer about whether copies exist.");
+            }
             return new Section("duplications", Verdict.ABSENT, Map.of(),
                     "No copy of this record in another format is recorded in the chain. Copies "
                             + "made outside the path that records them would not appear here.");
@@ -435,13 +452,19 @@ public class AuthenticityReportAssembler {
         body.put("disclosure", DUPLICATION_DISCLOSURE);
         body.put("duplications", rows);
         body.put("count", rows.size());
-        return new Section("duplications", Verdict.REPORTED, body,
-                "These are copies of this record made in another format, as recorded in the "
-                        + "evidence chain. The chain entry commits to a digest only, so the "
-                        + "converter and the exact losses are not repeated here — the "
-                        + "disclosure above states what every such copy is and is not. A copy "
-                        + "made by a path that does not record duplications would not be "
-                        + "listed, so this is NOT a complete inventory of derived copies.");
+        body.put("truncated", truncated);
+        String limits = "These are copies of this record made in another format, as recorded in "
+                + "the evidence chain. The chain entry commits to a digest only, so the "
+                + "converter and the exact losses are not repeated here — the disclosure above "
+                + "states what every such copy is and is not. A copy made by a path that does "
+                + "not record duplications would not be listed, so this is NOT a complete "
+                + "inventory of derived copies.";
+        if (truncated) {
+            limits = limits + " Only the first " + LEDGER_ENTRY_LIMIT + " chain entries for this "
+                    + "record were read, and the ones beyond that are the most recent, so copies "
+                    + "made later than the ones listed are missing from this list.";
+        }
+        return new Section("duplications", Verdict.REPORTED, body, limits);
     }
 
     /**

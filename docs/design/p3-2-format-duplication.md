@@ -177,3 +177,26 @@ digest は記録しない。消さないと**前の文書の結果**が今回の
 | `AttachmentServiceDelegate.copyRenditions` (コピー時の rendition 複製) | **未** |
 | cloud drive 側の変換 | **未** |
 | **PDF/A 出力と veraPDF 検証** | **未**。新規要素で、ロードマップもそう書いている |
+
+---
+
+## 6. 自己レビューで出た 1 件 (2026-08-26) — 切り詰めが「複製は無い」に見えていた
+
+`findBySubject` は **sequence 昇順**で返し、limit は view 側で当たる。つまり満杯で
+返ってきたとき**落ちているのは新しいほうの entry** である (`ledgerSection` は
+`range` で**最新の窓**を意図して取るので、向きが逆)。fixity 走査は走るたびに
+entry を足すので、**長く生きた文書は何も壊れていなくても上限に達する** —
+そして先週記録した複製は、読んだ範囲に居ない。
+
+そこで `ABSENT` (「この記録の他形式の複製は連鎖に記録されていない」) を返すと、
+**PDF が隣に在るのにそう答える**ことになる。この section が在る理由そのものの誤読。
+
+- 読みが満杯 かつ 複製 0 → `UNAVAILABLE`。文面で「読めた範囲に無いだけで、
+  読めていないのは新しいほう」と言う。
+- 読みが満杯 かつ 複製あり → `REPORTED` のまま `truncated: true` を付け、
+  「これより後の複製はこの一覧に無い」と限界に書く。
+
+| 壊した箇所 | 落ちたテスト |
+|---|---|
+| `truncated` を常に false にする | `aTruncatedReadIsNotAnAnswer` / `aTruncatedReadWithCopiesSaysSo` |
+

@@ -117,6 +117,43 @@ class DuplicationSectionTest {
     }
 
     @Test
+    @DisplayName("a truncated read is UNAVAILABLE, not 'no copies'")
+    void aTruncatedReadIsNotAnAnswer() {
+        // findBySubject answers in ascending sequence and lets the view apply the limit, so a
+        // full result means the entries it dropped are the LATEST. Fixity results accumulate on
+        // every scan, so a long-lived record hits the limit with nothing wrong — and a
+        // duplication recorded last week is then simply not in what we read.
+        List<EvidenceLedgerEntry> fixityOnly = new java.util.ArrayList<>();
+        for (int i = 0; i < AuthenticityReportAssembler.LEDGER_ENTRY_LIMIT; i++) {
+            fixityOnly.add(entry(i, EvidenceLedgerEntry.SubjectKind.FIXITY_RESULT));
+        }
+
+        AuthenticityReport.Section section = duplications(fixityOnly, true);
+
+        assertEquals(AuthenticityReport.Verdict.UNAVAILABLE, section.verdict(),
+                "the read stopped before the newest entries and the report still answered "
+                        + "'no copy of this record in another format is recorded'");
+        assertTrue(section.limits().contains("most recent"), section.limits());
+    }
+
+    @Test
+    @DisplayName("a truncated read that DID find copies says the list is short")
+    void aTruncatedReadWithCopiesSaysSo() {
+        List<EvidenceLedgerEntry> entries = new java.util.ArrayList<>();
+        entries.add(entry(0, EvidenceLedgerEntry.SubjectKind.FORMAT_DUPLICATION));
+        for (int i = 1; i < AuthenticityReportAssembler.LEDGER_ENTRY_LIMIT; i++) {
+            entries.add(entry(i, EvidenceLedgerEntry.SubjectKind.FIXITY_RESULT));
+        }
+
+        AuthenticityReport.Section section = duplications(entries, true);
+
+        assertEquals(AuthenticityReport.Verdict.REPORTED, section.verdict());
+        assertEquals(Boolean.TRUE, section.content().get("truncated"));
+        assertTrue(section.limits().contains("missing from this list"),
+                "a short list was presented as the copies there are: " + section.limits());
+    }
+
+    @Test
     @DisplayName("the section says it is not a complete inventory")
     void theSectionSaysWhatItMisses() {
         AuthenticityReport.Section section = duplications(
