@@ -1633,9 +1633,6 @@ public class ContentServiceImpl implements ContentService {
 		String attachmentId = copyAttachment(callContext, repositoryId, latest.getAttachmentNodeId());
 		pwc.setAttachmentNodeId(attachmentId);
 
-		// Create PWC renditions
-		copyRenditions(callContext, repositoryId, latest.getRenditionIds());
-
 		// Set other properties
 		updateVersionProperties(callContext, repositoryId, VersioningState.CHECKEDOUT, pwc, latest);
 
@@ -1646,6 +1643,10 @@ public class ContentServiceImpl implements ContentService {
 		if (log.isDebugEnabled()) {
 			log.debug("Setting versionSeriesCheckedOutId for PWC: {}", result.getId());
 		}
+		// PWC renditions, AFTER the PWC exists. They are copies OF the working copy, so they
+		// need its id both to be attached to it and to be recorded against it — and the old
+		// order had neither: the copies were made first and their ids thrown away.
+		copyRenditionsOnto(callContext, repositoryId, latest, result);
 		result.setPrivateWorkingCopy(true); // CRITICAL FIX: Ensure PWC flag is set before update
 		result.setVersionSeriesCheckedOutId(result.getId());
 		result.setVersionSeriesCheckedOut(true);
@@ -2480,9 +2481,51 @@ public class ContentServiceImpl implements ContentService {
 		return attachmentDelegate.copyAttachment(callContext, repositoryId, attachmentId);
 	}
 
-	private List<String> copyRenditions(CallContext callContext, String repositoryId, List<String> renditionIds) {
-		initDelegates();
-		return attachmentDelegate.copyRenditions(callContext, repositoryId, renditionIds);
+	/**
+	 * Copies {@code source}'s renditions onto {@code target}, recording each as a duplication.
+	 *
+	 * <p>Moved out of {@code AttachmentServiceDelegate} so it goes through the one method that
+	 * records. While it lived there it persisted renditions from a different file, which the
+	 * "one way in" scan could not see.
+	 *
+	 * <p>It also now runs AFTER the target document exists and puts the new ids ON it. The old
+	 * version ran before, and its only caller <b>discarded the returned ids</b> — so every
+	 * check-out stored a full set of rendition copies that no document referenced. Recording a
+	 * duplication for those would have said a copy of the working copy existed when the working
+	 * copy did not have one.
+	 */
+	private void copyRenditionsOnto(CallContext callContext, String repositoryId, Document source,
+			Document target) {
+		List<String> renditionIds = source == null ? null : source.getRenditionIds();
+		if (CollectionUtils.isEmpty(renditionIds)) {
+			return;
+		}
+		List<String> copied = target.getRenditionIds() == null
+				? new ArrayList<String>()
+				: new ArrayList<String>(target.getRenditionIds());
+		for (String renditionId : renditionIds) {
+			Rendition original = contentDaoService.getRendition(repositoryId, renditionId);
+			if (original == null) {
+				log.warn("copyRenditions: rendition " + renditionId + " is gone, so it was not "
+						+ "copied onto " + target.getId());
+				continue;
+			}
+			Rendition copy = new Rendition();
+			copy.setKind(original.getKind());
+			copy.setHeight(original.getHeight());
+			copy.setWidth(original.getWidth());
+			copy.setTitle(original.getTitle());
+			copy.setLength(original.getLength());
+			copy.setMimetype(original.getMimetype());
+			setSignature(callContext, copy);
+			ContentStream cs = new org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl(
+					"content", java.math.BigInteger.valueOf(original.getLength()),
+					original.getMimetype(), original.getInputStream());
+			copied.add(storeRenditionAndRecordDuplication(callContext, repositoryId, target, copy,
+					cs, jp.aegif.nemaki.evidence.FormatDuplicationRecorder.Converter.COPIED_RENDITION.id(),
+					jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat.forMediaType(original.getMimetype()), true));
+		}
+		target.setRenditionIds(copied);
 	}
 
 	private <T extends Content> T modifyProperties(CallContext callContext, String repositoryId, Properties properties,
@@ -3920,10 +3963,15 @@ public class ContentServiceImpl implements ContentService {
 	private String storeRenditionAndRecordDuplication(CallContext callContext, String repositoryId,
 			Document document, Rendition rendition, ContentStream converted, String converterId,
 			jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat target, boolean isDuplication) {
-		// The converted output, not the source MIME type.
-		rendition.setMimetype(target == null
-				? jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat.UNKNOWN.mediaType()
-				: target.mediaType());
+		// The converted output, not the source MIME type. A caller that already knows the
+		// exact media type keeps it: the copy path derives `target` FROM the media type, so
+		// overwriting it there would turn a copy of an unrecognised type into
+		// application/octet-stream on the way past.
+		if (rendition.getMimetype() == null || rendition.getMimetype().isBlank()) {
+			rendition.setMimetype(target == null
+					? jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat.UNKNOWN.mediaType()
+					: target.mediaType());
+		}
 		rendition.setLength(converted.getLength());
 		// P3-2: the produced bytes are hashed AS THEY STREAM PAST into storage. Buffering
 		// them to hash would put a whole converted document in memory, and reading the

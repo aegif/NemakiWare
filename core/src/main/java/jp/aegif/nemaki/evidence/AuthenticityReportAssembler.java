@@ -470,18 +470,37 @@ public class AuthenticityReportAssembler {
     /**
      * What every recorded duplication is, said once where a reader will meet it.
      *
-     * <p>Kept general on purpose: the chain entry carries a digest, not the converter, so this
-     * section cannot state which tool ran. Naming a specific one here would be a guess, and a
-     * guess about what was lost is worse than the general statement that something was.
+     * <h2>Why it does not name a format</h2>
+     *
+     * <p>The first version said "this product converts to PDF without requesting or validating
+     * a PDF/A profile". That was true while the only recorded path produced PDF. It stopped
+     * being true the moment the REST rendition stacks were wired, because two of them also
+     * produce SVG — and a reader looking at a drawing's SVG copy would have been told about
+     * PDF/A, which is not a thing an SVG could have had. Fixing the per-converter disclosure
+     * in the recorder did not reach here: this section is built from the LEDGER, and the entry
+     * carries a digest.
+     *
+     * <p>So the honest form names no format at all. What the entry does is <b>commit</b> to the
+     * converter and the target format — they are inputs to the digest — without carrying them
+     * in the clear. A party who holds those values can check this entry against them; this
+     * report cannot recover them, and saying so is better than picking the one that used to be
+     * the only possibility.
+     *
+     * <p>Putting them in the clear would mean a second field in {@link EvidenceLedgerEntry},
+     * which changes what the entry hash covers and invalidates every stored hash. Adding it
+     * OUTSIDE the hash would be worse than not having it: an annotation the chain does not
+     * commit to, presented in a report next to things it does.
      */
     static final String DUPLICATION_DISCLOSURE =
             "These are CONVENIENCE COPIES, not preservation formats and not additional records. "
-                    + "This product converts to PDF without requesting or validating a PDF/A "
-                    + "profile, so a copy listed here must not be treated as an archival "
-                    + "rendition. What a conversion preserves depends on the converter and the "
-                    + "source: layout, fonts, comments, tracked changes, embedded objects, CAD "
-                    + "layers and diagram structure are among the things that may not survive. "
-                    + "The ORIGINAL is unchanged and remains the record.";
+                    + "What a copy preserves depends on the converter and on the format it was "
+                    + "produced in: layout, fonts, comments, tracked changes, embedded objects, "
+                    + "CAD layers and diagram structure are among the things that may not "
+                    + "survive, and no output format produced here is requested or validated "
+                    + "against an archival profile. The chain entry COMMITS to which converter "
+                    + "and which format — they are inputs to its digest — but does not carry "
+                    + "them in the clear, so this report cannot tell you which applied to any "
+                    + "one copy below. The ORIGINAL is unchanged and remains the record.";
 
     private Section versionsSection(Content content) {
         if (!(content instanceof Document document)) {

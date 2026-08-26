@@ -56,9 +56,17 @@ public class RetentionJobResult {
     public void addSkippedDocumentId(String id) { skippedDocumentIds.add(id); }
     public List<String> getSkippedDocumentIds() { return Collections.unmodifiableList(skippedDocumentIds); }
 
+    /**
+     * Includes {@code refused}, because this is the line an operator actually reads.
+     *
+     * <p>Without it a run that refused every disposition looks like a run that skipped them,
+     * and "skipped" reads as "there was nothing to do". The counter existed and the summary
+     * did not print it, which is the same as not having it for anyone reading a log.
+     */
     @Override
     public String toString() {
-        return String.format("RetentionJobResult[job=%s, repo=%s, processed=%d, succeeded=%d, failed=%d, skipped=%d]",
-                jobName, repositoryId, processed, succeeded, failed, skipped);
+        return String.format("RetentionJobResult[job=%s, repo=%s, processed=%d, succeeded=%d, "
+                        + "failed=%d, skipped=%d, of which refused=%d]",
+                jobName, repositoryId, processed, succeeded, failed, skipped, refused);
     }
 }

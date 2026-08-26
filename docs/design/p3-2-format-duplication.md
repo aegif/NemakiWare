@@ -180,7 +180,7 @@ digest は記録しない。消さないと**前の文書の結果**が今回の
 |---|---|
 | 永続化される rendition (`ContentServiceImpl.createPreview`) | **実装済み** |
 | `rest/RenditionResource` / `rest/controller/RenditionController` / `api/v1/resource/RenditionResource` の 3 本 | **実装済み** (2026-08-26)。§7。かつて「永続化しないので対象外」と書いていたのは誤りで、3 本とも永続化していた |
-| `AttachmentServiceDelegate.copyRenditions` (コピー時の rendition 複製) | **未** |
+| `AttachmentServiceDelegate.copyRenditions` (コピー時の rendition 複製) | **実装済み** (2026-08-26)。§8 |
 | cloud drive 側の変換 | **未** |
 | **PDF/A 出力と veraPDF 検証** | **未**。新規要素で、ロードマップもそう書いている |
 
@@ -261,4 +261,63 @@ entry を足すので、**長く生きた文書は何も壊れていなくても
 
 `AttachmentServiceDelegate.copyRenditions` (コピー時の rendition 複製) と
 cloud drive 側の変換は**未**。PDF/A 出力と veraPDF 検証も**未**。
+
+---
+
+## 8. rendition のコピー (2026-08-26) — 記録の穴と、その下にあった孤児
+
+チェックアウトは文書の rendition を作業コピーへ複製する。§7 の走査が
+`ContentServiceImpl.java` 1 ファイルしか読んでいなかったので、
+`AttachmentServiceDelegate.copyRenditions` が**別ファイルから
+`createRendition` を呼んでいる**のを見逃していた。走査は全 `businesslogic` 配下に広げた
+(DAO 層は除く — あそこが `createRendition` を呼ぶのは当たり前で、規則は
+「業務ロジックが記録経路を迂回しない」ことのほう)。
+
+**その下にもう 1 つあった。** 唯一の呼び出し元が**戻り値の id を捨てていた**ので、
+チェックアウトのたびに「どの文書も参照していない rendition のコピー一式」が
+保存されていた。孤児の行と孤児のバイト列である。
+
+順序が記録にも効く。作業コピーが持っていない複製を「複製が在る」と記録することは
+できないので、複製は**作業コピーが出来た後**に行い、その id を作業コピーに付ける
+形にした (`ContentServiceImpl.copyRenditionsOnto`)。
+
+### 変換していないものを変換器に帰属させない
+
+コピーは**変換ではない**。`Converter.COPIED_RENDITION` を足し、開示は
+「これを作るのに何も変換していない。別オブジェクトの rendition のバイト複製である。
+その先行変換が落としたものはここでも落ちているが、**どのツールが行ったかを
+この build は記録していない**ので、その損失を列挙できない」と言う。
+
+出力形式は**コピー元の media type から引く** (`TargetFormat.forMediaType`)。
+知らない media type は `UNKNOWN` で、PDF に丸めない。
+
+### 負のコントロール 4 本
+
+| 壊した箇所 | 落ちたテスト |
+|---|---|
+| コピーした id を文書に付けない | `theCopiesAreAttached` |
+| コピーを変換器に帰属させる | `eachCopyIsRecorded` |
+| 未知の media type を PDF に丸める | `anUnknownMediaTypeIsNotGuessed` |
+| 報告の開示に PDF/A の文を戻す | `theDisclosureDoesNotGuessTheFormat` |
+
+---
+
+## 9. 報告の開示が出力形式を間違えていた (2026-08-26)
+
+§7 で変換器側の開示は出力形式込みに直したが、**報告側は直っていなかった**。
+`AuthenticityReportAssembler.DUPLICATION_DISCLOSURE` は
+「This product converts to PDF without requesting or validating a PDF/A profile」で固定で、
+REST が SVG を載せるようになった後は、**図面の SVG コピーについて PDF の話**を読ませていた。
+
+報告は台帳から作られ、**entry は digest しか持たない**。だから形式も変換器も
+復元できない。正直な形は「形式を名指ししない」ことである。
+
+そのうえで、言えることは言う: entry は変換器と出力形式に**コミットしている**
+(digest の入力である)。値を持っている者はこの entry を照合できる。
+報告は復元できない。「昔は 1 つしか可能性が無かったほう」を選ぶより良い。
+
+**平文で持たせる案は採らなかった。** `EvidenceLedgerEntry` にフィールドを足すと
+entry hash の対象が変わり、保存済みの hash が全部無効になる。hash の**外**に足すのは
+もっと悪い — 連鎖がコミットしていない注釈を、コミットしているものの隣に並べて
+報告することになる。
 

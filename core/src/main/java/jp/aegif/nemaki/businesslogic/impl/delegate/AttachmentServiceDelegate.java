@@ -146,29 +146,18 @@ public class AttachmentServiceDelegate {
 		return newAttachmentId;
 	}
 
-	public List<String> copyRenditions(CallContext callContext, String repositoryId, List<String> renditionIds) {
-		if (CollectionUtils.isEmpty(renditionIds))
-			return null;
+	/*
+	 * copyRenditions lived here and was removed (2026-08-26).
+	 *
+	 * It persisted renditions with contentDaoService.createRendition from THIS file, so the
+	 * P3-2 record was not made and the "only one way in" scan — which read ContentServiceImpl —
+	 * could not see it. Its only caller also discarded the ids it returned, so every check-out
+	 * stored a full set of rendition copies that no document referenced.
+	 *
+	 * It is now ContentServiceImpl.copyRenditionsOnto, which runs after the target document
+	 * exists, attaches the ids to it, and records each copy.
+	 */
 
-		List<String> list = new ArrayList<String>();
-		for (String renditionId : renditionIds) {
-			Rendition original = contentDaoService.getRendition(repositoryId, renditionId);
-			ContentStream cs = new ContentStreamImpl("content", BigInteger.valueOf(original.getLength()),
-					original.getMimetype(), original.getInputStream());
-
-			Rendition copy = new Rendition();
-			copy.setKind(original.getKind());
-			copy.setHeight(original.getHeight());
-			copy.setWidth(original.getWidth());
-			copy.setLength(original.getLength());
-			copy.setMimetype(original.getMimetype());
-			helper.setSignature(callContext, copy);
-
-			String createdId = contentDaoService.createRendition(repositoryId, copy, cs);
-			list.add(createdId);
-		}
-		return list;
-	}
 
 	/**
 	 * Calculate the actual size of an InputStream by reading through it

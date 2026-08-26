@@ -97,6 +97,21 @@ public class FormatDuplicationRecorder {
                         + "their relationships become drawing instructions."),
 
         /**
+         * Not a converter: the copy was made by copying an existing rendition.
+         *
+         * <p>Check-out copies a document's renditions onto the working copy. No conversion
+         * happens, so attributing it to a converter would name a tool that did not run here —
+         * and the losses a reader needs to know about are the ones the EARLIER conversion had,
+         * which this build does not record. Saying that plainly is the only honest option; the
+         * alternatives are a false attribution or leaving a derived copy off the record.
+         */
+        COPIED_RENDITION("nemaki/copied",
+                "Nothing was converted to make this copy: it is a byte-for-byte copy of a "
+                        + "rendition belonging to another object. Whatever that earlier "
+                        + "conversion dropped is dropped here too, and this build does not "
+                        + "record which tool performed it, so those losses cannot be listed."),
+
+        /**
          * A converter this build does not recognise.
          *
          * <p>Not a placeholder to be tidied away later. Attributing a copy to the wrong tool is
@@ -211,6 +226,24 @@ public class FormatDuplicationRecorder {
         /** What this target format does not give you. */
         public String caveat() {
             return caveat;
+        }
+
+        /**
+         * The format for a media type, or {@link #UNKNOWN}.
+         *
+         * <p>Never the nearest guess. A media type this build does not know is one whose
+         * caveats it cannot state, and UNKNOWN says exactly that.
+         */
+        public static TargetFormat forMediaType(String mediaType) {
+            if (mediaType != null) {
+                String normalised = mediaType.trim().toLowerCase(java.util.Locale.ROOT);
+                for (TargetFormat format : values()) {
+                    if (format != UNKNOWN && format.mediaType.equals(normalised)) {
+                        return format;
+                    }
+                }
+            }
+            return UNKNOWN;
         }
     }
 

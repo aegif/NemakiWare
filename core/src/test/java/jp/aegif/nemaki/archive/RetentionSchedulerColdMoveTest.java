@@ -128,6 +128,11 @@ public class RetentionSchedulerColdMoveTest {
         assertEquals(result.getProcessed(),
                 result.getSucceeded() + result.getFailed() + result.getSkipped(),
                 "the outcome counts do not add up to the number of documents processed");
+        // And the summary line an operator actually reads has to show it. A run that refused
+        // every disposition otherwise prints as a run that skipped them, and "skipped" reads
+        // as "there was nothing to do".
+        assertTrue(result.toString().contains("refused=1"),
+                "the refusal is counted but not printed: " + result);
     }
 
     @Test

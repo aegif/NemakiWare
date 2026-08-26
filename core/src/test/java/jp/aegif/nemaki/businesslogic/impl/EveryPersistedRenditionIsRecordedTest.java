@@ -53,6 +53,16 @@ class EveryPersistedRenditionIsRecordedTest {
     private static final Path SOURCE = Path.of("src/main/java/jp/aegif/nemaki/businesslogic/impl/"
             + "ContentServiceImpl.java");
 
+    /**
+     * Everything above the DAO. The DAO layers legitimately call {@code createRendition} —
+     * that is what they are — so the rule is about business logic reaching past the recording
+     * method, which is what {@code AttachmentServiceDelegate.copyRenditions} did from a file
+     * the single-file scan never opened.
+     */
+    private static final Path BUSINESS_LOGIC = Path.of("src/main/java/jp/aegif/nemaki");
+
+    private static final List<String> DAO_PACKAGES = List.of("/dao/");
+
     private static final String RECORDING_METHOD = "storeRenditionAndRecordDuplication";
 
     private static String source() throws Exception {
@@ -95,6 +105,35 @@ class EveryPersistedRenditionIsRecordedTest {
      * is what {@code ContentServiceImplCreatePreviewRenditionTest.recordsTheDuplicationItJustMade}
      * measures, by running the method and looking at the recorder.
      */
+    @Test
+    @DisplayName("no file outside the DAO persists a rendition on its own")
+    void noOtherFilePersists() throws Exception {
+        // The single-file version of this test passed while AttachmentServiceDelegate was
+        // persisting renditions from three directories away. A rule that only reads one file
+        // states a property of that file, not of the product.
+        List<String> offenders = new ArrayList<>();
+        try (java.util.stream.Stream<Path> files = Files.walk(BUSINESS_LOGIC)) {
+            for (Path file : files.filter(f -> f.toString().endsWith(".java")).toList()) {
+                String path = file.toString().replace('\\', '/');
+                if (DAO_PACKAGES.stream().anyMatch(path::contains)) {
+                    continue;
+                }
+                String text = Files.readString(file, StandardCharsets.UTF_8);
+                if (!text.contains(".createRendition(")) {
+                    continue;
+                }
+                if (file.endsWith("ContentServiceImpl.java")) {
+                    continue;   // covered, exactly, by oneWayIn
+                }
+                offenders.add(path);
+            }
+        }
+
+        assertTrue(offenders.isEmpty(),
+                "a rendition is persisted outside the one method that records the duplication, "
+                        + "from a file the focused scan does not read: " + offenders);
+    }
+
     @Test
     @DisplayName("the recording method does record")
     void andItRecords() throws Exception {

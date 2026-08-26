@@ -301,6 +301,24 @@ public class EvidenceLedgerService {
             body.put("status", "error");
             body.put("message", "no proof can be made against this checkpoint: " + coverage
                     + ". This is about the RANGE, not about the entry.");
+            // A fork's message says to look at the verifier's findings, so put them here. The
+            // first version told a reader where to look and then closed the response, which
+            // leaves them with "not success" and no way to see WHICH two entries compete —
+            // the one thing that makes a fork actionable.
+            if (span != null && !span.isEmpty()) {
+                EvidenceChainVerifier.Report findings = EvidenceChainVerifier.verify(span);
+                if (!findings.intact()) {
+                    body.putAll(findings.asMap());
+                } else {
+                    // More rows than sequences, and yet the verifier finds nothing wrong: the
+                    // same row came back more than once. That is a READ problem, not a chain
+                    // problem, and sending a reader to look for two competing entries that do
+                    // not exist wastes the one investigation they were going to do.
+                    body.put("note", "the extra rows are duplicates of rows already in the "
+                            + "span, not entries competing for a position. Nothing here says "
+                            + "the chain is forked; what is unreliable is the read.");
+                }
+            }
             return body;
         }
         List<String> leaves = new ArrayList<>(span.size());

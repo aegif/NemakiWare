@@ -87,8 +87,31 @@ class DuplicationSectionTest {
                 "the identifiers are shown before the caveat: " + section.content().keySet());
         String disclosure = String.valueOf(section.content().get("disclosure"));
         assertTrue(disclosure.contains("CONVENIENCE COPIES"), disclosure);
-        assertTrue(disclosure.contains("No PDF/A") || disclosure.contains("PDF/A"), disclosure);
         assertTrue(disclosure.contains("ORIGINAL is unchanged"), disclosure);
+    }
+
+    @Test
+    @DisplayName("the disclosure names NO output format — it cannot know which one applied")
+    void theDisclosureDoesNotGuessTheFormat() {
+        // It used to say "this product converts to PDF without requesting or validating a
+        // PDF/A profile". True while PDF was the only recorded path; false as soon as the REST
+        // stacks were wired, because two of them also produce SVG. A reader looking at a
+        // drawing's SVG copy would have been told about PDF/A — which is not a thing an SVG
+        // could have had. The per-converter fix in the recorder does not reach here: this
+        // section is built from the ledger, and the entry carries a digest.
+        AuthenticityReport.Section section = duplications(
+                List.of(entry(7, EvidenceLedgerEntry.SubjectKind.FORMAT_DUPLICATION)), true);
+        String disclosure = String.valueOf(section.content().get("disclosure"));
+
+        assertFalse(disclosure.contains("PDF/A"),
+                "the report tells every reader about PDF/A, including the ones looking at an "
+                        + "SVG copy: " + disclosure);
+        assertFalse(disclosure.contains("converts to PDF"),
+                "the report asserts an output format the chain does not reveal: " + disclosure);
+        // And it says WHY it cannot say, rather than staying silent and reading as "no format
+        // caveat applies".
+        assertTrue(disclosure.contains("COMMITS to which converter"), disclosure);
+        assertTrue(disclosure.contains("does not carry"), disclosure);
     }
 
     @Test

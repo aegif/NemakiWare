@@ -28,6 +28,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -441,6 +442,57 @@ class EvidenceLedgerServiceTest {
         assertNull(proof.get("auditPath"));
         assertTrue(String.valueOf(proof.get("message")).contains("short read"),
                 String.valueOf(proof.get("message")));
+    }
+
+    @Test
+    @DisplayName("a fork's refusal carries the competing hashes, not a pointer to them")
+    void aForkSaysWhichEntriesCompete() {
+        // The coverage check catches a fork (more rows than sequences) and its message says to
+        // look at the verifier's findings, which name both hashes. The first version then
+        // closed the response — so a reader was told where to look and handed nothing. "Not
+        // success" is not an answer anyone can act on.
+        FakeStore store = new FakeStore();
+        EvidenceLedgerService service = serviceOver(store);
+        appendSome(service, 4);
+        service.closeCheckpoint(DOMAIN, "2026-08-24T01:00:00Z");
+        // A REAL fork: two different entries at one position. (A row handed back twice is a
+        // different thing and gets a different answer — the test below.)
+        EvidenceLedgerEntry at2 = store.entries.get(2);
+        store.entries.add(EvidenceLedgerEntry.of(DOMAIN, at2.sequence(),
+                SubjectKind.LINEAGE_EVENT, "other-arm", "mh1:other-arm", at2.occurredAt(),
+                at2.prevEntryHash()));
+
+        Map<String, Object> proof = service.inclusionProof(DOMAIN, 2);
+
+        assertEquals("error", proof.get("status"));
+        assertNotNull(proof.get("findings"),
+                "the refusal points at the verifier's findings and does not include them");
+        String findings = String.valueOf(proof.get("findings"));
+        assertTrue(findings.contains("FORK"), findings);
+        // Both competing entry hashes, which is the whole reason to hand the findings over: a
+        // reader has to be able to say WHICH two rows claim the position.
+        assertTrue(findings.contains("two entries claim this sequence with different hashes"),
+                findings);
+    }
+
+    @Test
+    @DisplayName("a row read twice is a READ problem, and is not called a fork")
+    void aDuplicateReadIsNotAFork() {
+        // Same symptom from the coverage check — more rows than sequences — and a completely
+        // different cause. Sending an operator to look for two competing entries that do not
+        // exist spends the one investigation they were going to do.
+        FakeStore store = new FakeStore();
+        EvidenceLedgerService service = serviceOver(store);
+        appendSome(service, 4);
+        service.closeCheckpoint(DOMAIN, "2026-08-24T01:00:00Z");
+        store.dropFromEnd = -1;   // the fake hands one row back twice
+
+        Map<String, Object> proof = service.inclusionProof(DOMAIN, 2);
+
+        assertEquals("error", proof.get("status"));
+        assertNull(proof.get("findings"), "a duplicate read was reported as a forked chain");
+        assertTrue(String.valueOf(proof.get("note")).contains("what is unreliable is the read"),
+                String.valueOf(proof.get("note")));
     }
 
     @Test
