@@ -220,6 +220,17 @@
 			<artifactId>bcpkix-jdk18on</artifactId>
 		</dependency>
 
+		<!-- BagIt (RFC 8493), the transfer format Archivematica accepts. It arrives through
+		     commons-ip2, but the P3-4 connector layer imports gov.loc.repository.bagit
+		     directly, and an undeclared transitive is not a contract: a commons-ip2 bump
+		     could drop it and the failure would be a NoClassDefFoundError at transfer time,
+		     on the one path nobody exercises until it matters. Same lesson as bcpkix above. -->
+		<dependency>
+			<groupId>gov.loc</groupId>
+			<artifactId>bagit</artifactId>
+			<version>5.2.0</version>
+		</dependency>
+
 		<!-- nemakiware-action dependency commented out - module is suspended and not needed -->
 		<!--
 		<dependency>

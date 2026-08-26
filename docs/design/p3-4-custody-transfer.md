@@ -171,11 +171,111 @@ constructor は緩いままにした — 欠けた受領証も「何かが届い
 |---|---|
 | 状態機械・受領証・連鎖への追記 | **実装済み** |
 | **RODA / Archivematica への実際の送信** | **未**。§9-3 / §9-4 に API と落とし穴は調査済み |
-| **BagIt (`zipped bag`) 接続層** | **未**。Archivematica は E-ARK SIP を直接取り込めない (転送 type 8 種に相当が無い) ので必須。`gov.loc:bagit` は commons-ip2 経由で既にクラスパスに在る |
-| **署名検証** | **未**。先方の鍵素材の受け渡しが submission agreement 側の話 |
-| **永続化** (transfer の store) | **未**。現状はメモリ上の型のみ |
-| **fail-closed を強制する呼び出し元** | **未**。`recordVerifiedReceipt` の戻り値を読んで `CUSTODY_TRANSFERRED` へ進む/進まないを決めるコードが無い。型は在るが規則は誰も執行していない |
+| **BagIt (`zipped bag`) 接続層** | **実装済み** (2026-08-26)。§6。`gov.loc:bagit` は core/pom.xml に明示宣言した (commons-ip2 経由の暗黙依存のままにしない) |
+| **署名検証** | **機構は実装済み** (2026-08-26、§9)。`signatureVerified` は呼び手が立てる boolean ではなく検証の結果になった。**鍵の入手と信頼は依然 submission agreement 側**で、そこは software では閉じない |
+| **永続化** (transfer の store) | **実装済み** (2026-08-26、§7)。evidence-ledger DB に同居。読み出しは `restore` を通り、履歴が合法な歩みでなければ拒否される |
+| **fail-closed を強制する呼び出し元** | **実装済み** (2026-08-26、§7)。`CustodyTransferService.passCustody` が先に記録し、記録が効いたときだけ進む。`advance` は `CUSTODY_TRANSFERRED` を明示的に拒否する (扉は 1 つ) |
 | **スレッド安全性** | **未**。`state` / `receipt` / `history` は非同期化で、`advance` は check-then-act。呼び出し元が無いので現時点で実害は無いが、"workflow object" と説明する以上は同期か明記が要る |
 | **`reportsSuccess()` の語彙を実機で確認** | **未**。`PASSED/PASS/VALID/SUCCESS/ACCEPTED/OK` は**こちらが決めた綴り**で、RODA / Archivematica が実際に何を返すか照合していない。未知語は成功ではないので**外れても fail-closed** (受け入れてしまうのではなく、正当な受領証を拒否する) が、そのままでは使えない。実機受入試験で語彙を固定すること |
 | **submission agreement の明文化** (失敗・再送・重複取込・部分受入・先方 AIP 再生成) | **未** |
 | 実機受入試験 | **未**。RODA は arm64 で起動することだけ確認済み |
+
+---
+
+## 6. BagIt 接続層 (2026-08-26)
+
+Archivematica の転送 type は `standard / zipfile / unzipped bag / zipped bag / dspace /
+maildir / TRIM / dataverse` の 8 種で、**E-ARK に相当するものが無い**。
+そこで `zipped bag` がバイト列を渡す手段になる。
+
+**これは受け取り側が package を理解するようにする層ではない。** 向こう側では SIP は
+payload の中の 1 ファイルで、METS は読まれず、構造は尊重されず、これによって
+Archivematica の AIP が E-ARK AIP になることもない。「BagIt コネクタが在る」を
+「Archivematica が我々の E-ARK SIP を取り込む」と読まれると、このコードがしないことを
+言ったことになるので、`LIMITS` が全 bag に同行する。
+
+**「bag の中に IP を封入して搬送」という語り方もしない** — RFC 8493 は serialization を
+規定しないので、その言い方は標準がしていない保証を主張することになる (外部レビュー指摘)。
+真なのはもっと狭い: payload と manifest を持つディレクトリを zip したもので、
+受け取り側の `zipped bag` type が読むのはそれである。
+
+manifest は **SHA-512 と SHA-256 の 2 本**。前者は受け取り側が好みそうだから、
+後者は本製品の証跡が SHA-256 だから — 受け取り側が bag manifest を我々の連鎖と
+突き合わせるのに 2 つ目の digest を計算し直さずに済む。
+
+### 踏んだ落とし穴 2 つ
+
+1. **`bagInPlace` は root 直下を自分で `data/` へ移す。** 先に `data/` を作って
+   そこへ置くと `data/data/` になり、manifest はそれと整合するので**何も落ちない**。
+   受け取り側が期待するレイアウトでないだけ。移動後の位置を確認して、違えば送らない。
+2. **タグマニフェストの行順が絶対パス依存。** 同じ package を別ディレクトリで包むと
+   同じ 4 行が別の順で出て、**deflate の圧縮結果が変わり archive の長さが変わる**。
+   「同じものを 2 度送ったか」に安い答えが無くなる。行を整列して正規化した。
+   なお 2 つのディレクトリが偶然同じ順に hash することはあるので、
+   この対照は**end-to-end 比較ではなく正規化そのものを直接測る**
+   (実測: 整列を外しても end-to-end は緑のままだった)。
+
+---
+
+## 7. 永続化と、規則を執行する呼び出し元 (2026-08-26)
+
+### 規則は型に在ったが、誰も執行していなかった
+
+`recordVerifiedReceipt` は `Authorisation` を返し、javadoc は「拒否されたら
+custody を渡してはならない」と書いていた。**呼び出し元が無かった。**
+コメントに書かれた規則は、コメントを読まない最初の 1 人まで保つ。
+そしてそれが守っているのは「この記録の唯一の複製を持つのはもう自分ではない」という
+判断である。
+
+`CustodyTransferService.passCustody` がその呼び出し元。**先に記録し、記録が
+効いたときだけ進む。** 順序は capture 則の逆で、それが要点: capture は
+chain しようとする時点で既に起きているので、拒否すると記録の対象そのものが壊れる。
+custody は**まだ渡っていない**ので、拒否の代償は再試行だけである。
+
+`advance` は `CUSTODY_TRANSFERRED` を明示的に拒否する。ここを通せば規則は
+またコメントに戻る。REST も扉を 2 つに分けた (`/advance` と `/pass-custody`)。
+
+### 保存された状態は「主張」ではない
+
+state machine を永続化するとは、外から状態を設定できるようにすることである。
+検査せずにそれをやると、**DB に書ける者は誰でも 1 フィールド編集して
+`RECEIPT_VERIFIED` を自分に渡せる** — 機械が防いでいるはずの偽の診断に、
+塞いだ経路より短い道で着く。
+
+`CustodyTransfer.restore` は、保存された履歴が (a) 連続していること、
+(b) 各段が機械の許す移動であること、(c) 保存された状態で終わっていることを
+検査してから返す。偽造行は**読んだ時点で**拒否される — 誰かがそれに基づいて
+行動し得る最初の瞬間である。
+
+transfer は evidence-ledger DB に同居する (anchor receipt と同じ理由: 1 つの話に
+1 つの保持方針)。ただし ledger entry と違い**更新される** — state machine とは
+そういうものだから。append-only な handover の記録は `CUSTODY_RECEIPT` entry のほうで、
+この行はそれを生んだ作業状態である。
+
+| 壊した箇所 | 落ちたテスト |
+|---|---|
+| `Authorisation` を読まない | `anUnrecordableHandoverDoesNotPassCustody` |
+| 記録より先に進める | `theRecordingComesFirst` ほか 2 |
+| `advance` に CUSTODY_TRANSFERRED を通す | `custodyDoesNotPassThroughTheOrdinaryDoor` |
+| `save` の戻り値を無視する | `aMoveThatDidNotReachTheStoreIsRefused` ほか 1 |
+| `restore` の到達可能性検査を外す | `aSkippedStepIsRefused` |
+| `restore` の終端状態検査を外す | `aForgedStateIsRefused` |
+| `restore` の連続性検査を外す | `aHistoryThatDoesNotJoinUpIsRefused` |
+
+---
+
+## 9. 受領証の署名検証 (2026-08-26)
+
+`signatureVerified` は**呼び手が立てる boolean** だった。receipt を作れる者なら誰でも
+立てられた。`ReceiptSignatureVerifier` はそれを**検査の結果**にする。
+REST の受け口はリクエスト本文から決して読まない (findings は入力として受け付けない)。
+
+署名対象は識別フィールドを `\n` で連結した固定形。「先方が送ってきた直列化」ではなく
+固定なのは、こちらが制御しない直列化の上の署名は再現できないから — 先方がこの文字列に
+署名する必要があり、それを合意するのが submission agreement である。
+
+**鍵の入手と信頼は閉じていない。** 鍵が無いのは「検査できなかった」であって
+「署名が不正」ではない (前者はこちらについての言明である)。有効な署名が establish するのは
+「この鍵を持つ者がこの receipt を作った」までで、**その鍵が受け取り組織のものかどうかは
+言っていない**。
+

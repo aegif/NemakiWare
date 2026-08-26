@@ -128,6 +128,11 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
                 new CloudantClientWrapper.ViewSource(CouchAnchorReceiptStore.MAP_PENDING));
         views.put(CouchAnchorReceiptStore.VIEW_CONFIRMED,
                 new CloudantClientWrapper.ViewSource(CouchAnchorReceiptStore.MAP_CONFIRMED));
+        // Custody transfers share this database too, and their view goes in the SAME put. A
+        // second put would make CouchDB discard the index it just built for the others.
+        views.put(jp.aegif.nemaki.custody.CouchCustodyTransferStore.VIEW_BY_OBJECT,
+                new CloudantClientWrapper.ViewSource(
+                        jp.aegif.nemaki.custody.CouchCustodyTransferStore.MAP_BY_OBJECT));
         return views;
     }
 

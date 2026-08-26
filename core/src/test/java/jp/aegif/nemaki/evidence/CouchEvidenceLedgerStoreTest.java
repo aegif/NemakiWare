@@ -198,10 +198,23 @@ class CouchEvidenceLedgerStoreTest {
         org.mockito.Mockito.verify(client, org.mockito.Mockito.times(1))
                 .putDesignDocumentWithReducesIfChanged(anyString(), views.capture());
 
-        assertEquals(6, views.getValue().size(),
-                "the single put does not carry all six views (" + views.getValue().keySet()
-                        + "); a view deployed separately changes the design document's "
-                        + "signature again and discards the index just built");
+        // Named, not counted. The count was a literal, so adding a sibling store's view broke
+        // this test for the one reason that is not a defect — and the fix for a failing count
+        // is to bump the number, which is how a guard quietly stops guarding. What matters is
+        // that every view any store in this database needs is in THIS put.
+        java.util.List<String> required = java.util.List.of(
+                "entries_by_domain_sequence", "entries_by_domain_subject",
+                "checkpoints_by_domain_to",
+                jp.aegif.nemaki.evidence.anchor.CouchAnchorReceiptStore.VIEW_BY_CHECKPOINT,
+                jp.aegif.nemaki.evidence.anchor.CouchAnchorReceiptStore.VIEW_PENDING,
+                jp.aegif.nemaki.evidence.anchor.CouchAnchorReceiptStore.VIEW_CONFIRMED,
+                jp.aegif.nemaki.custody.CouchCustodyTransferStore.VIEW_BY_OBJECT);
+        java.util.List<String> missing = required.stream()
+                .filter(v -> !views.getValue().containsKey(v)).toList();
+        assertTrue(missing.isEmpty(),
+                "the single put does not carry " + missing + "; a view deployed separately "
+                        + "changes the design document's signature again and discards the index "
+                        + "just built. Put carried: " + views.getValue().keySet());
         assertTrue(views.getValue().containsKey("entries_by_domain_subject"),
                 "the subject view is missing, so an entry can be written and never found: "
                         + views.getValue().keySet());

@@ -81,6 +81,59 @@ public final class CustodyTransfer {
                 "a package was built for this record"));
     }
 
+    /**
+     * Re-materialises a transfer that was persisted. <b>Not a way to reach a state.</b>
+     *
+     * <p>A store has to be able to hand back what it wrote, and replaying the moves would not
+     * do it: the moves are refused or recorded by the state machine, and replaying a recorded
+     * one would append it to the history a second time.
+     *
+     * <p>So this sets the fields directly — and then <b>checks the history is a legal walk</b>
+     * before returning. Without that check this is a back door: anything that could write a row
+     * could name any state, and {@code RECEIPT_VERIFIED} arrived at by editing a database row
+     * is exactly the false diagnosis the machine exists to prevent. With it, a forged row is
+     * refused at the point it is read, which is the first moment anyone could act on it.
+     *
+     * @throws IllegalArgumentException when the stored history does not walk, or does not end
+     *         at the stored state
+     */
+    public static CustodyTransfer restore(String transferId, String repositoryId, String objectId,
+            String sipDigest, String receivingSystem, CustodyState state, CustodyReceipt receipt,
+            List<Step> history) {
+        if (history == null || history.isEmpty()) {
+            throw new IllegalArgumentException("a stored transfer with no history cannot be "
+                    + "checked, and an unchecked one is a state somebody asserted");
+        }
+        CustodyTransfer restored = new CustodyTransfer(transferId, repositoryId, objectId,
+                sipDigest, receivingSystem, history.get(0).at());
+        restored.history.clear();
+        CustodyState walked = null;
+        for (Step step : history) {
+            if (step.from() != walked) {
+                throw new IllegalArgumentException("the stored history does not walk: a step "
+                        + "leaves " + step.from() + " but the transfer was at " + walked);
+            }
+            if (!step.to().isReachableFrom(walked)) {
+                throw new IllegalArgumentException("the stored history contains a move the "
+                        + "state machine does not allow: " + walked + " -> " + step.to());
+            }
+            walked = step.to();
+            restored.history.add(step);
+        }
+        if (walked != state) {
+            throw new IllegalArgumentException("the stored state is " + state + " but its own "
+                    + "history ends at " + walked + "; a state its history does not support is "
+                    + "an assertion, not a record");
+        }
+        if (state == CustodyState.RECEIPT_VERIFIED && receipt == null) {
+            throw new IllegalArgumentException("a stored transfer at RECEIPT_VERIFIED with no "
+                    + "receipt is the false diagnosis this machine exists to prevent");
+        }
+        restored.state = state;
+        restored.receipt = receipt;
+        return restored;
+    }
+
     public String transferId() {
         return transferId;
     }
@@ -91,6 +144,11 @@ public final class CustodyTransfer {
 
     public String objectId() {
         return objectId;
+    }
+
+    /** Who the package went to. Named in the record because "somewhere" is not a handover. */
+    public String receivingSystem() {
+        return receivingSystem;
     }
 
     public String sipDigest() {
