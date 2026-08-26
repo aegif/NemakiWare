@@ -300,3 +300,42 @@ message imprint はこちらが選んでいない値になる。信頼された 
 > 自前の検証器が自前の誤りに同意していたのが元の欠陥なので、
 > 誤った形を名指しで落とすテストを残す。
 
+### 縮約木の歩き方 (2026-08-26、3 巡目で訂正)
+
+**計算した親は次のリストに「入っている」のではなく、次のリストに「加えて」ハッシュする。**
+RFC 4998 §4.3 step 3:「This hash value h' MUST become a member of the next higher list」。
+
+RFC 自身の例 (§4.2 Figure 2) で確かめる:
+
+```
+pht1 = SEQ (h2abc, h1)      h1 = H(d1)
+pht2 = SEQ (h3)
+h12  = H(sorted(h2abc, h1))          ← pht1 から計算
+h123 = H(sorted(h12, h3))            ← h12 を pht2 に「加えて」ハッシュ
+```
+
+`h12` は **pht2 のどこにも保存されていない**。縮約木が保存するのは各段の**兄弟**だけである。
+
+2 巡目の実装は「親が次のリストに保存されていること」を要求していた。これは
+**標準の記録を全部拒否し、本製品が書いていた形だけを受理する** — また
+エンコーダと検証器が互いに同意していた。テストの「well-formed」fixture も
+同じ非標準形だったので緑だった。RFC の例そのものを fixture にした。
+
+### 「検査できなかった」を型で持たせた
+
+`UncheckableLinkException` は `linksHold=false` にしていたが、`asMap()` の出力は
+boolean と件数しか無かったので、**呼び手が新アルゴリズムの H(d) を渡さなかっただけの
+健全な記録が、壊れた記録と機械的に区別できなかった**。散文は正直でも、
+構造化された判定のほうが強く、しかも逆を言っていた。
+
+`TimestampResult.Status` を 3 値 (`MATCHES` / `DOES_NOT_MATCH` / `NOT_CHECKED`) にし、
+`timestampsNotChecked` を報告に足した。検査できなかった位置は
+**checked に数えない** (数えると「見ていないものを見た」と言うことになる)。
+
+| 壊した箇所 | 落ちたテスト |
+|---|---|
+| 親が次のリストに保存されている必要がある形に戻す | `theRfcsOwnExampleVerifies` |
+| 第 1 リストの所属検査を外す | `theDataObjectMustBeInTheFirstList` ほか 1 |
+| 未検査を DOES_NOT_MATCH にする | `anUncheckableLinkIsNotClaimed` |
+| 未検査を checked に数える | 同上 |
+

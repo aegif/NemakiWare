@@ -284,49 +284,77 @@ class ErsRecordTest {
 
         assertFalse(report.linksHold(),
                 "a link nobody could check was reported as holding: " + report.asMap());
-        assertTrue(report.results().get(1).detail().contains("NOT checked"),
-                report.results().get(1).detail());
-        // And it must say so as a gap, not as an accusation.
+        // And it must be machine-readable as a gap, not as an accusation: a consumer reading
+        // booleans is every consumer that is not reading the English.
+        assertEquals(ErsVerifier.TimestampResult.Status.NOT_CHECKED,
+                report.results().get(1).status(),
+                "an unchecked link is indistinguishable from a broken one: " + report.asMap());
+        assertEquals(1, report.timestampsNotChecked());
+        assertEquals(1, report.timestampsChecked(),
+                "the unchecked position was counted as checked, so the report says it looked "
+                        + "at something it did not");
         assertTrue(report.results().get(1).detail().contains("not a finding that it is wrong"),
                 report.results().get(1).detail());
     }
 
     @Test
-    @DisplayName("a tree whose upper levels do not join up is caught")
-    void aTreeThatDoesNotJoinUpIsCaught() throws Exception {
-        // §4.3 step 3 walks EVERY list: each computed parent must be a member of the next.
-        // Reading only list 0 lets a record carry [[H(d)], [anything]] and be measured on
-        // list 0 alone.
-        byte[] h = dataObjectHash();
-        byte[] rootOfFirst = sha256(ErsRecord.sortedConcat(List.of(h)));
-        ErsRecord.ArchiveTimeStamp broken = new ErsRecord.ArchiveTimeStamp(
-                List.of(List.of(h), List.of(sha256("not the parent".getBytes("UTF-8")))),
-                tokenOver(sha256(ErsRecord.sortedConcat(
-                        List.of(sha256("not the parent".getBytes("UTF-8")))))),
-                SHA256_OID);
-        byte[] der = derOf(broken);
+    @DisplayName("the RFC's own reduced tree verifies — pht1=(h2abc,h1), pht2=(h3)")
+    void theRfcsOwnExampleVerifies() throws Exception {
+        // RFC 4998 §4.2 Figure 2, built exactly as written. A reduced tree stores the SIBLINGS
+        // at each level; the computed parent BECOMES a member of the next list rather than
+        // being stored in it. Requiring it to be stored — which this verifier did — rejects
+        // every standard record and accepts only the shape this product was writing.
+        byte[] h1 = dataObjectHash();
+        byte[] h2abc = sha256("group 2".getBytes("UTF-8"));
+        byte[] h3 = sha256("group 3".getBytes("UTF-8"));
+        byte[] h12 = sha256(ErsRecord.sortedConcat(List.of(h2abc, h1)));
+        byte[] h123 = sha256(ErsRecord.sortedConcat(List.of(h12, h3)));
+        ErsRecord.ArchiveTimeStamp rfcShape = new ErsRecord.ArchiveTimeStamp(
+                List.of(List.of(h2abc, h1), List.of(h3)), tokenOver(h123), SHA256_OID);
 
-        ErsVerifier.Report report = ErsVerifier.verify(der, h);
+        ErsVerifier.Report report = ErsVerifier.verify(derOf(rfcShape), h1);
 
-        assertFalse(report.linksHold(), "a tree whose levels do not join up verified");
-        assertTrue(report.results().get(0).detail().contains("does not join up"),
-                report.results().get(0).detail());
-        assertNotNull(rootOfFirst);
+        assertTrue(report.linksHold(),
+                "the RFC's own example was rejected: " + report.asMap());
     }
 
     @Test
-    @DisplayName("a two-level tree that DOES join up verifies — the control")
-    void aWellFormedTreeVerifies() throws Exception {
-        byte[] h = dataObjectHash();
-        byte[] parent = sha256(ErsRecord.sortedConcat(List.of(h)));
-        byte[] sibling = sha256("sibling".getBytes("UTF-8"));
-        byte[] root = sha256(ErsRecord.sortedConcat(List.of(parent, sibling)));
-        ErsRecord.ArchiveTimeStamp sound = new ErsRecord.ArchiveTimeStamp(
-                List.of(List.of(h), List.of(parent, sibling)), tokenOver(root), SHA256_OID);
+    @DisplayName("a tree whose upper level is wrong is caught")
+    void aTreeThatDoesNotJoinUpIsCaught() throws Exception {
+        // Same shape as the RFC example, with a sibling nobody's tree contains — so the root
+        // computed by walking it is not the one the token covers.
+        byte[] h1 = dataObjectHash();
+        byte[] h2abc = sha256("group 2".getBytes("UTF-8"));
+        byte[] h3 = sha256("group 3".getBytes("UTF-8"));
+        byte[] h12 = sha256(ErsRecord.sortedConcat(List.of(h2abc, h1)));
+        byte[] realRoot = sha256(ErsRecord.sortedConcat(List.of(h12, h3)));
+        ErsRecord.ArchiveTimeStamp broken = new ErsRecord.ArchiveTimeStamp(
+                List.of(List.of(h2abc, h1), List.of(sha256("someone else".getBytes("UTF-8")))),
+                tokenOver(realRoot), SHA256_OID);
 
-        ErsVerifier.Report report = ErsVerifier.verify(derOf(sound), h);
+        ErsVerifier.Report report = ErsVerifier.verify(derOf(broken), h1);
 
-        assertTrue(report.linksHold(), String.valueOf(report.asMap()));
+        assertFalse(report.linksHold(), "a tree that walks to another root verified");
+        assertTrue(report.results().get(0).detail().contains("does not belong here"),
+                report.results().get(0).detail());
+    }
+
+    @Test
+    @DisplayName("the data object's hash must be in the FIRST list")
+    void theDataObjectMustBeInTheFirstList() throws Exception {
+        // §4.3 step 2. Without it a tree could walk to the right root while saying nothing
+        // about the data object it claims to be for.
+        byte[] h1 = dataObjectHash();
+        byte[] other = sha256("not ours".getBytes("UTF-8"));
+        byte[] root = sha256(ErsRecord.sortedConcat(List.of(other)));
+        ErsRecord.ArchiveTimeStamp notOurs = new ErsRecord.ArchiveTimeStamp(
+                List.of(List.of(other)), tokenOver(root), SHA256_OID);
+
+        ErsVerifier.Report report = ErsVerifier.verify(derOf(notOurs), h1);
+
+        assertFalse(report.linksHold());
+        assertTrue(report.results().get(0).detail().contains("about something else"),
+                report.results().get(0).detail());
     }
 
     @Test

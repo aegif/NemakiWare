@@ -177,7 +177,15 @@ public class CustodyTransferService {
     /** The transfer as it stands, and why not when there is none. */
     public Found find(String repositoryId, String transferId) {
         CustodyTransfer transfer = load(repositoryId, transferId);
-        return new Found(transfer, transfer == null ? whyNotFound(transferId) : null);
+        if (transfer != null) {
+            unreadable.remove();
+            return new Found(transfer, null, null);
+        }
+        String why = unreadable.get();
+        unreadable.remove();
+        return why != null
+                ? new Found(null, Found.Absence.UNREADABLE, why)
+                : new Found(null, Found.Absence.NOT_STORED, notFound(transferId));
     }
 
     /**
@@ -185,9 +193,19 @@ public class CustodyTransferService {
      *
      * <p>Two reasons, and they are not the same: nothing is stored, or something is stored and
      * could not be read. A method returning null collapses them, and the collapsed answer —
-     * "there is no transfer" — is the reassuring one.
+     * "there is no transfer" — is the reassuring one. The KIND is a field rather than something
+     * a caller infers from the wording: a caller matching on the sentence breaks the first time
+     * the sentence is improved, and it breaks towards the reassuring answer.
      */
-    public record Found(CustodyTransfer transfer, String absent) {}
+    public record Found(CustodyTransfer transfer, Absence absence, String absent) {
+
+        public enum Absence {
+            /** Nothing is stored under that id. */
+            NOT_STORED,
+            /** A row exists and could not be read back through the state machine. */
+            UNREADABLE
+        }
+    }
 
     /**
      * Every transfer for one record, newest first, and whether the list is complete.
@@ -247,10 +265,14 @@ public class CustodyTransferService {
      * trace and a 500. {@link #unreadable} carries it as a refusal instead.
      */
     private CustodyTransfer load(String repositoryId, String transferId) {
+        unreadable.remove();
         if (notStorable()) {
+            // Cleared FIRST. The early return used to skip the clear, so a diagnosis left by an
+            // earlier request could be reported here — and, normally, this fell through to
+            // "there is no transfer", which is a 404 for a node that could not look.
+            unreadable.set(unstorable());
             return null;
         }
-        unreadable.remove();
         try {
             return store.find(repositoryId, transferId);
         } catch (RuntimeException e) {

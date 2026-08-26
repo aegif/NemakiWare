@@ -153,10 +153,10 @@ public class CustodyTransferController {
         if (found.transfer() == null) {
             // 409, not 404, when a row exists and could not be read: "there is no transfer" is
             // the reassuring answer and the wrong one, and a 404 is exactly how a reader
-            // reaches it.
-            boolean unreadable = found.absent() != null
-                    && !found.absent().contains("NOT a statement that the handover did not");
-            return error(unreadable ? HttpStatus.CONFLICT : HttpStatus.NOT_FOUND,
+            // reaches it. Decided on the KIND, not on the wording — matching the sentence
+            // breaks when the sentence is improved, and it breaks towards the reassuring side.
+            return error(found.absence() == CustodyTransferService.Found.Absence.UNREADABLE
+                            ? HttpStatus.CONFLICT : HttpStatus.NOT_FOUND,
                     found.absent());
         }
         CustodyTransfer transfer = found.transfer();

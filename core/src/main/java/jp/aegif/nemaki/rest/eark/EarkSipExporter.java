@@ -630,6 +630,7 @@ public class EarkSipExporter {
         List<Map<String, Object>> chained = new ArrayList<>();
         List<EvidenceLedgerEntry> entries;
         List<EvidenceLedgerEntry> captureEntries = List.of();
+        String captureLookupFailed = null;
         try {
             // TWO lookups, because the chain files two kinds of thing under two subjects.
             //
@@ -647,7 +648,6 @@ public class EarkSipExporter {
             // subject would have been the other way to close it, and it would break every
             // inclusion proof already issued over them.
             entries = new ArrayList<>(ledgerStore.findBySubject(repositoryId, objectId, 50));
-            captureEntries = captureEntriesFor(repositoryId, objectId);
         } catch (RuntimeException e) {
             evidence.put("status", "error");
             evidence.put("message", "the evidence ledger could not be read (" + e.getMessage()
@@ -656,12 +656,24 @@ public class EarkSipExporter {
                     + "be read when it was built.");
             return evidence;
         }
+        try {
+            captureEntries = captureEntriesFor(repositoryId, objectId);
+        } catch (CaptureLookupFailed e) {
+            // Reported, not swallowed. The package still carries the object's own entries; what
+            // it must not do is go on to say "no capture entry was found for this record" when
+            // the truth is that nobody could look.
+            captureLookupFailed = e.getMessage();
+        }
         if (entries.isEmpty() && captureEntries.isEmpty()) {
-            evidence.put("status", "not-chained");
-            evidence.put("message", "no ledger entry names this object, and no capture entry "
-                    + "was found for it either. The chain only holds what was written to it "
-                    + "from the day the producer shipped, with no back-fill, so this says "
-                    + "nothing about whether the record is genuine.");
+            evidence.put("status", captureLookupFailed != null ? "error" : "not-chained");
+            evidence.put("message", captureLookupFailed != null
+                    ? "no ledger entry names this object, and the capture rows could not be "
+                            + "read (" + captureLookupFailed + "). This is NOT a statement that "
+                            + "the record was never chained."
+                    : "no ledger entry names this object, and no capture entry was found for it "
+                            + "either. The chain only holds what was written to it from the day "
+                            + "the producer shipped, with no back-fill, so this says nothing "
+                            + "about whether the record is genuine.");
             return evidence;
         }
         List<EvidenceLedgerEntry> all = new ArrayList<>(captureEntries);
@@ -693,10 +705,14 @@ public class EarkSipExporter {
         proof.putAll(ledgerService.inclusionProof(repositoryId, proved.sequence()));
         evidence.put("inclusionProof", proof);
         if (captureEntries.isEmpty()) {
-            evidence.put("captureProof", "no capture entry was found for this record, so the "
-                    + "proof above is over the oldest entry ABOUT the object, not over its "
-                    + "capture. A record created through CMIS rather than external ingest has "
-                    + "no capture entry at all.");
+            evidence.put("captureProof", captureLookupFailed != null
+                    ? "the capture rows for this record COULD NOT BE READ (" + captureLookupFailed
+                            + "), so the proof above is over the oldest entry about the object. "
+                            + "This is NOT a statement that the record has no capture entry."
+                    : "no capture entry was found for this record, so the proof above is over "
+                            + "the oldest entry ABOUT the object, not over its capture. A record "
+                            + "created through CMIS rather than external ingest has no capture "
+                            + "entry at all.");
         }
         // Later entries are listed above but not proved individually — a package with fifty
         // audit paths in it would be no more checkable and much harder to read.
@@ -726,12 +742,26 @@ public class EarkSipExporter {
                 found.addAll(ledgerStore.findBySubject(repositoryId, String.valueOf(intentId),
                         10));
             }
+            if (found.isEmpty()) {
+                return found;
+            }
         } catch (RuntimeException e) {
+            // NOT an empty list. Returning one here turns "we could not look" into "there is no
+            // capture", which is the exact substitution this whole lookup was added to end.
             logger.warn("The capture entries for {}/{} could not be read: {}", repositoryId,
                     objectId, e.getMessage());
-            return List.of();
+            throw new CaptureLookupFailed(e.getMessage());
         }
         return found;
+    }
+
+    /** Raised when the capture rows could not be read — never collapsed into "none". */
+    private static class CaptureLookupFailed extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        CaptureLookupFailed(String message) {
+            super(message);
+        }
     }
 
     private Path writeEvidencePackage(Path workDir, Map<String, Object> evidence)

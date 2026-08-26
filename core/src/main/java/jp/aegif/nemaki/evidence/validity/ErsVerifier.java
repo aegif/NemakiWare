@@ -60,13 +60,39 @@ public final class ErsVerifier {
     private ErsVerifier() {
     }
 
-    /** One archive timestamp's result. */
-    public record TimestampResult(int chain, int position, boolean imprintMatches,
-            String digestAlgorithmOid, String genTime, String detail) {}
+    /**
+     * One archive timestamp's result.
+     *
+     * <p>{@link Status} is a THIRD value, not a shade of false. A record whose newer chain
+     * could not be checked because the caller did not supply {@code H(d)} under that algorithm
+     * is machine-indistinguishable from a broken one if the only outputs are booleans — and a
+     * consumer reading booleans is every consumer that is not reading the English.
+     */
+    public record TimestampResult(int chain, int position, Status status,
+            String digestAlgorithmOid, String genTime, String detail) {
+
+        public enum Status {
+            /** The token covers what this position must cover. */
+            MATCHES,
+            /** It covers something else. A finding about the record. */
+            DOES_NOT_MATCH,
+            /** Nothing was established either way. A statement about this check. */
+            NOT_CHECKED
+        }
+
+        public boolean imprintMatches() {
+            return status == Status.MATCHES;
+        }
+    }
 
     /** Whether the record's own links hold, and what was not looked at. */
-    public record Report(boolean linksHold, int timestampsChecked, List<TimestampResult> results,
-            String limits, String notChecked) {
+    /**
+     * @param linksHold every position was checked AND matched
+     * @param timestampsChecked how many were actually checked — not how many are in the record
+     * @param timestampsNotChecked how many could not be, which is why linksHold is false
+     */
+    public record Report(boolean linksHold, int timestampsChecked, int timestampsNotChecked,
+            List<TimestampResult> results, String limits, String notChecked) {
 
         public Map<String, Object> asMap() {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -75,11 +101,16 @@ public final class ErsVerifier {
             m.put("limits", limits);
             m.put("notChecked", notChecked);
             m.put("linksHold", linksHold);
+            // Before the count of what WAS checked, because a non-zero value here is the
+            // reason linksHold is false and a reader who meets the checked count first has
+            // already concluded "something is wrong with the record".
+            m.put("timestampsNotChecked", timestampsNotChecked);
             m.put("timestampsChecked", timestampsChecked);
             m.put("results", results.stream().map(r -> {
                 Map<String, Object> one = new LinkedHashMap<>();
                 one.put("chain", r.chain());
                 one.put("position", r.position());
+                one.put("status", r.status().name());
                 one.put("imprintMatches", r.imprintMatches());
                 one.put("digestAlgorithm", r.digestAlgorithmOid());
                 one.put("genTime", r.genTime());
@@ -115,18 +146,19 @@ public final class ErsVerifier {
         try {
             record = ErsRecord.parse(der);
         } catch (Exception e) {
-            return new Report(false, 0, List.of(), ErsRecord.LIMITS,
+            return new Report(false, 0, 0, List.of(), ErsRecord.LIMITS,
                     "The record could not be parsed (" + e.getMessage() + "), so nothing in it "
                             + "was checked. " + NOT_CHECKED);
         }
         if (dataObjectHash == null || dataObjectHash.length == 0) {
-            return new Report(false, 0, List.of(), ErsRecord.LIMITS,
+            return new Report(false, 0, 0, List.of(), ErsRecord.LIMITS,
                     "No data object hash was supplied, so there was nothing to check the record "
                             + "AGAINST. A record verified only against itself says nothing about "
                             + "whose data it is. " + NOT_CHECKED);
         }
         boolean allHold = true;
         int checked = 0;
+        int notChecked = 0;
         List<List<ErsRecord.ArchiveTimeStamp>> chains = record.chains();
         for (int c = 0; c < chains.size(); c++) {
             List<ErsRecord.ArchiveTimeStamp> chain = chains.get(c);
@@ -136,14 +168,22 @@ public final class ErsVerifier {
                 try {
                     expected = expectedImprint(record, chains, c, i, dataObjectHash,
                             dataObjectHashByAlgorithm);
+                } catch (UncheckableLinkException e) {
+                    // NOT_CHECKED, and not counted as checked. Counting it would make the
+                    // report say it looked at something it did not.
+                    results.add(new TimestampResult(c, i, TimestampResult.Status.NOT_CHECKED,
+                            ats.digestAlgorithmOid(), null,
+                            "this link was NOT checked: " + e.getMessage() + " — which is not a "
+                                    + "finding that it is wrong, and not a finding that it "
+                                    + "holds"));
+                    notChecked++;
+                    continue;
                 } catch (RuntimeException e) {
-                    results.add(new TimestampResult(c, i, false, ats.digestAlgorithmOid(), null,
-                            (e instanceof UncheckableLinkException
-                                    ? "this link was NOT checked: " : "what this timestamp "
-                                            + "should cover could not be computed: ")
-                                    + e.getMessage()
-                                    + " — which is not a finding that it is wrong, and not a "
-                                    + "finding that it holds"));
+                    // A structural disagreement IS a finding about the record.
+                    results.add(new TimestampResult(c, i, TimestampResult.Status.DOES_NOT_MATCH,
+                            ats.digestAlgorithmOid(), null,
+                            "what this timestamp should cover could not be computed: "
+                                    + e.getMessage()));
                     allHold = false;
                     checked++;
                     continue;
@@ -155,11 +195,12 @@ public final class ErsVerifier {
             }
         }
         if (checked == 0) {
-            return new Report(false, 0, results, ErsRecord.LIMITS,
+            return new Report(false, 0, 0, results, ErsRecord.LIMITS,
                     "The record contains no archive timestamp, so there was nothing to check. "
                             + NOT_CHECKED);
         }
-        return new Report(allHold, checked, results, ErsRecord.LIMITS, NOT_CHECKED);
+        return new Report(allHold && notChecked == 0, checked, notChecked, results,
+                ErsRecord.LIMITS, NOT_CHECKED);
     }
 
     /** As above, when there is only one chain and so only one algorithm. */
@@ -226,13 +267,19 @@ public final class ErsVerifier {
         byte[] current = ErsRecord.digest(ats.digestAlgorithmOid(),
                 ErsRecord.sortedConcat(tree.get(0)));
         for (int level = 1; level < tree.size(); level++) {
-            List<byte[]> next = tree.get(level);
-            byte[] carried = current;
-            if (next.stream().noneMatch(v -> Arrays.equals(v, carried))) {
-                throw new IllegalStateException("hash list " + level + " does not contain the "
-                        + "value computed from the one below it, so the tree does not join up");
-            }
-            current = ErsRecord.digest(ats.digestAlgorithmOid(), ErsRecord.sortedConcat(next));
+            // The computed value BECOMES a member of the next list; it is not expected to be
+            // stored there. §4.3 step 3: "This hash value h' MUST become a member of the next
+            // higher list of hash values." A reduced tree stores only the SIBLINGS at each
+            // level — the RFC's own example is pht1=(h2abc,h1), pht2=(h3), and the root is
+            // H(sorted(h12, h3)) with h12 computed from pht1 and nowhere in pht2.
+            //
+            // Requiring the parent to be stored in the next list, which is what this did
+            // before, rejects every standard record and accepts only the shape this product
+            // was writing — encoder and verifier agreeing with each other again.
+            List<byte[]> withParent = new ArrayList<>(tree.get(level));
+            withParent.add(current);
+            current = ErsRecord.digest(ats.digestAlgorithmOid(),
+                    ErsRecord.sortedConcat(withParent));
         }
         return current;
     }
@@ -258,7 +305,8 @@ public final class ErsVerifier {
                 // §4.2 step 5: the timestamp's hash algorithm MUST be the tree's, or
                 // digestAlgorithm must say what the tree uses. A record declaring SHA-512 with
                 // a SHA-256 token is not a record whose tree was built under SHA-512.
-                return new TimestampResult(chain, position, false, tokenAlgorithm,
+                return new TimestampResult(chain, position,
+                        TimestampResult.Status.DOES_NOT_MATCH, tokenAlgorithm,
                         String.valueOf(token.getTimeStampInfo().getGenTime().toInstant()),
                         "this Archive Timestamp declares " + ats.digestAlgorithmOid()
                                 + " and its token was taken under " + tokenAlgorithm
@@ -266,7 +314,9 @@ public final class ErsVerifier {
                                 + "algorithm");
             }
             boolean matches = Arrays.equals(expected, imprint);
-            return new TimestampResult(chain, position, matches,
+            return new TimestampResult(chain, position,
+                    matches ? TimestampResult.Status.MATCHES
+                            : TimestampResult.Status.DOES_NOT_MATCH,
                     token.getTimeStampInfo().getMessageImprintAlgOID().getId(),
                     String.valueOf(token.getTimeStampInfo().getGenTime().toInstant()),
                     matches ? "the token covers exactly what RFC 4998 says this position must "
@@ -274,7 +324,8 @@ public final class ErsVerifier {
                             : "the token's message imprint is NOT what this position must "
                                     + "cover, so this timestamp does not belong here");
         } catch (Exception e) {
-            return new TimestampResult(chain, position, false, ats.digestAlgorithmOid(), null,
+            return new TimestampResult(chain, position,
+                    TimestampResult.Status.NOT_CHECKED, ats.digestAlgorithmOid(), null,
                     "this timestamp could not be read (" + e.getMessage() + "), which is not a "
                             + "finding that it is wrong");
         }

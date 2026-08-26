@@ -19,6 +19,8 @@ package jp.aegif.nemaki.custody;
 import jp.aegif.nemaki.evidence.EvidenceLedgerEntry;
 import jp.aegif.nemaki.evidence.EvidenceLedgerService;
 import jp.aegif.nemaki.evidence.EvidenceLedgerStore;
+
+import java.util.List;
 import jp.aegif.nemaki.rest.purview.journal.LineageCanonicalHash;
 
 import org.slf4j.Logger;
@@ -140,17 +142,32 @@ public class CustodyLedgerRecorder {
      * which the ledger itself can refuse — rather than to report a handover as recorded on the
      * strength of a lookup that did not run.
      */
+    /** How far back the duplicate check looks. A cap, and the code says when it hit it. */
+    private static final int ALREADY_RECORDED_SCAN = 500;
+
     private boolean alreadyRecorded(CustodyTransfer transfer, String digest) {
         if (store == null) {
             return false;
         }
         try {
-            for (EvidenceLedgerEntry entry : store.findBySubject(transfer.repositoryId(),
-                    transfer.objectId(), 100)) {
+            List<EvidenceLedgerEntry> entries = store.findBySubject(transfer.repositoryId(),
+                    transfer.objectId(), ALREADY_RECORDED_SCAN);
+            for (EvidenceLedgerEntry entry : entries) {
                 if (entry.subjectKind() == EvidenceLedgerEntry.SubjectKind.CUSTODY_RECEIPT
                         && digest.equals(entry.payloadDigest())) {
                     return true;
                 }
+            }
+            if (entries.size() >= ALREADY_RECORDED_SCAN) {
+                // Said out loud. findBySubject answers in ascending order with the limit applied
+                // by the view, so a full result means the entries NOT read are the most recent
+                // — exactly where a handover recorded minutes ago would be. Not finding it here
+                // therefore does not mean it is not there, and the append that follows may be a
+                // second entry for one handover.
+                logger.warn("The first {} chain entries for {} were scanned for an existing "
+                        + "handover and it was not among them; there are more, and the ones not "
+                        + "read are the most recent, so this append may duplicate one",
+                        ALREADY_RECORDED_SCAN, transfer.objectId());
             }
         } catch (RuntimeException e) {
             logger.debug("Could not check whether the handover of {} is already chained: {}",

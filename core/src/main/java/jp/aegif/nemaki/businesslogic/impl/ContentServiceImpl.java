@@ -3990,7 +3990,8 @@ public class ContentServiceImpl implements ContentService {
 					counted = new CountingDigestStream(converted.getStream(), producedDigest,
 							target == jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat.PDF
 									? pdfaRetainLimit()
-									: 0L);
+									: 0L,
+							converted.getLength());
 				toStore = new org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl(
 						converted.getFileName(),
 						converted.getBigLength(),
@@ -4209,18 +4210,22 @@ public class ContentServiceImpl implements ContentService {
 		private final long retainLimit;
 
 		CountingDigestStream(java.io.InputStream in, java.security.MessageDigest digest) {
-			this(in, digest, 0L);
+			this(in, digest, 0L, 0L);
 		}
 
 		CountingDigestStream(java.io.InputStream in, java.security.MessageDigest digest,
-				long retainLimit) {
+				long retainLimit, long declaredLength) {
 			super(in);
 			this.digest = digest;
 			this.retainLimit = retainLimit;
-			// Allocated up front at the cap, not grown. The cap is what the deployment agreed
-			// to spend; growing to it in doubling steps spends more than that on the way.
+			// Sized from what the converter says it produced, capped by what the deployment
+			// agreed to spend. Allocating the cap every time would give a 2 KB preview the same
+			// 32 MiB as a large one — a memory fix that made memory worse. A declared length
+			// that turns out to be short just stops retaining, which is already one of the
+			// three answers.
+			long size = declaredLength > 0 ? Math.min(declaredLength, retainLimit) : retainLimit;
 			this.retained = retainLimit > 0
-					? new byte[(int) Math.min(retainLimit, Integer.MAX_VALUE - 8L)]
+					? new byte[(int) Math.min(size, Integer.MAX_VALUE - 8L)]
 					: null;
 		}
 
@@ -4229,6 +4234,13 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		/** The produced bytes, or null when they were not kept or the cap was passed. */
+		/**
+		 * The produced bytes.
+		 *
+		 * <p>Hands back the internal array when it is exactly full — the caller reads it and
+		 * the stream is finished with by then, so a defensive copy would double the peak for
+		 * nothing on the one path where the peak is the concern.
+		 */
 		byte[] retainedBytes() {
 			if (retained == null) {
 				return null;

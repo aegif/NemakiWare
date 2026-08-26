@@ -674,6 +674,45 @@ class EarkSipExporterTest {
     }
 
     @Test
+    @DisplayName("a capture lookup that FAILED is not reported as 'no capture entry'")
+    void anUnreadableCaptureIsNotAnAbsentOne() throws Exception {
+        // The lookup was added precisely to stop "we could not look" reading as "there is no
+        // capture" — and the first version of it swallowed every exception into an empty list,
+        // which reinstated the same substitution one layer down.
+        EvidenceLedgerStore store = mock(EvidenceLedgerStore.class);
+        when(store.isActive()).thenReturn(true);
+        when(store.findBySubject(anyString(), anyString(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(List.of(EvidenceLedgerEntry.of(REPO, 9,
+                        EvidenceLedgerEntry.SubjectKind.FIXITY_RESULT, OBJECT, "mh1:fixity",
+                        "2026-08-26T00:00:00Z", null)));
+        jp.aegif.nemaki.rest.ingest.capture.CaptureMaintenanceStore captureStore =
+                mock(jp.aegif.nemaki.rest.ingest.capture.CaptureMaintenanceStore.class);
+        when(captureStore.listCapturedForObject(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.anyInt()))
+                .thenThrow(new IllegalStateException("the capture database is down"));
+        EvidenceLedgerService service = new EvidenceLedgerService();
+        service.setStore(store);
+        EarkSipExporter exporter = exporterOver(
+                reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
+                "bytes".getBytes(StandardCharsets.UTF_8));
+        exporter.setLedgerStore(store);
+        exporter.setLedgerService(service);
+        exporter.setCaptureMaintenanceStore(captureStore);
+
+        java.lang.reflect.Method evidencePackage = EarkSipExporter.class.getDeclaredMethod(
+                "evidencePackage", String.class, String.class, List.class);
+        evidencePackage.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> evidence = (Map<String, Object>) evidencePackage.invoke(exporter,
+                REPO, OBJECT, new java.util.ArrayList<String>());
+
+        String captureProof = String.valueOf(evidence.get("captureProof"));
+        assertTrue(captureProof.contains("COULD NOT BE READ"), captureProof);
+        assertTrue(captureProof.contains("NOT a statement that the record has no capture"),
+                captureProof);
+    }
+
+    @Test
     @DisplayName("the inclusion proof says WHICH entry it is about")
     void theProofNamesItsSubject() throws Exception {
         // It used to prove entries.get(0) and call it "the capture". That list is the object's
