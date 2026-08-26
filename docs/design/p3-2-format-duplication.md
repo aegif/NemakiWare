@@ -384,9 +384,16 @@ entry は平文を持たないので、**製品は PDF/A を検査していて�
 しているものの隣に並べる)。
 
 そこで **rendition 行**に置いた。連鎖は判定にコミットし (digest の入力)、行は平文で持つ。
-**両方を持つ読み手は entry digest を再計算して一致を確かめられる**。行だけを持つ読み手が
-持っているのは主張であって証拠ではない。報告はどちらであるかを**値より先に**書く
-(`renditionsNowSource`)。
+
+**ただし「両方を持てば照合できる」は言い過ぎだった** (2026-08-26 訂正・レビュー指摘)。
+V2 digest の入力は repository / object / sourceDigest / producedDigest / converter /
+mediaType / outcome / flavour / actor である。報告の行が持つのは outcome・flavour・
+mediaType と rendition id、entry が持つのは digest だけ。**converter・両 digest・actor は
+どちらにも無い**ので、報告を開いた読み手には再計算する材料が無い。
+
+書けるのは「**書込時の入力をまだ持っている者だけが照合できる**」まで。
+`renditionsNowSource` はそう書き直した。「両方を持つ誰でも照合できる」は、
+実際にはできない計算を根拠に、行を連鎖の証拠として扱わせる誘いである。
 
 ### 保存の順序
 

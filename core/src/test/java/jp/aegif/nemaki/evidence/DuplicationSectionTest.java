@@ -159,6 +159,13 @@ class DuplicationSectionTest {
         String source = String.valueOf(section.content().get("renditionsNowSource"));
         assertTrue(source.contains("not from the evidence chain"), source);
         assertTrue(source.contains("COMMITS"), source);
+        // And it must NOT offer a check the reader cannot perform. The digest's other inputs —
+        // the converter, both digests, the actor — are in neither this report nor the entry,
+        // so "checkable by anyone holding both" invites a reader to treat the row as chained
+        // evidence on the strength of an arithmetic they cannot do.
+        assertTrue(source.contains("NOTHING HERE CAN BE CHECKED AGAINST THE CHAIN FROM THIS "
+                + "REPORT ALONE"), source);
+        assertFalse(source.contains("checked against the chain by anyone holding both"), source);
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> now =

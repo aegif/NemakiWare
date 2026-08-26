@@ -146,11 +146,11 @@ public class CustodyLedgerRecorder {
     private static final int ALREADY_RECORDED_SCAN = 500;
 
     private boolean alreadyRecorded(CustodyTransfer transfer, String digest) {
-        if (store == null) {
-            return false;
-        }
         try {
-            List<EvidenceLedgerEntry> entries = store.findBySubject(transfer.repositoryId(),
+            // Through the SERVICE, not a second injection of the store. A deployment with the
+            // service wired and the store not would have lost this check silently, and
+            // everything keeps working until the retry that appends twice.
+            List<EvidenceLedgerEntry> entries = ledgerService.entriesFor(transfer.repositoryId(),
                     transfer.objectId(), ALREADY_RECORDED_SCAN);
             for (EvidenceLedgerEntry entry : entries) {
                 if (entry.subjectKind() == EvidenceLedgerEntry.SubjectKind.CUSTODY_RECEIPT
@@ -174,14 +174,6 @@ public class CustodyLedgerRecorder {
                     transfer.objectId(), e.getMessage());
         }
         return false;
-    }
-
-    private EvidenceLedgerStore store;
-
-    /** Optional: without it a retry can append a second entry for one handover. */
-    @Autowired(required = false)
-    public void setStore(EvidenceLedgerStore store) {
-        this.store = store;
     }
 
     /**

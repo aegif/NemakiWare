@@ -359,8 +359,26 @@ OpenTimestamps 受領証は代用にならない (RFC 4998 の timestamp は RFC
 
 アンカー層は呼び手から hex digest を受け取る設計で、**merkle root も手元にある**。
 間違ったほうの上の token を包むと、**内部的には検証できて別のものについての記録**が
-出来る — 検証できるので信じられる。だから token の `anchoredDigest` が
-checkpoint hash と一致することを確かめてから組み立てる。
+出来る — 検証できるので信じられる。
+
+**受領証のフィールドだけを読んでいたのは不足だった** (2026-08-26 訂正・レビュー指摘)。
+`anchoredDigest` は**こちらが何を頼んだかについての自分のメモ**で、
+imprint は**当局が実際に署名した対象**である。別の事実である。
+警戒していた取り違え —「フィールドは checkpoint、proof は merkle root」— は
+まさにフィールドだけ読むと素通りする組み合わせだった。
+
+いまは 2 段階で見る: 安い診断としてフィールドを見て、そのあと
+**proof を parse して token の `hashedMessage` を checkpoint hash と突き合わせる**。
+
+さらに、**組み立てたものを `ErsVerifier` に通してから返す**。組み立ては安く、
+標準ツールが落とす記録を他組織へ送るのは高い。「exporter から出てきた」は
+受け取る側が受理する理由にならない。
+
+| 壊した箇所 | 落ちたテスト |
+|---|---|
+| フィールドだけ読んで token を見ない | `theTokenIsWhatCounts` |
+| 読めない token から組み立てる | `anUnreadableTokenIsNotAFinding` |
+| 組み立てたものを検証せずに返す | `anUnverifiableRecordIsNotShipped` |
 checkpoint 行自体が自己検証しないときも組み立てない
 (壊れた root を標準の容器に入れると見栄えが良くなるだけである)。
 

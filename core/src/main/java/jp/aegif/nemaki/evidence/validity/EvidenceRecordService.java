@@ -152,10 +152,6 @@ public class EvidenceRecordService {
                     + "record's timestamp is an RFC 3161 token, and this is a statement about "
                     + "what has been anchored — not about the records the checkpoint covers");
         }
-        // The imprint MUST be the checkpoint hash, or the record would be about something else.
-        // Checked rather than assumed: the anchor layer takes a hex digest from its caller, and
-        // an anchor over the merkle root — a value that is also to hand — would produce a
-        // record that verifies internally and is about a different thing.
         byte[] dataObjectHash;
         try {
             dataObjectHash = HexFormat.of().parseHex(checkpoint.checkpointHash());
@@ -163,20 +159,56 @@ public class EvidenceRecordService {
             return absent("the checkpoint hash is not a hex digest, so it cannot be the message "
                     + "imprint of an RFC 3161 token");
         }
+        // The receipt's FIELD first, because a mismatch there is the cheap diagnosis.
         if (!checkpoint.checkpointHash().equalsIgnoreCase(token.anchoredDigest())) {
             return absent("the confirmed token for checkpoint " + checkpoint.toSequence()
-                    + " was taken over " + token.anchoredDigest() + ", and this checkpoint's "
-                    + "hash is " + checkpoint.checkpointHash() + ". A record built from it "
-                    + "would be about a different value");
+                    + " is recorded as being over " + token.anchoredDigest() + ", and this "
+                    + "checkpoint's hash is " + checkpoint.checkpointHash() + ". A record built "
+                    + "from it would be about a different value");
         }
+        // Then the TOKEN ITSELF. The field is this repository's own note about what it asked
+        // for; the imprint is what the authority actually signed over, and they are two facts.
+        // The dangerous combination is precisely a receipt whose field says "checkpoint" and
+        // whose proof is over the merkle root — a value also to hand at anchoring time — which
+        // produces a record that assembles cleanly and is about something else. Reading the
+        // field alone would wave that through.
+        byte[] imprint;
         try {
-            return new Built(ErsRecord.first(dataObjectHash, token.proof()).der(), checkpoint,
-                    null);
+            imprint = new org.bouncycastle.tsp.TimeStampToken(
+                    new org.bouncycastle.cms.CMSSignedData(token.proof()))
+                    .getTimeStampInfo().getMessageImprintDigest();
+        } catch (Exception e) {
+            return absent("the confirmed token for checkpoint " + checkpoint.toSequence()
+                    + " could not be read (" + e.getMessage() + "), so what it covers is "
+                    + "unknown and no record is built from it");
+        }
+        if (!java.util.Arrays.equals(imprint, dataObjectHash)) {
+            return absent("the confirmed token for checkpoint " + checkpoint.toSequence()
+                    + " was SIGNED over " + HexFormat.of().formatHex(imprint) + ", not over "
+                    + "this checkpoint's hash. The receipt says otherwise; the token is the one "
+                    + "that counts, and a record built from it would verify internally while "
+                    + "being about a different value");
+        }
+        byte[] der;
+        try {
+            der = ErsRecord.first(dataObjectHash, token.proof()).der();
         } catch (RuntimeException e) {
             logger.warn("The evidence record for checkpoint {} could not be built: {}",
                     checkpoint.toSequence(), e.getMessage());
             return absent("the evidence record could not be built (" + e.getMessage() + ")");
         }
+        // And read it back the way a receiver will. Assembling is cheap and shipping a record
+        // a standard tool rejects is not: the package goes to another organisation, and "it
+        // came out of the exporter" is not a reason for them to accept it.
+        ErsVerifier.Report check = ErsVerifier.verify(der, dataObjectHash);
+        if (!check.linksHold()) {
+            logger.warn("The evidence record assembled for checkpoint {} does not verify: {}",
+                    checkpoint.toSequence(), check.asMap());
+            return absent("the evidence record was assembled and then did not verify against "
+                    + "the checkpoint it is about, so it is not shipped. This is a fault in "
+                    + "this deployment's anchoring, not a finding about the records covered");
+        }
+        return new Built(der, checkpoint, null);
     }
 
     private static Built absent(String why) {

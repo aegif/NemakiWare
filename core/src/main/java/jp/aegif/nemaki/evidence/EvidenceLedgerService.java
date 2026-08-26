@@ -258,6 +258,28 @@ public class EvidenceLedgerService {
         return null;
     }
 
+    /**
+     * The entries under one subject, for a caller that already depends on this service.
+     *
+     * <p>Exposed so a caller does not need a SECOND optional injection of the store to read
+     * what it just wrote. {@link jp.aegif.nemaki.custody.CustodyLedgerRecorder} did, and a
+     * deployment with the service wired and the store not would have lost its duplicate check
+     * silently — the one failure mode nobody notices, because everything keeps working until
+     * the retry that appends twice.
+     *
+     * @return an empty list when the ledger is unavailable. NOT an error: the caller's
+     *         response to "we could not look" has to be its own decision, and for the
+     *         duplicate check that decision is to attempt the append rather than to claim the
+     *         entry is already there.
+     */
+    public List<EvidenceLedgerEntry> entriesFor(String domain, String subjectId, int limit) {
+        if (store == null || !store.isActive()) {
+            return List.of();
+        }
+        List<EvidenceLedgerEntry> found = store.findBySubject(domain, subjectId, limit);
+        return found == null ? List.of() : found;
+    }
+
     /** An inclusion proof for one entry, against the checkpoint that covers it. */
     public Map<String, Object> inclusionProof(String domain, long sequence) {
         Map<String, Object> body = new LinkedHashMap<>();

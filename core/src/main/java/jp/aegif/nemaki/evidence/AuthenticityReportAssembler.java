@@ -507,19 +507,29 @@ public class AuthenticityReportAssembler {
      * chain, and for a while this report could not tell anyone what the product had found. It
      * is readable here because it is ALSO stored on the rendition row, in the clear.
      *
-     * <p>That row is mutable. A reader holding both can recompute the entry digest and see
-     * whether the two agree; a reader holding only this row has a claim. Saying which is which
-     * is the whole point — the alternative was putting the verdict into the entry, which
-     * changes what the entry hash covers and invalidates every stored hash.
+     * <p>That row is mutable, and — this is the part the first wording got wrong — a reader of
+     * this report CANNOT check it against the chain. The entry's digest is taken over the
+     * converter, the source and produced digests, the media type, the verdict and the actor.
+     * This section shows the verdict, the flavour and the media type; the entry shows a digest.
+     * The converter, both digests and the actor are in neither, so there is nothing to
+     * recompute from. Only a party that still holds the inputs as they were at write time can
+     * do the comparison.
+     *
+     * <p>Saying that precisely matters more than it sounds: "checkable by anyone holding both"
+     * invites a reader to treat the row as chained evidence on the strength of a check they
+     * cannot actually perform. The alternative — putting the verdict into the entry — changes
+     * what the entry hash covers and invalidates every stored hash.
      */
     static final String RENDITIONS_NOW_SOURCE =
             "These are read from the rendition rows AS THEY STAND NOW, not from the evidence "
                     + "chain. The chain COMMITS to each copy's archival-profile verdict — it is "
                     + "an input to the corresponding entry's digest — but does not carry it in "
-                    + "the clear, so these values can be checked against the chain by anyone "
-                    + "holding both, and are otherwise a claim by this repository rather than "
-                    + "chained evidence. A row edited after the fact would show here and would "
-                    + "NOT match the entry.";
+                    + "the clear, and the other inputs to that digest (the converter, the source "
+                    + "and produced digests, the actor) are not in this report either. So NOTHING "
+                    + "HERE CAN BE CHECKED AGAINST THE CHAIN FROM THIS REPORT ALONE: only a "
+                    + "party still holding the values recorded at write time can do that. Until "
+                    + "then these are a claim by this repository, and a row edited after the fact "
+                    + "would appear here exactly like an honest one.";
 
     static final String DUPLICATION_DISCLOSURE =
             "These are CONVENIENCE COPIES, not preservation formats and not additional records. "

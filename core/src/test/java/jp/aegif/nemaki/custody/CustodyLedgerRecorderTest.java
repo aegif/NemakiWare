@@ -79,15 +79,15 @@ class CustodyLedgerRecorderTest {
         when(service.append(anyString(), any(), anyString(), anyString(), anyString()))
                 .thenReturn(new EvidenceLedgerService.AppendResult(
                         EvidenceLedgerService.AppendOutcome.APPENDED, 1, "hash", null));
-        jp.aegif.nemaki.evidence.EvidenceLedgerStore store =
-                mock(jp.aegif.nemaki.evidence.EvidenceLedgerStore.class);
-        when(store.findBySubject(anyString(), anyString(),
+        // Through the SERVICE. The recorder used to take a second, separate injection of the
+        // store, so a deployment with the service wired and the store not lost this check
+        // silently — everything keeps working until the retry that appends twice.
+        when(service.entriesFor(anyString(), anyString(),
                 org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of(
                         EvidenceLedgerEntry.of("bedroom", 1,
                                 EvidenceLedgerEntry.SubjectKind.CUSTODY_RECEIPT, "doc-1",
                                 digest, "2026-08-26T02:00:00Z", null)));
         CustodyLedgerRecorder recorder = recorderOver(service);
-        recorder.setStore(store);
 
         CustodyLedgerRecorder.Authorisation second =
                 recorder.recordVerifiedReceipt(transfer, "2026-08-26T03:00:00Z");
@@ -109,15 +109,12 @@ class CustodyLedgerRecorderTest {
         when(service.append(anyString(), any(), anyString(), anyString(), anyString()))
                 .thenReturn(new EvidenceLedgerService.AppendResult(
                         EvidenceLedgerService.AppendOutcome.APPENDED, 2, "hash", null));
-        jp.aegif.nemaki.evidence.EvidenceLedgerStore store =
-                mock(jp.aegif.nemaki.evidence.EvidenceLedgerStore.class);
-        when(store.findBySubject(anyString(), anyString(),
+        when(service.entriesFor(anyString(), anyString(),
                 org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of(
                         EvidenceLedgerEntry.of("bedroom", 1,
                                 EvidenceLedgerEntry.SubjectKind.CUSTODY_RECEIPT, "doc-1",
                                 "mh1:some-other-handover", "2026-08-26T02:00:00Z", null)));
         CustodyLedgerRecorder recorder = recorderOver(service);
-        recorder.setStore(store);
 
         assertTrue(recorder.recordVerifiedReceipt(transfer, "2026-08-26T03:00:00Z")
                 .mayProceed());

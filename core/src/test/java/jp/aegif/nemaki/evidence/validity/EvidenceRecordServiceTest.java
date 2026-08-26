@@ -41,6 +41,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -163,6 +164,104 @@ class EvidenceRecordServiceTest {
 
         assertFalse(built.present());
         assertTrue(built.unavailable().contains("about a different value"), built.unavailable());
+    }
+
+    @Test
+    @DisplayName("the FIELD says checkpoint and the TOKEN is over something else — refused")
+    void theTokenIsWhatCounts() throws Exception {
+        // The dangerous combination, and the one the previous version waved through: the
+        // receipt's anchoredDigest is this repository's own note about what it asked for, and
+        // the imprint is what the authority actually signed. A receipt whose field says
+        // "checkpoint" while its proof covers the merkle root — a value also to hand at
+        // anchoring time — assembles cleanly and is about something else.
+        EvidenceCheckpoint checkpoint = checkpoint();
+        byte[] merkleRoot = MessageDigest.getInstance("SHA-256").digest("mh1:root".getBytes());
+        AnchorReceipt lying = confirmedOver(checkpoint.checkpointHash(), tokenOver(merkleRoot));
+
+        EvidenceRecordService.Built built =
+                serviceWith(checkpoint, List.of(lying)).latest(DOMAIN);
+
+        assertFalse(built.present(),
+                "a token signed over the merkle root was wrapped as a record about the "
+                        + "checkpoint, because only the receipt's own field was read");
+        assertTrue(built.unavailable().contains("SIGNED over"), built.unavailable());
+        assertTrue(built.unavailable().contains("the token is the one that counts"),
+                built.unavailable());
+    }
+
+    @Test
+    @DisplayName("an unreadable token is not built from, and is not called wrong")
+    void anUnreadableTokenIsNotAFinding() throws Exception {
+        EvidenceCheckpoint checkpoint = checkpoint();
+        AnchorReceipt garbage = confirmedOver(checkpoint.checkpointHash(),
+                "this is not a token".getBytes());
+
+        EvidenceRecordService.Built built =
+                serviceWith(checkpoint, List.of(garbage)).latest(DOMAIN);
+
+        assertFalse(built.present());
+        assertTrue(built.unavailable().contains("could not be read"), built.unavailable());
+    }
+
+    @Test
+    @DisplayName("what is shipped has been read back the way a receiver will read it")
+    void whatIsShippedVerifies() throws Exception {
+        // Assembling is cheap; shipping a record a standard tool rejects is not. The package
+        // goes to another organisation, and "it came out of the exporter" is not a reason for
+        // them to accept it.
+        EvidenceCheckpoint checkpoint = checkpoint();
+        byte[] imprint = HexFormat.of().parseHex(checkpoint.checkpointHash());
+        EvidenceRecordService.Built built = serviceWith(checkpoint,
+                List.of(confirmedOver(checkpoint.checkpointHash(), tokenOver(imprint))))
+                .latest(DOMAIN);
+
+        assertTrue(built.present(), built.unavailable());
+        assertTrue(ErsVerifier.verify(built.der(), imprint).linksHold(),
+                "the service shipped a record that does not verify");
+    }
+
+    @Test
+    @DisplayName("a record that assembles and does NOT verify is not shipped")
+    void anUnverifiableRecordIsNotShipped() throws Exception {
+        // Reachable when the token's imprint algorithm is not the one the record declares:
+        // every earlier check passes — the field matches, the imprint bytes match — and the
+        // assembled record still fails §4.2 step 5, because the tree and the timestamp are not
+        // about the same algorithm. Without the read-back this ships.
+        EvidenceCheckpoint checkpoint = checkpoint();
+        byte[] imprint = HexFormat.of().parseHex(checkpoint.checkpointHash());
+        // SHA3-256: also 32 bytes, so the imprint BYTES still equal the checkpoint hash and
+        // every earlier check passes. The record declares SHA-256, and §4.2 step 5 says the
+        // timestamp's algorithm must be the tree's — so the assembled record does not verify.
+        AnchorReceipt mislabelled = confirmedOver(checkpoint.checkpointHash(),
+                tokenOverWithAlgorithm(imprint, "2.16.840.1.101.3.4.2.8"));
+
+        EvidenceRecordService.Built built =
+                serviceWith(checkpoint, List.of(mislabelled)).latest(DOMAIN);
+
+        assertFalse(built.present(),
+                "a record that does not verify was shipped to another organisation");
+        assertTrue(built.unavailable().contains("did not verify"), built.unavailable());
+        assertTrue(built.unavailable().contains("not a finding about the records covered"),
+                built.unavailable());
+    }
+
+    /**
+     * A token whose imprint ALGORITHM is {@code oid} while the bytes are the SHA-256 digest.
+     *
+     * <p>A TSA will issue this: the imprint length is not checked against the algorithm by
+     * every implementation, and what matters here is that the record then declares SHA-256
+     * (from the checkpoint) while the token says otherwise.
+     */
+    private static byte[] tokenOverWithAlgorithm(byte[] imprint, String oid) throws Exception {
+        TimeStampRequest request = new TimeStampRequestGenerator()
+                .generate(new ASN1ObjectIdentifier(oid), imprint);
+        TimeStampResponse response = new TimeStampResponseGenerator(tokenGenerator,
+                java.util.Set.of(SHA256_OID, oid))
+                .generate(request, BigInteger.ONE, new java.util.Date());
+        assertNotNull(response.getTimeStampToken(),
+                "the test TSA refused to issue a token under " + oid + ", so this fixture does "
+                        + "not produce the mismatch it is for: " + response.getStatusString());
+        return response.getTimeStampToken().getEncoded();
     }
 
     @Test
