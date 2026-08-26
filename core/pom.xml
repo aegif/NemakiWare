@@ -33,7 +33,7 @@
 		     BC publishes patch releases PER ARTIFACT, so 1.81.1 exists for prov/pkix/util but
 		     NOT for bcjmail; bcjmail is therefore excluded from the pin and from the enforcer
 		     rule below rather than forced to a version that was never released. -->
-		<org.bouncycastle.version>1.81.1</org.bouncycastle.version>
+		<org.bouncycastle.version>1.84</org.bouncycastle.version>
 		<httpcomponents.client5.version>5.5.1</httpcomponents.client5.version>
 		<httpcomponents.core5.version>5.3.6</httpcomponents.core5.version>
 		<opencmis.github.packages.url>https://maven.pkg.github.com/aegif/chemistry-opencmis-nemakiware</opencmis.github.packages.url>
