@@ -239,7 +239,7 @@
 		<dependency>
 			<groupId>org.verapdf</groupId>
 			<artifactId>validation-model</artifactId>
-			<version>1.28.2</version>
+			<version>1.30.2</version>
 		</dependency>
 
 		<!-- nemakiware-action dependency commented out - module is suspended and not needed -->
