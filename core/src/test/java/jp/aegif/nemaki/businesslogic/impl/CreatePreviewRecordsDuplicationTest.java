@@ -328,7 +328,7 @@ class CreatePreviewRecordsDuplicationTest {
     }
 
     @Test
-    @DisplayName("a FULL read whose attachment write failed records no digest")
+    @DisplayName("a FULL read whose attachment write failed records NO duplication at all")
     void aSwallowedAttachmentFailureRecordsNoDigest() throws Exception {
         // The nastiest of the three, because the counting stream sees everything it expects:
         // AttachmentDaoDelegate reads the whole stream, THEN the attachment write throws and
@@ -365,14 +365,12 @@ class CreatePreviewRecordsDuplicationTest {
                         new ByteArrayInputStream("srcb".getBytes(StandardCharsets.UTF_8))),
                 document);
 
-        org.mockito.ArgumentCaptor<String> produced =
-                org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(recorder).recordDuplication(eq(REPO), eq("doc-1"), any(), produced.capture(),
+        // NOT "recorded without a digest". No copy exists: the write failed, so what survived
+        // is rendition metadata. A row under `duplications` says a copy of this record was made
+        // in another format, and dropping the digest does not change what the reader takes from
+        // the row being there at all.
+        verify(recorder, never()).recordDuplication(anyString(), anyString(), any(), any(),
                 any(), any(), anyString());
-
-        assertNull(produced.getValue(),
-                "the attachment write failed and was swallowed, and a digest of the bytes that "
-                        + "were read was recorded as the digest of a stored rendition");
     }
 
     @Test

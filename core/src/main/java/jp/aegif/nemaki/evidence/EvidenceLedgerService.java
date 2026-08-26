@@ -282,6 +282,27 @@ public class EvidenceLedgerService {
         int covered = (int) (covering.toSequence() - covering.fromSequence() + 1);
         List<EvidenceLedgerEntry> span = store.range(domain, covering.fromSequence(),
                 covering.toSequence(), covered + 1);
+        // The checkpoint row itself, before anything is proved against it. Its hash covers its
+        // own fields, so a row whose merkleRoot was edited stops here rather than becoming the
+        // root a proof is measured against.
+        if (!covering.selfVerifies()) {
+            body.put("status", "error");
+            body.put("message", "the checkpoint covering sequence " + sequence + " does not "
+                    + "verify against its own fields, so the root it names is not evidence of "
+                    + "anything. Nothing here is a statement about the entry.");
+            return body;
+        }
+        // The same coverage check the sealing path makes. A short read is the ordinary case —
+        // a view still building, a limit — and it produces a span that walks perfectly and
+        // hashes to a DIFFERENT root. Without this, "success" came back with an audit path
+        // that does not verify against the root printed beside it.
+        String coverage = coverageProblem(span, covering.fromSequence(), covering.toSequence());
+        if (coverage != null) {
+            body.put("status", "error");
+            body.put("message", "no proof can be made against this checkpoint: " + coverage
+                    + ". This is about the RANGE, not about the entry.");
+            return body;
+        }
         List<String> leaves = new ArrayList<>(span.size());
         int index = -1;
         for (int i = 0; i < span.size(); i++) {
@@ -306,6 +327,21 @@ public class EvidenceLedgerService {
                     + "inclusion proof over it establishes anything. The entry may well be "
                     + "there; what is broken is the range it would be proved against.");
             body.putAll(walk.asMap());
+            return body;
+        }
+        // Last, and the one that cannot be argued with: the leaves we hold must produce the
+        // root the checkpoint names. Everything above is a diagnosis; this is the answer. A
+        // span that walks, covers the range, and still hashes to a different root has been
+        // rewritten coherently, and handing out a path against the OLD root would present a
+        // proof that does not verify — under the word "success".
+        String recomputed = MerkleTree.root(leaves);
+        if (recomputed == null || !recomputed.equals(covering.merkleRoot())) {
+            body.put("status", "error");
+            body.put("message", "the entries we read for " + covering.fromSequence() + ".."
+                    + covering.toSequence() + " produce root " + recomputed + ", and the "
+                    + "checkpoint names " + covering.merkleRoot() + ". A proof built here would "
+                    + "not verify against the root printed beside it. The entry may well be "
+                    + "there; what disagrees is the span and the checkpoint over it.");
             return body;
         }
         List<MerkleTree.ProofStep> path = MerkleTree.proof(leaves, index);

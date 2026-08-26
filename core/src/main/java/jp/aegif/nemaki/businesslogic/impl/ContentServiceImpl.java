@@ -3888,12 +3888,14 @@ public class ContentServiceImpl implements ContentService {
 			jp.aegif.nemaki.dao.impl.couch.delegate.AttachmentDaoDelegate
 					.renditionContentStored.remove();
 			String renditionId;
-			boolean contentStored;
+			// Three answers, not two. TRUE: the bytes are stored. FALSE: the write failed and was
+			// swallowed, so there is no copy. null: nothing reported, which is what a store that
+			// does not go through the delegate looks like — we do not know either way.
+			Boolean storeReported;
 			try {
 				renditionId = contentDaoService.createRendition(repositoryId, rendition, toStore);
-				contentStored = Boolean.TRUE.equals(
-						jp.aegif.nemaki.dao.impl.couch.delegate.AttachmentDaoDelegate
-								.renditionContentStored.get());
+				storeReported = jp.aegif.nemaki.dao.impl.couch.delegate.AttachmentDaoDelegate
+						.renditionContentStored.get();
 			} finally {
 				jp.aegif.nemaki.dao.impl.couch.delegate.AttachmentDaoDelegate
 						.renditionContentStored.remove();
@@ -3908,11 +3910,25 @@ public class ContentServiceImpl implements ContentService {
 			// (the PDF-in, PDF-out path). Recording one would put a copy in the chain that does
 			// not exist, attributed to a conversion that never ran.
 			if (converted != contentStream) {
-				recordFormatDuplication(callContext, repositoryId, document,
-						contentStored
-								? digestOfWhatWasStored(counted, producedDigest, converted)
-								: null,
-						converterId);
+				if (Boolean.FALSE.equals(storeReported)) {
+					// The write failed and was swallowed, so NO copy exists — only rendition
+					// metadata. An entry here would put a derived copy in the chain that is not
+					// there, and the report would list it as one. Dropping the digest is not
+					// enough: what the reader takes from the row is that a copy was made.
+					//
+					// This is not the fail-open rule being broken. That rule is for a ledger we
+					// cannot reach while the copy exists; here the ledger is fine and the copy is
+					// the thing that is missing.
+					log.warn("createRendition: the rendition content was not stored, so no "
+							+ "duplication is recorded for document " + document.getId()
+							+ " — there is no copy to record");
+				} else {
+					recordFormatDuplication(callContext, repositoryId, document,
+							Boolean.TRUE.equals(storeReported)
+									? digestOfWhatWasStored(counted, producedDigest, converted)
+									: null,
+							converterId);
+				}
 			}
 			List<String> renditionIds = document.getRenditionIds();
 			if (renditionIds == null) {

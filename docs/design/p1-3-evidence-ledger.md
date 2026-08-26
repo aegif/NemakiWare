@@ -386,3 +386,27 @@ digest が適用済み hash を無視する / 未配線でも毎回警告する)
 > 封鎖側の `walk.intact()` を外しても落ちるのは `abrokenSpanIsNotSealed` のほうで、
 > proof 側のテストは落ちない。**同じ 1 行が 2 箇所に在る**ので、
 > 負のコントロールは出現位置を指定して壊すこと (1 度目の計測はこれで空振りした)。
+
+### 続き (2026-08-26 Codex レビュー) — walk が通っても proof は成り立たない
+
+上の修正は **chain walk** しか見ていなかった。walk は「隣同士が繋がっているか」だけを
+見るので、次の 3 つを素通しする。**どれも `success` と一緒に、そこに印刷された root では
+検証できない audit path を返していた。**
+
+1. **短い読み** (view が構築中・limit)。読めた entry は全部本物で、綺麗に繋がっている。
+   葉が少ない木の root が違うだけ。**一番ありふれた壊れ方**で、しかも walk では見えない。
+2. **整合的な書き換え** — 全 entry を hash し直せば walk は通る。checkpoint が
+   既にコミットした root だけが捕まえられる。**これが checkpoint を持つ理由そのもの**。
+3. **checkpoint 行自体の改竄** — `merkleRoot` を書き換えた行を root として使っていた。
+
+封鎖側が既に持っていた `coverageProblem` を proof 側にも通し、
+`covering.selfVerifies()` を先頭に、**`MerkleTree.root(leaves)` と
+`covering.merkleRoot()` の比較を最後に**置いた。最後のものは議論の余地が無い —
+上の 3 つは診断で、これが答えである。
+
+| 壊した箇所 | 落ちたテスト |
+|---|---|
+| coverage 検査を外す | `aShortReadIsNotAProof` |
+| root 比較を外す | `aRewrittenSpanIsCaughtByTheRoot` |
+| `covering.selfVerifies()` を外す | `anEditedCheckpointIsNotARoot` |
+

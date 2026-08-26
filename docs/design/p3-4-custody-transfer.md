@@ -134,6 +134,29 @@ custody が渡ることは、**ローカルコピーを消してよくなる直�
   運用者はそれを**そう**知らされる必要がある。guard は残し、
   テストは**理由の文面**で判別する (下表の 2 行目)。
 
+### 4.2 2026-08-26 Codex レビュー — 名無しの受領証で custody が渡っていた
+
+compact constructor が要求するのは `sipDigest` だけで、`verifyReceipt` が見るのは
+digest と outcome だけだった。つまり **「OK / digest X」以外が全部空**の受領証が
+`RECEIPT_VERIFIED` に着き、その後は通常の `advance` で `CUSTODY_TRANSFERRED` に行けた。
+**誰に・いつ渡したのかがどこにも無い受け渡し**である。後からこの記録について
+問い合わせる相手が居ないので、「受け渡した」と言えていない。
+
+`CustodyReceipt.missingRequiredField()` を足し、`verifyReceipt` が
+`submissionId` / `aipId` / `aipChecksum` / `receivingAgent` / `receivedAt` の
+**どれか 1 つでも空なら拒否**する (ロードマップ行が挙げている中身と同じ)。
+constructor は緩いままにした — 欠けた受領証も「何かが届いた」という事実で、
+捨てると届いたことごと消える。**検証に足りないだけで、物として無効ではない。**
+
+**署名は必須にしていない。** こちらは先方の鍵素材を持っておらず、検証しない署名文字列を
+必須にしても見せかけにしかならない。この欠落は全受領証の `limits()` に書いてある。
+必須化は submission agreement 側の判断で、§5 に未了として残す。
+
+| 壊した箇所 | 落ちたテスト |
+|---|---|
+| `missingRequiredField()` を読まない | `aReceiptMustNameWhoIsAnswerable` / `everyIdentifyingFieldIsRequired` |
+| `aipId` の判定だけ落とす | `everyIdentifyingFieldIsRequired` |
+
 | 壊した箇所 | 落ちたテスト |
 |---|---|
 | `allowedNext(AIP_CREATED)` に `RECEIPT_VERIFIED` を戻す | `receiptVerifiedIsNotAnOrdinaryMove` |

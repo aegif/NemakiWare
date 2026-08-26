@@ -4336,7 +4336,7 @@ acceptance review で挙がった 5 件 (F1-F5) のうち F1-F3 を小規模修�
 
 ### Multi-replica deployment
 
-NemakiWare 3.1.1 は **single-replica posture** で出荷。multi-replica で運用する場合の必要条件・制限・セットアップ手順は **[`docs/MULTI-REPLICA-DEPLOYMENT.md`](docs/MULTI-REPLICA-DEPLOYMENT.md)** に集約してあります。
+NemakiWare 3.1.1 は **single-replica posture** で出荷。multi-replica で運用する場合の必要条件・制限・セットアップ手順は **[`docs/MULTI-REPLICA-DEPLOYMENT.md`](../MULTI-REPLICA-DEPLOYMENT.md)** に集約してあります。
 
 要点:
 

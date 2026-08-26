@@ -422,6 +422,81 @@ class EvidenceLedgerServiceTest {
     }
 
     @Test
+    @DisplayName("a SHORT read is refused — it walks perfectly and hashes to another root")
+    void aShortReadIsNotAProof() {
+        // The ordinary case: a view still building, or a limit. Every entry read is genuine and
+        // links to the one before it, so the chain walk says intact — and the tree over FEWER
+        // leaves has a different root. The audit path handed back would not verify against the
+        // root printed beside it, under the word "success".
+        FakeStore store = new FakeStore();
+        EvidenceLedgerService service = serviceOver(store);
+        appendSome(service, 5);
+        service.closeCheckpoint(DOMAIN, "2026-08-24T01:00:00Z");
+        store.dropFromEnd = 1;
+
+        Map<String, Object> proof = service.inclusionProof(DOMAIN, 1);
+
+        assertEquals("error", proof.get("status"),
+                "a proof was built over a short read of the sealed range");
+        assertNull(proof.get("auditPath"));
+        assertTrue(String.valueOf(proof.get("message")).contains("short read"),
+                String.valueOf(proof.get("message")));
+    }
+
+    @Test
+    @DisplayName("a COHERENTLY rewritten span is refused by the root, not by the walk")
+    void aRewrittenSpanIsCaughtByTheRoot() {
+        // Every entry re-hashed so the chain links up again. The walk cannot see this — that is
+        // what makes the checkpoint worth having — and the only thing that catches it is the
+        // root the sealed checkpoint already committed to.
+        FakeStore store = new FakeStore();
+        EvidenceLedgerService service = serviceOver(store);
+        appendSome(service, 4);
+        service.closeCheckpoint(DOMAIN, "2026-08-24T01:00:00Z");
+        List<EvidenceLedgerEntry> rewritten = new java.util.ArrayList<>();
+        String prev = null;
+        for (EvidenceLedgerEntry e : store.entries) {
+            EvidenceLedgerEntry re = EvidenceLedgerEntry.of(e.domain(), e.sequence(),
+                    e.subjectKind(), e.subjectId(), "mh1:rewritten-" + e.sequence(),
+                    e.occurredAt(), prev);
+            rewritten.add(re);
+            prev = re.entryHash();
+        }
+        store.entries.clear();
+        store.entries.addAll(rewritten);
+        assertTrue(EvidenceChainVerifier.verify(store.entries).intact(),
+                "the fixture did not actually produce a coherent rewrite, so this test would "
+                        + "be measuring the chain walk instead of the root");
+
+        Map<String, Object> proof = service.inclusionProof(DOMAIN, 2);
+
+        assertEquals("error", proof.get("status"),
+                "a rewritten span produced a proof against the checkpoint it no longer matches");
+        assertTrue(String.valueOf(proof.get("message")).contains("may well be there"),
+                String.valueOf(proof.get("message")));
+    }
+
+    @Test
+    @DisplayName("a checkpoint whose own row was edited is refused before anything is proved")
+    void anEditedCheckpointIsNotARoot() {
+        FakeStore store = new FakeStore();
+        EvidenceLedgerService service = serviceOver(store);
+        appendSome(service, 4);
+        service.closeCheckpoint(DOMAIN, "2026-08-24T01:00:00Z");
+        EvidenceCheckpoint sealed = store.checkpoints.get(0);
+        store.checkpoints.set(0, new EvidenceCheckpoint(sealed.domain(), sealed.fromSequence(),
+                sealed.toSequence(), "mh1:SOMEONE-ELSES-ROOT", sealed.prevCheckpointHash(),
+                sealed.createdAt(), sealed.checkpointHash()));
+
+        Map<String, Object> proof = service.inclusionProof(DOMAIN, 2);
+
+        assertEquals("error", proof.get("status"),
+                "a checkpoint row that does not verify was used as the root of a proof");
+        assertTrue(String.valueOf(proof.get("message")).contains("its own fields"),
+                String.valueOf(proof.get("message")));
+    }
+
+    @Test
     @DisplayName("the refusal says the ENTRY may be fine — only the span is broken")
     void theRefusalDoesNotAccuseTheEntry() {
         // "No proof" is easily read as "that entry is not in the ledger", which is a statement

@@ -121,6 +121,40 @@ public record CustodyReceipt(
                 || outcome.equals("SUCCESS") || outcome.equals("ACCEPTED") || outcome.equals("OK");
     }
 
+    /**
+     * The first identifying field this receipt does not have, or null when it has them all.
+     *
+     * <p>Separate from the compact constructor on purpose. A receipt object with gaps is worth
+     * keeping — it is what arrived, and discarding it loses the fact that something arrived —
+     * but it must not be enough to move to RECEIPT_VERIFIED. That state says "we checked", and
+     * the next state along passes custody; passing custody to nobody in particular, at no
+     * stated time, is not a handover anyone can later ask about.
+     *
+     * <p>The roadmap's list of receipt contents is what this checks: submission id, AIP id, AIP
+     * checksum, target SIP digest (the constructor), verification outcome
+     * ({@link #reportsSuccess}) and the receiving agent. <b>A signature is not required</b>,
+     * because this product holds no key material for the far end and an unverified signature
+     * string would be theatre. That gap is disclosed in {@link #limits()} on every receipt.
+     */
+    public String missingRequiredField() {
+        if (submissionId == null || submissionId.isBlank()) {
+            return "submissionId";
+        }
+        if (aipId == null || aipId.isBlank()) {
+            return "aipId";
+        }
+        if (aipChecksum == null || aipChecksum.isBlank()) {
+            return "aipChecksum";
+        }
+        if (receivingAgent == null || receivingAgent.isBlank()) {
+            return "receivingAgent";
+        }
+        if (receivedAt == null || receivedAt.isBlank()) {
+            return "receivedAt";
+        }
+        return null;
+    }
+
     /** Whether this receipt refers to the package this transfer actually sent. */
     public boolean isAbout(String expectedSipDigest) {
         return refusalReasonFor(expectedSipDigest) == null;

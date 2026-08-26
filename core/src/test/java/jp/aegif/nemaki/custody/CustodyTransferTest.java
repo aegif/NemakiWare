@@ -228,6 +228,55 @@ class CustodyTransferTest {
     }
 
     @Test
+    @DisplayName("a receipt that names only our package is not enough to verify")
+    void aReceiptMustNameWhoIsAnswerable() {
+        // It passed before: the constructor requires only the SIP digest, and verifyReceipt
+        // checked the digest and the outcome. So a receipt saying "OK, digest X" and nothing
+        // else reached RECEIPT_VERIFIED, after which an ordinary advance passes custody — to
+        // nobody in particular, at no stated time, with no submission or AIP id to ask about
+        // it by. The state machine's own claim is that the state you are in IS the diagnosis,
+        // and "we checked" over that receipt is a false one.
+        CustodyTransfer transfer = atAipCreated();
+
+        CustodyTransfer.Moved moved = transfer.verifyReceipt(
+                new CustodyReceipt(null, null, null, SIP_DIGEST, "OK", null, null, null, false),
+                "2026-08-26T02:00:00Z");
+
+        assertFalse(moved.accepted(), "an anonymous receipt was accepted as verification");
+        assertEquals(CustodyState.AIP_CREATED, transfer.state());
+        assertTrue(moved.refusedReason().contains("submissionId"), moved.refusedReason());
+    }
+
+    @Test
+    @DisplayName("each identifying field is required — not just the first one checked")
+    void everyIdentifyingFieldIsRequired() {
+        // A guard that only ever fires on one field would let the other four through, and the
+        // test above would still pass.
+        record Case(String field, CustodyReceipt receipt) {}
+        List<Case> cases = List.of(
+                new Case("submissionId", new CustodyReceipt(null, "aip-1", "b".repeat(64),
+                        SIP_DIGEST, "PASSED", "roda-agent", "t", null, false)),
+                new Case("aipId", new CustodyReceipt("sub-1", "  ", "b".repeat(64),
+                        SIP_DIGEST, "PASSED", "roda-agent", "t", null, false)),
+                new Case("aipChecksum", new CustodyReceipt("sub-1", "aip-1", null,
+                        SIP_DIGEST, "PASSED", "roda-agent", "t", null, false)),
+                new Case("receivingAgent", new CustodyReceipt("sub-1", "aip-1", "b".repeat(64),
+                        SIP_DIGEST, "PASSED", "", "t", null, false)),
+                new Case("receivedAt", new CustodyReceipt("sub-1", "aip-1", "b".repeat(64),
+                        SIP_DIGEST, "PASSED", "roda-agent", null, null, false)));
+
+        for (Case each : cases) {
+            CustodyTransfer transfer = atAipCreated();
+            CustodyTransfer.Moved moved = transfer.verifyReceipt(each.receipt(), "t");
+            assertFalse(moved.accepted(),
+                    "a receipt with no " + each.field() + " was accepted as verification");
+            assertTrue(moved.refusedReason().contains(each.field()),
+                    "the refusal blamed the wrong field for a receipt missing "
+                            + each.field() + ": " + moved.refusedReason());
+        }
+    }
+
+    @Test
     @DisplayName("custody does NOT pass on the far end's word that an AIP exists")
     void aipCreatedDoesNotTransferCustody() {
         // AIP_CREATED is their claim; RECEIPT_VERIFIED is our finding. Collapsing the two makes

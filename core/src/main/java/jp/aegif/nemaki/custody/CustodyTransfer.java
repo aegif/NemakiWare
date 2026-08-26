@@ -179,6 +179,17 @@ public final class CustodyTransfer {
             return new Moved(false, state, "a receipt can only be verified once the receiving "
                     + "system has reported an AIP; this transfer is at " + state);
         }
+        String missing = candidate.missingRequiredField();
+        if (missing != null) {
+            // Before the digest check, because this is about the receipt being a receipt at
+            // all. One that names our package and nothing else says the far end holds
+            // something; it does not say who holds it or when they said so, and the state it
+            // would unlock is one step from custody passing.
+            return new Moved(false, state, "the receipt does not carry '" + missing + "'. A "
+                    + "receipt has to name who is answerable for the copy and when they said "
+                    + "so, or custody passes to nobody in particular and there is no later "
+                    + "conversation to have about this record.");
+        }
         String refusal = candidate.refusalReasonFor(sipDigest);
         if (refusal != null) {
             return new Moved(false, state, refusal);

@@ -2702,8 +2702,8 @@ return (
 ## 付録A: 参考資料
 
 - [CMIS 1.1 Specification](https://docs.oasis-open.org/cmis/CMIS/v1.1/CMIS-v1.1.pdf)
-- [NemakiWare AGENTS.md](../AGENTS.md)
-- [NemakiWare CLAUDE.md](../CLAUDE.md)
+- [NemakiWare AGENTS.md](../../AGENTS.md)
+- [NemakiWare CLAUDE.md](../../CLAUDE.md)
 
 ## 付録B: 用語集
 
