@@ -157,7 +157,7 @@ public class CustodyTransferService {
                     authorisation.refusedReason());
             return Outcome.refused(transfer, authorisation.refusedReason());
         }
-        CustodyTransfer.Moved moved = transfer.advance(CustodyState.CUSTODY_TRANSFERRED, at,
+        CustodyTransfer.Moved moved = transfer.passCustody(at,
                 "the handover was recorded in the evidence chain");
         if (!moved.accepted()) {
             // The entry is already in the chain and the transfer did not move. Said out loud
@@ -189,7 +189,19 @@ public class CustodyTransferService {
     }
 
     private Outcome persist(CustodyTransfer transfer, String failureReason) {
-        if (!store.save(transfer)) {
+        boolean saved;
+        try {
+            saved = store.save(transfer);
+        } catch (RuntimeException e) {
+            // The store can throw before it reaches its own retry loop — getting a client,
+            // reading the current revision. On the passCustody path the ledger entry is already
+            // written by then, so letting this propagate would replace the one message an
+            // operator needs (the chain and the transfer disagree) with a stack trace, and a
+            // retry would append a second custody entry.
+            logger.warn("A custody transfer could not be written: {}", e.getMessage());
+            saved = false;
+        }
+        if (!saved) {
             return Outcome.refused(transfer, failureReason);
         }
         return Outcome.done(transfer);

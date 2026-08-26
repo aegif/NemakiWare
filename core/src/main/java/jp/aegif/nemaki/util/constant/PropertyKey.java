@@ -280,6 +280,20 @@ public interface PropertyKey {
 	final String RENDITION_LAZY_CREATE_ON_PREVIEW = "rendition.lazy.createOnPreview";
 	/** Converter type: 'jod' (JODConverter) or 'external' (future). Default: jod */
 	final String RENDITION_CONVERTER_TYPE = "rendition.converter.type";
+
+	/**
+	 * The PDF/A flavour a produced PDF is checked against, e.g. {@code 1b}. Blank or absent
+	 * means no check — which the duplication record then states as NOT_CHECKED rather than as
+	 * a failure.
+	 */
+	final String RENDITION_PDFA_VALIDATE_FLAVOUR = "rendition.pdfa.validate.flavour";
+
+	/**
+	 * How many bytes of a produced PDF this deployment will hold in memory to validate it.
+	 * Past it the copy is stored as normal and the validation reports NOT_CHECKED with the
+	 * size as the reason.
+	 */
+	final String RENDITION_PDFA_VALIDATE_MAX_BYTES = "rendition.pdfa.validate.maxBytes";
 	/** Path to external converter command (future use). Default: null */
 	final String RENDITION_EXTERNAL_COMMAND = "rendition.external.command";
 	/** URL of external converter service (future use). Default: null */

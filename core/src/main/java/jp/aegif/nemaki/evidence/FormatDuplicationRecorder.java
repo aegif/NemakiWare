@@ -315,6 +315,24 @@ public class FormatDuplicationRecorder {
     public Recorded recordDuplication(String repositoryId, String sourceObjectId,
             String sourceDigest, String producedDigest, Converter converter,
             TargetFormat target, String actor, String occurredAt) {
+        return recordDuplication(repositoryId, sourceObjectId, sourceDigest, producedDigest,
+                converter, target, null, actor, occurredAt);
+    }
+
+    /**
+     * As above, committing to what a PDF/A validation found.
+     *
+     * <p>The FINDING is part of the digest, not the request. "We asked for PDF/A" and "it is
+     * PDF/A" are different facts, and an entry that committed to the first while a reader was
+     * shown the second would be the exact substitution this class exists to refuse.
+     *
+     * @param pdfa what the validator found, or null when the question does not arise — the
+     *        target is not PDF, or this deployment validates nothing
+     */
+    public Recorded recordDuplication(String repositoryId, String sourceObjectId,
+            String sourceDigest, String producedDigest, Converter converter,
+            TargetFormat target, jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation pdfa, String actor,
+            String occurredAt) {
         if (ledgerService == null) {
             logger.debug("No evidence ledger is wired; the duplication of {} is not chained",
                     sourceObjectId);
@@ -323,7 +341,7 @@ public class FormatDuplicationRecorder {
         EvidenceLedgerService.AppendResult result;
         try {
             String digest = duplicationDigest(repositoryId, sourceObjectId, sourceDigest,
-                    producedDigest, converter, target, actor);
+                    producedDigest, converter, target, pdfa, actor);
             result = ledgerService.append(repositoryId,
                     EvidenceLedgerEntry.SubjectKind.FORMAT_DUPLICATION, sourceObjectId, digest,
                     occurredAt);
@@ -356,10 +374,26 @@ public class FormatDuplicationRecorder {
     static String duplicationDigest(String repositoryId, String sourceObjectId,
             String sourceDigest, String producedDigest, Converter converter,
             TargetFormat target, String actor) {
+        return duplicationDigest(repositoryId, sourceObjectId, sourceDigest, producedDigest,
+                converter, target, null, actor);
+    }
+
+    /**
+     * As above, with the archival-profile finding folded in.
+     *
+     * <p>The OUTCOME goes in, not the whole sentence: the sentence is a property of the
+     * outcome and rewording it would change every entry, which would look like the facts had
+     * changed. Same reason the converter's id goes in rather than its disclosure.
+     */
+    static String duplicationDigest(String repositoryId, String sourceObjectId,
+            String sourceDigest, String producedDigest, Converter converter,
+            TargetFormat target, jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation pdfa, String actor) {
         return LineageCanonicalHash.hash(DUPLICATION_DIGEST_DOMAIN, repositoryId, sourceObjectId,
                 sourceDigest, producedDigest,
                 converter == null ? null : converter.id(),
-                target == null ? null : target.mediaType(), actor);
+                target == null ? null : target.mediaType(),
+                pdfa == null ? null : pdfa.outcome().name(),
+                pdfa == null ? null : pdfa.flavour(), actor);
     }
 
     /**

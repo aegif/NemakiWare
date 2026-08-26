@@ -130,7 +130,7 @@ class CreatePreviewRecordsDuplicationTest {
                 });
 
         FormatDuplicationRecorder recorder = mock(FormatDuplicationRecorder.class);
-        when(recorder.recordDuplication(anyString(), anyString(), any(), any(), any(), any(), any(),
+        when(recorder.recordDuplication(anyString(), anyString(), any(), any(), any(), any(), any(), any(),
                 anyString())).thenReturn(new FormatDuplicationRecorder.Recorded(true, null));
         service.setFormatDuplicationRecorder(recorder);
 
@@ -155,7 +155,7 @@ class CreatePreviewRecordsDuplicationTest {
         org.mockito.ArgumentCaptor<String> produced =
                 org.mockito.ArgumentCaptor.forClass(String.class);
         verify(harness.recorder()).recordDuplication(eq(REPO), eq("doc-1"), any(),
-                produced.capture(), any(), any(), any(), anyString());
+                produced.capture(), any(), any(), any(), any(), anyString());
 
         assertEquals(sha256Hex(PDF), produced.getValue(),
                 "the recorded digest is not the digest of the converted bytes");
@@ -176,7 +176,7 @@ class CreatePreviewRecordsDuplicationTest {
         org.mockito.ArgumentCaptor<String> produced =
                 org.mockito.ArgumentCaptor.forClass(String.class);
         verify(harness.recorder()).recordDuplication(eq(REPO), eq("doc-1"), any(),
-                produced.capture(), any(), any(), any(), anyString());
+                produced.capture(), any(), any(), any(), any(), anyString());
 
         assertNull(produced.getValue(),
                 "a digest was recorded for bytes nobody read. SHA-256 of the empty input is "
@@ -201,7 +201,7 @@ class CreatePreviewRecordsDuplicationTest {
         org.mockito.ArgumentCaptor<String> produced =
                 org.mockito.ArgumentCaptor.forClass(String.class);
         verify(harness.recorder()).recordDuplication(eq(REPO), eq("doc-1"), any(),
-                produced.capture(), any(), any(), any(), anyString());
+                produced.capture(), any(), any(), any(), any(), anyString());
         assertNull(produced.getValue(), "a digest was recorded for a stream that never existed");
     }
 
@@ -222,7 +222,7 @@ class CreatePreviewRecordsDuplicationTest {
         org.mockito.ArgumentCaptor<FormatDuplicationRecorder.Converter> converter =
                 org.mockito.ArgumentCaptor.forClass(FormatDuplicationRecorder.Converter.class);
         verify(harness.recorder()).recordDuplication(eq(REPO), eq("doc-1"), any(), any(),
-                converter.capture(), any(), any(), anyString());
+                converter.capture(), any(), any(), any(), anyString());
 
         assertEquals(FormatDuplicationRecorder.Converter.CAD_RENDITION, converter.getValue(),
                 "a CAD conversion was recorded as having been done by LibreOffice");
@@ -241,7 +241,7 @@ class CreatePreviewRecordsDuplicationTest {
         org.mockito.ArgumentCaptor<FormatDuplicationRecorder.Converter> converter =
                 org.mockito.ArgumentCaptor.forClass(FormatDuplicationRecorder.Converter.class);
         verify(harness.recorder()).recordDuplication(eq(REPO), eq("doc-1"), any(), any(),
-                converter.capture(), any(), any(), anyString());
+                converter.capture(), any(), any(), any(), anyString());
 
         assertEquals(FormatDuplicationRecorder.Converter.UNKNOWN, converter.getValue(),
                 "an unrecognised converter was reported as a specific one, so the disclosure "
@@ -265,7 +265,7 @@ class CreatePreviewRecordsDuplicationTest {
         org.mockito.ArgumentCaptor<String> produced =
                 org.mockito.ArgumentCaptor.forClass(String.class);
         verify(harness.recorder()).recordDuplication(eq(REPO), eq("doc-1"), any(),
-                produced.capture(), any(), any(), any(), anyString());
+                produced.capture(), any(), any(), any(), any(), anyString());
 
         assertNull(produced.getValue(),
                 "a digest over " + 4 + " of " + PDF.length + " bytes was recorded as the digest "
@@ -297,7 +297,7 @@ class CreatePreviewRecordsDuplicationTest {
         createPreview().invoke(service, mock(CallContext.class), REPO, source, document);
 
         verify(recorder, never()).recordDuplication(anyString(), anyString(), any(), any(),
-                any(), any(), any(), anyString());
+                any(), any(), any(), any(), anyString());
     }
 
     @Test
@@ -324,7 +324,7 @@ class CreatePreviewRecordsDuplicationTest {
 
         assertNull(result);
         verify(recorder, never()).recordDuplication(anyString(), anyString(), any(), any(),
-                any(), any(), any(), anyString());
+                any(), any(), any(), any(), anyString());
     }
 
     @Test
@@ -353,7 +353,7 @@ class CreatePreviewRecordsDuplicationTest {
                     return "rend-1";
                 });
         FormatDuplicationRecorder recorder = mock(FormatDuplicationRecorder.class);
-        when(recorder.recordDuplication(anyString(), anyString(), any(), any(), any(), any(), any(),
+        when(recorder.recordDuplication(anyString(), anyString(), any(), any(), any(), any(), any(), any(),
                 anyString())).thenReturn(new FormatDuplicationRecorder.Recorded(true, null));
         service.setFormatDuplicationRecorder(recorder);
         Document document = new Document();
@@ -370,7 +370,7 @@ class CreatePreviewRecordsDuplicationTest {
         // in another format, and dropping the digest does not change what the reader takes from
         // the row being there at all.
         verify(recorder, never()).recordDuplication(anyString(), anyString(), any(), any(),
-                any(), any(), any(), anyString());
+                any(), any(), any(), any(), anyString());
     }
 
     @Test
@@ -398,7 +398,7 @@ class CreatePreviewRecordsDuplicationTest {
                     return "rend-1";
                 });
         FormatDuplicationRecorder recorder = mock(FormatDuplicationRecorder.class);
-        when(recorder.recordDuplication(anyString(), anyString(), any(), any(), any(), any(), any(),
+        when(recorder.recordDuplication(anyString(), anyString(), any(), any(), any(), any(), any(), any(),
                 anyString())).thenReturn(new FormatDuplicationRecorder.Recorded(true, null));
         service.setFormatDuplicationRecorder(recorder);
         Document document = new Document();
@@ -413,7 +413,7 @@ class CreatePreviewRecordsDuplicationTest {
         org.mockito.ArgumentCaptor<String> produced =
                 org.mockito.ArgumentCaptor.forClass(String.class);
         verify(recorder).recordDuplication(eq(REPO), eq("doc-1"), any(), produced.capture(),
-                any(), any(), any(), anyString());
+                any(), any(), any(), any(), anyString());
 
         assertNull(produced.getValue(),
                 "nothing reported that the bytes were stored, and a value left behind by an "

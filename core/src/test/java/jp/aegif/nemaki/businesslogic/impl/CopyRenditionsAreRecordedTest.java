@@ -72,7 +72,7 @@ class CopyRenditionsAreRecordedTest {
         service.setContentDaoService(dao);
         recorder = mock(FormatDuplicationRecorder.class);
         when(recorder.recordDuplication(anyString(), anyString(), any(), any(), any(), any(),
-                any(), anyString())).thenReturn(new FormatDuplicationRecorder.Recorded(true, null));
+                any(), any(), anyString())).thenReturn(new FormatDuplicationRecorder.Recorded(true, null));
         service.setFormatDuplicationRecorder(recorder);
     }
 
@@ -140,7 +140,7 @@ class CopyRenditionsAreRecordedTest {
         ArgumentCaptor<FormatDuplicationRecorder.TargetFormat> format =
                 ArgumentCaptor.forClass(FormatDuplicationRecorder.TargetFormat.class);
         verify(recorder).recordDuplication(eq(REPO), eq("doc-pwc"), any(), any(),
-                converter.capture(), format.capture(), any(), anyString());
+                converter.capture(), format.capture(), any(), any(), anyString());
 
         assertEquals(FormatDuplicationRecorder.Converter.COPIED_RENDITION, converter.getValue(),
                 "a copy was attributed to a converter that did not run for it");
@@ -162,7 +162,7 @@ class CopyRenditionsAreRecordedTest {
         ArgumentCaptor<FormatDuplicationRecorder.TargetFormat> format =
                 ArgumentCaptor.forClass(FormatDuplicationRecorder.TargetFormat.class);
         verify(recorder).recordDuplication(any(), any(), any(), any(), any(), format.capture(),
-                any(), any());
+                any(), any(), any());
         assertEquals(FormatDuplicationRecorder.TargetFormat.SVG, format.getValue());
     }
 
@@ -177,7 +177,7 @@ class CopyRenditionsAreRecordedTest {
         ArgumentCaptor<FormatDuplicationRecorder.TargetFormat> format =
                 ArgumentCaptor.forClass(FormatDuplicationRecorder.TargetFormat.class);
         verify(recorder).recordDuplication(any(), any(), any(), any(), any(), format.capture(),
-                any(), any());
+                any(), any(), any());
         assertEquals(FormatDuplicationRecorder.TargetFormat.UNKNOWN, format.getValue(),
                 "a TIFF rendition was recorded as though its caveats were PDF's");
     }
@@ -192,7 +192,7 @@ class CopyRenditionsAreRecordedTest {
 
         verify(dao, never()).createRendition(any(), any(), any());
         verify(recorder, never()).recordDuplication(any(), any(), any(), any(), any(), any(),
-                any(), any());
+                any(), any(), any());
         assertTrue(target.getRenditionIds() == null || target.getRenditionIds().isEmpty());
     }
 
@@ -207,7 +207,7 @@ class CopyRenditionsAreRecordedTest {
 
         verify(dao, never()).createRendition(any(), any(), any());
         verify(recorder, never()).recordDuplication(any(), any(), any(), any(), any(), any(),
-                any(), any());
+                any(), any(), any());
     }
 
     @Test

@@ -19,7 +19,6 @@ package jp.aegif.nemaki.evidence.validity;
 import org.bouncycastle.tsp.TimeStampToken;
 
 import java.io.ByteArrayInputStream;
-import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -27,24 +26,34 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Checks an RFC 4998 evidence record against the value it claims to cover (P2-3).
+ * Checks an RFC 4998 evidence record the way §4.3 and §5.3 say to (P2-3).
  *
- * <h2>What it checks, and the one thing it refuses to say</h2>
+ * <h2>What each position must cover</h2>
  *
- * <p>For each archive timestamp: the reduced hash tree's first node is hashed the way RFC 4998
- * §4.2 says — the sorted concatenation of its values, with no domain separation — and compared
- * with the message imprint inside the timestamp token. That is the link between the data and
- * the time.
+ * <p>The verifier does not hash "whatever value is in the record and compare it to the token".
+ * That is what the first version did, and it made a chain of mutually unrelated tokens report
+ * success: every timestamp agreed with the value filed beside it, and no timestamp was tied to
+ * the one before. What ties them is that the expected imprint at each position is <b>computed
+ * from what came before</b>:
  *
- * <p>It does <b>not</b> validate the timestamp authority's certificate, its chain, or its
- * revocation status, because this product holds no trust anchors for any TSA. A verifier that
- * does is the one that can complete the check; this one reports what it saw and says which part
- * it did not do. Reporting a token as "valid" on the strength of its internal consistency alone
- * would be exactly the substitution this layer exists to refuse — the signature is the part
- * that makes it evidence, and it is the part not checked here.
+ * <ul>
+ *   <li>chain 0, position 0 — the data object's hash, unchanged (no reduced hash tree, §4.2)</li>
+ *   <li>chain 0, position i&gt;0 — {@code H(previous ContentInfo DER)} (§5.2)</li>
+ *   <li>chain k&gt;0, position 0 — {@code H(h')} where {@code h'} is the record's own first
+ *       hash list, and {@code h'} must itself equal {@code H(sorted(h(d), ha))} with
+ *       {@code ha = H(DER of all previous chains)} (§5.3)</li>
+ * </ul>
  *
- * <p>{@link ErsRecord#LIMITS} covers what the record itself does and does not establish; those
- * limits travel in every report this class produces.
+ * <p>The last relationship needs {@code h(d)} under the new chain's algorithm, which cannot be
+ * derived from the old hash — only from the data object. A caller that has it passes it; one
+ * that does not gets that link reported as unchecked rather than as verified.
+ *
+ * <h2>The one thing it refuses to say</h2>
+ *
+ * <p>It does not validate the timestamp authority's certificate, chain or revocation status,
+ * because this product holds no trust anchors for any TSA. So the result is called
+ * {@code linksHold} and not "valid": a record whose links hold and whose TSA nobody vouched for
+ * is not a validated record.
  */
 public final class ErsVerifier {
 
@@ -55,12 +64,7 @@ public final class ErsVerifier {
     public record TimestampResult(int chain, int position, boolean imprintMatches,
             String digestAlgorithmOid, String genTime, String detail) {}
 
-    /**
-     * Whether the record's own links hold, and what was not looked at.
-     *
-     * <p>{@code linksHold} is deliberately not called "valid". A record whose links hold and
-     * whose TSA nobody vouched for is not a validated record.
-     */
+    /** Whether the record's own links hold, and what was not looked at. */
     public record Report(boolean linksHold, int timestampsChecked, List<TimestampResult> results,
             String limits, String notChecked) {
 
@@ -95,15 +99,17 @@ public final class ErsVerifier {
                     + "with the TSA's trust anchors is the one that can finish the check.";
 
     /**
-     * Verifies every archive timestamp in the record.
+     * Verifies every archive timestamp against what RFC 4998 says it must cover.
      *
-     * @param der the evidence record
-     * @param expectedFirstValue the value the first timestamp should cover — the checkpoint
-     *        hash. Pass {@code null} to check the internal links only; passing it is what ties
-     *        the record to something the caller holds, and without it a record that is
-     *        perfectly self-consistent about somebody else's data passes.
+     * @param dataObjectHash {@code H(d)} under the FIRST chain's algorithm — the value the
+     *        first token must carry. Required: without it a record that is perfectly
+     *        self-consistent about somebody else's data passes.
+     * @param dataObjectHashByAlgorithm {@code H(d)} under each later chain's algorithm, keyed by
+     *        OID. A chain whose algorithm is absent from this map has its §5.3 relationship
+     *        reported as unchecked — not as holding.
      */
-    public static Report verify(byte[] der, byte[] expectedFirstValue) {
+    public static Report verify(byte[] der, byte[] dataObjectHash,
+            Map<String, byte[]> dataObjectHashByAlgorithm) {
         List<TimestampResult> results = new ArrayList<>();
         ErsRecord record;
         try {
@@ -113,29 +119,36 @@ public final class ErsVerifier {
                     "The record could not be parsed (" + e.getMessage() + "), so nothing in it "
                             + "was checked. " + NOT_CHECKED);
         }
+        if (dataObjectHash == null || dataObjectHash.length == 0) {
+            return new Report(false, 0, List.of(), ErsRecord.LIMITS,
+                    "No data object hash was supplied, so there was nothing to check the record "
+                            + "AGAINST. A record verified only against itself says nothing about "
+                            + "whose data it is. " + NOT_CHECKED);
+        }
         boolean allHold = true;
         int checked = 0;
-        for (int c = 0; c < record.chains().size(); c++) {
-            List<ErsRecord.ArchiveTimeStamp> chain = record.chains().get(c);
+        List<List<ErsRecord.ArchiveTimeStamp>> chains = record.chains();
+        for (int c = 0; c < chains.size(); c++) {
+            List<ErsRecord.ArchiveTimeStamp> chain = chains.get(c);
             for (int i = 0; i < chain.size(); i++) {
                 ErsRecord.ArchiveTimeStamp ats = chain.get(i);
-                TimestampResult result = check(c, i, ats);
+                byte[] expected;
+                try {
+                    expected = expectedImprint(record, chains, c, i, dataObjectHash,
+                            dataObjectHashByAlgorithm);
+                } catch (RuntimeException e) {
+                    results.add(new TimestampResult(c, i, false, ats.digestAlgorithmOid(), null,
+                            "what this timestamp should cover could not be computed ("
+                                    + e.getMessage() + "), which is not a finding that it is "
+                                    + "wrong"));
+                    allHold = false;
+                    checked++;
+                    continue;
+                }
+                TimestampResult result = check(c, i, ats, expected);
                 results.add(result);
                 checked++;
                 allHold &= result.imprintMatches();
-            }
-        }
-        if (expectedFirstValue != null) {
-            boolean tied = !record.chains().isEmpty()
-                    && !record.chains().get(0).isEmpty()
-                    && record.chains().get(0).get(0).reducedHashtreeFirstNode().stream()
-                            .anyMatch(v -> Arrays.equals(v, expectedFirstValue));
-            if (!tied) {
-                allHold = false;
-                results.add(new TimestampResult(0, 0, false, null, null,
-                        "the record does not cover the value it was checked against, so it is "
-                                + "about something else — a record that is perfectly consistent "
-                                + "about another party's data is not evidence about ours"));
             }
         }
         if (checked == 0) {
@@ -146,63 +159,82 @@ public final class ErsVerifier {
         return new Report(allHold, checked, results, ErsRecord.LIMITS, NOT_CHECKED);
     }
 
+    /** As above, when there is only one chain and so only one algorithm. */
+    public static Report verify(byte[] der, byte[] dataObjectHash) {
+        return verify(der, dataObjectHash, Map.of());
+    }
+
+    private static byte[] expectedImprint(ErsRecord record,
+            List<List<ErsRecord.ArchiveTimeStamp>> chains, int c, int i, byte[] dataObjectHash,
+            Map<String, byte[]> byAlgorithm) {
+        ErsRecord.ArchiveTimeStamp ats = chains.get(c).get(i);
+        if (c == 0 && i == 0) {
+            if (!ats.firstHashList().isEmpty()) {
+                // A first Archive Timestamp WITH a tree is a different form: §4.3 step 2 needs
+                // h in the list and step 3 hashes the list.
+                if (ats.firstHashList().stream().noneMatch(v -> Arrays.equals(v, dataObjectHash))) {
+                    throw new IllegalStateException("the data object's hash is not in the first "
+                            + "hash list, so this record is about something else");
+                }
+                return ErsRecord.digest(ats.digestAlgorithmOid(),
+                        ErsRecord.sortedConcat(ats.firstHashList()));
+            }
+            return dataObjectHash;
+        }
+        if (i > 0) {
+            // §5.2 timestamp renewal: the previous token's content, hashed.
+            ErsRecord.ArchiveTimeStamp previous = chains.get(c).get(i - 1);
+            byte[] over = ErsRecord.digest(ats.digestAlgorithmOid(), previous.timeStampDer());
+            if (ats.firstHashList().isEmpty()) {
+                return over;
+            }
+            if (ats.firstHashList().stream().noneMatch(v -> Arrays.equals(v, over))) {
+                throw new IllegalStateException("this renewal's hash list does not contain the "
+                        + "hash of the timestamp it renews, so it does not extend this chain");
+            }
+            return ErsRecord.digest(ats.digestAlgorithmOid(),
+                    ErsRecord.sortedConcat(ats.firstHashList()));
+        }
+        // §5.3 hash-tree renewal: a new chain, whose h' must commit to every previous chain.
+        if (ats.firstHashList().isEmpty()) {
+            throw new IllegalStateException("a new chain with no hash list cannot commit to the "
+                    + "chains before it, so it is a timestamp filed beside them rather than one "
+                    + "that covers them");
+        }
+        byte[] ha = ErsRecord.digest(ats.digestAlgorithmOid(),
+                ErsRecord.encodeSequence(chains.subList(0, c)));
+        byte[] hOfData = byAlgorithm.get(ats.digestAlgorithmOid());
+        if (hOfData != null) {
+            byte[] hPrime = ErsRecord.digest(ats.digestAlgorithmOid(),
+                    ErsRecord.sortedConcat(List.of(hOfData, ha)));
+            if (ats.firstHashList().stream().noneMatch(v -> Arrays.equals(v, hPrime))) {
+                throw new IllegalStateException("this chain's first hash value is not "
+                        + "H(sorted(H(data), H(previous chains))), so it does not renew them");
+            }
+        }
+        return ErsRecord.digest(ats.digestAlgorithmOid(),
+                ErsRecord.sortedConcat(ats.firstHashList()));
+    }
+
     private static TimestampResult check(int chain, int position,
-            ErsRecord.ArchiveTimeStamp ats) {
+            ErsRecord.ArchiveTimeStamp ats, byte[] expected) {
         try {
             TimeStampToken token = new TimeStampToken(
                     new org.bouncycastle.cms.CMSSignedData(
                             new ByteArrayInputStream(ats.timeStampDer())));
             byte[] imprint = token.getTimeStampInfo().getMessageImprintDigest();
-            String oid = token.getTimeStampInfo().getMessageImprintAlgOID().getId();
-            byte[] computed = reduce(ats.reducedHashtreeFirstNode(), oid);
-            boolean matches = computed != null && Arrays.equals(computed, imprint);
-            return new TimestampResult(chain, position, matches, oid,
+            boolean matches = Arrays.equals(expected, imprint);
+            return new TimestampResult(chain, position, matches,
+                    token.getTimeStampInfo().getMessageImprintAlgOID().getId(),
                     String.valueOf(token.getTimeStampInfo().getGenTime().toInstant()),
-                    matches ? "the token's message imprint is the hash of what the record says "
-                                    + "it covers"
-                            : "the token's message imprint is NOT the hash of what the record "
-                                    + "says it covers, so this timestamp is about a different "
-                                    + "value");
+                    matches ? "the token covers exactly what RFC 4998 says this position must "
+                                    + "cover"
+                            : "the token's message imprint is NOT what this position must "
+                                    + "cover, so this timestamp does not belong here");
         } catch (Exception e) {
-            return new TimestampResult(chain, position, false, null, null,
+            return new TimestampResult(chain, position, false, ats.digestAlgorithmOid(), null,
                     "this timestamp could not be read (" + e.getMessage() + "), which is not a "
                             + "finding that it is wrong");
-        }
-    }
-
-    /**
-     * RFC 4998 §4.2: hash the SORTED concatenation of the node's values.
-     *
-     * <p>Sorted, and with no length or type prefix. This product's own Merkle tree is
-     * RFC 6962-style and does prefix — the two are different algorithms, and using ours here
-     * would produce records that only this product can read while looking standard.
-     */
-    private static byte[] reduce(List<byte[]> node, String digestOid) {
-        if (node == null || node.isEmpty()) {
-            return null;
-        }
-        String algorithm = switch (digestOid == null ? "" : digestOid) {
-            case "2.16.840.1.101.3.4.2.1" -> "SHA-256";
-            case "2.16.840.1.101.3.4.2.2" -> "SHA-384";
-            case "2.16.840.1.101.3.4.2.3" -> "SHA-512";
-            default -> null;
-        };
-        if (algorithm == null) {
-            // Not a guess at SHA-256. A digest algorithm this build does not know is one whose
-            // result it cannot compute, and computing the wrong one produces a mismatch that
-            // reads as a broken record rather than an unsupported one.
-            return null;
-        }
-        List<byte[]> sorted = new ArrayList<>(node);
-        sorted.sort(Arrays::compareUnsigned);
-        try {
-            MessageDigest digest = MessageDigest.getInstance(algorithm);
-            for (byte[] value : sorted) {
-                digest.update(value);
-            }
-            return digest.digest();
-        } catch (java.security.NoSuchAlgorithmException e) {
-            return null;
         }
     }
 }

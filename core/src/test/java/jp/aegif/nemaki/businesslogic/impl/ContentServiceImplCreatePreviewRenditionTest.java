@@ -121,7 +121,7 @@ public class ContentServiceImplCreatePreviewRenditionTest {
         when(renditions.convertToPdfAttributed(any(), any())).thenReturn(
                 new RenditionManager.Converted(converted, "nemaki/cad"));
         FormatDuplicationRecorder recorder = mock(FormatDuplicationRecorder.class);
-        when(recorder.recordDuplication(any(), any(), any(), any(), any(), any(), any(), any()))
+        when(recorder.recordDuplication(any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new FormatDuplicationRecorder.Recorded(true, null));
         service.setFormatDuplicationRecorder(recorder);
 
@@ -134,7 +134,7 @@ public class ContentServiceImplCreatePreviewRenditionTest {
         ArgumentCaptor<FormatDuplicationRecorder.TargetFormat> target =
                 ArgumentCaptor.forClass(FormatDuplicationRecorder.TargetFormat.class);
         verify(recorder).recordDuplication(eq(REPO), eq("doc-1"), any(), any(),
-                converter.capture(), target.capture(), any(), any());
+                converter.capture(), target.capture(), any(), any(), any());
         assertEquals(FormatDuplicationRecorder.Converter.CAD_RENDITION, converter.getValue(),
                 "the copy was attributed to a converter that did not make it");
         assertEquals(FormatDuplicationRecorder.TargetFormat.PDF, target.getValue());

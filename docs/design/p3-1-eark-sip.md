@@ -31,9 +31,12 @@
   版・profile・検証器の版を固定して**「この版のこの検証器を通った」とだけ言う**
 - **「記録の真正性が移送先で保たれる」とは言わない。** 検証器が言うのは**容器が
   仕様に合っている**ことだけで、中身が真実かどうかについては何も言わない
-- **PREMIS はまだ 1 件も書いていない。** journal イベント → PREMIS イベントの
-  クロスウォークは §4。現在の記述メタデータは Dublin Core だけである
-- **`.ots` / TSA トークン / inclusion proof はまだ同梱していない** (§4)
+- ~~**PREMIS はまだ 1 件も書いていない。**~~ **2026-08-26 訂正**: PREMIS は
+  `writePremis` が preservation metadata として同梱している (LoC 語彙から弁護できる語だけ宣言)。
+  クロスウォークは §4
+- ~~**`.ots` / TSA トークン / inclusion proof はまだ同梱していない**~~ **2026-08-26 訂正**:
+  inclusion proof と、それを封じた checkpoint は `evidencePackage` として同梱済み。
+  **`.ots` / TSA トークンそのものと ERS は未同梱** (§4)
 - **AIP / DIP は作らない** (ロードマップ §3.1 の「軽量 Archive」責務を決めてから)
 - **エクスポートは custody chain に残らない。** この製品でいちばん取り消せない操作が、
   真正性レポートの custody 節からは見えない (`logger.info` だけ)。

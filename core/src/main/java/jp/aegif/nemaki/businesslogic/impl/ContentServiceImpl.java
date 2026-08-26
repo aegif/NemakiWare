@@ -3987,7 +3987,10 @@ public class ContentServiceImpl implements ContentService {
 		if (converted.getStream() != null) {
 			try {
 				producedDigest = java.security.MessageDigest.getInstance("SHA-256");
-				counted = new CountingDigestStream(converted.getStream(), producedDigest);
+					counted = new CountingDigestStream(converted.getStream(), producedDigest,
+							target == jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat.PDF
+									? pdfaRetainLimit()
+									: 0L);
 				toStore = new org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl(
 						converted.getFileName(),
 						converted.getBigLength(),
@@ -4052,7 +4055,7 @@ public class ContentServiceImpl implements ContentService {
 						Boolean.TRUE.equals(storeReported)
 								? digestOfWhatWasStored(counted, producedDigest, converted)
 								: null,
-						converterId, target);
+						converterId, target, validatePdfA(counted, target));
 			}
 		}
 		return renditionId;
@@ -4079,9 +4082,71 @@ public class ContentServiceImpl implements ContentService {
 		return renditionManager.convertToPdfAttributed(source, documentName);
 	}
 
+	/**
+	 * The PDF/A flavour this deployment checks against, or null when it checks nothing.
+	 *
+	 * <p>Off unless configured. PDF/A changes what a copy looks like and costs memory to check;
+	 * turning it on for every existing deployment would do both, to make a claim the deployment
+	 * then has to stand behind.
+	 */
+	private String pdfaFlavour() {
+		if (propertyManager == null) {
+			return null;
+		}
+		String flavour = propertyManager.readValue(PropertyKey.RENDITION_PDFA_VALIDATE_FLAVOUR);
+		return flavour == null || flavour.isBlank() ? null : flavour.trim();
+	}
+
+	/** How many bytes may be held to validate one copy. Zero means hold none. */
+	private long pdfaRetainLimit() {
+		if (pdfaFlavour() == null) {
+			return 0L;
+		}
+		String configured =
+				propertyManager.readValue(PropertyKey.RENDITION_PDFA_VALIDATE_MAX_BYTES);
+		if (configured == null || configured.isBlank()) {
+			// A default, not "unlimited". An unbounded buffer here would hold whole documents
+			// in memory on a path that runs for every preview.
+			return 32L * 1024 * 1024;
+		}
+		try {
+			return Math.max(0L, Long.parseLong(configured.trim()));
+		} catch (NumberFormatException e) {
+			log.warn("createRendition: " + PropertyKey.RENDITION_PDFA_VALIDATE_MAX_BYTES
+					+ " is not a number ('" + configured + "'), so no rendition is held for "
+					+ "PDF/A validation");
+			return 0L;
+		}
+	}
+
+	/**
+	 * Validates the produced PDF, or says why it did not.
+	 *
+	 * <p>Never throws and never fails the rendition: this is the fail-OPEN side of the
+	 * boundary, and the copy exists whatever the validator says. Null means the question does
+	 * not arise (the target is not PDF, or this deployment checks nothing), which is different
+	 * from NOT_CHECKED — that one is a copy we could have checked and did not.
+	 */
+	private jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation validatePdfA(CountingDigestStream counted,
+			jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat target) {
+		if (target != jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat.PDF || pdfaFlavour() == null) {
+			return null;
+		}
+		if (counted == null) {
+			return jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation.notChecked(
+					"the produced bytes were not measured, so there was nothing to validate");
+		}
+		byte[] produced = counted.retainedBytes();
+		if (produced == null) {
+			return jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation.notChecked(counted.whyNotRetained());
+		}
+		return jp.aegif.nemaki.businesslogic.rendition.pdfa.VeraPdfAValidator.validate(produced, pdfaFlavour());
+	}
+
 	private void recordFormatDuplication(CallContext callContext, String repositoryId,
 			Document document, String producedDigest, String converterId,
-			jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat target) {
+			jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat target,
+			jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation pdfa) {
 		if (formatDuplicationRecorder == null) {
 			return;
 		}
@@ -4095,7 +4160,7 @@ public class ContentServiceImpl implements ContentService {
 							source, producedDigest,
 							jp.aegif.nemaki.evidence.FormatDuplicationRecorder.Converter
 									.forId(converterId),
-							target,
+							target, pdfa,
 							callContext == null ? null : callContext.getUsername(),
 							java.time.Instant.now().toString());
 			if (recorded.warning() != null) {
@@ -4120,13 +4185,65 @@ public class ContentServiceImpl implements ContentService {
 		private final java.security.MessageDigest digest;
 		private long bytesRead;
 
+		/**
+		 * A copy of the bytes, kept ONLY when PDF/A validation is on and only up to a cap.
+		 *
+		 * <p>The digest exists so the bytes never have to be held; keeping them again for the
+		 * validator would undo that on every rendition in the product. So it is opt-in, and it
+		 * is bounded: past the cap the buffer is dropped and the validation reports NOT_CHECKED
+		 * with the size as the reason, which is true and is one of the three answers that
+		 * already exist. Reading the rendition back from storage instead would be a second trip
+		 * for bytes we are holding, and it would validate what was stored rather than what was
+		 * produced — a different question on the very path where the two can differ.
+		 */
+		private java.io.ByteArrayOutputStream retained;
+		private final long retainLimit;
+
 		CountingDigestStream(java.io.InputStream in, java.security.MessageDigest digest) {
+			this(in, digest, 0L);
+		}
+
+		CountingDigestStream(java.io.InputStream in, java.security.MessageDigest digest,
+				long retainLimit) {
 			super(in);
 			this.digest = digest;
+			this.retainLimit = retainLimit;
+			this.retained = retainLimit > 0 ? new java.io.ByteArrayOutputStream() : null;
 		}
 
 		long bytesRead() {
 			return bytesRead;
+		}
+
+		/** The produced bytes, or null when they were not kept or the cap was passed. */
+		byte[] retainedBytes() {
+			return retained == null ? null : retained.toByteArray();
+		}
+
+		/** Why nothing was kept, or null when something was. */
+		String whyNotRetained() {
+			if (retainLimit <= 0) {
+				return "PDF/A validation is not enabled on this deployment";
+			}
+			if (retained == null) {
+				return "the copy is larger than the " + retainLimit + "-byte limit this "
+						+ "deployment sets for holding a rendition in memory to validate it";
+			}
+			return null;
+		}
+
+		private void retain(byte[] buffer, int offset, int length) {
+			if (retained == null) {
+				return;
+			}
+			if (retained.size() + (long) length > retainLimit) {
+				// Dropped, not truncated. A truncated PDF fails validation for a reason that
+				// has nothing to do with the conversion, and reporting that as
+				// DOES_NOT_CONFORM would be a finding about our own buffer.
+				retained = null;
+				return;
+			}
+			retained.write(buffer, offset, length);
 		}
 
 		@Override
@@ -4135,6 +4252,7 @@ public class ContentServiceImpl implements ContentService {
 			if (b >= 0) {
 				digest.update((byte) b);
 				bytesRead++;
+				retain(new byte[] { (byte) b }, 0, 1);
 			}
 			return b;
 		}
@@ -4145,6 +4263,7 @@ public class ContentServiceImpl implements ContentService {
 			if (read > 0) {
 				digest.update(buffer, offset, read);
 				bytesRead += read;
+				retain(buffer, offset, read);
 			}
 			return read;
 		}

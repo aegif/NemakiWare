@@ -264,7 +264,7 @@ transfer は evidence-ledger DB に同居する (anchor receipt と同じ理由:
 
 ---
 
-## 9. 受領証の署名検証 (2026-08-26)
+## 8. 受領証の署名検証 (2026-08-26)
 
 `signatureVerified` は**呼び手が立てる boolean** だった。receipt を作れる者なら誰でも
 立てられた。`ReceiptSignatureVerifier` はそれを**検査の結果**にする。

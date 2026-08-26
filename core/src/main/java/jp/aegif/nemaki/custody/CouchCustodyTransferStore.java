@@ -61,7 +61,6 @@ public class CouchCustodyTransferStore implements CustodyTransferStore {
             LoggerFactory.getLogger(CouchCustodyTransferStore.class);
 
     static final String TYPE = "custody_transfer";
-    private static final int MAX_SAVE_ATTEMPTS = 3;
 
     public static final String VIEW_BY_OBJECT = "custody_transfers_by_object";
 
@@ -108,33 +107,36 @@ public class CouchCustodyTransferStore implements CustodyTransferStore {
             return false;
         }
         String id = documentId(transfer.repositoryId(), transfer.transferId());
-        for (int attempt = 1; attempt <= MAX_SAVE_ATTEMPTS; attempt++) {
-            Document existing = client.get(id);
-            Map<String, Object> doc = document(transfer);
-            try {
-                com.ibm.cloud.cloudant.v1.model.DocumentResult result;
-                if (existing == null) {
-                    result = client.create(id, doc);
-                } else {
-                    doc.put("_id", id);
-                    doc.put("_rev", existing.getRev());
-                    result = client.update(doc);
-                }
-                // The RESULT is checked, not the absence of an exception: create() answers null
-                // during startup by design, and reporting a move as saved when nothing was
-                // written is how a transfer comes to mean one thing here and another after a
-                // restart.
-                return result != null && Boolean.TRUE.equals(result.isOk());
-            } catch (RuntimeException e) {
-                if (!isConflict(e) || attempt == MAX_SAVE_ATTEMPTS) {
-                    logger.warn("The custody transfer {} was not written: {}", id,
-                            e.getMessage());
-                    return false;
-                }
-                logger.debug("Lost a race writing {} (attempt {}); re-reading", id, attempt);
+        Document existing = client.get(id);
+        Map<String, Object> doc = document(transfer);
+        try {
+            com.ibm.cloud.cloudant.v1.model.DocumentResult result;
+            if (existing == null) {
+                result = client.create(id, doc);
+            } else {
+                doc.put("_id", id);
+                doc.put("_rev", existing.getRev());
+                result = client.update(doc);
             }
+            // The RESULT is checked, not the absence of an exception: create() answers null
+            // during startup by design, and reporting a move as saved when nothing was written
+            // is how a transfer comes to mean one thing here and another after a restart.
+            return result != null && Boolean.TRUE.equals(result.isOk());
+        } catch (RuntimeException e) {
+            if (isConflict(e)) {
+                // NOT retried. A retry would re-read the winner's revision and write THIS
+                // transfer over it — the object in hand was built from a state that is now
+                // stale, so the retry would erase whatever the other writer just recorded, and
+                // optimistic concurrency would become last-retry-wins. Returning false makes
+                // the caller refuse the move, which is what a lost race means: the move did
+                // not happen, and the operator repeats it against the current state.
+                logger.info("The custody transfer {} was changed by another writer, so this "
+                        + "move was not applied", id);
+                return false;
+            }
+            logger.warn("The custody transfer {} was not written: {}", id, e.getMessage());
+            return false;
         }
-        return false;
     }
 
     @Override
@@ -144,7 +146,30 @@ public class CouchCustodyTransferStore implements CustodyTransferStore {
             return null;
         }
         Document existing = client.get(documentId(repositoryId, transferId));
-        return existing == null ? null : decode(propertiesOf(existing));
+        if (existing == null) {
+            return null;
+        }
+        CustodyTransfer decoded = decode(propertiesOf(existing));
+        if (decoded == null) {
+            // A row that is there and cannot be read is NOT "no transfer". Collapsing the two
+            // is the substitution this product refuses everywhere else: a forged or corrupt row
+            // would read as "nothing was ever sent", which is the most reassuring answer and
+            // the least supported one.
+            throw new UnreadableTransferException("the stored transfer " + transferId + " could "
+                    + "not be read back through the state machine, so it is NOT reported as "
+                    + "absent. A row exists; what it says is not something this product will "
+                    + "act on.");
+        }
+        return decoded;
+    }
+
+    /** Raised when a row exists and cannot be trusted — never collapsed into "not found". */
+    public static class UnreadableTransferException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        public UnreadableTransferException(String message) {
+            super(message);
+        }
     }
 
     @Override
@@ -169,12 +194,23 @@ public class CouchCustodyTransferStore implements CustodyTransferStore {
         if (result == null || result.getRows() == null) {
             return transfers;
         }
+        int unreadable = 0;
         for (ViewResultRow row : result.getRows()) {
             CustodyTransfer decoded = decode(row.getDoc() == null
                     ? null : row.getDoc().getProperties());
             if (decoded != null) {
                 transfers.add(decoded);
+            } else {
+                unreadable++;
             }
+        }
+        if (unreadable > 0) {
+            // Said at warn, not debug. A list that silently drops rows reads as a complete
+            // answer, and "this record was never sent anywhere" is exactly the conclusion a
+            // dropped row invites.
+            logger.warn("{} stored custody transfer(s) for {} could not be read and are NOT in "
+                    + "this list; it is not a complete answer about this record", unreadable,
+                    objectId);
         }
         return transfers;
     }
@@ -246,7 +282,13 @@ public class CouchCustodyTransferStore implements CustodyTransferStore {
                     asString(storedReceipt.get("receivingAgent")),
                     asString(storedReceipt.get("receivedAt")),
                     asString(storedReceipt.get("signature")),
-                    Boolean.TRUE.equals(storedReceipt.get("signatureVerified")));
+                    // NEVER the stored value. A verified signature is a finding, and a finding
+                    // read back out of a row anyone with database access can edit is an
+                    // assertion wearing a finding's name. Re-verifying needs the receiving
+                    // agent's key, which this product is given rather than holding — so the
+                    // honest state after a reload is "not verified here", and a deployment that
+                    // wants the finding checks it again with the key.
+                    false);
             return CustodyTransfer.restore(asString(raw.get("transferId")),
                     asString(raw.get("repositoryId")), asString(raw.get("objectId")),
                     asString(raw.get("sipDigest")), asString(raw.get("receivingSystem")),

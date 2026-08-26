@@ -16,31 +16,32 @@
  */
 package jp.aegif.nemaki.evidence.validity;
 
+import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1Integer;
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1TaggedObject;
+import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.DERTaggedObject;
-import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.cms.ContentInfo;
-import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 
 import java.io.IOException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * An RFC 4998 Evidence Record, built and parsed with ASN.1 primitives (P2-3).
- *
- * <h2>What this is</h2>
- *
- * <p>{@link ErsFormat} recorded the DECISION to use RFC 4998. This produces one. The structure
- * is the specification's, abbreviated to the parts this product can fill honestly:
  *
  * <pre>
  * EvidenceRecord ::= SEQUENCE {
@@ -49,43 +50,49 @@ import java.util.List;
  *     cryptoInfos          [0] CryptoInfos OPTIONAL,      -- not produced
  *     encryptionInfo       [1] EncryptionInfo OPTIONAL,   -- not produced
  *     archiveTimeStampSequence ArchiveTimeStampSequence }
- *
- * ArchiveTimeStampSequence ::= SEQUENCE OF ArchiveTimeStampChain
- * ArchiveTimeStampChain    ::= SEQUENCE OF ArchiveTimeStamp
  * ArchiveTimeStamp ::= SEQUENCE {
  *     digestAlgorithm  [0] AlgorithmIdentifier OPTIONAL,
  *     attributes       [1] Attributes OPTIONAL,           -- not produced
  *     reducedHashtree  [2] SEQUENCE OF PartialHashtree OPTIONAL,
  *     timeStamp            ContentInfo }
- * PartialHashtree ::= SEQUENCE OF OCTET STRING
  * </pre>
  *
- * <h2>What the data object is, and why that matters</h2>
+ * <p>The module is {@code DEFINITIONS IMPLICIT TAGS}, so the tagged fields are implicit —
+ * checked against the RFC text, not assumed.
  *
- * <p><b>The data object is the CHECKPOINT HASH, not the document.</b> RFC 4998 §4.2 reduces a
- * hash tree by hashing the <i>sorted concatenation</i> of the values in each partial hash tree,
- * with no domain separation. This product's Merkle tree is RFC 6962-style: leaves are hashed
- * with a {@code 0x00} prefix and nodes with {@code 0x01}. Those are different trees. An audit
- * path from ours, walked by an RFC 4998 verifier under RFC 4998's rules, computes a different
- * root and rejects — so emitting our path as a {@code reducedHashtree} would produce a record
- * that looks standard and fails every standard tool.
+ * <h2>The data object is the checkpoint's canonical bytes</h2>
  *
- * <p>So the reduced hash tree here has one node holding the checkpoint hash, and the timestamp
- * covers exactly that. A standard verifier can check it, and what it checks is true: this
- * checkpoint hash existed by the time in the token. The tie from a document to the checkpoint
- * is this product's own inclusion proof, which travels beside the record and which a standard
- * ERS verifier does not check. {@link #LIMITS} says so, and travels with it.
+ * <p>Not "the checkpoint hash". The distinction decides whether a standard verifier can read
+ * this at all, and the first version got it wrong. RFC 4998 §4.3 has a verifier compute
+ * {@code h = H(d)} and then look for {@code h} in the first hash list. Putting the checkpoint
+ * hash {@code C} in that list while ALSO calling {@code C} the data object means a verifier
+ * searches for {@code H(C)}, finds {@code C}, and rejects — before it ever looks at the token.
  *
- * <p>The alternative — reducing our entries under RFC 4998's rules — needs a SECOND root per
- * checkpoint and a second anchor over it, because the token we hold covers the RFC 6962 root.
- * That is a change to the anchoring design and is deliberately not taken here.
+ * <p>What is true is simpler: {@code C} is already {@code H(canonical checkpoint bytes)}, and
+ * this repository's RFC 3161 anchor is a token whose message imprint is exactly {@code C}. So
+ * the data object is those canonical bytes, {@code h = C}, and the record needs <b>no reduced
+ * hash tree at all</b> — which RFC 4998 §4.2 explicitly allows: "An Archive Timestamp may
+ * consist ... only of a timestamp with no hash value lists." §4.3 then degenerates to "the root
+ * hash value must correspond to hashedMessage", and the root IS {@code h}.
  *
- * <h2>Why it is worth producing anyway</h2>
+ * <p>That form is conformant AND reuses the anchor this product already has. The alternative —
+ * a one-node tree holding {@code H(C)} — would need a NEW token over {@code H(H(C))}, because
+ * §4.3 step 3 hashes the list even when it has one member.
  *
- * <p>The chain is the point. A bare RFC 3161 token proves one thing once; an
- * {@code ArchiveTimeStampChain} is where renewals accumulate, which is what
- * {@link RenewalNeed} exists to demand. {@code TIMESTAMP_RENEWAL} appends to the current chain;
- * {@code HASH_TREE_RENEWAL} starts a new one. Both are operations on this structure.
+ * <h2>Renewals follow §5.2 and §5.3, which are not the same operation</h2>
+ *
+ * <p><b>Timestamp renewal</b> (§5.2): the content of the old {@code timeStamp} field is hashed
+ * and timestamped. "The new Archive Timestamp MAY not contain a reducedHashtree field, if the
+ * timestamp only simply covers the previous timestamp" — so this produces none, and the new
+ * token's imprint must be {@code H(previous ContentInfo DER)}. It stays in the SAME chain and
+ * MUST use the same hash algorithm.
+ *
+ * <p><b>Hash-tree renewal</b> (§5.3): the data object AND every previous chain are hashed under
+ * a NEW algorithm. {@code ha = H(DER of the whole previous ArchiveTimeStampSequence)},
+ * {@code h' = H(sorted concat of h(d) and ha)}, the new Archive Timestamp's first list holds
+ * {@code h'}, and it starts a NEW chain. Without the {@code ha} term the new chain would not
+ * commit to the old ones — it would be an unrelated timestamp filed next to them, which is what
+ * the first version produced.
  *
  * <p>Design: {@code docs/design/p2-3-long-term-validity.md} §8.
  */
@@ -94,42 +101,58 @@ public final class ErsRecord {
     /** RFC 4998 §4: the only version defined. */
     public static final int VERSION = 1;
 
+    /** SHA-256, the algorithm this repository's ledger and anchors use. */
+    public static final String SHA256_OID = "2.16.840.1.101.3.4.2.1";
+
     /**
      * What a reader must not conclude from an evidence record this product produced.
      *
-     * <p>Travels with the record wherever it is reported, for the same reason
-     * {@link ErsFormat#LIMITS} does: naming a standard is read as conforming to everything a
-     * reader associates with it.
+     * <p>Travels with the record wherever it is reported.
      */
     public static final String LIMITS =
-            "The data object of this evidence record is a CHECKPOINT HASH of this repository's "
-                    + "evidence ledger — not a document. It establishes that that value existed "
-                    + "by the time in its timestamp token, and nothing else. Which records were "
-                    + "under that checkpoint is shown by this product's own inclusion proof, "
-                    + "which travels separately and which a standard RFC 4998 verifier does NOT "
-                    + "check. This product also does not verify the timestamp authority's "
-                    + "certificate chain or its revocation status: it holds no trust anchors, "
-                    + "so the token's signature is carried for a verifier that does.";
+            "The data object of this evidence record is the canonical serialisation of one "
+                    + "CHECKPOINT of this repository's evidence ledger — not a document. It "
+                    + "establishes that that value existed by the time in its timestamp token, "
+                    + "and nothing else. Which records were under that checkpoint is shown by "
+                    + "this product's own inclusion proof, which travels separately and which a "
+                    + "standard RFC 4998 verifier does NOT check. This product also does not "
+                    + "verify the timestamp authority's certificate chain or its revocation "
+                    + "status: it holds no trust anchors, so the token's signature is carried "
+                    + "for a verifier that does.";
 
     private final byte[] der;
     private final List<List<ArchiveTimeStamp>> chains;
+    private final List<String> digestAlgorithmOids;
 
-    private ErsRecord(byte[] der, List<List<ArchiveTimeStamp>> chains) {
+    private ErsRecord(byte[] der, List<List<ArchiveTimeStamp>> chains,
+            List<String> digestAlgorithmOids) {
         this.der = der;
         this.chains = chains;
+        this.digestAlgorithmOids = digestAlgorithmOids;
     }
 
-    /** One archive timestamp: what it covers, and the token over it. */
-    public record ArchiveTimeStamp(List<byte[]> reducedHashtreeFirstNode, byte[] timeStampDer) {}
+    /**
+     * One archive timestamp.
+     *
+     * @param firstHashList the members of the first {@code PartialHashtree}, or empty when the
+     *        Archive Timestamp carries no reduced hash tree
+     * @param digestAlgorithmOid the algorithm of THIS timestamp's tree
+     */
+    public record ArchiveTimeStamp(List<byte[]> firstHashList, byte[] timeStampDer,
+            String digestAlgorithmOid) {}
 
     /** The DER bytes. This is the file that goes in a package. */
     public byte[] der() {
         return der.clone();
     }
 
-    /** The chains, outermost first. Empty is possible only for a record we did not build. */
     public List<List<ArchiveTimeStamp>> chains() {
         return chains;
+    }
+
+    /** Every digest algorithm this record declares, in the order they were introduced. */
+    public List<String> digestAlgorithmOids() {
+        return List.copyOf(digestAlgorithmOids);
     }
 
     /** How many timestamps are in the newest chain — the renewal depth a reader asks about. */
@@ -137,33 +160,80 @@ public final class ErsRecord {
         return chains.isEmpty() ? 0 : chains.get(chains.size() - 1).size();
     }
 
+    // ---- what a token must cover, so a caller can ask a TSA for the right thing ----
+
     /**
-     * Builds the first evidence record over a checkpoint hash.
+     * The message imprint the FIRST token must carry: the data object's hash, unchanged.
      *
-     * @param checkpointHash the value the timestamp token covers, as raw bytes
-     * @param timeStampTokenDer a DER-encoded RFC 3161 {@code TimeStampToken} (a CMS
-     *        {@code ContentInfo}); this is what {@code Rfc3161AnchorTarget} stores as its proof
+     * <p>Exposed rather than left implicit because getting it wrong produces a record that
+     * looks right and no standard tool accepts. A caller asks its TSA for a token over this.
      */
-    public static ErsRecord first(byte[] checkpointHash, byte[] timeStampTokenDer) {
-        require(checkpointHash, "checkpointHash");
-        require(timeStampTokenDer, "timeStampTokenDer");
-        List<List<ArchiveTimeStamp>> chains = new ArrayList<>();
-        List<ArchiveTimeStamp> chain = new ArrayList<>();
-        chain.add(new ArchiveTimeStamp(List.of(checkpointHash.clone()),
-                timeStampTokenDer.clone()));
-        chains.add(chain);
-        return new ErsRecord(encode(chains), chains);
+    public static byte[] imprintForFirst(byte[] dataObjectHash) {
+        require(dataObjectHash, "dataObjectHash");
+        return dataObjectHash.clone();
+    }
+
+    /** The imprint a §5.2 timestamp renewal must carry: {@code H(previous ContentInfo DER)}. */
+    public byte[] imprintForTimestampRenewal() {
+        if (chains.isEmpty() || chains.get(chains.size() - 1).isEmpty()) {
+            throw new IllegalStateException("there is no timestamp to renew");
+        }
+        List<ArchiveTimeStamp> current = chains.get(chains.size() - 1);
+        ArchiveTimeStamp previous = current.get(current.size() - 1);
+        return digest(previous.digestAlgorithmOid(), previous.timeStampDer());
     }
 
     /**
-     * Appends a timestamp renewal to the newest chain (RFC 4998 §5.2).
+     * The imprint a §5.3 hash-tree renewal must carry, and the {@code h'} that goes in its tree.
      *
-     * <p>The renewal timestamps the PREVIOUS token, which is what keeps the original time
-     * reachable. Doing it after the old algorithm has broken re-dates the evidence to the
-     * renewal — {@link RenewalNeed#limits()} says that, and this method cannot check it: it
-     * does not know when the break happened.
+     * @param dataObjectHashUnderNewAlgorithm {@code H(d)} recomputed with the new algorithm
+     * @param algorithmOid the new algorithm
+     */
+    public HashTreeRenewalInputs inputsForHashTreeRenewal(byte[] dataObjectHashUnderNewAlgorithm,
+            String algorithmOid) {
+        require(dataObjectHashUnderNewAlgorithm, "dataObjectHashUnderNewAlgorithm");
+        byte[] ha = digest(algorithmOid, encodeSequence(chains));
+        byte[] hPrime = digest(algorithmOid,
+                sortedConcat(List.of(dataObjectHashUnderNewAlgorithm, ha)));
+        return new HashTreeRenewalInputs(hPrime, digest(algorithmOid, hPrime), ha);
+    }
+
+    /**
+     * What a §5.3 renewal needs.
      *
-     * @param renewalTokenDer a token whose message imprint is over the previous token's bytes
+     * @param hPrime the value that goes in the new Archive Timestamp's first hash list
+     * @param imprint what the new token must cover — {@code H(h')}, because §4.3 step 3 hashes
+     *        the list even when it holds one member
+     * @param previousSequenceHash {@code ha}, kept so a caller can show its working
+     */
+    public record HashTreeRenewalInputs(byte[] hPrime, byte[] imprint,
+            byte[] previousSequenceHash) {}
+
+    // ---- construction ----
+
+    /**
+     * The first evidence record over a data object whose hash is {@code dataObjectHash}.
+     *
+     * <p>No reduced hash tree: the token covers the data object's hash directly, which is the
+     * form §4.2 allows and the one this repository's existing anchors already fit.
+     */
+    public static ErsRecord first(byte[] dataObjectHash, byte[] timeStampTokenDer) {
+        require(dataObjectHash, "dataObjectHash");
+        require(timeStampTokenDer, "timeStampTokenDer");
+        List<List<ArchiveTimeStamp>> chains = new ArrayList<>();
+        List<ArchiveTimeStamp> chain = new ArrayList<>();
+        chain.add(new ArchiveTimeStamp(List.of(), timeStampTokenDer.clone(), SHA256_OID));
+        chains.add(chain);
+        List<String> algorithms = List.of(SHA256_OID);
+        return new ErsRecord(encode(chains, algorithms), chains, algorithms);
+    }
+
+    /**
+     * Appends a §5.2 timestamp renewal to the newest chain.
+     *
+     * <p>The token must cover {@link #imprintForTimestampRenewal()}. This does not check that —
+     * it cannot without the token's issuer — but {@link ErsVerifier} does, so a wrong one is
+     * caught the first time the record is read rather than the first time it is relied on.
      */
     public ErsRecord withTimestampRenewal(byte[] renewalTokenDer) {
         require(renewalTokenDer, "renewalTokenDer");
@@ -172,29 +242,40 @@ public final class ErsRecord {
         }
         List<List<ArchiveTimeStamp>> next = deepCopy();
         List<ArchiveTimeStamp> current = next.get(next.size() - 1);
-        byte[] previous = current.get(current.size() - 1).timeStampDer();
-        current.add(new ArchiveTimeStamp(List.of(previous.clone()), renewalTokenDer.clone()));
-        return new ErsRecord(encode(next), next);
+        // Same algorithm as the chain it joins: §5.2 requires it, and a chain whose links are
+        // hashed under different algorithms cannot be walked.
+        current.add(new ArchiveTimeStamp(List.of(), renewalTokenDer.clone(),
+                current.get(current.size() - 1).digestAlgorithmOid()));
+        return new ErsRecord(encode(next, digestAlgorithmOids), next, digestAlgorithmOids);
     }
 
     /**
-     * Starts a new chain for a hash-tree renewal (RFC 4998 §5.3).
+     * Starts a new chain for a §5.3 hash-tree renewal.
      *
-     * <p>A new chain rather than another link, because the digest algorithm changed: the old
-     * chain stays as it is and the new one begins from a value computed under the new
-     * algorithm. Collapsing the two into one chain would say the new algorithm had been in use
-     * all along.
+     * <p>{@code h'} must come from {@link #inputsForHashTreeRenewal}: it is the only value that
+     * commits the new chain to every previous one. Passing an arbitrary hash produces a
+     * timestamp filed next to the old chains rather than one that covers them.
      */
-    public ErsRecord withHashTreeRenewal(byte[] newCheckpointHash, byte[] timeStampTokenDer) {
-        require(newCheckpointHash, "newCheckpointHash");
+    public ErsRecord withHashTreeRenewal(byte[] hPrime, byte[] timeStampTokenDer,
+            String algorithmOid) {
+        require(hPrime, "hPrime");
         require(timeStampTokenDer, "timeStampTokenDer");
+        if (algorithmOid == null || algorithmOid.isBlank()) {
+            throw new IllegalArgumentException("a hash-tree renewal happens BECAUSE the "
+                    + "algorithm changed, so it has to say which one it is now");
+        }
         List<List<ArchiveTimeStamp>> next = deepCopy();
         List<ArchiveTimeStamp> chain = new ArrayList<>();
-        chain.add(new ArchiveTimeStamp(List.of(newCheckpointHash.clone()),
-                timeStampTokenDer.clone()));
+        chain.add(new ArchiveTimeStamp(List.of(hPrime.clone()), timeStampTokenDer.clone(),
+                algorithmOid));
         next.add(chain);
-        return new ErsRecord(encode(next), next);
+        Set<String> algorithms = new LinkedHashSet<>(digestAlgorithmOids);
+        algorithms.add(algorithmOid);
+        List<String> declared = List.copyOf(algorithms);
+        return new ErsRecord(encode(next, declared), next, declared);
     }
+
+    // ---- parsing ----
 
     /** Reads a record back. Throws rather than returning a half-parsed one. */
     public static ErsRecord parse(byte[] der) throws IOException {
@@ -209,6 +290,12 @@ public final class ErsRecord {
             throw new IOException("RFC 4998 defines version " + VERSION + " only; this record "
                     + "declares " + version);
         }
+        List<String> algorithms = new ArrayList<>();
+        ASN1Sequence declared = ASN1Sequence.getInstance(record.getObjectAt(1));
+        for (int i = 0; i < declared.size(); i++) {
+            algorithms.add(AlgorithmIdentifier.getInstance(declared.getObjectAt(i))
+                    .getAlgorithm().getId());
+        }
         // The sequence is the LAST element: the two optional tagged fields sit between the
         // digest algorithms and it, so counting from the front would read an encryptionInfo as
         // the timestamps on any record that carries one.
@@ -222,36 +309,42 @@ public final class ErsRecord {
             }
             chains.add(chain);
         }
-        return new ErsRecord(der.clone(), chains);
+        return new ErsRecord(der.clone(), chains, algorithms);
     }
 
     private static ArchiveTimeStamp parseArchiveTimeStamp(ASN1Sequence ats) throws IOException {
-        List<byte[]> firstNode = new ArrayList<>();
+        List<byte[]> firstList = new ArrayList<>();
         byte[] token = null;
+        String algorithm = null;
         for (int i = 0; i < ats.size(); i++) {
-            Object element = ats.getObjectAt(i);
+            ASN1Encodable element = ats.getObjectAt(i);
             if (element instanceof ASN1TaggedObject tagged) {
-                if (tagged.getTagNo() == 2) {
+                if (tagged.getTagNo() == 0) {
+                    algorithm = AlgorithmIdentifier.getInstance(tagged, false)
+                            .getAlgorithm().getId();
+                } else if (tagged.getTagNo() == 2) {
                     ASN1Sequence tree = ASN1Sequence.getInstance(tagged, false);
                     if (tree.size() > 0) {
                         ASN1Sequence partial = ASN1Sequence.getInstance(tree.getObjectAt(0));
                         for (int k = 0; k < partial.size(); k++) {
-                            firstNode.add(ASN1OctetString.getInstance(partial.getObjectAt(k))
+                            firstList.add(ASN1OctetString.getInstance(partial.getObjectAt(k))
                                     .getOctets());
                         }
                     }
                 }
                 continue;
             }
-            // The only untagged element is the ContentInfo holding the token.
             token = ContentInfo.getInstance(element).getEncoded(ASN1Encoding.DER);
         }
         if (token == null) {
             throw new IOException("an ArchiveTimeStamp with no timeStamp is not one; RFC 4998 "
                     + "makes every other field optional and this one mandatory");
         }
-        return new ArchiveTimeStamp(firstNode, token);
+        return new ArchiveTimeStamp(firstList, token,
+                algorithm == null ? SHA256_OID : algorithm);
     }
+
+    // ---- encoding ----
 
     private List<List<ArchiveTimeStamp>> deepCopy() {
         List<List<ArchiveTimeStamp>> copy = new ArrayList<>();
@@ -261,15 +354,40 @@ public final class ErsRecord {
         return copy;
     }
 
-    private static byte[] encode(List<List<ArchiveTimeStamp>> chains) {
+    private static byte[] encode(List<List<ArchiveTimeStamp>> chains, List<String> algorithms) {
         try {
             ASN1EncodableVector record = new ASN1EncodableVector();
             record.add(new ASN1Integer(VERSION));
-            // SHA-256, declared once at the record level. Stated rather than left absent: a
-            // reader of an evidence record has to know which digest the tree was built with,
-            // and RFC 4998 lets the field be a list precisely so a renewal can add to it.
-            record.add(new DERSequence(new AlgorithmIdentifier(
-                    NISTObjectIdentifiers.id_sha256)));
+            ASN1EncodableVector declared = new ASN1EncodableVector();
+            for (String oid : algorithms) {
+                declared.add(new AlgorithmIdentifier(new ASN1ObjectIdentifier(oid)));
+            }
+            record.add(new DERSequence(declared));
+            record.add(encodeSequenceObject(chains));
+            return new DERSequence(record).getEncoded(ASN1Encoding.DER);
+        } catch (IOException e) {
+            throw new IllegalStateException("the evidence record could not be encoded: "
+                    + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * The DER of the {@code ArchiveTimeStampSequence} alone — what {@code ha} is computed over.
+     *
+     * <p>§5.3 step 3 is explicit that the chains are DER encoded "i.e., they contain sequence
+     * and length tags", so this is the encoded sequence and not a concatenation of its parts.
+     */
+    static byte[] encodeSequence(List<List<ArchiveTimeStamp>> chains) {
+        try {
+            return encodeSequenceObject(chains).getEncoded(ASN1Encoding.DER);
+        } catch (IOException e) {
+            throw new IllegalStateException("the timestamp sequence could not be encoded: "
+                    + e.getMessage(), e);
+        }
+    }
+
+    private static DERSequence encodeSequenceObject(List<List<ArchiveTimeStamp>> chains) {
+        try {
             ASN1EncodableVector sequence = new ASN1EncodableVector();
             for (List<ArchiveTimeStamp> chain : chains) {
                 ASN1EncodableVector chainVector = new ASN1EncodableVector();
@@ -278,13 +396,9 @@ public final class ErsRecord {
                 }
                 sequence.add(new DERSequence(chainVector));
             }
-            record.add(new DERSequence(sequence));
-            return new DERSequence(record).getEncoded(ASN1Encoding.DER);
+            return new DERSequence(sequence);
         } catch (IOException e) {
-            // Encoding a structure we just built in memory cannot fail for a reason a caller
-            // could act on, and a checked exception here would push a meaningless catch into
-            // every call site.
-            throw new IllegalStateException("the evidence record could not be encoded: "
+            throw new IllegalStateException("the timestamp sequence could not be encoded: "
                     + e.getMessage(), e);
         }
     }
@@ -292,16 +406,58 @@ public final class ErsRecord {
     private static DERSequence encodeArchiveTimeStamp(ArchiveTimeStamp ats) throws IOException {
         ASN1EncodableVector vector = new ASN1EncodableVector();
         vector.add(new DERTaggedObject(false, 0,
-                new AlgorithmIdentifier(NISTObjectIdentifiers.id_sha256)));
-        ASN1EncodableVector partial = new ASN1EncodableVector();
-        for (byte[] value : ats.reducedHashtreeFirstNode()) {
-            partial.add(new DEROctetString(value));
+                new AlgorithmIdentifier(new ASN1ObjectIdentifier(ats.digestAlgorithmOid()))));
+        if (!ats.firstHashList().isEmpty()) {
+            ASN1EncodableVector partial = new ASN1EncodableVector();
+            for (byte[] value : ats.firstHashList()) {
+                partial.add(new DEROctetString(value));
+            }
+            vector.add(new DERTaggedObject(false, 2, new DERSequence(new DERSequence(partial))));
         }
-        vector.add(new DERTaggedObject(false, 2,
-                new DERSequence(new DERSequence(partial))));
-        vector.add(ContentInfo.getInstance(
-                ASN1Primitive.fromByteArray(ats.timeStampDer())));
+        vector.add(ContentInfo.getInstance(ASN1Primitive.fromByteArray(ats.timeStampDer())));
         return new DERSequence(vector);
+    }
+
+    // ---- shared hashing, so the encoder and the verifier cannot drift ----
+
+    /** RFC 4998 §4.2/§4.3: binary ascending sort, then concatenate. No prefixes, no lengths. */
+    static byte[] sortedConcat(List<byte[]> values) {
+        List<byte[]> sorted = new ArrayList<>(values);
+        sorted.sort(Arrays::compareUnsigned);
+        int total = 0;
+        for (byte[] value : sorted) {
+            total += value.length;
+        }
+        byte[] out = new byte[total];
+        int at = 0;
+        for (byte[] value : sorted) {
+            System.arraycopy(value, 0, out, at, value.length);
+            at += value.length;
+        }
+        return out;
+    }
+
+    /** The JCA name for a digest OID, or null when this build does not know it. */
+    static String algorithmNameFor(String oid) {
+        return switch (oid == null ? "" : oid) {
+            case "2.16.840.1.101.3.4.2.1" -> "SHA-256";
+            case "2.16.840.1.101.3.4.2.2" -> "SHA-384";
+            case "2.16.840.1.101.3.4.2.3" -> "SHA-512";
+            default -> null;
+        };
+    }
+
+    static byte[] digest(String oid, byte[] input) {
+        String name = algorithmNameFor(oid);
+        if (name == null) {
+            throw new IllegalArgumentException("this build does not know digest algorithm "
+                    + oid + ", so it cannot compute what a token over it should cover");
+        }
+        try {
+            return MessageDigest.getInstance(name).digest(input);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("this JVM does not provide " + name, e);
+        }
     }
 
     private static void require(byte[] value, String name) {

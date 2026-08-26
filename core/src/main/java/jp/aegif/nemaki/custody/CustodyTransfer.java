@@ -77,6 +77,12 @@ public final class CustodyTransfer {
         this.objectId = objectId;
         this.sipDigest = sipDigest;
         this.receivingSystem = receivingSystem;
+        if (createdAt == null || createdAt.isBlank()) {
+            // A history whose steps have no times is a list of claims in an order somebody
+            // chose. The class says every move leaves a step with its time; this is where that
+            // stops being a comment.
+            throw new IllegalArgumentException("a transfer has to record when it was opened");
+        }
         this.history.add(new Step(null, CustodyState.PACKAGE_CREATED, createdAt,
                 "a package was built for this record"));
     }
@@ -113,6 +119,10 @@ public final class CustodyTransfer {
                 throw new IllegalArgumentException("the stored history does not walk: a step "
                         + "leaves " + step.from() + " but the transfer was at " + walked);
             }
+            if (step.at() == null || step.at().isBlank()) {
+                throw new IllegalArgumentException("a stored step with no time cannot be placed "
+                        + "in a sequence of events, and a handover nobody can time is not one");
+            }
             if (!step.to().isReachableFrom(walked)) {
                 throw new IllegalArgumentException("the stored history contains a move the "
                         + "state machine does not allow: " + walked + " -> " + step.to());
@@ -125,9 +135,38 @@ public final class CustodyTransfer {
                     + "history ends at " + walked + "; a state its history does not support is "
                     + "an assertion, not a record");
         }
-        if (state == CustodyState.RECEIPT_VERIFIED && receipt == null) {
-            throw new IllegalArgumentException("a stored transfer at RECEIPT_VERIFIED with no "
-                    + "receipt is the false diagnosis this machine exists to prevent");
+        // Every state the history PASSED THROUGH, not just the one it stopped at. The first
+        // version checked `state == RECEIPT_VERIFIED`, so a row saying CUSTODY_TRANSFERRED with
+        // no receipt sailed through — custody passed, with nothing recording what was checked.
+        // The state it ended at is the last place to look for a missing receipt, not the only
+        // one.
+        boolean everVerified = history.stream()
+                .anyMatch(step -> step.to() == CustodyState.RECEIPT_VERIFIED);
+        if (everVerified) {
+            if (receipt == null) {
+                throw new IllegalArgumentException("this transfer's history says a receipt was "
+                        + "verified and no receipt is stored; a state that says 'we checked' "
+                        + "with nothing to have checked is the false diagnosis this machine "
+                        + "exists to prevent");
+            }
+            // The same checks verifyReceipt makes. A stored row is read back through the rules,
+            // or the rules only ever applied to the live path — and the live path is not where
+            // an attacker is.
+            String refusal = receipt.refusalReasonFor(sipDigest);
+            if (refusal != null) {
+                throw new IllegalArgumentException("the stored receipt is not about this "
+                        + "transfer's package: " + refusal);
+            }
+            if (!receipt.reportsSuccess()) {
+                throw new IllegalArgumentException("the stored receipt reports '"
+                        + receipt.verificationOutcome() + "', which is not an outcome that can "
+                        + "reach RECEIPT_VERIFIED");
+            }
+            String missing = receipt.missingRequiredField();
+            if (missing != null) {
+                throw new IllegalArgumentException("the stored receipt does not carry '"
+                        + missing + "', so it could not have been verified");
+            }
         }
         restored.state = state;
         restored.receipt = receipt;
@@ -179,6 +218,30 @@ public final class CustodyTransfer {
      * asking what went wrong later.
      */
     public Moved advance(CustodyState next, String at, String reason) {
+        if (next == CustodyState.CUSTODY_TRANSFERRED) {
+            // Refused HERE, not only in the service. The design document said "advance
+            // explicitly rejects CUSTODY_TRANSFERRED" while only the service wrapper did — so
+            // anything holding the domain object could pass custody without the ledger being
+            // asked, which is the rule this whole increment exists to enforce.
+            return new Moved(false, state, "custody does not pass by advancing to it. The "
+                    + "handover has to be recorded first, and only then may the transfer move; "
+                    + "CustodyTransferService.passCustody is what does that.");
+        }
+        return move(next, at, reason);
+    }
+
+    /**
+     * The move to {@link CustodyState#CUSTODY_TRANSFERRED}, for the service that records first.
+     *
+     * <p>Package-private on purpose. It is the one door, and a door reachable from outside this
+     * package is not one — {@code advance} refuses this state precisely so that nothing else
+     * can take it.
+     */
+    Moved passCustody(String at, String reason) {
+        return move(CustodyState.CUSTODY_TRANSFERRED, at, reason);
+    }
+
+    private Moved move(CustodyState next, String at, String reason) {
         if (next == null) {
             return new Moved(false, state, "no state was given");
         }
@@ -208,6 +271,10 @@ public final class CustodyTransfer {
                     + "; the moves available are " + state.allowedNext()
                     + ". Skipping a step would erase the fact that it never happened, which is "
                     + "what somebody asking what went wrong looks for.");
+        }
+        if (at == null || at.isBlank()) {
+            return new Moved(false, state, "a move has to say when it happened; a history whose "
+                    + "steps have no times is a list of claims in an order somebody chose");
         }
         history.add(new Step(state, next, at, reason));
         state = next;

@@ -192,8 +192,9 @@ class CustodyTransferTest {
     void aLateReceiptDoesNotRewriteTheHandover() {
         CustodyTransfer transfer = atAipCreated();
         transfer.verifyReceipt(receiptFor(SIP_DIGEST), "t");
-        assertTrue(transfer.advance(CustodyState.CUSTODY_TRANSFERRED, "t", "receipt verified")
-                .accepted());
+        // passCustody, not advance: advance refuses this state so that the ledger cannot be
+        // skipped, and a fixture using it would be exercising a path the product refuses.
+        assertTrue(transfer.passCustody("t", "receipt verified").accepted());
 
         CustodyTransfer.Moved late = transfer.verifyReceipt(
                 new CustodyReceipt("sub-2", "aip-9", "c".repeat(64), SIP_DIGEST, "PASSED",

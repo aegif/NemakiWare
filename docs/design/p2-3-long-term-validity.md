@@ -4,10 +4,13 @@
 
 ---
 
-## 0. この増分が実装するのは ERS ではない
+## 0. 第 1 段が実装するのは ERS ではない (第 2 段で実装した)
 
-**明言する**: 本増分は **ERS (RFC 4998 / RFC 6283) を実装しない**。
-実装するのは、**ERS が「本文書の範囲外」と明記して肩代わりしてくれない部分**である。
+**この節は第 1 段 (2026-08-25) について書かれている。** 第 2 段 (2026-08-26) で
+**RFC 4998 の生成と検証を実装した** — §8 を読むこと。data object は checkpoint の
+正規化バイト列であって文書ではなく、TSA 署名は検証していない。
+
+第 1 段が実装したのは、**ERS が「本文書の範囲外」と明記して肩代わりしてくれない部分**である。
 
 RFC 4998 は renewal の 2 種を定義するが、**いつ renewal が必要になるかは
 out-of-band で監視せよ**と書いている (ロードマップ §9-5)。つまり:
@@ -217,25 +220,49 @@ renewal monitor が既に在るからである — `RenewalNeed` は「そろそ
 
 §7 で形式を決めた。ここで作った。`ErsRecord` (生成・DER 往復) と `ErsVerifier` (検証)。
 
-### data object は checkpoint hash であって文書ではない — これが一番大事
+### data object は checkpoint の**正規化バイト列**であって checkpoint hash ではない
 
-RFC 4998 §4.2 のハッシュ木縮約は、各 `PartialHashtree` の値を**ソートして連結し**、
-**domain separation 無し**で hash する。本製品の Merkle 木は RFC 6962 型で、
-葉に `0x00`、節に `0x01` を前置する。**別の木である。**
+**2026-08-26 訂正 (Codex 指摘・RFC 本文で確認)。** 最初の実装はここを取り違えており、
+その結果**どの標準ツールでも読めない記録**を出していた。自前の検証器が同じ取り違えを
+していたので、テストは緑だった。
 
-したがって、こちらの audit path をそのまま `reducedHashtree` に載せると、
-RFC 4998 の規則で歩いた標準検証器は**違う root を計算して落とす**。
-「標準に見えるがどの標準ツールでも落ちる記録」を出すことになる。
+RFC 4998 §4.3 は検証器に **`h = H(d)` を計算させ、最初のハッシュリストに `h` が
+在ることを確かめさせる**。checkpoint hash `C` を「data object」と呼びながら
+リストに `C` を入れると、検証器は `H(C)` を探して `C` を見つけ、
+**token を見る前に**落とす。
 
-そこで `reducedHashtree` は 1 ノードで、中身は **checkpoint hash**。
-タイムスタンプはちょうどそれを覆う。標準検証器はこれを検査でき、
-検査した内容は真である ——「この checkpoint hash は token の時刻までに存在した」。
-文書と checkpoint を結ぶのは本製品の inclusion proof で、これは記録の**隣を**旅し、
-**標準 ERS 検証器は見ない**。`ErsRecord.LIMITS` がそう書いて、記録と一緒に運ばれる。
+正しくはもっと単純だった。`C` は既に `H(checkpoint の正規化バイト列)` であり、
+本製品の RFC 3161 アンカーは **message imprint がちょうど `C` の token** である。
+つまり data object はその正規化バイト列で、`h = C`。そして **reducedHashtree は
+要らない** — RFC 4998 §4.2 が明示的に許している:「An Archive Timestamp may consist
+... only of a timestamp with no hash value lists」。§4.3 は
+「root hash value must correspond to hashedMessage」に縮退し、root は `h` そのもの。
+
+この形は**適合し、かつ既存アンカーをそのまま使える**。代案 —— `H(C)` を 1 ノードの
+木に入れる —— は `H(H(C))` を覆う**新しい token** が要る。§4.3 step 3 は
+要素が 1 つでもリストを hash するからである (単一要素の例外は RFC に無い。本文で確認)。
 
 **採らなかった案**: entry を RFC 4998 の規則で縮約する。checkpoint ごとに
-**2 つ目の root** と、その上の 2 つ目のアンカーが要る (手元の token は
-RFC 6962 root を覆っている)。アンカー設計の変更であり、ここでは採らない。
+2 つ目の root と 2 つ目のアンカーが要る (手元の token は RFC 6962 root ではなく
+checkpoint hash を覆っている)。アンカー設計の変更であり、ここでは採らない。
+
+### 更新は §5.2 と §5.3 の別物である
+
+**timestamp renewal (§5.2)**: 古い `timeStamp` フィールドの**内容**が hash され
+タイムスタンプされる。「The new Archive Timestamp MAY not contain a reducedHashtree
+field, if the timestamp only simply covers the previous timestamp」— したがって
+reducedHashtree は作らず、新 token の imprint は `H(直前の ContentInfo DER)`。
+**同じ鎖**に留まり、**同じアルゴリズム**を使う。
+
+**hash-tree renewal (§5.3)**: data object と**過去の全鎖**を新アルゴリズムで hash する。
+`ha = H(直前までの ArchiveTimeStampSequence の DER)`、
+`h' = H(sorted concat(h(d), ha))`、新 Archive Timestamp の第 1 リストが `h'` を持ち、
+**新しい鎖**を始める。`ha` の項が無いと、新しい鎖は古い鎖に**コミットしていない** ——
+横に並べただけの無関係なタイムスタンプになる。最初の実装が出していたのはそれだった。
+
+**何を覆う token が要るかは製品側が計算して渡す** (`imprintForFirst` /
+`imprintForTimestampRenewal` / `inputsForHashTreeRenewal`)。ここを呼び手に委ねると、
+正しく見えてどの標準ツールも受け付けない記録が出る — 一度出した。
 
 ### それでも作る価値 — 鎖が本体
 
@@ -261,10 +288,15 @@ message imprint はこちらが選んでいない値になる。信頼された 
 
 | 壊した箇所 | 落ちたテスト |
 |---|---|
-| message imprint を比較しない | `aTokenAboutSomethingElseIsCaught` |
+| 最初の imprint をもう一度 hash する (旧実装の形) | `theFirstTokenCoversTheDataObjectHash` ほか 4 |
+| 更新の imprint を直前 token 以外にする | `timestampRenewalCoversThePreviousToken` |
+| 新しい鎖と古い鎖の関係を検査しない | `anUnrelatedNewChainIsCaught` |
+| `ha` を別の入力の上で計算する | `hashTreeRenewalCommitsToTheOldChains` |
 | 期待値との突き合わせを外す | `aRecordAboutAnotherPartysDataIsRefused` |
-| 縮約に Merkle の前置バイトを入れる | `theLinksHold` ほか 3 |
-| timestamp renewal で新しい鎖を始める | `timestampRenewalAppends` |
-| hash-tree renewal を既存の鎖に足す | `hashTreeRenewalStartsAChain` |
 | limits を先頭から動かす | `theUncheckedPartIsSaidFirst` |
+
+> 旧実装が出していた形 (`H(H(d))` を覆う token) は
+> `theOldWrongInterpretationIsCaught` が**明示的に拒否**する。
+> 自前の検証器が自前の誤りに同意していたのが元の欠陥なので、
+> 誤った形を名指しで落とすテストを残す。
 

@@ -253,13 +253,13 @@ class FormatDuplicationRecorderTest {
         // The literal is written here; production reads the constant.
         String expected = jp.aegif.nemaki.rest.purview.journal.LineageCanonicalHash.hash(
                 "LEDGER_FORMAT_DUPLICATION_V1", REPO, "obj-1", "src", "out",
-                "jodconverter/LibreOffice", "application/pdf", "admin");
+                "jodconverter/LibreOffice", "application/pdf", null, null, "admin");
 
         assertEquals(expected, FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "src",
                         "out", Converter.JODCONVERTER_LIBREOFFICE, FormatDuplicationRecorder.TargetFormat.PDF, "admin"),
                 "the duplication digest is no longer H(LEDGER_FORMAT_DUPLICATION_V1, "
                         + "repositoryId, sourceObjectId, sourceDigest, producedDigest, "
-                        + "converterId, targetMediaType, actor)");
+                        + "converterId, targetMediaType, pdfaOutcome, pdfaFlavour, actor)");
     }
 
     @Test
@@ -274,10 +274,12 @@ class FormatDuplicationRecorderTest {
         // and asserts which one production actually emits.
         String withId = jp.aegif.nemaki.rest.purview.journal.LineageCanonicalHash.hash(
                 "LEDGER_FORMAT_DUPLICATION_V1", REPO, "obj-1", "src", "out",
-                Converter.JODCONVERTER_LIBREOFFICE.id(), "application/pdf", "admin");
+                Converter.JODCONVERTER_LIBREOFFICE.id(), "application/pdf", null, null,
+                "admin");
         String withDisclosure = jp.aegif.nemaki.rest.purview.journal.LineageCanonicalHash.hash(
                 "LEDGER_FORMAT_DUPLICATION_V1", REPO, "obj-1", "src", "out",
-                Converter.JODCONVERTER_LIBREOFFICE.disclosure(), "application/pdf", "admin");
+                Converter.JODCONVERTER_LIBREOFFICE.disclosure(), "application/pdf", null, null,
+                "admin");
         assertNotEquals(withId, withDisclosure, "the fixture cannot tell the two apart");
 
         assertEquals(withId, FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "src",
@@ -303,6 +305,59 @@ class FormatDuplicationRecorderTest {
         assertNotEquals(pdf, svg, "a PDF copy and an SVG copy hash to the same entry");
         assertNotEquals(pdf, unknown, "an unrecorded format hashes as though it were PDF");
         assertNotEquals(svg, unknown);
+    }
+
+    @Test
+    @DisplayName("the digest commits to the archival-profile FINDING")
+    void theDigestCommitsToWhatTheValidatorFound() {
+        // "We asked for PDF/A" and "it IS PDF/A" are different facts. An entry that committed
+        // to the request while a reader was shown the finding would be the exact substitution
+        // this class exists to refuse — and one that commits to neither leaves the sentence a
+        // reader is shown detached from anything the chain holds.
+        var conforms = new jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation(
+                jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation.Outcome.CONFORMS,
+                "1b", 0, "ok");
+        var fails = new jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation(
+                jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation.Outcome
+                        .DOES_NOT_CONFORM, "1b", 2, "no");
+        var unchecked = jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation
+                .notChecked("off");
+
+        String a = FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "src", "out",
+                Converter.JODCONVERTER_LIBREOFFICE, FormatDuplicationRecorder.TargetFormat.PDF,
+                conforms, "admin");
+        String b = FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "src", "out",
+                Converter.JODCONVERTER_LIBREOFFICE, FormatDuplicationRecorder.TargetFormat.PDF,
+                fails, "admin");
+        String c = FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "src", "out",
+                Converter.JODCONVERTER_LIBREOFFICE, FormatDuplicationRecorder.TargetFormat.PDF,
+                unchecked, "admin");
+
+        assertNotEquals(a, b, "a conforming copy and a failing one hash to the same entry");
+        assertNotEquals(a, c, "an unchecked copy hashes as though it had been checked and passed");
+        assertNotEquals(b, c);
+    }
+
+    @Test
+    @DisplayName("the digest carries the OUTCOME, not the sentence")
+    void theDigestUsesTheOutcomeNotTheProse() {
+        // Same reason the converter's id goes in rather than its disclosure: rewording the
+        // sentence would change every entry, which looks like the facts changed.
+        var one = new jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation(
+                jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation.Outcome.CONFORMS,
+                "1b", 0, "veraPDF reported compliance");
+        var same = new jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation(
+                jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation.Outcome.CONFORMS,
+                "1b", 0, "a differently worded detail");
+
+        assertEquals(
+                FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "src", "out",
+                        Converter.JODCONVERTER_LIBREOFFICE,
+                        FormatDuplicationRecorder.TargetFormat.PDF, one, "admin"),
+                FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "src", "out",
+                        Converter.JODCONVERTER_LIBREOFFICE,
+                        FormatDuplicationRecorder.TargetFormat.PDF, same, "admin"),
+                "rewording the validator's detail changed the entry");
     }
 
     @Test

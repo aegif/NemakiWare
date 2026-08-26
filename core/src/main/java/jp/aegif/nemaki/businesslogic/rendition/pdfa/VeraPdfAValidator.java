@@ -20,7 +20,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Runs veraPDF over produced bytes (P3-2).
@@ -47,7 +46,8 @@ public final class VeraPdfAValidator {
      * <p>Once, and lazily. Doing it in a static initialiser would make loading this class fail
      * on a deployment without veraPDF, which is the situation it is supposed to survive.
      */
-    private static final AtomicBoolean INITIALISED = new AtomicBoolean(false);
+    private static final Object INIT_LOCK = new Object();
+    private static boolean initialised;
 
     private VeraPdfAValidator() {
     }
@@ -99,9 +99,21 @@ public final class VeraPdfAValidator {
         }
     }
 
+    /**
+     * Initialises once, and only marks it done once it IS done.
+     *
+     * <p>The first version flipped an {@code AtomicBoolean} before calling {@code initialise()},
+     * so a concurrent caller could go on to use a half-built global foundry — and if the call
+     * threw, the flag stayed set and validation was inert for the life of the JVM while every
+     * result read "not checked". Setting the flag after the call, under a lock, costs one
+     * uncontended monitor on a path that already parses a PDF.
+     */
     private static void initialise() {
-        if (INITIALISED.compareAndSet(false, true)) {
-            org.verapdf.gf.foundry.VeraGreenfieldFoundryProvider.initialise();
+        synchronized (INIT_LOCK) {
+            if (!initialised) {
+                org.verapdf.gf.foundry.VeraGreenfieldFoundryProvider.initialise();
+                initialised = true;
+            }
         }
     }
 }
