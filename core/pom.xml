@@ -28,14 +28,19 @@
 		<org.apache.cxf.version>4.2.3</org.apache.cxf.version>
 		<!-- BouncyCastle arrives transitively through Tika (bcjmail -> bcpkix), but 3.4 uses
 		     org.bouncycastle.tsp directly for RFC 3161 anchoring, so it must be declared: a Tika
-		     bump could otherwise remove it silently. Tika brought prov at 1.81 while pkix/util
-		     came at 1.81.1 — the same family skew that cost a Tomcat startup with HttpComponents.
-		     BC publishes patch releases PER ARTIFACT, so 1.81.1 exists for prov/pkix/util but
-		     NOT for bcjmail; bcjmail is therefore excluded from the pin and from the enforcer
-		     rule below rather than forced to a version that was never released. -->
-		<org.bouncycastle.version>1.81.1</org.bouncycastle.version>
-		<httpcomponents.client5.version>5.5.1</httpcomponents.client5.version>
-		<httpcomponents.core5.version>5.3.6</httpcomponents.core5.version>
+		     bump could otherwise remove it silently. Tika once brought prov at 1.81 while
+		     pkix/util came at 1.81.1 — the same family skew that cost a Tomcat startup with
+		     HttpComponents.
+
+		     BC publishes patch releases PER ARTIFACT, so a chosen version may not exist for
+		     every module: at 1.81.1 bcjmail had no such release and was excluded from the pin
+		     and from the enforcer rule. **Check before bumping** — at 1.84 all four exist
+		     (prov / pkix / util / jmail, verified against Central), so the exclusion is gone
+		     and the rule now covers every module. If a later version is missing one, exclude
+		     that module again rather than pinning it to something never released. -->
+		<org.bouncycastle.version>1.84</org.bouncycastle.version>
+		<httpcomponents.client5.version>5.6.3</httpcomponents.client5.version>
+		<httpcomponents.core5.version>5.4.3</httpcomponents.core5.version>
 		<opencmis.github.packages.url>https://maven.pkg.github.com/aegif/chemistry-opencmis-nemakiware</opencmis.github.packages.url>
 		<opencmis.github.packages.repository.id>github-opencmis</opencmis.github.packages.repository.id>
 		<jersey.version>4.0.0</jersey.version>
@@ -84,6 +89,16 @@
 			<dependency>
 				<groupId>org.bouncycastle</groupId>
 				<artifactId>bcpkix-jdk18on</artifactId>
+				<version>${org.bouncycastle.version}</version>
+			</dependency>
+			<!-- bcjmail too, now that 1.84 is published for it. Tika still delivers 1.81, and
+			     WITHOUT this line the enforcer refuses the build — which is the rule working:
+			     the previous exclusion was a workaround for a version BC had not released, and
+			     removing the exclusion without pinning would have left Tika's 1.81 in the WAR
+			     beside a 1.84 family. -->
+			<dependency>
+				<groupId>org.bouncycastle</groupId>
+				<artifactId>bcjmail-jdk18on</artifactId>
 				<version>${org.bouncycastle.version}</version>
 			</dependency>
 
@@ -239,7 +254,7 @@
 		<dependency>
 			<groupId>org.verapdf</groupId>
 			<artifactId>validation-model</artifactId>
-			<version>1.28.2</version>
+			<version>1.30.2</version>
 		</dependency>
 
 		<!-- nemakiware-action dependency commented out - module is suspended and not needed -->
@@ -305,7 +320,7 @@
 		<dependency>
 			<groupId>org.mozilla</groupId>
 			<artifactId>rhino</artifactId>
-			<version>1.7.15</version>
+			<version>1.7.15.1</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
@@ -504,6 +519,24 @@
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-client-bindings</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
+			<exclusions>
+				<!-- client-bindings declares httpclient5 5.5.1. Resolution already prefers our
+				     newer pin, but the enforcer's family rule walks the whole dependency GRAPH
+				     — omitted nodes included — so an unexcluded 5.5.1 node fails the build even
+				     though no 5.5.1 jar reaches the WAR. Left as-is, the rule would forbid ever
+				     moving past whatever version client-bindings happens to declare, which is
+				     not what it is for: it exists to catch a MIXED family in the WAR.
+
+				     Note what this does not settle. client-bindings was built against 5.5.1 and
+				     now runs against 5.6.3. That is the shape CLAUDE.md warns about — compiles,
+				     resolves, passes unit tests, fails at Tomcat startup — and the enforcer
+				     cannot see it, because after this exclusion there is no skew to see. It has
+				     to be verified by starting the application. -->
+				<exclusion>
+					<groupId>org.apache.httpcomponents.client5</groupId>
+					<artifactId>httpclient5</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
@@ -778,7 +811,8 @@
 		<!-- Jakarta EE compatible HTTP Client for Solr -->
 		<!-- HTTP Client 5.x dependencies moved down to avoid duplication -->
 		<!-- HttpComponents 5 moves as ONE family. OpenCMIS 2.0.0-RC1's default HTTP
-		     invoker brings httpclient5 5.5.1, whose parent requires httpcore5 5.3.6;
+		     invoker brings httpclient5, whose parent pins the httpcore5 it expects
+		     (5.6.3 -> 5.4.3, checked against the parent pom rather than assumed);
 		     leaving httpcore5 at 5.2.4 made the whole application fail to start with
 		     NoSuchMethodError on DefaultHttpRequestWriterFactory(Http1Config) — added in
 		     httpcore5 5.3. The enforcer below now refuses a mixed family outright. -->
@@ -1364,18 +1398,18 @@
 									</includes>
 									<message>All org.apache.cxf modules must be exactly ${org.apache.cxf.version} — bump the property, not individual dependencies.</message>
 								</bannedDependencies>
-								<!-- Fourth family. Tika delivered prov/jmail 1.81 and pkix/util 1.81.1
-								     to the same WAR; 3.4 calls org.bouncycastle.tsp directly, so a
-								     cross-version tsp/prov pair is exactly the shape that compiles,
-								     resolves, passes unit tests and then fails at runtime. -->
+								<!-- Fourth family. Tika once delivered prov/jmail 1.81 and pkix/util
+								     1.81.1 to the same WAR; 3.4 calls org.bouncycastle.tsp directly,
+								     so a cross-version tsp/prov pair is exactly the shape that
+								     compiles, resolves, passes unit tests and then fails at runtime.
+								     Every module is covered — see the property's comment for what to
+								     do if a future version is not published for all of them. -->
 								<bannedDependencies>
 									<excludes>
 										<exclude>org.bouncycastle:*</exclude>
 									</excludes>
 									<includes>
 										<include>org.bouncycastle:*:${org.bouncycastle.version}</include>
-										<!-- bcjmail has no 1.81.1 release (BC patches per artifact). -->
-										<include>org.bouncycastle:bcjmail-jdk18on</include>
 									</includes>
 									<message>All org.bouncycastle modules must be exactly ${org.bouncycastle.version} — bump the property, not individual dependencies.</message>
 								</bannedDependencies>
