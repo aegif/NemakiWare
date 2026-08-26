@@ -282,9 +282,23 @@ public interface PropertyKey {
 	final String RENDITION_CONVERTER_TYPE = "rendition.converter.type";
 
 	/**
-	 * The PDF/A flavour a produced PDF is checked against, e.g. {@code 1b}. Blank or absent
-	 * means no check — which the duplication record then states as NOT_CHECKED rather than as
-	 * a failure.
+	 * The PDF/A flavour to request and check against, e.g. {@code 2b}. Blank or absent means
+	 * neither — which the duplication record states as NOT_CHECKED rather than as a failure.
+	 *
+	 * <h2>Measured: use 2b or 3b, not 1b</h2>
+	 *
+	 * <p>With the LibreOffice in this product's container image (24.2.7.2), a document exported
+	 * with {@code SelectPdfVersion=1} fails exactly one PDF/A-1b check — clause 6.7.3 test 1,
+	 * "the value of CreationDate ... and its analogous XMP property xmp:CreateDate shall be
+	 * equivalent". {@code 2} and {@code 3} produce files veraPDF accepts.
+	 *
+	 * <p>So configuring {@code 1b} gets a correct DOES_NOT_CONFORM on every copy, which is
+	 * honest and useless. This product does not patch the converter's output to make it pass:
+	 * the digest and the record commit to what the converter produced, and editing that would
+	 * make the record's own statement false.
+	 *
+	 * <p>Measured 2026-08-26 against LibreOffice 24.2.7.2. If a later build produces conforming
+	 * 1b, this note is stale — re-measure rather than trusting it.
 	 */
 	final String RENDITION_PDFA_VALIDATE_FLAVOUR = "rendition.pdfa.validate.flavour";
 

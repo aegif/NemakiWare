@@ -182,7 +182,7 @@ digest は記録しない。消さないと**前の文書の結果**が今回の
 | `rest/RenditionResource` / `rest/controller/RenditionController` / `api/v1/resource/RenditionResource` の 3 本 | **実装済み** (2026-08-26)。§7。かつて「永続化しないので対象外」と書いていたのは誤りで、3 本とも永続化していた |
 | `AttachmentServiceDelegate.copyRenditions` (コピー時の rendition 複製) | **実装済み** (2026-08-26)。§8 |
 | ~~cloud drive 側の変換~~ | **該当する経路が存在しない** (2026-08-26 確認)。`createRendition` を呼ぶ業務コードは `ContentServiceImpl` だけで、cloud drive 同期は rendition を作らない。`TextExtractionServiceImpl` は変換器を使うが**何も永続化しない** (索引用のテキストを返すだけ) ので複製ではない。ギャップ行のほうが陳腐化していた |
-| **PDF/A 出力と veraPDF 検証** | **実装済み・未実測** (2026-08-26、§10)。要求は `JodRenditionManagerImpl` に配線済み (`rendition.pdfa.validate.flavour` が設定されたときだけ)、判定は veraPDF、判定は entry の digest にコミット。判定は rendition 行にも平文で入り、報告が出所付きで表示する (§11)。**未**: LibreOffice を通した実測 (この build に LibreOffice が無い。**docker の core イメージには在る**ので実スタックでなら測れる) |
+| **PDF/A 出力と veraPDF 検証** | **実装済み・未実測** (2026-08-26、§10)。要求は `JodRenditionManagerImpl` に配線済み (`rendition.pdfa.validate.flavour` が設定されたときだけ)、判定は veraPDF、判定は entry の digest にコミット。判定は rendition 行にも平文で入り、報告が出所付きで表示する (§11)。**LibreOffice を通した実測済み** (§12) — **2b / 3b は適合、1b は 1 件落ちる**。|
 
 ---
 
@@ -403,4 +403,45 @@ entry は平文を持たないので、**製品は PDF/A を検査していて�
 |---|---|
 | 出所の文を値の後ろに回す | `theVerdictIsReadable` |
 | 未検査を「検査済み」と出す | `anUncheckedCopyIsNotAFailedOne` |
+
+---
+
+## 12. 実測 (2026-08-26) — 要求は通るが、版によって結果が違う
+
+コンテナ内の LibreOffice 24.2.7.2 に `SelectPdfVersion` を渡して変換し、
+出た PDF を veraPDF に掛けた。デプロイはしていない (実行中の core コンテナで
+`soffice` を直接動かし、出力を取り出して検証した)。
+
+| 要求 | veraPDF の判定 | 失敗した検査 |
+|---|---|---|
+| 無し (素の PDF) | **DOES_NOT_CONFORM** | 7 件。XMP メタデータストリーム欠落、OutputIntent 無しの DeviceRGB、info 辞書と XMP の不一致 |
+| `SelectPdfVersion=1` (PDF/A-1b) | **DOES_NOT_CONFORM** | **1 件**。§6.7.3 test 1 — info 辞書の `CreationDate` と XMP の `xmp:CreateDate` が「equivalent」でない |
+| `SelectPdfVersion=2` (PDF/A-2b) | **CONFORMS** | 0 |
+| `SelectPdfVersion=3` (PDF/A-3b) | **CONFORMS** | 0 |
+
+ファイルサイズは素の PDF 10,014 バイトに対し PDF/A 版 23,988 バイト
+(フォント埋め込みの分)。「PDF/A はコピーの見た目と大きさを変える」は実測どおり。
+
+### 何が分かったか
+
+**要求は効く。** LibreOffice はフォントを埋め込み、OutputIntent を付け、XMP を書く。
+素の PDF が 7 件落ちるところを 1 件まで詰める。
+
+**それでも 1b は適合しない。** 落ちるのは日付表現の不一致 1 点で、これは
+LibreOffice 側の出力の問題である。**この 1 点があるので「PDF/A を要求した」を
+「PDF/A である」と読んではいけない** — この設計が最初から言っていたことが、
+主張ではなく測定になった。
+
+### 直さない
+
+出力に手を入れて日付を揃えれば 1b も通る。**やらない。** digest と記録は
+「変換器が出したもの」にコミットしており、それを編集すると**記録自身の言明が嘘になる**。
+利便コピーを 1 件のために書き換えるより、判定を正直に出すほうがこの製品の役目に合う。
+
+### 運用への含意
+
+**1b を設定すると、全コピーが正しく DOES_NOT_CONFORM になる** — 正直だが役に立たない。
+2b か 3b を使うこと。`PropertyKey.RENDITION_PDFA_VALIDATE_FLAVOUR` の javadoc にも書いた。
+後の LibreOffice で 1b が通るようになったらこの記述は陳腐化するので、
+**信じずに測り直すこと**。
 
