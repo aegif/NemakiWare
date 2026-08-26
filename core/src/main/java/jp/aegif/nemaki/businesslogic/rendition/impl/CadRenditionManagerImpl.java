@@ -117,6 +117,11 @@ public class CadRenditionManagerImpl implements ExtendedRenditionManager {
 	}
 
 	@Override
+	public String converterId() {
+		return "nemaki/cad";
+	}
+
+	@Override
 	public ContentStream convertToPdf(ContentStream contentStream, String documentName) {
 		log.info("[CadRendition] PDF conversion for CAD files via mathacad for: " + documentName);
 		try {

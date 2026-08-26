@@ -87,8 +87,17 @@ class CreatePreviewRecordsDuplicationTest {
     private record Harness(ContentServiceImpl service, ContentDaoService dao,
                            FormatDuplicationRecorder recorder, Document document) {}
 
-    /** @param convertedStream what the converter hands back; null models a converter with none */
     private static Harness harness(InputStream convertedStream, boolean daoReadsTheStream) {
+        return harness(convertedStream, daoReadsTheStream, "jodconverter/LibreOffice", false);
+    }
+
+    /**
+     * @param convertedStream what the converter hands back; null models a converter with none
+     * @param shortRead the DAO reads only part of the stream, which is reachable in production:
+     *        the attachment write swallows its own failure and returns an id anyway
+     */
+    private static Harness harness(InputStream convertedStream, boolean daoReadsTheStream,
+            String converterId, boolean shortRead) {
         ContentServiceImpl service = new ContentServiceImpl();
         ContentDaoService dao = mock(ContentDaoService.class);
         service.setContentDaoService(dao);
@@ -101,13 +110,18 @@ class CreatePreviewRecordsDuplicationTest {
 
         RenditionManager renditions = mock(RenditionManager.class);
         when(renditions.convertToPdf(any(), anyString())).thenReturn(converted);
+        when(renditions.converterIdFor(any())).thenReturn(converterId);
         service.setRenditionManager(renditions);
 
         when(dao.createRendition(eq(REPO), any(Rendition.class), any()))
                 .thenAnswer(invocation -> {
                     ContentStream stored = invocation.getArgument(2);
                     if (daoReadsTheStream && stored != null && stored.getStream() != null) {
-                        stored.getStream().readAllBytes();
+                        if (shortRead) {
+                            stored.getStream().read(new byte[4]);
+                        } else {
+                            stored.getStream().readAllBytes();
+                        }
                     }
                     return "rend-1";
                 });
@@ -186,6 +200,101 @@ class CreatePreviewRecordsDuplicationTest {
         verify(harness.recorder()).recordDuplication(eq(REPO), eq("doc-1"), any(),
                 produced.capture(), any(), any(), anyString());
         assertNull(produced.getValue(), "a digest was recorded for a stream that never existed");
+    }
+
+    @Test
+    @DisplayName("the converter that ACTUALLY ran is the one recorded")
+    void theRealConverterIsRecorded() throws Exception {
+        // Hard-coding LibreOffice attributed every CAD rendition to it. The digest commits to
+        // the converter, so that was a false attribution written into the chain — and the
+        // disclosure shown was LibreOffice's font substitution rather than the loss of layers
+        // and geometry that actually happened.
+        Harness harness = harness(new ByteArrayInputStream(PDF), true, "nemaki/cad", false);
+
+        createPreview().invoke(harness.service(), mock(CallContext.class), REPO,
+                new ContentStreamImpl("drawing.dwg", BigInteger.valueOf(4), "image/vnd.dwg",
+                        new ByteArrayInputStream("srcb".getBytes(StandardCharsets.UTF_8))),
+                harness.document());
+
+        org.mockito.ArgumentCaptor<FormatDuplicationRecorder.Converter> converter =
+                org.mockito.ArgumentCaptor.forClass(FormatDuplicationRecorder.Converter.class);
+        verify(harness.recorder()).recordDuplication(eq(REPO), eq("doc-1"), any(), any(),
+                converter.capture(), any(), anyString());
+
+        assertEquals(FormatDuplicationRecorder.Converter.CAD_RENDITION, converter.getValue(),
+                "a CAD conversion was recorded as having been done by LibreOffice");
+    }
+
+    @Test
+    @DisplayName("a converter this build does not know is UNKNOWN, not the nearest guess")
+    void anUnrecognisedConverterIsNotGuessed() throws Exception {
+        Harness harness = harness(new ByteArrayInputStream(PDF), true, "something/new", false);
+
+        createPreview().invoke(harness.service(), mock(CallContext.class), REPO,
+                new ContentStreamImpl("x.bin", BigInteger.valueOf(4), "application/x",
+                        new ByteArrayInputStream("srcb".getBytes(StandardCharsets.UTF_8))),
+                harness.document());
+
+        org.mockito.ArgumentCaptor<FormatDuplicationRecorder.Converter> converter =
+                org.mockito.ArgumentCaptor.forClass(FormatDuplicationRecorder.Converter.class);
+        verify(harness.recorder()).recordDuplication(eq(REPO), eq("doc-1"), any(), any(),
+                converter.capture(), any(), anyString());
+
+        assertEquals(FormatDuplicationRecorder.Converter.UNKNOWN, converter.getValue(),
+                "an unrecognised converter was reported as a specific one, so the disclosure "
+                        + "describes losses that may not have happened");
+    }
+
+    @Test
+    @DisplayName("a SHORT read records no digest — the DAO can return an id having stored part")
+    void aShortReadRecordsNoDigest() throws Exception {
+        // Reachable in production: AttachmentDaoDelegate swallows an attachment-write failure
+        // and returns the document id anyway. A digest over the part that was read would be
+        // recorded as the digest of the whole converted document.
+        Harness harness = harness(new ByteArrayInputStream(PDF), true,
+                "jodconverter/LibreOffice", true);
+
+        createPreview().invoke(harness.service(), mock(CallContext.class), REPO,
+                new ContentStreamImpl("minutes.docx", BigInteger.valueOf(4), "application/x",
+                        new ByteArrayInputStream("srcb".getBytes(StandardCharsets.UTF_8))),
+                harness.document());
+
+        org.mockito.ArgumentCaptor<String> produced =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(harness.recorder()).recordDuplication(eq(REPO), eq("doc-1"), any(),
+                produced.capture(), any(), any(), anyString());
+
+        assertNull(produced.getValue(),
+                "a digest over " + 4 + " of " + PDF.length + " bytes was recorded as the digest "
+                        + "of the converted document");
+    }
+
+    @Test
+    @DisplayName("a converter that returns its INPUT unchanged records no duplication")
+    void aPassThroughIsNotADuplication() throws Exception {
+        // JodRenditionManagerImpl hands a PDF straight back rather than converting it. Nothing
+        // was duplicated, so an entry would put a copy in the chain that does not exist,
+        // attributed to a conversion that never ran.
+        ContentServiceImpl service = new ContentServiceImpl();
+        ContentDaoService dao = mock(ContentDaoService.class);
+        service.setContentDaoService(dao);
+        when(dao.createRendition(eq(REPO), any(Rendition.class), any())).thenReturn("rend-1");
+        ContentStreamImpl source = new ContentStreamImpl("already.pdf",
+                BigInteger.valueOf(PDF.length), "application/pdf", new ByteArrayInputStream(PDF));
+        RenditionManager renditions = mock(RenditionManager.class);
+        when(renditions.convertToPdf(any(), anyString())).thenReturn(source);
+        when(renditions.converterIdFor(any())).thenReturn("jodconverter/LibreOffice");
+        service.setRenditionManager(renditions);
+        FormatDuplicationRecorder recorder = mock(FormatDuplicationRecorder.class);
+        service.setFormatDuplicationRecorder(recorder);
+        Document document = new Document();
+        document.setId("doc-1");
+        document.setName("already.pdf");
+
+        createPreview().invoke(service, mock(CallContext.class), REPO, source, document);
+
+        verify(recorder, never()).recordDuplication(anyString(), anyString(), any(), any(),
+                any(), any(), anyString());
     }
 
     @Test

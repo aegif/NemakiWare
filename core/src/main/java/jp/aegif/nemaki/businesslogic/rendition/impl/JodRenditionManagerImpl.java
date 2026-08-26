@@ -111,6 +111,11 @@ public class JodRenditionManagerImpl implements RenditionManager {
 		}
 	}
 
+	@Override
+	public String converterId() {
+		return "jodconverter/LibreOffice";
+	}
+
 	public ContentStream convertToPdf(ContentStream contentStream,
 			String documentName) {
 		log.info("[JodRendition] Starting PDF conversion for: " + documentName + ", mimeType: " + contentStream.getMimeType());

@@ -1359,5 +1359,8 @@
          @Component in an unscanned package is worse than no annotation — it reads as wired
          while never becoming a bean, which is exactly how EarkSipExporter shipped. -->
     <context:component-scan base-package="jp.aegif.nemaki.rest.eark" />
+    <!-- P3-4. Same reason as the line above: a @Component in a package nothing scans reads as
+         wired and never becomes a bean. CustodyLedgerRecorder shipped that way for one commit. -->
+    <context:component-scan base-package="jp.aegif.nemaki.custody" />
 
 </beans>

@@ -210,6 +210,11 @@ public class DiagramRenditionManagerImpl implements ExtendedRenditionManager {
 	}
 
 	@Override
+	public String converterId() {
+		return "nemaki/diagram";
+	}
+
+	@Override
 	public ContentStream convertToPdf(ContentStream contentStream, String documentName) {
 		// Diagram formats are rendered as SVG; PDF not directly supported
 		log.info("[DiagramRendition] PDF conversion not directly supported for diagrams, returning null");

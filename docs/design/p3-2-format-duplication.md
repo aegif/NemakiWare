@@ -15,8 +15,13 @@
   **PDF/A profile の指定も検証もしていない**。出てくるのは**利便コピー**である
 - **これは保存計画の代替ではない。** ロードマップが最初からそう書いている
 - **veraPDF による検証は入れていない** (新規要素。§4)
-- **証跡が付くのは永続化される rendition だけ**。一時的なプレビュー変換や
-  ダウンロード時のオンザフライ変換は通っていない (§4)
+- **証跡が付くのは `ContentServiceImpl.createPreview` 経由の rendition だけ**。
+  同じく永続化する別経路が 4 本あり、まだ通っていない (§5)
+- **「取得記録との関係」(`sourceDigest`) が入るのは外部取込由来の文書だけ。**
+  読んでいるのは aspect `nemaki:externalIntegration` の `nemaki:contentHash` で、
+  それを書くのは外部取込経路だけである。**通常の CMIS アップロードでは常に null** になり、
+  複製の記録は「何から作ったか」を欠いたまま残る。null を捏造しないのは正しいが、
+  B.2 の 6 項目のうち 1 つが**実運用の大半で埋まらない**ことは主張の側で言っておく
 
 ---
 
@@ -74,6 +79,29 @@ reset するとストリームは巻き戻るが digest は巻き戻らず、両
 負のコントロール 3 本実測 (読まれなくても digest を記録する / 無条件に包む /
 元ストリームのほうを hash する)。
 
+### さらにレビューが見つけた偽記録が 2 つ (2026-08-26)
+
+**3. 変換器の帰属が固定値だった。** 呼び出し側が常に `JODCONVERTER_LIBREOFFICE` を
+渡していたが、実際の dispatch は composite の **cad → diagram → jod** である。
+つまり **CAD 図面の変換が「LibreOffice が変換した」と記録され**、
+digest は converter id を含むので**偽の帰属に digest がコミット**し、
+開示文は LibreOffice のフォント置換が出て、**CAD 本来の損失 (layers / 3D) は
+製品コードから一度も出力されていなかった**。
+`RenditionManager.converterIdFor(mimeType)` で**実際に走る変換器を聞く**ようにした。
+知らない id は近いものに寄せず `UNKNOWN` にする — 寄せた時点で偽の帰属になる。
+
+**4. 部分読みでも digest を記録していた。** `AttachmentDaoDelegate` は添付書き込みの
+失敗を握り潰して id を返すので、**バイト列の一部しか保存されていない rendition が
+成立し得る**。0 バイトだけを弾いていたので、途中で落ちた場合は
+**部分 digest が「変換済み文書の digest」として台帳に載る**。宣言長と突き合わせる。
+
+**5. 変換していないのに複製を記録していた。** PDF を入れると jodconverter は
+**同じ ContentStream をそのまま返す**。変換は起きていないのに `FORMAT_DUPLICATION` が
+1 件、しかも「フォントが置換される」付きで載っていた。同一オブジェクトなら記録しない。
+
+負のコントロール追加 4 本実測 (帰属を固定に戻す / 未知 id を推測する /
+部分読みでも digest を出す / 素通しでも記録する)。
+
 ---
 
 ## 3. fail-open — ここだけの理由
@@ -108,6 +136,7 @@ null になったとき rendition は成功したまま**記録だけが静か�
 | 経路 | 状態 |
 |---|---|
 | 永続化される rendition (`ContentServiceImpl.createPreview`) | **実装済み** |
-| `RenditionResource` / `RenditionController` のオンザフライ変換 | **未**。永続化しないので「複製」かどうか自体が判断事項 |
+| `rest/RenditionResource` / `rest/controller/RenditionController` / `api/v1/resource/RenditionResource` の 3 本 | **未**。**「永続化しないので対象外」と書いていたのは誤り** (2026-08-26 訂正・レビュー指摘) — 3 本とも `createPreviewRendition` を呼び、`createRendition` + `setRenditionIds` + `update` を実行して**永続化している**。「対象外」ではなく「対象だが未実装」であり、ギャップを実際より小さく、しかも設計判断に見せる誤りだった |
+| `AttachmentServiceDelegate.copyRenditions` (コピー時の rendition 複製) | **未** |
 | cloud drive 側の変換 | **未** |
 | **PDF/A 出力と veraPDF 検証** | **未**。新規要素で、ロードマップもそう書いている |

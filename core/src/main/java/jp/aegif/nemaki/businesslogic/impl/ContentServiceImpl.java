@@ -3870,13 +3870,24 @@ public class ContentServiceImpl implements ContentService {
 				}
 			}
 			String renditionId = contentDaoService.createRendition(repositoryId, rendition, toStore);
+			// Which converter ACTUALLY ran, asked of the rendition layer rather than assumed.
+			// Hard-coding LibreOffice here attributed every CAD rendition to it — and the
+			// digest commits to the converter, so that was a false attribution written into
+			// the chain, with LibreOffice's losses disclosed instead of the ones that happened.
+			String converterId = renditionManager == null ? null
+					: renditionManager.converterIdFor(contentStream.getMimeType());
 			// The byte count decides whether the digest means anything. If the DAO never read
 			// the stream — a path that skips the attachment write, a store that takes the
 			// reference and defers — MessageDigest still answers, with SHA-256 of nothing, and
 			// recording THAT as the digest of a converted document is a false record rather
 			// than a missing one.
-			recordFormatDuplication(callContext, repositoryId, document,
-					counted != null && counted.bytesRead() > 0 ? producedDigest : null);
+			// Nothing was DUPLICATED when the converter handed the same stream straight back
+			// (the PDF-in, PDF-out path). Recording one would put a copy in the chain that does
+			// not exist, attributed to a conversion that never ran.
+			if (converted != contentStream) {
+				recordFormatDuplication(callContext, repositoryId, document,
+						digestOfWhatWasStored(counted, producedDigest, converted), converterId);
+			}
 			List<String> renditionIds = document.getRenditionIds();
 			if (renditionIds == null) {
 				document.setRenditionIds(new ArrayList<String>());
@@ -3900,22 +3911,46 @@ public class ContentServiceImpl implements ContentService {
 	 *
 	 * <p>Never throws. A preview must not fail because a second record could not be written.
 	 */
+	/**
+	 * The produced digest, or null when it cannot be stood behind.
+	 *
+	 * <p>Two ways it cannot. Nothing was read — {@code MessageDigest} still answers, with
+	 * SHA-256 of the empty input, and that value looks exactly like a digest. Or a SHORT read:
+	 * the DAO swallows an attachment-write failure and returns an id anyway, so a rendition can
+	 * exist with only part of its bytes stored, and a digest over the part read would be
+	 * recorded as the digest of the document.
+	 */
+	private static String digestOfWhatWasStored(CountingDigestStream counted,
+			java.security.MessageDigest producedDigest, ContentStream converted) {
+		if (counted == null || producedDigest == null || counted.bytesRead() <= 0) {
+			return null;
+		}
+		java.math.BigInteger declared = converted == null ? null : converted.getBigLength();
+		if (declared != null && declared.signum() > 0
+				&& declared.longValue() != counted.bytesRead()) {
+			log.warn("createRendition: the converted stream declared " + declared
+					+ " bytes and " + counted.bytesRead() + " were read, so no produced digest "
+					+ "is recorded for this duplication");
+			return null;
+		}
+		return hex(producedDigest.digest());
+	}
+
 	private void recordFormatDuplication(CallContext callContext, String repositoryId,
-			Document document, java.security.MessageDigest producedDigest) {
+			Document document, String producedDigest, String converterId) {
 		if (formatDuplicationRecorder == null) {
 			return;
 		}
 		try {
-			String produced = producedDigest == null ? null : hex(producedDigest.digest());
 			// The SOURCE digest as this repository recorded it — not recomputed. The point is
 			// to state what the copy was made FROM according to the record, and a fresh
 			// computation would paper over the case where the two disagree.
 			String source = jp.aegif.nemaki.fixity.FixityVerifier.recordedDigest(document);
 			jp.aegif.nemaki.evidence.FormatDuplicationRecorder.Recorded recorded =
 					formatDuplicationRecorder.recordDuplication(repositoryId, document.getId(),
-							source, produced,
+							source, producedDigest,
 							jp.aegif.nemaki.evidence.FormatDuplicationRecorder.Converter
-									.JODCONVERTER_LIBREOFFICE,
+									.forId(converterId),
 							callContext == null ? null : callContext.getUsername(),
 							java.time.Instant.now().toString());
 			if (recorded.warning() != null) {

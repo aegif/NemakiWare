@@ -8,7 +8,14 @@
 
 **主張する**: **管理責任の移転を 9 状態の状態機械として管理し、
 「先方が言ったこと」と「こちらが確かめたこと」を別の状態として持つ**。
-検証済み受領証は**証拠連鎖に載り**、載せられなければ**custody は渡らない**。
+検証済み受領証を証拠連鎖に載せる型が在り、載せられなければ**拒否を返す**。
+
+> **「載せられなければ custody は渡らない」は、まだ構造ではなく規約である**
+> (2026-08-26 訂正・レビュー指摘)。`advance(CUSTODY_TRANSFERRED, …)` は受領証の有無しか
+> 見ておらず、台帳を参照しない。fail-closed を成立させるのは
+> `recordVerifiedReceipt` の戻り値を読む**呼び出し元**だが、**その呼び出し元は
+> まだ存在しない** (§5)。javadoc も "The caller must not move to CUSTODY_TRANSFERRED" と、
+> 規約であることを認めている。呼び出し元ができるまでは、これは**守られていない規則**である。
 
 **主張しない**:
 
@@ -114,5 +121,7 @@ custody が渡ることは、**ローカルコピーを消してよくなる直�
 | **BagIt (`zipped bag`) 接続層** | **未**。Archivematica は E-ARK SIP を直接取り込めない (転送 type 8 種に相当が無い) ので必須。`gov.loc:bagit` は commons-ip2 経由で既にクラスパスに在る |
 | **署名検証** | **未**。先方の鍵素材の受け渡しが submission agreement 側の話 |
 | **永続化** (transfer の store) | **未**。現状はメモリ上の型のみ |
+| **fail-closed を強制する呼び出し元** | **未**。`recordVerifiedReceipt` の戻り値を読んで `CUSTODY_TRANSFERRED` へ進む/進まないを決めるコードが無い。型は在るが規則は誰も執行していない |
+| **スレッド安全性** | **未**。`state` / `receipt` / `history` は非同期化で、`advance` は check-then-act。呼び出し元が無いので現時点で実害は無いが、"workflow object" と説明する以上は同期か明記が要る |
 | **submission agreement の明文化** (失敗・再送・重複取込・部分受入・先方 AIP 再生成) | **未** |
 | 実機受入試験 | **未**。RODA は arm64 で起動することだけ確認済み |

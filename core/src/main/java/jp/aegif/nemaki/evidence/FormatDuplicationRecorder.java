@@ -103,6 +103,22 @@ public class FormatDuplicationRecorder {
                         + "requested and no PDF/A validation was performed. A diagram rendered "
                         + "to PDF loses its structure: shapes, connectors and their "
                         + "relationships become drawing instructions. The ORIGINAL is unchanged "
+                        + "and remains the record."),
+
+        /**
+         * A converter this build does not recognise.
+         *
+         * <p>Not a placeholder to be tidied away later. Attributing a copy to the wrong tool is
+         * worse than not attributing it: the digest commits to the converter, so a guess is a
+         * false attribution recorded in the chain, and the disclosure would then describe
+         * losses that did not happen while staying silent about the ones that did.
+         */
+        UNKNOWN("nemaki/unknown",
+                "This is a CONVENIENCE COPY, not a preservation format. The tool that produced "
+                        + "it is not identified by this build, so it is NOT possible to state "
+                        + "what the conversion preserved and what it did not — treat its "
+                        + "fidelity as unknown. In particular nothing here establishes that a "
+                        + "PDF/A profile was requested or validated. The ORIGINAL is unchanged "
                         + "and remains the record.");
 
         private final String id;
@@ -121,6 +137,24 @@ public class FormatDuplicationRecorder {
         /** What this converter does NOT preserve. */
         public String disclosure() {
             return disclosure;
+        }
+
+        /**
+         * The converter with this id, or {@link #UNKNOWN}.
+         *
+         * <p>Never guesses at the nearest match. The id comes from the rendition layer, which
+         * knows which delegate actually ran; an unrecognised one means this build and that
+         * layer disagree, and the honest answer to a disagreement is to say so.
+         */
+        public static Converter forId(String id) {
+            if (id != null) {
+                for (Converter converter : values()) {
+                    if (converter.id.equals(id)) {
+                        return converter;
+                    }
+                }
+            }
+            return UNKNOWN;
         }
     }
 

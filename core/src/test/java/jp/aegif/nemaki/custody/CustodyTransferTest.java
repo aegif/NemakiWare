@@ -85,6 +85,24 @@ class CustodyTransferTest {
     }
 
     @Test
+    @DisplayName("the package digest is compared without regard to hex case")
+    void theDigestComparisonIgnoresHexCase() {
+        // Deliberate: the same SHA-256 written upper- and lower-case is the same digest, and a
+        // receipt that spelled it the other way would otherwise be refused as being about a
+        // different package. Pinned because the alternative — a case-sensitive compare — looks
+        // equally reasonable in review and would reject correct receipts.
+        CustodyTransfer transfer = atAipCreated();
+
+        CustodyTransfer.Moved moved = transfer.verifyReceipt(
+                receiptFor(SIP_DIGEST.toUpperCase(java.util.Locale.ROOT)),
+                "2026-08-26T02:00:00Z");
+
+        assertTrue(moved.accepted(),
+                "a receipt naming the same digest in upper case was refused as being about "
+                        + "another package: " + moved.refusedReason());
+    }
+
+    @Test
     @DisplayName("a receipt about THIS package is accepted — the control")
     void aReceiptForThisPackageIsAccepted() {
         // Without this, refusing everything would pass the test above and no transfer could
@@ -284,6 +302,12 @@ class CustodyTransferTest {
         assertNotNull(body.get("stateLimits"),
                 "the state name is shown with nothing saying what it does not establish: "
                         + body);
+        // ORDER, not just presence. "Straight after the state" is what the javadoc claims, and
+        // a caveat further down the map is one a reader skimming for the verdict never meets.
+        // Moving the put to the end of asMap left the presence assertion green.
+        List<String> keys = new java.util.ArrayList<>(body.keySet());
+        assertEquals(keys.indexOf("state") + 1, keys.indexOf("stateLimits"),
+                "the caveat is not immediately after the state: " + keys);
         assertEquals(Boolean.FALSE, body.get("custodyHasPassed"));
         assertNull(body.get("receipt"));
     }

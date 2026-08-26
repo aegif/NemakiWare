@@ -76,9 +76,20 @@ class FormatDuplicationRecorderTest {
             String disclosure = converter.disclosure();
             if (disclosure == null || disclosure.isBlank()
                     || !disclosure.contains("CONVENIENCE COPY")
-                    || !disclosure.contains("No PDF/A profile")
                     || !disclosure.contains("ORIGINAL is unchanged")) {
                 missing.add(converter.name() + " -> " + disclosure);
+                continue;
+            }
+            // A KNOWN converter states that no PDF/A profile was requested, because we know it
+            // was not. UNKNOWN must not: it does not know, and asserting the same sentence
+            // there would be a claim about a tool this build cannot name. It has to say the
+            // stronger and less comfortable thing — that fidelity cannot be stated at all.
+            boolean known = converter != Converter.UNKNOWN;
+            if (known && !disclosure.contains("No PDF/A profile was requested")) {
+                missing.add(converter.name() + " (no PDF/A statement) -> " + disclosure);
+            }
+            if (!known && !disclosure.contains("NOT possible to state")) {
+                missing.add(converter.name() + " (claims to know what it lost) -> " + disclosure);
             }
         }
         assertTrue(missing.isEmpty(),
@@ -237,10 +248,32 @@ class FormatDuplicationRecorderTest {
     void theDigestUsesTheStableConverterId() {
         // Otherwise rewording a sentence changes every entry, which looks like the facts
         // changed. The id is what stays the same when the wording improves.
-        assertTrue(Converter.JODCONVERTER_LIBREOFFICE.id().length()
-                        < Converter.JODCONVERTER_LIBREOFFICE.disclosure().length(),
-                "the id and the disclosure are the same string, so the digest moves whenever "
-                        + "the caveat is reworded");
+        //
+        // The first version of this compared the two STRING LENGTHS, which is true of any
+        // build and measured nothing — swapping id() for disclosure() in the digest left it
+        // green. This computes the value the id produces and the value the disclosure would,
+        // and asserts which one production actually emits.
+        String withId = jp.aegif.nemaki.rest.purview.journal.LineageCanonicalHash.hash(
+                "LEDGER_FORMAT_DUPLICATION_V1", REPO, "obj-1", "src", "out",
+                Converter.JODCONVERTER_LIBREOFFICE.id(), "admin");
+        String withDisclosure = jp.aegif.nemaki.rest.purview.journal.LineageCanonicalHash.hash(
+                "LEDGER_FORMAT_DUPLICATION_V1", REPO, "obj-1", "src", "out",
+                Converter.JODCONVERTER_LIBREOFFICE.disclosure(), "admin");
+        assertNotEquals(withId, withDisclosure, "the fixture cannot tell the two apart");
+
+        assertEquals(withId, FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "src",
+                        "out", Converter.JODCONVERTER_LIBREOFFICE, "admin"),
+                "the digest is taken over the disclosure TEXT, so rewording a caveat changes "
+                        + "every entry and looks like the facts changed");
+    }
+
+    @Test
+    @DisplayName("an unrecognised converter id becomes UNKNOWN, never the nearest match")
+    void anUnknownIdIsNotGuessed() {
+        assertEquals(Converter.UNKNOWN, Converter.forId("something/new"));
+        assertEquals(Converter.UNKNOWN, Converter.forId(null));
+        assertEquals(Converter.CAD_RENDITION, Converter.forId("nemaki/cad"),
+                "a known id was not recognised, so every CAD copy would record as UNKNOWN");
     }
 
     @Test

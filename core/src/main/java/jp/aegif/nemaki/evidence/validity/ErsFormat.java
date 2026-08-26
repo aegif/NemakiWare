@@ -17,7 +17,7 @@
 package jp.aegif.nemaki.evidence.validity;
 
 /**
- * Which Evidence Record Syntax this product would produce, and where it would go (P2-3 §7).
+ * Which Evidence Record Syntax this product would produce, and where it would go.
  *
  * <h2>This is a DECISION, not an implementation</h2>
  *
@@ -64,7 +64,7 @@ public enum ErsFormat {
      *
      * <p>Not implemented. Declared so the renewal monitor can say what it would renew into.
      */
-    RFC_4998_ASN1("RFC 4998", "application/vnd.etsi.asic-e+zip", "ers.der"),
+    RFC_4998_ASN1("RFC 4998", "application/octet-stream", "ers.der"),
 
     /**
      * RFC 6283 — XMLERS. Considered and not chosen; see the class javadoc.
@@ -101,6 +101,16 @@ public enum ErsFormat {
         return specification;
     }
 
+    /**
+     * The media type the file would be declared as.
+     *
+     * <p>{@code application/octet-stream} for the DER blob, deliberately. The first version
+     * said {@code application/vnd.etsi.asic-e+zip}, which is the type of an ASiC-E container —
+     * a ZIP — and not of a bare ASN.1 evidence record. RFC 4998 registers no media type of its
+     * own, so the honest answer is the generic one rather than a specific-looking wrong one:
+     * this constant exists so the value is decided once, and deciding it once wrongly is worse
+     * than not deciding it.
+     */
     public String mediaType() {
         return mediaType;
     }

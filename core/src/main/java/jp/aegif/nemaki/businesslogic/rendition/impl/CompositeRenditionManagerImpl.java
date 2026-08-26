@@ -50,6 +50,23 @@ public class CompositeRenditionManagerImpl implements ExtendedRenditionManager {
 		return false;
 	}
 
+	/**
+	 * The delegate that would convert this type — the same first-match walk {@code convertToPdf}
+	 * performs, so the answer is what will actually happen rather than what usually happens.
+	 */
+	@Override
+	public String converterIdFor(String mediatype) {
+		if (delegates == null) {
+			return null;
+		}
+		for (RenditionManager delegate : delegates) {
+			if (delegate.checkConvertible(mediatype)) {
+				return delegate.converterId();
+			}
+		}
+		return null;
+	}
+
 	@Override
 	public ContentStream convertToPdf(ContentStream contentStream, String documentName) {
 		if (delegates == null) return null;
