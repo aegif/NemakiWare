@@ -31,6 +31,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -177,6 +178,102 @@ public class EarkSipExportController {
             logger.warn("E-ARK export of {}/{} refused: {}", repositoryId, objectId,
                     e.getMessage());
             return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+        }
+    }
+
+    /**
+     * The same package, in the transfer format Archivematica accepts.
+     *
+     * <p>A separate endpoint rather than a flag on the export, because a bag is not a better
+     * SIP — it is a different thing for a different receiver, and the limits that travel with
+     * it say the far end will not read the SIP inside it. A caller that wants an E-ARK SIP for
+     * an E-ARK receiver should not get a bag by accident.
+     */
+    @PostMapping(value = "/{repositoryId}/objects/{objectId}/bag")
+    public ResponseEntity<?> bag(@PathVariable String repositoryId,
+            @PathVariable String objectId,
+            @RequestParam(required = false, defaultValue = "false") boolean includeInternalOnly,
+            @RequestParam(required = false, defaultValue = "") String submissionId) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdmin();
+        if (forbidden != null) {
+            return forbidden;
+        }
+        if (exporter == null) {
+            return unavailable("E-ARK SIP export is not available on this node");
+        }
+        if (submissionId == null || submissionId.isBlank()) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("status", "error");
+            body.put("message", "a transfer needs a submission id: a bag with no "
+                    + "External-Identifier cannot be referred to in a later receipt");
+            body.put("limits", EXPORT_LIMITS);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+        }
+        java.nio.file.Path workDir = null;
+        try {
+            workDir = java.nio.file.Files.createTempDirectory("nemaki-bag-");
+            EarkSipExporter.Exported exported = exporter.export(repositoryId, objectId,
+                    // The same construction the export endpoint uses, so the two
+                    // cannot disagree about what "include personal data" means.
+                    new EarkSipExporter.Options(includeInternalOnly,
+                            "NemakiWare deployment"),
+                    workDir);
+            jp.aegif.nemaki.custody.BagItTransferPackager.Bagged bagged =
+                    jp.aegif.nemaki.custody.BagItTransferPackager.bag(exported.sip(),
+                            java.nio.file.Files.createDirectories(workDir.resolve("transfer")),
+                            submissionId, digestOf(exported.sip()));
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentDisposition(org.springframework.http.ContentDisposition
+                    .attachment().filename(bagged.zippedBag().getFileName().toString()).build());
+            headers.add("X-Nemaki-Withheld-Property-Count",
+                    String.valueOf(exported.withheldPropertyCount()));
+            headers.add("X-Nemaki-Includes-Personal-Data", String.valueOf(includeInternalOnly));
+            headers.add("X-Nemaki-Export-Limits", EXPORT_LIMITS);
+            // The bag's OWN limits, separately: what a reader must not conclude about the
+            // receiving system reading the SIP inside it is a different statement from what
+            // the package itself establishes.
+            headers.add("X-Nemaki-Bag-Limits", bagged.limits().replace('\n', ' '));
+            headers.add("X-Nemaki-Payload-Oxum", bagged.payloadOxum());
+            for (String note : exported.notes()) {
+                headers.add("X-Nemaki-Export-Note", note.replace('\n', ' '));
+            }
+            return ResponseEntity.ok().headers(headers)
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .body(new FileSystemResource(bagged.zippedBag().toFile()));
+        } catch (EarkSipExporter.ExportRefusedException e) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("status", "refused");
+            body.put("message", e.getMessage());
+            body.put("limits", EXPORT_LIMITS);
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+        } catch (Exception e) {
+            logger.warn("The bag for {}/{} could not be built: {}", repositoryId, objectId,
+                    e.getMessage());
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("status", "error");
+            body.put("message", "the bag could not be built: " + e.getMessage());
+            body.put("limits", EXPORT_LIMITS);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+        }
+    }
+
+    /** SHA-256 of the package, which is what a later receipt has to name. */
+    private static String digestOf(java.nio.file.Path file) throws java.io.IOException {
+        try (java.io.InputStream in = java.nio.file.Files.newInputStream(file)) {
+            java.security.MessageDigest digest =
+                    java.security.MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = in.read(buffer)) > 0) {
+                digest.update(buffer, 0, read);
+            }
+            StringBuilder hex = new StringBuilder();
+            for (byte b : digest.digest()) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new java.io.IOException("this JVM does not provide SHA-256", e);
         }
     }
 

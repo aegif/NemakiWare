@@ -151,7 +151,16 @@ public class JodRenditionManagerImpl implements RenditionManager {
 			synchronized (officeManagerLock) {
 				log.info("[JodRendition] Starting conversion (synchronized)...");
 				OfficeDocumentConverter converter = new OfficeDocumentConverter(officeManager);
-				converter.convert(inputFile, outputFile);
+				DocumentFormat pdf = pdfFormatFor(contentStream.getMimeType());
+				if (pdf == null) {
+					converter.convert(inputFile, outputFile);
+				} else {
+					// PDF/A REQUESTED, not asserted. LibreOffice takes the property and produces
+					// what it produces; whether the result IS PDF/A is settled by veraPDF over
+					// the bytes, and the duplication record states what was FOUND. Nothing here
+					// is allowed to reach a reader as a claim.
+					converter.convert(inputFile, outputFile, pdf);
+				}
 				log.info("[JodRendition] Conversion completed, output size=" + outputFile.length());
 			}
 
@@ -254,6 +263,59 @@ public class JodRenditionManagerImpl implements RenditionManager {
 			return fileName.substring(0, point);
 		}
 		return fileName;
+	}
+
+	/**
+	 * The output format to ask for, or null to convert with the defaults.
+	 *
+	 * <p>Null unless this deployment configured a PDF/A version. The profile changes what the
+	 * copy looks like — fonts embedded, transparency flattened — and these are previews, so
+	 * turning it on for every existing deployment would change every preview to make a claim
+	 * the deployment then has to verify.
+	 *
+	 * <p>The filter name comes from the SOURCE document's family: a spreadsheet exported with
+	 * {@code writer_pdf_Export} is not exported at all.
+	 */
+	private DocumentFormat pdfFormatFor(String sourceMediaType) {
+		int version = pdfaVersion();
+		if (version <= 0) {
+			return null;
+		}
+		DocumentFormat source = registry.getFormatByMediaType(sourceMediaType);
+		String filterName = jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAExportRequest
+				.filterNameFor(source == null ? null : source.getInputFamily());
+		if (filterName == null) {
+			log.warn("[JodRendition] No PDF export filter is known for " + sourceMediaType
+					+ ", so the conversion runs without the requested PDF/A profile");
+			return null;
+		}
+		DocumentFormat pdf = new DocumentFormat("Portable Document Format", "pdf",
+				"application/pdf");
+		pdf.setStoreProperties(source.getInputFamily(),
+				jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAExportRequest
+						.storeProperties(filterName, version));
+		return pdf;
+	}
+
+	/** {@code SelectPdfVersion} from the deployment's configured flavour, or 0 for none. */
+	private int pdfaVersion() {
+		if (propertyManager == null) {
+			return 0;
+		}
+		String flavour = propertyManager.readValue(
+				jp.aegif.nemaki.util.constant.PropertyKey.RENDITION_PDFA_VALIDATE_FLAVOUR);
+		if (flavour == null || flavour.isBlank()) {
+			return 0;
+		}
+		return switch (flavour.trim()) {
+			case "1b", "1a" -> 1;
+			case "2b", "2a", "2u" -> 2;
+			case "3b", "3a", "3u" -> 3;
+			// A flavour this build cannot map is one whose output it could not check either;
+			// requesting the wrong version would produce a copy that fails validation for a
+			// reason nobody chose.
+			default -> 0;
+		};
 	}
 
 	public boolean checkConvertible(String mediatype) {

@@ -289,6 +289,18 @@ public interface PropertyKey {
 	final String RENDITION_PDFA_VALIDATE_FLAVOUR = "rendition.pdfa.validate.flavour";
 
 	/**
+	 * The receiving agent's public key, base64 X.509 SubjectPublicKeyInfo, for checking custody
+	 * receipt signatures. Absent means no check — reported as "not checked", never as a failure.
+	 *
+	 * <p>Per agent: {@code custody.receipt.key.<agent>}. Whose key it is remains a submission
+	 * agreement question; this only says which bytes to check against.
+	 */
+	final String CUSTODY_RECEIPT_KEY_PREFIX = "custody.receipt.key.";
+
+	/** The signature algorithm agreed with the receiving agent, e.g. {@code SHA256withRSA}. */
+	final String CUSTODY_RECEIPT_SIGNATURE_ALGORITHM = "custody.receipt.signature.algorithm";
+
+	/**
 	 * How many bytes of a produced PDF this deployment will hold in memory to validate it.
 	 * Past it the copy is stored as normal and the validation reports NOT_CHECKED with the
 	 * size as the reason.

@@ -123,7 +123,13 @@ public class CustodyTransferService {
         if (transfer == null) {
             return Outcome.refused(null, whyNotFound(transferId));
         }
-        CustodyTransfer.Moved moved = transfer.verifyReceipt(receipt, Instant.now().toString());
+        // The signature is checked HERE, at the moment the receipt is examined — not read back
+        // out of a row later. The stored flag is deliberately not trusted on reload (anything
+        // with database access could set it), so the finding has to be made where the receipt
+        // arrives and chained from there.
+        ReceiptSignatureVerifier.Checked checked = checkSignature(receipt);
+        CustodyTransfer.Moved moved = transfer.verifyReceipt(checked.receipt(),
+                Instant.now().toString());
         if (!moved.accepted()) {
             return Outcome.refused(transfer, moved.refusedReason());
         }
@@ -232,6 +238,58 @@ public class CustodyTransferService {
 
     /** A list, and what it is missing. */
     public record Listed(List<CustodyTransfer> transfers, boolean complete, String incomplete) {}
+
+    /**
+     * Checks the receipt's signature when this deployment holds a key for its agent.
+     *
+     * <p>No key is "not checked", which is a statement about this deployment — not a finding
+     * that the signature is bad. Whose key it is remains a submission agreement question;
+     * configuration only says which bytes to check against.
+     */
+    private ReceiptSignatureVerifier.Checked checkSignature(CustodyReceipt receipt) {
+        if (receipt == null || propertyManager == null) {
+            return ReceiptSignatureVerifier.verify(receipt, null, "SHA256withRSA");
+        }
+        String algorithm = propertyManager.readValue(
+                jp.aegif.nemaki.util.constant.PropertyKey.CUSTODY_RECEIPT_SIGNATURE_ALGORITHM);
+        if (algorithm == null || algorithm.isBlank()) {
+            algorithm = "SHA256withRSA";
+        }
+        java.security.PublicKey key = null;
+        String agent = receipt.receivingAgent();
+        if (agent != null && !agent.isBlank()) {
+            String encoded = propertyManager.readValue(
+                    jp.aegif.nemaki.util.constant.PropertyKey.CUSTODY_RECEIPT_KEY_PREFIX + agent);
+            if (encoded != null && !encoded.isBlank()) {
+                try {
+                    key = java.security.KeyFactory.getInstance(
+                                    algorithm.contains("RSA") ? "RSA" : "EC")
+                            .generatePublic(new java.security.spec.X509EncodedKeySpec(
+                                    java.util.Base64.getDecoder().decode(encoded.trim())));
+                } catch (Exception e) {
+                    // A key we cannot read is not a signature we can fault. Left null, which
+                    // reports "not checked" with the reason rather than "invalid".
+                    logger.warn("The configured key for {} could not be read ({}), so the "
+                            + "receipt's signature was not checked", agent, e.getMessage());
+                }
+            }
+        }
+        ReceiptSignatureVerifier.Checked result =
+                ReceiptSignatureVerifier.verify(receipt, key, algorithm);
+        if (result.ran() && !result.valid()) {
+            logger.warn("A custody receipt from {} did not verify against the configured key",
+                    agent);
+        }
+        return result;
+    }
+
+    private jp.aegif.nemaki.util.PropertyManager propertyManager;
+
+    /** Optional: without it no receipt signature is checked, and every result says so. */
+    @Autowired(required = false)
+    public void setPropertyManager(jp.aegif.nemaki.util.PropertyManager propertyManager) {
+        this.propertyManager = propertyManager;
+    }
 
     private Outcome persist(CustodyTransfer transfer, String failureReason) {
         boolean saved;

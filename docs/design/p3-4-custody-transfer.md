@@ -171,8 +171,8 @@ constructor は緩いままにした — 欠けた受領証も「何かが届い
 |---|---|
 | 状態機械・受領証・連鎖への追記 | **実装済み** |
 | **RODA / Archivematica への実際の送信** | **未**。§9-3 / §9-4 に API と落とし穴は調査済み |
-| **BagIt (`zipped bag`) 接続層** | **実装済み** (2026-08-26)。§6。`gov.loc:bagit` は core/pom.xml に明示宣言した (commons-ip2 経由の暗黙依存のままにしない) |
-| **署名検証** | **機構は実装済み** (2026-08-26、§9)。`signatureVerified` は呼び手が立てる boolean ではなく検証の結果になった。**鍵の入手と信頼は依然 submission agreement 側**で、そこは software では閉じない |
+| **BagIt (`zipped bag`) 接続層** | **実装済み・REST から到達可能** (2026-08-26)。§6。`POST /v1/admin/eark/{repo}/objects/{id}/bag`。`gov.loc:bagit` は core/pom.xml に明示宣言した |
+| **署名検証** | **配線済み** (2026-08-26、§8)。受領証が**到着した時点で**検査する (`custody.receipt.key.<agent>` が設定されたときだけ)。保存された `signatureVerified` は読み戻しで信じないので、所見はここで作るしかない。鍵が読めない・無いは「検査していない」であって不正ではない。**鍵の入手と信頼は依然 submission agreement 側** |
 | **永続化** (transfer の store) | **実装済み** (2026-08-26、§7)。evidence-ledger DB に同居。読み出しは `restore` を通り、履歴が合法な歩みでなければ拒否される |
 | **fail-closed を強制する呼び出し元** | **実装済み** (2026-08-26、§7)。`CustodyTransferService.passCustody` が先に記録し、記録が効いたときだけ進む。`advance` は `CUSTODY_TRANSFERRED` を明示的に拒否する (扉は 1 つ) |
 | **スレッド安全性** | **未**。`state` / `receipt` / `history` は非同期化で、`advance` は check-then-act。呼び出し元が無いので現時点で実害は無いが、"workflow object" と説明する以上は同期か明記が要る |

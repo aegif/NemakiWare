@@ -181,8 +181,8 @@ digest は記録しない。消さないと**前の文書の結果**が今回の
 | 永続化される rendition (`ContentServiceImpl.createPreview`) | **実装済み** |
 | `rest/RenditionResource` / `rest/controller/RenditionController` / `api/v1/resource/RenditionResource` の 3 本 | **実装済み** (2026-08-26)。§7。かつて「永続化しないので対象外」と書いていたのは誤りで、3 本とも永続化していた |
 | `AttachmentServiceDelegate.copyRenditions` (コピー時の rendition 複製) | **実装済み** (2026-08-26)。§8 |
-| cloud drive 側の変換 | **未** |
-| **PDF/A 出力と veraPDF 検証** | **部分実装** (2026-08-26、§10)。veraPDF 判定は変換経路に配線済みで、判定は entry の digest にコミットする。PDF/A を要求する store property も用意した。**未**: LibreOffice への要求の配線と実測 (この build に LibreOffice が無い)、報告での判定の開示 (entry が平文を持たないため) |
+| ~~cloud drive 側の変換~~ | **該当する経路が存在しない** (2026-08-26 確認)。`createRendition` を呼ぶ業務コードは `ContentServiceImpl` だけで、cloud drive 同期は rendition を作らない。`TextExtractionServiceImpl` は変換器を使うが**何も永続化しない** (索引用のテキストを返すだけ) ので複製ではない。ギャップ行のほうが陳腐化していた |
+| **PDF/A 出力と veraPDF 検証** | **実装済み・未実測** (2026-08-26、§10)。要求は `JodRenditionManagerImpl` に配線済み (`rendition.pdfa.validate.flavour` が設定されたときだけ)、判定は veraPDF、判定は entry の digest にコミット。**未**: LibreOffice を通した実測 (この build に LibreOffice が無い)、報告での判定の開示 (entry が平文を持たないため — §9) |
 
 ---
 

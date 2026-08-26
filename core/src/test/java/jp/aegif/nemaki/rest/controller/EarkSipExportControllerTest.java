@@ -100,9 +100,13 @@ class EarkSipExportControllerTest {
         EarkSipExportController controller = controllerFor(false);
         List<Method> endpoints = mappedEndpoints();
 
-        assertEquals(2, endpoints.size(),
-                "this API has " + endpoints.size() + " mapped endpoints, not 2; if one was "
-                        + "added, confirm it is gated and update this number");
+        // Not a fixed number. The count was a literal, so adding an endpoint failed this test
+        // for the one reason that is not a defect — and the fix for a failing count is to bump
+        // the number, which is how a guard quietly stops guarding. What matters is that there
+        // ARE endpoints and that every one of them refuses; the loop below is the rule.
+        assertFalse(endpoints.isEmpty(),
+                "no mapped endpoint was found, so the loop below asserts nothing — the "
+                        + "reflection that finds them has probably stopped matching");
 
         for (Method endpoint : endpoints) {
             Object response = endpoint.invoke(controller, argumentsFor(endpoint));
