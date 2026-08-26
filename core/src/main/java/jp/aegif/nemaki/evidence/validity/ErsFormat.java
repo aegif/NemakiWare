@@ -19,9 +19,10 @@ package jp.aegif.nemaki.evidence.validity;
 /**
  * Which Evidence Record Syntax this product would produce, and where it would go.
  *
- * <h2>This is a DECISION, not an implementation</h2>
+ * <h2>This is the DECISION; {@link ErsRecord} is the implementation</h2>
  *
- * <p>Nothing here builds or verifies an evidence record. What it settles is the question P2-3
+ * <p>Nothing in THIS class builds or verifies an evidence record — {@link ErsRecord} does that
+ * now, and {@link ErsVerifier} checks one. What this class settles is the question P2-3
  * deferred: RFC 4998 or RFC 6283. That question was held open on purpose — "先に形式を選ぶと、
  * 後で捨てる形式が 1 つ増える" — until P3-1 fixed the package format, because the package is
  * what an evidence record has to travel inside. P3-1 chose E-ARK CSIP 2.2.0, so it can be
@@ -60,9 +61,10 @@ package jp.aegif.nemaki.evidence.validity;
 public enum ErsFormat {
 
     /**
-     * RFC 4998 — ASN.1/CMS. <b>The chosen format.</b>
+     * RFC 4998 — ASN.1/CMS. <b>The chosen format, and the one this product produces.</b>
      *
-     * <p>Not implemented. Declared so the renewal monitor can say what it would renew into.
+     * <p>See {@link ErsRecord} for what the record covers, which is narrower than a reader of
+     * "we produce evidence records" would assume.
      */
     RFC_4998_ASN1("RFC 4998", "application/octet-stream", "ers.der"),
 
@@ -127,9 +129,11 @@ public enum ErsFormat {
      * routinely read as implementing it, and this one does not.
      */
     public static final String LIMITS =
-            "This product does NOT generate or verify evidence records. The format above is a "
-                    + "recorded DECISION about which syntax would be produced if it did, so that "
-                    + "the renewal monitor can name a target. Naming RFC 4998 is not a claim of "
-                    + "conformance to it, and no package this product builds today contains an "
-                    + "evidence record.";
+            "This product produces and checks RFC 4998 evidence records whose DATA OBJECT is a "
+                    + "checkpoint hash of its evidence ledger — not a document. Naming RFC 4998 "
+                    + "is not a claim of conformance to everything the standard covers: the "
+                    + "reduced hash tree carries one node, the timestamp authority's signature "
+                    + "and certificate are not verified here, and nothing generates a record "
+                    + "automatically or puts one into a package. See ErsRecord.LIMITS, which "
+                    + "travels with every record.";
 }

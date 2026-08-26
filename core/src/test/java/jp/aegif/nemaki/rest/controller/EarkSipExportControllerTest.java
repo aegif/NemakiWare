@@ -179,7 +179,8 @@ class EarkSipExportControllerTest {
         EarkSipExporter exporter = mock(EarkSipExporter.class);
         when(exporter.export(anyString(), anyString(), any(), any()))
                 .thenReturn(new EarkSipExporter.Exported(sip, 3,
-                        List.of("3 propert(y/ies) ... are NOT in this package.")));
+                        List.of("3 propert(y/ies) ... are NOT in this package."),
+                        new EarkSipExporter.Validation(true, true, 0, 0, "12 check(s) passed")));
         setField(controller, "exporter", exporter);
 
         Object response = EarkSipExportController.class.getDeclaredMethod("export",

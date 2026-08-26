@@ -140,7 +140,39 @@ public class EarkSipExporter {
     }
 
     /** What was produced, and what it does not contain. */
-    public record Exported(Path sip, int withheldPropertyCount, List<String> notes) {}
+    public record Exported(Path sip, int withheldPropertyCount, List<String> notes,
+            Validation validation) {}
+
+    /**
+     * What the reference validator said about the package that was just built.
+     *
+     * <p>Three outcomes, not two. {@code ran=false} means the validator could not be run at
+     * all — and "we could not check" is not "it is fine", which is the substitution this whole
+     * layer exists to refuse. A package built on a node where validation could not run is
+     * still handed over, because refusing would make an unrelated local failure look like a
+     * defect in the record; but it is handed over saying so.
+     */
+    public record Validation(boolean ran, boolean valid, int errors, int warnings,
+            String detail) {
+
+        static Validation notRun(String why) {
+            return new Validation(false, false, 0, 0, why);
+        }
+
+        /** What a receiver must not read into it. */
+        public String limits() {
+            if (!ran) {
+                return "This package was NOT checked against the CSIP " + CSIP_VERSION
+                        + " reference validator on this node (" + detail + "). That is a "
+                        + "statement about this node, not about the package: it may well be "
+                        + "valid, and nothing here says it is not.";
+            }
+            return "The CSIP " + CSIP_VERSION + " reference validator accepted this package's "
+                    + "STRUCTURE and METS. It says nothing about whether the record inside is "
+                    + "genuine, complete, or what its metadata claims — those are the "
+                    + "authenticity report's business, with its own limits.";
+        }
+    }
 
     /** Raised instead of writing a package that would be read as complete when it is not. */
     public static class ExportRefusedException extends RuntimeException {
@@ -232,6 +264,22 @@ public class EarkSipExporter {
             if (built == null || !Files.exists(built)) {
                 throw new ExportRefusedException("the SIP was not written");
             }
+            // Validated HERE, not only in a test. A package is a disclosure to another
+            // organisation and cannot be un-sent, so "our builder produces valid packages"
+            // being true in CI is not the same as this package being valid. The reference
+            // validator ships inside commons-ip2 and runs in this process.
+            Validation validation = validate(built);
+            if (validation.ran() && !validation.valid()) {
+                throw new ExportRefusedException("the CSIP " + CSIP_VERSION + " reference "
+                        + "validator rejected this package, so it was not returned: "
+                        + validation.detail());
+            }
+            if (!validation.ran()) {
+                notes.add(validation.limits());
+            } else if (validation.warnings() > 0) {
+                notes.add("The reference validator accepted this package with "
+                        + validation.warnings() + " warning(s). " + validation.limits());
+            }
             if (withheld > 0) {
                 notes.add(withheld + " propert(y/ies) the disclosure table marks INTERNAL_ONLY "
                         + "are NOT in this package. A receiver reading it as a complete record "
@@ -248,7 +296,7 @@ public class EarkSipExporter {
             }
             logger.info("Exported {}/{} as an E-ARK SIP ({} propert(y/ies) withheld)",
                     repositoryId, objectId, withheld);
-            return new Exported(built, withheld, List.copyOf(notes));
+            return new Exported(built, withheld, List.copyOf(notes), validation);
         } catch (ExportRefusedException e) {
             throw e;
         } catch (Exception e) {
@@ -258,6 +306,56 @@ public class EarkSipExporter {
                     + " could not be built: " + (e.getMessage() == null
                             ? e.getClass().getName() : e.getMessage()), e);
         }
+    }
+
+    /**
+     * Runs the reference validator, and distinguishes "rejected" from "could not check".
+     *
+     * <p>A validator that throws is not a verdict. It could be a local problem — a temporary
+     * file it cannot write, a JVM without the parser it wants — and turning that into a refusal
+     * would make an unrelated local failure read as a defect in the record. So the exception
+     * becomes {@code ran=false} and travels with the package as a stated gap.
+     *
+     * <p>A validator that RUNS and rejects is a verdict, and that one refuses. There is no
+     * option to skip it: an option to hand over a package the validator rejects is an option
+     * that gets used, and the receiving end has no way to tell such a package from a checked
+     * one.
+     */
+    private Validation validate(Path sip) {
+        java.io.ByteArrayOutputStream reportOut = new java.io.ByteArrayOutputStream();
+        try {
+            org.roda_project.commons_ip2.validator.reporter.ValidationReportOutputJson report =
+                    new org.roda_project.commons_ip2.validator.reporter.ValidationReportOutputJson(
+                            sip, reportOut);
+            org.roda_project.commons_ip2.validator.EARKSIPValidator validator =
+                    new org.roda_project.commons_ip2.validator.EARKSIPValidator(report,
+                            CSIP_VERSION);
+            boolean valid = validator.validate(CSIP_VERSION);
+            String detail = valid
+                    ? report.getSuccess() + " check(s) passed"
+                    : truncate(reportOut.toString(java.nio.charset.StandardCharsets.UTF_8));
+            return new Validation(true, valid, report.getErrors(), report.getWarnings(), detail);
+        } catch (Exception | LinkageError e) {
+            String why = e.getMessage() == null ? e.getClass().getName() : e.getMessage();
+            logger.warn("The CSIP reference validator could not be run for {}: {}", sip, why);
+            return Validation.notRun(why);
+        }
+    }
+
+    /**
+     * Enough of the validator's report to act on, and not so much that it buries the refusal.
+     *
+     * <p>The whole report is JSON of every check including the passes. A refusal message is
+     * read in a log line or an API error body; a 200 kB one is read by nobody, which makes the
+     * reason for the refusal effectively absent.
+     */
+    private static String truncate(String report) {
+        String text = report == null ? "" : report.strip();
+        if (text.length() <= 4000) {
+            return text;
+        }
+        return text.substring(0, 4000) + " ... [" + (text.length() - 4000)
+                + " more characters of the validator's report were not included here]";
     }
 
     private AuthenticityReport report(String repositoryId, String objectId, Options options,

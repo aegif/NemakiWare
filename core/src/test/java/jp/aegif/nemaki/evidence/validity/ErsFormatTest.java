@@ -72,10 +72,22 @@ class ErsFormatTest {
 
         assertEquals("RFC 4998", body.get("renewalFormat"));
         assertNotNull(body.get("renewalFormatLimits"),
-                "the format is named with nothing beside it saying the product does not produce "
-                        + "one, so a reader takes the name as a capability: " + body);
-        assertTrue(String.valueOf(body.get("renewalFormatLimits")).contains("does NOT generate"),
-                String.valueOf(body.get("renewalFormatLimits")));
+                "the format is named with nothing beside it bounding what naming it means, so a "
+                        + "reader takes the name for full conformance: " + body);
+        // The disclaimer used to be "this product does NOT generate evidence records". It does
+        // now, so that sentence would be false — and a false disclaimer is worse than none,
+        // because it is the sentence a careful reader trusts. What has to be bounded is the
+        // part that is still narrower than the name: WHAT the record is about, and what nobody
+        // checked.
+        String limits = String.valueOf(body.get("renewalFormatLimits"));
+        assertTrue(limits.contains("checkpoint hash"),
+                "the disclaimer does not say the record is about a checkpoint rather than a "
+                        + "document, which is the assumption the name invites: " + limits);
+        assertTrue(limits.contains("not a claim of conformance"), limits);
+        assertTrue(limits.contains("signature and certificate are not verified"), limits);
+        assertFalse(limits.contains("does NOT generate"),
+                "the disclaimer still says this product generates no evidence records, which "
+                        + "stopped being true: " + limits);
     }
 
     @Test

@@ -120,11 +120,20 @@ class EarkSipExporterTest {
                 "the minutes".getBytes(StandardCharsets.UTF_8))
                 .export(REPO, OBJECT, EarkSipExporter.Options.withholdingPersonalData(), tmp);
 
+        // The exporter now validates its own output, so this asserts what it FOUND rather
+        // than re-running the validator beside it. A test that validates independently proves
+        // the builder produces valid packages; it does not prove the product ever checks.
+        assertTrue(exported.validation().ran(),
+                "the exporter did not run the reference validator: "
+                        + exported.validation().detail());
+        assertTrue(exported.validation().valid(), exported.validation().detail());
+        assertEquals(0, exported.validation().errors());
+
+        // And independently, so this test still fails if the exporter's own check goes wrong.
         ByteArrayOutputStream reportOut = new ByteArrayOutputStream();
         EARKSIPValidator validator = new EARKSIPValidator(
                 new ValidationReportOutputJson(exported.sip(), reportOut),
                 EarkSipExporter.CSIP_VERSION);
-
         assertTrue(validator.validate(EarkSipExporter.CSIP_VERSION),
                 "the reference validator rejected a package built from a real record:\n"
                         + reportOut.toString(StandardCharsets.UTF_8));
@@ -136,6 +145,55 @@ class EarkSipExporterTest {
                         .anyMatch(e -> e.getKey().endsWith("minutes.txt")
                                 && e.getValue().equals("the minutes")),
                 "the packaged file is not the document's content");
+    }
+
+    @Test
+    @DisplayName("a package the validator REJECTS is not returned")
+    void anInvalidPackageIsRefused(@TempDir Path tmp) throws Exception {
+        // A package is a disclosure to another organisation and cannot be un-sent, so a
+        // rejected one has to stop here. The rejection is reached by validating something that
+        // is not a CSIP package at all — the validator running and saying no, which is the
+        // case that must refuse.
+        EarkSipExporter exporter = new EarkSipExporter();
+        java.lang.reflect.Method validate = EarkSipExporter.class.getDeclaredMethod("validate",
+                Path.class);
+        validate.setAccessible(true);
+        Path notAPackage = Files.writeString(tmp.resolve("empty.zip"), "");
+
+        EarkSipExporter.Validation verdict =
+                (EarkSipExporter.Validation) validate.invoke(exporter, notAPackage);
+
+        assertFalse(verdict.ran() && verdict.valid(),
+                "an empty file was accepted as a valid CSIP package");
+    }
+
+    @Test
+    @DisplayName("'could not check' is not 'valid' — and it travels with the package")
+    void validationThatCouldNotRunSaysSo() {
+        // The distinction the rest of this product keeps making. A local failure to run the
+        // validator is a statement about the node, and turning it into a refusal would make an
+        // unrelated local problem read as a defect in the record.
+        EarkSipExporter.Validation notRun =
+                EarkSipExporter.Validation.notRun("no temporary directory");
+
+        assertFalse(notRun.ran());
+        assertFalse(notRun.valid());
+        assertTrue(notRun.limits().contains("NOT checked"), notRun.limits());
+        assertTrue(notRun.limits().contains("statement about this node"), notRun.limits());
+        assertTrue(notRun.limits().contains("nothing here says it is not"), notRun.limits());
+    }
+
+    @Test
+    @DisplayName("a validated package does not claim the record is genuine")
+    void validationDoesNotVouchForTheRecord() {
+        // "Passed the reference validator" is read as a clean bill of health for what is
+        // inside. It is a statement about structure and METS, and about nothing else.
+        EarkSipExporter.Validation passed =
+                new EarkSipExporter.Validation(true, true, 0, 0, "12 check(s) passed");
+
+        assertTrue(passed.limits().contains("STRUCTURE and METS"), passed.limits());
+        assertTrue(passed.limits().contains("says nothing about whether the record inside is"),
+                passed.limits());
     }
 
     @Test

@@ -86,8 +86,9 @@ public record RenewalNeed(Kind kind, String subject, String algorithm,
      *
      * <p>A monitor that says "a renewal is coming due" and cannot say into WHAT is only half a
      * monitor. The format was an open question until P3-1 fixed the package; it is
-     * {@link ErsFormat#CHOSEN} now. <b>Nothing generates one</b> — see {@link ErsFormat#LIMITS},
-     * which travels with it.
+     * {@link ErsFormat#CHOSEN} now, and {@link ErsRecord} produces one. <b>Nothing generates a
+     * renewal automatically</b>: this says what is due and in what syntax, and an operator (or
+     * a caller that has a TSA to hand) performs it. See {@link ErsFormat#LIMITS}.
      */
     public ErsFormat targetFormat() {
         return switch (kind) {

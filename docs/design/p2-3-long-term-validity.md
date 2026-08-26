@@ -210,3 +210,61 @@ renewal monitor が既に在るからである — `RenewalNeed` は「そろそ
 実装しているものとして読まれる**ので、そこは構造で守る。
 
 負のコントロール 2 本実測 (何も要らないときにも形式を名乗る / 但し書きを map から落とす)。
+
+---
+
+## 8. RFC 4998 evidence record の生成と検証 (2026-08-26)
+
+§7 で形式を決めた。ここで作った。`ErsRecord` (生成・DER 往復) と `ErsVerifier` (検証)。
+
+### data object は checkpoint hash であって文書ではない — これが一番大事
+
+RFC 4998 §4.2 のハッシュ木縮約は、各 `PartialHashtree` の値を**ソートして連結し**、
+**domain separation 無し**で hash する。本製品の Merkle 木は RFC 6962 型で、
+葉に `0x00`、節に `0x01` を前置する。**別の木である。**
+
+したがって、こちらの audit path をそのまま `reducedHashtree` に載せると、
+RFC 4998 の規則で歩いた標準検証器は**違う root を計算して落とす**。
+「標準に見えるがどの標準ツールでも落ちる記録」を出すことになる。
+
+そこで `reducedHashtree` は 1 ノードで、中身は **checkpoint hash**。
+タイムスタンプはちょうどそれを覆う。標準検証器はこれを検査でき、
+検査した内容は真である ——「この checkpoint hash は token の時刻までに存在した」。
+文書と checkpoint を結ぶのは本製品の inclusion proof で、これは記録の**隣を**旅し、
+**標準 ERS 検証器は見ない**。`ErsRecord.LIMITS` がそう書いて、記録と一緒に運ばれる。
+
+**採らなかった案**: entry を RFC 4998 の規則で縮約する。checkpoint ごとに
+**2 つ目の root** と、その上の 2 つ目のアンカーが要る (手元の token は
+RFC 6962 root を覆っている)。アンカー設計の変更であり、ここでは採らない。
+
+### それでも作る価値 — 鎖が本体
+
+素の RFC 3161 token は 1 度 1 つのことを証明する。`ArchiveTimeStampChain` は
+**更新が積み上がる場所**で、それこそ `RenewalNeed` が要求しているもの。
+`TIMESTAMP_RENEWAL` は現在の鎖に追加し、`HASH_TREE_RENEWAL` は新しい鎖を始める
+(digest algorithm が変わったのに同じ鎖に足すと「新しいアルゴリズムを最初から
+使っていた」と言うことになる)。
+
+### 検証が言わないこと
+
+**TSA の署名・証明書鎖・失効状態は検証していない。** trust anchor を 1 つも持たないから。
+だから結果は `valid` ではなく **`linksHold`** と呼ぶ。内部の結び付きが保たれている、
+という意味しかない。`ErsVerifier.NOT_CHECKED` がそう書き、`asMap()` は
+**limits と notChecked を先頭に**置く (判定に見える語より先に読ませる)。
+
+### 実 TSA での測定
+
+テストは stub トークンを使わない。鍵・自己署名証明書 (timeStamping EKU)・
+BouncyCastle の token generator で**本物の RFC 3161 トークン**を発行させ、
+message imprint はこちらが選んでいない値になる。信頼された TSA では**ない** —
+それが後半のテストの主題で、誰も保証していない証明書で「検証済み」と言わないことを測る。
+
+| 壊した箇所 | 落ちたテスト |
+|---|---|
+| message imprint を比較しない | `aTokenAboutSomethingElseIsCaught` |
+| 期待値との突き合わせを外す | `aRecordAboutAnotherPartysDataIsRefused` |
+| 縮約に Merkle の前置バイトを入れる | `theLinksHold` ほか 3 |
+| timestamp renewal で新しい鎖を始める | `timestampRenewalAppends` |
+| hash-tree renewal を既存の鎖に足す | `hashTreeRenewalStartsAChain` |
+| limits を先頭から動かす | `theUncheckedPartIsSaidFirst` |
+

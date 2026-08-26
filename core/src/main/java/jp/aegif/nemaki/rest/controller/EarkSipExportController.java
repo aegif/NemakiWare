@@ -148,6 +148,17 @@ public class EarkSipExportController {
             headers.add("X-Nemaki-Withheld-Property-Count",
                     String.valueOf(exported.withheldPropertyCount()));
             headers.add("X-Nemaki-Includes-Personal-Data", String.valueOf(includeInternalOnly));
+            // The validator's verdict, in a header for the same reason as the omissions: a
+            // caller streaming the zip to disk never reads a JSON body. "Not checked on this
+            // node" is a different answer from "checked and accepted", and a receiver that
+            // cannot tell them apart has been given the stronger one for free.
+            EarkSipExporter.Validation validation = exported.validation();
+            headers.add("X-Nemaki-Csip-Validated",
+                    validation == null ? "unknown" : String.valueOf(validation.ran()));
+            if (validation != null) {
+                headers.add("X-Nemaki-Csip-Validation-Limits",
+                        validation.limits().replace('\n', ' '));
+            }
             headers.add("X-Nemaki-Export-Limits", EXPORT_LIMITS);
             for (String note : exported.notes()) {
                 headers.add("X-Nemaki-Export-Note", note.replace('\n', ' '));
