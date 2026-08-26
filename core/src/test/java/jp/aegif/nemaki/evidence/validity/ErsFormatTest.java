@@ -1,0 +1,113 @@
+/**
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ */
+package jp.aegif.nemaki.evidence.validity;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * Naming a standard is not implementing it.
+ *
+ * <h2>What is being defended</h2>
+ *
+ * <p>The specific hazard of a declared-but-unimplemented format: a response that says
+ * "RFC 4998" reads, to anybody skimming, as a product that produces RFC 4998. The disclaimer is
+ * the whole protection, so it is pinned to travel in the same map as the name — not merely to
+ * exist somewhere in the class.
+ */
+class ErsFormatTest {
+
+    @Test
+    @DisplayName("a renewal that is due names the format it would be produced in")
+    void aDueRenewalNamesItsFormat() {
+        // The gap this closes: the monitor could say "a renewal is coming" and not what to
+        // renew into, which is an alarm nobody can act on.
+        RenewalNeed need = new RenewalNeed(RenewalNeed.Kind.TIMESTAMP_RENEWAL, "checkpoint-1",
+                "SHA-1", AlgorithmRegistry.Soundness.UNSOUND, "SHA-1 is past its declared end date");
+
+        assertEquals(ErsFormat.CHOSEN, need.targetFormat());
+        assertEquals("RFC 4998", need.targetFormat().specification());
+    }
+
+    @Test
+    @DisplayName("a renewal that is NOT due names no format — the control")
+    void nothingDueNamesNoFormat() {
+        // Without this, returning the format unconditionally would pass the test above while
+        // telling an operator with nothing to do that there is a format they should be using.
+        assertNull(new RenewalNeed(RenewalNeed.Kind.NONE, "checkpoint-1", "SHA-256",
+                AlgorithmRegistry.Soundness.SOUND, "nothing due").targetFormat());
+        assertNull(new RenewalNeed(RenewalNeed.Kind.UNDETERMINED, "checkpoint-1", "SHA-3",
+                null, "not in the table").targetFormat(),
+                "an algorithm nobody has judged was given a renewal target, which reads as a "
+                        + "finding that a renewal is needed");
+    }
+
+    @Test
+    @DisplayName("the disclaimer travels in the same map as the name")
+    void theDisclaimerTravelsWithTheName() {
+        Map<String, Object> body = new RenewalNeed(RenewalNeed.Kind.HASH_TREE_RENEWAL,
+                "checkpoint-1", "SHA-1", AlgorithmRegistry.Soundness.UNSOUND, "broken").asMap();
+
+        assertEquals("RFC 4998", body.get("renewalFormat"));
+        assertNotNull(body.get("renewalFormatLimits"),
+                "the format is named with nothing beside it saying the product does not produce "
+                        + "one, so a reader takes the name as a capability: " + body);
+        assertTrue(String.valueOf(body.get("renewalFormatLimits")).contains("does NOT generate"),
+                String.valueOf(body.get("renewalFormatLimits")));
+    }
+
+    @Test
+    @DisplayName("nothing due carries no format AND no disclaimer about one")
+    void nothingDueCarriesNeither() {
+        Map<String, Object> body = new RenewalNeed(RenewalNeed.Kind.NONE, "checkpoint-1",
+                "SHA-256", AlgorithmRegistry.Soundness.SOUND, "nothing due").asMap();
+
+        assertNull(body.get("renewalFormat"));
+        assertNull(body.get("renewalFormatLimits"),
+                "a response with nothing due carries a paragraph about evidence records, which "
+                        + "is noise where an operator is looking for a verdict");
+    }
+
+    @Test
+    @DisplayName("the rejected option is still written down")
+    void theRejectedOptionIsRecorded() {
+        // A decision whose rejected alternative is not recorded is indistinguishable from never
+        // having considered it, and the next person re-opens the same question.
+        assertEquals(2, ErsFormat.values().length,
+                "the comparison lost an option; the decision is then unreviewable");
+        assertEquals("RFC 6283", ErsFormat.RFC_6283_XML.specification());
+        assertFalse(ErsFormat.CHOSEN == ErsFormat.RFC_6283_XML,
+                "the chosen format changed without this test being updated");
+    }
+
+    @Test
+    @DisplayName("the placement in a CSIP package is decided in one place")
+    void thePlacementIsDecidedOnce() {
+        // Otherwise the exporter decides it again, differently, on the day it is implemented.
+        assertEquals("metadata/preservation", ErsFormat.CSIP_LOCATION,
+                "an evidence record is preservation metadata; descriptive metadata and "
+                        + "documentation are different sections of a CSIP package");
+    }
+}

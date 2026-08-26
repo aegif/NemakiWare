@@ -81,12 +81,32 @@ public record RenewalNeed(Kind kind, String subject, String algorithm,
         };
     }
 
+    /**
+     * The syntax a renewal would be produced in, or {@code null} when none is due.
+     *
+     * <p>A monitor that says "a renewal is coming due" and cannot say into WHAT is only half a
+     * monitor. The format was an open question until P3-1 fixed the package; it is
+     * {@link ErsFormat#CHOSEN} now. <b>Nothing generates one</b> — see {@link ErsFormat#LIMITS},
+     * which travels with it.
+     */
+    public ErsFormat targetFormat() {
+        return switch (kind) {
+            case TIMESTAMP_RENEWAL, HASH_TREE_RENEWAL -> ErsFormat.CHOSEN;
+            case NONE, UNDETERMINED -> null;
+        };
+    }
+
     public Map<String, Object> asMap() {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("kind", kind.name());
         m.put("subject", subject);
         m.put("algorithm", algorithm);
         m.put("soundness", soundness == null ? null : soundness.name());
+        ErsFormat target = targetFormat();
+        m.put("renewalFormat", target == null ? null : target.specification());
+        // The disclaimer is beside the format, not somewhere else in the response: a product
+        // that names a standard is read as implementing it, and this one does not.
+        m.put("renewalFormatLimits", target == null ? null : ErsFormat.LIMITS);
         // Before the detail, so a reader skimming for the verdict meets the caveat first.
         m.put("limits", limits());
         m.put("detail", detail);

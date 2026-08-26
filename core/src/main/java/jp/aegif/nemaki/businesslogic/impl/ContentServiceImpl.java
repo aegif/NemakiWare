@@ -3842,7 +3842,27 @@ public class ContentServiceImpl implements ContentService {
 			// Set MIME type to application/pdf (the converted output), not the source MIME type
 			rendition.setMimetype("application/pdf");
 			rendition.setLength(converted.getLength());
-			String renditionId = contentDaoService.createRendition(repositoryId, rendition, converted);
+			// P3-2: the produced bytes are hashed AS THEY STREAM PAST into storage. Buffering
+			// them to hash would put a whole converted document in memory, and reading the
+			// rendition back afterwards would be a second trip for a value we are already
+			// holding. A digesting wrapper costs neither.
+			java.security.MessageDigest producedDigest = null;
+			ContentStream toStore = converted;
+			try {
+				producedDigest = java.security.MessageDigest.getInstance("SHA-256");
+				toStore = new org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl(
+						converted.getFileName(),
+						converted.getBigLength(),
+						converted.getMimeType(),
+						new java.security.DigestInputStream(converted.getStream(), producedDigest));
+			} catch (java.security.NoSuchAlgorithmException e) {
+				// Recorded without the produced digest rather than not recorded at all: the
+				// duplication still happened, and a weaker record of it beats none.
+				log.warn("createRendition: SHA-256 unavailable, the duplication will be recorded "
+						+ "without a produced digest: " + e.getMessage());
+			}
+			String renditionId = contentDaoService.createRendition(repositoryId, rendition, toStore);
+			recordFormatDuplication(callContext, repositoryId, document, producedDigest);
 			List<String> renditionIds = document.getRenditionIds();
 			if (renditionIds == null) {
 				document.setRenditionIds(new ArrayList<String>());
@@ -3853,6 +3873,68 @@ public class ContentServiceImpl implements ContentService {
 			return renditionId;
 		}
 
+	}
+
+	/**
+	 * Records that a copy was made in another format (P3-2 / B.2).
+	 *
+	 * <p>Fail-open on purpose, and the reason is specific to what a rendition is: it is
+	 * derivable. A copy that could not be chained can be produced again from a source that was
+	 * never touched, so refusing here would take document preview down to protect a record of a
+	 * regenerable file. That is the opposite of the disposition rule, where what could not be
+	 * recorded destroys something.
+	 *
+	 * <p>Never throws. A preview must not fail because a second record could not be written.
+	 */
+	private void recordFormatDuplication(CallContext callContext, String repositoryId,
+			Document document, java.security.MessageDigest producedDigest) {
+		if (formatDuplicationRecorder == null) {
+			return;
+		}
+		try {
+			String produced = producedDigest == null ? null : hex(producedDigest.digest());
+			// The SOURCE digest as this repository recorded it — not recomputed. The point is
+			// to state what the copy was made FROM according to the record, and a fresh
+			// computation would paper over the case where the two disagree.
+			String source = jp.aegif.nemaki.fixity.FixityVerifier.recordedDigest(document);
+			jp.aegif.nemaki.evidence.FormatDuplicationRecorder.Recorded recorded =
+					formatDuplicationRecorder.recordDuplication(repositoryId, document.getId(),
+							source, produced,
+							jp.aegif.nemaki.evidence.FormatDuplicationRecorder.Converter
+									.JODCONVERTER_LIBREOFFICE,
+							callContext == null ? null : callContext.getUsername(),
+							java.time.Instant.now().toString());
+			if (recorded.warning() != null) {
+				log.warn("createRendition: " + recorded.warning());
+			}
+		} catch (RuntimeException e) {
+			log.warn("createRendition: the format duplication of " + document.getId()
+					+ " could not be recorded: " + e.getMessage());
+		}
+	}
+
+	private static String hex(byte[] bytes) {
+		StringBuilder out = new StringBuilder(bytes.length * 2);
+		for (byte b : bytes) {
+			out.append(Character.forDigit((b >> 4) & 0xf, 16))
+					.append(Character.forDigit(b & 0xf, 16));
+		}
+		return out.toString();
+	}
+
+	private jp.aegif.nemaki.evidence.FormatDuplicationRecorder formatDuplicationRecorder;
+
+	/**
+	 * Wired explicitly in {@code businesslogicContext.xml}, deliberately NOT by annotation.
+	 *
+	 * <p>A null recorder is SILENT by design — the rendition still succeeds, and only the record
+	 * of it is missing. That makes an injection that stopped firing indistinguishable from a
+	 * healthy deployment, which is precisely how this project shipped a broken wiring once
+	 * already.
+	 */
+	public void setFormatDuplicationRecorder(
+			jp.aegif.nemaki.evidence.FormatDuplicationRecorder formatDuplicationRecorder) {
+		this.formatDuplicationRecorder = formatDuplicationRecorder;
 	}
 
 	private boolean isPreviewEnabled() {

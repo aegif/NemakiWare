@@ -66,9 +66,17 @@ public record EvidenceLedgerEntry(
         LINEAGE_EVENT,
         /** A fixity check's verdict (P1-2). */
         FIXITY_RESULT,
-        /** A retention disposition (P3-3 will use this; the kind exists so it is not invented
-         *  twice with two names). */
+        /** A retention disposition (P3-3). Written by {@code DispositionRecorder}. */
         DISPOSITION,
+        /**
+         * A copy made in another format (P3-2).
+         *
+         * <p>Its own kind rather than a {@link #LINEAGE_EVENT}: a derived copy is a specific
+         * fact with a specific caveat attached — that it is not the record — and folding it in
+         * with everything else would make the two indistinguishable in the chain, which is
+         * exactly the distinction a reader needs.
+         */
+        FORMAT_DUPLICATION,
         /**
          * A deliberate break in the chain.
          *
