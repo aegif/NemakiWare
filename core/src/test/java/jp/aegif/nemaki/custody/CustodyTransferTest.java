@@ -1,0 +1,290 @@
+/**
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ */
+package jp.aegif.nemaki.custody;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * Custody does not pass because the other end said so.
+ *
+ * <h2>The failure this is built against</h2>
+ *
+ * <p>Not a lost package — that one is visible. The quiet one is a transfer marked complete on a
+ * receipt nobody checked: a positive-sounding document about a different submission, or an
+ * AIP checksum that satisfies nothing because it hashes an artefact this repository has never
+ * seen. Either way the record leaves and a state machine says everything went well.
+ */
+class CustodyTransferTest {
+
+    private static final String SIP_DIGEST = "a".repeat(64);
+
+    private static CustodyTransfer transfer() {
+        return new CustodyTransfer("t-1", "bedroom", "doc-1", SIP_DIGEST, "RODA",
+                "2026-08-26T00:00:00Z");
+    }
+
+    private static CustodyReceipt receiptFor(String sipDigest) {
+        return new CustodyReceipt("sub-1", "aip-1", "b".repeat(64), sipDigest, "PASSED",
+                "roda-agent", "2026-08-26T01:00:00Z", null, false);
+    }
+
+    private static CustodyTransfer atAipCreated() {
+        CustodyTransfer transfer = transfer();
+        for (CustodyState next : List.of(CustodyState.SENT, CustodyState.RECEIVED,
+                CustodyState.VALIDATED, CustodyState.INGEST_ACCEPTED,
+                CustodyState.AIP_CREATED)) {
+            CustodyTransfer.Moved moved = transfer.advance(next, "2026-08-26T00:10:00Z", "step");
+            assertTrue(moved.accepted(), moved.refusedReason());
+        }
+        return transfer;
+    }
+
+    // ---- the receipt is the gate ----
+
+    @Test
+    @DisplayName("a receipt about a DIFFERENT package is refused, however positive it is")
+    void aReceiptForAnotherPackageIsRefused() {
+        // The whole protection. "Everything went well" about somebody else's record moves
+        // custody off this repository on the strength of a document about a different thing.
+        CustodyTransfer transfer = atAipCreated();
+
+        CustodyTransfer.Moved moved = transfer.verifyReceipt(
+                receiptFor("c".repeat(64)), "2026-08-26T02:00:00Z");
+
+        assertFalse(moved.accepted(),
+                "a receipt about another package was accepted, so custody would pass on a "
+                        + "document that says nothing about this record");
+        assertEquals(CustodyState.AIP_CREATED, transfer.state());
+        assertTrue(moved.refusedReason().contains("says nothing about this one"),
+                moved.refusedReason());
+    }
+
+    @Test
+    @DisplayName("a receipt about THIS package is accepted — the control")
+    void aReceiptForThisPackageIsAccepted() {
+        // Without this, refusing everything would pass the test above and no transfer could
+        // ever complete.
+        CustodyTransfer transfer = atAipCreated();
+
+        CustodyTransfer.Moved moved = transfer.verifyReceipt(
+                receiptFor(SIP_DIGEST), "2026-08-26T02:00:00Z");
+
+        assertTrue(moved.accepted(), moved.refusedReason());
+        assertEquals(CustodyState.RECEIPT_VERIFIED, transfer.state());
+        assertNotNull(transfer.receipt());
+    }
+
+    @Test
+    @DisplayName("a receipt that names no package cannot be built at all")
+    void aReceiptWithoutASipDigestIsRefusedAtConstruction() {
+        // An AIP checksum alone is a hash of an artefact we have never seen, so ANY value
+        // satisfies it. Admitting such a receipt means every later reader has to remember to
+        // check; refusing it at construction means none of them does.
+        IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
+                () -> new CustodyReceipt("sub-1", "aip-1", "b".repeat(64), null, "PASSED",
+                        "roda-agent", "2026-08-26T01:00:00Z", null, false));
+
+        assertTrue(refused.getMessage().contains("never seen"), refused.getMessage());
+    }
+
+    @Test
+    @DisplayName("custody does NOT pass on the far end's word that an AIP exists")
+    void aipCreatedDoesNotTransferCustody() {
+        // AIP_CREATED is their claim; RECEIPT_VERIFIED is our finding. Collapsing the two makes
+        // this repository's record depend on an unverified assertion by the party taking over.
+        CustodyTransfer transfer = atAipCreated();
+
+        assertFalse(transfer.state().custodyHasPassed());
+        CustodyTransfer.Moved moved = transfer.advance(CustodyState.CUSTODY_TRANSFERRED,
+                "2026-08-26T02:00:00Z", "they said it is fine");
+
+        assertFalse(moved.accepted(),
+                "custody passed without any receipt being checked");
+        assertEquals(CustodyState.AIP_CREATED, transfer.state());
+    }
+
+    // ---- the machine ----
+
+    @Test
+    @DisplayName("a skipped step is refused, not quietly allowed")
+    void aSkippedStepIsRefused() {
+        // Jumping to AIP_CREATED because the first reply mentioned an AIP erases the fact that
+        // we never heard it was received or validated — which is what somebody asking what
+        // went wrong looks at.
+        CustodyTransfer transfer = transfer();
+        CustodyTransfer.Moved sent = transfer.advance(CustodyState.SENT, "t", "sent");
+        assertTrue(sent.accepted());
+
+        CustodyTransfer.Moved skipped = transfer.advance(CustodyState.AIP_CREATED, "t", "skip");
+
+        assertFalse(skipped.accepted(), "a two-step jump was allowed");
+        assertEquals(CustodyState.SENT, transfer.state());
+        assertTrue(skipped.refusedReason().contains("RECEIVED"),
+                "the refusal does not say what WAS available: " + skipped.refusedReason());
+    }
+
+    @Test
+    @DisplayName("a reversal is refused")
+    void aReversalIsRefused() {
+        CustodyTransfer transfer = transfer();
+        transfer.advance(CustodyState.SENT, "t", "sent");
+        transfer.advance(CustodyState.RECEIVED, "t", "received");
+
+        assertFalse(transfer.advance(CustodyState.SENT, "t", "resend").accepted(),
+                "a transfer went backwards, so the history no longer says what happened");
+    }
+
+    @Test
+    @DisplayName("a failed transfer is terminal — a retry does not overwrite what went wrong")
+    void aFailedTransferIsTerminal() {
+        CustodyTransfer transfer = transfer();
+        transfer.advance(CustodyState.SENT, "t", "sent");
+        assertTrue(transfer.advance(CustodyState.FAILED, "t", "no response in 7 days")
+                .accepted());
+
+        assertTrue(transfer.state().isTerminal());
+        assertFalse(transfer.advance(CustodyState.SENT, "t", "trying again").accepted(),
+                "a failed transfer was re-driven in place, so the record of what went wrong is "
+                        + "overwritten by the retry");
+    }
+
+    @Test
+    @DisplayName("FAILED is reachable from every step before custody passes")
+    void failureIsReachableEverywhere() {
+        // A machine with no failure state forces every real failure to be recorded as "still at
+        // the previous step", which is how a stalled transfer becomes invisible.
+        for (CustodyState state : CustodyState.values()) {
+            if (state.custodyHasPassed() || state == CustodyState.FAILED) {
+                continue;
+            }
+            assertTrue(state.allowedNext().contains(CustodyState.FAILED),
+                    state + " cannot fail, so a transfer stuck there is indistinguishable from "
+                            + "one still in progress");
+        }
+    }
+
+    @Test
+    @DisplayName("custody passing does not dispose of the local copy by itself")
+    void custodyPassingIsNotDisposition() {
+        // Deleting the local copy is an irreversible act P3-3 governs. It happens because
+        // somebody decided to, not because a transfer completed.
+        assertEquals(java.util.Set.of(CustodyState.LOCAL_DISPOSITION),
+                CustodyState.CUSTODY_TRANSFERRED.allowedNext(),
+                "custody transfer leads somewhere other than a deliberate disposition step");
+        assertFalse(CustodyState.CUSTODY_TRANSFERRED.isTerminal());
+    }
+
+    @Test
+    @DisplayName("a transfer that does not know what it sent cannot be created")
+    void aTransferMustKnowItsPackage() {
+        // Otherwise the moment that matters — checking a receipt — is the moment it is found out.
+        assertThrows(IllegalArgumentException.class,
+                () -> new CustodyTransfer("t-1", "bedroom", "doc-1", "  ", "RODA", "t"));
+    }
+
+    // ---- what a reader is told ----
+
+    @Test
+    @DisplayName("every state says what it does NOT establish")
+    void everyStateCarriesItsLimits() {
+        for (CustodyState state : CustodyState.values()) {
+            assertNotNull(state.limits(), state.name());
+            assertFalse(state.limits().isBlank(), state.name());
+        }
+        assertTrue(CustodyState.AIP_CREATED.limits().contains("has not checked"),
+                "AIP_CREATED does not say the claim is unverified: "
+                        + CustodyState.AIP_CREATED.limits());
+        assertTrue(CustodyState.SENT.limits().contains("NOT a statement that it arrived"),
+                CustodyState.SENT.limits());
+    }
+
+    @Test
+    @DisplayName("an unsigned receipt says it is unauthenticated")
+    void anUnsignedReceiptSaysSo() {
+        // "The far end confirmed it" is what a receipt is read as. Without a signature, anything
+        // that could reach the endpoint could have sent it, and that has to be on the record.
+        String limits = receiptFor(SIP_DIGEST).limits();
+
+        assertTrue(limits.contains("NO signature"), limits);
+        assertTrue(limits.contains("anything that could reach this endpoint"), limits);
+    }
+
+    @Test
+    @DisplayName("a carried but unverified signature is not reported as verified")
+    void anUnverifiedSignatureIsNotVerified() {
+        CustodyReceipt receipt = new CustodyReceipt("sub-1", "aip-1", "b".repeat(64), SIP_DIGEST,
+                "PASSED", "roda-agent", "2026-08-26T01:00:00Z", "MEUCIQ...", false);
+
+        assertTrue(receipt.limits().contains("has NOT been verified"), receipt.limits());
+        assertEquals(Boolean.FALSE, receipt.asMap().get("signatureVerified"));
+        assertEquals(Boolean.TRUE, receipt.asMap().get("hasSignature"),
+                "the signature was dropped, so it cannot be checked later either");
+    }
+
+    @Test
+    @DisplayName("claiming a verified signature without one is refused")
+    void aVerifiedFlagWithoutASignatureIsRefused() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new CustodyReceipt("sub-1", "aip-1", "b".repeat(64), SIP_DIGEST, "PASSED",
+                        "roda-agent", "2026-08-26T01:00:00Z", null, true));
+    }
+
+    @Test
+    @DisplayName("the history records every move, with its reason")
+    void theHistoryIsTheAnswer() {
+        // "It is at INGEST_ACCEPTED" answers less than "it reached INGEST_ACCEPTED at 09:14 and
+        // has not moved since", and only the second tells an operator whether to chase somebody.
+        CustodyTransfer transfer = transfer();
+        transfer.advance(CustodyState.SENT, "2026-08-26T09:00:00Z", "handed to RODA");
+        transfer.advance(CustodyState.FAILED, "2026-08-26T09:14:00Z", "no response in 7 days");
+
+        List<CustodyTransfer.Step> history = transfer.history();
+        assertEquals(3, history.size(), history.toString());
+        assertEquals("no response in 7 days", history.get(2).reason());
+        assertEquals("2026-08-26T09:14:00Z", history.get(2).at());
+
+        // A refused move leaves NO trace in the history: it did not happen.
+        transfer.advance(CustodyState.SENT, "t", "retry");
+        assertEquals(3, transfer.history().size(),
+                "a refused move was written into the history, so the record shows a step that "
+                        + "never took place");
+    }
+
+    @Test
+    @DisplayName("the rendered transfer puts the caveat beside the state")
+    void theRenderedStateCarriesItsCaveat() {
+        Map<String, Object> body = atAipCreated().asMap();
+
+        assertEquals("AIP_CREATED", body.get("state"));
+        assertNotNull(body.get("stateLimits"),
+                "the state name is shown with nothing saying what it does not establish: "
+                        + body);
+        assertEquals(Boolean.FALSE, body.get("custodyHasPassed"));
+        assertNull(body.get("receipt"));
+    }
+}

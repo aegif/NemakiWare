@@ -78,6 +78,15 @@ public record EvidenceLedgerEntry(
          */
         FORMAT_DUPLICATION,
         /**
+         * A verified custody receipt from another organisation (P3-4).
+         *
+         * <p>The only kind that records something ANOTHER party said. Everything else in the
+         * chain is this repository's own observation, and a reader has to be able to tell the
+         * difference — an entry that folded the two together would let a statement by the party
+         * taking over read as a finding by the party handing over.
+         */
+        CUSTODY_RECEIPT,
+        /**
          * A deliberate break in the chain.
          *
          * <p>{@code prevEntryHash} is null and the entry says WHY. Used when a span had to be

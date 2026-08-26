@@ -1,0 +1,140 @@
+/**
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ */
+package jp.aegif.nemaki.custody;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/**
+ * What the receiving organisation sent back, and whether it is about our package (P3-4).
+ *
+ * <h2>An AIP checksum on its own proves nothing</h2>
+ *
+ * <p>The obvious receipt is "here is the checksum of the AIP we made". It establishes nothing
+ * this repository can use: it is a hash of THEIR artefact, which we have never seen, so any
+ * value at all satisfies it. What makes a receipt checkable is that it names <b>our</b> package
+ * — {@link #sipDigest} — so the claim can be tied to something we hold.
+ *
+ * <p>Everything else follows from that. The submission id and AIP id are what a later
+ * conversation about this record refers to; the agent is who is answerable; the verification
+ * outcome is what they say they found. None of it is checkable without the SIP digest, and all
+ * of it is worth having once there is one.
+ *
+ * <h2>The signature is carried, and not treated as verified</h2>
+ *
+ * <p>{@link #signature} travels because a submission agreement may require one and because
+ * discarding it would make later verification impossible. <b>This class does not check it.</b>
+ * A field called "signature" is routinely read as "signed and verified", so
+ * {@link #signatureVerified} is separate and defaults to false — the honest state for a product
+ * that has no key material for the far end.
+ *
+ * <h2>Why the receipt comes back later, on purpose</h2>
+ *
+ * <p>A bidirectional reference cannot exist at packaging time: when the SIP is built, the far
+ * end's AIP id does not exist yet. So the SIP carries a chain excerpt outward, and the receipt
+ * is appended to the evidence chain <b>after</b> the AIP is created and folded into the next
+ * anchor. That makes later inconsistency detectable. It does not freeze anything.
+ *
+ * <p>Design: {@code docs/design/p3-4-custody-transfer.md}.
+ */
+public record CustodyReceipt(
+        String submissionId,
+        String aipId,
+        String aipChecksum,
+        String sipDigest,
+        String verificationOutcome,
+        String receivingAgent,
+        String receivedAt,
+        String signature,
+        boolean signatureVerified) {
+
+    /**
+     * Refuses a receipt that cannot be tied to anything.
+     *
+     * <p>The compact constructor rejects a missing {@link #sipDigest} rather than letting one
+     * through to be dealt with later: a receipt with no reference to our package is not a weak
+     * receipt, it is a different object that happens to have the same fields, and admitting it
+     * means every later reader has to remember to check.
+     */
+    public CustodyReceipt {
+        if (sipDigest == null || sipDigest.isBlank()) {
+            throw new IllegalArgumentException(
+                    "a custody receipt must name the digest of the package it is about; without "
+                            + "it the receipt cannot be tied to anything this repository holds, "
+                            + "and an AIP checksum alone is a hash of an artefact we have never "
+                            + "seen");
+        }
+        if (signatureVerified && (signature == null || signature.isBlank())) {
+            throw new IllegalArgumentException(
+                    "a receipt cannot be marked as having a verified signature when it carries "
+                            + "no signature");
+        }
+    }
+
+    /** Why a receipt was refused, or null when it is about the package we sent. */
+    public String refusalReasonFor(String expectedSipDigest) {
+        if (expectedSipDigest == null || expectedSipDigest.isBlank()) {
+            return "this transfer has no recorded package digest, so no receipt can be checked "
+                    + "against it. This is NOT a statement that the receipt is wrong.";
+        }
+        if (!expectedSipDigest.equalsIgnoreCase(sipDigest)) {
+            return "the receipt is about package " + sipDigest + ", and this transfer sent "
+                    + expectedSipDigest + ". A receipt for a different package says nothing "
+                    + "about this one — including when it says everything went well.";
+        }
+        return null;
+    }
+
+    /** Whether this receipt refers to the package this transfer actually sent. */
+    public boolean isAbout(String expectedSipDigest) {
+        return refusalReasonFor(expectedSipDigest) == null;
+    }
+
+    /** What accepting this receipt does and does not establish. */
+    public String limits() {
+        StringBuilder limits = new StringBuilder(
+                "A verified receipt establishes that the receiving system took in THIS package "
+                        + "and reported this outcome. It does NOT establish that their copy is "
+                        + "intact now, that they will keep it, or that their validation was "
+                        + "thorough — those are their processes, reported by them.");
+        if (signature == null || signature.isBlank()) {
+            limits.append(" This receipt carries NO signature, so it is an unauthenticated "
+                    + "statement: anything that could reach this endpoint could have sent it.");
+        } else if (!signatureVerified) {
+            limits.append(" This receipt carries a signature that has NOT been verified — this "
+                    + "product holds no key material for the receiving agent — so it is stored "
+                    + "for later checking and adds nothing today.");
+        }
+        return limits.toString();
+    }
+
+    public Map<String, Object> asMap() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("submissionId", submissionId);
+        body.put("aipId", aipId);
+        body.put("aipChecksum", aipChecksum);
+        body.put("sipDigest", sipDigest);
+        body.put("verificationOutcome", verificationOutcome);
+        body.put("receivingAgent", receivingAgent);
+        body.put("receivedAt", receivedAt);
+        body.put("hasSignature", signature != null && !signature.isBlank());
+        body.put("signatureVerified", signatureVerified);
+        // Immediately after the two signature fields, so a reader cannot take them alone.
+        body.put("limits", limits());
+        return body;
+    }
+}
