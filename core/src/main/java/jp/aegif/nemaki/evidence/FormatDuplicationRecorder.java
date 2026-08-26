@@ -81,29 +81,20 @@ public class FormatDuplicationRecorder {
          * common way a converted document stops looking like the original.
          */
         JODCONVERTER_LIBREOFFICE("jodconverter/LibreOffice",
-                "This is a CONVENIENCE COPY, not a preservation format. No PDF/A profile was "
-                        + "requested and no PDF/A validation was performed, so it must not be "
-                        + "treated as an archival rendition. Fonts not installed on the server "
-                        + "are substituted, so layout and pagination may differ from the "
-                        + "original. Comments, tracked changes, macros, embedded objects, "
-                        + "form state and document-level metadata are not guaranteed to "
-                        + "survive. The ORIGINAL is unchanged and remains the record."),
+                "Fonts not installed on the server are substituted, so layout and pagination "
+                        + "may differ from the original. Comments, tracked changes, macros, "
+                        + "embedded objects, form state and document-level metadata are not "
+                        + "guaranteed to survive."),
 
         /** The CAD path. Same lack of a PDF/A profile, plus its own losses. */
         CAD_RENDITION("nemaki/cad",
-                "This is a CONVENIENCE COPY, not a preservation format. No PDF/A profile was "
-                        + "requested and no PDF/A validation was performed. A CAD drawing "
-                        + "rendered to PDF loses its model: layers, dimensions as data, and "
-                        + "any 3D geometry become flat marks on a page. The ORIGINAL is "
-                        + "unchanged and remains the record."),
+                "A CAD drawing rendered for viewing loses its model: layers, dimensions as "
+                        + "data, and any 3D geometry become flat marks."),
 
         /** The diagram path. */
         DIAGRAM_RENDITION("nemaki/diagram",
-                "This is a CONVENIENCE COPY, not a preservation format. No PDF/A profile was "
-                        + "requested and no PDF/A validation was performed. A diagram rendered "
-                        + "to PDF loses its structure: shapes, connectors and their "
-                        + "relationships become drawing instructions. The ORIGINAL is unchanged "
-                        + "and remains the record."),
+                "A diagram rendered for viewing loses its structure: shapes, connectors and "
+                        + "their relationships become drawing instructions."),
 
         /**
          * A converter this build does not recognise.
@@ -114,12 +105,9 @@ public class FormatDuplicationRecorder {
          * losses that did not happen while staying silent about the ones that did.
          */
         UNKNOWN("nemaki/unknown",
-                "This is a CONVENIENCE COPY, not a preservation format. The tool that produced "
-                        + "it is not identified by this build, so it is NOT possible to state "
-                        + "what the conversion preserved and what it did not — treat its "
-                        + "fidelity as unknown. In particular nothing here establishes that a "
-                        + "PDF/A profile was requested or validated. The ORIGINAL is unchanged "
-                        + "and remains the record.");
+                "The tool that produced it is not identified by this build, so it is NOT "
+                        + "possible to state what the conversion preserved and what it did "
+                        + "not — treat its fidelity as unknown.");
 
         private final String id;
         private final String disclosure;
@@ -134,9 +122,31 @@ public class FormatDuplicationRecorder {
             return id;
         }
 
-        /** What this converter does NOT preserve. */
+        /**
+         * What this converter does NOT preserve, on its own.
+         *
+         * <p>Converter-specific only. The full sentence a reader needs also depends on what
+         * was produced — a PDF and an SVG are not lossy in the same way — so use
+         * {@link #disclosureFor(TargetFormat)} anywhere a reader will see it.
+         */
         public String disclosure() {
             return disclosure;
+        }
+
+        /**
+         * The whole disclosure: what this is, what the converter drops, what the target format
+         * does not give you, and that the original is untouched.
+         *
+         * <p>Composed rather than written out per pair because the pairs multiply. The first
+         * version hard-coded "rendered to PDF" into every converter's text, which was fine
+         * while only the PDF path recorded anything and became false the moment the SVG path
+         * did — the diagram converter would have told a reader its SVG output lost structure
+         * "rendered to PDF", and named a PDF/A profile that was never in question.
+         */
+        public String disclosureFor(TargetFormat target) {
+            TargetFormat format = target == null ? TargetFormat.UNKNOWN : target;
+            return "This is a CONVENIENCE COPY, not a preservation format. " + disclosure + " "
+                    + format.caveat() + " The ORIGINAL is unchanged and remains the record.";
         }
 
         /**
@@ -155,6 +165,52 @@ public class FormatDuplicationRecorder {
                 }
             }
             return UNKNOWN;
+        }
+    }
+
+    /**
+     * What was produced, because the losses depend on it as much as on the converter.
+     *
+     * <p>Part of the digest for the same reason the converter is: the record has to commit to
+     * what the copy IS, or a later reader has only a hash and a tool name.
+     */
+    public enum TargetFormat {
+
+        /** A page-based document. No archival profile is requested or checked. */
+        PDF("application/pdf",
+                "The target is PDF, and no PDF/A profile was requested and no PDF/A validation "
+                        + "was performed, so this must not be treated as an archival rendition."),
+
+        /**
+         * A display format. Weaker than PDF for this purpose, and said so rather than left to
+         * a reader who knows PDF is sometimes archival to assume SVG is too.
+         */
+        SVG("image/svg+xml",
+                "The target is SVG, a display format with no archival profile at all. Text may "
+                        + "have been converted to outlines, in which case it is no longer text; "
+                        + "fonts and external references may not resolve elsewhere."),
+
+        /** Anything this build was not told about. Says so instead of assuming PDF. */
+        UNKNOWN("application/octet-stream",
+                "The format of this copy was not recorded, so nothing can be said about what "
+                        + "that format preserves.");
+
+        private final String mediaType;
+        private final String caveat;
+
+        TargetFormat(String mediaType, String caveat) {
+            this.mediaType = mediaType;
+            this.caveat = caveat;
+        }
+
+        /** Stable across versions: what goes in the digest. */
+        public String mediaType() {
+            return mediaType;
+        }
+
+        /** What this target format does not give you. */
+        public String caveat() {
+            return caveat;
         }
     }
 
@@ -196,8 +252,8 @@ public class FormatDuplicationRecorder {
      * @return whether it reached the chain. Never throws: the copy already exists
      */
     public Recorded recordDuplication(String repositoryId, String sourceObjectId,
-            String sourceDigest, String producedDigest, Converter converter, String actor,
-            String occurredAt) {
+            String sourceDigest, String producedDigest, Converter converter,
+            TargetFormat target, String actor, String occurredAt) {
         if (ledgerService == null) {
             logger.debug("No evidence ledger is wired; the duplication of {} is not chained",
                     sourceObjectId);
@@ -206,7 +262,7 @@ public class FormatDuplicationRecorder {
         EvidenceLedgerService.AppendResult result;
         try {
             String digest = duplicationDigest(repositoryId, sourceObjectId, sourceDigest,
-                    producedDigest, converter, actor);
+                    producedDigest, converter, target, actor);
             result = ledgerService.append(repositoryId,
                     EvidenceLedgerEntry.SubjectKind.FORMAT_DUPLICATION, sourceObjectId, digest,
                     occurredAt);
@@ -237,10 +293,12 @@ public class FormatDuplicationRecorder {
      * change when a sentence is reworded, which would look like the facts had changed.
      */
     static String duplicationDigest(String repositoryId, String sourceObjectId,
-            String sourceDigest, String producedDigest, Converter converter, String actor) {
+            String sourceDigest, String producedDigest, Converter converter,
+            TargetFormat target, String actor) {
         return LineageCanonicalHash.hash(DUPLICATION_DIGEST_DOMAIN, repositoryId, sourceObjectId,
                 sourceDigest, producedDigest,
-                converter == null ? null : converter.id(), actor);
+                converter == null ? null : converter.id(),
+                target == null ? null : target.mediaType(), actor);
     }
 
     /**
@@ -257,13 +315,15 @@ public class FormatDuplicationRecorder {
      * "this is not a preservation format" before the identifiers, not after them.
      */
     public static Map<String, Object> describe(String sourceObjectId, String sourceDigest,
-            String producedDigest, Converter converter, String actor, String occurredAt) {
+            String producedDigest, Converter converter, TargetFormat target, String actor,
+            String occurredAt) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("disclosure", converter == null ? null : converter.disclosure());
+        body.put("disclosure", converter == null ? null : converter.disclosureFor(target));
         body.put("sourceObjectId", sourceObjectId);
         body.put("sourceDigest", sourceDigest);
         body.put("producedDigest", producedDigest);
         body.put("converter", converter == null ? null : converter.id());
+        body.put("targetFormat", target == null ? null : target.mediaType());
         body.put("actor", actor);
         body.put("occurredAt", occurredAt);
         return body;

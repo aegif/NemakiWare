@@ -382,41 +382,43 @@ public class RenditionResource extends ResourceBase {
                 new java.io.ByteArrayInputStream(contentBytes)
             );
 
-            // Convert to SVG or PDF depending on format
-            ContentStream renditionStream;
-            String renditionMimeType;
+            // Convert to SVG or PDF depending on format.
+            //
+            // The conversion moved INTO ContentService: it is what produces a derived copy,
+            // and P3-2 records those. While it lived here, all three rendition stacks
+            // persisted copies with nothing recorded — and the design document called them
+            // out of scope, which was wrong. Handing an already-converted stream to a persist
+            // method is what made that possible, so there is no longer such a method.
+            jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat target;
             String renditionTitle;
 
             if (isSvgConvertible) {
                 log.info("[RenditionResource] Converting " + mimeType + " to SVG for document: " + document.getName());
-                renditionStream = ((ExtendedRenditionManager) renditionManager).convertToSvg(contentStream, document.getName());
-                renditionMimeType = "image/svg+xml";
+                target = jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat.SVG;
                 renditionTitle = "SVG Preview";
             } else {
                 log.info("[RenditionResource] Converting " + mimeType + " to PDF for document: " + document.getName());
-                renditionStream = renditionManager.convertToPdf(contentStream, document.getName());
-                renditionMimeType = "application/pdf";
+                target = jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat.PDF;
                 renditionTitle = "PDF Preview";
             }
 
-            if (renditionStream == null) {
+            // Convert + persist + RECORD + link, in one call. The conversion cannot be
+            // separated from the recording any more.
+            Rendition rendition = getContentService().createPreviewRendition(repositoryId, document,
+                    contentStream, target, renditionTitle, callContext.getUsername(), callContext);
+            if (rendition == null) {
                 response.put("status", "error");
                 response.put("message", (isSvgConvertible ? "SVG" : "PDF") + " conversion failed");
                 return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(response).build();
             }
-
-            // Build + persist rendition + link to document via shared ContentService
-            // (signature stamped with the authenticated user; document updated under the user's CallContext)
-            Rendition rendition = getContentService().createPreviewRendition(repositoryId, document,
-                    renditionStream, renditionMimeType, renditionTitle, callContext.getUsername(), callContext);
             String renditionId = rendition.getId();
 
-            log.info("[RenditionResource] Successfully created " + renditionMimeType + " rendition: " + renditionId);
+            log.info("[RenditionResource] Successfully created " + target.mediaType() + " rendition: " + renditionId);
 
             response.put("status", "success");
             response.put("message", "Rendition generated successfully");
             response.put("renditionId", renditionId);
-            response.put("mimeType", renditionMimeType);
+            response.put("mimeType", target.mediaType());
 
             return Response.status(Response.Status.CREATED).entity(response).build();
 

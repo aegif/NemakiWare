@@ -3845,91 +3845,13 @@ public class ContentServiceImpl implements ContentService {
 			return null;
 		} else {
 			// Set MIME type to application/pdf (the converted output), not the source MIME type
-			rendition.setMimetype("application/pdf");
-			rendition.setLength(converted.getLength());
-			// P3-2: the produced bytes are hashed AS THEY STREAM PAST into storage. Buffering
-			// them to hash would put a whole converted document in memory, and reading the
-			// rendition back afterwards would be a second trip for a value we are already
-			// holding. A digesting wrapper costs neither.
-			java.security.MessageDigest producedDigest = null;
-			CountingDigestStream counted = null;
-			ContentStream toStore = converted;
-			// Only wrap a stream that exists. The DAO skips the attachment write when
-			// getStream() is null, and a wrapper is non-null even around nothing — so wrapping
-			// unconditionally turns that graceful skip into a read of null, i.e. an NPE where
-			// there used to be a document with no content.
-			if (converted.getStream() != null) {
-				try {
-					producedDigest = java.security.MessageDigest.getInstance("SHA-256");
-					counted = new CountingDigestStream(converted.getStream(), producedDigest);
-					toStore = new org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl(
-							converted.getFileName(),
-							converted.getBigLength(),
-							converted.getMimeType(),
-							counted);
-				} catch (java.security.NoSuchAlgorithmException e) {
-					// Recorded without the produced digest rather than not recorded at all: the
-					// duplication still happened, and a weaker record of it beats none.
-					log.warn("createRendition: SHA-256 unavailable, the duplication will be "
-							+ "recorded without a produced digest: " + e.getMessage());
-				}
-			}
-			// The DAO swallows an attachment-write failure and returns an id anyway, so a
-			// rendition can exist with no bytes behind it. The byte count cannot see that: the
-			// SDK may have read the whole stream before the write failed, which looks exactly
-			// like success from here.
-			//
-			// The flag belongs to THIS call, so it is cleared first and removed after. A value
-			// left on a pooled thread by an earlier rendition would otherwise decide this one in
-			// either direction: a stale FALSE silencing a digest that is fine, a stale TRUE
-			// licensing one that is not. Cleared, the only reading is the delegate's own, and
-			// silence means the delegate was never reached — no digest, because "we did not hear
-			// that the bytes were stored" is not "the bytes were stored".
-			jp.aegif.nemaki.dao.impl.couch.delegate.AttachmentDaoDelegate
-					.renditionContentStored.remove();
-			String renditionId;
-			// Three answers, not two. TRUE: the bytes are stored. FALSE: the write failed and was
-			// swallowed, so there is no copy. null: nothing reported, which is what a store that
-			// does not go through the delegate looks like — we do not know either way.
-			Boolean storeReported;
-			try {
-				renditionId = contentDaoService.createRendition(repositoryId, rendition, toStore);
-				storeReported = jp.aegif.nemaki.dao.impl.couch.delegate.AttachmentDaoDelegate
-						.renditionContentStored.get();
-			} finally {
-				jp.aegif.nemaki.dao.impl.couch.delegate.AttachmentDaoDelegate
-						.renditionContentStored.remove();
-			}
-			String converterId = attributed.converterId();
-			// The byte count decides whether the digest means anything. If the DAO never read
-			// the stream — a path that skips the attachment write, a store that takes the
-			// reference and defers — MessageDigest still answers, with SHA-256 of nothing, and
-			// recording THAT as the digest of a converted document is a false record rather
-			// than a missing one.
-			// Nothing was DUPLICATED when the converter handed the same stream straight back
-			// (the PDF-in, PDF-out path). Recording one would put a copy in the chain that does
-			// not exist, attributed to a conversion that never ran.
-			if (converted != contentStream) {
-				if (Boolean.FALSE.equals(storeReported)) {
-					// The write failed and was swallowed, so NO copy exists — only rendition
-					// metadata. An entry here would put a derived copy in the chain that is not
-					// there, and the report would list it as one. Dropping the digest is not
-					// enough: what the reader takes from the row is that a copy was made.
-					//
-					// This is not the fail-open rule being broken. That rule is for a ledger we
-					// cannot reach while the copy exists; here the ledger is fine and the copy is
-					// the thing that is missing.
-					log.warn("createRendition: the rendition content was not stored, so no "
-							+ "duplication is recorded for document " + document.getId()
-							+ " — there is no copy to record");
-				} else {
-					recordFormatDuplication(callContext, repositoryId, document,
-							Boolean.TRUE.equals(storeReported)
-									? digestOfWhatWasStored(counted, producedDigest, converted)
-									: null,
-							converterId);
-				}
-			}
+			String renditionId = storeRenditionAndRecordDuplication(callContext, repositoryId,
+					document, rendition, converted, attributed.converterId(),
+					jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat.PDF,
+					// Nothing was DUPLICATED when the converter handed the same stream straight
+					// back (the PDF-in, PDF-out path). Recording one would put a copy in the chain
+					// that does not exist, attributed to a conversion that never ran.
+					converted != contentStream);
 			List<String> renditionIds = document.getRenditionIds();
 			if (renditionIds == null) {
 				document.setRenditionIds(new ArrayList<String>());
@@ -3978,8 +3900,140 @@ public class ContentServiceImpl implements ContentService {
 		return hex(producedDigest.digest());
 	}
 
+
+	/**
+	 * Stores a rendition and records the duplication — the one place that knows how.
+	 *
+	 * <p>Every persisted rendition goes through here, and the recording is not something a
+	 * caller opts into. That is the point: the first version of P3-2 put this logic inline in
+	 * {@code createPreview} and left the three REST endpoints persisting renditions with
+	 * nothing recorded, which the design document had wrongly described as out of scope. Three
+	 * copies of "convert, then remember to record" would have drifted the same way again.
+	 *
+	 * @param converterId what produced the bytes, or null when this build cannot say; null is
+	 *        recorded as UNKNOWN rather than guessed at
+	 * @param isDuplication whether a conversion actually happened. False for the pass-through
+	 *        case, where the converter handed its input straight back: nothing was duplicated,
+	 *        and an entry would put a copy in the chain that does not exist
+	 * @return the id of the stored rendition
+	 */
+	private String storeRenditionAndRecordDuplication(CallContext callContext, String repositoryId,
+			Document document, Rendition rendition, ContentStream converted, String converterId,
+			jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat target, boolean isDuplication) {
+		// The converted output, not the source MIME type.
+		rendition.setMimetype(target == null
+				? jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat.UNKNOWN.mediaType()
+				: target.mediaType());
+		rendition.setLength(converted.getLength());
+		// P3-2: the produced bytes are hashed AS THEY STREAM PAST into storage. Buffering
+		// them to hash would put a whole converted document in memory, and reading the
+		// rendition back afterwards would be a second trip for a value we are already
+		// holding. A digesting wrapper costs neither.
+		java.security.MessageDigest producedDigest = null;
+		CountingDigestStream counted = null;
+		ContentStream toStore = converted;
+		// Only wrap a stream that exists. The DAO skips the attachment write when
+		// getStream() is null, and a wrapper is non-null even around nothing — so wrapping
+		// unconditionally turns that graceful skip into a read of null, i.e. an NPE where
+		// there used to be a document with no content.
+		if (converted.getStream() != null) {
+			try {
+				producedDigest = java.security.MessageDigest.getInstance("SHA-256");
+				counted = new CountingDigestStream(converted.getStream(), producedDigest);
+				toStore = new org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl(
+						converted.getFileName(),
+						converted.getBigLength(),
+						converted.getMimeType(),
+						counted);
+			} catch (java.security.NoSuchAlgorithmException e) {
+				// Recorded without the produced digest rather than not recorded at all: the
+				// duplication still happened, and a weaker record of it beats none.
+				log.warn("createRendition: SHA-256 unavailable, the duplication will be "
+						+ "recorded without a produced digest: " + e.getMessage());
+			}
+		}
+		// The DAO swallows an attachment-write failure and returns an id anyway, so a
+		// rendition can exist with no bytes behind it. The byte count cannot see that: the
+		// SDK may have read the whole stream before the write failed, which looks exactly
+		// like success from here.
+		//
+		// The flag belongs to THIS call, so it is cleared first and removed after. A value
+		// left on a pooled thread by an earlier rendition would otherwise decide this one in
+		// either direction: a stale FALSE silencing a digest that is fine, a stale TRUE
+		// licensing one that is not. Cleared, the only reading is the delegate's own, and
+		// silence means the delegate was never reached — no digest, because "we did not hear
+		// that the bytes were stored" is not "the bytes were stored".
+		jp.aegif.nemaki.dao.impl.couch.delegate.AttachmentDaoDelegate
+				.renditionContentStored.remove();
+		String renditionId;
+		// Three answers, not two. TRUE: the bytes are stored. FALSE: the write failed and was
+		// swallowed, so there is no copy. null: nothing reported, which is what a store that
+		// does not go through the delegate looks like — we do not know either way.
+		Boolean storeReported;
+		try {
+			renditionId = contentDaoService.createRendition(repositoryId, rendition, toStore);
+			storeReported = jp.aegif.nemaki.dao.impl.couch.delegate.AttachmentDaoDelegate
+					.renditionContentStored.get();
+		} finally {
+			jp.aegif.nemaki.dao.impl.couch.delegate.AttachmentDaoDelegate
+					.renditionContentStored.remove();
+		}
+		// The byte count decides whether the digest means anything. If the DAO never read
+		// the stream — a path that skips the attachment write, a store that takes the
+		// reference and defers — MessageDigest still answers, with SHA-256 of nothing, and
+		// recording THAT as the digest of a converted document is a false record rather
+		// than a missing one.
+		// Nothing was DUPLICATED when the converter handed the same stream straight back
+		// (the PDF-in, PDF-out path). Recording one would put a copy in the chain that does
+		// not exist, attributed to a conversion that never ran.
+		if (isDuplication) {
+			if (Boolean.FALSE.equals(storeReported)) {
+				// The write failed and was swallowed, so NO copy exists — only rendition
+				// metadata. An entry here would put a derived copy in the chain that is not
+				// there, and the report would list it as one. Dropping the digest is not
+				// enough: what the reader takes from the row is that a copy was made.
+				//
+				// This is not the fail-open rule being broken. That rule is for a ledger we
+				// cannot reach while the copy exists; here the ledger is fine and the copy is
+				// the thing that is missing.
+				log.warn("createRendition: the rendition content was not stored, so no "
+						+ "duplication is recorded for document " + document.getId()
+						+ " — there is no copy to record");
+			} else {
+				recordFormatDuplication(callContext, repositoryId, document,
+						Boolean.TRUE.equals(storeReported)
+								? digestOfWhatWasStored(counted, producedDigest, converted)
+								: null,
+						converterId, target);
+			}
+		}
+		return renditionId;
+	}
+
+	/**
+	 * The conversion for a target format, with the delegate that produced the bytes named.
+	 *
+	 * <p>SVG goes through {@link ExtendedRenditionManager}, which not every manager is; when
+	 * this build has no extended manager wired there is no SVG conversion, and saying so beats
+	 * silently producing a PDF under an SVG label.
+	 */
+	private jp.aegif.nemaki.businesslogic.rendition.RenditionManager.Converted convertFor(
+			jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat target, ContentStream source, String documentName) {
+		if (target == jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat.SVG) {
+			if (!(renditionManager instanceof jp.aegif.nemaki.businesslogic.rendition
+					.ExtendedRenditionManager extended)) {
+				log.warn("createPreviewRendition: SVG was asked for and no extended rendition "
+						+ "manager is wired, so nothing was converted");
+				return null;
+			}
+			return extended.convertToSvgAttributed(source, documentName);
+		}
+		return renditionManager.convertToPdfAttributed(source, documentName);
+	}
+
 	private void recordFormatDuplication(CallContext callContext, String repositoryId,
-			Document document, String producedDigest, String converterId) {
+			Document document, String producedDigest, String converterId,
+			jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat target) {
 		if (formatDuplicationRecorder == null) {
 			return;
 		}
@@ -3993,6 +4047,7 @@ public class ContentServiceImpl implements ContentService {
 							source, producedDigest,
 							jp.aegif.nemaki.evidence.FormatDuplicationRecorder.Converter
 									.forId(converterId),
+							target,
 							callContext == null ? null : callContext.getUsername(),
 							java.time.Instant.now().toString());
 			if (recorded.warning() != null) {
@@ -4170,20 +4225,36 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public Rendition createPreviewRendition(String repositoryId, jp.aegif.nemaki.model.Document document,
-			ContentStream renditionStream, String renditionMimeType, String renditionTitle, String actorUsername,
-			CallContext updateContext) {
+			ContentStream sourceStream,
+			jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat target,
+			String renditionTitle, String actorUsername, CallContext updateContext) {
+		// Attributed, for the same reason createPreview asks that way: the delegate that
+		// produced the bytes is the one whose losses the disclosure describes, and it is not
+		// always the one that claimed the mime type.
+		jp.aegif.nemaki.businesslogic.rendition.RenditionManager.Converted attributed =
+				convertFor(target, sourceStream, document.getName());
+		ContentStream converted = attributed == null ? null : attributed.stream();
+		if (converted == null) {
+			log.warn("createPreviewRendition: conversion to " + target
+					+ " produced nothing for document " + document.getName()
+					+ " (id=" + document.getId() + ")");
+			return null;
+		}
+
 		Rendition rendition = new Rendition();
 		rendition.setTitle(renditionTitle);
 		rendition.setKind(jp.aegif.nemaki.util.constant.RenditionKind.CMIS_PREVIEW.value());
-		rendition.setMimetype(renditionMimeType);
-		rendition.setLength(renditionStream.getLength());
 		java.util.GregorianCalendar now = new java.util.GregorianCalendar();
 		rendition.setCreator(actorUsername);
 		rendition.setModifier(actorUsername);
 		rendition.setCreated(now);
 		rendition.setModified(now);
 
-		String renditionId = contentDaoService.createRendition(repositoryId, rendition, renditionStream);
+		String renditionId = storeRenditionAndRecordDuplication(updateContext, repositoryId,
+				document, rendition, converted, attributed.converterId(), target,
+				// The pass-through: an already-PDF source comes straight back out. Nothing was
+				// duplicated, and an entry would put a copy in the chain that does not exist.
+				converted != sourceStream);
 		rendition.setId(renditionId);
 
 		List<String> renditionIds = document.getRenditionIds();

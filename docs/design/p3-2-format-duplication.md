@@ -179,7 +179,7 @@ digest は記録しない。消さないと**前の文書の結果**が今回の
 | 経路 | 状態 |
 |---|---|
 | 永続化される rendition (`ContentServiceImpl.createPreview`) | **実装済み** |
-| `rest/RenditionResource` / `rest/controller/RenditionController` / `api/v1/resource/RenditionResource` の 3 本 | **未**。**「永続化しないので対象外」と書いていたのは誤り** (2026-08-26 訂正・レビュー指摘) — 3 本とも `createPreviewRendition` を呼び、`createRendition` + `setRenditionIds` + `update` を実行して**永続化している**。「対象外」ではなく「対象だが未実装」であり、ギャップを実際より小さく、しかも設計判断に見せる誤りだった |
+| `rest/RenditionResource` / `rest/controller/RenditionController` / `api/v1/resource/RenditionResource` の 3 本 | **実装済み** (2026-08-26)。§7。かつて「永続化しないので対象外」と書いていたのは誤りで、3 本とも永続化していた |
 | `AttachmentServiceDelegate.copyRenditions` (コピー時の rendition 複製) | **未** |
 | cloud drive 側の変換 | **未** |
 | **PDF/A 出力と veraPDF 検証** | **未**。新規要素で、ロードマップもそう書いている |
@@ -205,4 +205,60 @@ entry を足すので、**長く生きた文書は何も壊れていなくても
 | 壊した箇所 | 落ちたテスト |
 |---|---|
 | `truncated` を常に false にする | `aTruncatedReadIsNotAnAnswer` / `aTruncatedReadWithCopiesSaysSo` |
+
+---
+
+## 7. 3 本の REST 経路 (2026-08-26) — 「記録せずに永続化できない」形にした
+
+### 直したのは配線ではなく、配線し忘れられる形のほう
+
+3 箇所に「変換して、それから記録も忘れずに」を書けば、必ずどれかが落ちる。実際に落ちていた。
+そこで **`ContentService` から「変換済みストリームを渡して永続化する」メソッドを消した**。
+
+- 旧: `createPreviewRendition(repo, doc, 変換済みstream, mime, title, actor, ctx)`
+  — 変換は呼び出し側。だから変換器の名前も、格納されたバイト列の digest も、
+  P3-2 の記録も、このメソッドの外に在った。
+- 新: `createPreviewRendition(repo, doc, **元の**stream, target, title, actor, ctx)`
+  — 変換・計測・記録が 1 箇所で起きる。**自分が作っていないコピーをこのメソッドに
+  渡す方法がもう無い**ので、「永続化して記録し忘れる」が書けない。
+
+`ContentServiceImpl.createPreview` (CMIS 経路) も同じ内部メソッドを通る。
+`contentDaoService.createRendition` の呼び出し元は**全体で 1 つ**になった。
+
+### SVG も対象になった — 開示文を出力形式込みで組み立て直した
+
+3 本のうち 2 本は SVG も作る。SVG も派生コピーであり、記録の対象である。
+ところが**変換器ごとの開示文は「PDF に変換した」を埋め込んでいた** — 「PDF/A profile を
+要求していない」「PDF にレンダリングすると構造を失う」。SVG 経路が記録を始めた瞬間、
+読む人は SVG のコピーについて **PDF の話**を読まされることになる。
+
+開示を 3 つに分けて組み立てる形にした:
+
+1. 共通の頭 (「これは利便コピーであって保存形式ではない」)
+2. **変換器**が落とすもの (出力形式に依らない書き方に直した)
+3. **出力形式**の但し書き — PDF は「PDF/A profile を要求も検証もしていない」、
+   SVG は「archival profile がそもそも無い。テキストがアウトライン化されていれば
+   もうテキストではない」、UNKNOWN は「形式を記録していないので何も言えない」
+
+**digest は出力形式にもコミットする。** 同じ変換器・同じ元でも PDF と SVG は落とすものが
+違うので、どちらだったかを entry が持たないと、読む人に見せる開示文が
+「それが説明しているコピー」から切り離される。
+
+### 負のコントロール 7 本
+
+| 壊した箇所 | 落ちたテスト |
+|---|---|
+| 記録を通らない永続化経路を 1 本足す | `oneWayIn` |
+| 記録の呼び出しを消す | `andItRecords` / `recordsTheDuplicationItJustMade` |
+| SVG 要求を PDF 変換器に流す | `svgGoesThroughTheSvgConverter` |
+| digest から出力形式を落とす | `theDigestCommitsToWhatWasProduced` ほか 2 |
+| SVG の但し書きを PDF/A の文にする | `anSvgIsNotDescribedAsAPdf` / `everyConverterDisclosesWhatItIsNot` |
+
+> `andItRecords` は**削除しか捕まえない**。`if (false)` で包むと緑のままなのを実測した。
+> 到達可能性を測っているのは `recordsTheDuplicationItJustMade` のほう。
+
+### まだ残っているもの
+
+`AttachmentServiceDelegate.copyRenditions` (コピー時の rendition 複製) と
+cloud drive 側の変換は**未**。PDF/A 出力と veraPDF 検証も**未**。
 

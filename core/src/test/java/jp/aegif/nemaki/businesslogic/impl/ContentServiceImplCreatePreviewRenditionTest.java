@@ -35,17 +35,22 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import jp.aegif.nemaki.businesslogic.rendition.RenditionManager;
 import jp.aegif.nemaki.dao.ContentDaoService;
+import jp.aegif.nemaki.evidence.FormatDuplicationRecorder;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.Rendition;
 import jp.aegif.nemaki.util.constant.RenditionKind;
 
 /**
  * Tests for the consolidated {@code ContentService.createPreviewRendition}, the
- * build+persist tail shared by the three rendition REST stacks. It must build a
- * CMIS_PREVIEW rendition stamped with the actor, store it via the DAO, append
- * the new id to the document's renditionIds and persist the document under the
- * supplied CallContext.
+ * convert+persist+record path shared by the three rendition REST stacks. It must convert to
+ * the requested target, build a CMIS_PREVIEW rendition stamped with the actor, store it via
+ * the DAO, append the new id to the document's renditionIds and persist the document under
+ * the supplied CallContext.
+ *
+ * <p>The conversion is part of this method rather than the caller's job. While it was the
+ * caller's, all three REST stacks persisted derived copies with no P3-2 duplication recorded.
  */
 public class ContentServiceImplCreatePreviewRenditionTest {
 
@@ -53,6 +58,7 @@ public class ContentServiceImplCreatePreviewRenditionTest {
 
     private ContentServiceImpl service;
     private ContentDaoService dao;
+    private RenditionManager renditions;
 
     @BeforeEach
     public void setUp() {
@@ -61,6 +67,8 @@ public class ContentServiceImplCreatePreviewRenditionTest {
         service.setContentDaoService(dao);
         when(dao.createRendition(eq(REPO), any(Rendition.class), any(ContentStream.class)))
                 .thenReturn("rend-123");
+        renditions = mock(RenditionManager.class);
+        service.setRenditionManager(renditions);
         doReturn(null).when(service).update(any(), any(), any());
     }
 
@@ -68,12 +76,15 @@ public class ContentServiceImplCreatePreviewRenditionTest {
     public void buildsStampsPersistsAndLinksToDocument() {
         Document document = mock(Document.class);
         when(document.getRenditionIds()).thenReturn(new ArrayList<>(List.of("existing-1")));
+        ContentStream source = mock(ContentStream.class);
         ContentStream stream = mock(ContentStream.class);
         when(stream.getLength()).thenReturn(4096L);
+        when(renditions.convertToPdfAttributed(any(), any())).thenReturn(
+                new RenditionManager.Converted(stream, "jodconverter/LibreOffice"));
         CallContext ctx = mock(CallContext.class);
 
-        Rendition result = service.createPreviewRendition(REPO, document, stream,
-                "application/pdf", "PDF Preview", "alice", ctx);
+        Rendition result = service.createPreviewRendition(REPO, document, source,
+                FormatDuplicationRecorder.TargetFormat.PDF, "PDF Preview", "alice", ctx);
 
         // returned rendition carries the DAO-assigned id and the requested fields
         assertEquals("rend-123", result.getId());
@@ -84,8 +95,8 @@ public class ContentServiceImplCreatePreviewRenditionTest {
         assertEquals("alice", result.getCreator());
         assertEquals("alice", result.getModifier());
 
-        // DAO stored the same rendition with the source stream
-        verify(dao).createRendition(eq(REPO), eq(result), eq(stream));
+        // DAO stored the same rendition with the CONVERTED stream
+        verify(dao).createRendition(eq(REPO), eq(result), any(ContentStream.class));
 
         // document's renditionIds got the new id appended (existing preserved)
         ArgumentCaptor<List<String>> idsCaptor = ArgumentCaptor.forClass(List.class);
@@ -97,15 +108,125 @@ public class ContentServiceImplCreatePreviewRenditionTest {
     }
 
     @Test
+    public void recordsTheDuplicationItJustMade() {
+        // The point of moving the conversion in here. While it was the caller's job, all three
+        // REST stacks persisted derived copies and recorded nothing, and the design document
+        // described those paths as out of scope — which was wrong; they persist exactly as
+        // createPreview does.
+        Document document = mock(Document.class);
+        when(document.getId()).thenReturn("doc-1");
+        when(document.getRenditionIds()).thenReturn(null);
+        ContentStream source = mock(ContentStream.class);
+        ContentStream converted = mock(ContentStream.class);
+        when(renditions.convertToPdfAttributed(any(), any())).thenReturn(
+                new RenditionManager.Converted(converted, "nemaki/cad"));
+        FormatDuplicationRecorder recorder = mock(FormatDuplicationRecorder.class);
+        when(recorder.recordDuplication(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new FormatDuplicationRecorder.Recorded(true, null));
+        service.setFormatDuplicationRecorder(recorder);
+
+        service.createPreviewRendition(REPO, document, source,
+                FormatDuplicationRecorder.TargetFormat.PDF, "PDF Preview", "alice",
+                mock(CallContext.class));
+
+        ArgumentCaptor<FormatDuplicationRecorder.Converter> converter =
+                ArgumentCaptor.forClass(FormatDuplicationRecorder.Converter.class);
+        ArgumentCaptor<FormatDuplicationRecorder.TargetFormat> target =
+                ArgumentCaptor.forClass(FormatDuplicationRecorder.TargetFormat.class);
+        verify(recorder).recordDuplication(eq(REPO), eq("doc-1"), any(), any(),
+                converter.capture(), target.capture(), any(), any());
+        assertEquals(FormatDuplicationRecorder.Converter.CAD_RENDITION, converter.getValue(),
+                "the copy was attributed to a converter that did not make it");
+        assertEquals(FormatDuplicationRecorder.TargetFormat.PDF, target.getValue());
+    }
+
+    @Test
+    public void svgGoesThroughTheSvgConverter() {
+        // Not a detail: convertToPdfAttributed on an SVG request would store PDF bytes under an
+        // SVG media type, and record a duplication whose disclosure describes the wrong losses.
+        Document document = mock(Document.class);
+        when(document.getId()).thenReturn("doc-1");
+        when(document.getRenditionIds()).thenReturn(null);
+        ContentStream source = mock(ContentStream.class);
+        ContentStream converted = mock(ContentStream.class);
+        jp.aegif.nemaki.businesslogic.rendition.ExtendedRenditionManager extended =
+                mock(jp.aegif.nemaki.businesslogic.rendition.ExtendedRenditionManager.class);
+        when(extended.convertToSvgAttributed(any(), any())).thenReturn(
+                new RenditionManager.Converted(converted, "nemaki/diagram"));
+        service.setRenditionManager(extended);
+
+        Rendition result = service.createPreviewRendition(REPO, document, source,
+                FormatDuplicationRecorder.TargetFormat.SVG, "SVG Preview", "alice",
+                mock(CallContext.class));
+
+        verify(extended).convertToSvgAttributed(any(), any());
+        verify(extended, never()).convertToPdfAttributed(any(), any());
+        assertEquals("image/svg+xml", result.getMimetype());
+    }
+
+    @Test
+    public void aFailedConversionIsNullAndRecordsNothing() {
+        Document document = mock(Document.class);
+        when(renditions.convertToPdfAttributed(any(), any())).thenReturn(null);
+        FormatDuplicationRecorder recorder = mock(FormatDuplicationRecorder.class);
+        service.setFormatDuplicationRecorder(recorder);
+
+        Rendition result = service.createPreviewRendition(REPO, document, mock(ContentStream.class),
+                FormatDuplicationRecorder.TargetFormat.PDF, "PDF Preview", "alice",
+                mock(CallContext.class));
+
+        assertNull(result, "a rendition was returned for a conversion that produced nothing");
+        verify(dao, never()).createRendition(any(), any(), any());
+        verify(recorder, never()).recordDuplication(any(), any(), any(), any(), any(), any(),
+                any(), any());
+    }
+
+    @Test
+    public void aPassThroughRecordsNoDuplication() {
+        // An already-PDF source comes straight back out. Nothing was duplicated, and an entry
+        // would put a copy in the chain that does not exist.
+        Document document = mock(Document.class);
+        when(document.getRenditionIds()).thenReturn(null);
+        ContentStream source = mock(ContentStream.class);
+        when(renditions.convertToPdfAttributed(any(), any())).thenReturn(
+                new RenditionManager.Converted(source, "jodconverter/LibreOffice"));
+        FormatDuplicationRecorder recorder = mock(FormatDuplicationRecorder.class);
+        service.setFormatDuplicationRecorder(recorder);
+
+        service.createPreviewRendition(REPO, document, source,
+                FormatDuplicationRecorder.TargetFormat.PDF, "PDF Preview", "alice",
+                mock(CallContext.class));
+
+        verify(recorder, never()).recordDuplication(any(), any(), any(), any(), any(), any(),
+                any(), any());
+    }
+
+    @Test
+    public void svgWithNoExtendedManagerConvertsNothing() {
+        // Rather than falling back to PDF and labelling it SVG.
+        Document document = mock(Document.class);
+
+        Rendition result = service.createPreviewRendition(REPO, document,
+                mock(ContentStream.class), FormatDuplicationRecorder.TargetFormat.SVG,
+                "SVG Preview", "alice", mock(CallContext.class));
+
+        assertNull(result);
+        verify(renditions, never()).convertToPdfAttributed(any(), any());
+    }
+
+    @Test
     public void initialisesRenditionIdsWhenDocumentHasNone() {
         Document document = mock(Document.class);
         when(document.getRenditionIds()).thenReturn(null);
+        ContentStream source = mock(ContentStream.class);
         ContentStream stream = mock(ContentStream.class);
         when(stream.getLength()).thenReturn(10L);
+        when(renditions.convertToPdfAttributed(any(), any())).thenReturn(
+                new RenditionManager.Converted(stream, "jodconverter/LibreOffice"));
         CallContext ctx = mock(CallContext.class);
 
-        service.createPreviewRendition(REPO, document, stream,
-                "image/svg+xml", "SVG Preview", "bob", ctx);
+        service.createPreviewRendition(REPO, document, source,
+                FormatDuplicationRecorder.TargetFormat.PDF, "PDF Preview", "bob", ctx);
 
         ArgumentCaptor<List<String>> idsCaptor = ArgumentCaptor.forClass(List.class);
         verify(document).setRenditionIds(idsCaptor.capture());

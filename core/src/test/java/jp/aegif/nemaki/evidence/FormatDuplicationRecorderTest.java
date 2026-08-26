@@ -71,25 +71,44 @@ class FormatDuplicationRecorderTest {
         // The compiler asks for a disclosure when a converter is added; this asks that the
         // answer is not a placeholder. A blank or vague one would leave the enum looking
         // complete while the protection is gone.
+        // Every converter against every target, because the disclosure is composed from both
+        // and a gap in either half is a gap a reader meets.
         List<String> missing = new ArrayList<>();
         for (Converter converter : Converter.values()) {
-            String disclosure = converter.disclosure();
-            if (disclosure == null || disclosure.isBlank()
-                    || !disclosure.contains("CONVENIENCE COPY")
-                    || !disclosure.contains("ORIGINAL is unchanged")) {
-                missing.add(converter.name() + " -> " + disclosure);
-                continue;
-            }
-            // A KNOWN converter states that no PDF/A profile was requested, because we know it
-            // was not. UNKNOWN must not: it does not know, and asserting the same sentence
-            // there would be a claim about a tool this build cannot name. It has to say the
-            // stronger and less comfortable thing — that fidelity cannot be stated at all.
-            boolean known = converter != Converter.UNKNOWN;
-            if (known && !disclosure.contains("No PDF/A profile was requested")) {
-                missing.add(converter.name() + " (no PDF/A statement) -> " + disclosure);
-            }
-            if (!known && !disclosure.contains("NOT possible to state")) {
-                missing.add(converter.name() + " (claims to know what it lost) -> " + disclosure);
+            for (FormatDuplicationRecorder.TargetFormat target :
+                    FormatDuplicationRecorder.TargetFormat.values()) {
+                String disclosure = converter.disclosureFor(target);
+                String where = converter.name() + "/" + target.name();
+                if (disclosure == null || disclosure.isBlank()
+                        || !disclosure.contains("CONVENIENCE COPY")
+                        || !disclosure.contains("ORIGINAL is unchanged")) {
+                    missing.add(where + " -> " + disclosure);
+                    continue;
+                }
+                // A KNOWN converter says what it drops. UNKNOWN must not pretend to: it does
+                // not know, and asserting the same sentence there would be a claim about a
+                // tool this build cannot name. It has to say the stronger and less comfortable
+                // thing — that fidelity cannot be stated at all.
+                boolean known = converter != Converter.UNKNOWN;
+                if (!known && !disclosure.contains("NOT possible to state")) {
+                    missing.add(where + " (claims to know what it lost) -> " + disclosure);
+                }
+                // And the target's own caveat has to be there. PDF must name the missing
+                // PDF/A profile; SVG must NOT, because PDF/A is not a thing an SVG could have
+                // had and naming it would read as the only thing wrong with the copy.
+                if (target == FormatDuplicationRecorder.TargetFormat.PDF
+                        && !disclosure.contains("no PDF/A profile was requested")) {
+                    missing.add(where + " (no PDF/A statement) -> " + disclosure);
+                }
+                if (target == FormatDuplicationRecorder.TargetFormat.SVG
+                        && (disclosure.contains("PDF/A")
+                                || !disclosure.contains("no archival profile at all"))) {
+                    missing.add(where + " (describes an SVG as a PDF) -> " + disclosure);
+                }
+                if (target == FormatDuplicationRecorder.TargetFormat.UNKNOWN
+                        && !disclosure.contains("format of this copy was not recorded")) {
+                    missing.add(where + " (assumes a format) -> " + disclosure);
+                }
             }
         }
         assertTrue(missing.isEmpty(),
@@ -104,7 +123,7 @@ class FormatDuplicationRecorderTest {
         // A reader skimming a block about a derived copy has to meet "this is not a
         // preservation format" before the digests, not after them.
         Map<String, Object> body = FormatDuplicationRecorder.describe("obj-1", "src", "out",
-                Converter.JODCONVERTER_LIBREOFFICE, "admin", "2026-08-26T00:00:00Z");
+                Converter.JODCONVERTER_LIBREOFFICE, FormatDuplicationRecorder.TargetFormat.PDF, "admin", "2026-08-26T00:00:00Z");
 
         assertEquals("disclosure", body.keySet().iterator().next(),
                 "the identifiers are shown before the caveat: " + body.keySet());
@@ -133,7 +152,7 @@ class FormatDuplicationRecorderTest {
         EvidenceLedgerService service = appending();
 
         FormatDuplicationRecorder.Recorded recorded = recorderOver(service).recordDuplication(
-                REPO, "obj-1", "srcdigest", "outdigest", Converter.JODCONVERTER_LIBREOFFICE,
+                REPO, "obj-1", "srcdigest", "outdigest", Converter.JODCONVERTER_LIBREOFFICE, FormatDuplicationRecorder.TargetFormat.PDF,
                 "admin", "2026-08-26T00:00:00Z");
 
         assertTrue(recorded.inChain(), recorded.warning());
@@ -165,7 +184,7 @@ class FormatDuplicationRecorderTest {
                         EvidenceLedgerService.AppendOutcome.UNAVAILABLE, -1, null, "down"));
 
         FormatDuplicationRecorder.Recorded recorded = recorderOver(service).recordDuplication(
-                REPO, "obj-1", "src", "out", Converter.JODCONVERTER_LIBREOFFICE, "admin",
+                REPO, "obj-1", "src", "out", Converter.JODCONVERTER_LIBREOFFICE, FormatDuplicationRecorder.TargetFormat.PDF, "admin",
                 "2026-08-26T00:00:00Z");
 
         assertFalse(recorded.inChain());
@@ -183,7 +202,7 @@ class FormatDuplicationRecorderTest {
                 .thenThrow(new RuntimeException("couchdb is down"));
 
         FormatDuplicationRecorder.Recorded recorded = recorderOver(service).recordDuplication(
-                REPO, "obj-1", "src", "out", Converter.JODCONVERTER_LIBREOFFICE, "admin",
+                REPO, "obj-1", "src", "out", Converter.JODCONVERTER_LIBREOFFICE, FormatDuplicationRecorder.TargetFormat.PDF, "admin",
                 "2026-08-26T00:00:00Z");
 
         assertFalse(recorded.inChain());
@@ -196,21 +215,21 @@ class FormatDuplicationRecorderTest {
     @DisplayName("the digest commits to what came out, not just what went in")
     void theDigestCommitsToBothSides() {
         String base = FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "src", "out",
-                Converter.JODCONVERTER_LIBREOFFICE, "admin");
+                Converter.JODCONVERTER_LIBREOFFICE, FormatDuplicationRecorder.TargetFormat.PDF, "admin");
 
         assertNotEquals(base, FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "src",
-                        "other", Converter.JODCONVERTER_LIBREOFFICE, "admin"),
+                        "other", Converter.JODCONVERTER_LIBREOFFICE, FormatDuplicationRecorder.TargetFormat.PDF, "admin"),
                 "what was produced does not affect the digest, so the entry cannot show WHICH "
                         + "copy was made");
         assertNotEquals(base, FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "other",
-                        "out", Converter.JODCONVERTER_LIBREOFFICE, "admin"),
+                        "out", Converter.JODCONVERTER_LIBREOFFICE, FormatDuplicationRecorder.TargetFormat.PDF, "admin"),
                 "what it was made FROM does not affect the digest");
         assertNotEquals(base, FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "src",
-                        "out", Converter.CAD_RENDITION, "admin"),
+                        "out", Converter.CAD_RENDITION, FormatDuplicationRecorder.TargetFormat.PDF, "admin"),
                 "the converter does not affect the digest, so two very different losses record "
                         + "identically");
         assertNotEquals(base, FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "src",
-                        "out", Converter.JODCONVERTER_LIBREOFFICE, "someone-else"),
+                        "out", Converter.JODCONVERTER_LIBREOFFICE, FormatDuplicationRecorder.TargetFormat.PDF, "someone-else"),
                 "who did it does not affect the digest");
     }
 
@@ -221,9 +240,9 @@ class FormatDuplicationRecorderTest {
         // the produced digest, or an empty string, would write it as a stronger one.
         assertNotEquals(
                 FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", null, "out",
-                        Converter.JODCONVERTER_LIBREOFFICE, "admin"),
+                        Converter.JODCONVERTER_LIBREOFFICE, FormatDuplicationRecorder.TargetFormat.PDF, "admin"),
                 FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "", "out",
-                        Converter.JODCONVERTER_LIBREOFFICE, "admin"),
+                        Converter.JODCONVERTER_LIBREOFFICE, FormatDuplicationRecorder.TargetFormat.PDF, "admin"),
                 "'no digest was recorded' and 'the digest is the empty string' produce the same "
                         + "entry");
     }
@@ -234,13 +253,13 @@ class FormatDuplicationRecorderTest {
         // The literal is written here; production reads the constant.
         String expected = jp.aegif.nemaki.rest.purview.journal.LineageCanonicalHash.hash(
                 "LEDGER_FORMAT_DUPLICATION_V1", REPO, "obj-1", "src", "out",
-                "jodconverter/LibreOffice", "admin");
+                "jodconverter/LibreOffice", "application/pdf", "admin");
 
         assertEquals(expected, FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "src",
-                        "out", Converter.JODCONVERTER_LIBREOFFICE, "admin"),
+                        "out", Converter.JODCONVERTER_LIBREOFFICE, FormatDuplicationRecorder.TargetFormat.PDF, "admin"),
                 "the duplication digest is no longer H(LEDGER_FORMAT_DUPLICATION_V1, "
                         + "repositoryId, sourceObjectId, sourceDigest, producedDigest, "
-                        + "converterId, actor)");
+                        + "converterId, targetMediaType, actor)");
     }
 
     @Test
@@ -255,16 +274,51 @@ class FormatDuplicationRecorderTest {
         // and asserts which one production actually emits.
         String withId = jp.aegif.nemaki.rest.purview.journal.LineageCanonicalHash.hash(
                 "LEDGER_FORMAT_DUPLICATION_V1", REPO, "obj-1", "src", "out",
-                Converter.JODCONVERTER_LIBREOFFICE.id(), "admin");
+                Converter.JODCONVERTER_LIBREOFFICE.id(), "application/pdf", "admin");
         String withDisclosure = jp.aegif.nemaki.rest.purview.journal.LineageCanonicalHash.hash(
                 "LEDGER_FORMAT_DUPLICATION_V1", REPO, "obj-1", "src", "out",
-                Converter.JODCONVERTER_LIBREOFFICE.disclosure(), "admin");
+                Converter.JODCONVERTER_LIBREOFFICE.disclosure(), "application/pdf", "admin");
         assertNotEquals(withId, withDisclosure, "the fixture cannot tell the two apart");
 
         assertEquals(withId, FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "src",
-                        "out", Converter.JODCONVERTER_LIBREOFFICE, "admin"),
+                        "out", Converter.JODCONVERTER_LIBREOFFICE, FormatDuplicationRecorder.TargetFormat.PDF, "admin"),
                 "the digest is taken over the disclosure TEXT, so rewording a caveat changes "
                         + "every entry and looks like the facts changed");
+    }
+
+    @Test
+    @DisplayName("the digest commits to the TARGET FORMAT, not just the converter")
+    void theDigestCommitsToWhatWasProduced() {
+        // The same converter on the same source produces a PDF and an SVG that lose different
+        // things. An entry that does not commit to which one it was leaves the disclosure a
+        // reader is shown detached from the copy it describes.
+        String pdf = FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "src", "out",
+                Converter.DIAGRAM_RENDITION, FormatDuplicationRecorder.TargetFormat.PDF, "admin");
+        String svg = FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "src", "out",
+                Converter.DIAGRAM_RENDITION, FormatDuplicationRecorder.TargetFormat.SVG, "admin");
+        String unknown = FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "src", "out",
+                Converter.DIAGRAM_RENDITION, FormatDuplicationRecorder.TargetFormat.UNKNOWN,
+                "admin");
+
+        assertNotEquals(pdf, svg, "a PDF copy and an SVG copy hash to the same entry");
+        assertNotEquals(pdf, unknown, "an unrecorded format hashes as though it were PDF");
+        assertNotEquals(svg, unknown);
+    }
+
+    @Test
+    @DisplayName("an SVG disclosure does not describe a PDF")
+    void anSvgIsNotDescribedAsAPdf() {
+        // The whole reason the disclosure is composed. Every converter's text used to end in
+        // "rendered to PDF" and name a PDF/A profile; the moment the SVG path recorded
+        // anything, a reader would have been told what an SVG copy lost "rendered to PDF".
+        String svg = Converter.DIAGRAM_RENDITION.disclosureFor(
+                FormatDuplicationRecorder.TargetFormat.SVG);
+
+        assertFalse(svg.contains("PDF"),
+                "the SVG disclosure talks about PDF: " + svg);
+        assertTrue(svg.contains("no archival profile at all"), svg);
+        assertTrue(svg.contains("shapes, connectors"),
+                "the converter's own losses were dropped: " + svg);
     }
 
     @Test
@@ -280,7 +334,7 @@ class FormatDuplicationRecorderTest {
     @DisplayName("no ledger wired is silent, not a warning per rendition")
     void anUnwiredLedgerIsSilent() {
         FormatDuplicationRecorder.Recorded recorded = recorderOver(null).recordDuplication(
-                REPO, "obj-1", "src", "out", Converter.JODCONVERTER_LIBREOFFICE, "admin",
+                REPO, "obj-1", "src", "out", Converter.JODCONVERTER_LIBREOFFICE, FormatDuplicationRecorder.TargetFormat.PDF, "admin",
                 "2026-08-26T00:00:00Z");
 
         assertFalse(recorded.inChain());

@@ -80,8 +80,9 @@ public class CompositeRenditionManagerImpl implements ExtendedRenditionManager {
 		return converted == null ? null : converted.stream();
 	}
 
+	/** The delegate that actually SUCCEEDED — see {@link #convertToPdfAttributed}. */
 	@Override
-	public ContentStream convertToSvg(ContentStream contentStream, String documentName) {
+	public Converted convertToSvgAttributed(ContentStream contentStream, String documentName) {
 		if (delegates == null) return null;
 		String mimeType = contentStream.getMimeType();
 		for (RenditionManager delegate : delegates) {
@@ -90,12 +91,18 @@ public class CompositeRenditionManagerImpl implements ExtendedRenditionManager {
 				if (ext.checkSvgConvertible(mimeType, documentName)) {
 					log.info("[CompositeRendition] Delegating SVG conversion to: " + delegate.getClass().getSimpleName());
 					ContentStream result = ext.convertToSvg(contentStream, documentName);
-					if (result != null) return result;
+					if (result != null) return new Converted(result, delegate.converterId());
 				}
 			}
 		}
 		log.warn("[CompositeRendition] No delegate could convert to SVG: " + documentName);
 		return null;
+	}
+
+	@Override
+	public ContentStream convertToSvg(ContentStream contentStream, String documentName) {
+		Converted converted = convertToSvgAttributed(contentStream, documentName);
+		return converted == null ? null : converted.stream();
 	}
 
 	@Override

@@ -409,15 +409,19 @@ public class RenditionResource {
                 attachment.getInputStream()
             );
             
-            ContentStream pdfStream = renditionManager.convertToPdf(contentStream, document.getName());
-            if (pdfStream == null) {
+            // Convert + persist + RECORD + link, in one call. The conversion used to happen
+            // here and the already-converted stream was handed to a persist method — which is
+            // how all three rendition stacks came to persist derived copies with nothing
+            // recorded, while the design document called them out of scope. There is no longer
+            // a way to hand this method a copy it did not make.
+            Rendition rendition = contentService.createPreviewRendition(repositoryId, document,
+                    contentStream,
+                    jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat.PDF,
+                    "PDF Preview", getAuthenticatedUsername(),
+                    new SystemCallContext(repositoryId));
+            if (rendition == null) {
                 throw ApiException.internalError("PDF conversion failed");
             }
-            
-            // Build + persist rendition + link to document via shared ContentService
-            Rendition rendition = contentService.createPreviewRendition(repositoryId, document,
-                    pdfStream, "application/pdf", "PDF Preview", getAuthenticatedUsername(),
-                    new SystemCallContext(repositoryId));
             RenditionResponse response = convertToRenditionResponse(rendition, repositoryId, objectId);
             
             return Response.status(Response.Status.CREATED).entity(response).build();

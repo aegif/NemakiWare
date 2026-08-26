@@ -748,18 +748,30 @@ public interface ContentService {
 	List<Rendition> getRenditions(String repositoryId, String objectId);
 
 	/**
-	 * Persist a generated preview rendition stream and link it to its document.
-	 * Builds a {@link Rendition} (CMIS_PREVIEW kind) with the given mime type /
-	 * title / length, stamps the signature with {@code actorUsername}, stores it
-	 * via the DAO, appends the new rendition id to {@code document}'s
-	 * renditionIds, and persists the document under {@code updateContext}. Returns
-	 * the rendition with its new id set. Consolidates the identical build+persist
-	 * tail of the three rendition REST stacks (only the actor + update context and
-	 * the upstream SVG/PDF conversion differed).
+	 * Convert to {@code target}, persist the rendition, record the duplication, and link it
+	 * to its document. Returns the rendition with its new id set, or null when the conversion
+	 * produced nothing.
+	 *
+	 * <h2>Why this takes the SOURCE and not a converted stream</h2>
+	 *
+	 * <p>Its predecessor took an already-converted stream, so each of the three rendition REST
+	 * stacks called the converter itself and then handed the output here. That left the
+	 * converter's identity, the digest of the bytes that went into storage, and therefore the
+	 * P3-2 duplication record outside this method — and all three stacks persisted renditions
+	 * with nothing recorded. The design document had described those paths as out of scope,
+	 * which was wrong: they persist exactly as {@code createPreview} does.
+	 *
+	 * <p>Taking the source means the conversion, the measurement and the record happen together
+	 * in one place. A caller cannot persist a derived copy and forget to say so, because there
+	 * is no longer a way to hand this method a copy it did not make.
+	 *
+	 * <p>Callers keep their own {@code checkConvertible} test: an unsupported type is a bad
+	 * request, and a conversion that fails after the type was accepted is not.
 	 */
 	Rendition createPreviewRendition(String repositoryId, jp.aegif.nemaki.model.Document document,
-			org.apache.chemistry.opencmis.commons.data.ContentStream renditionStream,
-			String renditionMimeType, String renditionTitle, String actorUsername,
+			org.apache.chemistry.opencmis.commons.data.ContentStream sourceStream,
+			jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat target,
+			String renditionTitle, String actorUsername,
 			org.apache.chemistry.opencmis.commons.server.CallContext updateContext);
 
 	// ///////////////////////////////////////
