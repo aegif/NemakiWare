@@ -138,9 +138,12 @@ public final class ErsVerifier {
                             dataObjectHashByAlgorithm);
                 } catch (RuntimeException e) {
                     results.add(new TimestampResult(c, i, false, ats.digestAlgorithmOid(), null,
-                            "what this timestamp should cover could not be computed ("
-                                    + e.getMessage() + "), which is not a finding that it is "
-                                    + "wrong"));
+                            (e instanceof UncheckableLinkException
+                                    ? "this link was NOT checked: " : "what this timestamp "
+                                            + "should cover could not be computed: ")
+                                    + e.getMessage()
+                                    + " — which is not a finding that it is wrong, and not a "
+                                    + "finding that it holds"));
                     allHold = false;
                     checked++;
                     continue;
@@ -168,52 +171,79 @@ public final class ErsVerifier {
             List<List<ErsRecord.ArchiveTimeStamp>> chains, int c, int i, byte[] dataObjectHash,
             Map<String, byte[]> byAlgorithm) {
         ErsRecord.ArchiveTimeStamp ats = chains.get(c).get(i);
+        byte[] mustBeInFirstList;
+        String what;
         if (c == 0 && i == 0) {
-            if (!ats.firstHashList().isEmpty()) {
-                // A first Archive Timestamp WITH a tree is a different form: §4.3 step 2 needs
-                // h in the list and step 3 hashes the list.
-                if (ats.firstHashList().stream().noneMatch(v -> Arrays.equals(v, dataObjectHash))) {
-                    throw new IllegalStateException("the data object's hash is not in the first "
-                            + "hash list, so this record is about something else");
-                }
-                return ErsRecord.digest(ats.digestAlgorithmOid(),
-                        ErsRecord.sortedConcat(ats.firstHashList()));
-            }
-            return dataObjectHash;
-        }
-        if (i > 0) {
+            mustBeInFirstList = dataObjectHash;
+            what = "the data object's hash";
+        } else if (i > 0) {
             // §5.2 timestamp renewal: the previous token's content, hashed.
-            ErsRecord.ArchiveTimeStamp previous = chains.get(c).get(i - 1);
-            byte[] over = ErsRecord.digest(ats.digestAlgorithmOid(), previous.timeStampDer());
-            if (ats.firstHashList().isEmpty()) {
-                return over;
+            mustBeInFirstList = ErsRecord.digest(ats.digestAlgorithmOid(),
+                    chains.get(c).get(i - 1).timeStampDer());
+            what = "the hash of the timestamp this renews";
+        } else {
+            // §5.3 hash-tree renewal: a new chain, whose h' must commit to every previous one.
+            byte[] ha = ErsRecord.digest(ats.digestAlgorithmOid(),
+                    ErsRecord.encodeSequence(chains.subList(0, c)));
+            byte[] hOfData = byAlgorithm.get(ats.digestAlgorithmOid());
+            if (hOfData == null) {
+                // NOT waved through. Returning H(the record's own list) here would compare the
+                // token with a value taken from the record itself, so any timestamp filed
+                // beside the old chains would pass — which is the defect this branch exists to
+                // catch. "We cannot check this link" is not "this link holds".
+                throw new UncheckableLinkException("this chain renews under "
+                        + ats.digestAlgorithmOid() + ", and checking that it covers the older "
+                        + "chains needs H(data object) under that algorithm — which cannot be "
+                        + "derived from the old hash. Supply it, or this link stays unchecked.");
             }
-            if (ats.firstHashList().stream().noneMatch(v -> Arrays.equals(v, over))) {
-                throw new IllegalStateException("this renewal's hash list does not contain the "
-                        + "hash of the timestamp it renews, so it does not extend this chain");
-            }
-            return ErsRecord.digest(ats.digestAlgorithmOid(),
-                    ErsRecord.sortedConcat(ats.firstHashList()));
-        }
-        // §5.3 hash-tree renewal: a new chain, whose h' must commit to every previous chain.
-        if (ats.firstHashList().isEmpty()) {
-            throw new IllegalStateException("a new chain with no hash list cannot commit to the "
-                    + "chains before it, so it is a timestamp filed beside them rather than one "
-                    + "that covers them");
-        }
-        byte[] ha = ErsRecord.digest(ats.digestAlgorithmOid(),
-                ErsRecord.encodeSequence(chains.subList(0, c)));
-        byte[] hOfData = byAlgorithm.get(ats.digestAlgorithmOid());
-        if (hOfData != null) {
-            byte[] hPrime = ErsRecord.digest(ats.digestAlgorithmOid(),
+            mustBeInFirstList = ErsRecord.digest(ats.digestAlgorithmOid(),
                     ErsRecord.sortedConcat(List.of(hOfData, ha)));
-            if (ats.firstHashList().stream().noneMatch(v -> Arrays.equals(v, hPrime))) {
-                throw new IllegalStateException("this chain's first hash value is not "
-                        + "H(sorted(H(data), H(previous chains))), so it does not renew them");
-            }
+            what = "H(sorted(H(data), H(previous chains))), which is what makes this chain "
+                    + "renew the ones before it rather than sit beside them";
         }
-        return ErsRecord.digest(ats.digestAlgorithmOid(),
-                ErsRecord.sortedConcat(ats.firstHashList()));
+        if (ats.hashTree().isEmpty()) {
+            // §4.2 allows an Archive Timestamp with no hash lists; §4.3 then degenerates to
+            // "the root is h".
+            return mustBeInFirstList;
+        }
+        return walk(ats, mustBeInFirstList, what);
+    }
+
+    /**
+     * §4.3 steps 2 and 3, over EVERY list.
+     *
+     * <p>Step 2 finds {@code h} in the first list; step 3 hashes that list and requires the
+     * result to be a member of the next, repeating to the root. Reading only the first list and
+     * stopping — which is what the previous version did — lets a record carry
+     * {@code [[H(d)], [anything]]} and be measured on the first list alone.
+     */
+    private static byte[] walk(ErsRecord.ArchiveTimeStamp ats, byte[] h, String what) {
+        List<List<byte[]>> tree = ats.hashTree();
+        if (tree.get(0).stream().noneMatch(v -> Arrays.equals(v, h))) {
+            throw new IllegalStateException("the first hash list does not contain " + what
+                    + ", so this Archive Timestamp is about something else");
+        }
+        byte[] current = ErsRecord.digest(ats.digestAlgorithmOid(),
+                ErsRecord.sortedConcat(tree.get(0)));
+        for (int level = 1; level < tree.size(); level++) {
+            List<byte[]> next = tree.get(level);
+            byte[] carried = current;
+            if (next.stream().noneMatch(v -> Arrays.equals(v, carried))) {
+                throw new IllegalStateException("hash list " + level + " does not contain the "
+                        + "value computed from the one below it, so the tree does not join up");
+            }
+            current = ErsRecord.digest(ats.digestAlgorithmOid(), ErsRecord.sortedConcat(next));
+        }
+        return current;
+    }
+
+    /** A link this build cannot check — reported as unchecked, never as holding. */
+    static class UncheckableLinkException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        UncheckableLinkException(String message) {
+            super(message);
+        }
     }
 
     private static TimestampResult check(int chain, int position,
@@ -223,6 +253,18 @@ public final class ErsVerifier {
                     new org.bouncycastle.cms.CMSSignedData(
                             new ByteArrayInputStream(ats.timeStampDer())));
             byte[] imprint = token.getTimeStampInfo().getMessageImprintDigest();
+            String tokenAlgorithm = token.getTimeStampInfo().getMessageImprintAlgOID().getId();
+            if (!tokenAlgorithm.equals(ats.digestAlgorithmOid())) {
+                // §4.2 step 5: the timestamp's hash algorithm MUST be the tree's, or
+                // digestAlgorithm must say what the tree uses. A record declaring SHA-512 with
+                // a SHA-256 token is not a record whose tree was built under SHA-512.
+                return new TimestampResult(chain, position, false, tokenAlgorithm,
+                        String.valueOf(token.getTimeStampInfo().getGenTime().toInstant()),
+                        "this Archive Timestamp declares " + ats.digestAlgorithmOid()
+                                + " and its token was taken under " + tokenAlgorithm
+                                + ", so the tree and the timestamp are not about the same "
+                                + "algorithm");
+            }
             boolean matches = Arrays.equals(expected, imprint);
             return new TimestampResult(chain, position, matches,
                     token.getTimeStampInfo().getMessageImprintAlgOID().getId(),

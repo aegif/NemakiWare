@@ -138,8 +138,14 @@ public final class ErsRecord {
      *        Archive Timestamp carries no reduced hash tree
      * @param digestAlgorithmOid the algorithm of THIS timestamp's tree
      */
-    public record ArchiveTimeStamp(List<byte[]> firstHashList, byte[] timeStampDer,
-            String digestAlgorithmOid) {}
+    public record ArchiveTimeStamp(List<List<byte[]>> hashTree, byte[] timeStampDer,
+            String digestAlgorithmOid) {
+
+        /** The first {@code PartialHashtree}, or empty when there is no tree at all. */
+        public List<byte[]> firstHashList() {
+            return hashTree.isEmpty() ? List.of() : hashTree.get(0);
+        }
+    }
 
     /** The DER bytes. This is the file that goes in a package. */
     public byte[] der() {
@@ -266,8 +272,8 @@ public final class ErsRecord {
         }
         List<List<ArchiveTimeStamp>> next = deepCopy();
         List<ArchiveTimeStamp> chain = new ArrayList<>();
-        chain.add(new ArchiveTimeStamp(List.of(hPrime.clone()), timeStampTokenDer.clone(),
-                algorithmOid));
+        chain.add(new ArchiveTimeStamp(List.of(List.of(hPrime.clone())),
+                timeStampTokenDer.clone(), algorithmOid));
         next.add(chain);
         Set<String> algorithms = new LinkedHashSet<>(digestAlgorithmOids);
         algorithms.add(algorithmOid);
@@ -313,7 +319,10 @@ public final class ErsRecord {
     }
 
     private static ArchiveTimeStamp parseArchiveTimeStamp(ASN1Sequence ats) throws IOException {
-        List<byte[]> firstList = new ArrayList<>();
+        // EVERY level, not just the first. Reading only list 0 and discarding the rest means a
+        // record can carry [[H(d)], [anything]] and be measured on list 0 alone — §4.3 step 3
+        // walks each list in turn and requires the computed parent to be a member of the next.
+        List<List<byte[]>> tree = new ArrayList<>();
         byte[] token = null;
         String algorithm = null;
         for (int i = 0; i < ats.size(); i++) {
@@ -323,13 +332,15 @@ public final class ErsRecord {
                     algorithm = AlgorithmIdentifier.getInstance(tagged, false)
                             .getAlgorithm().getId();
                 } else if (tagged.getTagNo() == 2) {
-                    ASN1Sequence tree = ASN1Sequence.getInstance(tagged, false);
-                    if (tree.size() > 0) {
-                        ASN1Sequence partial = ASN1Sequence.getInstance(tree.getObjectAt(0));
+                    ASN1Sequence lists = ASN1Sequence.getInstance(tagged, false);
+                    for (int j = 0; j < lists.size(); j++) {
+                        ASN1Sequence partial = ASN1Sequence.getInstance(lists.getObjectAt(j));
+                        List<byte[]> level = new ArrayList<>();
                         for (int k = 0; k < partial.size(); k++) {
-                            firstList.add(ASN1OctetString.getInstance(partial.getObjectAt(k))
+                            level.add(ASN1OctetString.getInstance(partial.getObjectAt(k))
                                     .getOctets());
                         }
+                        tree.add(level);
                     }
                 }
                 continue;
@@ -340,8 +351,24 @@ public final class ErsRecord {
             throw new IOException("an ArchiveTimeStamp with no timeStamp is not one; RFC 4998 "
                     + "makes every other field optional and this one mandatory");
         }
-        return new ArchiveTimeStamp(firstList, token,
-                algorithm == null ? SHA256_OID : algorithm);
+        // §4.1: "If the optional field digestAlgorithm is not present, the digest algorithm of
+        // the timestamp MUST be used" — so an absent field is read from the token, not assumed
+        // to be SHA-256. Assuming it rejected every valid SHA-384/SHA-512 record.
+        return new ArchiveTimeStamp(tree, token,
+                algorithm == null ? imprintAlgorithmOf(token) : algorithm);
+    }
+
+    /** The imprint algorithm the token itself declares. */
+    static String imprintAlgorithmOf(byte[] tokenDer) {
+        try {
+            return new org.bouncycastle.tsp.TimeStampToken(
+                    new org.bouncycastle.cms.CMSSignedData(tokenDer))
+                    .getTimeStampInfo().getMessageImprintAlgOID().getId();
+        } catch (Exception e) {
+            // Unreadable: SHA-256 is this product's algorithm and the honest default for a
+            // record it produced, and a token nobody can read fails the imprint check anyway.
+            return SHA256_OID;
+        }
     }
 
     // ---- encoding ----
@@ -407,12 +434,16 @@ public final class ErsRecord {
         ASN1EncodableVector vector = new ASN1EncodableVector();
         vector.add(new DERTaggedObject(false, 0,
                 new AlgorithmIdentifier(new ASN1ObjectIdentifier(ats.digestAlgorithmOid()))));
-        if (!ats.firstHashList().isEmpty()) {
-            ASN1EncodableVector partial = new ASN1EncodableVector();
-            for (byte[] value : ats.firstHashList()) {
-                partial.add(new DEROctetString(value));
+        if (!ats.hashTree().isEmpty()) {
+            ASN1EncodableVector lists = new ASN1EncodableVector();
+            for (List<byte[]> level : ats.hashTree()) {
+                ASN1EncodableVector partial = new ASN1EncodableVector();
+                for (byte[] value : level) {
+                    partial.add(new DEROctetString(value));
+                }
+                lists.add(new DERSequence(partial));
             }
-            vector.add(new DERTaggedObject(false, 2, new DERSequence(new DERSequence(partial))));
+            vector.add(new DERTaggedObject(false, 2, new DERSequence(lists)));
         }
         vector.add(ContentInfo.getInstance(ASN1Primitive.fromByteArray(ats.timeStampDer())));
         return new DERSequence(vector);

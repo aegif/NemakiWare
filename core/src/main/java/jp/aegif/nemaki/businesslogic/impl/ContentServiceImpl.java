@@ -4196,7 +4196,16 @@ public class ContentServiceImpl implements ContentService {
 		 * for bytes we are holding, and it would validate what was stored rather than what was
 		 * produced — a different question on the very path where the two can differ.
 		 */
-		private java.io.ByteArrayOutputStream retained;
+		/**
+		 * One array of the capped size, filled as the bytes go past.
+		 *
+		 * <p>A {@code ByteArrayOutputStream} would double its capacity as it grew and then
+		 * {@code toByteArray()} would make a second full copy — so a 32 MiB cap could cost
+		 * ~96 MiB per concurrent preview before veraPDF allocated anything. This is exactly
+		 * one buffer, and {@link #retainedBytes()} hands back a view of it.
+		 */
+		private byte[] retained;
+		private int retainedLength;
 		private final long retainLimit;
 
 		CountingDigestStream(java.io.InputStream in, java.security.MessageDigest digest) {
@@ -4208,7 +4217,11 @@ public class ContentServiceImpl implements ContentService {
 			super(in);
 			this.digest = digest;
 			this.retainLimit = retainLimit;
-			this.retained = retainLimit > 0 ? new java.io.ByteArrayOutputStream() : null;
+			// Allocated up front at the cap, not grown. The cap is what the deployment agreed
+			// to spend; growing to it in doubling steps spends more than that on the way.
+			this.retained = retainLimit > 0
+					? new byte[(int) Math.min(retainLimit, Integer.MAX_VALUE - 8L)]
+					: null;
 		}
 
 		long bytesRead() {
@@ -4217,7 +4230,12 @@ public class ContentServiceImpl implements ContentService {
 
 		/** The produced bytes, or null when they were not kept or the cap was passed. */
 		byte[] retainedBytes() {
-			return retained == null ? null : retained.toByteArray();
+			if (retained == null) {
+				return null;
+			}
+			return retainedLength == retained.length
+					? retained
+					: java.util.Arrays.copyOf(retained, retainedLength);
 		}
 
 		/** Why nothing was kept, or null when something was. */
@@ -4236,14 +4254,16 @@ public class ContentServiceImpl implements ContentService {
 			if (retained == null) {
 				return;
 			}
-			if (retained.size() + (long) length > retainLimit) {
+			if (retainedLength + (long) length > retained.length) {
 				// Dropped, not truncated. A truncated PDF fails validation for a reason that
 				// has nothing to do with the conversion, and reporting that as
 				// DOES_NOT_CONFORM would be a finding about our own buffer.
 				retained = null;
+				retainedLength = 0;
 				return;
 			}
-			retained.write(buffer, offset, length);
+			System.arraycopy(buffer, offset, retained, retainedLength, length);
+			retainedLength += length;
 		}
 
 		@Override
@@ -4252,7 +4272,16 @@ public class ContentServiceImpl implements ContentService {
 			if (b >= 0) {
 				digest.update((byte) b);
 				bytesRead++;
-				retain(new byte[] { (byte) b }, 0, 1);
+				if (retained != null) {
+					// Straight into the buffer: the earlier version wrapped each byte in a new
+					// one-element array, which allocates once per byte for the whole document.
+					if (retainedLength < retained.length) {
+						retained[retainedLength++] = (byte) b;
+					} else {
+						retained = null;
+						retainedLength = 0;
+					}
+				}
 			}
 			return b;
 		}

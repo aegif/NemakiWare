@@ -304,6 +304,14 @@ public final class CustodyTransfer {
             return new Moved(false, state, "a receipt can only be verified once the receiving "
                     + "system has reported an AIP; this transfer is at " + state);
         }
+        if (at == null || at.isBlank()) {
+            // The same rule every other move follows. Without it a public call could produce an
+            // accepted RECEIPT_VERIFIED transfer that restore() then refuses to read back —
+            // a state the product can create and cannot reload.
+            return new Moved(false, state, "a receipt has to be checked at a stated time; a "
+                    + "history whose steps have no times is a list of claims in an order "
+                    + "somebody chose");
+        }
         String missing = candidate.missingRequiredField();
         if (missing != null) {
             // Before the digest check, because this is about the receipt being a receipt at

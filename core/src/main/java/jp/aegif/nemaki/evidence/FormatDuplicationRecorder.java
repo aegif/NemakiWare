@@ -62,7 +62,7 @@ public class FormatDuplicationRecorder {
             LoggerFactory.getLogger(FormatDuplicationRecorder.class);
 
     /** Domain-separated from every other digest in the product. */
-    static final String DUPLICATION_DIGEST_DOMAIN = "LEDGER_FORMAT_DUPLICATION_V1";
+    static final String DUPLICATION_DIGEST_DOMAIN = "LEDGER_FORMAT_DUPLICATION_V2";
 
     /**
      * The converters this product can attribute a duplication to, and what each one loses.
@@ -371,6 +371,22 @@ public class FormatDuplicationRecorder {
      * disclosure text: the text is a property of the id and would otherwise make every entry
      * change when a sentence is reworded, which would look like the facts had changed.
      */
+    /**
+     * The V1 field list, kept so an entry written before 2026-08-26 can still be reproduced.
+     *
+     * <p>The V2 list adds the archival-profile finding, so the same facts hash differently.
+     * Bumping the domain rather than quietly changing what V1 means is the difference between
+     * "these are two schemas" and "the old entries no longer reproduce and nobody said why".
+     */
+    static String duplicationDigestV1(String repositoryId, String sourceObjectId,
+            String sourceDigest, String producedDigest, Converter converter,
+            TargetFormat target, String actor) {
+        return LineageCanonicalHash.hash("LEDGER_FORMAT_DUPLICATION_V1", repositoryId,
+                sourceObjectId, sourceDigest, producedDigest,
+                converter == null ? null : converter.id(),
+                target == null ? null : target.mediaType(), actor);
+    }
+
     static String duplicationDigest(String repositoryId, String sourceObjectId,
             String sourceDigest, String producedDigest, Converter converter,
             TargetFormat target, String actor) {

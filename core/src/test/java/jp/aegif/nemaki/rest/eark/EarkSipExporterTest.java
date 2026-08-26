@@ -17,6 +17,9 @@
 package jp.aegif.nemaki.rest.eark;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.evidence.EvidenceLedgerEntry;
+import jp.aegif.nemaki.evidence.EvidenceLedgerService;
+import jp.aegif.nemaki.evidence.EvidenceLedgerStore;
 import jp.aegif.nemaki.evidence.AuthenticityReport;
 import jp.aegif.nemaki.evidence.AuthenticityReport.Section;
 import jp.aegif.nemaki.evidence.AuthenticityReport.Verdict;
@@ -43,6 +46,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -619,5 +623,90 @@ class EarkSipExporterTest {
         assertFalse(escaped.contains("\u0007"), "a BEL survived into the XML");
         assertTrue(escaped.contains("\t"), "a legal tab was dropped: " + escaped);
         assertEquals("beforeafter\tkept", escaped);
+    }
+
+    @Test
+    @DisplayName("the capture entry is found through the capture rows, and proved")
+    void theCaptureIsFoundThroughItsIntent() throws Exception {
+        // The CAPTURE entry's subject is the capture intent id, not the object — so an
+        // object-only lookup reported "nothing chained" for a record whose capture IS in the
+        // chain. The object id has been on the intent row since completion, which is how the
+        // authenticity report has been finding these all along; the exporter now follows the
+        // same path instead of rewriting stored subjects, which would break every inclusion
+        // proof already issued.
+        EvidenceLedgerStore store = mock(EvidenceLedgerStore.class);
+        when(store.isActive()).thenReturn(true);
+        when(store.findBySubject(anyString(), org.mockito.ArgumentMatchers.eq(OBJECT),
+                org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of());
+        when(store.findBySubject(anyString(), org.mockito.ArgumentMatchers.eq("intent-7"),
+                org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of(
+                        EvidenceLedgerEntry.of(REPO, 3,
+                                EvidenceLedgerEntry.SubjectKind.CAPTURE_COMPLETED, "intent-7",
+                                "mh1:capture", "2026-08-25T00:00:00Z", null)));
+        jp.aegif.nemaki.rest.ingest.capture.CaptureMaintenanceStore captureStore =
+                mock(jp.aegif.nemaki.rest.ingest.capture.CaptureMaintenanceStore.class);
+        when(captureStore.listCapturedForObject(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(List.of(Map.of("intentId", "intent-7")));
+        EvidenceLedgerService service = new EvidenceLedgerService();
+        service.setStore(store);
+        EarkSipExporter exporter = exporterOver(
+                reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
+                "bytes".getBytes(StandardCharsets.UTF_8));
+        exporter.setLedgerStore(store);
+        exporter.setLedgerService(service);
+        exporter.setCaptureMaintenanceStore(captureStore);
+
+        java.lang.reflect.Method evidencePackage = EarkSipExporter.class.getDeclaredMethod(
+                "evidencePackage", String.class, String.class, List.class);
+        evidencePackage.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> evidence = (Map<String, Object>) evidencePackage.invoke(exporter,
+                REPO, OBJECT, new java.util.ArrayList<String>());
+
+        assertEquals("success", evidence.get("status"),
+                "a record whose capture IS in the chain was reported as not chained: "
+                        + evidence.get("message"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> proof = (Map<String, Object>) evidence.get("inclusionProof");
+        assertEquals("CAPTURE_COMPLETED", proof.get("provesEntry"), String.valueOf(proof));
+        assertEquals("intent-7", proof.get("provesSubjectId"), String.valueOf(proof));
+    }
+
+    @Test
+    @DisplayName("the inclusion proof says WHICH entry it is about")
+    void theProofNamesItsSubject() throws Exception {
+        // It used to prove entries.get(0) and call it "the capture". That list is the object's
+        // OWN entries, so the label named a capture while the proof was over the oldest fixity
+        // result, duplication or custody receipt. A proof whose subject is mislabelled is worse
+        // than no proof: it is checkable, so it is believed.
+        EvidenceLedgerStore store = mock(EvidenceLedgerStore.class);
+        when(store.isActive()).thenReturn(true);
+        when(store.findBySubject(anyString(), anyString(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(List.of(EvidenceLedgerEntry.of(REPO, 9,
+                        EvidenceLedgerEntry.SubjectKind.FIXITY_RESULT, OBJECT, "mh1:fixity",
+                        "2026-08-26T00:00:00Z", null)));
+        EvidenceLedgerService service = new EvidenceLedgerService();
+        service.setStore(store);
+        EarkSipExporter exporter = exporterOver(
+                reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
+                "bytes".getBytes(StandardCharsets.UTF_8));
+        exporter.setLedgerStore(store);
+        exporter.setLedgerService(service);
+
+        java.lang.reflect.Method evidencePackage = EarkSipExporter.class.getDeclaredMethod(
+                "evidencePackage", String.class, String.class, List.class);
+        evidencePackage.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> evidence = (Map<String, Object>) evidencePackage.invoke(exporter,
+                REPO, OBJECT, new java.util.ArrayList<String>());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> proof = (Map<String, Object>) evidence.get("inclusionProof");
+        assertEquals("FIXITY_RESULT", proof.get("provesEntry"),
+                "the proof does not say which entry it is about: " + proof);
+        assertNotNull(evidence.get("captureProof"),
+                "there is no capture entry and the package does not say the proof is over "
+                        + "something else: " + evidence);
     }
 }

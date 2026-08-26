@@ -67,6 +67,65 @@ class CustodyLedgerRecorderTest {
     }
 
     @Test
+    @DisplayName("recording the same handover twice appends ONCE")
+    void aRetryDoesNotChainTheHandoverTwice() {
+        // passCustody records, then moves, then writes. When the write fails it says so
+        // honestly — the chain has an entry the transfer does not — and the operator retries.
+        // Without this the retry appends a SECOND custody receipt for one handover, and the
+        // chain then says the record was handed over twice.
+        CustodyTransfer transfer = verifiedTransfer(null, false);
+        String digest = CustodyLedgerRecorder.receiptDigest(transfer);
+        EvidenceLedgerService service = mock(EvidenceLedgerService.class);
+        when(service.append(anyString(), any(), anyString(), anyString(), anyString()))
+                .thenReturn(new EvidenceLedgerService.AppendResult(
+                        EvidenceLedgerService.AppendOutcome.APPENDED, 1, "hash", null));
+        jp.aegif.nemaki.evidence.EvidenceLedgerStore store =
+                mock(jp.aegif.nemaki.evidence.EvidenceLedgerStore.class);
+        when(store.findBySubject(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of(
+                        EvidenceLedgerEntry.of("bedroom", 1,
+                                EvidenceLedgerEntry.SubjectKind.CUSTODY_RECEIPT, "doc-1",
+                                digest, "2026-08-26T02:00:00Z", null)));
+        CustodyLedgerRecorder recorder = recorderOver(service);
+        recorder.setStore(store);
+
+        CustodyLedgerRecorder.Authorisation second =
+                recorder.recordVerifiedReceipt(transfer, "2026-08-26T03:00:00Z");
+
+        assertTrue(second.mayProceed(),
+                "an already-recorded handover was refused, so the operator cannot finish it: "
+                        + second.refusedReason());
+        org.mockito.Mockito.verify(service, org.mockito.Mockito.never())
+                .append(anyString(), any(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("a DIFFERENT handover for the same record is still appended")
+    void adifferentHandoverIsNotSuppressed() {
+        // The control: matching on the subject alone would make the second, genuine transfer of
+        // the same record silently unrecorded.
+        CustodyTransfer transfer = verifiedTransfer(null, false);
+        EvidenceLedgerService service = mock(EvidenceLedgerService.class);
+        when(service.append(anyString(), any(), anyString(), anyString(), anyString()))
+                .thenReturn(new EvidenceLedgerService.AppendResult(
+                        EvidenceLedgerService.AppendOutcome.APPENDED, 2, "hash", null));
+        jp.aegif.nemaki.evidence.EvidenceLedgerStore store =
+                mock(jp.aegif.nemaki.evidence.EvidenceLedgerStore.class);
+        when(store.findBySubject(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of(
+                        EvidenceLedgerEntry.of("bedroom", 1,
+                                EvidenceLedgerEntry.SubjectKind.CUSTODY_RECEIPT, "doc-1",
+                                "mh1:some-other-handover", "2026-08-26T02:00:00Z", null)));
+        CustodyLedgerRecorder recorder = recorderOver(service);
+        recorder.setStore(store);
+
+        assertTrue(recorder.recordVerifiedReceipt(transfer, "2026-08-26T03:00:00Z")
+                .mayProceed());
+        org.mockito.Mockito.verify(service).append(anyString(), any(), anyString(), anyString(),
+                anyString());
+    }
+
+    @Test
     @DisplayName("a recorded handover authorises custody to pass, under its own kind")
     void aRecordedHandoverIsAuthorised() {
         EvidenceLedgerService service = mock(EvidenceLedgerService.class);

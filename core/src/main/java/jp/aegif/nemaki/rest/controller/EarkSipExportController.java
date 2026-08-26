@@ -72,13 +72,15 @@ public class EarkSipExportController {
      * archive's own acceptance profile.
      */
     static final String EXPORT_LIMITS =
-            "This package is built to E-ARK CSIP 2.2.0 and passes the reference validator "
-                    + "bundled with commons-ip2. That establishes that the CONTAINER is "
-                    + "well formed. It is NOT a statement that any particular archive will "
-                    + "accept it, NOT a claim of E-ARK certification, and NOT a statement that "
-                    + "the record's metadata is true — the descriptive metadata is what the "
-                    + "source system reported at capture. The authenticity report inside the "
-                    + "package carries the per-section limits.";
+            "This package is built to E-ARK CSIP 2.2.0. Whether the bundled reference validator "
+                    + "was RUN on it is in the X-Nemaki-Csip-Validated header — a package the "
+                    + "validator rejected is never returned, but one it could not check is, and "
+                    + "says so. Even a package it accepted is only a statement that the "
+                    + "CONTAINER is well formed. It is NOT a statement that any particular "
+                    + "archive will accept it, NOT a claim of E-ARK certification, and NOT a "
+                    + "statement that the record's metadata is true — the descriptive metadata "
+                    + "is what the source system reported at capture. The authenticity report "
+                    + "inside the package carries the per-section limits.";
 
     @Autowired(required = false)
     private EarkSipExporter exporter;

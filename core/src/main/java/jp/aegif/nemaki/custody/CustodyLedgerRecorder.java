@@ -18,6 +18,7 @@ package jp.aegif.nemaki.custody;
 
 import jp.aegif.nemaki.evidence.EvidenceLedgerEntry;
 import jp.aegif.nemaki.evidence.EvidenceLedgerService;
+import jp.aegif.nemaki.evidence.EvidenceLedgerStore;
 import jp.aegif.nemaki.rest.purview.journal.LineageCanonicalHash;
 
 import org.slf4j.Logger;
@@ -100,6 +101,17 @@ public class CustodyLedgerRecorder {
         EvidenceLedgerService.AppendResult result;
         try {
             String digest = receiptDigest(transfer);
+            // Idempotent on the handover itself. The digest is deterministic — the same
+            // transfer and the same receipt produce the same value — so an entry already
+            // carrying it IS this handover, recorded. Without this, the honest failure path
+            // ("recorded, but the transfer was not written") turns a retry into a SECOND
+            // CUSTODY_RECEIPT for one handover, and the chain then says the record was handed
+            // over twice.
+            if (alreadyRecorded(transfer, digest)) {
+                logger.info("The handover of {} is already in the chain; not appending it "
+                        + "again", transfer.objectId());
+                return Authorisation.granted();
+            }
             result = ledgerService.append(transfer.repositoryId(),
                     EvidenceLedgerEntry.SubjectKind.CUSTODY_RECEIPT, transfer.objectId(), digest,
                     occurredAt);
@@ -118,6 +130,41 @@ public class CustodyLedgerRecorder {
         return Authorisation.refused("this handover was not recorded (" + result.reason()
                 + "), so custody has NOT passed. The record is still here and the next attempt "
                 + "will try again.");
+    }
+
+    /**
+     * Whether this exact handover is already in the chain.
+     *
+     * <p>Read failures answer {@code false}: not finding it because the store could not be read
+     * is not the same as it not being there, and the safe direction is to attempt the append —
+     * which the ledger itself can refuse — rather than to report a handover as recorded on the
+     * strength of a lookup that did not run.
+     */
+    private boolean alreadyRecorded(CustodyTransfer transfer, String digest) {
+        if (store == null) {
+            return false;
+        }
+        try {
+            for (EvidenceLedgerEntry entry : store.findBySubject(transfer.repositoryId(),
+                    transfer.objectId(), 100)) {
+                if (entry.subjectKind() == EvidenceLedgerEntry.SubjectKind.CUSTODY_RECEIPT
+                        && digest.equals(entry.payloadDigest())) {
+                    return true;
+                }
+            }
+        } catch (RuntimeException e) {
+            logger.debug("Could not check whether the handover of {} is already chained: {}",
+                    transfer.objectId(), e.getMessage());
+        }
+        return false;
+    }
+
+    private EvidenceLedgerStore store;
+
+    /** Optional: without it a retry can append a second entry for one handover. */
+    @Autowired(required = false)
+    public void setStore(EvidenceLedgerStore store) {
+        this.store = store;
     }
 
     /**

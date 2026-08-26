@@ -306,3 +306,41 @@ CSIP 版を落とす)。**うち「非 ASCII を潰す」は 1 度目の細工�
 何も調べなくても verified / 葉ハッシュを飛ばす / 未対応 algorithm を FAILED にする)。
 **export → verify のラウンドトリップも 1 本測っている** — 他は全部手組みの fixture
 なので、それだけだと「自分の fixture しか検証できない検証器」でも全部緑になる。
+
+---
+
+## 10. capture の証明を object id から引く (2026-08-26)
+
+### 診断を 1 度間違えた
+
+「SIP の inclusion proof が capture 済み文書を object id で引けない」の原因を、
+**「CMIS object id はどこにも記録されていない」と書いたのは誤り**だった (並行レビュー指摘)。
+完了時に `withCaptureOutcome` が intent 行へ `objectId` を入れており、
+`VIEW_CAPTURED_BY_OBJECT` と `listCapturedForObject` があり、
+**真正性報告はずっとそれで capture 行を引いていた**。ingest のホットパスに触る話ではない。
+
+### 閉じ方
+
+exporter が報告と同じ道を辿る: object id → capture 行 → intentId →
+`findBySubject(intentId)`。object 配下の entry (fixity / duplication / custody) は
+これまでどおり別に引き、両方を並べる。
+
+**保存済みの capture entry の subject を object id に書き換える案は採らない。**
+既に発行した inclusion proof が全部壊れる。
+
+### 証明の対象を名乗る
+
+旧版は `entries.get(0)` を証明して「the capture」と書いていた。
+そのリストは**object 自身の entry** なので、ラベルが capture と言いながら
+証明していたのは最古の fixity / 複製 / 受領証だった。
+**対象を取り違えた証明は、証明が無いより悪い** — 検証できるので信じられる。
+
+`provesEntry` / `provesSubjectId` / `provesSequence` を証明に添え、
+capture entry が無いときは「これは capture の証明ではない」と明記する
+(CMIS から作られた文書には capture entry がそもそも無い)。
+
+| 壊した箇所 | 落ちたテスト |
+|---|---|
+| capture 行を辿らない | `theCaptureIsFoundThroughItsIntent` |
+| 証明に対象を書かない | `theProofNamesItsSubject` |
+

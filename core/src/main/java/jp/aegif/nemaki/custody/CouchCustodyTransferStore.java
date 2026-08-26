@@ -172,8 +172,17 @@ public class CouchCustodyTransferStore implements CustodyTransferStore {
         }
     }
 
+    /** How many rows the last findByObject on THIS thread could not read. */
+    private final ThreadLocal<Integer> lastUnreadable = ThreadLocal.withInitial(() -> 0);
+
+    @Override
+    public int unreadableCount() {
+        return lastUnreadable.get();
+    }
+
     @Override
     public List<CustodyTransfer> findByObject(String repositoryId, String objectId, int limit) {
+        lastUnreadable.set(0);
         CloudantClientWrapper client = client();
         if (client == null || objectId == null || objectId.isBlank()) {
             return List.of();
@@ -204,6 +213,7 @@ public class CouchCustodyTransferStore implements CustodyTransferStore {
                 unreadable++;
             }
         }
+        lastUnreadable.set(unreadable);
         if (unreadable > 0) {
             // Said at warn, not debug. A list that silently drops rows reads as a complete
             // answer, and "this record was never sent anywhere" is exactly the conclusion a

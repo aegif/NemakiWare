@@ -252,12 +252,12 @@ class FormatDuplicationRecorderTest {
     void theDigestIsDomainSeparated() {
         // The literal is written here; production reads the constant.
         String expected = jp.aegif.nemaki.rest.purview.journal.LineageCanonicalHash.hash(
-                "LEDGER_FORMAT_DUPLICATION_V1", REPO, "obj-1", "src", "out",
+                "LEDGER_FORMAT_DUPLICATION_V2", REPO, "obj-1", "src", "out",
                 "jodconverter/LibreOffice", "application/pdf", null, null, "admin");
 
         assertEquals(expected, FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "src",
                         "out", Converter.JODCONVERTER_LIBREOFFICE, FormatDuplicationRecorder.TargetFormat.PDF, "admin"),
-                "the duplication digest is no longer H(LEDGER_FORMAT_DUPLICATION_V1, "
+                "the duplication digest is no longer H(LEDGER_FORMAT_DUPLICATION_V2, "
                         + "repositoryId, sourceObjectId, sourceDigest, producedDigest, "
                         + "converterId, targetMediaType, pdfaOutcome, pdfaFlavour, actor)");
     }
@@ -273,11 +273,11 @@ class FormatDuplicationRecorderTest {
         // green. This computes the value the id produces and the value the disclosure would,
         // and asserts which one production actually emits.
         String withId = jp.aegif.nemaki.rest.purview.journal.LineageCanonicalHash.hash(
-                "LEDGER_FORMAT_DUPLICATION_V1", REPO, "obj-1", "src", "out",
+                "LEDGER_FORMAT_DUPLICATION_V2", REPO, "obj-1", "src", "out",
                 Converter.JODCONVERTER_LIBREOFFICE.id(), "application/pdf", null, null,
                 "admin");
         String withDisclosure = jp.aegif.nemaki.rest.purview.journal.LineageCanonicalHash.hash(
-                "LEDGER_FORMAT_DUPLICATION_V1", REPO, "obj-1", "src", "out",
+                "LEDGER_FORMAT_DUPLICATION_V2", REPO, "obj-1", "src", "out",
                 Converter.JODCONVERTER_LIBREOFFICE.disclosure(), "application/pdf", null, null,
                 "admin");
         assertNotEquals(withId, withDisclosure, "the fixture cannot tell the two apart");
@@ -286,6 +286,27 @@ class FormatDuplicationRecorderTest {
                         "out", Converter.JODCONVERTER_LIBREOFFICE, FormatDuplicationRecorder.TargetFormat.PDF, "admin"),
                 "the digest is taken over the disclosure TEXT, so rewording a caveat changes "
                         + "every entry and looks like the facts changed");
+    }
+
+    @Test
+    @DisplayName("V1 is still reproducible — the schema changed, it was not redefined")
+    void theOldSchemaStillReproduces() {
+        // Adding the archival-profile finding changed what the digest covers, so the domain
+        // moved to V2. Entries written before that carry V1 payload digests, and a reader
+        // reconciling one from the documented facts has to be able to get the same value —
+        // otherwise "the old entries no longer reproduce" and nobody said why.
+        String v1 = jp.aegif.nemaki.rest.purview.journal.LineageCanonicalHash.hash(
+                "LEDGER_FORMAT_DUPLICATION_V1", REPO, "obj-1", "src", "out",
+                "jodconverter/LibreOffice", "application/pdf", "admin");
+
+        assertEquals(v1, FormatDuplicationRecorder.duplicationDigestV1(REPO, "obj-1", "src",
+                        "out", Converter.JODCONVERTER_LIBREOFFICE,
+                        FormatDuplicationRecorder.TargetFormat.PDF, "admin"),
+                "an entry written under the old schema can no longer be reproduced");
+        assertNotEquals(v1, FormatDuplicationRecorder.duplicationDigest(REPO, "obj-1", "src",
+                        "out", Converter.JODCONVERTER_LIBREOFFICE,
+                        FormatDuplicationRecorder.TargetFormat.PDF, "admin"),
+                "V1 and V2 hash the same facts identically, so the version bump says nothing");
     }
 
     @Test

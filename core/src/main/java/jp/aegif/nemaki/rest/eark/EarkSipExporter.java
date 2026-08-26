@@ -125,6 +125,18 @@ public class EarkSipExporter {
         this.contentService = contentService;
     }
 
+    private jp.aegif.nemaki.rest.ingest.capture.CaptureMaintenanceStore captureMaintenanceStore;
+
+    /**
+     * Optional: without it a package carries the object's own entries and no capture proof,
+     * and says so rather than reporting the oldest entry as though it were the capture.
+     */
+    @Autowired(required = false)
+    public void setCaptureMaintenanceStore(
+            jp.aegif.nemaki.rest.ingest.capture.CaptureMaintenanceStore captureMaintenanceStore) {
+        this.captureMaintenanceStore = captureMaintenanceStore;
+    }
+
     @Autowired(required = false)
     public void setReportAssembler(AuthenticityReportAssembler reportAssembler) {
         this.reportAssembler = reportAssembler;
@@ -617,17 +629,25 @@ public class EarkSipExporter {
         }
         List<Map<String, Object>> chained = new ArrayList<>();
         List<EvidenceLedgerEntry> entries;
+        List<EvidenceLedgerEntry> captureEntries = List.of();
         try {
-            // Looked up by the OBJECT id, which finds the entries whose subject is the object:
-            // fixity passes, format duplications, custody receipts.
+            // TWO lookups, because the chain files two kinds of thing under two subjects.
             //
-            // It does NOT find the capture entry. That one's subject is the capture intent id
-            // (EvidenceLedgerRecorder appends under intent.intentId()), and this method is
-            // given an object. The comment here used to say "both are tried"; only one was, so
-            // a package could report "not-chained" for a record whose capture IS in the chain.
-            // Saying which lookup was performed is the honest fix — following the intent id
-            // needs the capture row, which is a different store and a wider change.
+            // Entries ABOUT the object — fixity passes, format duplications, custody receipts —
+            // have the object as their subject. The CAPTURE entry does not: it is filed under
+            // the capture intent id. The previous version looked up only the object and said so
+            // honestly, which left a package reporting nothing about a capture that IS in the
+            // chain. The earlier diagnosis of that gap was wrong: it said the CMIS object id
+            // was never recorded at capture, and it is — `withCaptureOutcome` puts it on the
+            // intent row and `listCapturedForObject` reads it back, which is how the
+            // authenticity report has been finding capture rows all along.
+            //
+            // So this follows the same path the report does: object -> capture rows -> intent
+            // ids -> ledger. Rewriting the stored capture entries to use the object as their
+            // subject would have been the other way to close it, and it would break every
+            // inclusion proof already issued over them.
             entries = new ArrayList<>(ledgerStore.findBySubject(repositoryId, objectId, 50));
+            captureEntries = captureEntriesFor(repositoryId, objectId);
         } catch (RuntimeException e) {
             evidence.put("status", "error");
             evidence.put("message", "the evidence ledger could not be read (" + e.getMessage()
@@ -636,17 +656,17 @@ public class EarkSipExporter {
                     + "be read when it was built.");
             return evidence;
         }
-        if (entries.isEmpty()) {
+        if (entries.isEmpty() && captureEntries.isEmpty()) {
             evidence.put("status", "not-chained");
-            evidence.put("message", "no ledger entry names this OBJECT. Note what that does and "
-                    + "does not cover: the capture entry for an externally ingested record is "
-                    + "filed under its capture intent id, not under the object, so a record "
-                    + "whose capture IS in the chain still reports nothing here. The chain also "
-                    + "only holds what was written to it from the day the producer shipped, "
-                    + "with no back-fill. None of this says the record is not genuine.");
+            evidence.put("message", "no ledger entry names this object, and no capture entry "
+                    + "was found for it either. The chain only holds what was written to it "
+                    + "from the day the producer shipped, with no back-fill, so this says "
+                    + "nothing about whether the record is genuine.");
             return evidence;
         }
-        for (EvidenceLedgerEntry entry : entries) {
+        List<EvidenceLedgerEntry> all = new ArrayList<>(captureEntries);
+        all.addAll(entries);
+        for (EvidenceLedgerEntry entry : all) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("sequence", entry.sequence());
             row.put("subjectKind", entry.subjectKind().name());
@@ -658,12 +678,60 @@ public class EarkSipExporter {
         }
         evidence.put("chainedEntries", chained);
         evidence.put("status", "success");
-        // The proof for the FIRST entry: the capture. Later entries about the same object are
-        // listed above but not proved individually — a package with fifty audit paths in it
-        // would be no more checkable and much harder to read.
-        evidence.put("inclusionProof",
-                ledgerService.inclusionProof(repositoryId, entries.get(0).sequence()));
+        // The proof is for the CAPTURE when there is one, and it says which entry it is about.
+        // The previous version proved `entries.get(0)` and called it "the capture" — but that
+        // list is the object's own entries, so the label named a capture while the proof was
+        // over the oldest fixity result, duplication or custody receipt. A proof whose subject
+        // is mislabelled is worse than no proof: it is checkable, so it is believed.
+        EvidenceLedgerEntry proved = captureEntries.isEmpty()
+                ? entries.get(0)
+                : captureEntries.get(0);
+        Map<String, Object> proof = new LinkedHashMap<>();
+        proof.put("provesEntry", proved.subjectKind().name());
+        proof.put("provesSubjectId", proved.subjectId());
+        proof.put("provesSequence", proved.sequence());
+        proof.putAll(ledgerService.inclusionProof(repositoryId, proved.sequence()));
+        evidence.put("inclusionProof", proof);
+        if (captureEntries.isEmpty()) {
+            evidence.put("captureProof", "no capture entry was found for this record, so the "
+                    + "proof above is over the oldest entry ABOUT the object, not over its "
+                    + "capture. A record created through CMIS rather than external ingest has "
+                    + "no capture entry at all.");
+        }
+        // Later entries are listed above but not proved individually — a package with fifty
+        // audit paths in it would be no more checkable and much harder to read.
         return evidence;
+    }
+
+    /**
+     * The chain entries for this record's CAPTURE, found the way the report finds them.
+     *
+     * <p>object id -> capture rows (the intent row carries the object id from completion) ->
+     * intent ids -> ledger. Never throws: a package that could not read the capture store is
+     * still a package, and it reports what it did find rather than failing over what it did
+     * not.
+     */
+    private List<EvidenceLedgerEntry> captureEntriesFor(String repositoryId, String objectId) {
+        if (captureMaintenanceStore == null) {
+            return List.of();
+        }
+        List<EvidenceLedgerEntry> found = new ArrayList<>();
+        try {
+            for (Map<String, Object> row : captureMaintenanceStore.listCapturedForObject(
+                    repositoryId, objectId, 20)) {
+                Object intentId = row.get("intentId");
+                if (intentId == null) {
+                    continue;
+                }
+                found.addAll(ledgerStore.findBySubject(repositoryId, String.valueOf(intentId),
+                        10));
+            }
+        } catch (RuntimeException e) {
+            logger.warn("The capture entries for {}/{} could not be read: {}", repositoryId,
+                    objectId, e.getMessage());
+            return List.of();
+        }
+        return found;
     }
 
     private Path writeEvidencePackage(Path workDir, Map<String, Object> evidence)

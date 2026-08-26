@@ -149,11 +149,17 @@ public class CustodyTransferController {
         if (refused != null) {
             return refused;
         }
-        CustodyTransfer transfer = service.find(repositoryId, transferId);
-        if (transfer == null) {
-            return error(HttpStatus.NOT_FOUND, "there is no transfer " + transferId + " on this "
-                    + "node. This is NOT a statement that the handover did not happen.");
+        CustodyTransferService.Found found = service.find(repositoryId, transferId);
+        if (found.transfer() == null) {
+            // 409, not 404, when a row exists and could not be read: "there is no transfer" is
+            // the reassuring answer and the wrong one, and a 404 is exactly how a reader
+            // reaches it.
+            boolean unreadable = found.absent() != null
+                    && !found.absent().contains("NOT a statement that the handover did not");
+            return error(unreadable ? HttpStatus.CONFLICT : HttpStatus.NOT_FOUND,
+                    found.absent());
         }
+        CustodyTransfer transfer = found.transfer();
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("limits", CUSTODY_LIMITS);
         body.put("status", "success");
@@ -169,12 +175,21 @@ public class CustodyTransferController {
         if (refused != null) {
             return refused;
         }
+        CustodyTransferService.Listed listed =
+                service.findByObject(repositoryId, objectId, limit);
         List<Map<String, Object>> transfers = new ArrayList<>();
-        for (CustodyTransfer transfer : service.findByObject(repositoryId, objectId, limit)) {
+        for (CustodyTransfer transfer : listed.transfers()) {
             transfers.add(describe(transfer));
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("limits", CUSTODY_LIMITS);
+        // Completeness BEFORE the list. A reader who meets the rows first has already drawn
+        // the conclusion by the time they reach the caveat, and the conclusion an incomplete
+        // list invites is "this record was never sent anywhere".
+        body.put("complete", listed.complete());
+        if (!listed.complete()) {
+            body.put("incomplete", listed.incomplete());
+        }
         body.put("status", "success");
         body.put("transfers", transfers);
         return ResponseEntity.ok(body);

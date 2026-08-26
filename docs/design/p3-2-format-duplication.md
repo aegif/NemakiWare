@@ -182,7 +182,7 @@ digest は記録しない。消さないと**前の文書の結果**が今回の
 | `rest/RenditionResource` / `rest/controller/RenditionController` / `api/v1/resource/RenditionResource` の 3 本 | **実装済み** (2026-08-26)。§7。かつて「永続化しないので対象外」と書いていたのは誤りで、3 本とも永続化していた |
 | `AttachmentServiceDelegate.copyRenditions` (コピー時の rendition 複製) | **実装済み** (2026-08-26)。§8 |
 | cloud drive 側の変換 | **未** |
-| **PDF/A 出力と veraPDF 検証** | **部分実装** (2026-08-26、§10)。veraPDF による判定と、判定を開示に載せる経路は実装済み。PDF/A を要求する store property も用意した。**未**: 変換経路への配線と、LibreOffice を通した実測 (この build に LibreOffice が無く、要求が通ったかを測れない) |
+| **PDF/A 出力と veraPDF 検証** | **部分実装** (2026-08-26、§10)。veraPDF 判定は変換経路に配線済みで、判定は entry の digest にコミットする。PDF/A を要求する store property も用意した。**未**: LibreOffice への要求の配線と実測 (この build に LibreOffice が無い)、報告での判定の開示 (entry が平文を持たないため) |
 
 ---
 

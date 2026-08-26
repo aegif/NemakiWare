@@ -108,7 +108,7 @@ public class CustodyTransferService {
         }
         CustodyTransfer transfer = load(repositoryId, transferId);
         if (transfer == null) {
-            return Outcome.refused(null, notFound(transferId));
+            return Outcome.refused(null, whyNotFound(transferId));
         }
         CustodyTransfer.Moved moved = transfer.advance(next, Instant.now().toString(), reason);
         if (!moved.accepted()) {
@@ -121,7 +121,7 @@ public class CustodyTransferService {
     public Outcome verifyReceipt(String repositoryId, String transferId, CustodyReceipt receipt) {
         CustodyTransfer transfer = load(repositoryId, transferId);
         if (transfer == null) {
-            return Outcome.refused(null, notFound(transferId));
+            return Outcome.refused(null, whyNotFound(transferId));
         }
         CustodyTransfer.Moved moved = transfer.verifyReceipt(receipt, Instant.now().toString());
         if (!moved.accepted()) {
@@ -143,7 +143,7 @@ public class CustodyTransferService {
     public Outcome passCustody(String repositoryId, String transferId) {
         CustodyTransfer transfer = load(repositoryId, transferId);
         if (transfer == null) {
-            return Outcome.refused(null, notFound(transferId));
+            return Outcome.refused(null, whyNotFound(transferId));
         }
         if (ledgerRecorder == null) {
             return Outcome.refused(transfer, "the custody ledger recorder is not wired on this "
@@ -174,19 +174,46 @@ public class CustodyTransferService {
                 + "reflect.");
     }
 
-    /** The transfer as it stands, or null. */
-    public CustodyTransfer find(String repositoryId, String transferId) {
-        return load(repositoryId, transferId);
+    /** The transfer as it stands, and why not when there is none. */
+    public Found find(String repositoryId, String transferId) {
+        CustodyTransfer transfer = load(repositoryId, transferId);
+        return new Found(transfer, transfer == null ? whyNotFound(transferId) : null);
     }
 
-    /** Every transfer for one record, newest first. */
-    public List<CustodyTransfer> findByObject(String repositoryId, String objectId, int limit) {
+    /**
+     * A transfer, or the reason there is none.
+     *
+     * <p>Two reasons, and they are not the same: nothing is stored, or something is stored and
+     * could not be read. A method returning null collapses them, and the collapsed answer —
+     * "there is no transfer" — is the reassuring one.
+     */
+    public record Found(CustodyTransfer transfer, String absent) {}
+
+    /**
+     * Every transfer for one record, newest first, and whether the list is complete.
+     *
+     * <p>The completeness travels with the list. A list that silently dropped rows it could not
+     * read looks like a complete answer, and "this record was never sent anywhere" is exactly
+     * the conclusion a dropped row invites.
+     */
+    public Listed findByObject(String repositoryId, String objectId, int limit) {
         if (notStorable()) {
-            return List.of();
+            return new Listed(List.of(), false, unstorable());
         }
         List<CustodyTransfer> found = store.findByObject(repositoryId, objectId, limit);
-        return found == null ? List.of() : found;
+        if (found == null) {
+            return new Listed(List.of(), false, "the store did not answer, which is not the "
+                    + "same as there being no transfers");
+        }
+        int unread = store.unreadableCount();
+        return new Listed(found, unread == 0, unread == 0 ? null
+                : unread + " stored transfer(s) for this record could not be read and are NOT "
+                        + "in this list, so it is not a complete answer about where this record "
+                        + "has been");
     }
+
+    /** A list, and what it is missing. */
+    public record Listed(List<CustodyTransfer> transfers, boolean complete, String incomplete) {}
 
     private Outcome persist(CustodyTransfer transfer, String failureReason) {
         boolean saved;
@@ -202,16 +229,50 @@ public class CustodyTransferService {
             saved = false;
         }
         if (!saved) {
-            return Outcome.refused(transfer, failureReason);
+            // NOT the object in hand. advance() mutated it before the write was attempted, so
+            // returning it would show a caller `state=SENT` while the database holds whatever
+            // the winning writer put there — the losing speculative state presented as current.
+            // Null says what is true: this process does not know what the transfer is now.
+            return Outcome.refused(null, failureReason);
         }
         return Outcome.done(transfer);
     }
 
+    /**
+     * The stored transfer, or null when there is none.
+     *
+     * <p>Throws nothing. A row that exists and cannot be read is a different fact from "there
+     * is no such transfer" — the store raises it rather than collapsing the two — but letting
+     * that reach a caller as an exception replaces the one sentence they need with a stack
+     * trace and a 500. {@link #unreadable} carries it as a refusal instead.
+     */
     private CustodyTransfer load(String repositoryId, String transferId) {
         if (notStorable()) {
             return null;
         }
-        return store.find(repositoryId, transferId);
+        unreadable.remove();
+        try {
+            return store.find(repositoryId, transferId);
+        } catch (RuntimeException e) {
+            // Cleared at entry, set only here: a diagnosis left behind by an earlier request on
+            // a pooled thread would otherwise be reported as this one's.
+            unreadable.set(e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Why the last {@link #load} found nothing, when the reason was not "nothing is there".
+     *
+     * <p>A thread-local because the answer belongs to one call and the alternative — a field —
+     * would let one request's diagnosis be reported on another's.
+     */
+    private final ThreadLocal<String> unreadable = new ThreadLocal<>();
+
+    private String whyNotFound(String transferId) {
+        String reason = unreadable.get();
+        unreadable.remove();
+        return reason != null ? reason : notFound(transferId);
     }
 
     private boolean notStorable() {

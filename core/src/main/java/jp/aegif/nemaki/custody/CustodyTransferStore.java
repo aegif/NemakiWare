@@ -55,4 +55,15 @@ public interface CustodyTransferStore {
 
     /** Every transfer for one record, newest first. Empty when there are none. */
     List<CustodyTransfer> findByObject(String repositoryId, String objectId, int limit);
+
+    /**
+     * How many rows the last {@link #findByObject} on this thread could not read.
+     *
+     * <p>Zero is the ordinary answer. A non-zero one means the list that came back is not a
+     * complete answer, and a caller that reports it as one is telling a reader a record was
+     * never sent anywhere on the strength of a row nobody could parse.
+     */
+    default int unreadableCount() {
+        return 0;
+    }
 }

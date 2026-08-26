@@ -261,16 +261,18 @@ class ErsRecordTest {
 
         assertFalse(report.linksHold(),
                 "a new chain unrelated to the old ones was accepted as renewing them");
-        assertTrue(report.results().get(1).detail().contains("does not renew them"),
+        assertTrue(report.results().get(1).detail().contains("renew the ones before it"),
                 report.results().get(1).detail());
     }
 
     @Test
-    @DisplayName("without H(d) under the new algorithm, the §5.3 link is not claimed")
+    @DisplayName("without H(d) under the new algorithm, the §5.3 link is NOT claimed to hold")
     void anUncheckableLinkIsNotClaimed() throws Exception {
-        // The relationship needs H(d) under the NEW algorithm, which cannot be derived from the
-        // old hash. A caller that cannot supply it must not be told the link holds — but the
-        // token's own imprint is still checkable, so that part is.
+        // This test previously asserted the opposite of its own name — that the record passed —
+        // and it passed because the verifier compared the token with a value it took from the
+        // record itself. Any timestamp filed beside the old chains satisfied that. "We cannot
+        // check this link" is not "this link holds", and a report that says linksHold=true is
+        // read as the second.
         ErsRecord first = firstRecord();
         byte[] hUnderNew = MessageDigest.getInstance("SHA-512").digest(dataObject());
         ErsRecord.HashTreeRenewalInputs inputs =
@@ -280,8 +282,116 @@ class ErsRecordTest {
 
         ErsVerifier.Report report = ErsVerifier.verify(renewed.der(), dataObjectHash());
 
-        assertTrue(report.linksHold(),
-                "the imprint check alone should still pass: " + report.asMap());
+        assertFalse(report.linksHold(),
+                "a link nobody could check was reported as holding: " + report.asMap());
+        assertTrue(report.results().get(1).detail().contains("NOT checked"),
+                report.results().get(1).detail());
+        // And it must say so as a gap, not as an accusation.
+        assertTrue(report.results().get(1).detail().contains("not a finding that it is wrong"),
+                report.results().get(1).detail());
+    }
+
+    @Test
+    @DisplayName("a tree whose upper levels do not join up is caught")
+    void aTreeThatDoesNotJoinUpIsCaught() throws Exception {
+        // §4.3 step 3 walks EVERY list: each computed parent must be a member of the next.
+        // Reading only list 0 lets a record carry [[H(d)], [anything]] and be measured on
+        // list 0 alone.
+        byte[] h = dataObjectHash();
+        byte[] rootOfFirst = sha256(ErsRecord.sortedConcat(List.of(h)));
+        ErsRecord.ArchiveTimeStamp broken = new ErsRecord.ArchiveTimeStamp(
+                List.of(List.of(h), List.of(sha256("not the parent".getBytes("UTF-8")))),
+                tokenOver(sha256(ErsRecord.sortedConcat(
+                        List.of(sha256("not the parent".getBytes("UTF-8")))))),
+                SHA256_OID);
+        byte[] der = derOf(broken);
+
+        ErsVerifier.Report report = ErsVerifier.verify(der, h);
+
+        assertFalse(report.linksHold(), "a tree whose levels do not join up verified");
+        assertTrue(report.results().get(0).detail().contains("does not join up"),
+                report.results().get(0).detail());
+        assertNotNull(rootOfFirst);
+    }
+
+    @Test
+    @DisplayName("a two-level tree that DOES join up verifies — the control")
+    void aWellFormedTreeVerifies() throws Exception {
+        byte[] h = dataObjectHash();
+        byte[] parent = sha256(ErsRecord.sortedConcat(List.of(h)));
+        byte[] sibling = sha256("sibling".getBytes("UTF-8"));
+        byte[] root = sha256(ErsRecord.sortedConcat(List.of(parent, sibling)));
+        ErsRecord.ArchiveTimeStamp sound = new ErsRecord.ArchiveTimeStamp(
+                List.of(List.of(h), List.of(parent, sibling)), tokenOver(root), SHA256_OID);
+
+        ErsVerifier.Report report = ErsVerifier.verify(derOf(sound), h);
+
+        assertTrue(report.linksHold(), String.valueOf(report.asMap()));
+    }
+
+    @Test
+    @DisplayName("a token taken under a different algorithm than the tree declares is caught")
+    void anAlgorithmMismatchIsCaught() throws Exception {
+        // §4.2 step 5: the timestamp's hash algorithm MUST be the tree's. A record declaring
+        // SHA-512 with a SHA-256 token is not one whose tree was built under SHA-512.
+        byte[] h = dataObjectHash();
+        ErsRecord.ArchiveTimeStamp mismatched = new ErsRecord.ArchiveTimeStamp(
+                List.of(), tokenOver(h), SHA512_OID);
+
+        ErsVerifier.Report report = ErsVerifier.verify(derOf(mismatched), h);
+
+        assertFalse(report.linksHold());
+        assertTrue(report.results().get(0).detail().contains("not about the same"),
+                report.results().get(0).detail());
+    }
+
+    /** A record around one hand-built Archive Timestamp, for the malformed cases. */
+    private static byte[] derOf(ErsRecord.ArchiveTimeStamp ats) throws Exception {
+        java.lang.reflect.Method encode = ErsRecord.class.getDeclaredMethod("encode",
+                List.class, List.class);
+        encode.setAccessible(true);
+        return (byte[]) encode.invoke(null, List.of(List.of(ats)),
+                List.of(SHA256_OID, SHA512_OID));
+    }
+
+    @Test
+    @DisplayName("an absent digestAlgorithm is read from the TOKEN, not assumed SHA-256")
+    void anAbsentAlgorithmComesFromTheToken() throws Exception {
+        // §4.1: "If the optional field digestAlgorithm is not present, the digest algorithm of
+        // the timestamp MUST be used." Assuming SHA-256 rejects every valid SHA-384/SHA-512
+        // record — and the rejection reads as a broken record rather than an unsupported one.
+        byte[] h512 = MessageDigest.getInstance("SHA-512").digest(dataObject());
+        byte[] der = derWithoutAlgorithm(tokenOver(h512, SHA512_OID));
+
+        ErsRecord parsed = ErsRecord.parse(der);
+
+        assertEquals(SHA512_OID, parsed.chains().get(0).get(0).digestAlgorithmOid(),
+                "the algorithm was assumed rather than read from the token");
+        assertTrue(ErsVerifier.verify(der, h512).linksHold(),
+                "a SHA-512 record with no explicit digestAlgorithm was rejected");
+    }
+
+    /** An ArchiveTimeStamp with the [0] field omitted, which the RFC allows. */
+    private static byte[] derWithoutAlgorithm(byte[] tokenDer) throws Exception {
+        org.bouncycastle.asn1.ASN1EncodableVector ats =
+                new org.bouncycastle.asn1.ASN1EncodableVector();
+        ats.add(org.bouncycastle.asn1.cms.ContentInfo.getInstance(
+                org.bouncycastle.asn1.ASN1Primitive.fromByteArray(tokenDer)));
+        org.bouncycastle.asn1.ASN1EncodableVector chain =
+                new org.bouncycastle.asn1.ASN1EncodableVector();
+        chain.add(new org.bouncycastle.asn1.DERSequence(ats));
+        org.bouncycastle.asn1.ASN1EncodableVector sequence =
+                new org.bouncycastle.asn1.ASN1EncodableVector();
+        sequence.add(new org.bouncycastle.asn1.DERSequence(chain));
+        org.bouncycastle.asn1.ASN1EncodableVector record =
+                new org.bouncycastle.asn1.ASN1EncodableVector();
+        record.add(new org.bouncycastle.asn1.ASN1Integer(1));
+        record.add(new org.bouncycastle.asn1.DERSequence(
+                new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
+                        new ASN1ObjectIdentifier(SHA512_OID))));
+        record.add(new org.bouncycastle.asn1.DERSequence(sequence));
+        return new org.bouncycastle.asn1.DERSequence(record)
+                .getEncoded(org.bouncycastle.asn1.ASN1Encoding.DER);
     }
 
     @Test

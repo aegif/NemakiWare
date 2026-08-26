@@ -35,6 +35,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -202,5 +203,22 @@ class EarkSipExportControllerTest {
         java.lang.reflect.Field field = target.getClass().getDeclaredField(name);
         field.setAccessible(true);
         field.set(target, value);
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("the export limits do not claim a check that may not have run")
+    void theLimitsDoNotAssertAPass() {
+        // These limits go out in X-Nemaki-Export-Limits on EVERY 200, and that header is what a
+        // caller streaming the zip to disk actually reads. Saying "passes the reference
+        // validator" there told them a package had been checked even when the body and the
+        // X-Nemaki-Csip-Validated header both said it had not.
+        String limits = EarkSipExportController.EXPORT_LIMITS;
+
+        assertFalse(limits.contains("passes the reference validator"),
+                "the limits assert a pass on every response, including unchecked ones: "
+                        + limits);
+        assertTrue(limits.contains("X-Nemaki-Csip-Validated"),
+                "the limits do not say where the actual verdict is: " + limits);
+        assertTrue(limits.contains("could not check"), limits);
     }
 }

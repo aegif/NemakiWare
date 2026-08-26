@@ -500,7 +500,10 @@ public class AuthenticityReportAssembler {
                     + "against an archival profile. The chain entry COMMITS to which converter "
                     + "and which format — they are inputs to its digest — but does not carry "
                     + "them in the clear, so this report cannot tell you which applied to any "
-                    + "one copy below. The ORIGINAL is unchanged and remains the record.";
+                    + "one copy below — and the same is true of whether a copy was checked "
+                    + "against an archival profile such as PDF/A, and of what that check found. "
+                    + "This report therefore does NOT say a copy failed such a check, and does "
+                    + "NOT say one passed. The ORIGINAL is unchanged and remains the record.";
 
     private Section versionsSection(Content content) {
         if (!(content instanceof Document document)) {

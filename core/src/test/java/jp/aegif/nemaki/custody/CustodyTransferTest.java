@@ -278,6 +278,21 @@ class CustodyTransferTest {
     }
 
     @Test
+    @DisplayName("a receipt checked at no stated time is refused")
+    void anUntimedVerificationIsRefused() {
+        // Every other move requires a time and restore() refuses a step without one. Without
+        // the same rule here, a public call could produce an accepted RECEIPT_VERIFIED transfer
+        // that cannot be read back — a state the product can create and cannot reload.
+        CustodyTransfer transfer = atAipCreated();
+
+        CustodyTransfer.Moved moved = transfer.verifyReceipt(receiptFor(SIP_DIGEST), "  ");
+
+        assertFalse(moved.accepted(), "a receipt was verified at no stated time");
+        assertEquals(CustodyState.AIP_CREATED, transfer.state());
+        assertTrue(moved.refusedReason().contains("stated time"), moved.refusedReason());
+    }
+
+    @Test
     @DisplayName("custody does NOT pass on the far end's word that an AIP exists")
     void aipCreatedDoesNotTransferCustody() {
         // AIP_CREATED is their claim; RECEIPT_VERIFIED is our finding. Collapsing the two makes

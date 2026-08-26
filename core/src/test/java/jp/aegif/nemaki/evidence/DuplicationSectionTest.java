@@ -103,15 +103,36 @@ class DuplicationSectionTest {
                 List.of(entry(7, EvidenceLedgerEntry.SubjectKind.FORMAT_DUPLICATION)), true);
         String disclosure = String.valueOf(section.content().get("disclosure"));
 
-        assertFalse(disclosure.contains("PDF/A"),
-                "the report tells every reader about PDF/A, including the ones looking at an "
-                        + "SVG copy: " + disclosure);
+        // The rule is about ASSERTING a format property, not about the letters "PDF/A". The
+        // disclosure may — and now does — name PDF/A in order to say it cannot tell you
+        // anything about it; forbidding the string outright would push the text back towards
+        // silence, and silence reads as "no format caveat applies".
+        assertFalse(disclosure.contains("no PDF/A profile was requested"),
+                "the report asserts that no profile was requested, which it cannot know: "
+                        + disclosure);
         assertFalse(disclosure.contains("converts to PDF"),
                 "the report asserts an output format the chain does not reveal: " + disclosure);
         // And it says WHY it cannot say, rather than staying silent and reading as "no format
         // caveat applies".
         assertTrue(disclosure.contains("COMMITS to which converter"), disclosure);
         assertTrue(disclosure.contains("does not carry"), disclosure);
+    }
+
+    @Test
+    @DisplayName("the disclosure does not claim, or deny, an archival-profile check")
+    void theDisclosureIsHonestAboutPdfA() {
+        // The recorder now folds a veraPDF finding into the entry's digest, and the roadmap
+        // briefly claimed that finding was "wired into the disclosure". It is not: the entry
+        // carries a digest, so this section cannot reveal the outcome any more than it can
+        // reveal the format. What it CAN do is say so — rather than leaving a reader with the
+        // old flat sentence, which read as "no copy here was ever checked".
+        AuthenticityReport.Section section = duplications(
+                List.of(entry(7, EvidenceLedgerEntry.SubjectKind.FORMAT_DUPLICATION)), true);
+        String disclosure = String.valueOf(section.content().get("disclosure"));
+
+        assertTrue(disclosure.contains("archival profile such as PDF/A"), disclosure);
+        assertTrue(disclosure.contains("does NOT say a copy failed"), disclosure);
+        assertTrue(disclosure.contains("does NOT say one passed"), disclosure);
     }
 
     @Test
