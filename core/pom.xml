@@ -231,6 +231,17 @@
 			<version>5.2.0</version>
 		</dependency>
 
+		<!-- veraPDF, for checking whether a produced PDF actually IS PDF/A. Requesting the
+		     profile from LibreOffice is not the same as getting it, and P3-2's disclosure has
+		     to state what was FOUND rather than what was asked for. Self-contained: veraPDF
+		     brings its own parser rather than PDFBox, so it does not join the PDF stack
+		     already on the classpath. -->
+		<dependency>
+			<groupId>org.verapdf</groupId>
+			<artifactId>validation-model</artifactId>
+			<version>1.28.2</version>
+		</dependency>
+
 		<!-- nemakiware-action dependency commented out - module is suspended and not needed -->
 		<!--
 		<dependency>

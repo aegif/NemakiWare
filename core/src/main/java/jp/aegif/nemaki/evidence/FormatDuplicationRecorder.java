@@ -159,9 +159,29 @@ public class FormatDuplicationRecorder {
          * "rendered to PDF", and named a PDF/A profile that was never in question.
          */
         public String disclosureFor(TargetFormat target) {
+            return disclosureFor(target, null);
+        }
+
+        /**
+         * As above, with what a PDF/A validation actually found.
+         *
+         * <p>The format's own caveat is REPLACED rather than appended to. Appending would leave
+         * "no PDF/A profile was requested and no PDF/A validation was performed" sitting next
+         * to a sentence saying one was — and a reader meeting both takes the pessimistic one,
+         * which makes the check pointless, or the optimistic one, which makes the caveat a lie.
+         * Only one of them can be true of a given copy.
+         *
+         * @param validation what the validator found, or null when the target is not PDF or no
+         *        validation was attempted at all
+         */
+        public String disclosureFor(TargetFormat target,
+                jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation validation) {
             TargetFormat format = target == null ? TargetFormat.UNKNOWN : target;
+            String caveat = (validation != null && format == TargetFormat.PDF)
+                    ? validation.disclosureSentence()
+                    : format.caveat();
             return "This is a CONVENIENCE COPY, not a preservation format. " + disclosure + " "
-                    + format.caveat() + " The ORIGINAL is unchanged and remains the record.";
+                    + caveat + " The ORIGINAL is unchanged and remains the record.";
         }
 
         /**
@@ -191,7 +211,15 @@ public class FormatDuplicationRecorder {
      */
     public enum TargetFormat {
 
-        /** A page-based document. No archival profile is requested or checked. */
+        /**
+         * A page-based document.
+         *
+         * <p>The caveat here is the one for a copy nobody checked. When a PDF/A validation was
+         * performed, {@link Converter#disclosureFor(TargetFormat,
+         * jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation)} replaces it with what
+         * the validator found — which is the only honest way to mention a profile, since
+         * requesting one from LibreOffice and receiving one are different events.
+         */
         PDF("application/pdf",
                 "The target is PDF, and no PDF/A profile was requested and no PDF/A validation "
                         + "was performed, so this must not be treated as an archival rendition."),

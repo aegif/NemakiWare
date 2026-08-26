@@ -306,6 +306,58 @@ class FormatDuplicationRecorderTest {
     }
 
     @Test
+    @DisplayName("a checked copy's disclosure states what was FOUND, not what was asked for")
+    void aValidatedCopyReportsTheFinding() {
+        // Requesting PDF/A from LibreOffice and receiving it are different events. A product
+        // that recorded the request would tell every reader its convenience copies are archival
+        // renditions on the strength of a flag it set itself.
+        var conforms = new jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation(
+                jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation.Outcome.CONFORMS,
+                "1b", 0, "veraPDF reported compliance");
+
+        String text = Converter.JODCONVERTER_LIBREOFFICE.disclosureFor(
+                FormatDuplicationRecorder.TargetFormat.PDF, conforms);
+
+        assertTrue(text.contains("conforms to 1b"), text);
+        // And the unchecked caveat must be GONE, not sitting beside it. A reader meeting both
+        // takes the pessimistic one — making the check pointless — or the optimistic one,
+        // making the caveat a lie. Only one can be true of a given copy.
+        assertFalse(text.contains("no PDF/A profile was requested"), text);
+        assertTrue(text.contains("CONVENIENCE COPY"), text);
+        assertTrue(text.contains("ORIGINAL is unchanged"), text);
+    }
+
+    @Test
+    @DisplayName("a copy that failed validation says so, and is not called archival")
+    void aFailedValidationIsSaid() {
+        var failed = new jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation(
+                jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation.Outcome
+                        .DOES_NOT_CONFORM, "1b", 3, "veraPDF reported 3 failed check(s)");
+
+        String text = Converter.JODCONVERTER_LIBREOFFICE.disclosureFor(
+                FormatDuplicationRecorder.TargetFormat.PDF, failed);
+
+        assertTrue(text.contains("does NOT conform"), text);
+        assertTrue(text.contains("even though the profile was requested"), text);
+    }
+
+    @Test
+    @DisplayName("a validation result does not leak into an SVG's disclosure")
+    void aPdfFindingIsNotAboutAnSvg() {
+        // Only PDF has a PDF/A profile to report on. Letting the finding through for another
+        // target would attach a PDF verdict to a file that is not one.
+        var conforms = new jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation(
+                jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation.Outcome.CONFORMS,
+                "1b", 0, "veraPDF reported compliance");
+
+        String text = Converter.DIAGRAM_RENDITION.disclosureFor(
+                FormatDuplicationRecorder.TargetFormat.SVG, conforms);
+
+        assertFalse(text.contains("conforms to 1b"), text);
+        assertTrue(text.contains("no archival profile at all"), text);
+    }
+
+    @Test
     @DisplayName("an SVG disclosure does not describe a PDF")
     void anSvgIsNotDescribedAsAPdf() {
         // The whole reason the disclosure is composed. Every converter's text used to end in
