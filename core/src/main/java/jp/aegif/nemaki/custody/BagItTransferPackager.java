@@ -38,11 +38,22 @@ import java.util.zip.ZipOutputStream;
  *
  * <p><b>It does not make the receiving system understand the package.</b> Archivematica's
  * transfer types are {@code standard / zipfile / unzipped bag / zipped bag / dspace / maildir /
- * TRIM / dataverse} — there is no E-ARK type. A {@code zipped bag} is therefore how the bytes
- * get across, and on the far side the SIP is a file inside a payload: its METS is not read, its
- * structure is not honoured, and nothing about this step makes an Archivematica AIP an E-ARK
- * one. Anyone reading "we have a BagIt connector" as "Archivematica ingests our E-ARK SIPs"
- * has been told something this code does not do, so {@link #LIMITS} travels with every bag.
+ * TRIM / dataverse} — there is no E-ARK type. A {@code zipped bag} is how the bytes get across,
+ * and on the far side the SIP is never interpreted: its METS is not read, its structure is not
+ * honoured, and nothing about this step makes an Archivematica AIP an E-ARK one. Anyone reading
+ * "we have a BagIt connector" as "Archivematica ingests our E-ARK SIPs" has been told something
+ * this code does not do, so {@link #LIMITS} travels with every bag.
+ *
+ * <p><b>The payload does not necessarily stay whole.</b> Archivematica 1.18.0's
+ * {@code automated} processing config extracts the SIP zip and files its tree under the AIP's
+ * {@code objects/} (measured — p3-4 §12). An earlier version of this javadoc said the SIP stays
+ * "a file inside a payload"; that was a guess, and it was wrong. <b>Unpacked is not
+ * understood</b> — the tree is just files to AM, and the AIP is still an AM AIP.
+ *
+ * <p><b>And a bag is not the only way in.</b> Measured the same day: the same E-ARK SIP ingests
+ * as {@code zipfile}, and as an unzipped directory under {@code standard}. So this layer is not
+ * "the only route" — what it uniquely buys is that {@code zipped bag} is the one transfer type
+ * that runs {@code Verify bag}, checking the payload manifests this product ships.
  *
  * <p>Nor is this "an IP enclosed in a bag for transport". RFC 8493 does not specify a
  * serialization, so that phrasing describes a guarantee the standard does not make. What is

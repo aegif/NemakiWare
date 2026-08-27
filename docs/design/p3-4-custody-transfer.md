@@ -544,10 +544,14 @@ RODA の bag パーサの欠陥が既定の形式を決めていた**からで�
 | E-ARK | `EARKSIP2ToAIPPlugin` | **METS を読む**。`OBJID` が AIP に入る | `representations/rep1/data/` に**そのまま** |
 | bag | `BagitToAIPPlugin` | payload の中身は見ない | SIP の zip が**丸ごと 1 ファイル**として |
 
-**bag 経路は RODA に入るための必須条件ではなくなった。** BagIt 接続層が要るのは
-E-ARK 相当の transfer type を持たない受け手 — 今のところ Archivematica — のためである
-(§6)。`LIMITS` が「受け手は payload を不透明なファイルとして読む」と言うのは
-**bag 経路について**であって、E-ARK 経路には当てはまらない。
+**bag 経路は RODA に入るための必須条件ではなくなった。** BagIt 接続層は
+E-ARK 相当の transfer type を持たない受け手 — Archivematica — のために残る (§6)。
+**ただしそこでも必須ではなかった** — AM は同じ SIP を `zipfile` でも取り込む (§12)。
+残る積極的な理由は `Verify bag` である。
+
+> `LIMITS` の言い分は **bag 経路についてのもの**で、E-ARK 経路には当てはまらない。
+> なお LIMITS は「不透明なファイルとして読む」とは**もう言っていない** — AM は
+> 展開したので (§12)、「展開しうる。展開された ≠ 理解された」に直してある。
 
 ### 追試 (2026-08-27 夕) — 残していた 3 点を測った
 
@@ -1022,3 +1026,78 @@ AIP になる。`standard` は zip では落ち、展開ディレクトリでは
 config、manifest 1 本の bag、`unzipped bag`、他版の AM、本物の ERS、
 full な本番相当の AIP、arm64 ネイティブ。**AIP が `UPLOADED` なことは「先方が
 保持し続ける」ことでも「E-ARK として読んだ」ことでもない。**
+
+---
+
+## 13. 接続層を書く前に決める 2 点 (2026-08-27)
+
+**受け手を 2 つ測った結果、接続層が写像を持たないと両方で genuine な受領を拒否する。**
+送る口 (HTTP クライアント) より先にここを決めておかないと、RODA と AM で別々の分岐を
+書くことになる。
+
+### 13.1 `verificationOutcome` に何を入れるか
+
+測った語彙:
+
+| 受け手 | 出所 | 成功を表す語 |
+|---|---|---|
+| RODA 6.3.0 | `Report.pluginState` | `SUCCESS` |
+| RODA 6.3.0 | `Report.outcomeObjectState` (`AIPState`) | `ACTIVE` |
+| AM 1.18.0 | transfer / SIP `status` | `COMPLETE` |
+| AM 1.18.0 | SS package `status` | `UPLOADED` |
+
+`reportsSuccess()` が受けるのは `PASSED / PASS / VALID / SUCCESS / ACCEPTED / OK`。
+**通るのは RODA の `pluginState` だけ**である。
+
+**決めること**: 語彙を増やすか、接続層で写像するか。
+
+**写像を採る。** 理由は 3 つ:
+
+- **語彙を増やすと fail-closed の向きが崩れる。** `ACTIVE` や `UPLOADED` を足すと、
+  それらの語を別の意味で使う 3 つ目の受け手に対して**通してしまう**側へ倒れる。
+  今の `reportsSuccess()` は「知らない語は成功ではない」で、外れると正当な受領証を
+  拒否する — §4.1 が意図して選んだ向きである。
+- **どのフィールドを採るかは受け手ごとの判断**であって、語の綴りの問題ではない。
+  RODA では `pluginState` を採り `outcomeObjectState` を採らない、という選択が
+  既に要る (§10 追試 3)。写像はその選択を書く場所になる。
+- **写像なら「何を何に寄せたか」が記録に残る。** 語彙を増やすと、受領証を読んだ人には
+  先方が `SUCCESS` と言ったのか `UPLOADED` と言ったのか区別できない。
+
+> **したがって `verificationOutcome` には先方の生の語を入れる。**
+> 写像するのは `reportsSuccess()` に渡す前ではなく、**接続層が受領証を組み立てるとき**で、
+> 生の語と写像後の語の**両方**を持つこと。生の語を捨てると、後から
+> 「先方は何と言ったのか」に答えられない。
+
+### 13.2 `sipDigest` に何を入れるか — pointer の AIP digest ではない
+
+**両方の受け手で、いちばん近くに在る digest が間違った digest である。**
+
+| 受け手 | すぐ手に入る digest | それは何の digest か |
+|---|---|---|
+| RODA 6.3.0 | 応答フィールドに**無い** | — |
+| AM 1.18.0 | pointer file の PREMIS `messageDigest` | **AIP の 7z** |
+
+`sipDigest` は「**こちらが送った package**」を指していなければ意味が無い (§2)。
+AIP の digest は先方が作った成果物のもので、こちらは一度も見ていない —
+まさに §2 が「どんな値でも条件を満たす」と言って退けた形である。
+
+**採るべきもの**:
+
+- **RODA**: `GET /api/v2/transfers/{uuid}/download` (または AIP の
+  `download/submission`) で**先方が持っているバイト列**を取り、こちらでハッシュする
+- **AM**: 送った bag の `manifest-sha256.txt` が AIP 内
+  `data/objects/metadata/transfers/{transfer-uuid}/` に残る。あるいは
+  `GET /api/v2/file/{uuid}/download/` で AIP を取って中を見る
+
+> **どちらも未実測**である。「取れる口が在る」ことまでは確かめたが、
+> **そのバイト列が送ったものと一致するか**は測っていない。接続層を書くときの
+> 最初の受入条件はそこになる。
+
+### 13.3 この 2 つが同じ形をしている
+
+どちらも「**受け手がすぐ返してくるものは、こちらが必要としているものではない**」で
+ある。語彙は先方の workflow の状態で、digest は先方の成果物のものである。
+受領証が establish しようとしているのは**こちらの package について先方が何をしたか**
+なので、両方とも一段取りに行く必要がある。
+
+**接続層はその一段を書く場所**であり、送る口はそのあとで足りる。

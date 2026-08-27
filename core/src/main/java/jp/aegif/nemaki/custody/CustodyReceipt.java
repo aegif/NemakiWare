@@ -149,13 +149,28 @@ public record CustodyReceipt(
      * what the RECEIVER has. Unverified: whether those bytes are identical to what was sent, and
      * whether the transferred resource still exists when the receipt is assembled.
      *
+     * <p><b>Archivematica has the same trap with a different shape.</b> The digest nearest to
+     * hand — the pointer file's PREMIS {@code messageDigest} — is of the AIP's 7z, an artefact
+     * this product has never seen. Putting it here would be exactly the "AIP checksum only"
+     * receipt §2 refuses. What survives of ours is the shipped bag's
+     * {@code manifest-sha256.txt}, filed inside the AIP under
+     * {@code data/objects/metadata/transfers/}. Design §13.2.
+     *
      * <p>Archivematica 1.18.0's live {@code status} strings are {@code COMPLETE} and
      * {@code FAILED} (transfer/SIP); the stored AIP is {@code UPLOADED}; {@code check_fixity}
      * returns a boolean {@code success}. None of those are in this list, so a connector that
      * copies them here will refuse a genuine ingest — the same trap as RODA's
-     * {@code outcomeObjectState=ACTIVE}. Map, or the list is wrong for that receiver. No receipt
-     * has yet been assembled and verified end to end. Being wrong here costs a refusal of a
-     * genuine receipt, not an acceptance of a bad one, which is the direction to be wrong in.
+     * {@code outcomeObjectState=ACTIVE}. Map, or the list is wrong for that receiver.
+     *
+     * <p><b>Map in the connector, do not widen this list</b> (decided 2026-08-27 — design §13.1).
+     * Adding {@code ACTIVE} or {@code UPLOADED} would tip the failure direction: a third
+     * receiver using either word differently would be ACCEPTED rather than refused. The value
+     * stored here stays the receiver's RAW word, so a later reader can still see what was
+     * actually said; the connector carries the mapping alongside it.
+     *
+     * <p>No receipt has yet been assembled and verified end to end. Being wrong here costs a
+     * refusal of a genuine receipt, not an acceptance of a bad one, which is the direction to
+     * be wrong in.
      */
     public boolean reportsSuccess() {
         if (verificationOutcome == null || verificationOutcome.isBlank()) {

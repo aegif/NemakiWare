@@ -210,8 +210,7 @@ class BagItTransferPackagerTest {
     @DisplayName("the limits say the receiver does not read the SIP")
     void theLimitsRefuseTheObviousMisreading() {
         // "We have a BagIt connector" is read as "Archivematica ingests our E-ARK SIPs". It
-        // does not: there is no E-ARK transfer type, so on the far side the SIP is a file
-        // inside a payload.
+        // does not: there is no E-ARK transfer type, so the far side never interprets the SIP.
         String limits = BagItTransferPackager.LIMITS;
 
         assertTrue(limits.contains("TRANSFER FORMAT"), limits);
@@ -220,6 +219,18 @@ class BagItTransferPackagerTest {
         // And it must not describe itself as enclosing an IP for transport: RFC 8493 specifies
         // no serialization, so that phrasing claims a guarantee the standard does not make.
         assertFalse(limits.contains("enclos"), limits);
+
+        // The measured correction has to be IN the string, not just in a design document.
+        // This said "a payload of opaque files" until 2026-08-27, when Archivematica 1.18.0's
+        // automated config was measured extracting the SIP zip and filing its tree under the
+        // AIP's objects/. Without these two lines, deleting that clause leaves the test green
+        // and puts a falsified sentence back on every bag.
+        assertFalse(limits.contains("opaque"), limits);
+        assertTrue(limits.contains("unpacked is not understood"),
+                "the limits no longer say that unpacking is not understanding. A receiver may "
+                        + "well extract the payload -- Archivematica does -- and a reader who is "
+                        + "only told 'it stays opaque' will read the extracted tree as the "
+                        + "receiver having honoured the package: " + limits);
     }
 
     @Test
