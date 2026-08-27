@@ -77,7 +77,7 @@ class BagItTransferPackagerTest {
     }
 
     @Test
-    @DisplayName("it is a bag: declaration, exactly one payload manifest, and bag-info")
+    @DisplayName("it is a bag: declaration, both payload manifests, and bag-info")
     void itIsActuallyABag(@TempDir Path tmp) throws Exception {
         BagItTransferPackager.Bagged bagged = BagItTransferPackager.bag(
                 sip(Files.createDirectories(tmp.resolve("in")), "x"),
@@ -85,23 +85,26 @@ class BagItTransferPackagerTest {
 
         Map<String, byte[]> entries = entriesOf(bagged.zippedBag());
         assertTrue(entries.containsKey("bagit.txt"), entries.keySet().toString());
-        assertTrue(entries.containsKey("manifest-sha512.txt"), entries.keySet().toString());
-        // Exactly ONE payload manifest, whatever the algorithm. RFC 8493 allows several, but
-        // commons-ip v1's BagitSIP.parse — which RODA 6.3.0 uses — adds each payload file once
-        // per manifest, so a second one makes the ingest fail with "Binary already exists" and
-        // roll back. Measured against a live RODA on 2026-08-26; the identical bag with one
-        // manifest produced an AIP.
+        // SHA-512 because receivers ask for it, SHA-256 because that is the digest this
+        // product's evidence chain uses. In a manifest it is a path->digest binding the
+        // receiver's own verification covers; in bag-info.txt it is free text nobody checks.
         //
-        // Counting is what pins the rule: an assertion that only forbids manifest-sha256.txt
-        // would pass if someone added manifest-sha1.txt instead, which breaks the same receiver
-        // the same way.
+        // This spent 2026-08-26 as ONE manifest, because RODA 6.3.0's BagitToAIPPlugin rolls
+        // back a two-manifest ingest (commons-ip v1 adds the payload once per manifest --
+        // TwoPayloadManifestsBreakTheLegacyBagParserTest pins that, and it is still true).
+        // It is two again because RODA takes the SIP directly, so a parser defect in a
+        // receiver this layer does not serve should not pick the format for the one it does.
+        //
+        // Enumerate rather than forbid a name: an assertion that only forbade manifest-sha1.txt
+        // would pass if the SHA-256 one silently disappeared, which is the loss that matters.
         List<String> payloadManifests = entries.keySet().stream()
                 .filter(name -> name.startsWith("manifest-") && name.endsWith(".txt"))
                 .sorted()
                 .toList();
-        assertEquals(List.of("manifest-sha512.txt"), payloadManifests,
-                "a bag with more than one payload manifest is back; the tested receiver rolls "
-                        + "back the ingest of such a bag: " + entries.keySet());
+        assertEquals(List.of("manifest-sha256.txt", "manifest-sha512.txt"), payloadManifests,
+                "the payload manifests are not SHA-256 + SHA-512. If the SHA-256 one is gone, "
+                        + "the digest this product's chain uses is no longer something a "
+                        + "receiver's bag verification checks: " + entries.keySet());
         assertTrue(entries.containsKey("bag-info.txt"), entries.keySet().toString());
     }
 
@@ -119,10 +122,9 @@ class BagItTransferPackagerTest {
         assertTrue(info.contains("External-Identifier: " + SUBMISSION), info);
         assertTrue(info.contains(DIGEST),
                 "the bag does not name the package digest, so a bag and a receipt can only be "
-                        + "tied together through a system that holds both — and, since there is "
-                        + "now only one payload manifest, this is also where a receiver finds "
-                        + "the SHA-256 it needs to reconcile against this product's chain: "
-                        + info);
+                        + "tied together through a system that holds both. manifest-sha256.txt "
+                        + "carries the same value as a verified path→digest binding; this line "
+                        + "is what a conversation about the transfer quotes: " + info);
     }
 
     @Test
@@ -143,8 +145,7 @@ class BagItTransferPackagerTest {
         // — and "was the same package sent twice?" then has no cheap answer.
         //
         // The one that actually bit: bagit-java writes the TAG MANIFESTS by iterating a set,
-        // so two runs over identical input produced the same lines in a different order.
-        // (It was four lines when the bag carried two payload manifests; it is three now.)
+        // so two runs over identical input produced the same four lines in a different order.
         // Everything else already matched.
         Path source = sip(Files.createDirectories(tmp.resolve("in")), "same bytes");
 

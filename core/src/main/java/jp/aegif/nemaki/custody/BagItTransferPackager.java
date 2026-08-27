@@ -49,42 +49,48 @@ import java.util.zip.ZipOutputStream;
  * true is narrower: a directory with a payload and manifests, zipped, which is what the
  * receiving system's {@code zipped bag} transfer type reads.
  *
- * <h2>ONE payload manifest — measured, not preferred</h2>
+ * <h2>TWO payload manifests — SHA-512 and SHA-256</h2>
  *
- * <p>SHA-512 only. The first version wrote SHA-512 <i>and</i> SHA-256: RFC 8493 §2.1.3 allows
- * several, and the second one meant a receiver reconciling a bag against this product's
- * SHA-256 evidence would not have to recompute anything.
+ * <p>The second one is why this product can hand a receiver a bag and have the receiver's own
+ * verification cover the digest this product's evidence chain uses. Without it the SHA-256 is
+ * still <i>stated</i>, in {@code bag-info.txt}'s {@code External-Description} — but that is free
+ * text no bag verifier reads, so reconciling a receipt against the chain means recomputing.
  *
- * <p><b>RODA 6.3.0 cannot ingest such a bag.</b> Measured 2026-08-26 against a live instance:
- * the second copy of the payload fails with "Binary already exists" and the whole ingest
- * transaction is rolled back. The identical bag with one manifest ingests and produces an AIP.
+ * <h3>It was one manifest for a day, and that was the wrong default</h3>
+ *
+ * <p>On 2026-08-26 this wrote SHA-512 only, because a two-manifest bag could not be ingested by
+ * RODA 6.3.0's {@code BagitToAIPPlugin}: the payload is created twice, the second create fails
+ * with "Binary already exists", and the whole ingest transaction rolls back. Measured against a
+ * live instance; the identical bag with one manifest produced an AIP.
  *
  * <p>The mechanism is in the library, not in RODA's plugin: {@code BagitSIP.parse} — commons-ip
- * <i>v1</i>, which ships inside {@code commons-ip2-2.11.3.jar} — walks
- * {@code Bag.getPayLoadManifests()} and, per manifest, adds an {@code IPFile} for every entry of
- * {@code getFileToChecksumMap()}, with no dedupe. {@code BagitToAIPPluginUtils} then hands each
- * one to {@code ModelService.createFile}, so the payload is created twice.
+ * <i>v1</i>, which ships inside the commons-ip2 jar — walks {@code Bag.getPayLoadManifests()}
+ * and, per manifest, adds an {@code IPFile} for every entry of {@code getFileToChecksumMap()},
+ * with no dedupe. {@code BagitToAIPPluginUtils} then hands each one to
+ * {@code ModelService.createFile}. {@link TwoPayloadManifestsBreakTheLegacyBagParserTest} pins
+ * that, and it is still true.
  *
- * <p><b>Writing two was not wrong.</b> RFC 8493 §2.1.3 allows several payload manifests. This is
- * an accommodation of one library's parser, not a correction.
+ * <p><b>But that receiver is not this layer's receiver.</b> On 2026-08-27 the E-ARK route into
+ * RODA 6.3.0 was measured working ({@code EARKSIP2ToAIPPlugin} — p3-4 §10), so there is no
+ * reason to send RODA a bag at all. This layer exists for receivers with no E-ARK transfer type;
+ * the one known to need it is Archivematica, which reads bags with a BagIt verifier rather than
+ * commons-ip. Keeping one manifest would have let <b>a parser defect in a receiver we do not
+ * use</b> go on deciding the format for the receiver we do. That, not "the reason expired", is
+ * why it is two again.
  *
- * <p><b>Something is lost by dropping to one, and it is not nothing.</b> The payload's SHA-256
- * is still stated — {@code bag-info.txt} carries it in {@code External-Description}, which is
- * the value a receiver needs to tie the bag to this product's chain. What is gone is that any
- * RFC 8493 verifier used to <i>check</i> it as a path→digest binding; {@code External-Description}
- * is free text that no verifier reads. The value survives, the verification of it does not.
+ * <p><b>Neither shape has been ingested end-to-end by this layer's actual receiver.</b> Two
+ * manifests have zero measured ingests anywhere; one manifest has exactly one, into a route this
+ * design says not to use. So this is not "two works" — it is "two is the shape RFC 8493 allows
+ * and the shape whose SHA-256 a verifier checks", with the one receiver known to choke on it
+ * named below. Archivematica remains unmeasured either way.
  *
- * <p>The tag manifests drop to SHA-512 only as well — a side effect of passing one algorithm to
- * {@code bagInPlace}, not a second measured constraint. {@code BagitSIP.parse} walks
- * {@code getPayLoadManifests()}; nothing showed two <i>tag</i> manifests breaking anything.
+ * <p><b>Do not send this bag to RODA's {@code BagitToAIPPlugin}.</b> It will roll back. RODA
+ * takes the SIP directly.
  *
- * <p>Note also that {@code External-Description} is only written when a caller supplies
+ * <p>Note that {@code External-Description} is only written when a caller supplies
  * {@code sipDigest} (unlike {@code submissionId}, which is refused when absent). The export
- * endpoint always supplies it; a caller that does not gets a bag with the SHA-256 nowhere.
- *
- * <p>If a deployment's receiver wants a second manifest, that is a change to make deliberately —
- * and to measure against that receiver. Archivematica reads bags with bagit-python, not
- * commons-ip, so it plausibly accepts two; <b>that has not been measured.</b>
+ * endpoint always supplies it. With two manifests that is no longer the only place the SHA-256
+ * appears, but it is still the line a receipt is discussed against.
  *
  * <p>Design: {@code docs/design/p3-4-custody-transfer.md} §6.
  */
@@ -104,9 +110,12 @@ public final class BagItTransferPackager {
                     + "THIS BAG AS A BAG reads it as a payload of opaque files; it does not "
                     + "read the E-ARK SIP's METS, honour its structure, or produce an E-ARK AIP "
                     + "because of it. (The same system may have an E-ARK route that does read "
-                    + "it — RODA 6.3.0 does — but that route is not this one.) Nothing here "
-                    + "establishes that the receiver accepted, understood or kept anything — "
-                    + "those are its own processes, reported in a receipt.";
+                    + "it — RODA 6.3.0 does — but that route is not this one, and where an "
+                    + "E-ARK route exists it is the better one.) This bag carries TWO payload "
+                    + "manifests, which RFC 8493 allows; RODA 6.3.0's BagitToAIPPlugin ROLLS "
+                    + "BACK the ingest of such a bag, so do not send it there — send RODA the "
+                    + "SIP. Nothing here establishes that the receiver accepted, understood or "
+                    + "kept anything — those are its own processes, reported in a receipt.";
 
     /** The bag, what it holds, and what that does not mean. */
     public record Bagged(Path zippedBag, String payloadOxum, long payloadBytes, String limits) {}
@@ -147,12 +156,16 @@ public final class BagItTransferPackager {
             metadata.add("External-Description",
                     "E-ARK SIP; package digest (SHA-256) " + sipDigest);
         }
-        // ONE manifest. See the class javadoc: two of them make RODA 6.3.0 roll back the
-        // ingest. This costs the SHA-256 its manifest line — the value stays in bag-info.txt,
-        // but no bag verifier checks it there.
+        // TWO manifests. SHA-512 because receivers ask for it, SHA-256 because that is the
+        // digest this product's evidence chain uses -- and in a manifest it is a path->digest
+        // binding the receiver's own verification covers, which bag-info.txt is not.
+        //
+        // RODA 6.3.0's BagitToAIPPlugin cannot ingest this (see the class javadoc). That is a
+        // reason not to send RODA a bag -- it takes the SIP directly -- not a reason to ship
+        // every receiver the shape that suits its parser.
         try {
-            BagCreator.bagInPlace(bagRoot, List.of(StandardSupportedAlgorithms.SHA512),
-                    false, metadata);
+            BagCreator.bagInPlace(bagRoot, List.of(StandardSupportedAlgorithms.SHA512,
+                    StandardSupportedAlgorithms.SHA256), false, metadata);
         } catch (java.security.NoSuchAlgorithmException e) {
             // Not swallowed into a generic failure: a JVM without SHA-512 is a deployment
             // problem with a specific fix, and "the bag could not be written" sends whoever

@@ -926,16 +926,21 @@ POST /api/v2beta/package
 失敗すると転送が FAILED になるため「COMPLETE したこと」自体がマニフェスト一致の証拠になり、
 送った bag の `manifest-*.txt` は AIP 内 `metadata/` に保存されるので `extract_file` で回収できる。
 
-> **2026-08-27 追記 — この cross-check は SHA-512 のぶんだけになった。**
-> RODA 6.3.0 の bag 経路が payload manifest 2 本で rollback したため、現行の
-> `BagItTransferPackager` は **`manifest-sha512.txt` 1 本しか書かない**
-> ([`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §6 / §10)。したがって
+> **2026-08-27 追記 — この cross-check は SHA-256 も覆う。ただし AM は未測定。**
+> `BagItTransferPackager` は **`manifest-sha512.txt` と `manifest-sha256.txt` の 2 本**を
+> 書く ([`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §6)。したがって
 > 「COMPLETE = マニフェスト一致」で担保されるのも、`extract_file` で回収できるのも
-> **SHA-512 だけ**である。本製品の証跡が使う **SHA-256 は `bag-info.txt` の
-> `External-Description` に残るが、bag の検証器はそこを照合しない** — 受領証と
-> 突き合わせるならこちら側で再計算するか、先方に再計算してもらう必要がある。
-> **なお 1 本にした理由は RODA 側の制約で、Archivematica では未測定**なので、
-> AM 向けに 2 本へ戻すかはこの経路を実際に測ってから決めること。
+> **両方**であり、本製品の証跡が使う SHA-256 は再計算せずに突き合わせられる。
+>
+> **判断の履歴**: 8-26 に一度 1 本 (SHA-512 のみ) にした。RODA 6.3.0 の
+> `BagitToAIPPlugin` が 2 本の bag を rollback したためである (commons-ip v1 の
+> `BagitSIP.parse` が manifest ごとに payload を足す)。8-27 に E-ARK 経路が通ることを
+> 実測し、**RODA に bag を送る理由が無くなった**ので 2 本へ戻した — 使わせない受け手の
+> パーサ欠陥が、AM 向けの形式を決めるべきではない。
+>
+> **AM でどちらの形も測っていない。** 2 本は取込実績が 0 件、1 本は RODA の bag 経路で
+> 1 件だけである。AM の Storage Service は commons-ip ではなく BagIt 検証器で読むので
+> 同じ機構には当たらないはずだが、**これは推測である**。この経路を実際に測ること。
 
 **ポーリング回避**: Storage Service の **Service callbacks** (post-store AIP 等) で任意の
 REST エンドポイントを叩ける (`<package_uuid>` / `<package_name>` がプレースホルダ置換)。

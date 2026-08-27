@@ -204,14 +204,38 @@ Archivematica の AIP が E-ARK AIP になることもない。「BagIt コネ�
 真なのはもっと狭い: payload と manifest を持つディレクトリを zip したもので、
 受け取り側の `zipped bag` type が読むのはそれである。
 
-payload manifest は **SHA-512 の 1 本だけ** (2026-08-26 変更、§10 結果 2)。
-当初は SHA-512 と SHA-256 の 2 本だった — 後者は本製品の証跡が SHA-256 なので、
-受け取り側が bag manifest を我々の連鎖と突き合わせるのに計算し直さずに済むからである。
-**RFC 8493 §2.1.3 は複数を許すが、RODA が積む commons-ip v1 の `BagitSIP` が
-manifest ごとに payload を追加して落ちる**ので 1 本にした。SHA-256 の値自体は
-`bag-info.txt` の `External-Description` に残るが、**BagIt 検証器の照合対象では
-なくなった** (値は残り、検証が消えた)。詳細と、この判断が受け手 1 つに対してしか
-測られていないことは §10。
+payload manifest は **SHA-512 と SHA-256 の 2 本**。後者は本製品の証跡が SHA-256 なので、
+受け取り側が bag manifest を我々の連鎖と突き合わせるのに計算し直さずに済む —
+しかも manifest に在れば **path→digest の束縛として受け取り側の検証が照合する**。
+`bag-info.txt` の 1 行は誰も照合しない自由記述なので、そこだけでは同じ意味を持たない。
+
+### 2026-08-26 は 1 本だった。戻した理由 (2026-08-27)
+
+**1 本は RFC 違反ではない。** §2.1.3 は複数を「許す」ので、1 本も適法である。
+失っていたのは準拠ではなく、**SHA-256 が BagIt 検証器の照合対象でなくなったこと**である。
+
+1 本にした唯一の実測理由は、RODA 6.3.0 の `BagitToAIPPlugin` が 2 本の bag を
+rollback すること (§10 結果 2)。**だがその受け手は、この層の受け手ではない。**
+8-27 に E-ARK 経路が通ることを実測したので、RODA に bag を送る理由は無い。
+1 本を既定に残すと、**使わせない受け手のパーサ欠陥が、まだ測っていない正の受け手向けの
+形式を決め続ける**。それが戻した理由であって、「理由が消えたから」ではない。
+
+**どちらの形も、この層の本来の受け手で end-to-end の取込実績は無い。**
+
+| | 実測された取込 |
+|---|---|
+| manifest 2 本 (現行の出荷形) | **0 件**。どの受け手でも取り込ませていない |
+| manifest 1 本 | 1 件。ただし**この設計が「選ぶ理由が無い」と書いた経路** (RODA の bag) |
+
+つまりこれは「2 本なら通る」ではない。**「規格が許す形に戻し、SHA-256 を検証器の
+照合対象に戻した」**であり、**その形で落ちると分かっている受け手が 1 つ在る**、である。
+Archivematica はどちらの形も未測定。
+
+> **この bag を RODA の `BagitToAIPPlugin` に入れないこと。** rollback する。
+> RODA には SIP を直接渡す。`LIMITS` にも書いてある。
+
+機構は [`TwoPayloadManifestsBreakTheLegacyBagParserTest`](../../core/src/test/java/jp/aegif/nemaki/custody/TwoPayloadManifestsBreakTheLegacyBagParserTest.java)
+が固定している — 2 本に戻しても commons-ip v1 の欠陥は消えないので、テストも残る。
 
 ### 踏んだ落とし穴 2 つ
 
@@ -454,7 +478,7 @@ schemas/{mets1_12,DILCISExtensionMETS,DILCISExtensionSIPMETS,xlink}.xsd
 > **我々の PREMIS 文書は届いていない**、**ERS は未測定**、
 > **受入が承認された状態にもなっていない**。
 
-### 結果 2 — BagIt も **取り込める**。ただし manifest は 1 本
+### 結果 2 — BagIt も AIP object になった。ただし manifest 1 本の bag だけ
 
 `BagitToAIPPlugin` に投げると、最初は失敗した:
 
@@ -475,18 +499,21 @@ Transaction was rolled back
 manifest を 1 本にした同一の bag を投入 → **SUCCESS**。
 `AIP` が 1 件生成され、representation と payload ファイルが入った。
 
-そこで **SHA-512 の 1 本だけを書く**ようにした。**失うものが無いわけではない**:
+そこで一度 **SHA-512 の 1 本だけを書く**ようにした。**翌 8-27 に 2 本へ戻している** (§6)。
 
-- **残るもの** — payload の SHA-256 は `bag-info.txt` の `External-Description` に
-  在る。受け手が我々の連鎖と突き合わせるのに要る値は、そこにある。
-- **失うもの** — その SHA-256 はもう **BagIt の検証対象ではない**。
-  `manifest-sha256.txt` は任意の RFC 8493 検証器が path→digest として照合したが、
-  `External-Description` は誰も照合しない自由記述である。**値は残り、検証が消えた。**
-  tag manifest も同様に SHA-512 のみになる。
+戻した理由は「1 本にした理由が消えたから」ではない。**この層の受け手は RODA ではないのに、
+RODA の bag パーサの欠陥が既定の形式を決めていた**からである。E-ARK 経路が通ると分かった
+時点で、RODA に bag を送る理由は無くなった。1 本のまま置くことは、**使わせない受け手向けの
+回避策を、まだ測っていない正の受け手に渡し続ける**ことになる。
 
-**これは commons-ip v1 の `BagitSIP` という 1 つのライブラリの欠陥に対する回避策**で
-あり、そう明記してある。`BagitSIP` を使わない受け手 (Archivematica は bagit-python)
-なら 2 本でも通る見込みだが、**それは測っていない**。測ったのは RODA だけである。
+失っていたものは準拠ではない (§2.1.3 は 1 本も許す)。**SHA-256 が
+`manifest-sha256.txt` という path→digest の束縛でなくなり、`bag-info.txt` の
+照合されない 1 行だけになっていた**ことである。
+
+**ただし 2 本の bag には、どの受け手でも取込の実績が無い。** 言えるのは
+「規格が許す形に戻した」と「commons-ip v1 の bag パーサでは rollback する (実測)」まで。
+Archivematica は bagit-python 系の検証器で読むので同じ機構には当たらないはずだが、
+**そこも測っていない**。
 
 ### 結果 3 — つまり RODA には 2 つの経路があり、E-ARK の方が多くを運ぶ
 
@@ -503,16 +530,16 @@ E-ARK 相当の transfer type を持たない受け手 — 今のところ Archi
 ### この試験が確かめたこと / 確かめていないこと
 
 **確かめた**: NemakiWare の E-ARK SIP は RODA 6.3.0 の `EARKSIP2ToAIPPlugin` が
-取り込み、本文・`dc.xml`・我々の JSON 2 本を含む AIP になる。同じ package を
-`EARKSIPToAIPPlugin` (E-ARK SIP 1.x) に投げると FAILURE になる。bag も
-manifest 1 本なら取り込まれ、AIP になる。
+AIP object にする — 本文・`dc.xml`・我々の JSON 2 本が入る。同じ package を
+`EARKSIPToAIPPlugin` (E-ARK SIP 1.x) に投げると FAILURE になる。
+manifest 1 本の bag も AIP object になり、**2 本だと rollback する**。
 
-**確かめていない**: 他版の RODA、Archivematica、受領証の形式と署名
-(RODA が受領証を返す経路そのものが未調査)、`reportsSuccess()` の語彙、
-manifest 2 本を Archivematica が読めるか。
-**取り込めたことは「先方が保持し続ける」ことでも「AIP が正しい」ことでもない。**
+**確かめていない**: **現行の出荷形 (manifest 2 本の bag) の取込** — どの受け手でも
+実績が無い (§6)。他版の RODA、Archivematica、受入承認まで含む ingest workflow、
+受領証の形式と署名 (RODA が受領証を返す経路そのものが未調査)、`reportsSuccess()` の語彙。
+**AIP object ができたことは「先方が保持し続ける」ことでも「AIP が正しい」ことでもない。**
 AIP は `INGEST_PROCESSING` のままで、**受入が承認された状態ではない**。
-**我々の PREMIS は AIP に残らない。**
+**我々の PREMIS 文書は AIP の PREMIS metadata に無く、`ers.der` は未測定。**
 
 > なお `EXPORT_LIMITS` は最初から「**NOT a statement that any particular archive
 > will accept it**」と書いていた。この但し書きは、**受け入れられた今も**必要である

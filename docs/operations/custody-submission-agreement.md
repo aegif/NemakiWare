@@ -108,10 +108,11 @@ submission agreement として明文化」と書いているのはこの文書�
 - **取り込まれたから保持される、とは言わない。** RODA 6.3.0 で実測したところ、
   SIP→AIP プラグインが作った AIP は `INGEST_PROCESSING` 止まりで、
   受入承認まで進んでいない (その先の workflow は走らせていない)
-- **bag の中の SHA-256 は「照合された値」ではない。** payload manifest は SHA-512 の
-  1 本だけなので、BagIt の検証器が照合するのは SHA-512 である。本製品の証跡が使う
-  SHA-256 は `bag-info.txt` の `External-Description` に**書いてあるだけ**で、
-  受け手の bag 検証はそこを見ない。受領証と突き合わせるなら再計算が要る
+- **bag が取り込まれる形だ、とは言わない。** payload manifest は **SHA-512 と
+  SHA-256 の 2 本**である (RFC 8493 §2.1.3 が許す形で、本製品の証跡が使う SHA-256 を
+  受け手の検証が照合できるようにするため)。**この形で取込まで通した実績はまだ無い。**
+  RODA 6.3.0 の `BagitToAIPPlugin` は 2 本の bag を **rollback する** (実測) ので、
+  **RODA には bag ではなく SIP を渡すこと**。Archivematica は未測定
 
 ---
 
@@ -122,7 +123,7 @@ submission agreement として明文化」と書いているのはこの文書�
 | | 結果 |
 |---|---|
 | **E-ARK SIP を直接** (`EARKSIP2ToAIPPlugin`) | **AIP object が作られる**。本文が `representations/rep1/data/` に入り、METS の `OBJID` が AIP に載る |
-| **bag** (`BagitToAIPPlugin`) | **AIP object が作られる**。ただし payload manifest は **1 本**でなければ transaction が rollback する。SIP は payload の中の 1 ファイルのまま |
+| **bag** (`BagitToAIPPlugin`) | manifest **1 本**の bag なら AIP object が作られた。**現行の出荷形 (2 本) は rollback する** — RODA には bag を送らず SIP を送ること。なお bag 経路では SIP は payload の中の 1 ファイルのままで、METS は読まれない |
 | 旧版 `EARKSIPToAIPPlugin` (E-ARK SIP 1.x) | 同じ package を**拒否**する。**プラグインの指定を間違えると「非対応」に見える** |
 | 我々の `metadata/preservation/premis.xml` | **生成された AIP の PREMIS metadata に無い**。在るのは RODA 自身の event 2 件だけ。値が非 PREMIS のフィールドへ写されたかは未調査 |
 | 我々の `metadata/preservation/ers.der` (タイムスタンプ証跡) | **未測定**。投入した package に入っていなかった。同じディレクトリの `premis.xml` が残らなかった以上、要確認 |
@@ -137,9 +138,10 @@ submission agreement として明文化」と書いているのはこの文書�
 1. 受け手が実際に返す `verificationOutcome` の語を採取し、
    `CustodyReceipt.reportsSuccess()` の語彙を固定する
    — **RODA が受領証を返す経路そのものが未調査**なので、まだ採れていない
-2. Archivematica で同じことを測る (`zipped bag` transfer。manifest 2 本を
-   読めるかどうかも — RODA が読めなかった理由は commons-ip v1 固有で、
-   Archivematica には当てはまらない可能性が高いが**測っていない**)
+2. Archivematica で同じことを測る (`zipped bag` transfer)。**出荷形の manifest 2 本が
+   読めるかどうかが最初の確認事項**である — RODA が読めなかった理由は commons-ip v1 の
+   `BagitSIP.parse` 固有で、BagIt 検証器で読む Archivematica には当てはまらない
+   はずだが、**推測であって測っていない**
 3. 受領証の形式と署名の有無を確認し、1.7 を埋める
 4. 上記 1.1〜1.6 を、実際に落として確かめる (合意は落ちたときにしか効かない)
 

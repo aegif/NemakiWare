@@ -209,13 +209,12 @@ class EarkSipExportControllerTest {
     @DisplayName("the bag's External-Description is the SHA-256 of the payload actually in data/")
     void theBagsStatedDigestIsThePayloadsDigest(@org.junit.jupiter.api.io.TempDir Path tmp)
             throws Exception {
-        // The bag used to carry a manifest-sha256.txt, which bound path -> digest and which any
-        // RFC 8493 verifier checked. It carries one payload manifest now (RODA 6.3.0 rolls back
-        // an ingest of a two-manifest bag), so the ONLY place a receiver finds the SHA-256 it
-        // needs to reconcile against this product's chain is this bag-info.txt line -- and
-        // nothing verifies it. If the controller ever states a digest of something other than
-        // the bytes it ships, a receiver reconciling the bag against the chain gets a mismatch
-        // it cannot explain, and there is no manifest left to catch it here.
+        // manifest-sha256.txt carries the same digest as a verified path -> digest binding, so
+        // this line is not the only copy. It is still the one a receipt is discussed against:
+        // it names the PACKAGE, not a path inside the bag, which is what a receiver reconciling
+        // against this product's chain quotes back. A controller that stated the digest of
+        // something other than the bytes it ships would produce a mismatch nobody could explain
+        // -- and the manifest would not catch it, because the manifest would be self-consistent.
         EarkSipExportController controller = controllerFor(true);
         Path sip = Files.write(tmp.resolve("payload.zip"),
                 "the exact bytes that must be described".getBytes(StandardCharsets.UTF_8));
