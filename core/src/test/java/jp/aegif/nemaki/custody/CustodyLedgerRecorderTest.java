@@ -235,15 +235,19 @@ class CustodyLedgerRecorderTest {
     @Test
     @DisplayName("the digest is domain-separated from every other in the product")
     void theDigestIsDomainSeparated() {
+        // reportedOutcome joined the inputs on 2026-08-27: a connector that maps a receiver's
+        // vocabulary into ours (design §13.1) keeps the receiver's own word beside the mapped
+        // one, and an entry that committed only to the mapped word would let the mapping be
+        // rewritten later without changing. Empty here because nothing was mapped.
         String expected = jp.aegif.nemaki.rest.purview.journal.LineageCanonicalHash.hash(
                 "LEDGER_CUSTODY_RECEIPT_V1", "bedroom", "doc-1", SIP_DIGEST,
-                "sub-1", "aip-1", "b".repeat(64), "PASSED", "roda-agent", "false", "false");
+                "sub-1", "aip-1", "b".repeat(64), "PASSED", "", "roda-agent", "false", "false");
 
         assertEquals(expected,
                 CustodyLedgerRecorder.receiptDigest(verifiedTransfer(null, false)),
                 "the custody digest is no longer H(LEDGER_CUSTODY_RECEIPT_V1, repositoryId, "
                         + "objectId, sipDigest, submissionId, aipId, aipChecksum, outcome, "
-                        + "agent, hasSignature, signatureVerified)");
+                        + "reportedOutcome, agent, hasSignature, signatureVerified)");
     }
 
     private static EvidenceLedgerService answering(

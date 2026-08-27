@@ -999,8 +999,9 @@ SS `GET /api/v2/file/{uuid}/` の `status` は **`UPLOADED`**。フィールド�
 - ジョブ名の `COMPLETE` も同じ
 
 RODA の `outcomeObjectState=ACTIVE` と同じ形の罠である。違うのは語だけ。
-**接続層は写像する** — AM の `COMPLETE` をこちらの `SUCCESS` に寄せるか、語彙を
-増やすか。写像しないまま入れると、genuine な受領が拒否される
+**接続層は写像する** — 語彙を増やすのではなく、写像後を `verificationOutcome` に、
+生の語を `reportedOutcome` に置く。**§13.1 で閉じた分岐**である。
+写像しないまま入れると、genuine な受領が拒否される
 (`reportsSuccess` が間違う方向として選んでいる側)。
 
 `sipDigest`: 応答 JSON には無い。AIP の checksum は
@@ -1063,10 +1064,30 @@ full な本番相当の AIP、arm64 ネイティブ。**AIP が `UPLOADED` な�
 - **写像なら「何を何に寄せたか」が記録に残る。** 語彙を増やすと、受領証を読んだ人には
   先方が `SUCCESS` と言ったのか `UPLOADED` と言ったのか区別できない。
 
-> **したがって `verificationOutcome` には先方の生の語を入れる。**
-> 写像するのは `reportsSuccess()` に渡す前ではなく、**接続層が受領証を組み立てるとき**で、
-> 生の語と写像後の語の**両方**を持つこと。生の語を捨てると、後から
-> 「先方は何と言ったのか」に答えられない。
+#### どちらの欄に何を入れるか — 向きを間違えると写像した意味が無い
+
+**`verificationOutcome` には写像後の語を入れる。生の語は `reportedOutcome` に置く。**
+
+逆にすると成立しない。`CustodyTransfer.verifyReceipt` は
+**`candidate.reportsSuccess()` を直接呼ぶ**ので、そこに AM の `COMPLETE` が入っていれば
+**写像を採ったはずなのに genuine な受領が止まる** (外部レビュー指摘 2026-08-27)。
+「両方を持つ」までは前版で書けていたが、**どちらが `verificationOutcome` かは
+決まっていなかった** — 今のコードと両立するのは写像後を入れる側だけである。
+
+`CustodyReceipt` に `reportedOutcome` を足した (null = 写像していない)。
+
+**そして署名は生の語を覆う。** 先方は**自分が出した語に**署名しており、こちらの語彙を
+知らない。`ReceiptSignatureVerifier.canonicalForm` は `asReported()` を使う —
+写像後の語に署名を求めると、**写像した受領証が全部検証に落ちる**。
+これは「生の語を状態機械が読む欄に入れる」のと同じ誤りが 1 層ずれただけである。
+
+> **代償を書いておく: 写像後の語は先方の署名で覆われない。** 読み手が写像を検めたければ、
+> **署名された生の語が隣に在る**ので再導出できる。
+> 本製品側の台帳 digest (`CustodyLedgerRecorder.receiptDigest`) は**両方**に commit する —
+> 写像後だけに commit すると、後から写像を書き換えても entry が変わらない。
+
+錠: `theSignatureCoversWhatTheReceiverSaid` (canonicalForm に生の語が在り写像後が無い) と
+`theDigestIsDomainSeparated` (digest の入力表)。負のコントロール 2 本発火済み。
 
 ### 13.2 `sipDigest` に何を入れるか — pointer の AIP digest ではない
 
@@ -1090,8 +1111,20 @@ AIP の digest は先方が作った成果物のもので、こちらは一度�
   `GET /api/v2/file/{uuid}/download/` で AIP を取って中を見る
 
 > **どちらも未実測**である。「取れる口が在る」ことまでは確かめたが、
-> **そのバイト列が送ったものと一致するか**は測っていない。接続層を書くときの
+> **回収した値が送ったものと一致するか**は測っていない。接続層を書くときの
 > 最初の受入条件はそこになる。
+
+**一段の中身は受け手で違う** (外部レビュー指摘 2026-08-27):
+
+- **RODA** — 取るのは**提出したバイト列そのもの**で、こちらでハッシュする。
+  受入条件は「**そのバイト列が送ったものと一致するか**」。
+- **AM** — `automated` は payload の zip を展開して消すので、**提出物は残っていない**。
+  残るのは bag の `manifest-sha256.txt` の**コピー**である。したがって取るのは
+  バイト列ではなく**manifest の行**で、受入条件は
+  「**回収した SHA-256 が、送った SIP のそれと一致するか**」になる。
+
+> **そして `zipfile` 経路にはそのファイルが無い。** bag を選ぶ積極的な理由の続きである —
+> `Verify bag` が照合するだけでなく、**照合された値が AIP の中に残る**。
 
 ### 13.3 この 2 つが同じ形をしている
 

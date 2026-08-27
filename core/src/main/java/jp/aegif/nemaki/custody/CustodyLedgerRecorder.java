@@ -189,7 +189,13 @@ public class CustodyLedgerRecorder {
         return LineageCanonicalHash.hash(CUSTODY_DIGEST_DOMAIN,
                 transfer.repositoryId(), transfer.objectId(), transfer.sipDigest(),
                 receipt.submissionId(), receipt.aipId(), receipt.aipChecksum(),
-                receipt.verificationOutcome(), receipt.receivingAgent(),
+                receipt.verificationOutcome(),
+                // The receiver's own word too, when a connector mapped it into our vocabulary.
+                // Committing only to the mapped word would let the mapping be rewritten later
+                // without the entry changing -- and "what did they actually say" is the part a
+                // dispute turns on. Empty when nothing was mapped.
+                receipt.reportedOutcome() == null ? "" : receipt.reportedOutcome(),
+                receipt.receivingAgent(),
                 // Whether it was signed AND whether that was checked. A receipt taken on trust
                 // and one whose signature was verified are different facts, and an entry that
                 // digested the same for both would lose the distinction the moment it mattered.

@@ -166,4 +166,33 @@ class ReceiptSignatureVerifierTest {
                 new String(ReceiptSignatureVerifier.canonicalForm(verifiedFlagSet)),
                 "the signature or the verified flag is inside the signed bytes");
     }
+
+    @Test
+    @DisplayName("a mapped receipt is signed over the RECEIVER's word, not our translation")
+    void theSignatureCoversWhatTheReceiverSaid() throws Exception {
+        // Archivematica reports COMPLETE, which reportsSuccess() does not accept, so a connector
+        // maps it to SUCCESS and puts the mapped word where the state machine reads it
+        // (design §13.1). The far end signed COMPLETE -- it has never heard of our vocabulary.
+        // If canonicalForm signed the mapped word, EVERY mapped receipt would fail verification.
+        CustodyReceipt mapped = new CustodyReceipt("sub-1", "aip-1", "b".repeat(64),
+                "a".repeat(64), "SUCCESS", "COMPLETE", "am-agent", "2026-08-27T00:00:00Z",
+                null, false);
+
+        String signed = new String(ReceiptSignatureVerifier.canonicalForm(mapped),
+                java.nio.charset.StandardCharsets.UTF_8);
+
+        assertTrue(signed.contains("COMPLETE"),
+                "the canonical form does not carry the receiver's own word, so a receipt the "
+                        + "receiver really signed would fail verification here: " + signed);
+        assertFalse(signed.contains("SUCCESS"),
+                "the canonical form carries OUR mapped word. The far end never signed that: "
+                        + signed);
+
+        // And with no mapping, nothing changes: the receiver's word IS the judged word.
+        CustodyReceipt plain = new CustodyReceipt("sub-1", "aip-1", "b".repeat(64),
+                "a".repeat(64), "PASSED", "roda-agent", "2026-08-27T00:00:00Z", null, false);
+        assertTrue(new String(ReceiptSignatureVerifier.canonicalForm(plain),
+                        java.nio.charset.StandardCharsets.UTF_8).contains("PASSED"),
+                "an unmapped receipt lost its outcome from the canonical form");
+    }
 }

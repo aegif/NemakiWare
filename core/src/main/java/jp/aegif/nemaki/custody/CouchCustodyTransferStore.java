@@ -257,6 +257,7 @@ public class CouchCustodyTransferStore implements CustodyTransferStore {
         doc.put("aipChecksum", receipt.aipChecksum());
         doc.put("sipDigest", receipt.sipDigest());
         doc.put("verificationOutcome", receipt.verificationOutcome());
+        doc.put("reportedOutcome", receipt.reportedOutcome());
         doc.put("receivingAgent", receipt.receivingAgent());
         doc.put("receivedAt", receipt.receivedAt());
         doc.put("signature", receipt.signature());
@@ -289,6 +290,7 @@ public class CouchCustodyTransferStore implements CustodyTransferStore {
                     asString(storedReceipt.get("aipChecksum")),
                     asString(storedReceipt.get("sipDigest")),
                     asString(storedReceipt.get("verificationOutcome")),
+                    asString(storedReceipt.get("reportedOutcome")),
                     asString(storedReceipt.get("receivingAgent")),
                     asString(storedReceipt.get("receivedAt")),
                     asString(storedReceipt.get("signature")),

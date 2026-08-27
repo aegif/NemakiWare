@@ -57,10 +57,55 @@ public record CustodyReceipt(
         String aipChecksum,
         String sipDigest,
         String verificationOutcome,
+        String reportedOutcome,
         String receivingAgent,
         String receivedAt,
         String signature,
         boolean signatureVerified) {
+
+    /**
+     * For a receiver whose own word this product already judges — no mapping, nothing to keep
+     * separately.
+     *
+     * <p>Every receiver measured so far needs the other constructor: RODA says {@code SUCCESS}
+     * (which does pass) but also {@code ACTIVE}, and Archivematica says {@code COMPLETE} and
+     * {@code UPLOADED}. See {@link #reportedOutcome}.
+     */
+    public CustodyReceipt(String submissionId, String aipId, String aipChecksum,
+            String sipDigest, String verificationOutcome, String receivingAgent,
+            String receivedAt, String signature, boolean signatureVerified) {
+        this(submissionId, aipId, aipChecksum, sipDigest, verificationOutcome, null,
+                receivingAgent, receivedAt, signature, signatureVerified);
+    }
+
+    /**
+     * The word the RECEIVER used, when it is not the word this product judges.
+     *
+     * <p>{@link #verificationOutcome} is read by the state machine — {@code verifyReceipt} calls
+     * {@link #reportsSuccess()} on it and refuses the receipt when it does not pass. So a
+     * connector for a receiver whose vocabulary differs has to put the MAPPED word there, or a
+     * genuine acceptance stops the handover. Measured: Archivematica says {@code COMPLETE},
+     * which is not in the accepted list (design §13.1).
+     *
+     * <p>That leaves the receiver's own word homeless, and losing it means never being able to
+     * answer "what did they actually say?". It goes here. <b>Null means no mapping was applied
+     * </b> — the receiver's word IS {@link #verificationOutcome}.
+     *
+     * <p><b>The signature covers this one, not the mapped one.</b> The far end signs what it
+     * produced; it has never seen our vocabulary. {@link ReceiptSignatureVerifier#canonicalForm}
+     * therefore uses {@code reportedOutcome} when it is present. The consequence is worth saying
+     * plainly: <b>the mapped word is not covered by the far end's signature</b>. A reader who
+     * wants to check the mapping has the raw word — signed — beside it, and can re-derive.
+     * This product's own ledger digest commits to both.
+     */
+    public String reportedOutcome() {
+        return reportedOutcome;
+    }
+
+    /** The word the receiver used, mapped or not. What a later conversation quotes. */
+    public String asReported() {
+        return reportedOutcome == null ? verificationOutcome : reportedOutcome;
+    }
 
     /**
      * Refuses a receipt that cannot be tied to anything.
@@ -245,6 +290,7 @@ public record CustodyReceipt(
         body.put("aipChecksum", aipChecksum);
         body.put("sipDigest", sipDigest);
         body.put("verificationOutcome", verificationOutcome);
+        body.put("reportedOutcome", reportedOutcome);
         body.put("receivingAgent", receivingAgent);
         body.put("receivedAt", receivedAt);
         body.put("hasSignature", signature != null && !signature.isBlank());
