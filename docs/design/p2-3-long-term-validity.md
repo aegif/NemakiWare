@@ -205,9 +205,13 @@ documentation でもない」— としていた。**これは OAIS の分類を
 読み違いだった。ただし間違っていたのはフォルダではない。**
 
 フォルダを決めているのは exporter が呼ぶ API で、`addPreservationMetadata` は METS の
-`<amdSec><digiprovMD>` に宣言を書く。**CSIP32 が `digiprovMD` を「PREMIS 1 件ごとに 1 つ」の
-枠と定めている**ので、ASN.1 の DER をそこに宣言していたのが defect である
-(フォルダ自体は CSIPSTR6 の SHOULD にすぎない)。
+`<amdSec><digiprovMD>` に宣言を書く。**CSIP32 が preservation 情報に PREMIS を使うと
+述べているのがその枠**なので、ASN.1 の DER をそこに宣言していたのが defect である。
+
+**「フォルダは SHOULD にすぎず CSIP32 が拘束する」という論の立て方はしない** —
+CSIP32 も CSIPSTR6 と同じ **SHOULD** (`0..n`) で、しかも「PREMIS ⇒ `digiprovMD` 1 つ」の
+片方向しか書いていない。**規格違反ではなく、PREMIS のための枠に PREMIS でないものを
+載せた**、が言える範囲である ([`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §11)。
 
 実測で浮いた: そこに置いた SIP を RODA 6.3.0 に投げると、`digiprovMD` の中身を
 `PremisV3Utils.binaryToGenericPremis` に通そうとして `Failed to load PREMIS` になり、

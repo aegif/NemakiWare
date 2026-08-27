@@ -254,10 +254,12 @@ CSIP 版を落とす)。**うち「非 ASCII を潰す」は 1 度目の細工�
    **`ers.der` は測った** (2026-08-27 追試): 初回の package には入っていなかったので、
    スタブの記録を注入して投げ直した (**本物の RFC 3161 ベース ERS では未測定**)。
    **`addPreservationMetadata` で出すと `Failed to load PREMIS` で package ごと
-   rollback する** — その呼び出しは METS の `<digiprovMD>` に宣言を書き、CSIP32 が
-   そこを「PREMIS 1 件ごとに 1 つ」の枠と定めているためである。フォルダの話ではない
-   (フォルダは CSIPSTR6 の SHOULD にすぎない)。ASN.1 の DER をあの枠に載せていたのが
-   我々の読み違いだった。
+   rollback する** — その呼び出しは METS の `<digiprovMD>` に宣言を書き、
+   CSIP32 が preservation 情報に PREMIS を使うと述べているのがその枠だからである。
+   **フォルダの話ではない。** ただし **CSIP32 も CSIPSTR6 と同じ SHOULD** であって
+   (`LEVEL = SHOULD` / `0..n`)、「`digiprovMD` に PREMIS 以外を置くな」とは書いていない —
+   **規格違反ではなく、PREMIS のための枠に PREMIS でないものを載せた**、が正確な言い方である
+   ([`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §11)。
    **`metadata/other` へ移すと取り込まれ、記録も残った** (ただし AIP では
    `metadata/descriptive/ers.der` へ移されている — 受け取った側が `other/` を探しても
    見つからない)。本製品は同日 `metadata/other` へ変更した

@@ -135,7 +135,7 @@ class ErsIsInTheSipAtItsDeclaredPlaceTest {
         assertTrue(fileNames(readBack.getPreservationMetadata())
                         .noneMatch(name -> name.equals(ErsFormat.CHOSEN.fileName())),
                 "the evidence record comes back as PRESERVATION metadata -- i.e. declared inside "
-                        + "<digiprovMD>, which CSIP32 reserves for PREMIS. A receiver that parses "
+                        + "<digiprovMD>, the slot CSIP32 names for PREMIS. A receiver that reads "
                         + "that list as PREMIS (RODA 6.3.0 does) rejects the WHOLE package over "
                         + "it, and the file path can look perfectly correct while this is wrong: "
                         + fileNames(readBack.getPreservationMetadata()).toList());
@@ -165,15 +165,31 @@ class ErsIsInTheSipAtItsDeclaredPlaceTest {
         assertTrue(readBackOtherNames(tmp.resolve("viaOther"), true)
                         .contains(ErsFormat.CHOSEN.fileName()),
                 "a record added with addOtherMetadata does not read back as OTHER metadata");
-        assertTrue(readBackOtherNames(tmp.resolve("viaPreservation"), false)
-                        .isEmpty(),
+        assertTrue(readBack(tmp.resolve("viaPreservation"), false, false).isEmpty(),
                 "a record added with addPreservationMetadata ALSO reads back as OTHER metadata, "
                         + "so the assertion in the test above cannot tell the two apart and is "
                         + "not guarding anything");
+        // And it has to land SOMEWHERE: an oracle that reported "not in OTHER" because the
+        // record vanished entirely would pass the line above while seeing nothing.
+        assertTrue(readBack(tmp.resolve("viaPreservation2"), false, true)
+                        .contains(ErsFormat.CHOSEN.fileName()),
+                "a record added with addPreservationMetadata does not read back as PRESERVATION "
+                        + "metadata either, so the check above passes because the oracle sees "
+                        + "nothing at all -- not because it discriminates");
     }
 
-    /** Builds a bare SIP with the record added one way or the other, and reads OTHER back. */
     private static List<String> readBackOtherNames(Path work, boolean asOther) throws Exception {
+        return readBack(work, asOther, false);
+    }
+
+    /**
+     * Builds a bare SIP with the record added one way or the other, and reads one list back.
+     *
+     * @param asOther which call to add it with
+     * @param preservationSide which list to read back: preservation when true, other when false
+     */
+    private static List<String> readBack(Path work, boolean asOther, boolean preservationSide)
+            throws Exception {
         Path record = Files.write(Files.createDirectories(work.resolve("in"))
                 .resolve(ErsFormat.CHOSEN.fileName()), new byte[] {1, 2, 3});
         org.roda_project.commons_ip2.model.SIP sip =
@@ -195,9 +211,11 @@ class ErsIsInTheSipAtItsDeclaredPlaceTest {
         Path built = sip.build(new org.roda_project.commons_ip2.model.impl.eark.out.writers
                 .factory.ZipWriteStrategyFactory()
                 .create(Files.createDirectories(work.resolve("out"))), false);
-        return fileNames(new org.roda_project.commons_ip2.model.impl.eark.EARKSIP()
-                .parse(built, Files.createDirectories(work.resolve("read")))
-                .getOtherMetadata()).toList();
+        org.roda_project.commons_ip2.model.SIP back =
+                new org.roda_project.commons_ip2.model.impl.eark.EARKSIP()
+                        .parse(built, Files.createDirectories(work.resolve("read")));
+        return fileNames(preservationSide ? back.getPreservationMetadata()
+                : back.getOtherMetadata()).toList();
     }
 
     @Test
