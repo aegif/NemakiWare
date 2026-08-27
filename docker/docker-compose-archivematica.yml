@@ -1,0 +1,256 @@
+# Archivematica — BagIt 接続層の受入試験用スタック (P3-4)
+#
+# 何のためにあるか
+# ----------------
+# ロードマップ §9-4 は「Archivematica の標準 transfer type 一覧に E-ARK/CSIP 専用の
+# ものは無い」→「`zipped bag` が実装可能な候補経路」と書き、**BagIt が必須かどうかも、
+# 出荷形の bag が読めるかどうかも実機で確かめていない**と但し書きしている。
+# これはそれを測るためのスタックである。
+#
+# 測りたいことは 3 つ (docs/design/p3-4-custody-transfer.md §6 / §10):
+#   1. 現行の出荷形 (payload manifest 2 本の zipped bag) が取り込まれるか
+#      — RODA の bag 経路は commons-ip v1 の欠陥で rollback した。AM は BagIt 検証器で
+#        読むので同じ機構には当たらない**はず**だが、これは推測である
+#   2. AM が返す `verificationOutcome` 相当の語 (`CustodyReceipt.reportsSuccess()` の語彙)
+#   3. E-ARK SIP を `zipfile` / `standard` に投げたら何が起きるか
+#      — 「BagIt が必須」と言えるかはここで決まる
+#
+# 公式 compose との差分
+# --------------------
+# 公式 (`archivematica/hack/docker-compose.yml` v1.18.0) は **ソースからビルドする**。
+# submodule 込みのチェックアウトが要り、arm64 で apt/wheel が揃うかも未検証である。
+# ここは代わりに **公開イメージ**を使う:
+#
+#   artefactual/archivematica-{dashboard,mcp-server,mcp-client}:v1.18.0
+#   artefactual/archivematica-storage-service:v0.24.0
+#
+# **この 4 つは amd64 単独** (2026-08-25 実測)。Apple Silicon では QEMU を挟むので、
+# `platform: linux/amd64` を明示してある。**エミュレーションが動くことは実測済み**
+# (aarch64 ホストで `uname -m` = `x86_64`)。依存 (percona / elasticsearch / gearmand /
+# nginx / clamav) は arm64 ネイティブが在るので platform を指定しない。
+#
+# **したがってここで測るのは「AM 1.18.0 が何をするか」であって、
+# 「arm64 ネイティブで動くか」ではない。** 後者は別の問だが、受入試験には要らない。
+#
+# 公式が bind mount している `../:/src` は落とした。あれは開発用にホストのソースを
+# 差し込むためのもので、公開イメージにはコードが入っている。同じ理由で
+# `*_frontend_node_modules` volume も要らない。
+#
+# ポートは全部ずらしてある
+# ----------------------
+# 公式は 62080 / 62081 を publish する。衝突しないが、nb33 (8080) / RODA (18080) と
+# 並べたときに読み違えないよう、こちらは **62080 / 62081 のまま**にした
+# (公式ドキュメントの手順をそのまま引ける方が、受入試験としては再現しやすい)。
+# MySQL / Elasticsearch / gearmand / clamav は**外に出さない** — このスタックの外から
+# 触る用事が無い。
+#
+# 使い方
+# ------
+#   docker compose -p am -f docker/docker-compose-archivematica.yml up -d
+#   open http://localhost:62080        # dashboard
+#   open http://localhost:62081        # storage service
+#   docker compose -p am -f docker/docker-compose-archivematica.yml down    # -v は付けない
+#
+# **プロジェクト名を必ず `-p am` にすること。** 既定はディレクトリ名から決まり、
+# nb33 と同じ名前空間に入る。
+#
+# **初回は DB マイグレーションが要る** (公式 compose も同じ):
+#   docker compose -p am -f docker/docker-compose-archivematica.yml \
+#     run --rm archivematica-storage-service /src/manage.py migrate --noinput
+# 手順は docs/design/p3-4-custody-transfer.md §12 に、実際に走らせた形で残す。
+#
+# なお **停めておくのが既定**。elasticsearch に 512m、clamav にウイルス定義、
+# さらに amd64 エミュレーションぶんの CPU を食うので、常駐させると nb33 と取り合う。
+
+name: am
+
+volumes:
+  mysql_data:
+  elasticsearch_data:
+  storage_service_staging_data:
+  # 公式は external: true の bind mount にしているが、受入試験では中身を外から
+  # 触る必要が無いので通常の名前付き volume にした。
+  pipeline_data:
+  location_data:
+
+services:
+
+  mysql:
+    image: "percona/percona-server:8.0.43-34"
+    restart: unless-stopped
+    command: "--character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci"
+    environment:
+      MYSQL_ROOT_PASSWORD: "12345"
+      MYSQL_USER: "archivematica"
+      MYSQL_PASSWORD: "demo"
+    volumes:
+      - "./archivematica/etc/mysql/tuning.cnf:/etc/my.cnf.d/tuning.cnf:ro"
+      - "mysql_data:/var/lib/mysql"
+    cap_add:
+      - "SYS_NICE"
+
+  elasticsearch:
+    image: "docker.elastic.co/elasticsearch/elasticsearch:8.19.3"
+    restart: unless-stopped
+    environment:
+      - "cluster.name=am-cluster"
+      - "node.name=am-node"
+      - "network.host=0.0.0.0"
+      - "bootstrap.memory_lock=true"
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - "discovery.type=single-node"
+      - "xpack.security.enabled=false"
+      - "xpack.security.transport.ssl.enabled=false"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test: [
+        "CMD-SHELL",
+        "curl -fsSL http://localhost:9200/_cat/health?h=status | grep -q -E 'green|yellow'",
+      ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    volumes:
+      - "elasticsearch_data:/usr/share/elasticsearch/data"
+
+  gearmand:
+    image: "artefactual/gearmand:1.1.22-alpine"
+    restart: unless-stopped
+    command: "--queue-type=builtin"
+    user: "gearman"
+
+  clamavd:
+    # v1.18.0 の compose は 1.4.3-57 を指すが、その tag は既に Docker Hub から
+    # 消えている (2026-08-27 実測)。同じ 1.4 系の最新 patch に寄せた。
+    image: "clamav/clamav-debian:1.4.6"
+    restart: unless-stopped
+    user: "clamav"
+    entrypoint: "/init-unprivileged"
+    environment:
+      CLAMD_CONF_MaxFileSize: "42M"
+      CLAMD_CONF_MaxScanSize: "42M"
+      CLAMD_CONF_StreamMaxLength: "100M"
+    volumes:
+      - "pipeline_data:/var/archivematica/sharedDirectory:ro"
+
+  nginx:
+    image: "nginx:1.29.1"
+    restart: unless-stopped
+    volumes:
+      - "./archivematica/etc/nginx/nginx.conf:/etc/nginx/nginx.conf:ro"
+      - "./archivematica/etc/nginx/conf.d/archivematica.conf:/etc/nginx/conf.d/archivematica.conf:ro"
+      - "./archivematica/etc/nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro"
+    ports:
+      - "62080:80"
+      - "62081:8000"
+
+  archivematica-mcp-server:
+    image: "artefactual/archivematica-mcp-server:v1.18.0"
+    platform: "linux/amd64"
+    restart: unless-stopped
+    environment:
+      DJANGO_SECRET_KEY: "12345"
+      DJANGO_SETTINGS_MODULE: "archivematica.MCPServer.settings.common"
+      ARCHIVEMATICA_MCPSERVER_CLIENT_USER: "archivematica"
+      ARCHIVEMATICA_MCPSERVER_CLIENT_PASSWORD: "demo"
+      ARCHIVEMATICA_MCPSERVER_CLIENT_HOST: "mysql"
+      ARCHIVEMATICA_MCPSERVER_CLIENT_DATABASE: "MCP"
+      ARCHIVEMATICA_MCPSERVER_MCPSERVER_MCPARCHIVEMATICASERVER: "gearmand:4730"
+      ARCHIVEMATICA_MCPSERVER_SEARCH_ENABLED: "true"
+      ARCHIVEMATICA_MCPSERVER_MCPSERVER_PROMETHEUS_BIND_PORT: "7999"
+      ARCHIVEMATICA_MCPSERVER_MCPSERVER_PROMETHEUS_BIND_ADDRESS: "0.0.0.0"
+    volumes:
+      - "pipeline_data:/var/archivematica/sharedDirectory:rw"
+    depends_on:
+      - "mysql"
+      - "gearmand"
+
+  archivematica-mcp-client:
+    image: "artefactual/archivematica-mcp-client:v1.18.0"
+    platform: "linux/amd64"
+    restart: unless-stopped
+    environment:
+      DJANGO_SECRET_KEY: "12345"
+      DJANGO_SETTINGS_MODULE: "archivematica.MCPClient.settings.common"
+      ARCHIVEMATICA_MCPCLIENT_CLIENT_USER: "archivematica"
+      ARCHIVEMATICA_MCPCLIENT_CLIENT_PASSWORD: "demo"
+      ARCHIVEMATICA_MCPCLIENT_CLIENT_HOST: "mysql"
+      ARCHIVEMATICA_MCPCLIENT_CLIENT_DATABASE: "MCP"
+      ARCHIVEMATICA_MCPCLIENT_MCPCLIENT_ELASTICSEARCHSERVER: "http://elasticsearch:9200"
+      ARCHIVEMATICA_MCPCLIENT_MCPCLIENT_MCPARCHIVEMATICASERVER: "gearmand:4730"
+      ARCHIVEMATICA_MCPCLIENT_MCPCLIENT_SEARCH_ENABLED: "true"
+      ARCHIVEMATICA_MCPCLIENT_MCPCLIENT_CAPTURE_CLIENT_SCRIPT_OUTPUT: "true"
+      ARCHIVEMATICA_MCPCLIENT_MCPCLIENT_CLAMAV_SERVER: "clamavd:3310"
+      ARCHIVEMATICA_MCPCLIENT_MCPCLIENT_CLAMAV_CLIENT_MAX_FILE_SIZE: "42"
+      ARCHIVEMATICA_MCPCLIENT_MCPCLIENT_CLAMAV_CLIENT_MAX_SCAN_SIZE: "42"
+      ARCHIVEMATICA_MCPCLIENT_MCPCLIENT_CLAMAV_CLIENT_MAX_STREAM_LENGTH: "100"
+      ARCHIVEMATICA_MCPCLIENT_MCPCLIENT_CLAMAV_CLIENT_BACKEND: "clamdscanner"
+      ARCHIVEMATICA_MCPCLIENT_MCPCLIENT_PROMETHEUS_BIND_PORT: "7999"
+      ARCHIVEMATICA_MCPCLIENT_MCPCLIENT_PROMETHEUS_BIND_ADDRESS: "0.0.0.0"
+      # 公式は sampledata の submodule を指す。ここには無いので切る — 受入試験で
+      # 測るのは bag と E-ARK の取込可否であって、metadata XML の検証ではない。
+      ARCHIVEMATICA_MCPCLIENT_MCPCLIENT_METADATA_XML_VALIDATION_ENABLED: "false"
+    volumes:
+      - "pipeline_data:/var/archivematica/sharedDirectory:rw"
+    depends_on:
+      - "clamavd"
+      - "mysql"
+      - "gearmand"
+      - "elasticsearch"
+      - "archivematica-storage-service"
+
+  archivematica-dashboard:
+    image: "artefactual/archivematica-dashboard:v1.18.0"
+    platform: "linux/amd64"
+    restart: unless-stopped
+    environment:
+      FORWARDED_ALLOW_IPS: "*"
+      AM_GUNICORN_ACCESSLOG: "/dev/null"
+      AM_GUNICORN_RELOAD: "false"
+      DJANGO_SETTINGS_MODULE: "archivematica.dashboard.settings.local"
+      ARCHIVEMATICA_DASHBOARD_DASHBOARD_GEARMAN_SERVER: "gearmand:4730"
+      ARCHIVEMATICA_DASHBOARD_DASHBOARD_ELASTICSEARCH_SERVER: "http://elasticsearch:9200"
+      ARCHIVEMATICA_DASHBOARD_DASHBOARD_PROMETHEUS_ENABLED: "1"
+      ARCHIVEMATICA_DASHBOARD_CLIENT_USER: "archivematica"
+      ARCHIVEMATICA_DASHBOARD_CLIENT_PASSWORD: "demo"
+      ARCHIVEMATICA_DASHBOARD_CLIENT_HOST: "mysql"
+      ARCHIVEMATICA_DASHBOARD_CLIENT_DATABASE: "MCP"
+      ARCHIVEMATICA_DASHBOARD_SEARCH_ENABLED: "true"
+      ARCHIVEMATICA_DASHBOARD_DASHBOARD_SESSION_COOKIE_SECURE: "false"
+      ARCHIVEMATICA_DASHBOARD_DASHBOARD_CSRF_COOKIE_SECURE: "false"
+    volumes:
+      - "pipeline_data:/var/archivematica/sharedDirectory:rw"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      mysql:
+        condition: service_started
+      gearmand:
+        condition: service_started
+      archivematica-storage-service:
+        condition: service_started
+
+  archivematica-storage-service:
+    image: "artefactual/archivematica-storage-service:v0.24.0"
+    platform: "linux/amd64"
+    restart: unless-stopped
+    environment:
+      FORWARDED_ALLOW_IPS: "*"
+      SS_GUNICORN_ACCESSLOG: "/dev/null"
+      SS_GUNICORN_RELOAD: "false"
+      DJANGO_SETTINGS_MODULE: "archivematica.storage_service.storage_service.settings.local"
+      SS_DB_URL: "mysql://archivematica:demo@mysql/SS"
+      SS_GNUPG_HOME_PATH: "/var/archivematica/storage_service/.gnupg"
+      SS_PROMETHEUS_ENABLED: "true"
+      SESSION_COOKIE_SECURE: "false"
+      CSRF_COOKIE_SECURE: "false"
+    volumes:
+      - "pipeline_data:/var/archivematica/sharedDirectory:rw"
+      - "storage_service_staging_data:/var/archivematica/storage_service:rw"
+      - "location_data:/home:rw"
+    depends_on:
+      - "mysql"
