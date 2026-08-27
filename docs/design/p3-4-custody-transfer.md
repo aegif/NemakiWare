@@ -178,20 +178,23 @@ constructor は緩いままにした — 欠けた受領証も「何かが届い
 | **スレッド安全性** | **未**。`state` / `receipt` / `history` は非同期化で、`advance` は check-then-act。呼び出し元が無いので現時点で実害は無いが、"workflow object" と説明する以上は同期か明記が要る |
 | **`reportsSuccess()` の語彙を実機で確認** | **未**。`PASSED/PASS/VALID/SUCCESS/ACCEPTED/OK` は**こちらが決めた綴り**で、RODA / Archivematica が実際に何を返すか照合していない。未知語は成功ではないので**外れても fail-closed** (受け入れてしまうのではなく、正当な受領証を拒否する) が、そのままでは使えない。実機受入試験で語彙を固定すること |
 | **submission agreement の明文化** (失敗・再送・重複取込・部分受入・先方 AIP 再生成) | **雛形あり** (2026-08-26): [`docs/operations/custody-submission-agreement.md`](../operations/custody-submission-agreement.md)。7 項目と、本製品が既に決めていて交渉できない側の分離。**合意そのものは当事者間の作業で、software では閉じない** |
-| 実機受入試験 | **RODA 6.3.0 の SIP→AIP プラグインだけ実施済み** (§10)。E-ARK SIP (`EARKSIP2ToAIPPlugin`) も bag も AIP object になった。**受入承認まで含む ingest workflow は未実施**で、AIP は `INGEST_PROCESSING` 止まり。**我々の PREMIS は AIP に残らない**。**未**: full ingest workflow、Archivematica、受領証を返す経路、他版の RODA |
+| 実機受入試験 | **RODA 6.3.0 の SIP→AIP プラグインだけ実施済み** (§10)。E-ARK SIP は `EARKSIP2ToAIPPlugin` で AIP object になった。bag は **manifest 1 本のときに** AIP object になり、**現行の出荷形 (2 本) は投入していない** (§6)。**受入承認まで含む ingest workflow は未実施**で、AIP は `INGEST_PROCESSING` 止まり。**我々の PREMIS 文書は AIP の PREMIS metadata に無く、`ers.der` は未測定**。**未**: 現行の bag の取込、full ingest workflow、Archivematica、受領証を返す経路、他版の RODA |
 
 ---
 
 ## 6. BagIt 接続層 (2026-08-26)
 
 Archivematica の転送 type は `standard / zipfile / unzipped bag / zipped bag / dspace /
-maildir / TRIM / dataverse` の 8 種で、**E-ARK に相当するものが無い**。
-そこで `zipped bag` がバイト列を渡す手段になる。
+maildir / TRIM / dataverse` の 8 種で、**この一覧に E-ARK / CSIP 専用のものは無い**。
+そこで `zipped bag` が**実装可能な候補経路**になる。
 
-> **この層は「E-ARK が使えない受け手」のためのものである。** RODA 6.3.0 は
-> E-ARK SIP を直接取り込めることを実測した (§10 結果 1) ので、RODA に対しては
+> **「必須」とは書かない** (外部レビュー指摘 2026-08-27)。測れているのは
+> 「8 種に E-ARK 専用が無い」までで、**`standard` / `zipfile` / custom processing で
+> E-ARK SIP を扱えないことは確認していない**。BagIt が唯一の道かどうかは未測定である。
+>
+> **この層は「E-ARK 経路を持たない受け手」のためのものである。** RODA 6.3.0 は
+> E-ARK SIP から AIP object を作れることを実測した (§10 結果 1) ので、RODA に対しては
 > bag 経路を選ぶ理由が無い — E-ARK 経路の方が本文も METS も運ぶ。
-> 現時点で bag が要ると分かっているのは Archivematica だけである。
 
 **これは受け取り側が package を理解するようにする層ではない。** 向こう側では SIP は
 payload の中の 1 ファイルで、METS は読まれず、構造は尊重されず、これによって

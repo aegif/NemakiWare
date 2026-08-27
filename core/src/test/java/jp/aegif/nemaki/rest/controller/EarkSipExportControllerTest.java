@@ -255,10 +255,11 @@ class EarkSipExportControllerTest {
                 .findFirst()
                 .orElse("");
         assertTrue(described.contains(expected.toString()),
-                "External-Description does not state the SHA-256 of the bytes under data/, so a "
-                        + "receiver reconciling this bag against the chain has nothing that "
-                        + "matches -- and there is no sha256 payload manifest to fall back on. "
-                        + "bag-info.txt was: " + info);
+                "External-Description does not state the SHA-256 of the bytes under data/, so "
+                        + "the line a receipt is discussed against names a package this bag "
+                        + "does not carry. (manifest-sha256.txt holds the same value as a "
+                        + "verified path->digest binding, but it names a PATH, not the package "
+                        + "-- a receipt quotes this line.) bag-info.txt was: " + info);
     }
 
     private static void setField(Object target, String name, Object value) throws Exception {

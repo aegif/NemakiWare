@@ -105,7 +105,28 @@ class BagItTransferPackagerTest {
                 "the payload manifests are not SHA-256 + SHA-512. If the SHA-256 one is gone, "
                         + "the digest this product's chain uses is no longer something a "
                         + "receiver's bag verification checks: " + entries.keySet());
+
+        // A file called manifest-sha256.txt is not the point -- an EMPTY one would satisfy the
+        // check above. The point is that the line in it binds data/sip.zip to the SHA-256 a
+        // receiver would compute, because that binding is the whole reason the second manifest
+        // is here. So compute it and look for the actual line.
+        String expected = hex("SHA-256", entries.get("data/sip.zip"));
+        List<String> sha256Lines = new String(entries.get("manifest-sha256.txt"),
+                StandardCharsets.UTF_8).lines().filter(line -> !line.isBlank()).toList();
+        assertEquals(List.of(expected + "  data/sip.zip"), sha256Lines,
+                "manifest-sha256.txt does not bind data/sip.zip to its actual SHA-256, so a "
+                        + "receiver's bag verification does not cover the digest this product's "
+                        + "chain uses -- which is the only reason this manifest exists");
+
         assertTrue(entries.containsKey("bag-info.txt"), entries.keySet().toString());
+    }
+
+    private static String hex(String algorithm, byte[] bytes) throws Exception {
+        StringBuilder out = new StringBuilder();
+        for (byte b : java.security.MessageDigest.getInstance(algorithm).digest(bytes)) {
+            out.append(String.format("%02x", b));
+        }
+        return out.toString();
     }
 
     @Test

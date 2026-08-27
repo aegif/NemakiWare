@@ -114,13 +114,16 @@ class TwoPayloadManifestsBreakTheLegacyBagParserTest {
         BagCreator.bagInPlace(bagRoot,
                 List.<SupportedAlgorithm>of(StandardSupportedAlgorithms.SHA512), false, metadata);
 
+        // Entries from the bag root, with no wrapping directory -- the same layout
+        // BagItTransferPackager produces. If the control were zipped differently, the
+        // comparison would have two variables in it instead of one.
         Path zip = workDir.resolve("one-manifest.zip");
         try (java.util.zip.ZipOutputStream out =
                 new java.util.zip.ZipOutputStream(Files.newOutputStream(zip));
                 java.util.stream.Stream<Path> tree = Files.walk(bagRoot)) {
             for (Path file : tree.filter(Files::isRegularFile).sorted().toList()) {
-                out.putNextEntry(new java.util.zip.ZipEntry(
-                        bagRoot.getFileName() + "/" + bagRoot.relativize(file)));
+                out.putNextEntry(
+                        new java.util.zip.ZipEntry(bagRoot.relativize(file).toString()));
                 out.write(Files.readAllBytes(file));
                 out.closeEntry();
             }

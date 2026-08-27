@@ -66,9 +66,22 @@
 #   (METS 1.11) なので CSIP 2.2 を拒否する。詳細は
 #   docs/design/p3-4-custody-transfer.md §10。
 #
-#   **`jobStats` を結果として読まないこと。** 成功したジョブでも
-#   completionPercentage=0 / ok=0 / waiting=1 のまま COMPLETED になる例を実測した。
-#   判定は JobReport の pluginState と、AIP が実在するかで読む。
+#   **索引を読む API が全部 0 を返す環境があった** (2026-08-27)。`POST /api/v2/*/find` も
+#   `/count` も全コレクションで 0 を返す一方、Solr を直接引くと Job 16 / AIP 2 /
+#   TransferredResource 6 が在る、という状態である。同じ症状の一部として `jobStats` も
+#   更新後の結果を返さず、成功したジョブも失敗したジョブも揃って
+#   completionPercentage=0 / ok=0 / waiting=1 のまま COMPLETED になった。
+#
+#   **これは「RODA 6.3.0 の jobStats は信用できない」ではない。** 8-26 の初回測定では
+#   集計欄は正しく動いていた。健全な環境でどうかは確かめていない。分かっているのは、
+#   索引読み取りが壊れた環境では集計欄も一緒に壊れる、ということだけである。
+#
+#   この症状が出ていたら、次の 2 つで読む (実際に使った手順):
+#     docker exec roda-roda-1 find /roda/data/storage/aip/<aipId> -type f
+#       -> 索引ではなく storage を見るので障害の影響を受けない
+#     docker exec roda-solr-1 curl -s \
+#       'http://localhost:8983/solr/JobReport/select?q=jobId:<id>&wt=json'
+#       -> pluginState = SUCCESS / FAILURE と outcomeObjectId が入っている
 #
 # **まだ分かっていない 1 点**:
 #
