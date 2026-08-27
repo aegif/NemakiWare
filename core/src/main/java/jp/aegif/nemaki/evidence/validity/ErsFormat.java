@@ -162,7 +162,9 @@ public enum ErsFormat {
                     + "reduced hash tree carries one node, the timestamp authority's signature "
                     + "and certificate are not verified here, and nothing generates a record "
                     + "automatically. A record IS put into an E-ARK SIP when this node has one, "
-                    + "at metadata/other; whether a receiving archive keeps it there is a "
-                    + "separate question this product does not answer. See ErsRecord.LIMITS, "
-                    + "which travels with every record.";
+                    + "at metadata/other -- but where it ENDS UP is the receiver's decision, not "
+                    + "this product's: RODA 6.3.0 keeps the record and files it under "
+                    + "metadata/descriptive instead (measured 2026-08-27). Whether any other "
+                    + "archive keeps it at all is unmeasured. See ErsRecord.LIMITS, which "
+                    + "travels with every record.";
 }

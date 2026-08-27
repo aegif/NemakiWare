@@ -480,6 +480,11 @@ schemas/{mets1_12,DILCISExtensionMETS,DILCISExtensionSIPMETS,xlink}.xsd
 > **「AIP object になった」はここまでである。** 本文と JSON は届き、METS は読まれた。
 > **我々の PREMIS 文書は届いていない**、**ERS は未測定**、
 > **受入が承認された状態にもなっていない**。
+>
+> **→ ERS はこの後の追試 1 で測った。結論は覆っている**: `metadata/preservation` に
+> 置くと **package ごと落ちる**ので、この節が「AIP object になった」と書けたのは
+> たまたま `ers.der` が書かれなかったからである。`metadata/other` へ移して測り直した。
+> ここで読み終えないこと。
 
 ### 結果 2 — BagIt も AIP object になった。ただし manifest 1 本の bag だけ
 

@@ -251,7 +251,14 @@ CSIP 版を落とす)。**うち「非 ASCII を潰す」は 1 度目の細工�
    測ったのは我々のものの不在と RODA のものの存在であって、変換や置換の機構は
    確かめていない。§4-1 のクロスウォークが**この受け手に届く保証は無い**。
    `metadata/other/` の JSON 2 本は `metadata/descriptive/` に在った。
-   **`ers.der` は未測定** — 投入した package に入っていなかった。
+   **`ers.der` は測った** (2026-08-27 追試): 初回の package には入っていなかったので、
+   スタブの記録を注入して投げ直した。**`metadata/preservation` に置くと
+   `Failed to load PREMIS` で package ごと rollback する** — CSIP のその位置は PREMIS の
+   場所で、そこに ASN.1 の DER を置いていたのは我々の読み違いだった。
+   **`metadata/other` へ移すと取り込まれ、記録も残った** (ただし AIP では
+   `metadata/descriptive/ers.der` へ移されている — 受け取った側が `other/` を探しても
+   見つからない)。本製品は同日 `metadata/other` へ変更した
+   ([`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §11)。
    **未**: 受入承認を含む full ingest workflow、Archivematica、他版の RODA
 
 ---
