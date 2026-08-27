@@ -139,10 +139,13 @@ public record CustodyReceipt(
      * built without.</b> {@link #sipDigest} exists so a receipt names OUR package; RODA's
      * {@code TransferredResource} carries no checksum at all, and {@code Report} ties back by
      * {@code sourceObjectId} / {@code sourceObjectOriginalName} — <b>by name, not by content</b>.
-     * A connector would have to fill {@code sipDigest} from our own record, at which point
-     * {@link #refusalReasonFor} compares our value against itself and establishes nothing. That
-     * is the same shape of defect §2 of the design doc exists to prevent, and it is unsolved for
-     * this receiver.
+     * A connector that fills {@code sipDigest} from RODA's responses cannot; filling it from our
+     * own record makes {@link #refusalReasonFor} compare our value against itself, which
+     * establishes nothing — the same shape §2 of the design doc exists to prevent.
+     *
+     * <p>What is measured is narrower than "this receiver cannot yield a verifiable receipt":
+     * RODA's <i>responses</i> carry no digest. Whether a connector could fetch the stored bytes
+     * and hash them itself has not been examined. Unsolved, either way.
      *
      * <p>Archivematica's vocabulary is still unmeasured, and no receipt has yet been assembled
      * and verified end to end. Being wrong here costs a refusal of a genuine receipt, not an

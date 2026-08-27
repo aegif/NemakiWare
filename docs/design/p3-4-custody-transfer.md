@@ -176,7 +176,7 @@ constructor は緩いままにした — 欠けた受領証も「何かが届い
 | **永続化** (transfer の store) | **実装済み** (2026-08-26、§7)。evidence-ledger DB に同居。読み出しは `restore` を通り、履歴が合法な歩みでなければ拒否される |
 | **fail-closed を強制する呼び出し元** | **実装済み** (2026-08-26、§7)。`CustodyTransferService.passCustody` が先に記録し、記録が効いたときだけ進む。`advance` は `CUSTODY_TRANSFERRED` を明示的に拒否する (扉は 1 つ) |
 | **スレッド安全性** | **未**。`state` / `receipt` / `history` は非同期化で、`advance` は check-then-act。呼び出し元が無いので現時点で実害は無いが、"workflow object" と説明する以上は同期か明記が要る |
-| **`reportsSuccess()` の語彙を実機で確認** | **RODA については採れた** (§10 追試 3)。RODA に受領証のリソースは無く、材料は `JobReport.pluginState` (`SUCCESS`/`PARTIAL_SUCCESS`/`FAILURE`/`RUNNING`/`SKIPPED`) と `AIP.state` (`ACTIVE` ほか)。**`pluginState` を入れるなら噛み合う** — `SUCCESS` は通り `PARTIAL_SUCCESS` は通らない (§1.4 と一致)。**`AIP.state` を入れると壊れる**: 受入完了の `ACTIVE` がこの語彙に無い。**未**: Archivematica の語彙、受領証を実際に組み立てて検証する経路 |
+| **`reportsSuccess()` の語彙を実機で確認** | **RODA については採れた** (§10 追試 3)。RODA に受領証のリソースは無く、材料は同じ `Report` に載る `pluginState` (`SUCCESS`/`PARTIAL_SUCCESS`/`FAILURE`/`RUNNING`/`SKIPPED`) と `outcomeObjectState` (`ACTIVE` ほか)。**`pluginState` を入れるなら噛み合う** — `SUCCESS` は通り `PARTIAL_SUCCESS` は通らない (§1.4 と一致)。**`outcomeObjectState` を入れると壊れる**: 受入完了の `ACTIVE` がこの語彙に無い。さらに **RODA の応答だけからは `sipDigest` を埋められない** (checksum のフィールドが無い)。**未**: Archivematica の語彙、受領証を実際に組み立てて検証する経路 |
 | **submission agreement の明文化** (失敗・再送・重複取込・部分受入・先方 AIP 再生成) | **雛形あり** (2026-08-26): [`docs/operations/custody-submission-agreement.md`](../operations/custody-submission-agreement.md)。7 項目と、本製品が既に決めていて交渉できない側の分離。**合意そのものは当事者間の作業で、software では閉じない** |
 | 実機受入試験 | **RODA 6.3.0 の SIP→AIP プラグインだけ実施済み** (§10)。E-ARK SIP は `EARKSIP2ToAIPPlugin` で AIP object になり、**`ers.der` も `metadata/other` なら取り込まれて残る** (`metadata/preservation` に置くと package ごと rollback する — §11 で直した。**投げたのはスタブの DER で、本物の RFC 3161 ベース ERS では未測定**)。bag は **manifest 1 本なら** AIP object になり、**現行の出荷形 (2 本) は rollback する**。**受入承認まで含む ingest workflow は未実施**で、AIP は `INGEST_PROCESSING` 止まり。**我々の PREMIS 文書は AIP の PREMIS metadata に無い**。**未**: full ingest workflow、**Archivematica (bag も E-ARK も)**、受領証を組み立てる経路、他版の RODA |
 
@@ -413,7 +413,7 @@ sourceObjectsProcessedWithSuccess = 0   ...WithFailure = 0   ...WaitingToBeProce
 
 **同一の package を、同一インスタンスに、数分差で 2 本のプラグインへ投げた。**
 
-| プラグイン | 呼ぶパーサ | `JobReport.pluginState` | 生成された AIP |
+| プラグイン | 呼ぶパーサ | `Report.pluginState` | 生成された AIP |
 |---|---|---|---|
 | `EARKSIP2ToAIPPlugin` | `commons_ip2...EARKSIP.parse` (CSIP 2.x) | **SUCCESS** | `28da89b5-…` |
 | `EARKSIPToAIPPlugin` | `commons_ip...EARKSIP.parse` (**v1**, E-ARK SIP 1.x) | **FAILURE** | `NO_OUTCOME_ID` |
@@ -544,7 +544,7 @@ E-ARK 相当の transfer type を持たない受け手 — 今のところ Archi
 
 RODA を立て直し、前の節が「未測定」と書いた 3 つを潰した。
 
-#### 1. `ers.der` は置き場で結果が割れる。`metadata/preservation` に置くと package ごと落ちる
+#### 1. `ers.der` を `digiprovMD` に宣言すると package ごと落ちる
 
 前回は投入した package に `ers.der` が入っていなかったので未測定だった
 (このノードに確定した RFC 3161 トークンが無く `EvidenceRecordService.latest` が absent を
@@ -595,16 +595,20 @@ RODA を立て直し、前の節が「未測定」と書いた 3 つを潰した
 > 上の比較が確かめたのは `MIMETYPE` / `MDTYPE` / `CHECKSUM` が同一だったことだけで、
 > それは media type 説を消すのに十分であり、それ以上ではない。
 
-**そしてこれは我々の側の問題だった。** CSIP の `metadata/preservation` は
-**PREMIS の置き場**であり、「証拠記録は保存メタデータだから」というのは OAIS の分類を
-CSIP のディレクトリに載せた読み違いである。RODA が `MDTYPE` を見ないのは、その上に
-乗った受け手の癖にすぎない。**同じ増分で BagIt については逆の判断をしている**
+**そしてこれは我々の側の問題だった。** ただし**フォルダの話ではない** — CSIP32 が
+`digiprovMD` を「PREMIS 1 件ごとに 1 つ」の枠と定めているのに、**PREMIS でない DER を
+そこに宣言していた**ことである。「証拠記録は保存メタデータだから」という当初の理由は
+OAIS の分類を CSIP のディレクトリに載せたもので、**そのフォルダ自体は CSIPSTR6 の
+SHOULD にすぎない** (§11)。RODA が `MDTYPE` を見ずにあの枠を全部 PREMIS として読むのは、
+CSIP32 の「preservation 情報には PREMIS を使う」に対する**実装として妥当**である。
+**同じ増分で BagIt については逆の判断をしている**
 (使わない受け手のパーサ欠陥に形式を合わせない) が、あちらは我々の形が正しく、
 こちらは我々の形が間違っていた。→ **`metadata/other` へ移した** (§11)。
 
 > **測っていないこと**: 使った DER は**スタブのバイト列**である。本物の RFC 3161 ベースの
-> ERS でも同じかは確かめていない — ただし置き場が原因だと分かった以上、
-> 中身によらず同じになる公算が高い。**「高い」は測定ではない。**
+> ERS でも同じかは確かめていない — ただし原因が「PREMIS として読めないものを
+> `digiprovMD` に宣言した」ことである以上、本物の DER でも同じになる公算が高い。
+> **「高い」は測定ではない。**
 >
 > **`metadata/descriptive/` へ移されたことは、残ったこととは別の話である。** 証拠記録は
 > 記述メタデータではない。**AIP を受け取った側が `other/` を探しても見つからない。**
@@ -664,9 +668,14 @@ Archivematica は依然として未測定である。
 `refusalReasonFor` は**自分の値を自分と比べる**ことになり、§2 が
 「AIP checksum だけの受領証は何も証明しない」と言って避けたのと同じ形に戻る。
 
-> **これは語彙の話より重い。** 語彙は綴りを合わせれば済むが、こちらは
-> **この受け手からは検証可能な受領証を作れない**という話である。
-> 未解決として残す (外部レビュー指摘 2026-08-27)。
+> **測った範囲は「応答にフィールドが無い」まで** (外部レビュー指摘 2026-08-27)。
+> 「この受け手からは検証可能な受領証を作れない」は一段強い — たとえば接続層が
+> `fullPath` のバイト列を取って自分でハッシュする経路が無いことは、
+> ここからは出ていない。**言えるのは「RODA の応答だけからは `sipDigest` を埋められない」**で、
+> そこから先は接続層の設計判断である。
+>
+> それでも語彙の話より重い。語彙は綴りを合わせれば済むが、こちらは
+> **素朴に組み立てると §2 が避けた形に戻る**。未解決として残す。
 
 **署名は無い。** 上記のどれにも署名は付かないので、
 RODA から組み立てた受領証は `signatureVerified = false` のままになる
@@ -687,7 +696,7 @@ manifest 1 本の bag も AIP object になり、**2 本だと rollback する**
 (`metadata/descriptive/` へ移されて)。`metadata/preservation` に置くと package ごと落ちる。
 **ただし投げたのはスタブの DER である** — 本物の RFC 3161 ベース ERS では測っていない。
 **現行の出荷形 (manifest 2 本の bag) は RODA では rollback する。**
-RODA に受領証のリソースは無く、語彙は `JobReport.pluginState` と `AIP.state` の 2 つ。
+RODA に受領証と分かるリソースは無く、語彙は同じ `Report` の `pluginState` と `outcomeObjectState` の 2 つ。
 
 **確かめていない**: 他版の RODA、**Archivematica (bag も E-ARK も、どちらの形も)**、
 受入承認まで含む ingest workflow、受領証を組み立てて検証する経路そのもの、
@@ -772,9 +781,10 @@ note 無しの package は作れない」までである。
 
 `ErsFormat.CSIP_LOCATION` は `metadata/preservation` を選んでいた。理由は
 「証拠記録は保存メタデータであって、記述メタデータでも documentation でもない」。
-**これは OAIS の分類を CSIP のディレクトリに載せた読み違いである。**
-CSIP の `metadata/preservation` は「保存メタデータ一般」の場所ではなく、
-**PREMIS の場所**である。RFC 4998 の証拠記録は ASN.1 の DER で、PREMIS ではない。
+**これは OAIS の分類を CSIP のディレクトリに載せた読み違いである** — が、
+**間違っていたのはフォルダではなく、そのフォルダを選ぶために呼んだ API のほうだった。**
+`sip.addPreservationMetadata(...)` は METS の `<amdSec><digiprovMD>` に宣言を書き、
+フォルダ名はその副作用である。
 
 **ディレクトリの話ではなかった** (外部レビュー指摘 2026-08-27)。CSIP 2.2.0 の条文は
 commons-ip2 の `ConstantsCSIPspec` に原文で入っており、こちらのリポジトリの依存から
@@ -792,10 +802,16 @@ commons-ip2 の `ConstantsCSIPspec` に原文で入っており、こちらの�
   CSIPSTR8 に至っては `other` を **for example** としか書いていない。
   「`metadata/other` は CSIP が定めた catch-all である」も**言い過ぎ**だった。
   同梱の validator も `validateCSIPSTR6` でフォルダの存在しか見ない。
-- **効くのは CSIP32 である。** `digiprovMD` は PREMIS のための枠で、
-  `addPreservationMetadata` はそこに宣言を書いていた。
-  **ASN.1 の DER を `digiprovMD` に宣言していたことが defect** であって、
+- **効くのは CSIP32 である。** 「preservation 情報には PREMIS を使う。**PREMIS 1 件ごとに
+  `<digiprovMD>` を 1 つ含めることが必須**」。`addPreservationMetadata` はその枠に
+  宣言を書いていた。**ASN.1 の DER をそこに宣言していたことが defect** であって、
   ディレクトリ名ではない。
+
+  > **CSIP32 は「`digiprovMD` に PREMIS 以外を置くな」とまでは書いていない**
+  > (外部レビュー指摘 2026-08-27)。書いてあるのは「PREMIS ごとに 1 つ」である。
+  > だから RODA があの枠を全部 PREMIS として読むのは**実装として妥当**だが、
+  > **CSIP32 がその fail-closed を義務づけている、とまでは言えない。**
+  > 我々の側の defect は「PREMIS の枠に PREMIS でないものを載せた」ことで足りる。
 
 > **だから「我々の形が間違っていた」は成り立つ。** ただし理由は
 > 「CSIP がそのフォルダを PREMIS 専用と定めているから」ではなく、
@@ -811,7 +827,7 @@ commons-ip2 の `ConstantsCSIPspec` に原文で入っており、こちらの�
 > | | 我々の側 | 受け手の側 | 代替の代償 |
 > |---|---|---|---|
 > | bag | RFC 8493 §2.1.3 が明示的に許す形 | `BagitSIP.parse` が manifest ごとに payload を足す (**受け手の欠陥**) | manifest 1 本 = **SHA-256 が検証器の照合対象でなくなる** |
-> | ERS | **CSIP32 に反して `digiprovMD` に非 PREMIS を宣言** | それを PREMIS として読む (**仕様どおり**) | `dmdSec` へ移す = **無い** |
+> | ERS | **CSIP32 の PREMIS の枠に非 PREMIS を宣言** | それを PREMIS として読む (**実装として妥当**) | `dmdSec` へ移す = **package の検証上は無い**。ただし AIP では `descriptive/` へ移されるので、**「保存証跡の場所に在る」という見え方は失う** |
 >
 > あちらは我々が規格どおりで受け手が欠陥、こちらは我々が規格に反していて受け手が
 > 仕様どおり。**向きが逆だから、判断も逆になる。**
@@ -843,4 +859,4 @@ ASiC-E ではない理由まで書いてある。**だが METS には反映さ�
 なおこの probe された型は、**置き場を変えた 3 本目でも同じ値**だった
 (`MDTYPE` も `CHECKSUM` も同一で、違うのは `xlink:href` だけ)。
 つまり **1 本目が落ちた原因は media type ではなくディレクトリである** — これが
-「ディレクトリを全部 PREMIS として読む」という診断の対照になっている。
+「`digiprovMD` の中身を PREMIS として読む」という診断の対照になっている。

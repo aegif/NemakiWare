@@ -56,21 +56,30 @@ import static org.mockito.Mockito.when;
  *
  * <p>The first RODA run (p3-4 §10) submitted a package with no evidence record in it — that
  * node had no confirmed RFC 3161 anchor, so {@code EvidenceRecordService.latest} returned absent
- * and the exporter wrote nothing. Adding one and re-running showed why that mattered: with the
- * record at {@code metadata/preservation/}, RODA 6.3.0 failed the <b>whole ingest</b>
+ * and the exporter wrote nothing. Adding one and re-running showed why that mattered: exported
+ * through {@code addPreservationMetadata}, RODA 6.3.0 failed the <b>whole ingest</b>
  * ({@code Failed to load PREMIS}, transaction rolled back) while the identical package without
- * it succeeded. CSIP's {@code metadata/preservation} is where PREMIS goes; a DER blob there is
- * our misreading, not the receiver being strict.
+ * the record succeeded, and the same record via {@code addOtherMetadata} succeeded.
  *
- * <p>So the lock is now two-sided: the record must be at {@link ErsFormat#CSIP_LOCATION}
- * ({@code metadata/other}) and must <b>not</b> be in {@code metadata/preservation}. The second
- * half is the one that matters — putting it back beside the PREMIS is a change that makes a
- * receiver reject everything, and nothing else in the build would notice.
+ * <p><b>The directory was never the cause.</b> {@code addPreservationMetadata} declares the file
+ * in {@code <amdSec><digiprovMD>}, and CSIP32 makes that the PREMIS slot ("it is mandatory to
+ * include one {@code <digiprovMD>} element for each piece of PREMIS metadata"). commons-ip2's
+ * parser collects {@code digiprovMD} into {@code SIP.getPreservationMetadata()}, and RODA pushes
+ * every entry of that list through {@code PremisV3Utils.binaryToGenericPremis}. The folder name
+ * follows the same call. CSIPSTR6 is only SHOULD about the folder and CSIPSTR8 names
+ * {@code other} as a MAY-level <i>example</i>, so <b>neither placement breaks CSIP at the folder
+ * level</b> — the defect was declaring a DER blob in the PREMIS slot.
  *
- * <p>What this does NOT establish: whether a receiver <b>keeps</b> the record at
- * {@code metadata/other}. That is measured against a live receiver, and is recorded in p3-4 §10.
+ * <p>So this locks three things, weakest first: the file is at
+ * {@link ErsFormat#CSIP_LOCATION}; it is not under {@code metadata/preservation}; and — the one
+ * that matters — <b>it does not come back as preservation metadata</b>, which is the list a
+ * receiver acts on.
  *
- * <p>The DER here is a stub. Nothing about the bytes is asserted; the subject is the path.
+ * <p>What this does NOT establish: whether a receiver <b>keeps</b> the record. That is measured
+ * against a live receiver and recorded in p3-4 §10 (RODA 6.3.0 keeps it, filed under
+ * {@code metadata/descriptive/}).
+ *
+ * <p>The DER here is a stub. Nothing about the bytes is asserted; the subject is placement.
  */
 class ErsIsInTheSipAtItsDeclaredPlaceTest {
 
@@ -113,25 +122,33 @@ class ErsIsInTheSipAtItsDeclaredPlaceTest {
         // HONESTLY: no product-side sabotage isolates this assertion today. Through commons-ip2's
         // public API, addPreservationMetadata moves the FILE as well as the declaration, so the
         // attempt to declare in digiprovMD while leaving the path at metadata/other was caught by
-        // the path assertion above (measured, cg16). This is therefore a guard against a future
-        // API or library change that decouples the two -- not a lock with its own measured
+        // the path assertion above first (measured, cg16). So this is a guard against a future
+        // API or library change that decouples the two -- not a lock with its own isolated
         // control. It is here because the path is the symptom and this is the cause, and a
         // reader who only sees the path assertions will fix the wrong thing.
-        String mets = new String(entries.entrySet().stream()
-                .filter(e -> e.getKey().endsWith("/METS.xml"))
-                .filter(e -> !e.getKey().contains("/representations/"))
-                .findFirst().orElseThrow().getValue(), StandardCharsets.UTF_8);
-        int record = mets.indexOf(ErsFormat.CHOSEN.fileName());
-        assertTrue(record >= 0, "the evidence record is not declared in the root METS: " + mets);
-        // The element names carry no namespace prefix in what commons-ip2 writes, but do not
-        // rely on that: match an optional one.
-        int lastDigiprov = lastOpeningTagBefore(mets, "digiprovMD", record);
-        int lastDmdSec = lastOpeningTagBefore(mets, "dmdSec", record);
-        assertTrue(lastDmdSec > lastDigiprov,
-                "the evidence record is declared inside <digiprovMD>, which CSIP32 reserves for "
-                        + "PREMIS. A receiver that parses digiprovMD as PREMIS -- RODA 6.3.0 "
-                        + "does -- rejects the WHOLE package over it, and the file path can look "
-                        + "perfectly correct while this is wrong. METS was: " + mets);
+        //
+        // Read it back the way a receiver does, rather than pattern-matching the raw METS.
+        org.roda_project.commons_ip2.model.SIP readBack =
+                new org.roda_project.commons_ip2.model.impl.eark.EARKSIP()
+                        .parse(sip, Files.createDirectories(tmp.resolve("readback")));
+
+        assertTrue(fileNames(readBack.getPreservationMetadata())
+                        .noneMatch(name -> name.equals(ErsFormat.CHOSEN.fileName())),
+                "the evidence record comes back as PRESERVATION metadata -- i.e. declared inside "
+                        + "<digiprovMD>, which CSIP32 reserves for PREMIS. A receiver that parses "
+                        + "that list as PREMIS (RODA 6.3.0 does) rejects the WHOLE package over "
+                        + "it, and the file path can look perfectly correct while this is wrong: "
+                        + fileNames(readBack.getPreservationMetadata()).toList());
+        assertTrue(fileNames(readBack.getOtherMetadata())
+                        .anyMatch(name -> name.equals(ErsFormat.CHOSEN.fileName())),
+                "the evidence record does not come back as OTHER metadata, so the assertion "
+                        + "above passes for the wrong reason -- it may not be declared at all: "
+                        + fileNames(readBack.getOtherMetadata()).toList());
+    }
+
+    private static java.util.stream.Stream<String> fileNames(
+            List<org.roda_project.commons_ip2.model.IPMetadata> metadata) {
+        return metadata.stream().map(m -> m.getMetadata().getFileName());
     }
 
     @Test
@@ -147,18 +164,6 @@ class ErsIsInTheSipAtItsDeclaredPlaceTest {
                 "a package with no evidence record still carries a file named "
                         + ErsFormat.CHOSEN.fileName() + ", which a receiver would read as "
                         + "evidence this node does not have");
-    }
-
-    /** Offset of the last {@code <name} or {@code <prefix:name} opening tag before {@code before}. */
-    private static int lastOpeningTagBefore(String xml, String name, int before) {
-        java.util.regex.Matcher m = java.util.regex.Pattern
-                .compile("<(?:[A-Za-z_][\\w.-]*:)?" + name + "[\\s>]")
-                .matcher(xml.substring(0, before));
-        int last = -1;
-        while (m.find()) {
-            last = m.start();
-        }
-        return last;
     }
 
     private static EvidenceCheckpoint checkpoint() {

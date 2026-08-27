@@ -71,7 +71,7 @@ submission agreement として明文化」と書いているのはこの文書�
 - 本製品は `verificationOutcome` を二値でしか読まない。`PARTIAL` は
   **成功として扱わない**ので、部分受入を成功と呼ぶ合意があるなら、
   受け手が返す語をこちらの語彙に合わせる必要がある
-- **RODA の `PARTIAL_SUCCESS` はここに落ちる** (2026-08-27 実測)。`JobReport.pluginState` を
+- **RODA の `PARTIAL_SUCCESS` はここに落ちる** (2026-08-27 実測)。`Report.pluginState` を
   `verificationOutcome` に入れる限り、この規則と受け手の語彙は一致する。
   **Archivematica の語彙は未採取** (下記 3)
 
