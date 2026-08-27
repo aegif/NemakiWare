@@ -82,29 +82,40 @@ public enum ErsFormat {
     /**
      * Where an evidence record goes in a CSIP package.
      *
-     * <p>{@code metadata/other}. <b>This was {@code metadata/preservation} until 2026-08-27, and
-     * that was a misreading.</b> "An evidence record is preservation metadata" is an OAIS
-     * category; CSIP's {@code metadata/preservation} is not that category, it is <b>the place
-     * CSIP puts PREMIS</b>. An RFC 4998 evidence record is an ASN.1 DER blob, not PREMIS, so it
-     * does not belong there. {@code metadata/other} is CSIP's place for metadata that does not
-     * fit a named category, which is exactly what this is.
+     * <p>{@code metadata/other}. <b>This was {@code metadata/preservation} until 2026-08-27,
+     * and the directory was never the point.</b>
      *
-     * <p>What made the misreading visible: RODA 6.3.0 parses <i>everything</i> in
-     * {@code metadata/preservation} as PREMIS and fails the WHOLE ingest when it cannot —
-     * {@code Failed to load PREMIS}, transaction rolled back, not one file kept. Measured with a
-     * control (the same package with the record removed ingests). So a deployment with a
-     * confirmed RFC 3161 anchor could not hand a SIP to the one receiver this project has
-     * measured.
+     * <p>What DECIDES both the directory and the METS is which commons-ip2 call the exporter
+     * makes. {@code addPreservationMetadata} declares the file in
+     * {@code <amdSec><digiprovMD><mdRef>}; {@code addOtherMetadata} declares it in
+     * {@code <dmdSec>}. <b>CSIP 2.2.0 requirement CSIP32</b> — verbatim in commons-ip2's
+     * {@code ConstantsCSIPspec} — says "the standard PREMIS is used. It is mandatory to include
+     * one {@code <digiprovMD>} element for each piece of PREMIS metadata." An RFC 4998 evidence
+     * record is an ASN.1 DER blob, so declaring it there was a defect on this product's side.
      *
-     * <p><b>The move is not an accommodation of that receiver.</b> Elsewhere in this increment
-     * (the BagIt layer) the opposite call was made deliberately: a parser defect in a receiver
-     * we do not use must not pick our format. The difference is that here the placement was
-     * wrong on its own terms, and RODA's behaviour only made it visible.
+     * <p><b>The folder was never the violation.</b> CSIPSTR6 is only SHOULD ("preservation
+     * metadata … SHOULD be included in sub-folder preservation"), and CSIPSTR8 names
+     * {@code other} as an <i>example</i> at MAY level. An earlier version of this javadoc said
+     * CSIP makes {@code metadata/preservation} the PREMIS-only place; that was an unverified
+     * reading, and the requirement text does not support it.
      *
-     * <p><b>Changing this constant is not enough.</b> It DESCRIBES the location; what DECIDES it
-     * is which commons-ip2 call the exporter makes — {@code addPreservationMetadata} versus
-     * {@code addOtherMetadata}. A negative control that changed only the working directory left
-     * the package unchanged. Change both, or neither moves.
+     * <p>How it surfaced: RODA 6.3.0 reads {@code amdSec/digiprovMD} into
+     * {@code SIP.getPreservationMetadata()} and hands each entry to
+     * {@code PremisV3Utils.binaryToGenericPremis} — {@code Failed to load PREMIS}, transaction
+     * rolled back, not one file kept. Measured with controls: the same package without the
+     * record ingests, and the same package with the record in {@code dmdSec} ingests and keeps
+     * it. RODA was behaving to spec.
+     *
+     * <p><b>Contrast with the BagIt decision in the same increment,</b> where a receiver's
+     * parser defect was deliberately NOT allowed to pick this product's format. The directions
+     * are opposite: there our shape was what RFC 8493 §2.1.3 explicitly allows and the receiver
+     * was defective; here our shape broke CSIP32 and the receiver was correct. The alternative's
+     * cost differs too — one payload manifest would have cost the SHA-256 its verified
+     * path→digest binding, while moving to {@code dmdSec} costs nothing.
+     *
+     * <p><b>Changing this constant is not enough,</b> and on its own it changes nothing: it
+     * DESCRIBES where the file lands. A negative control that changed only the working directory
+     * left the package identical. Change the {@code add*Metadata} call, and keep this in step.
      */
     public static final String CSIP_LOCATION = "metadata/other";
 
@@ -164,7 +175,7 @@ public enum ErsFormat {
                     + "automatically. A record IS put into an E-ARK SIP when this node has one, "
                     + "at metadata/other -- but where it ENDS UP is the receiver's decision, not "
                     + "this product's: RODA 6.3.0 keeps the record and files it under "
-                    + "metadata/descriptive instead (measured 2026-08-27). Whether any other "
-                    + "archive keeps it at all is unmeasured. See ErsRecord.LIMITS, which "
-                    + "travels with every record.";
+                    + "metadata/descriptive instead (measured 2026-08-27 with a STUB record, not "
+                    + "a real timestamped one). Whether any other archive keeps it at all is "
+                    + "unmeasured. See ErsRecord.LIMITS, which travels with every record.";
 }

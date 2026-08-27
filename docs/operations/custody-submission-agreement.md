@@ -128,7 +128,7 @@ submission agreement として明文化」と書いているのはこの文書�
 | **bag** (`BagitToAIPPlugin`) | manifest **1 本**の bag なら AIP object が作られた。**現行の出荷形 (2 本) は rollback する** (2026-08-27 実測) — RODA には bag を送らず SIP を送ること。なお bag 経路では SIP は payload の中の 1 ファイルのままで、METS は読まれない |
 | 旧版 `EARKSIPToAIPPlugin` (E-ARK SIP 1.x) | 同じ package を**拒否**する。**プラグインの指定を間違えると「非対応」に見える** |
 | 我々の `metadata/preservation/premis.xml` | **生成された AIP の PREMIS metadata に無い**。在るのは RODA 自身の event 2 件だけ。値が非 PREMIS のフィールドへ写されたかは未調査 |
-| 我々の `ers.der` (タイムスタンプ証跡) | **`metadata/other` なら取り込まれ、残る** (ただし AIP では `metadata/descriptive/ers.der` へ移されている)。**`metadata/preservation` に置くと package ごと rollback する** — RODA がそのディレクトリを PREMIS として読むため。本製品は 2026-08-27 に `metadata/other` へ移した |
+| 我々の `ers.der` (タイムスタンプ証跡) | **`metadata/other` なら取り込まれ、残る** (ただし AIP では `metadata/descriptive/ers.der` へ移されている)。**`metadata/preservation` に置くと package ごと rollback する** — RODA がそのディレクトリを PREMIS として読むため。本製品は 2026-08-27 に `metadata/other` へ移した。**測ったのはスタブの DER で、本物の ERS では未測定** |
 | AIP の `state` | `INGEST_PROCESSING`。受入承認された状態ではない |
 
 > **先方と話すときの実務**: 「E-ARK SIP を受けられますか」だけでなく
@@ -138,13 +138,19 @@ submission agreement として明文化」と書いているのはこの文書�
 **まだやること**:
 
 1. ~~受け手が実際に返す `verificationOutcome` の語を採取する~~ **RODA については採れた**
-   (2026-08-27)。**RODA は受領証を返さない** — v2 API の 28 本にそれに相当するリソースが無い。
+   (2026-08-27)。**RODA の v2 API 26 本に、受領証と分かるリソースは無い** (job report や投入時の応答が代役になり得るかは未検証)。
    接続層が組み立てるなら材料は 2 つで、**どちらを選ぶかで結果が変わる**:
 
    | 出所 | 値 | `reportsSuccess()` との相性 |
    |---|---|---|
-   | `JobReport.pluginState` | `SUCCESS` / `PARTIAL_SUCCESS` / `FAILURE` / `RUNNING` / `SKIPPED` | **合う**。`SUCCESS` は通り、`PARTIAL_SUCCESS` は通らない (1.4 と一致) |
-   | `AIP.state` | `CREATED` / `INGEST_PROCESSING` / `UNDER_APPRAISAL` / `ACTIVE` / … | **壊れる**。受入完了の `ACTIVE` が語彙に無い |
+   | `Report.pluginState` | `SUCCESS` / `PARTIAL_SUCCESS` / `FAILURE` / `RUNNING` / `SKIPPED` | **合う**。`SUCCESS` は通り、`PARTIAL_SUCCESS` は通らない (1.4 と一致) |
+   | 同じ `Report` の `outcomeObjectState` | `CREATED` / `INGEST_PROCESSING` / `UNDER_APPRAISAL` / `ACTIVE` / … | **壊れる**。受入完了の `ACTIVE` が語彙に無い |
+
+   **さらに深い問題**: RODA の `TransferredResource` には **checksum のフィールドが無く**、
+   `Report` が投入物に紐づくのは名前 (`sourceObjectId` / `sourceObjectOriginalName`) である。
+   つまり **`sipDigest` を先方から得られない** — こちら側の記録から埋めるしかなく、
+   そうすると照合が自分の値を自分と比べる形になり、§0 の「受領証の最低条件」を
+   実質満たせない。**この受け手からは検証可能な受領証を作れない**、というのが現状である。
 
    **Archivematica の語彙は未採取。** また、受領証を実際に組み立てて検証する経路は未実装で、
    署名も無い (RODA が返せるものはどれも認証されていない)

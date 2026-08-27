@@ -93,21 +93,45 @@ class ErsIsInTheSipAtItsDeclaredPlaceTest {
                         + "ErsFormat.CSIP_LOCATION says to look will not find it: "
                         + entries.keySet());
 
-        // The half that costs a whole ingest if it regresses. CSIP's metadata/preservation is
-        // the PREMIS directory; RODA 6.3.0 parses everything in it as PREMIS and rolls the
-        // entire transaction back on a DER blob. Measured 2026-08-27 with a control.
         assertTrue(entries.keySet().stream()
                         .noneMatch(name -> name.contains("metadata/preservation/")
                                 && name.endsWith(ErsFormat.CHOSEN.fileName())),
-                "the evidence record is back in metadata/preservation, which is where CSIP puts "
-                        + "PREMIS. A receiver that parses that directory as PREMIS rejects the "
-                        + "WHOLE package -- not just this file: " + entries.keySet());
+                "the evidence record is back under metadata/preservation: " + entries.keySet());
         // The PREMIS is still there, and still alone: this is what makes the line above a claim
         // about the record's placement rather than about the directory having vanished.
         assertTrue(entries.keySet().stream()
                         .anyMatch(name -> name.endsWith("metadata/preservation/premis.xml")),
                 "there is no PREMIS in metadata/preservation any more, so the assertion above "
                         + "passes for the wrong reason: " + entries.keySet());
+
+        // THE CAUSAL VARIABLE, asserted directly. The directory is a side effect; what a
+        // receiver acts on is the METS section. CSIP32 makes <digiprovMD> the PREMIS slot, and
+        // RODA 6.3.0 reads digiprovMD into SIP.getPreservationMetadata() and pushes every entry
+        // through PremisV3Utils.binaryToGenericPremis -- so a DER declared there rolls the whole
+        // transaction back.
+        //
+        // HONESTLY: no product-side sabotage isolates this assertion today. Through commons-ip2's
+        // public API, addPreservationMetadata moves the FILE as well as the declaration, so the
+        // attempt to declare in digiprovMD while leaving the path at metadata/other was caught by
+        // the path assertion above (measured, cg16). This is therefore a guard against a future
+        // API or library change that decouples the two -- not a lock with its own measured
+        // control. It is here because the path is the symptom and this is the cause, and a
+        // reader who only sees the path assertions will fix the wrong thing.
+        String mets = new String(entries.entrySet().stream()
+                .filter(e -> e.getKey().endsWith("/METS.xml"))
+                .filter(e -> !e.getKey().contains("/representations/"))
+                .findFirst().orElseThrow().getValue(), StandardCharsets.UTF_8);
+        int record = mets.indexOf(ErsFormat.CHOSEN.fileName());
+        assertTrue(record >= 0, "the evidence record is not declared in the root METS: " + mets);
+        // The element names carry no namespace prefix in what commons-ip2 writes, but do not
+        // rely on that: match an optional one.
+        int lastDigiprov = lastOpeningTagBefore(mets, "digiprovMD", record);
+        int lastDmdSec = lastOpeningTagBefore(mets, "dmdSec", record);
+        assertTrue(lastDmdSec > lastDigiprov,
+                "the evidence record is declared inside <digiprovMD>, which CSIP32 reserves for "
+                        + "PREMIS. A receiver that parses digiprovMD as PREMIS -- RODA 6.3.0 "
+                        + "does -- rejects the WHOLE package over it, and the file path can look "
+                        + "perfectly correct while this is wrong. METS was: " + mets);
     }
 
     @Test
@@ -123,6 +147,18 @@ class ErsIsInTheSipAtItsDeclaredPlaceTest {
                 "a package with no evidence record still carries a file named "
                         + ErsFormat.CHOSEN.fileName() + ", which a receiver would read as "
                         + "evidence this node does not have");
+    }
+
+    /** Offset of the last {@code <name} or {@code <prefix:name} opening tag before {@code before}. */
+    private static int lastOpeningTagBefore(String xml, String name, int before) {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("<(?:[A-Za-z_][\\w.-]*:)?" + name + "[\\s>]")
+                .matcher(xml.substring(0, before));
+        int last = -1;
+        while (m.find()) {
+            last = m.start();
+        }
+        return last;
     }
 
     private static EvidenceCheckpoint checkpoint() {

@@ -22,7 +22,6 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -132,7 +131,11 @@ class ErsFormatTest {
                         + "metadata/preservation, note that CSIP puts PREMIS there and at least "
                         + "one receiver rejects the entire package over a DER blob in it "
                         + "(docs/design/p3-4-custody-transfer.md §11)");
-        assertNotEquals("metadata/preservation", ErsFormat.CSIP_LOCATION,
-                "an ASN.1 evidence record is back in CSIP's PREMIS directory");
+        // No assertNotEquals("metadata/preservation", ...) here: the assertEquals above already
+        // implies it, so it could never fail on its own. An earlier version of this test added
+        // one and the commit message called it extra discrimination -- it was not. The
+        // assertion that actually catches the regression that matters is in
+        // ErsIsInTheSipAtItsDeclaredPlaceTest, over the METS section, because a receiver acts
+        // on <digiprovMD> rather than on the folder name (CSIP32).
     }
 }

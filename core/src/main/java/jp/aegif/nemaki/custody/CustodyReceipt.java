@@ -108,24 +108,41 @@ public record CustodyReceipt(
      *
      * <h3>What a real receiver actually says (RODA 6.3.0, measured 2026-08-27)</h3>
      *
-     * <p><b>RODA returns no receipt at all</b> — there is no such resource among its 28 v2 API
-     * controllers. A connector has to assemble one, and the two fields it would assemble from
+     * <p><b>RODA has no resource that is recognisably a receipt</b> — none among its 26 v2 API
+     * controllers. That is not the same as "RODA returns no receipt": a job report or an ingest
+     * response could be pressed into the role, and that has not been ruled out. What is certain
+     * is that a connector would have to assemble one, and the two fields it would assemble from
      * carry these vocabularies:
      *
+     * <p>Both live on the SAME object — {@code org.roda.core.data.v2.jobs.Report}, the job
+     * report ({@code JobReportController} is the endpoint; there is no type called
+     * {@code JobReport}):
+     *
      * <ul>
-     *   <li>{@code JobReport.pluginState}: {@code SUCCESS}, {@code PARTIAL_SUCCESS},
+     *   <li>{@code Report.pluginState}: {@code SUCCESS}, {@code PARTIAL_SUCCESS},
      *       {@code FAILURE}, {@code RUNNING}, {@code SKIPPED}</li>
-     *   <li>{@code AIP.state}: {@code CREATED}, {@code INGEST_PROCESSING},
-     *       {@code UNDER_APPRAISAL}, {@code ACTIVE}, {@code DELETED}, …</li>
+     *   <li>{@code Report.outcomeObjectState} ({@code AIPState}): {@code CREATED},
+     *       {@code INGEST_PROCESSING}, {@code UNDER_APPRAISAL}, {@code ACTIVE},
+     *       {@code DELETED}, …</li>
      * </ul>
      *
      * <p><b>Put {@code pluginState} in {@code verificationOutcome} and this list is right:</b>
      * {@code SUCCESS} passes, and {@code PARTIAL_SUCCESS} does not — which is what §1.4 of the
      * submission agreement decided independently.
      *
-     * <p><b>Put {@code AIP.state} in it and this list is wrong:</b> {@code ACTIVE} — an AIP that
-     * completed appraisal — is not in the vocabulary, so a fully accepted deposit would read as
-     * not-success. Whoever writes the connector has to choose the first field.
+     * <p><b>Put {@code outcomeObjectState} in it and this list is wrong:</b> {@code ACTIVE} —
+     * an AIP that completed appraisal — is not in the vocabulary, so a fully accepted deposit
+     * would read as not-success. Since both fields arrive in one response body, that is a live
+     * choice a connector makes, not a hypothetical.
+     *
+     * <p><b>And a RODA-derived receipt cannot satisfy the one field this class refuses to be
+     * built without.</b> {@link #sipDigest} exists so a receipt names OUR package; RODA's
+     * {@code TransferredResource} carries no checksum at all, and {@code Report} ties back by
+     * {@code sourceObjectId} / {@code sourceObjectOriginalName} — <b>by name, not by content</b>.
+     * A connector would have to fill {@code sipDigest} from our own record, at which point
+     * {@link #refusalReasonFor} compares our value against itself and establishes nothing. That
+     * is the same shape of defect §2 of the design doc exists to prevent, and it is unsolved for
+     * this receiver.
      *
      * <p>Archivematica's vocabulary is still unmeasured, and no receipt has yet been assembled
      * and verified end to end. Being wrong here costs a refusal of a genuine receipt, not an
