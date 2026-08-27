@@ -56,8 +56,8 @@ import java.util.zip.ZipOutputStream;
  * SHA-256 evidence would not have to recompute anything.
  *
  * <p><b>RODA 6.3.0 cannot ingest such a bag.</b> Measured 2026-08-26 against a live instance:
- * "Binary already exists", and the whole ingest transaction is rolled back. The identical bag
- * with one manifest ingests and produces an AIP.
+ * the second copy of the payload fails with "Binary already exists" and the whole ingest
+ * transaction is rolled back. The identical bag with one manifest ingests and produces an AIP.
  *
  * <p>The mechanism is in the library, not in RODA's plugin: {@code BagitSIP.parse} — commons-ip
  * <i>v1</i>, which ships inside {@code commons-ip2-2.11.3.jar} — walks
@@ -72,8 +72,11 @@ import java.util.zip.ZipOutputStream;
  * is still stated — {@code bag-info.txt} carries it in {@code External-Description}, which is
  * the value a receiver needs to tie the bag to this product's chain. What is gone is that any
  * RFC 8493 verifier used to <i>check</i> it as a path→digest binding; {@code External-Description}
- * is free text that no verifier reads. The value survives, the verification of it does not. The
- * tag manifests drop to SHA-512 only for the same reason.
+ * is free text that no verifier reads. The value survives, the verification of it does not.
+ *
+ * <p>The tag manifests drop to SHA-512 only as well — a side effect of passing one algorithm to
+ * {@code bagInPlace}, not a second measured constraint. {@code BagitSIP.parse} walks
+ * {@code getPayLoadManifests()}; nothing showed two <i>tag</i> manifests breaking anything.
  *
  * <p>Note also that {@code External-Description} is only written when a caller supplies
  * {@code sipDigest} (unlike {@code submissionId}, which is refused when absent). The export
@@ -97,11 +100,13 @@ public final class BagItTransferPackager {
      * time: the sentence has to be where the decision is made.
      */
     public static final String LIMITS =
-            "This bag is a TRANSFER FORMAT, not an interpretation. The receiving system reads "
-                    + "it as a payload of opaque files; it does not read the E-ARK SIP's METS, "
-                    + "honour its structure, or produce an E-ARK AIP because of it. Nothing "
-                    + "here establishes that the receiver accepted, understood or kept "
-                    + "anything — those are its own processes, reported in a receipt.";
+            "This bag is a TRANSFER FORMAT, not an interpretation. A receiving system reading "
+                    + "THIS BAG AS A BAG reads it as a payload of opaque files; it does not "
+                    + "read the E-ARK SIP's METS, honour its structure, or produce an E-ARK AIP "
+                    + "because of it. (The same system may have an E-ARK route that does read "
+                    + "it — RODA 6.3.0 does — but that route is not this one.) Nothing here "
+                    + "establishes that the receiver accepted, understood or kept anything — "
+                    + "those are its own processes, reported in a receipt.";
 
     /** The bag, what it holds, and what that does not mean. */
     public record Bagged(Path zippedBag, String payloadOxum, long payloadBytes, String limits) {}

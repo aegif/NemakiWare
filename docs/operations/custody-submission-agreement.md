@@ -106,7 +106,12 @@ submission agreement として明文化」と書いているのはこの文書�
   payload の中の 1 ファイルとして SIP を見る。METS は読まれない
   (E-ARK 経路で受け取る先方なら読まれる — 下記 3 を見ること)
 - **取り込まれたから保持される、とは言わない。** RODA 6.3.0 で実測したところ、
-  取込直後の AIP は `INGEST_PROCESSING` 止まりで、受入承認まで進んでいない
+  SIP→AIP プラグインが作った AIP は `INGEST_PROCESSING` 止まりで、
+  受入承認まで進んでいない (その先の workflow は走らせていない)
+- **bag の中の SHA-256 は「照合された値」ではない。** payload manifest は SHA-512 の
+  1 本だけなので、BagIt の検証器が照合するのは SHA-512 である。本製品の証跡が使う
+  SHA-256 は `bag-info.txt` の `External-Description` に**書いてあるだけ**で、
+  受け手の bag 検証はそこを見ない。受領証と突き合わせるなら再計算が要る
 
 ---
 
@@ -116,10 +121,11 @@ submission agreement として明文化」と書いているのはこの文書�
 
 | | 結果 |
 |---|---|
-| **E-ARK SIP を直接** (`EARKSIP2ToAIPPlugin`) | **取り込まれる**。本文が `representations/rep1/data/` に入り、METS の `OBJID` が AIP に載る |
-| **bag** (`BagitToAIPPlugin`) | **取り込まれる**。ただし payload manifest は **1 本**でなければ transaction が rollback する |
+| **E-ARK SIP を直接** (`EARKSIP2ToAIPPlugin`) | **AIP object が作られる**。本文が `representations/rep1/data/` に入り、METS の `OBJID` が AIP に載る |
+| **bag** (`BagitToAIPPlugin`) | **AIP object が作られる**。ただし payload manifest は **1 本**でなければ transaction が rollback する。SIP は payload の中の 1 ファイルのまま |
 | 旧版 `EARKSIPToAIPPlugin` (E-ARK SIP 1.x) | 同じ package を**拒否**する。**プラグインの指定を間違えると「非対応」に見える** |
-| 我々の `metadata/preservation/premis.xml` | **AIP に残らない**。RODA は自分の PREMIS event だけを置く |
+| 我々の `metadata/preservation/premis.xml` | **生成された AIP の PREMIS metadata に無い**。在るのは RODA 自身の event 2 件だけ。値が非 PREMIS のフィールドへ写されたかは未調査 |
+| 我々の `metadata/preservation/ers.der` (タイムスタンプ証跡) | **未測定**。投入した package に入っていなかった。同じディレクトリの `premis.xml` が残らなかった以上、要確認 |
 | AIP の `state` | `INGEST_PROCESSING`。受入承認された状態ではない |
 
 > **先方と話すときの実務**: 「E-ARK SIP を受けられますか」だけでなく

@@ -247,11 +247,19 @@ class EarkSipExportControllerTest {
         for (byte b : java.security.MessageDigest.getInstance("SHA-256").digest(payload)) {
             expected.append(String.format("%02x", b));
         }
+        // On the External-Description LINE, not merely somewhere in the file: a receiver looking
+        // for the package digest reads that field. A bare substring check would stay green if the
+        // value drifted onto some other bag-info key, where nobody looks for it.
         String info = new String(entries.get("bag-info.txt"), StandardCharsets.UTF_8);
-        assertTrue(info.contains(expected.toString()),
-                "bag-info.txt does not state the SHA-256 of the bytes under data/, so a receiver "
-                        + "reconciling this bag against the chain has nothing that matches -- "
-                        + "and there is no sha256 payload manifest to fall back on: " + info);
+        String described = info.lines()
+                .filter(line -> line.startsWith("External-Description:"))
+                .findFirst()
+                .orElse("");
+        assertTrue(described.contains(expected.toString()),
+                "External-Description does not state the SHA-256 of the bytes under data/, so a "
+                        + "receiver reconciling this bag against the chain has nothing that "
+                        + "matches -- and there is no sha256 payload manifest to fall back on. "
+                        + "bag-info.txt was: " + info);
     }
 
     private static void setField(Object target, String name, Object value) throws Exception {

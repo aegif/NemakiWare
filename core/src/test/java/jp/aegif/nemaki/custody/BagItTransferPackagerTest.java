@@ -143,7 +143,8 @@ class BagItTransferPackagerTest {
         // — and "was the same package sent twice?" then has no cheap answer.
         //
         // The one that actually bit: bagit-java writes the TAG MANIFESTS by iterating a set,
-        // so two runs over identical input produced the same four lines in a different order.
+        // so two runs over identical input produced the same lines in a different order.
+        // (It was four lines when the bag carried two payload manifests; it is three now.)
         // Everything else already matched.
         Path source = sip(Files.createDirectories(tmp.resolve("in")), "same bytes");
 

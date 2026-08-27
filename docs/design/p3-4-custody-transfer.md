@@ -178,7 +178,7 @@ constructor は緩いままにした — 欠けた受領証も「何かが届い
 | **スレッド安全性** | **未**。`state` / `receipt` / `history` は非同期化で、`advance` は check-then-act。呼び出し元が無いので現時点で実害は無いが、"workflow object" と説明する以上は同期か明記が要る |
 | **`reportsSuccess()` の語彙を実機で確認** | **未**。`PASSED/PASS/VALID/SUCCESS/ACCEPTED/OK` は**こちらが決めた綴り**で、RODA / Archivematica が実際に何を返すか照合していない。未知語は成功ではないので**外れても fail-closed** (受け入れてしまうのではなく、正当な受領証を拒否する) が、そのままでは使えない。実機受入試験で語彙を固定すること |
 | **submission agreement の明文化** (失敗・再送・重複取込・部分受入・先方 AIP 再生成) | **雛形あり** (2026-08-26): [`docs/operations/custody-submission-agreement.md`](../operations/custody-submission-agreement.md)。7 項目と、本製品が既に決めていて交渉できない側の分離。**合意そのものは当事者間の作業で、software では閉じない** |
-| 実機受入試験 | **RODA 6.3.0 は実施済み** (§10)。E-ARK SIP (`EARKSIP2ToAIPPlugin`) も bag も取り込まれ AIP になる。**未**: Archivematica、受領証を返す経路、他版の RODA |
+| 実機受入試験 | **RODA 6.3.0 の SIP→AIP プラグインだけ実施済み** (§10)。E-ARK SIP (`EARKSIP2ToAIPPlugin`) も bag も AIP object になった。**受入承認まで含む ingest workflow は未実施**で、AIP は `INGEST_PROCESSING` 止まり。**我々の PREMIS は AIP に残らない**。**未**: full ingest workflow、Archivematica、受領証を返す経路、他版の RODA |
 
 ---
 
@@ -219,7 +219,7 @@ manifest ごとに payload を追加して落ちる**ので 1 本にした。SHA
    そこへ置くと `data/data/` になり、manifest はそれと整合するので**何も落ちない**。
    受け取り側が期待するレイアウトでないだけ。移動後の位置を確認して、違えば送らない。
 2. **タグマニフェストの行順が絶対パス依存。** 同じ package を別ディレクトリで包むと
-   同じ 4 行が別の順で出て、**deflate の圧縮結果が変わり archive の長さが変わる**。
+   同じ行が別の順で出て、**deflate の圧縮結果が変わり archive の長さが変わる**。
    「同じものを 2 度送ったか」に安い答えが無くなる。行を整列して正規化した。
    なお 2 つのディレクトリが偶然同じ順に hash することはあるので、
    この対照は**end-to-end 比較ではなく正規化そのものを直接測る**
@@ -316,13 +316,15 @@ REST の受け口はリクエスト本文から決して読まない (findings �
 ## 10. RODA 実機受入試験 (2026-08-26 / 2026-08-27 実測)
 
 **RODA 6.3.0 を立てて、NemakiWare が作った本物の SIP / bag を投入した。**
-**E-ARK SIP も bag も取り込まれ、AIP になった。**
+**E-ARK SIP も bag も、SIP→AIP プラグインが処理して AIP object を作った。**
+ただし走らせたのはそのプラグインだけで、**受入承認まで含む ingest workflow は通していない**
+(E-ARK 側の AIP は `INGEST_PROCESSING` のまま)。
 
 > **この節は一度書き直している。** 2026-08-26 の初回、`EARKSIPToAIPPlugin` に投げて
 > 拒否されたのをもって「E-ARK SIP は取り込めない」と書いた。**プラグインの選択を
 > 誤っていた。** RODA 6.3.0 には E-ARK 系が 2 本あり、CSIP 2.x を読むのは
 > `EARKSIP2ToAIPPlugin` の方である。3 系統のレビューが独立に同じ点を指摘し、
-> 8-27 に測り直して**結論が反転した**。誤りの中身は §10.6 に残す — 同じ罠を
+> 8-27 に測り直して**結論が反転した**。誤りの中身は本節の末尾「初回の誤り」に残す — 同じ罠を
 > 次に踏まないために、消さずに書いておく。
 
 ### 投入 API — 前回「未特定」としていたもの
@@ -346,25 +348,39 @@ POST /api/v2/jobs                          (取込ジョブ)                    
 - `GET /api/v2/jobs/plugin-info` は `plugin-info.json` が未生成だと 404。
   プラグイン ID は fat jar の中の `roda-core-6.3.0.jar` から読める
 - **プラグインは 1 本ではない。** `org.roda.core.plugins.base.ingest` に E-ARK が
-  2 本ある。どちらを指すかで結果が変わる (§10.6)
+  2 本ある。どちらを指すかで結果が変わる (末尾「初回の誤り」)
 
-### ジョブの結果は集計欄で読まない — 0 のまま SUCCESS が起きる
+### この環境では索引を読む API が全部 0 を返していた — 集計欄も含めて
 
-**`GET /api/v2/jobs/{id}` の `jobStats` は当てにならなかった。** 8-27 の再測定では、
-成功したジョブも失敗したジョブも**揃って**こう返した:
+**8-27 の再測定環境には、索引読み取りの障害があった。** `POST /api/v2/*/find` も
+`/count` も**全コレクションで 0** を返す一方、Solr を直接引くと `Job` 16 件・
+`AIP` 2 件・`TransferredResource` 6 件が在る。
+
+同じ症状の一部として、`GET /api/v2/jobs/{id}` の `jobStats` も更新後の結果を
+返さなかった。成功したジョブも失敗したジョブも**揃って**こうである:
 
 ```
 state = COMPLETED   completionPercentage = 0
 sourceObjectsProcessedWithSuccess = 0   ...WithFailure = 0   ...WaitingToBeProcessed = 1
 ```
 
-`AIP` が実際に 1 件生まれた側もこの表示である。同じ環境で `POST /api/v2/*/find` と
-`/count` も全コレクションで 0 を返した (Solr を直接引くと `Job` 16 件・`AIP` 2 件・
-`TransferredResource` 6 件が在る) ので、**索引を読む API 層が沈黙して 0 を返していた**。
+`AIP` が実際に 1 件生まれた側もこの表示だった。
 
-> **判定は `JobReport` の `pluginState` と、実際に AIP が在るかで読むこと。**
-> 集計欄だけを見ると、**成功を「何も起きなかった」と読む**。初回に
-> 「プラグインが違う」と気づけなかったのも、この層を信じたことが一因である。
+> **これは「RODA 6.3.0 の `jobStats` は信用できない」ではない** (外部レビュー指摘)。
+> 8-26 の初回測定では集計欄は正しく動いていた。**健全な環境で `jobStats` が
+> 非信頼だ、ということは確かめていない。** 分かっているのは、
+> **索引読み取りが壊れた環境では集計欄も一緒に壊れる**ということだけである。
+
+**この症状が出ている環境での読み方** (実際に使った手順):
+
+- **AIP がディスクに在るか** — `docker exec roda-roda-1 find /roda/data/storage/aip/... -type f`。
+  索引ではなく storage を見るので、この障害の影響を受けない
+- **`JobReport.pluginState`** — API では引けなかったので、**Solr を直接引いた**:
+  `docker exec roda-solr-1 curl -s 'http://localhost:8983/solr/JobReport/select?q=jobId:<id>&wt=json'`。
+  ここに `pluginState = SUCCESS / FAILURE` と `outcomeObjectId` が入っている
+
+集計欄だけを見ると、**成功を「何も起きなかった」と読む**。初回に
+「プラグインが違う」と気づけなかったのも、索引を読む層を信じたことが一因である。
 
 ### 結果 1 — E-ARK SIP は **取り込める** (`EARKSIP2ToAIPPlugin`)
 
@@ -403,19 +419,40 @@ schemas/{mets1_12,DILCISExtensionMETS,DILCISExtensionSIPMETS,xlink}.xsd
 
 #### ただし、渡したものが全部そのまま残るわけではない
 
-同じ AIP を測って分かったこと:
+測り方: `docker exec roda-roda-1 find /roda/data/storage/aip/{aipId} -type f` で
+**AIP 全体を 12 ファイル**列挙し (representation 配下も含む — `representations/rep1/metadata/`
+のような場所は存在しなかった)、その上で `grep -rl` / `grep -c` を掛けた。
 
-- **我々の `metadata/preservation/premis.xml` は AIP に無い。** そこに在るのは
-  RODA が自分で作った 2 件だけで、`eventType` は `wellformedness check` と
-  `unpacking`。PREMIS の **object レコードは 0 件** (`grep -c` で確認)。
-  P3-1 のクロスウォークの成果物は、**この受け手の AIP には残らない**。
-- 我々が `metadata/other/` に置いた JSON 2 本は **`metadata/descriptive/` へ
-  移されて**残った (`metadata/other/OTHER/{aipId}` にも複製)。
+- **我々の `premis.xml` と、その PREMIS object / event / agent レコードは、
+  生成された AIP の PREMIS metadata に無い。** `metadata/preservation/` に在るのは
+  RODA が自分で作った 2 件だけで、`eventType` は `wellformedness check` と `unpacking`。
+  PREMIS の **object レコードは 0 件**。我々の object identifier
+  (`bedroom/2878786f…`) が現れるのは `descriptive/` の 3 ファイルと
+  `other/OTHER/{aipId}` と `aip.json` だけだった。
+
+  > **「値が別の形に取り込まれた」可能性は否定していない** (外部レビュー指摘)。
+  > 測ったのは「元の PREMIS 文書とそのレコードが無い」ことであって、
+  > RODA が一部の値を PREMIS でない AIP のフィールドへ写したかどうかは調べていない。
+  >
+  > **「object レコード 0 件」の方は交絡している。** RODA 自身の PREMIS object は
+  > 後続プラグインが書くので、SIP→AIP だけ走らせた AIP では**どんな SIP でも 0 件**に
+  > なりうる。**残っている主張は前半 (我々の premis.xml が無い) だけ**で、
+  > こちらは SIP の metadata を写すのが SIP→AIP 段しかない以上、成り立つ。
+
+- 我々が `metadata/other/` に置いた JSON 2 本は **`metadata/descriptive/` に在った**
+  (`metadata/other/OTHER/{aipId}` にも同じ 1642 バイトが在る)。
+- **`metadata/preservation/ers.der` は測っていない。** ERS を同梱する経路は在る
+  (`ErsFormat.CSIP_LOCATION = "metadata/preservation"`) が、**投入した package に
+  ers.der は入っていなかった** (zip の中身は 11 ファイルで、`metadata/preservation/` は
+  `premis.xml` だけ)。同じディレクトリに置く `premis.xml` が残らなかった以上、
+  **ERS も残らない可能性が高いが、それは推測であって測定ではない**。
+  タイムスタンプ証跡はここで運ぶ物の中で最も重いので、**別途測ること**。
 - AIP の `state` は **`INGEST_PROCESSING`**。`ACTIVE` ではない。SIP→AIP の
   プラグインだけを走らせたので、受入承認まで含む ingest workflow は通していない。
 
-> **「取り込める」はここまでである。** 本文と JSON は届き、METS は読まれた。
-> **PREMIS は届いていない**し、**受入が承認された状態にもなっていない**。
+> **「AIP object になった」はここまでである。** 本文と JSON は届き、METS は読まれた。
+> **我々の PREMIS 文書は届いていない**、**ERS は未測定**、
+> **受入が承認された状態にもなっていない**。
 
 ### 結果 2 — BagIt も **取り込める**。ただし manifest は 1 本
 
@@ -481,7 +518,7 @@ AIP は `INGEST_PROCESSING` のままで、**受入が承認された状態で�
 > will accept it**」と書いていた。この但し書きは、**受け入れられた今も**必要である
 > — 通ったのは RODA 6.3.0 の 1 プラグインであって、「どの archive でも通る」ではない。
 
-### 10.6 初回の誤り — 何を間違えたか
+### 初回の誤り — 何を間違えたか
 
 **消さずに残す。** 同じ形の誤りを次に踏まないために書いておく。
 
@@ -535,7 +572,10 @@ note 無しの package は作れない」までである。
    であって、製品全体の答えではない。同名同系統の実装が複数在るかを先に見る。
 2. **「同じ jar だから同じ経路」ではない。** 呼ばれるクラスの**完全修飾名**まで
    確かめる。`commons_ip` と `commons_ip2` は 1 文字違いで別のライブラリだった。
-3. **対照は必ず同じ入力・同じインスタンスで**。今回は同一 package を 2 本の
-   プラグインへ数分差で投げて、SUCCESS / FAILURE が並んで出た。これが無ければ
-   「環境が壊れているのでは」と切り分けられなかった。
+3. **足りなかったのは「同じ入力」ではなく、正のコントロールである。**
+   初回も同一 package を同一インスタンスに投げている。欠けていたのは
+   **比較対象になるもう 1 つの実装**で、「拒否された」を「拒否しない実装は無いのか」と
+   突き合わせる相手が居なかった。再測定で SUCCESS / FAILURE が並んだのは、
+   その相手を用意したからである。**否定的な結果は、単独では環境の故障と
+   区別できない。**
 
