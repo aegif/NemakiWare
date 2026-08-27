@@ -73,7 +73,7 @@ submission agreement として明文化」と書いているのはこの文書�
   受け手が返す語をこちらの語彙に合わせる必要がある
 - **RODA の `PARTIAL_SUCCESS` はここに落ちる** (2026-08-27 実測)。`Report.pluginState` を
   `verificationOutcome` に入れる限り、この規則と受け手の語彙は一致する。
-  **Archivematica の語彙は未採取** (下記 3)
+  **Archivematica 1.18.0 の語彙は採取した** (下記 3 / 設計 §12)
 
 ### 1.5 先方の AIP 再生成
 
@@ -104,28 +104,31 @@ submission agreement として明文化」と書いているのはこの文書�
   「引き渡しを記録し、その受領証を検証した」であって、
   **先方が今も持っている**ことではない
 - **受け手の検証が十分だった、とは言わない。** 受領証は先方の陳述である
-- **bag に包んだから相互運用できる、とは言わない。** **bag 経路では**受け手は
-  payload の中の 1 ファイルとして SIP を見る。METS は読まれない
-  (E-ARK 経路で受け取る先方なら読まれる — 下記 3 を見ること)
+- **bag に包んだから相互運用できる、とは言わない。** **bag 経路では** METS は読まれず、
+  構造も尊重されない (E-ARK 経路で受け取る先方なら読まれる — 下記 3)。
+  **ただし「payload の中の 1 ファイルのまま残る」とも言わない** — Archivematica の
+  `automated` 設定は package を展開し、SIP のツリーが AIP の `objects/` に入る
+  (2026-08-27 実測)。**展開された ≠ 理解された。**
 - **取り込まれたから保持される、とは言わない。** RODA 6.3.0 で実測したところ、
   SIP→AIP プラグインが作った AIP は `INGEST_PROCESSING` 止まりで、
-  受入承認まで進んでいない (その先の workflow は走らせていない)
-- **bag が取り込まれる形だ、とは言わない。** payload manifest は **SHA-512 と
-  SHA-256 の 2 本**である (RFC 8493 §2.1.3 が許す形で、本製品の証跡が使う SHA-256 を
-  受け手の検証が照合できるようにするため)。**この形で取込まで通した実績はまだ無い。**
-  RODA 6.3.0 の `BagitToAIPPlugin` は 2 本の bag を **rollback する** (実測) ので、
-  **RODA には bag ではなく SIP を渡すこと**。Archivematica は未測定
+  受入承認まで進んでいない (その先の workflow は走らせていない)。
+  Archivematica 1.18.0 では automated processing の末に AIP が `UPLOADED` になったが、
+  それも「今も持っている」証拠ではない
+- **bag がどこでも取り込まれる形だ、とは言わない。** payload manifest は **SHA-512 と
+  SHA-256 の 2 本**。**AM 1.18.0 の `zipped bag` はこの形で AIP になった** (2026-08-27)。
+  **RODA 6.3.0 の `BagitToAIPPlugin` は rollback する**ので、
+  **RODA には bag ではなく SIP を渡すこと**
 
 ---
 
-## 3. 実機受入試験 — RODA 6.3.0 は実施済み (2026-08-27)
+## 3. 実機受入試験 — RODA 6.3.0 と Archivematica 1.18.0 (2026-08-27)
 
 **やって分かったこと** (詳細は設計 §10):
 
 | | 結果 |
 |---|---|
 | **E-ARK SIP を直接** (`EARKSIP2ToAIPPlugin`) | **AIP object が作られる**。本文が `representations/rep1/data/` に入り、METS の `OBJID` が AIP に載る |
-| **bag** (`BagitToAIPPlugin`) | manifest **1 本**の bag なら AIP object が作られた。**現行の出荷形 (2 本) は rollback する** (2026-08-27 実測) — RODA には bag を送らず SIP を送ること。なお bag 経路では SIP は payload の中の 1 ファイルのままで、METS は読まれない |
+| **bag** (`BagitToAIPPlugin`) | manifest **1 本**の bag なら AIP object が作られた。**現行の出荷形 (2 本) は rollback する** (2026-08-27 実測) — RODA には bag を送らず SIP を送ること。なお bag 経路では METS は読まれない (RODA の bag 経路では payload はそのまま置かれる。展開するかは受け手の設定次第で、AM は展開した — §12) |
 | 旧版 `EARKSIPToAIPPlugin` (E-ARK SIP 1.x) | 同じ package を**拒否**する。**プラグインの指定を間違えると「非対応」に見える** |
 | 我々の `metadata/preservation/premis.xml` | **生成された AIP の PREMIS metadata に無い**。在るのは RODA 自身の event 2 件だけ。値が非 PREMIS のフィールドへ写されたかは未調査 |
 | 我々の `ers.der` (タイムスタンプ証跡) | **`metadata/other` なら取り込まれ、残る** (ただし AIP では `metadata/descriptive/ers.der` へ移されている)。**`addPreservationMetadata` で出すと package ごと rollback する** — その呼び出しは METS の `<digiprovMD>` に宣言を書き、RODA はその枠の中身を PREMIS として読むためである (フォルダ名ではない)。本製品は 2026-08-27 に `addOtherMetadata` へ変えた。**測ったのはスタブの DER で、本物の ERS では未測定** |
@@ -134,6 +137,16 @@ submission agreement として明文化」と書いているのはこの文書�
 > **先方と話すときの実務**: 「E-ARK SIP を受けられますか」だけでなく
 > **「どのプラグイン / どの profile 版で受けますか」**まで確認すること。
 > 同じ製品の同じ版が、E-ARK 取込を 2 版ぶん持っていた。
+
+**Archivematica 1.18.0** (詳細は設計 §12)。`automated` processing。AM の AIP であって
+E-ARK AIP ではない。
+
+| | 結果 |
+|---|---|
+| 出荷形 bag (manifest 2 本)、`zipped bag` | `Verify bag` COMPLETE、AIP `UPLOADED` |
+| 同じ E-ARK SIP zip、`zipfile` | AIP `UPLOADED` — **BagIt は必須ではない** |
+| 同じ SIP zip、`standard` | `FAILED` (`Failed compliance.`) — その type はディレクトリを期待する |
+| 同じ SIP の展開ディレクトリ、`standard` | AIP `UPLOADED` |
 
 **まだやること**:
 
@@ -156,12 +169,18 @@ submission agreement として明文化」と書いているのはこの文書�
    自分でハッシュすること。**未検証**: そのバイト列が送ったものと同一か、
    受領証を作る時点まで transferred resource が残っているか。
 
-   **Archivematica の語彙は未採取。** また、受領証を実際に組み立てて検証する経路は未実装で、
-   署名も無い (RODA が返せるものはどれも認証されていない)
-2. Archivematica で同じことを測る (`zipped bag` transfer)。**出荷形の manifest 2 本が
-   読めるかどうかが最初の確認事項**である — RODA が読めなかった理由は commons-ip v1 の
-   `BagitSIP.parse` 固有で、BagIt 検証器で読む Archivematica には当てはまらない
-   はずだが、**推測であって測っていない**
+   **Archivematica 1.18.0 の語彙は採取した** (2026-08-27、設計 §12)。
+   Dashboard の transfer/SIP `status` は `COMPLETE` / `FAILED` (ほかソース上
+   `REJECTED` / `USER_INPUT` / `PROCESSING`)、SS の package は `UPLOADED`、
+   `check_fixity.success` は boolean。**どれも `reportsSuccess()` に無い** —
+   正常終了の `COMPLETE` をそのまま入れると拒否になる。接続層は写像が要る。
+   AIP checksum は pointer file の PREMIS `messageDigest` (AIP 7z のもの)。
+   送った bag の SHA-256 は AIP 内 `metadata/transfers/.../manifest-sha256.txt` に残った。
+   **受領証を実際に組み立てて検証する経路は未実装。** 署名も無い
+2. ~~Archivematica で同じことを測る~~ **測った** (2026-08-27)。出荷形 (manifest 2 本) の
+   `zipped bag` は `Verify bag` を通り AIP `UPLOADED`。同じ E-ARK SIP は `zipfile` でも
+   AIP になるので **BagIt は必須ではない**。`standard` に zip を渡すと FAILED
+   (ディレクトリを期待する)。展開ディレクトリなら `standard` でも AIP になる
 3. 受領証の形式と署名の有無を確認し、1.7 を埋める
 4. 上記 1.1〜1.6 を、実際に落として確かめる (合意は落ちたときにしか効かない)
 

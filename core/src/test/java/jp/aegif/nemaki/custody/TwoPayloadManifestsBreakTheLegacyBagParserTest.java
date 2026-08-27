@@ -59,8 +59,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * legacy package). RODA 6.3.0 bundles <b>2.11.3</b>. This corroborates the mechanism against the
  * version we build with; the receiver behaviour itself was measured live and is recorded in
  * {@code docs/design/p3-4-custody-transfer.md} §10. It does not pin RODA's runtime, and it says
- * nothing about Archivematica, which reads bags with a BagIt verifier rather than commons-ip and
- * <b>has not been measured with either shape</b>.
+ * nothing about Archivematica's verifier — that was measured live in §12 (two-manifest
+ * {@code zipped bag}, {@code Verify bag} COMPLETE).
  *
  * <p>It also does not assert that RODA fails — only that the parse yields duplicates. The step
  * from "duplicate {@code IPFile}" to "rolled back transaction" is RODA's, and belongs to the

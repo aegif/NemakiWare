@@ -73,16 +73,16 @@ import java.util.zip.ZipOutputStream;
  * <p><b>But that receiver is not this layer's receiver.</b> On 2026-08-27 the E-ARK route into
  * RODA 6.3.0 was measured working ({@code EARKSIP2ToAIPPlugin} — p3-4 §10), so there is no
  * reason to send RODA a bag at all. This layer exists for receivers with no E-ARK transfer type;
- * the one known to need it is Archivematica, which reads bags with a BagIt verifier rather than
- * commons-ip. Keeping one manifest would have let <b>a parser defect in a receiver we do not
- * use</b> go on deciding the format for the receiver we do. That, not "the reason expired", is
- * why it is two again.
+ * the one whose transfer types include a BagIt verifier is Archivematica. Keeping one manifest
+ * would have let <b>a parser defect in a receiver we do not use</b> go on deciding the format
+ * for the receiver we do. That, not "the reason expired", is why it is two again.
  *
- * <p><b>Neither shape has been ingested end-to-end by this layer's actual receiver.</b> Two
- * manifests have zero measured ingests anywhere; one manifest has exactly one, into a route this
- * design says not to use. So this is not "two works" — it is "two is the shape RFC 8493 allows
- * and the shape whose SHA-256 a verifier checks", with the one receiver known to choke on it
- * named below. Archivematica remains unmeasured either way.
+ * <p><b>Archivematica 1.18.0 ingested this two-manifest shape</b> ({@code zipped bag},
+ * {@code Verify bag} COMPLETE, AIP {@code UPLOADED} — p3-4 §12). That is not "two works
+ * everywhere": RODA's {@code BagitToAIPPlugin} still rolls it back, and AM also accepted the
+ * same E-ARK SIP as {@code zipfile} and as an unzipped {@code standard} directory, so BagIt is
+ * not required to get an AIP. What the bag path uniquely did was run the verifier against both
+ * manifests. One manifest remains unmeasured on AM.
  *
  * <p><b>Do not send this bag to RODA's {@code BagitToAIPPlugin}.</b> It will roll back. RODA
  * takes the SIP directly.
@@ -107,15 +107,17 @@ public final class BagItTransferPackager {
      */
     public static final String LIMITS =
             "This bag is a TRANSFER FORMAT, not an interpretation. A receiving system reading "
-                    + "THIS BAG AS A BAG reads it as a payload of opaque files; it does not "
-                    + "read the E-ARK SIP's METS, honour its structure, or produce an E-ARK AIP "
-                    + "because of it. (The same system may have an E-ARK route that does read "
-                    + "it — RODA 6.3.0 does — but that route is not this one, and where an "
-                    + "E-ARK route exists it is the better one.) This bag carries TWO payload "
-                    + "manifests, which RFC 8493 allows; RODA 6.3.0's BagitToAIPPlugin ROLLS "
-                    + "BACK the ingest of such a bag, so do not send it there — send RODA the "
-                    + "SIP. Nothing here establishes that the receiver accepted, understood or "
-                    + "kept anything — those are its own processes, reported in a receipt.";
+                    + "THIS BAG AS A BAG does not read the E-ARK SIP's METS, honour its "
+                    + "structure, or produce an E-ARK AIP because of it. It may well UNPACK the "
+                    + "payload — Archivematica 1.18.0's automated config extracts the SIP zip "
+                    + "and files its tree under the AIP's objects/ — but unpacked is not "
+                    + "understood. (The same system may have an E-ARK route that does read it — "
+                    + "RODA 6.3.0 does — and where one exists it is the better route.) This bag "
+                    + "carries TWO payload manifests, which RFC 8493 allows and which "
+                    + "Archivematica verified; RODA 6.3.0's BagitToAIPPlugin ROLLS BACK the "
+                    + "ingest of such a bag, so do not send it there — send RODA the SIP. "
+                    + "Nothing here establishes that the receiver accepted, understood or kept "
+                    + "anything — those are its own processes, reported in a receipt.";
 
     /** The bag, what it holds, and what that does not mean. */
     public record Bagged(Path zippedBag, String payloadOxum, long payloadBytes, String limits) {}

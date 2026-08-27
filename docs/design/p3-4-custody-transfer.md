@@ -176,9 +176,9 @@ constructor は緩いままにした — 欠けた受領証も「何かが届い
 | **永続化** (transfer の store) | **実装済み** (2026-08-26、§7)。evidence-ledger DB に同居。読み出しは `restore` を通り、履歴が合法な歩みでなければ拒否される |
 | **fail-closed を強制する呼び出し元** | **実装済み** (2026-08-26、§7)。`CustodyTransferService.passCustody` が先に記録し、記録が効いたときだけ進む。`advance` は `CUSTODY_TRANSFERRED` を明示的に拒否する (扉は 1 つ) |
 | **スレッド安全性** | **未**。`state` / `receipt` / `history` は非同期化で、`advance` は check-then-act。呼び出し元が無いので現時点で実害は無いが、"workflow object" と説明する以上は同期か明記が要る |
-| **`reportsSuccess()` の語彙を実機で確認** | **RODA については採れた** (§10 追試 3)。RODA に受領証と分かるリソースは無く、材料は同じ `Report` に載る `pluginState` (`SUCCESS`/`PARTIAL_SUCCESS`/`FAILURE`/`RUNNING`/`SKIPPED`) と `outcomeObjectState` (`ACTIVE` ほか)。**`pluginState` を入れるなら噛み合う** — `SUCCESS` は通り `PARTIAL_SUCCESS` は通らない (§1.4 と一致)。**`outcomeObjectState` を入れると壊れる**: 受入完了の `ACTIVE` がこの語彙に無い。さらに **応答フィールドには SIP の checksum が無い**ので、それだけで組み立てると `sipDigest` が自分の値との比較になる — `/transfers/{uuid}/download` で先方の bytes を取ってハッシュすること (§10 追試 3.1)。**未**: Archivematica の語彙、受領証を実際に組み立てて検証する経路 |
+| **`reportsSuccess()` の語彙を実機で確認** | **RODA については採れた** (§10 追試 3)。RODA に受領証と分かるリソースは無く、材料は同じ `Report` に載る `pluginState` (`SUCCESS`/`PARTIAL_SUCCESS`/`FAILURE`/`RUNNING`/`SKIPPED`) と `outcomeObjectState` (`ACTIVE` ほか)。**`pluginState` を入れるなら噛み合う** — `SUCCESS` は通り `PARTIAL_SUCCESS` は通らない (§1.4 と一致)。**`outcomeObjectState` を入れると壊れる**: 受入完了の `ACTIVE` がこの語彙に無い。さらに **応答フィールドには SIP の checksum が無い**ので、それだけで組み立てると `sipDigest` が自分の値との比較になる — `/transfers/{uuid}/download` で先方の bytes を取ってハッシュすること (§10 追試 3.1)。**Archivematica 1.18.0 も採れた** (§12): transfer/SIP の `status` は `COMPLETE` / `FAILED` (ほかソース上 `REJECTED` / `USER_INPUT` / `PROCESSING`)、SS の package は `UPLOADED`、`check_fixity` の `success` は boolean。**どれも語彙に無い** (`COMPLETE` も `UPLOADED` も通らない)。接続層は写像が要る。**未**: 受領証を実際に組み立てて検証する経路 |
 | **submission agreement の明文化** (失敗・再送・重複取込・部分受入・先方 AIP 再生成) | **雛形あり** (2026-08-26): [`docs/operations/custody-submission-agreement.md`](../operations/custody-submission-agreement.md)。7 項目と、本製品が既に決めていて交渉できない側の分離。**合意そのものは当事者間の作業で、software では閉じない** |
-| 実機受入試験 | **RODA 6.3.0 の SIP→AIP プラグインだけ実施済み** (§10)。E-ARK SIP は `EARKSIP2ToAIPPlugin` で AIP object になり、**`ers.der` も `metadata/other` なら取り込まれて残る** (`metadata/preservation` に置くと package ごと rollback する — §11 で直した。**投げたのはスタブの DER で、本物の RFC 3161 ベース ERS では未測定**)。bag は **manifest 1 本なら** AIP object になり、**現行の出荷形 (2 本) は rollback する**。**受入承認まで含む ingest workflow は未実施**で、AIP は `INGEST_PROCESSING` 止まり。**我々の PREMIS 文書は AIP の PREMIS metadata に無い**。**未**: full ingest workflow、**Archivematica (bag も E-ARK も)**、受領証を組み立てる経路、他版の RODA |
+| 実機受入試験 | **RODA 6.3.0 の SIP→AIP プラグイン** (§10) と **Archivematica 1.18.0 の automated ingest** (§12) を実施済み。RODA: E-ARK SIP は `EARKSIP2ToAIPPlugin` で AIP object になり、**`ers.der` も `metadata/other` なら取り込まれて残る** (`metadata/preservation` に置くと package ごと rollback する — §11 で直した。**投げたのはスタブの DER で、本物の RFC 3161 ベース ERS では未測定**)。bag は **manifest 1 本なら** AIP object になり、**現行の出荷形 (2 本) は RODA の bag 経路では rollback する**。RODA の AIP は `INGEST_PROCESSING` 止まり (受入承認の workflow は未実施)。**我々の PREMIS 文書は RODA の AIP PREMIS に無い**。AM: 出荷形 bag も E-ARK SIP の `zipfile` も AIP `UPLOADED` まで行った。**未**: NemakiWare からの HTTP 送信、受領証を組み立てる経路、他版、AM の default processing config、本物の ERS |
 
 ---
 
@@ -188,19 +188,27 @@ Archivematica の転送 type は `standard / zipfile / unzipped bag / zipped bag
 maildir / TRIM / dataverse` の 8 種で、**この一覧に E-ARK / CSIP 専用のものは無い**。
 そこで `zipped bag` が**実装可能な候補経路**になる。
 
-> **「必須」とは書かない** (外部レビュー指摘 2026-08-27)。測れているのは
-> 「8 種に E-ARK 専用が無い」までで、**`standard` / `zipfile` / custom processing で
-> E-ARK SIP を扱えないことは確認していない**。BagIt が唯一の道かどうかは未測定である。
+> **「必須」とは書かない** (外部レビュー指摘 2026-08-27)。**2026-08-27 に測った**
+> (§12): 同じ E-ARK SIP を `zipfile` に投げても AIP になった。展開したディレクトリを
+> `standard` に投げても AIP になった。**BagIt は必須ではない。** `zipped bag` を選ぶ
+> 積極的な理由は残っている — その type だけが `Verify bag` を走り、出荷形の
+> SHA-256 が受け手の検証器の照合対象になる。`zipfile` はそれを走らない。
 >
 > **この層は「E-ARK 経路を持たない受け手」のためのものである。** RODA 6.3.0 は
 > E-ARK SIP から AIP object を作れることを実測した (§10 結果 1) ので、RODA に対しては
 > bag 経路を選ぶ理由が無い — E-ARK 経路の方が本文も METS も運ぶ。
 
-**これは受け取り側が package を理解するようにする層ではない。** 向こう側では SIP は
-payload の中の 1 ファイルで、METS は読まれず、構造は尊重されず、これによって
-Archivematica の AIP が E-ARK AIP になることもない。「BagIt コネクタが在る」を
-「Archivematica が我々の E-ARK SIP を取り込む」と読まれると、このコードがしないことを
-言ったことになるので、`LIMITS` が全 bag に同行する。
+**これは受け取り側が package を理解するようにする層ではない。** METS は読まれず、
+構造は尊重されず、これによって Archivematica の AIP が E-ARK AIP になることもない。
+「BagIt コネクタが在る」を「Archivematica が我々の E-ARK SIP を取り込む」と読まれると、
+このコードがしないことを言ったことになるので、`LIMITS` が全 bag に同行する。
+
+> **「payload の中の 1 ファイルのまま残る」とは書かない** (2026-08-27 実測、§12)。
+> `automated` の processing config は **packages を展開する**ので、bag の payload に
+> 入れた SIP の zip はそのまま残らず、**AIP の `objects/` に SIP のツリーが入る**。
+> 展開されないと書いていたのは推測だった。
+> **それでも「理解される」ことにはならない** — 展開されたツリーは AM から見れば
+> ただのファイル群で、METS は解釈されず、AIP は AM の AIP のままである。
 
 **「bag の中に IP を封入して搬送」という語り方もしない** — RFC 8493 は serialization を
 規定しないので、その言い方は標準がしていない保証を主張することになる (外部レビュー指摘)。
@@ -220,19 +228,19 @@ payload manifest は **SHA-512 と SHA-256 の 2 本**。後者は本製品の�
 1 本にした唯一の実測理由は、RODA 6.3.0 の `BagitToAIPPlugin` が 2 本の bag を
 rollback すること (§10 結果 2)。**だがその受け手は、この層の受け手ではない。**
 8-27 に E-ARK 経路が通ることを実測したので、RODA に bag を送る理由は無い。
-1 本を既定に残すと、**使わせない受け手のパーサ欠陥が、まだ測っていない正の受け手向けの
+1 本を既定に残すと、**使わせない受け手のパーサ欠陥が、当時まだ測っていなかった正の受け手向けの
 形式を決め続ける**。それが戻した理由であって、「理由が消えたから」ではない。
 
-**この層の本来の受け手 (Archivematica) では、どちらの形も測っていない。**
+**この層の本来の受け手 (Archivematica 1.18.0) では、2 本を測った** (§12)。
 
 | | 実測された取込 |
 |---|---|
-| manifest 2 本 (現行の出荷形) | RODA の bag 経路で **rollback** (2026-08-27 実測)。ほかの受け手では未測定 |
-| manifest 1 本 | RODA の bag 経路で 1 件成功。ただし**この設計が「選ぶ理由が無い」と書いた経路** |
+| manifest 2 本 (現行の出荷形) | **AM 1.18.0 の `zipped bag` で AIP `UPLOADED`** (2026-08-27、§12)。RODA の bag 経路では **rollback** (同日、§10) — そこには SIP を送る |
+| manifest 1 本 | RODA の bag 経路で 1 件成功。ただし**この設計が「選ぶ理由が無い」と書いた経路**。AM では未測定 |
 
-つまりこれは「2 本なら通る」ではない。**「規格が許す形に戻し、SHA-256 を検証器の
-照合対象に戻した」**であり、**その形で落ちると分かっている受け手が 1 つ在る (RODA の
-bag 経路。そこには SIP を送るので使わない)**、である。Archivematica はどちらの形も未測定。
+つまりこれは「2 本ならどこでも通る」ではない。**「規格が許す形に戻し、SHA-256 を
+検証器の照合対象に戻した」**であり、**その形で落ちると分かっている受け手が 1 つ在る
+(RODA の bag 経路)**、**その形で AIP まで行った受け手が 1 つ在る (AM 1.18.0)**、である。
 
 > **この bag を RODA の `BagitToAIPPlugin` に入れないこと。** rollback する。
 > RODA には SIP を直接渡す。`LIMITS` にも書いてある。
@@ -440,8 +448,9 @@ schemas/{mets1_12,DILCISExtensionMETS,DILCISExtensionSIPMETS,xlink}.xsd
 
 > **配置そのものは根拠にならない。** 本文が `representations/rep1/data/` に在ることは
 > METS と**矛盾しない**が、CSIP の zip は元からその構造を持っているので、
-> METS を読まずに展開しても同じ場所に出る。bag 経路との違い
-> (丸ごと 1 ファイル / 中身が展開された) も、展開したかどうかの差でしかない。
+> METS を読まずに展開しても同じ場所に出る。**RODA の** bag 経路との違い
+> (丸ごと 1 ファイル / 中身が展開された) も、展開したかどうかの差でしかない
+> (展開するかは受け手の設定次第で、AM は展開した — §12)。
 > 上の 2 つと違って、これは METS をパースした証明にならない (外部レビュー指摘)。
 
 #### ただし、渡したものが全部そのまま残るわけではない
@@ -513,20 +522,20 @@ manifest を 1 本にした同一の bag を投入 → **SUCCESS**。
 戻した理由は「1 本にした理由が消えたから」ではない。**この層の受け手は RODA ではないのに、
 RODA の bag パーサの欠陥が既定の形式を決めていた**からである。E-ARK 経路が通ると分かった
 時点で、RODA に bag を送る理由は無くなった。1 本のまま置くことは、**使わせない受け手向けの
-回避策を、まだ測っていない正の受け手に渡し続ける**ことになる。
+回避策を、まだ測っていなかった正の受け手に渡し続ける**ことになる。
+その受け手は同じ日に測った (§12)。
 
 失っていたものは準拠ではない (§2.1.3 は 1 本も許す)。**SHA-256 が
 `manifest-sha256.txt` という path→digest の束縛でなくなり、`bag-info.txt` の
 照合されない 1 行だけになっていた**ことである。
 
-**ただし 2 本の bag には、どの受け手でも取込の実績が無い。** 言えるのは
+**2 本の bag は、その時点ではどの受け手でも取込の実績が無かった。** 言えたのは
 「規格が許す形に戻した」と「commons-ip v1 の bag パーサでは rollback する (実測)」まで。
-Archivematica は bagit-python 系の検証器で読むので同じ機構には当たらないはずだが、
-**そこも測っていない**。
+同じ日の §12 で AM 1.18.0 がこの形を Verify bag し AIP にした。
 
 > **→ 現行の 2 本 bag は、その後 RODA に投げた** (追試 2)。予測どおり
 > `Binary already exists` で rollback した。**否定的な結果が 1 件付いている**ので、
-> 「どの受け手でも実績が無い」はここで読み終えないこと。
+> 「どの受け手でも実績が無い」はここで読み終えないこと。AM 側は §12。
 
 ### 結果 3 — つまり RODA には 2 つの経路があり、E-ARK の方が多くを運ぶ
 
@@ -624,7 +633,7 @@ Transaction was rolled back
 ```
 
 **これで現行の出荷形について、RODA では否定的な結果が 1 件付いた。**
-Archivematica は依然として未測定である。
+同じ日に Archivematica 1.18.0 では AIP まで行った (§12)。
 
 #### 3. 受領証と分かるリソースは無い。語彙は 2 つの enum
 
@@ -706,16 +715,17 @@ manifest 1 本の bag も AIP object になり、**2 本だと rollback する**
 **現行の出荷形 (manifest 2 本の bag) は RODA では rollback する。**
 RODA に受領証と分かるリソースは無く、語彙は同じ `Report` の `pluginState` と `outcomeObjectState` の 2 つ。
 
-**確かめていない**: 他版の RODA、**Archivematica (bag も E-ARK も、どちらの形も)**、
-受入承認まで含む ingest workflow、受領証を組み立てて検証する経路そのもの、
-本物の RFC 3161 ベース ERS での再現。
+**確かめていない**: 他版の RODA、RODA 側の受入承認まで含む ingest workflow、
+受領証を組み立てて検証する経路そのもの、本物の RFC 3161 ベース ERS での再現。
+**Archivematica は §12。**
 **AIP object ができたことは「先方が保持し続ける」ことでも「AIP が正しい」ことでもない。**
-AIP は `INGEST_PROCESSING` のままで、**受入が承認された状態ではない**。
-**我々の PREMIS 文書は AIP の PREMIS metadata に無い。**
+RODA の AIP は `INGEST_PROCESSING` のままで、**受入が承認された状態ではない**。
+**我々の PREMIS 文書は RODA の AIP の PREMIS metadata に無い。**
 
 > なお `EXPORT_LIMITS` は最初から「**NOT a statement that any particular archive
 > will accept it**」と書いていた。この但し書きは、**受け入れられた今も**必要である
-> — 通ったのは RODA 6.3.0 の 1 プラグインであって、「どの archive でも通る」ではない。
+> — 通ったのは RODA 6.3.0 の 1 プラグインと AM 1.18.0 の automated ingest であって、
+> 「どの archive でも通る」ではない。
 
 ### 初回の誤り — 何を間違えたか
 
@@ -891,3 +901,124 @@ ASiC-E ではない理由まで書いてある。**だが METS には反映さ�
 (`MDTYPE` も `CHECKSUM` も同一で、違うのは `xlink:href` だけ)。
 つまり **1 本目が落ちた原因は media type ではなくディレクトリである** — これが
 「`digiprovMD` の中身を PREMIS として読む」という診断の対照になっている。
+
+---
+
+## 12. Archivematica 1.18.0 受入試験 (2026-08-27)
+
+**版**: Archivematica 1.18.0 / Storage Service 0.24.0。公開イメージ、
+`platform: linux/amd64` を aarch64 ホストで QEMU エミュレーション。
+**測っているのは AM 1.18.0 の挙動であって、arm64 ネイティブではない。**
+processing config は **`automated`** (`auto_approve: true`)。
+スタックは `docker/docker-compose-archivematica.yml`、プロジェクト名 `-p am`。
+
+投入は NemakiWare の HTTP クライアントではない。出荷エンドポイントから bag / SIP を
+取り、Dashboard `POST /api/v2beta/package` に置いた。**接続層はまだ無い。**
+
+対象 object: `bedroom` / `26b9bd3e3be50260cc7580be38113bbc`
+(`am-trial-2026-08-27.txt`)。**ERS は入っていない** (この object に記録が無い)。
+SIP は `X-Nemaki-Csip-Validated: true`。bag は payload manifest **2 本**
+(`manifest-sha256.txt` と `manifest-sha512.txt`)。
+
+### 起動で踏んだこと (compose だけでは足りない)
+
+公式 `hack/` の Makefile が bootstrap するので、compose には無い:
+
+1. MySQL に DB `MCP` / `SS` を作り、`archivematica`@`%` へ `GRANT ALL`
+   — これが無いと mcp-server / storage-service は
+   `Access denied for user 'archivematica'@'%' to database 'MCP'` で再起動する
+2. 両方 `migrate`
+3. SS: `create_user --username=test --password=test --email=test@example.com --api-key=test --superuser`
+4. dashboard: `manage.py install` (`--ss-url=http://archivematica-storage-service:8000`、
+   `--ss-user=test --ss-api-key=test`、`--site-url=http://archivematica-dashboard:8000`)
+
+clamav の tag `1.4.3-57` は Docker Hub から消えていて `1.4.6` に寄せた (compose コメント)。
+
+dashboard は installer 後 `/administration/accounts/login/` へ。pipeline UUID
+`cbdc4cb3-e25d-4997-96b1-6709ea6869d8`。Transfer Source は `/home`
+(`752793d2-6897-428a-a4fd-7d8cf22558f8`)。この `test` / `test` はローカル受入試験用。
+
+**202 は path の存在を保証しない** (ロードマップ §9-4 の 1)。存在しないディレクトリを
+指して 202 が返り、status は `Unable to determine the status of the unit` になった。
+
+### 結果
+
+投入口はどれも `POST /api/v2beta/package`、path は
+`base64("<TS uuid>:<絶対パス>")`、`processing_config: automated`。
+zipped bag の転送名は API の `name` ではなく **zip のファイル名** になった
+(§9-4 の 7)。
+
+| 入力 | type | transfer `status` | AIP (SS) |
+|---|---|---|---|
+| 出荷形 bag (manifest 2 本) | `zipped bag` | `COMPLETE`、`sip_uuid` あり | **`UPLOADED`** (`32eaa64b-…`、7z 44918 bytes) |
+| 同じ E-ARK SIP zip | `zipfile` | `COMPLETE`、`sip_uuid` あり | **`UPLOADED`** (`4f38c5d4-…`) |
+| 同じ SIP zip | `standard` | **`FAILED`** (`Failed compliance.`) | — |
+| 同じ SIP を展開したディレクトリ | `standard` | `COMPLETE`、`sip_uuid` あり | **`UPLOADED`** (`48f400a3-…`) |
+
+bag の `Verify bag, and restructure for compliance` は **COMPLETE / exit 0**。
+2 本でも AM の BagIt 検証器は通った。zipfile / standard 側にこの job は無い。
+
+`standard` に zip を渡した失敗は **E-ARK を拒否したのではない。** その type は
+ディレクトリを期待し、zip ファイルに対して `Remove hidden files and directories` が
+exit 1 になった。展開すれば通る。対照を置かないと「E-ARK が standard で落ちる」に
+読める。
+
+**BagIt は必須ではない。** 同じ SIP が `zipfile` でも AIP になる。
+`zipped bag` を選ぶ理由は「他に道が無い」ではなく、**`Verify bag` が payload
+manifest (SHA-256 を含む) を照合する**ことである。
+
+どれも **Archivematica の AIP** である。E-ARK AIP にはならない。
+`automated` は packages を展開するので、bag 経路でも payload の SIP zip は
+1 ファイルのまま残らず、AIP の `objects/` に SIP のツリーが入る
+(METS.xml / `representations/rep1/data/am-trial-2026-08-27.txt` ほか)。
+「bag として読む」と「そのあと processing config が zip を展開する」は別である。
+
+### 語彙 (`reportsSuccess()` との突き合わせ)
+
+Dashboard `GET /api/transfer/status/{uuid}/` と `/api/ingest/status/{uuid}/` が返す
+`status` は、ソースどおり **`FAILED` / `REJECTED` / `USER_INPUT` / `COMPLETE` /
+`PROCESSING`**。今回見たのは `COMPLETE` と `FAILED`。
+
+SS `GET /api/v2/file/{uuid}/` の `status` は **`UPLOADED`**。フィールドに checksum は無い
+(keys: uuid / status / package_type / size / stored_date / path ほか)。
+
+`GET /api/v2/file/{uuid}/check_fixity/` は `success: true` (JSON boolean)、
+`timestamp: null`。`GET .../contents/` は `files: []` だった
+(per-file checksum を常に返すかは、空配列なので「返す」とは言えない)。
+
+`CustodyReceipt.reportsSuccess()` が受ける語は
+`PASSED / PASS / VALID / SUCCESS / ACCEPTED / OK`。突き合わせると:
+
+- **生の `COMPLETE` も `UPLOADED` も `FAILED` も通らない。** 正常に AIP まで行った
+  transfer が、写像なしでは「成功ではない」
+- `check_fixity` の `true` を文字列にしても `TRUE` であり、語彙に無い
+- ジョブ名の `COMPLETE` も同じ
+
+RODA の `outcomeObjectState=ACTIVE` と同じ形の罠である。違うのは語だけ。
+**接続層は写像する** — AM の `COMPLETE` をこちらの `SUCCESS` に寄せるか、語彙を
+増やすか。写像しないまま入れると、genuine な受領が拒否される
+(`reportsSuccess` が間違う方向として選んでいる側)。
+
+`sipDigest`: 応答 JSON には無い。AIP の checksum は
+`GET /api/v2/file/{uuid}/pointer_file/` の PREMIS `messageDigest`
+(今回 `sha256` / `11214191bd63382ab86d2a6ed06ca0585e4730a87c2ec5b28a4e4fa5a25c1a73`)
+で、**これは AIP (7z) のものであって送った bag/SIP のものではない。**
+送った bag の SHA-256 は、AIP 内
+`data/objects/metadata/transfers/{transfer-uuid}/manifest-sha256.txt` に残った。
+先方の AIP bytes は `GET /api/v2/file/{uuid}/download/` で取れる。
+**未検証**: 受領証を組む時点で pointer / download / extract のどれを採るか
+(接続層はまだ無い)。
+
+署名は無い。`signatureVerified = false` のままになる。
+
+### この試験が確かめたこと / 確かめていないこと
+
+**確かめた**: AM 1.18.0 は出荷形 (manifest 2 本) の zipped bag を Verify bag し、
+automated processing の末に AIP を `UPLOADED` する。同じ E-ARK SIP は `zipfile` でも
+AIP になる。`standard` は zip では落ち、展開ディレクトリでは AIP になる。
+返る `status` の語は `reportsSuccess()` と重ならない。
+
+**確かめていない**: NemakiWare からの送信、受領証の組み立て、`default` processing
+config、manifest 1 本の bag、`unzipped bag`、他版の AM、本物の ERS、
+full な本番相当の AIP、arm64 ネイティブ。**AIP が `UPLOADED` なことは「先方が
+保持し続ける」ことでも「E-ARK として読んだ」ことでもない。**

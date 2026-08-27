@@ -149,9 +149,13 @@ public record CustodyReceipt(
      * what the RECEIVER has. Unverified: whether those bytes are identical to what was sent, and
      * whether the transferred resource still exists when the receipt is assembled.
      *
-     * <p>Archivematica's vocabulary is still unmeasured, and no receipt has yet been assembled
-     * and verified end to end. Being wrong here costs a refusal of a genuine receipt, not an
-     * acceptance of a bad one, which is the direction to be wrong in.
+     * <p>Archivematica 1.18.0's live {@code status} strings are {@code COMPLETE} and
+     * {@code FAILED} (transfer/SIP); the stored AIP is {@code UPLOADED}; {@code check_fixity}
+     * returns a boolean {@code success}. None of those are in this list, so a connector that
+     * copies them here will refuse a genuine ingest — the same trap as RODA's
+     * {@code outcomeObjectState=ACTIVE}. Map, or the list is wrong for that receiver. No receipt
+     * has yet been assembled and verified end to end. Being wrong here costs a refusal of a
+     * genuine receipt, not an acceptance of a bad one, which is the direction to be wrong in.
      */
     public boolean reportsSuccess() {
         if (verificationOutcome == null || verificationOutcome.isBlank()) {

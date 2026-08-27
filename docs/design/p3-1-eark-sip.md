@@ -29,11 +29,14 @@
 - **E-ARK 準拠とは名乗らない。** 通ったのは `commons-ip2` に同梱された検証器であって、
   DILCIS Board の公式サービスではない。版・profile・検証器の版を固定して
   **「この版のこの検証器を通った」とだけ言う**。
-  **受入側の実機は RODA 6.3.0 の SIP→AIP プラグインだけ測った** (2026-08-27、
-  [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §10) — `EARKSIP2ToAIPPlugin` が
-  AIP object を作った。**受入承認を含む ingest workflow は未実施**、
-  **Archivematica は未測定**。1 つ通ったことは「E-ARK 準拠」でも
-  「どの archive でも通る」でも「先方が保持する」でもない
+  **受入側の実機は RODA 6.3.0 の SIP→AIP プラグインと Archivematica 1.18.0 の
+  automated ingest を測った** (2026-08-27、
+  [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §10 / §12) — RODA の
+  `EARKSIP2ToAIPPlugin` が AIP object を作り、AM は E-ARK 専用 type が無いので
+  `zipfile` / `zipped bag` / 展開 `standard` で **AM の AIP** になった。
+  **受入承認を含む RODA ingest workflow は未実施**。
+  1 つ通ったことは「E-ARK 準拠」でも「どの archive でも通る」でも
+  「先方が保持する」でも「AM が E-ARK として読んだ」でもない
 - **「記録の真正性が移送先で保たれる」とは言わない。** 検証器が言うのは**容器が
   仕様に合っている**ことだけで、中身が真実かどうかについては何も言わない
 - ~~**PREMIS はまだ 1 件も書いていない。**~~ **2026-08-26 訂正**: PREMIS は
@@ -264,7 +267,9 @@ CSIP 版を落とす)。**うち「非 ASCII を潰す」は 1 度目の細工�
    `metadata/descriptive/ers.der` へ移されている — 受け取った側が `other/` を探しても
    見つからない)。本製品は同日 `metadata/other` へ変更した
    ([`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §11)。
-   **未**: 受入承認を含む full ingest workflow、Archivematica、他版の RODA
+   **未**: 受入承認を含む full ingest workflow、他版の RODA。Archivematica は
+   [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §12
+   (E-ARK 専用 type は無く、`zipfile` / bag / 展開 `standard` で AM の AIP になった)
 
 ---
 

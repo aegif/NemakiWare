@@ -3,17 +3,15 @@
 # 何のためにあるか
 # ----------------
 # ロードマップ §9-4 は「Archivematica の標準 transfer type 一覧に E-ARK/CSIP 専用の
-# ものは無い」→「`zipped bag` が実装可能な候補経路」と書き、**BagIt が必須かどうかも、
-# 出荷形の bag が読めるかどうかも実機で確かめていない**と但し書きしている。
-# これはそれを測るためのスタックである。
-#
-# 測りたいことは 3 つ (docs/design/p3-4-custody-transfer.md §6 / §10):
-#   1. 現行の出荷形 (payload manifest 2 本の zipped bag) が取り込まれるか
-#      — RODA の bag 経路は commons-ip v1 の欠陥で rollback した。AM は BagIt 検証器で
-#        読むので同じ機構には当たらない**はず**だが、これは推測である
-#   2. AM が返す `verificationOutcome` 相当の語 (`CustodyReceipt.reportsSuccess()` の語彙)
-#   3. E-ARK SIP を `zipfile` / `standard` に投げたら何が起きるか
-#      — 「BagIt が必須」と言えるかはここで決まる
+# ものは無い」→「`zipped bag` が実装可能な候補経路」と書いていた。
+# **2026-08-27 に測った** (docs/design/p3-4-custody-transfer.md §12):
+#   1. 現行の出荷形 (payload manifest 2 本の zipped bag) は AIP になった
+#      (`Verify bag` COMPLETE、SS `status=UPLOADED`)
+#   2. 返る語は transfer/SIP の `COMPLETE` / `FAILED` と SS の `UPLOADED`。
+#      どれも `reportsSuccess()` の語彙に無い
+#   3. 同じ E-ARK SIP を `zipfile` に投げても AIP になった — **BagIt は必須ではない**。
+#      `standard` に zip を渡すと FAILED (ディレクトリを期待する)。展開した
+#      ディレクトリなら `standard` でも AIP になった
 #
 # 公式 compose との差分
 # --------------------
@@ -54,10 +52,21 @@
 # **プロジェクト名を必ず `-p am` にすること。** 既定はディレクトリ名から決まり、
 # nb33 と同じ名前空間に入る。
 #
-# **初回は DB マイグレーションが要る** (公式 compose も同じ):
-#   docker compose -p am -f docker/docker-compose-archivematica.yml \
-#     run --rm archivematica-storage-service /src/manage.py migrate --noinput
-# 手順は docs/design/p3-4-custody-transfer.md §12 に、実際に走らせた形で残す。
+# **初回は DB とユーザが要る** (公式は hack/ の Makefile が bootstrap するので
+# compose には無い)。migrate だけでは足りない:
+#   1. MySQL に DB `MCP` / `SS` を作り、`archivematica`@`%` へ GRANT ALL
+#      — これが無いと mcp-server と storage-service は
+#        Access denied for user 'archivematica'@'%' to database 'MCP' で再起動する
+#   2. 両方 migrate
+#   3. SS:  manage.py create_user --username=test --password=test \
+#           --email=test@example.com --api-key=test --superuser
+#   4. dashboard: manage.py install --username=test --password=test \
+#           --api-key=test --org-name=... --org-id=... \
+#           --ss-url=http://archivematica-storage-service:8000 \
+#           --ss-user=test --ss-api-key=test \
+#           --site-url=http://archivematica-dashboard:8000
+# 走らせたコマンドは docs/design/p3-4-custody-transfer.md §12。
+# この test/test はローカル受入試験用で、本番の値ではない。
 #
 # なお **停めておくのが既定**。elasticsearch に 512m、clamav にウイルス定義、
 # さらに amd64 エミュレーションぶんの CPU を食うので、常駐させると nb33 と取り合う。
