@@ -51,15 +51,29 @@
 #   - 全コンテナで `uname -m` = **aarch64**。QEMU は挟まっていない
 #   - Solr のコレクション 17 本 (AIP / Job / PreservationEvent 等) が自動作成される
 #
-# **まだ分かっていない 2 点**:
+# 投入 API (2026-08-26 に解けた。`/api/v2/**` は在る — 存在しないパスを叩いていただけ)
+# ------------------------------------------------------------------------------------
+#   POST /api/v2/transfers/create/resource   multipart, part 名は "resource"  -> 201
+#   POST /api/v2/transfers/refresh                                            -> 204
+#   POST /api/v2/jobs                        取込ジョブ                        -> 201
 #
-#   1. **REST API のベースパスが未特定。** v6.3.0 では `/api/v1/**`・`/api/v2/**` とも
-#      404 で、本文は Spring の「No static resource」= 何も mapped されていない。
-#      公式 compose の swagger は `/api/openapi.json` を指しているが、それも 404。
-#      SIP 投入を API でやるなら**着手時にここを解く**こと。UI からのアップロードと、
-#      `roda_data` (= `/roda/data/`) に置く経路は別に在る。
-#   2. **起動時に `groups.keep.pt:443` (KEEP Solutions / リスボン) へ出ていく。**
-#      用途は未確認。閉域で試すときは**この外向き接続が要るかどうかを先に確かめる**こと。
+#   ジョブ body の落とし穴: `sourceObjects` の判別子は `@type` で値は
+#   "SelectedItemsListRequest"。`priority` / `parallelism` は必須で、省くと
+#   enum 変換が NPE になり HTTP 500 が返る。
+#
+#   **プラグインは 1 本ではない。** E-ARK は 2 版ぶん在り、CSIP 2.x を読むのは
+#   `...ingest.EARKSIP2ToAIPPlugin` の方。`EARKSIPToAIPPlugin` は commons-ip v1
+#   (METS 1.11) なので CSIP 2.2 を拒否する。詳細は
+#   docs/design/p3-4-custody-transfer.md §10。
+#
+#   **`jobStats` を結果として読まないこと。** 成功したジョブでも
+#   completionPercentage=0 / ok=0 / waiting=1 のまま COMPLETED になる例を実測した。
+#   判定は JobReport の pluginState と、AIP が実在するかで読む。
+#
+# **まだ分かっていない 1 点**:
+#
+#   - **起動時に `groups.keep.pt:443` (KEEP Solutions / リスボン) へ出ていく。**
+#     用途は未確認。閉域で試すときは**この外向き接続が要るかどうかを先に確かめる**こと。
 #
 # なお **停めておくのが既定**。Solr に 2g、clamd にウイルス定義と、常駐させると
 # nb33 スタックと資源を取り合う。Playwright の失敗 21 件のうち 16 件が負荷・干渉

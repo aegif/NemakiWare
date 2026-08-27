@@ -77,7 +77,7 @@ class BagItTransferPackagerTest {
     }
 
     @Test
-    @DisplayName("it is a bag: declaration, both manifests, and bag-info")
+    @DisplayName("it is a bag: declaration, exactly one payload manifest, and bag-info")
     void itIsActuallyABag(@TempDir Path tmp) throws Exception {
         BagItTransferPackager.Bagged bagged = BagItTransferPackager.bag(
                 sip(Files.createDirectories(tmp.resolve("in")), "x"),
@@ -86,13 +86,22 @@ class BagItTransferPackagerTest {
         Map<String, byte[]> entries = entriesOf(bagged.zippedBag());
         assertTrue(entries.containsKey("bagit.txt"), entries.keySet().toString());
         assertTrue(entries.containsKey("manifest-sha512.txt"), entries.keySet().toString());
-        // Exactly ONE payload manifest. RFC 8493 allows several, and RODA 6.3.0 adds each
-        // payload file once per manifest — so a second one makes the ingest fail with
-        // "Binary already exists" and roll back. Measured against a live RODA on 2026-08-26;
-        // the identical bag with one manifest produced an AIP.
-        assertFalse(entries.containsKey("manifest-sha256.txt"),
-                "a second payload manifest is back; the tested receiver cannot ingest such a "
-                        + "bag: " + entries.keySet());
+        // Exactly ONE payload manifest, whatever the algorithm. RFC 8493 allows several, but
+        // commons-ip v1's BagitSIP.parse — which RODA 6.3.0 uses — adds each payload file once
+        // per manifest, so a second one makes the ingest fail with "Binary already exists" and
+        // roll back. Measured against a live RODA on 2026-08-26; the identical bag with one
+        // manifest produced an AIP.
+        //
+        // Counting is what pins the rule: an assertion that only forbids manifest-sha256.txt
+        // would pass if someone added manifest-sha1.txt instead, which breaks the same receiver
+        // the same way.
+        List<String> payloadManifests = entries.keySet().stream()
+                .filter(name -> name.startsWith("manifest-") && name.endsWith(".txt"))
+                .sorted()
+                .toList();
+        assertEquals(List.of("manifest-sha512.txt"), payloadManifests,
+                "a bag with more than one payload manifest is back; the tested receiver rolls "
+                        + "back the ingest of such a bag: " + entries.keySet());
         assertTrue(entries.containsKey("bag-info.txt"), entries.keySet().toString());
     }
 

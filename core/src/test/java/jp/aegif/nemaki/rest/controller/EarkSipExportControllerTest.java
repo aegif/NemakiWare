@@ -28,10 +28,12 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -201,6 +203,55 @@ class EarkSipExportControllerTest {
         assertNotNull(headers.getFirst("X-Nemaki-Export-Note"),
                 "the exporter's notes did not reach the caller");
         assertNotNull(headers.getFirst("X-Nemaki-Export-Limits"));
+    }
+
+    @Test
+    @DisplayName("the bag's External-Description is the SHA-256 of the payload actually in data/")
+    void theBagsStatedDigestIsThePayloadsDigest(@org.junit.jupiter.api.io.TempDir Path tmp)
+            throws Exception {
+        // The bag used to carry a manifest-sha256.txt, which bound path -> digest and which any
+        // RFC 8493 verifier checked. It carries one payload manifest now (RODA 6.3.0 rolls back
+        // an ingest of a two-manifest bag), so the ONLY place a receiver finds the SHA-256 it
+        // needs to reconcile against this product's chain is this bag-info.txt line -- and
+        // nothing verifies it. If the controller ever states a digest of something other than
+        // the bytes it ships, a receiver reconciling the bag against the chain gets a mismatch
+        // it cannot explain, and there is no manifest left to catch it here.
+        EarkSipExportController controller = controllerFor(true);
+        Path sip = Files.write(tmp.resolve("payload.zip"),
+                "the exact bytes that must be described".getBytes(StandardCharsets.UTF_8));
+        EarkSipExporter exporter = mock(EarkSipExporter.class);
+        when(exporter.export(anyString(), anyString(), any(), any()))
+                .thenReturn(new EarkSipExporter.Exported(sip, 0, List.of(),
+                        new EarkSipExporter.Validation(true, true, 0, 0, "ok")));
+        setField(controller, "exporter", exporter);
+
+        Object response = EarkSipExportController.class.getDeclaredMethod("bag",
+                        String.class, String.class, boolean.class, String.class)
+                .invoke(controller, "bedroom", "doc-1", false, "sub-1");
+        Object body = response.getClass().getMethod("getBody").invoke(response);
+        assertTrue(body instanceof org.springframework.core.io.Resource,
+                "the bag endpoint did not return a downloadable body: " + body);
+
+        Map<String, byte[]> entries = new java.util.LinkedHashMap<>();
+        try (java.util.zip.ZipInputStream in = new java.util.zip.ZipInputStream(
+                ((org.springframework.core.io.Resource) body).getInputStream())) {
+            java.util.zip.ZipEntry entry;
+            while ((entry = in.getNextEntry()) != null) {
+                entries.put(entry.getName(), in.readAllBytes());
+            }
+        }
+        byte[] payload = entries.get("data/payload.zip");
+        assertNotNull(payload, "the payload is not under data/: " + entries.keySet());
+
+        StringBuilder expected = new StringBuilder();
+        for (byte b : java.security.MessageDigest.getInstance("SHA-256").digest(payload)) {
+            expected.append(String.format("%02x", b));
+        }
+        String info = new String(entries.get("bag-info.txt"), StandardCharsets.UTF_8);
+        assertTrue(info.contains(expected.toString()),
+                "bag-info.txt does not state the SHA-256 of the bytes under data/, so a receiver "
+                        + "reconciling this bag against the chain has nothing that matches -- "
+                        + "and there is no sha256 payload manifest to fall back on: " + info);
     }
 
     private static void setField(Object target, String name, Object value) throws Exception {

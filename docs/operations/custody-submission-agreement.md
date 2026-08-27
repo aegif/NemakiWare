@@ -102,16 +102,38 @@ submission agreement として明文化」と書いているのはこの文書�
   「引き渡しを記録し、その受領証を検証した」であって、
   **先方が今も持っている**ことではない
 - **受け手の検証が十分だった、とは言わない。** 受領証は先方の陳述である
-- **bag に包んだから相互運用できる、とは言わない。** 受け手は payload の中の
-  1 ファイルとして SIP を見る。METS は読まれない
+- **bag に包んだから相互運用できる、とは言わない。** **bag 経路では**受け手は
+  payload の中の 1 ファイルとして SIP を見る。METS は読まれない
+  (E-ARK 経路で受け取る先方なら読まれる — 下記 3 を見ること)
+- **取り込まれたから保持される、とは言わない。** RODA 6.3.0 で実測したところ、
+  取込直後の AIP は `INGEST_PROCESSING` 止まりで、受入承認まで進んでいない
 
 ---
 
-## 3. 実機受入試験でやること (未実施)
+## 3. 実機受入試験 — RODA 6.3.0 は実施済み (2026-08-27)
 
-1. 受け手 (RODA / Archivematica) が実際に返す `verificationOutcome` の語を採取し、
+**やって分かったこと** (詳細は設計 §10):
+
+| | 結果 |
+|---|---|
+| **E-ARK SIP を直接** (`EARKSIP2ToAIPPlugin`) | **取り込まれる**。本文が `representations/rep1/data/` に入り、METS の `OBJID` が AIP に載る |
+| **bag** (`BagitToAIPPlugin`) | **取り込まれる**。ただし payload manifest は **1 本**でなければ transaction が rollback する |
+| 旧版 `EARKSIPToAIPPlugin` (E-ARK SIP 1.x) | 同じ package を**拒否**する。**プラグインの指定を間違えると「非対応」に見える** |
+| 我々の `metadata/preservation/premis.xml` | **AIP に残らない**。RODA は自分の PREMIS event だけを置く |
+| AIP の `state` | `INGEST_PROCESSING`。受入承認された状態ではない |
+
+> **先方と話すときの実務**: 「E-ARK SIP を受けられますか」だけでなく
+> **「どのプラグイン / どの profile 版で受けますか」**まで確認すること。
+> 同じ製品の同じ版が、E-ARK 取込を 2 版ぶん持っていた。
+
+**まだやること**:
+
+1. 受け手が実際に返す `verificationOutcome` の語を採取し、
    `CustodyReceipt.reportsSuccess()` の語彙を固定する
-2. bag が `zipped bag` transfer として取り込まれることを確認する
+   — **RODA が受領証を返す経路そのものが未調査**なので、まだ採れていない
+2. Archivematica で同じことを測る (`zipped bag` transfer。manifest 2 本を
+   読めるかどうかも — RODA が読めなかった理由は commons-ip v1 固有で、
+   Archivematica には当てはまらない可能性が高いが**測っていない**)
 3. 受領証の形式と署名の有無を確認し、1.7 を埋める
 4. 上記 1.1〜1.6 を、実際に落として確かめる (合意は落ちたときにしか効かない)
 

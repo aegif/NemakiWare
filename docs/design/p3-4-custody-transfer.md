@@ -178,7 +178,7 @@ constructor は緩いままにした — 欠けた受領証も「何かが届い
 | **スレッド安全性** | **未**。`state` / `receipt` / `history` は非同期化で、`advance` は check-then-act。呼び出し元が無いので現時点で実害は無いが、"workflow object" と説明する以上は同期か明記が要る |
 | **`reportsSuccess()` の語彙を実機で確認** | **未**。`PASSED/PASS/VALID/SUCCESS/ACCEPTED/OK` は**こちらが決めた綴り**で、RODA / Archivematica が実際に何を返すか照合していない。未知語は成功ではないので**外れても fail-closed** (受け入れてしまうのではなく、正当な受領証を拒否する) が、そのままでは使えない。実機受入試験で語彙を固定すること |
 | **submission agreement の明文化** (失敗・再送・重複取込・部分受入・先方 AIP 再生成) | **雛形あり** (2026-08-26): [`docs/operations/custody-submission-agreement.md`](../operations/custody-submission-agreement.md)。7 項目と、本製品が既に決めていて交渉できない側の分離。**合意そのものは当事者間の作業で、software では閉じない** |
-| 実機受入試験 | **未**。RODA は arm64 で起動することだけ確認済み |
+| 実機受入試験 | **RODA 6.3.0 は実施済み** (§10)。E-ARK SIP (`EARKSIP2ToAIPPlugin`) も bag も取り込まれ AIP になる。**未**: Archivematica、受領証を返す経路、他版の RODA |
 
 ---
 
@@ -187,6 +187,11 @@ constructor は緩いままにした — 欠けた受領証も「何かが届い
 Archivematica の転送 type は `standard / zipfile / unzipped bag / zipped bag / dspace /
 maildir / TRIM / dataverse` の 8 種で、**E-ARK に相当するものが無い**。
 そこで `zipped bag` がバイト列を渡す手段になる。
+
+> **この層は「E-ARK が使えない受け手」のためのものである。** RODA 6.3.0 は
+> E-ARK SIP を直接取り込めることを実測した (§10 結果 1) ので、RODA に対しては
+> bag 経路を選ぶ理由が無い — E-ARK 経路の方が本文も METS も運ぶ。
+> 現時点で bag が要ると分かっているのは Archivematica だけである。
 
 **これは受け取り側が package を理解するようにする層ではない。** 向こう側では SIP は
 payload の中の 1 ファイルで、METS は読まれず、構造は尊重されず、これによって
@@ -199,9 +204,14 @@ Archivematica の AIP が E-ARK AIP になることもない。「BagIt コネ�
 真なのはもっと狭い: payload と manifest を持つディレクトリを zip したもので、
 受け取り側の `zipped bag` type が読むのはそれである。
 
-manifest は **SHA-512 と SHA-256 の 2 本**。前者は受け取り側が好みそうだから、
-後者は本製品の証跡が SHA-256 だから — 受け取り側が bag manifest を我々の連鎖と
-突き合わせるのに 2 つ目の digest を計算し直さずに済む。
+payload manifest は **SHA-512 の 1 本だけ** (2026-08-26 変更、§10 結果 2)。
+当初は SHA-512 と SHA-256 の 2 本だった — 後者は本製品の証跡が SHA-256 なので、
+受け取り側が bag manifest を我々の連鎖と突き合わせるのに計算し直さずに済むからである。
+**RFC 8493 §2.1.3 は複数を許すが、RODA が積む commons-ip v1 の `BagitSIP` が
+manifest ごとに payload を追加して落ちる**ので 1 本にした。SHA-256 の値自体は
+`bag-info.txt` の `External-Description` に残るが、**BagIt 検証器の照合対象では
+なくなった** (値は残り、検証が消えた)。詳細と、この判断が受け手 1 つに対してしか
+測られていないことは §10。
 
 ### 踏んだ落とし穴 2 つ
 
@@ -303,10 +313,17 @@ REST の受け口はリクエスト本文から決して読まない (findings �
 
 ---
 
-## 10. RODA 実機受入試験 (2026-08-26 実測)
+## 10. RODA 実機受入試験 (2026-08-26 / 2026-08-27 実測)
 
 **RODA 6.3.0 を立てて、NemakiWare が作った本物の SIP / bag を投入した。**
-結果は 2 つとも「相互運用できる」ではなかった。両方とも原因を特定した。
+**E-ARK SIP も bag も取り込まれ、AIP になった。**
+
+> **この節は一度書き直している。** 2026-08-26 の初回、`EARKSIPToAIPPlugin` に投げて
+> 拒否されたのをもって「E-ARK SIP は取り込めない」と書いた。**プラグインの選択を
+> 誤っていた。** RODA 6.3.0 には E-ARK 系が 2 本あり、CSIP 2.x を読むのは
+> `EARKSIP2ToAIPPlugin` の方である。3 系統のレビューが独立に同じ点を指摘し、
+> 8-27 に測り直して**結論が反転した**。誤りの中身は §10.6 に残す — 同じ罠を
+> 次に踏まないために、消さずに書いておく。
 
 ### 投入 API — 前回「未特定」としていたもの
 
@@ -328,38 +345,68 @@ POST /api/v2/jobs                          (取込ジョブ)                    
   `NullPointerException: Name is null` になり、**HTTP 500** が返る
 - `GET /api/v2/jobs/plugin-info` は `plugin-info.json` が未生成だと 404。
   プラグイン ID は fat jar の中の `roda-core-6.3.0.jar` から読める
+- **プラグインは 1 本ではない。** `org.roda.core.plugins.base.ingest` に E-ARK が
+  2 本ある。どちらを指すかで結果が変わる (§10.6)
 
-### 結果 1 — E-ARK SIP は **取り込めない**
+### ジョブの結果は集計欄で読まない — 0 のまま SUCCESS が起きる
 
-`EARKSIPToAIPPlugin` が拒否する。`Is the package valid? no`。
+**`GET /api/v2/jobs/{id}` の `jobStats` は当てにならなかった。** 8-27 の再測定では、
+成功したジョブも失敗したジョブも**揃って**こう返した:
 
 ```
-Element 'note' is a simple type, so it cannot have attributes ...
-However, the attribute, 'csip:NOTETYPE' was found.   (METS.xml 6 行目)
+state = COMPLETED   completionPercentage = 0
+sourceObjectsProcessedWithSuccess = 0   ...WithFailure = 0   ...WaitingToBeProcessed = 1
 ```
 
-**我々の SIP が壊れているのではない。** 測った:
+`AIP` が実際に 1 件生まれた側もこの表示である。同じ環境で `POST /api/v2/*/find` と
+`/count` も全コレクションで 0 を返した (Solr を直接引くと `Job` 16 件・`AIP` 2 件・
+`TransferredResource` 6 件が在る) ので、**索引を読む API 層が沈黙して 0 を返していた**。
 
-| 検査したもの | 結果 |
-|---|---|
-| commons-ip2 **2.12.0** (我々が生成に使う) の validator | **valid** (エラー 0) |
-| commons-ip2 **2.11.3** (RODA が積んでいる版) の validator | **valid**、130 検査通過、エラー 0 |
-| commons-ip2 2.11.3 / 2.12.0 の **parser** (`EARKSIP.parse`) | 両方 **成功**、`valid=true` |
-| RODA 6.3.0 の取込プラグイン | **拒否** |
+> **判定は `JobReport` の `pluginState` と、実際に AIP が在るかで読むこと。**
+> 集計欄だけを見ると、**成功を「何も起きなかった」と読む**。初回に
+> 「プラグインが違う」と気づけなかったのも、この層を信じたことが一因である。
 
-つまり **RODA は commons-ip2 の検証もパースも使っておらず、独自の METS 検証
-(JAXB + 自前スキーマ) で落としている**。そして我々の package が**同梱している**
-`mets1_12.xsd` (DILCIS 修正版) は、`note` を complexType にしたうえで
-`<xsd:attribute ref="csip:NOTETYPE" use="required"/>` — **必須**と宣言している。
+### 結果 1 — E-ARK SIP は **取り込める** (`EARKSIP2ToAIPPlugin`)
 
-> **両方を同時に満たす METS は書けない。** CSIP 準拠なら `csip:NOTETYPE` が要り、
-> RODA の検証はそれを許さない。
+**同一の package を、同一インスタンスに、数分差で 2 本のプラグインへ投げた。**
 
-`csip:NOTETYPE` を外して再投入すると、今度は
-`METS 'TYPE' attribute does not contain a valid value` で落ちる。
-**1 つ目の後ろに 2 つ目が居る**ので、属性 1 個の問題ではない。
+| プラグイン | 呼ぶパーサ | `JobReport.pluginState` | 生成された AIP |
+|---|---|---|---|
+| `EARKSIP2ToAIPPlugin` | `commons_ip2...EARKSIP.parse` (CSIP 2.x) | **SUCCESS** | `28da89b5-…` |
+| `EARKSIPToAIPPlugin` | `commons_ip...EARKSIP.parse` (**v1**, E-ARK SIP 1.x) | **FAILURE** | `NO_OUTCOME_ID` |
 
-### 結果 2 — BagIt は **取り込める**。ただし manifest は 1 本
+生まれた AIP の中身 (`/roda/data/storage/aip/28da89b5-…/`):
+
+```
+representations/rep1/data/_________.pdf        ← 本文がそのまま入っている
+metadata/descriptive/dc.xml
+metadata/descriptive/nemaki-authenticity-report.json
+metadata/descriptive/nemaki-evidence.json
+metadata/preservation/urn:roda:premis:event:….xml   (2 件)
+schemas/{mets1_12,DILCISExtensionMETS,DILCISExtensionSIPMETS,xlink}.xsd
+```
+
+`AIP.ingestSIPIds` は zip 名ではなく **我々の METS `OBJID`**
+(`nemaki-bedroom-2878786f…`) になっていた。**RODA は METS を読んでいる** —
+bag 経路のように payload を丸ごと 1 ファイルとして置いたのではない。
+
+#### ただし、渡したものが全部そのまま残るわけではない
+
+同じ AIP を測って分かったこと:
+
+- **我々の `metadata/preservation/premis.xml` は AIP に無い。** そこに在るのは
+  RODA が自分で作った 2 件だけで、`eventType` は `wellformedness check` と
+  `unpacking`。PREMIS の **object レコードは 0 件** (`grep -c` で確認)。
+  P3-1 のクロスウォークの成果物は、**この受け手の AIP には残らない**。
+- 我々が `metadata/other/` に置いた JSON 2 本は **`metadata/descriptive/` へ
+  移されて**残った (`metadata/other/OTHER/{aipId}` にも複製)。
+- AIP の `state` は **`INGEST_PROCESSING`**。`ACTIVE` ではない。SIP→AIP の
+  プラグインだけを走らせたので、受入承認まで含む ingest workflow は通していない。
+
+> **「取り込める」はここまでである。** 本文と JSON は届き、METS は読まれた。
+> **PREMIS は届いていない**し、**受入が承認された状態にもなっていない**。
+
+### 結果 2 — BagIt も **取り込める**。ただし manifest は 1 本
 
 `BagitToAIPPlugin` に投げると、最初は失敗した:
 
@@ -368,29 +415,104 @@ Binary already exists: .../representations/rep1/data/nemaki-....zip
 Transaction was rolled back
 ```
 
-**原因は我々の側**だった。`BagItTransferPackager` は SHA-512 と SHA-256 の
-**manifest を 2 本**書いていた (RFC 8493 §2.1.3 は複数を許す)。RODA の plugin は
-**manifest ごとに payload を追加する**ので、2 本目で「もう在る」と落ちる。
+引き金は我々の側にある。`BagItTransferPackager` は SHA-512 と SHA-256 の
+**manifest を 2 本**書いていた。**ただしそれは規格違反ではない** — RFC 8493 §2.1.3 は
+複数の payload manifest を明示的に許す。**落ちるのは受け手の側**で、機構は
+バイトコードで確かめてある: `BagitSIP.parse` (これも **commons-ip v1**) が
+`Bag.getPayLoadManifests()` を回し、manifest ごとに `getFileToChecksumMap()` の
+各エントリから `IPFile` を作って `IPRepresentation.addFile` する — 重複を落とさない。
+`BagitToAIPPluginUtils` はそれを 1 件ずつ `ModelService.createFile` に渡すので、
+2 本目で「もう在る」になる。
 
 manifest を 1 本にした同一の bag を投入 → **SUCCESS**。
 `AIP` が 1 件生成され、representation と payload ファイルが入った。
 
-そこで **SHA-512 の 1 本だけを書く**ように変えた。失うものは無い —
-payload の SHA-256 は `bag-info.txt` の `External-Description` に既に入っており、
-受け手が我々の連鎖と突き合わせるのに必要なのはそれである。
+そこで **SHA-512 の 1 本だけを書く**ようにした。**失うものが無いわけではない**:
 
-**これは受け手 1 つの欠陥に対する回避策**であり、そう明記してある。
-別の受け手が 2 本目を望むなら、それは意図して変え、その受け手に対して測る変更である。
+- **残るもの** — payload の SHA-256 は `bag-info.txt` の `External-Description` に
+  在る。受け手が我々の連鎖と突き合わせるのに要る値は、そこにある。
+- **失うもの** — その SHA-256 はもう **BagIt の検証対象ではない**。
+  `manifest-sha256.txt` は任意の RFC 8493 検証器が path→digest として照合したが、
+  `External-Description` は誰も照合しない自由記述である。**値は残り、検証が消えた。**
+  tag manifest も同様に SHA-512 のみになる。
+
+**これは commons-ip v1 の `BagitSIP` という 1 つのライブラリの欠陥に対する回避策**で
+あり、そう明記してある。`BagitSIP` を使わない受け手 (Archivematica は bagit-python)
+なら 2 本でも通る見込みだが、**それは測っていない**。測ったのは RODA だけである。
+
+### 結果 3 — つまり RODA には 2 つの経路があり、E-ARK の方が多くを運ぶ
+
+| | 経路 | 先方が読むもの | 本文の在り処 |
+|---|---|---|---|
+| E-ARK | `EARKSIP2ToAIPPlugin` | **METS を読む**。`OBJID` が AIP に入る | `representations/rep1/data/` に**そのまま** |
+| bag | `BagitToAIPPlugin` | payload の中身は見ない | SIP の zip が**丸ごと 1 ファイル**として |
+
+**bag 経路は RODA に入るための必須条件ではなくなった。** BagIt 接続層が要るのは
+E-ARK 相当の transfer type を持たない受け手 — 今のところ Archivematica — のためである
+(§6)。`LIMITS` が「受け手は payload を不透明なファイルとして読む」と言うのは
+**bag 経路について**であって、E-ARK 経路には当てはまらない。
 
 ### この試験が確かめたこと / 確かめていないこと
 
-**確かめた**: NemakiWare の bag は RODA 6.3.0 が取り込み、AIP になる。
-E-ARK SIP は RODA 6.3.0 が取り込まない。
+**確かめた**: NemakiWare の E-ARK SIP は RODA 6.3.0 の `EARKSIP2ToAIPPlugin` が
+取り込み、本文・`dc.xml`・我々の JSON 2 本を含む AIP になる。同じ package を
+`EARKSIPToAIPPlugin` (E-ARK SIP 1.x) に投げると FAILURE になる。bag も
+manifest 1 本なら取り込まれ、AIP になる。
 
 **確かめていない**: 他版の RODA、Archivematica、受領証の形式と署名
-(RODA が受領証を返す経路そのものが未調査)、`reportsSuccess()` の語彙。
+(RODA が受領証を返す経路そのものが未調査)、`reportsSuccess()` の語彙、
+manifest 2 本を Archivematica が読めるか。
 **取り込めたことは「先方が保持し続ける」ことでも「AIP が正しい」ことでもない。**
+AIP は `INGEST_PROCESSING` のままで、**受入が承認された状態ではない**。
+**我々の PREMIS は AIP に残らない。**
 
 > なお `EXPORT_LIMITS` は最初から「**NOT a statement that any particular archive
-> will accept it**」と書いていた。今回それが必要な但し書きだったことが実測で分かった。
+> will accept it**」と書いていた。この但し書きは、**受け入れられた今も**必要である
+> — 通ったのは RODA 6.3.0 の 1 プラグインであって、「どの archive でも通る」ではない。
+
+### 10.6 初回の誤り — 何を間違えたか
+
+**消さずに残す。** 同じ形の誤りを次に踏まないために書いておく。
+
+**誤り**: 「E-ARK SIP は RODA 6.3.0 が取り込まない」「RODA は commons-ip2 の検証も
+パースも使わず、独自の METS 検証で落としている」「両方を同時に満たす METS は書けない」。
+**3 つとも成り立たない。**
+
+**何が起きていたか**。`EARKSIPToAIPPlugin` は **commons-ip v1** の
+`org.roda_project.commons_ip.model.impl.eark.EARKSIP.parse` を呼ぶ。この v1 API は
+**commons-ip2 の jar の中に同居していて**、自分の `schemas/mets1_11.xsd` で JAXB 検証する。
+METS 1.11 の `note` は `type="xsd:string"` — **単純型**。CSIP 2.2.0 (METS 1.12、DILCIS 修正版)
+の `note` は complexType で `csip:NOTETYPE` を持つ。だからあのエラーが出た。
+**RODA 独自の検証ではなく、commons-ip 自身の、古い profile 版の検証**である。
+
+手元で再現した (コンテナ不要、commons-ip2 2.11.3 の v1 API を直接呼ぶ):
+
+```
+V1 PARSER isValid = false
+  [ERROR] Main METS.xml file is not valid. | jakarta.xml.bind.UnmarshalException
+    lineNumber: 6; columnNumber: 52; cvc-type.3.1.1: 要素'note'は単純型であるため …
+    属性'csip:NOTETYPE'が見つかりました
+```
+
+**そして測定表が的を外していた。**「commons-ip2 2.11.3 (RODA が積んでいる版) の
+validator は valid」と書いたが、**RODA はこの取込経路でその API を呼ばない**。
+同じ jar の中の別の (v1 の) API を呼ぶ。**同じ jar だから同じ判定だろう、と
+確かめずに書いた** — これが誤りの本体である。
+
+**「両方を満たす METS は書けない」は前提から崩れている。** そもそも両方を満たす
+必要が無い (版に合ったプラグインを指せばよい)。加えてこの命題自体も強すぎた:
+`mets1_12.xsd` の `note` は `minOccurs="0"` なので、note を出さなければ両方の
+スキーマを満たす。成り立つのは「commons-ip2 の v2 writer は `createMETSAgent` で
+note を**無条件に**書く (バイトコードに分岐が無い) ので、**我々の生成器では**
+note 無しの package は作れない」までである。
+
+**教訓 3 つ**:
+
+1. **受け手のプラグインは 1 本とは限らない。** 「拒否された」は「その実装が拒否した」
+   であって、製品全体の答えではない。同名同系統の実装が複数在るかを先に見る。
+2. **「同じ jar だから同じ経路」ではない。** 呼ばれるクラスの**完全修飾名**まで
+   確かめる。`commons_ip` と `commons_ip2` は 1 文字違いで別のライブラリだった。
+3. **対照は必ず同じ入力・同じインスタンスで**。今回は同一 package を 2 本の
+   プラグインへ数分差で投げて、SUCCESS / FAILURE が並んで出た。これが無ければ
+   「環境が壊れているのでは」と切り分けられなかった。
 

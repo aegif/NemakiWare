@@ -56,18 +56,32 @@ import java.util.zip.ZipOutputStream;
  * SHA-256 evidence would not have to recompute anything.
  *
  * <p><b>RODA 6.3.0 cannot ingest such a bag.</b> Measured 2026-08-26 against a live instance:
- * its {@code BagitToAIPPlugin} adds each payload file once per manifest, so the second add
- * fails with "Binary already exists" and the whole ingest transaction is rolled back. The
- * identical bag with one manifest ingests and produces an AIP.
+ * "Binary already exists", and the whole ingest transaction is rolled back. The identical bag
+ * with one manifest ingests and produces an AIP.
  *
- * <p>So one manifest, and nothing is lost by it: {@code bag-info.txt} already carries the
- * payload's SHA-256 in {@code External-Description}, which is the value a receiver needs to tie
- * the bag to this product's chain.
+ * <p>The mechanism is in the library, not in RODA's plugin: {@code BagitSIP.parse} — commons-ip
+ * <i>v1</i>, which ships inside {@code commons-ip2-2.11.3.jar} — walks
+ * {@code Bag.getPayLoadManifests()} and, per manifest, adds an {@code IPFile} for every entry of
+ * {@code getFileToChecksumMap()}, with no dedupe. {@code BagitToAIPPluginUtils} then hands each
+ * one to {@code ModelService.createFile}, so the payload is created twice.
  *
- * <p>This is a workaround for a defect in one receiver, chosen because a transfer format the
- * tested receiver cannot read does not do the job the layer exists for. If a deployment's
- * receiver wants a second manifest, that is a change to make deliberately — and to measure
- * against that receiver.
+ * <p><b>Writing two was not wrong.</b> RFC 8493 §2.1.3 allows several payload manifests. This is
+ * an accommodation of one library's parser, not a correction.
+ *
+ * <p><b>Something is lost by dropping to one, and it is not nothing.</b> The payload's SHA-256
+ * is still stated — {@code bag-info.txt} carries it in {@code External-Description}, which is
+ * the value a receiver needs to tie the bag to this product's chain. What is gone is that any
+ * RFC 8493 verifier used to <i>check</i> it as a path→digest binding; {@code External-Description}
+ * is free text that no verifier reads. The value survives, the verification of it does not. The
+ * tag manifests drop to SHA-512 only for the same reason.
+ *
+ * <p>Note also that {@code External-Description} is only written when a caller supplies
+ * {@code sipDigest} (unlike {@code submissionId}, which is refused when absent). The export
+ * endpoint always supplies it; a caller that does not gets a bag with the SHA-256 nowhere.
+ *
+ * <p>If a deployment's receiver wants a second manifest, that is a change to make deliberately —
+ * and to measure against that receiver. Archivematica reads bags with bagit-python, not
+ * commons-ip, so it plausibly accepts two; <b>that has not been measured.</b>
  *
  * <p>Design: {@code docs/design/p3-4-custody-transfer.md} §6.
  */
@@ -129,7 +143,8 @@ public final class BagItTransferPackager {
                     "E-ARK SIP; package digest (SHA-256) " + sipDigest);
         }
         // ONE manifest. See the class javadoc: two of them make RODA 6.3.0 roll back the
-        // ingest, and the payload's SHA-256 is already in bag-info.txt.
+        // ingest. This costs the SHA-256 its manifest line — the value stays in bag-info.txt,
+        // but no bag verifier checks it there.
         try {
             BagCreator.bagInPlace(bagRoot, List.of(StandardSupportedAlgorithms.SHA512),
                     false, metadata);
