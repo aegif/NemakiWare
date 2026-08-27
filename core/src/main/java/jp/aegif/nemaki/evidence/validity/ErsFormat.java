@@ -104,7 +104,14 @@ public enum ErsFormat {
     }
 
     /**
-     * The media type the file would be declared as.
+     * The media type this format WOULD be declared as, if the packager could declare it.
+     *
+     * <p><b>It is not what the METS says today.</b> commons-ip2 probes the file and writes what
+     * it guesses into {@code mdRef/@MIMETYPE}; {@code IPFile} exposes no setter, so this value
+     * never reaches the package. Measured 2026-08-27: a stub record came out as
+     * {@code application/x-x509-ca-cert}. Kept because the decision below is still the one this
+     * project would state, and because a constant that silently does nothing is worse than one
+     * that says so.
      *
      * <p>{@code application/octet-stream} for the DER blob, deliberately. The first version
      * said {@code application/vnd.etsi.asic-e+zip}, which is the type of an ASiC-E container —

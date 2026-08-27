@@ -530,6 +530,82 @@ E-ARK 相当の transfer type を持たない受け手 — 今のところ Archi
 (§6)。`LIMITS` が「受け手は payload を不透明なファイルとして読む」と言うのは
 **bag 経路について**であって、E-ARK 経路には当てはまらない。
 
+### 追試 (2026-08-27 夕) — 残していた 3 点を測った
+
+RODA を立て直し、前の節が「未測定」と書いた 3 つを潰した。
+
+#### 1. `ers.der` を入れると **package ごと拒否される**
+
+前回は投入した package に `ers.der` が入っていなかったので未測定だった。
+入れて投げると **FAILURE**。理由は:
+
+```
+Failed to load PREMIS: null
+Transaction was rolled back due to a failure in the plugin execution.
+```
+
+**同じ exporter・同じ object で `ers.der` だけを外した package を対照に投げた**:
+
+| package | `metadata/preservation/ers.der` | `pluginState` |
+|---|---|---|
+| `nemaki-sip-ers.zip` | **在り** | **FAILURE** — `Failed to load PREMIS` で rollback |
+| `nemaki-sip-noers.zip` | 無し | **SUCCESS** — AIP `fce8e101-…` |
+
+> **RODA は `metadata/preservation/` の中身を全部 PREMIS として読む。**
+> PREMIS でないファイルが 1 つ在ると、**その package は 1 件も取り込まれない**。
+>
+> **これは我々の側の問題である。** `ErsFormat.CSIP_LOCATION` が
+> `metadata/preservation` を選んでいるので、**証拠記録を持つ deployment の SIP は
+> RODA 6.3.0 に入らない**。前節で「AIP object になった」と書けたのは、
+> たまたまこのノードに確定した RFC 3161 トークンが無く、`ers.der` が
+> 書かれなかったからである。
+
+置き場を変えるかどうかは設計判断なので §11 に分けた。
+
+> **測っていないこと**: 使った DER は**スタブのバイト列**である。本物の RFC 3161 ベースの
+> ERS でも同じかは確かめていない — ただし理由が「PREMIS として読めない」である以上、
+> 本物の DER でも同じになる公算が高い。**「高い」は測定ではない。**
+
+#### 2. 現行の bag (manifest 2 本) は RODA では **rollback する**
+
+§6 が「どの受け手でも取込実績が無い」と書いていた形を、実際に投げた。予測どおり:
+
+```
+Binary already exists: …/representations/rep1/data/nemaki-sip-noers.zip
+Transaction was rolled back
+```
+
+**これで現行の出荷形について、RODA では否定的な結果が 1 件付いた。**
+Archivematica は依然として未測定である。
+
+#### 3. RODA は受領証を返さない。語彙は 2 つの enum
+
+`/api/v2/**` のコントローラを全部数えた (28 本)。**受領証に相当するものは無い。**
+接続層が組み立てるなら、材料は `JobReportController` と `AIPController` の 2 つになる。
+
+| 出所 | 値 |
+|---|---|
+| `JobReport.pluginState` | `SUCCESS` / `PARTIAL_SUCCESS` / `FAILURE` / `RUNNING` / `SKIPPED` |
+| `AIP.state` | `CREATED` / `INGEST_PROCESSING` / `UNDER_APPRAISAL` / `ACTIVE` / `DELETED` / `DESTROYED` / `DESTROY_PROCESSING` / `RESTORE_PROCESSING` |
+
+`CustodyReceipt.reportsSuccess()` が受ける語は
+`PASSED / PASS / VALID / SUCCESS / ACCEPTED / OK`。突き合わせると:
+
+- **`pluginState` を入れるなら合っている。** `SUCCESS` は通り、`PARTIAL_SUCCESS` は
+  通らない (§1.4 が「部分受入は成功として扱わない」と決めているのと一致)。
+  `FAILURE` / `SKIPPED` / `RUNNING` も通らない。
+- **`AIPState` を入れると壊れる。** 受入が完了した状態である **`ACTIVE` は
+  この語彙に無い**ので、正常に受け入れられた AIP が「成功ではない」と読まれる。
+  接続層を書くときに踏む。
+
+**署名は無い。** RODA が返せるものはどれも認証されていないので、
+RODA から組み立てた受領証は `signatureVerified = false` のままになる
+(その扱いは §9 と `limits()` が既に持っている)。
+
+> **語彙は「実機で見た」ところまで固定できた**が、**受領証そのものを組み立てて
+> 検証する経路はまだ書いていない**。`reportsSuccess()` を RODA に対して
+> 「確かめた」と言えるのは `pluginState` を入れる場合だけである。
+
 ### この試験が確かめたこと / 確かめていないこと
 
 **確かめた**: NemakiWare の E-ARK SIP は RODA 6.3.0 の `EARKSIP2ToAIPPlugin` が
@@ -609,3 +685,57 @@ note 無しの package は作れない」までである。
    その相手を用意したからである。**否定的な結果は、単独では環境の故障と
    区別できない。**
 
+
+---
+
+## 11. 未決 — 証拠記録の置き場 (2026-08-27 に測って浮いた)
+
+**現状のままだと、証拠記録を持つ deployment の SIP は RODA 6.3.0 に取り込めない。**
+§10 の追試 1 で測った。決めなければならないのはこの 1 点である。
+
+### 事実
+
+- `ErsFormat.CSIP_LOCATION` は **`metadata/preservation`** を選んでいる。理由は
+  enum の javadoc にある — 「証拠記録は保存メタデータであって、記述メタデータでも
+  documentation でもない」。
+- exporter はそこに `ers.der` を書き、METS では
+  **`<digiprovMD>` の `mdRef MDTYPE="OTHER"`** として宣言している。
+  **型は正しく OTHER と書いてある。**
+- **RODA 6.3.0 はその宣言を見ない。** `metadata/preservation/` の中身を PREMIS として
+  読みにいき、読めないと `Failed to load PREMIS` で **package ごと rollback** する。
+  1 ファイルも取り込まれない。
+- CSIP は保存メタデータを PREMIS と規定している。つまり
+  **PREMIS でないバイト列をあの位置に置いているのは我々の側の判断**であり、
+  「RODA が厳しすぎる」で済ませられる話ではない。
+
+### 選択肢
+
+| | 内容 | 代償 |
+|---|---|---|
+| **A. `metadata/other/` へ移す** | 我々の evidence JSON が既に居る場所。RODA は `other/` の中身を PREMIS として読まないので取り込める | 「証拠記録は保存メタデータ」という位置づけを下ろす。受け手が探す場所が変わる |
+| **B. 今のままにする** | 位置づけを守る | **証拠記録を持つ SIP は RODA に入らない**。P3-1 の成果物が、測った唯一の受け手に届かない |
+| **C. 出し分ける** | 受け手ごとに置き場を変える | 未測定の需要に対して形式を分岐させることになる。2 番目の受け手を測る前にやることではない |
+
+**推奨は A。** CSIP が `metadata/preservation` を PREMIS と規定している以上、
+そこに ASN.1 の DER を置くのは規約の読み違いに近い。`metadata/other/` は
+「名前の付いた分類に入らないメタデータ」のための場所で、RFC 4998 の ERS はそれである。
+加えて RODA は `metadata/other/` に置いた我々の JSON を**残した** (§10 — ただし
+`metadata/descriptive/` へ移していた)。
+
+**ただし A も測っていない。** 「`other/` に置けば RODA が ERS を保持する」ことは
+確かめていない。確かめたのは「`preservation/` に置くと package ごと落ちる」だけである。
+
+**A は 1 行である。** package 内の位置を決めているのは `writeEvidenceRecord` が書き出す
+作業ディレクトリではなく、**`sip.addPreservationMetadata(...)` / `sip.addOtherMetadata(...)`
+のどちらを呼ぶか**である (負のコントロールで確認 — 作業ディレクトリの側を
+`metadata/other` に変えても zip 内の位置は動かず、テストは緑のままだった。
+呼び分けの側を変えると発火した)。`ErsFormat.CSIP_LOCATION` は**その事実を記述している
+定数であって、位置を決めている定数ではない** — 変えるなら両方を揃えること。
+
+### 併せて分かった小さいこと — `ErsFormat.mediaType()` は使われていない
+
+enum は `application/octet-stream` を「この file が宣言される media type」として持ち、
+ASiC-E ではない理由まで書いてある。**だが METS には反映されていない。** commons-ip2 が
+ファイルを probe した結果が入り、今回のスタブでは
+`MIMETYPE="application/x-x509-ca-cert"` になっていた。`IPFile` に media type の setter が
+無いので、公開 API のままでは反映できない。**javadoc の言い方を実態に合わせた。**
