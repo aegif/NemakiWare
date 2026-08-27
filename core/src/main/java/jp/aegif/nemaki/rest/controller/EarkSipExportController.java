@@ -68,9 +68,15 @@ public class EarkSipExportController {
     /**
      * What this endpoint does NOT establish, said in the response rather than in a manual.
      *
-     * <p>The package passes the reference validator bundled with commons-ip2. That is a
-     * statement about the container, not about the record, and not about any receiving
-     * archive's own acceptance profile.
+     * <p>Whether the reference validator bundled with commons-ip2 was RUN on a given package is
+     * a per-response fact, carried in {@code X-Nemaki-Csip-Validated} — the header exists
+     * because "the validator rejected it" and "the validator could not check it" are different
+     * answers, and only the first is a defect. Saying flatly that the package "passes the
+     * reference validator" here would assert on every response a check that may not have run.
+     *
+     * <p>Even a package it accepted is a statement about the container: not about the record,
+     * not about any receiving archive's acceptance profile, and — measured against RODA 6.3.0 —
+     * not about which parts of the package a receiver that ingests it will keep.
      */
     static final String EXPORT_LIMITS =
             "This package is built to E-ARK CSIP 2.2.0. Whether the bundled reference validator "
@@ -80,8 +86,11 @@ public class EarkSipExportController {
                     + "CONTAINER is well formed. It is NOT a statement that any particular "
                     + "archive will accept it, NOT a claim of E-ARK certification, and NOT a "
                     + "statement that the record's metadata is true — the descriptive metadata "
-                    + "is what the source system reported at capture. The authenticity report "
-                    + "inside the package carries the per-section limits.";
+                    + "is what the source system reported at capture. Nor does an archive that "
+                    + "INGESTS this package necessarily KEEP every part of it: measured against "
+                    + "RODA 6.3.0 on 2026-08-27, the PREMIS in metadata/preservation was not in "
+                    + "the resulting AIP. The authenticity report inside the package carries the "
+                    + "per-section limits.";
 
     @Autowired(required = false)
     private EarkSipExporter exporter;

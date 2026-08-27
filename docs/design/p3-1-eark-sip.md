@@ -27,8 +27,12 @@
 **主張しない**:
 
 - **E-ARK 準拠とは名乗らない。** 通ったのは `commons-ip2` に同梱された検証器であって、
-  DILCIS Board の公式サービスでも、受入側 (RODA / Archivematica) の実機受入でもない。
-  版・profile・検証器の版を固定して**「この版のこの検証器を通った」とだけ言う**
+  DILCIS Board の公式サービスではない。版・profile・検証器の版を固定して
+  **「この版のこの検証器を通った」とだけ言う**。
+  **受入側の実機は RODA 6.3.0 だけ測った** (2026-08-27、
+  [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §10) — `EARKSIP2ToAIPPlugin` が
+  取り込んで AIP になった。**Archivematica は未測定**であり、1 つ通ったことは
+  「E-ARK 準拠」でも「どの archive でも通る」でもない
 - **「記録の真正性が移送先で保たれる」とは言わない。** 検証器が言うのは**容器が
   仕様に合っている**ことだけで、中身が真実かどうかについては何も言わない
 - ~~**PREMIS はまだ 1 件も書いていない。**~~ **2026-08-26 訂正**: PREMIS は
@@ -235,8 +239,14 @@ CSIP 版を落とす)。**うち「非 ASCII を潰す」は 1 度目の細工�
    ロードマップ §4 Phase 3 が要求している成果物
 2. **evidence package (`.ots` / TSA トークン / inclusion proof) の CSIP 上の置き場所**。
    正位置は仕様で要確認 (ロードマップも「着手時に要確認」と書いている)
-3. **RODA 実機受入試験** — `docker/docker-compose-roda.yml` は arm64 で動くことを
-   確認済み。ただし**受入 profile / 版の対応表は未確認**なので、通ることは前提にしない
+3. ~~**RODA 実機受入試験**~~ **実施済み** (2026-08-27、[`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §10)。
+   `EARKSIP2ToAIPPlugin` が取り込み、本文が `representations/rep1/data/` に入った。
+   **ただしこの節が作っている PREMIS は AIP に残らなかった** — RODA は
+   `metadata/preservation/` を自前の event (`wellformedness check` / `unpacking`) で
+   置き換え、PREMIS の object レコードは 0 件だった。§4-1 のクロスウォークは
+   **この受け手には届かない**。残ったのは `metadata/other/` の JSON 2 本で、
+   これは `metadata/descriptive/` へ移されていた。
+   **未**: Archivematica、他版の RODA
 
 ---
 

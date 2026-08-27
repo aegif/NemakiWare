@@ -57,10 +57,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * DILCIS-patched METS 1.12 that CSIP 2.2.0 uses makes it a complexType carrying a required
  * {@code csip:NOTETYPE}. v1 validates against the former with JAXB and fails on the attribute.
  *
- * <p>What this establishes, and what it does not: it establishes that a receiver reading our
- * package with commons-ip v1 will refuse it. It says <b>nothing</b> about whether any particular
- * archive accepts the package — that is measured against a live receiver, and only RODA 6.3.0
- * has been.
+ * <h2>What this pins, stated exactly — because the original mistake was being loose here</h2>
+ *
+ * <p>The two parsers this exercises are <b>both from the commons-ip2 on this project's own
+ * classpath</b> — currently 2.12.0. RODA 6.3.0 bundles <b>2.11.3</b>. So what is pinned is
+ * <i>the difference between the two APIs in the version we build against</i>, not RODA's ingest.
+ * Saying more than that would repeat the error this test exists to prevent: the earlier
+ * write-up ran {@code commons_ip2}'s validator, saw it pass, and reported that as RODA's answer,
+ * when RODA never calls that API for this route.
+ *
+ * <p>That RODA's own 2.11.3 behaves the same way was measured separately, once, by running its
+ * v1 parser out of the RODA fat jar's {@code BOOT-INF/lib}: same refusal, same METS line 6, same
+ * {@code csip:NOTETYPE} message. That run is recorded in
+ * {@code docs/design/p3-4-custody-transfer.md} §10.6 and is <b>not</b> re-run here — it needs
+ * jars this build does not depend on.
+ *
+ * <p>And nothing here says whether any particular archive accepts the package. That is measured
+ * against a live receiver, and only RODA 6.3.0 has been.
  *
  * <p>If this test ever fails, the world changed in a way worth knowing about: either the legacy
  * parser learned METS 1.12, or our generator stopped emitting CSIP 2.2.0. Read it, do not

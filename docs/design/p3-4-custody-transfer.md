@@ -386,9 +386,20 @@ metadata/preservation/urn:roda:premis:event:….xml   (2 件)
 schemas/{mets1_12,DILCISExtensionMETS,DILCISExtensionSIPMETS,xlink}.xsd
 ```
 
-`AIP.ingestSIPIds` は zip 名ではなく **我々の METS `OBJID`**
-(`nemaki-bedroom-2878786f…`) になっていた。**RODA は METS を読んでいる** —
-bag 経路のように payload を丸ごと 1 ファイルとして置いたのではない。
+**RODA は METS を読んでいる。** 根拠 2 つ:
+
+- **`AIP.ingestSIPIds` が zip 名ではなく `nemaki-bedroom-2878786f…`** になっていた。
+  これは我々の METS の `@OBJID` である — バイトコードで確認: commons-ip2 の
+  `EARKUtils` が `Mets.getOBJID()` を読んで `IPInterface.setIds` に渡している
+  (zip 内のフォルダ名から derive しているのではない)。
+- **`metadata/other/` に入れた JSON 2 本が `metadata/descriptive/` へ移された。**
+  展開するだけならディレクトリは動かない。**metadata の分類を解釈した**跡である。
+
+> **配置そのものは根拠にならない。** 本文が `representations/rep1/data/` に在ることは
+> METS と**矛盾しない**が、CSIP の zip は元からその構造を持っているので、
+> METS を読まずに展開しても同じ場所に出る。bag 経路との違い
+> (丸ごと 1 ファイル / 中身が展開された) も、展開したかどうかの差でしかない。
+> 上の 2 つと違って、これは METS をパースした証明にならない (外部レビュー指摘)。
 
 #### ただし、渡したものが全部そのまま残るわけではない
 
@@ -485,7 +496,9 @@ METS 1.11 の `note` は `type="xsd:string"` — **単純型**。CSIP 2.2.0 (MET
 の `note` は complexType で `csip:NOTETYPE` を持つ。だからあのエラーが出た。
 **RODA 独自の検証ではなく、commons-ip 自身の、古い profile 版の検証**である。
 
-手元で再現した (コンテナ不要、commons-ip2 2.11.3 の v1 API を直接呼ぶ):
+**手元で再現した。RODA が積んでいる 2.11.3 そのものを使った** — 具体的には
+`roda-wui-6.3.0.jar` の `BOOT-INF/lib` を展開してクラスパスにし、
+`org.roda_project.commons_ip.model.impl.eark.EARKSIP.parse` を直接呼んだ。コンテナは不要:
 
 ```
 V1 PARSER isValid = false
@@ -493,6 +506,16 @@ V1 PARSER isValid = false
     lineNumber: 6; columnNumber: 52; cvc-type.3.1.1: 要素'note'は単純型であるため …
     属性'csip:NOTETYPE'が見つかりました
 ```
+
+`csip:NOTETYPE` だけを取り除いて同じ parser に渡すと、次は
+`METS 'TYPE' attribute does not contain a valid value` になった。**二段ある。**
+
+> **この 2.11.3 の再現は 1 回きりの手元実行で、CI には入っていない** — この build が
+> 依存しない jar が要るため。CI に入れた `LegacyEarkParserRejectsOurSipTest` が
+> 固定するのは、**我々がビルドに使う commons-ip2 (現 2.12.0) の中の v1 と v2 の差**で
+> あって、RODA の取込そのものではない。**実機の結論は実機の測定として残る。**
+> ここを曖昧にすると、まさに今回の誤り —「同じ jar に入っている、測っていない側の
+> API を、測った側と同一視する」— を繰り返すことになる。
 
 **そして測定表が的を外していた。**「commons-ip2 2.11.3 (RODA が積んでいる版) の
 validator は valid」と書いたが、**RODA はこの取込経路でその API を呼ばない**。
