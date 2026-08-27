@@ -54,17 +54,21 @@ import static org.mockito.Mockito.when;
  *
  * <h2>Why this is pinned separately</h2>
  *
- * <p>The RODA acceptance test (p3-4 §10) could not say whether a receiver keeps
- * {@code metadata/preservation/ers.der}, because <b>the package submitted did not contain one</b>
- * — the tested node had no confirmed RFC 3161 anchor, so {@code EvidenceRecordService.latest}
- * returned absent and the exporter wrote nothing. That gap is only visible if something asserts
- * where the file goes when there IS one; otherwise "no ers.der in the AIP" and "no ers.der in
- * the SIP" look identical from the far end.
+ * <p>The first RODA run (p3-4 §10) submitted a package with no evidence record in it — that
+ * node had no confirmed RFC 3161 anchor, so {@code EvidenceRecordService.latest} returned absent
+ * and the exporter wrote nothing. Adding one and re-running showed why that mattered: with the
+ * record at {@code metadata/preservation/}, RODA 6.3.0 failed the <b>whole ingest</b>
+ * ({@code Failed to load PREMIS}, transaction rolled back) while the identical package without
+ * it succeeded. CSIP's {@code metadata/preservation} is where PREMIS goes; a DER blob there is
+ * our misreading, not the receiver being strict.
  *
- * <p>So this pins the near half: given a present record, the exporter puts it at
- * {@code metadata/preservation/}{@link ErsFormat#fileName()}. Whether a receiver keeps it there
- * is the far half, and it is <b>still unmeasured</b> — RODA did not keep the {@code premis.xml}
- * that sits in the same directory, which is reason to check rather than to assume either way.
+ * <p>So the lock is now two-sided: the record must be at {@link ErsFormat#CSIP_LOCATION}
+ * ({@code metadata/other}) and must <b>not</b> be in {@code metadata/preservation}. The second
+ * half is the one that matters — putting it back beside the PREMIS is a change that makes a
+ * receiver reject everything, and nothing else in the build would notice.
+ *
+ * <p>What this does NOT establish: whether a receiver <b>keeps</b> the record at
+ * {@code metadata/other}. That is measured against a live receiver, and is recorded in p3-4 §10.
  *
  * <p>The DER here is a stub. Nothing about the bytes is asserted; the subject is the path.
  */
@@ -74,29 +78,36 @@ class ErsIsInTheSipAtItsDeclaredPlaceTest {
     private static final String OBJECT = "doc-1";
 
     @Test
-    @DisplayName("a present evidence record lands at metadata/preservation/, beside the PREMIS")
+    @DisplayName("a present evidence record lands at metadata/other/, NOT beside the PREMIS")
     void theEvidenceRecordIsWhereTheFormatSaysItIs(@TempDir Path tmp) throws Exception {
         byte[] stubDer = "not a real ERS; this test is about the path".getBytes(StandardCharsets.UTF_8);
         Path sip = exportWith(tmp, new EvidenceRecordService.Built(stubDer, checkpoint(), null));
 
         Map<String, byte[]> entries = entriesOf(sip);
         String expected = ErsFormat.CSIP_LOCATION + "/" + ErsFormat.CHOSEN.fileName();
-        String found = entries.keySet().stream()
-                .filter(name -> name.endsWith(expected))
-                .findFirst()
-                .orElse(null);
-
-        assertNotNull(found,
+        assertNotNull(entries.keySet().stream()
+                        .filter(name -> name.endsWith(expected))
+                        .findFirst()
+                        .orElse(null),
                 "the evidence record is not at " + expected + ", so a receiver looking where "
                         + "ErsFormat.CSIP_LOCATION says to look will not find it: "
                         + entries.keySet());
-        // And the PREMIS is beside it — the two share a directory, which is why the RODA result
-        // for one is a reason to check the other.
+
+        // The half that costs a whole ingest if it regresses. CSIP's metadata/preservation is
+        // the PREMIS directory; RODA 6.3.0 parses everything in it as PREMIS and rolls the
+        // entire transaction back on a DER blob. Measured 2026-08-27 with a control.
         assertTrue(entries.keySet().stream()
-                        .anyMatch(name -> name.endsWith(ErsFormat.CSIP_LOCATION + "/premis.xml")),
-                "the PREMIS is no longer in the same directory as the evidence record, so the "
-                        + "recorded reasoning in p3-4 §10 about that directory no longer applies: "
-                        + entries.keySet());
+                        .noneMatch(name -> name.contains("metadata/preservation/")
+                                && name.endsWith(ErsFormat.CHOSEN.fileName())),
+                "the evidence record is back in metadata/preservation, which is where CSIP puts "
+                        + "PREMIS. A receiver that parses that directory as PREMIS rejects the "
+                        + "WHOLE package -- not just this file: " + entries.keySet());
+        // The PREMIS is still there, and still alone: this is what makes the line above a claim
+        // about the record's placement rather than about the directory having vanished.
+        assertTrue(entries.keySet().stream()
+                        .anyMatch(name -> name.endsWith("metadata/preservation/premis.xml")),
+                "there is no PREMIS in metadata/preservation any more, so the assertion above "
+                        + "passes for the wrong reason: " + entries.keySet());
     }
 
     @Test

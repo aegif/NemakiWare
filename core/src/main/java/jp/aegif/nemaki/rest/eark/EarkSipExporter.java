@@ -257,9 +257,14 @@ public class EarkSipExporter {
                     new IPFile(writePremis(workDir, repositoryId, objectId, report, packagedAt)),
                     new MetadataType(MetadataType.MetadataTypeEnum.PREMIS)));
 
-            // The evidence record, if this deployment has one. It goes in preservation
-            // metadata because that is where ErsFormat.CSIP_LOCATION says an evidence record
-            // belongs, decided once so the exporter does not decide it again.
+            // The evidence record, if this deployment has one. It goes in OTHER metadata,
+            // where ErsFormat.CSIP_LOCATION says an evidence record belongs -- and the call
+            // below is what actually decides that, so the two have to move together (a control
+            // that changed only the working directory left the package unchanged).
+            //
+            // NOT metadata/preservation. That is CSIP's place for PREMIS, and a receiver that
+            // takes it at its word parses everything there as PREMIS: RODA 6.3.0 fails the
+            // WHOLE ingest on a DER blob sitting in it. Measured 2026-08-27, with a control.
             //
             // Its data object is a CHECKPOINT, not this document — a receiver must not read a
             // file called ers.der beside a record as a timestamp on the record. The evidence
@@ -269,8 +274,9 @@ public class EarkSipExporter {
                             ? null
                             : evidenceRecordService.latest(repositoryId);
             if (evidenceRecord != null && evidenceRecord.present()) {
-                sip.addPreservationMetadata(new IPMetadata(
-                        new IPFile(writeEvidenceRecord(workDir, evidenceRecord.der()))));
+                sip.addOtherMetadata(new IPMetadata(
+                        new IPFile(writeEvidenceRecord(workDir, evidenceRecord.der())),
+                        new MetadataType(MetadataType.MetadataTypeEnum.OTHER)));
             }
 
             // The evidence package: the inclusion proof that ties THIS record to the chain,
@@ -787,9 +793,12 @@ public class EarkSipExporter {
     /**
      * The evidence record, at the place {@link ErsFormat#CSIP_LOCATION} names.
      *
-     * <p>Preservation metadata, beside PREMIS — an evidence record is preservation metadata,
-     * not documentation and not descriptive metadata. The decision is on the enum so that this
-     * method does not make it a second time and disagree.
+     * <p>OTHER metadata, not preservation metadata: CSIP's {@code metadata/preservation} is
+     * where PREMIS goes, and an ASN.1 DER blob is not PREMIS. The reasoning is on the enum so
+     * this method does not make the decision a second time and disagree.
+     *
+     * <p>Note that this method only chooses the working directory. What puts the file in the
+     * package is the {@code addOtherMetadata} call in {@code export}; both have to agree.
      */
     private Path writeEvidenceRecord(Path workDir, byte[] der) throws IOException {
         Path dir = Files.createDirectories(

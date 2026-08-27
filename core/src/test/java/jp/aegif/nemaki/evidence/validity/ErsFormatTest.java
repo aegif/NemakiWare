@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -115,11 +116,23 @@ class ErsFormatTest {
     }
 
     @Test
-    @DisplayName("the placement in a CSIP package is decided in one place")
+    @DisplayName("the placement in a CSIP package is decided in one place, and it is not PREMIS's")
     void thePlacementIsDecidedOnce() {
         // Otherwise the exporter decides it again, differently, on the day it is implemented.
-        assertEquals("metadata/preservation", ErsFormat.CSIP_LOCATION,
-                "an evidence record is preservation metadata; descriptive metadata and "
-                        + "documentation are different sections of a CSIP package");
+        //
+        // This said metadata/preservation until 2026-08-27, with the reasoning "an evidence
+        // record is preservation metadata". That is an OAIS category; CSIP's
+        // metadata/preservation is not that category, it is where CSIP puts PREMIS. An RFC 4998
+        // record is an ASN.1 DER blob, so it does not belong there -- and a receiver that takes
+        // the directory at its word (RODA 6.3.0 parses everything in it as PREMIS) fails the
+        // WHOLE ingest on it. Measured with a control: the same package with the record at
+        // metadata/other ingests and the record survives.
+        assertEquals("metadata/other", ErsFormat.CSIP_LOCATION,
+                "the evidence record's declared place changed. If it went back to "
+                        + "metadata/preservation, note that CSIP puts PREMIS there and at least "
+                        + "one receiver rejects the entire package over a DER blob in it "
+                        + "(docs/design/p3-4-custody-transfer.md §11)");
+        assertNotEquals("metadata/preservation", ErsFormat.CSIP_LOCATION,
+                "an ASN.1 evidence record is back in CSIP's PREMIS directory");
     }
 }

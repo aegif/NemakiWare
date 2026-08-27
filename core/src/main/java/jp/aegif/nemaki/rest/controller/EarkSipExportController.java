@@ -87,9 +87,11 @@ public class EarkSipExportController {
                     + "archive will accept it, NOT a claim of E-ARK certification, and NOT a "
                     + "statement that the record's metadata is true — the descriptive metadata "
                     + "is what the source system reported at capture. Nor does an archive that "
-                    + "INGESTS this package necessarily KEEP every part of it: measured against "
-                    + "RODA 6.3.0 on 2026-08-27, the PREMIS in metadata/preservation was not in "
-                    + "the resulting AIP. The authenticity report inside the package carries the "
+                    + "INGESTS this package necessarily KEEP every part of it WHERE IT WAS PUT: "
+                    + "measured against RODA 6.3.0 on 2026-08-27, the PREMIS in "
+                    + "metadata/preservation was not in the resulting AIP at all, and everything "
+                    + "this package puts in metadata/other arrived under metadata/descriptive "
+                    + "instead. The authenticity report inside the package carries the "
                     + "per-section limits.";
 
     @Autowired(required = false)

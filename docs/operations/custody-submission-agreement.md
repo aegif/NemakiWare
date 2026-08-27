@@ -71,7 +71,9 @@ submission agreement として明文化」と書いているのはこの文書�
 - 本製品は `verificationOutcome` を二値でしか読まない。`PARTIAL` は
   **成功として扱わない**ので、部分受入を成功と呼ぶ合意があるなら、
   受け手が返す語をこちらの語彙に合わせる必要がある
-- **`reportsSuccess()` の語彙は実機で確認していない。** 受入試験で固定すること
+- **RODA の `PARTIAL_SUCCESS` はここに落ちる** (2026-08-27 実測)。`JobReport.pluginState` を
+  `verificationOutcome` に入れる限り、この規則と受け手の語彙は一致する。
+  **Archivematica の語彙は未採取** (下記 3)
 
 ### 1.5 先方の AIP 再生成
 
@@ -123,10 +125,10 @@ submission agreement として明文化」と書いているのはこの文書�
 | | 結果 |
 |---|---|
 | **E-ARK SIP を直接** (`EARKSIP2ToAIPPlugin`) | **AIP object が作られる**。本文が `representations/rep1/data/` に入り、METS の `OBJID` が AIP に載る |
-| **bag** (`BagitToAIPPlugin`) | manifest **1 本**の bag なら AIP object が作られた。**現行の出荷形 (2 本) は rollback する** — RODA には bag を送らず SIP を送ること。なお bag 経路では SIP は payload の中の 1 ファイルのままで、METS は読まれない |
+| **bag** (`BagitToAIPPlugin`) | manifest **1 本**の bag なら AIP object が作られた。**現行の出荷形 (2 本) は rollback する** (2026-08-27 実測) — RODA には bag を送らず SIP を送ること。なお bag 経路では SIP は payload の中の 1 ファイルのままで、METS は読まれない |
 | 旧版 `EARKSIPToAIPPlugin` (E-ARK SIP 1.x) | 同じ package を**拒否**する。**プラグインの指定を間違えると「非対応」に見える** |
 | 我々の `metadata/preservation/premis.xml` | **生成された AIP の PREMIS metadata に無い**。在るのは RODA 自身の event 2 件だけ。値が非 PREMIS のフィールドへ写されたかは未調査 |
-| 我々の `metadata/preservation/ers.der` (タイムスタンプ証跡) | **未測定**。投入した package に入っていなかった。同じディレクトリの `premis.xml` が残らなかった以上、要確認 |
+| 我々の `ers.der` (タイムスタンプ証跡) | **`metadata/other` なら取り込まれ、残る** (ただし AIP では `metadata/descriptive/ers.der` へ移されている)。**`metadata/preservation` に置くと package ごと rollback する** — RODA がそのディレクトリを PREMIS として読むため。本製品は 2026-08-27 に `metadata/other` へ移した |
 | AIP の `state` | `INGEST_PROCESSING`。受入承認された状態ではない |
 
 > **先方と話すときの実務**: 「E-ARK SIP を受けられますか」だけでなく
@@ -135,9 +137,17 @@ submission agreement として明文化」と書いているのはこの文書�
 
 **まだやること**:
 
-1. 受け手が実際に返す `verificationOutcome` の語を採取し、
-   `CustodyReceipt.reportsSuccess()` の語彙を固定する
-   — **RODA が受領証を返す経路そのものが未調査**なので、まだ採れていない
+1. ~~受け手が実際に返す `verificationOutcome` の語を採取する~~ **RODA については採れた**
+   (2026-08-27)。**RODA は受領証を返さない** — v2 API の 28 本にそれに相当するリソースが無い。
+   接続層が組み立てるなら材料は 2 つで、**どちらを選ぶかで結果が変わる**:
+
+   | 出所 | 値 | `reportsSuccess()` との相性 |
+   |---|---|---|
+   | `JobReport.pluginState` | `SUCCESS` / `PARTIAL_SUCCESS` / `FAILURE` / `RUNNING` / `SKIPPED` | **合う**。`SUCCESS` は通り、`PARTIAL_SUCCESS` は通らない (1.4 と一致) |
+   | `AIP.state` | `CREATED` / `INGEST_PROCESSING` / `UNDER_APPRAISAL` / `ACTIVE` / … | **壊れる**。受入完了の `ACTIVE` が語彙に無い |
+
+   **Archivematica の語彙は未採取。** また、受領証を実際に組み立てて検証する経路は未実装で、
+   署名も無い (RODA が返せるものはどれも認証されていない)
 2. Archivematica で同じことを測る (`zipped bag` transfer)。**出荷形の manifest 2 本が
    読めるかどうかが最初の確認事項**である — RODA が読めなかった理由は commons-ip v1 の
    `BagitSIP.parse` 固有で、BagIt 検証器で読む Archivematica には当てはまらない

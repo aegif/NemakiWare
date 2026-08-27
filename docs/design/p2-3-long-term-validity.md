@@ -198,9 +198,22 @@ P3-1 が CSIP 2.2.0 を選んだので答えられるようになった。
 
 ### 置き場所
 
-`metadata/preservation` — PREMIS の隣。evidence record は**保存メタデータ**であって
-記述メタデータでも documentation でもない。1 か所で決めておかないと、
-実装する日にエクスポータがもう一度、別の答えで決める。
+`metadata/other` (**2026-08-27 変更**)。
+
+当初は `metadata/preservation` — 「evidence record は保存メタデータであって記述メタデータでも
+documentation でもない」— としていた。**これは OAIS の分類を CSIP のディレクトリに載せた
+読み違いだった。** CSIP の `metadata/preservation` は「保存メタデータ一般」の場所ではなく
+**PREMIS の場所**で、RFC 4998 の証拠記録は ASN.1 の DER であって PREMIS ではない。
+
+実測で浮いた: そこに置いた SIP を RODA 6.3.0 に投げると、ディレクトリの中身を全部
+PREMIS として読もうとして `Failed to load PREMIS` になり、**package ごと rollback** する。
+`metadata/other` へ移すと取り込まれ、記録も残った (RODA 側で `metadata/descriptive/` へ
+移されて)。経緯と対照は
+[`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §10 追試 1 / §11。
+
+**1 か所で決めておく方針は変えていない**が、`ErsFormat.CSIP_LOCATION` は位置を
+*記述*しているだけで、*決めて*いるのは exporter が `addPreservationMetadata` と
+`addOtherMetadata` のどちらを呼ぶかである。**変えるときは両方**。
 
 ### 何も生成していない
 
@@ -384,8 +397,10 @@ checkpoint 行自体が自己検証しないときも組み立てない
 
 ### SIP への同梱
 
-`metadata/preservation/ers.der` — `ErsFormat.CSIP_LOCATION` が宣言している位置。
-PREMIS の隣で、evidence record は保存メタデータだからである。
+`metadata/other/ers.der` — `ErsFormat.CSIP_LOCATION` が宣言している位置。
+**PREMIS の隣ではない**: CSIP の `metadata/preservation` は PREMIS の場所で、
+そこに DER を置くと少なくとも 1 つの受け手 (RODA 6.3.0) が package ごと拒否する
+(上記「置き場所」と [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §11)。
 
 **受け手が誤読しないように**: `ers.der` は記録の隣に在るが、その data object は
 **checkpoint** であって隣の文書ではない。evidence package の `evidenceRecord` 節と

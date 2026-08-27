@@ -106,11 +106,30 @@ public record CustodyReceipt(
      * build does not recognise, is not evidence that things went well — and the state it would
      * unlock is the one before custody passes.
      *
-     * <p><b>The spellings below have not been checked against a real receiving system.</b> They
-     * are what this product decided to accept, not what RODA or Archivematica were observed to
-     * send. Being wrong about them costs a refusal of a genuine receipt, not an acceptance of a
-     * bad one, which is the direction to be wrong in — but it does mean this list has to be
-     * pinned during acceptance testing before the feature is usable.
+     * <h3>What a real receiver actually says (RODA 6.3.0, measured 2026-08-27)</h3>
+     *
+     * <p><b>RODA returns no receipt at all</b> — there is no such resource among its 28 v2 API
+     * controllers. A connector has to assemble one, and the two fields it would assemble from
+     * carry these vocabularies:
+     *
+     * <ul>
+     *   <li>{@code JobReport.pluginState}: {@code SUCCESS}, {@code PARTIAL_SUCCESS},
+     *       {@code FAILURE}, {@code RUNNING}, {@code SKIPPED}</li>
+     *   <li>{@code AIP.state}: {@code CREATED}, {@code INGEST_PROCESSING},
+     *       {@code UNDER_APPRAISAL}, {@code ACTIVE}, {@code DELETED}, …</li>
+     * </ul>
+     *
+     * <p><b>Put {@code pluginState} in {@code verificationOutcome} and this list is right:</b>
+     * {@code SUCCESS} passes, and {@code PARTIAL_SUCCESS} does not — which is what §1.4 of the
+     * submission agreement decided independently.
+     *
+     * <p><b>Put {@code AIP.state} in it and this list is wrong:</b> {@code ACTIVE} — an AIP that
+     * completed appraisal — is not in the vocabulary, so a fully accepted deposit would read as
+     * not-success. Whoever writes the connector has to choose the first field.
+     *
+     * <p>Archivematica's vocabulary is still unmeasured, and no receipt has yet been assembled
+     * and verified end to end. Being wrong here costs a refusal of a genuine receipt, not an
+     * acceptance of a bad one, which is the direction to be wrong in.
      */
     public boolean reportsSuccess() {
         if (verificationOutcome == null || verificationOutcome.isBlank()) {

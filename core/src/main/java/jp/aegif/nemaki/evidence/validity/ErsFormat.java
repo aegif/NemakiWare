@@ -82,11 +82,31 @@ public enum ErsFormat {
     /**
      * Where an evidence record goes in a CSIP package.
      *
-     * <p>{@code metadata/preservation}, beside PREMIS — an evidence record is preservation
-     * metadata, not descriptive metadata and not documentation. Stated here rather than left to
-     * whoever writes the exporter, so the answer does not get decided twice.
+     * <p>{@code metadata/other}. <b>This was {@code metadata/preservation} until 2026-08-27, and
+     * that was a misreading.</b> "An evidence record is preservation metadata" is an OAIS
+     * category; CSIP's {@code metadata/preservation} is not that category, it is <b>the place
+     * CSIP puts PREMIS</b>. An RFC 4998 evidence record is an ASN.1 DER blob, not PREMIS, so it
+     * does not belong there. {@code metadata/other} is CSIP's place for metadata that does not
+     * fit a named category, which is exactly what this is.
+     *
+     * <p>What made the misreading visible: RODA 6.3.0 parses <i>everything</i> in
+     * {@code metadata/preservation} as PREMIS and fails the WHOLE ingest when it cannot —
+     * {@code Failed to load PREMIS}, transaction rolled back, not one file kept. Measured with a
+     * control (the same package with the record removed ingests). So a deployment with a
+     * confirmed RFC 3161 anchor could not hand a SIP to the one receiver this project has
+     * measured.
+     *
+     * <p><b>The move is not an accommodation of that receiver.</b> Elsewhere in this increment
+     * (the BagIt layer) the opposite call was made deliberately: a parser defect in a receiver
+     * we do not use must not pick our format. The difference is that here the placement was
+     * wrong on its own terms, and RODA's behaviour only made it visible.
+     *
+     * <p><b>Changing this constant is not enough.</b> It DESCRIBES the location; what DECIDES it
+     * is which commons-ip2 call the exporter makes — {@code addPreservationMetadata} versus
+     * {@code addOtherMetadata}. A negative control that changed only the working directory left
+     * the package unchanged. Change both, or neither moves.
      */
-    public static final String CSIP_LOCATION = "metadata/preservation";
+    public static final String CSIP_LOCATION = "metadata/other";
 
     private final String specification;
     private final String mediaType;
@@ -141,6 +161,8 @@ public enum ErsFormat {
                     + "is not a claim of conformance to everything the standard covers: the "
                     + "reduced hash tree carries one node, the timestamp authority's signature "
                     + "and certificate are not verified here, and nothing generates a record "
-                    + "automatically or puts one into a package. See ErsRecord.LIMITS, which "
-                    + "travels with every record.";
+                    + "automatically. A record IS put into an E-ARK SIP when this node has one, "
+                    + "at metadata/other; whether a receiving archive keeps it there is a "
+                    + "separate question this product does not answer. See ErsRecord.LIMITS, "
+                    + "which travels with every record.";
 }
