@@ -259,16 +259,17 @@ public class EarkSipExporter {
 
             // The evidence record, if this deployment has one. It goes in OTHER metadata,
             // where ErsFormat.CSIP_LOCATION says an evidence record belongs -- and the call
-            // below is what actually decides that, so the two have to move together (a control
-            // that changed only the working directory left the package unchanged).
+            // below is what actually decides that. The constant only describes the outcome:
+            // editing it alone leaves the package byte-identical, so the two must move together.
             //
             // NOT addPreservationMetadata. That call declares the file in <amdSec><digiprovMD>,
-            // and CSIP32 makes digiprovMD the PREMIS slot ("it is mandatory to include one
-            // <digiprovMD> element for each piece of PREMIS metadata"). A DER blob declared
-            // there is a defect on our side: RODA 6.3.0 reads digiprovMD into
-            // SIP.getPreservationMetadata() and hands each entry to
-            // PremisV3Utils.binaryToGenericPremis, which fails the WHOLE ingest. Measured
-            // 2026-08-27 with controls. The directory follows the call; it is not the cause.
+            // which is the slot CSIP32 names for PREMIS ("For recording information about
+            // preservation the standard PREMIS is used..."). CSIP32 is SHOULD-level, so a DER
+            // there is a departure from its intent rather than a requirement violation -- but
+            // it is still ours: RODA 6.3.0 reads digiprovMD into SIP.getPreservationMetadata()
+            // and hands each entry to PremisV3Utils.binaryToGenericPremis, which fails the
+            // WHOLE ingest. Measured 2026-08-27 with controls. The directory follows the call;
+            // it is not the cause.
             //
             // Its data object is a CHECKPOINT, not this document — a receiver must not read a
             // file called ers.der beside a record as a timestamp on the record. The evidence

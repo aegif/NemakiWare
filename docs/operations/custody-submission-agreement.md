@@ -128,7 +128,7 @@ submission agreement として明文化」と書いているのはこの文書�
 | **bag** (`BagitToAIPPlugin`) | manifest **1 本**の bag なら AIP object が作られた。**現行の出荷形 (2 本) は rollback する** (2026-08-27 実測) — RODA には bag を送らず SIP を送ること。なお bag 経路では SIP は payload の中の 1 ファイルのままで、METS は読まれない |
 | 旧版 `EARKSIPToAIPPlugin` (E-ARK SIP 1.x) | 同じ package を**拒否**する。**プラグインの指定を間違えると「非対応」に見える** |
 | 我々の `metadata/preservation/premis.xml` | **生成された AIP の PREMIS metadata に無い**。在るのは RODA 自身の event 2 件だけ。値が非 PREMIS のフィールドへ写されたかは未調査 |
-| 我々の `ers.der` (タイムスタンプ証跡) | **`metadata/other` なら取り込まれ、残る** (ただし AIP では `metadata/descriptive/ers.der` へ移されている)。**`metadata/preservation` に置くと package ごと rollback する** — RODA がそのディレクトリを PREMIS として読むため。本製品は 2026-08-27 に `metadata/other` へ移した。**測ったのはスタブの DER で、本物の ERS では未測定** |
+| 我々の `ers.der` (タイムスタンプ証跡) | **`metadata/other` なら取り込まれ、残る** (ただし AIP では `metadata/descriptive/ers.der` へ移されている)。**`addPreservationMetadata` で出すと package ごと rollback する** — その呼び出しは METS の `<digiprovMD>` に宣言を書き、RODA はその枠の中身を PREMIS として読むためである (フォルダ名ではない)。本製品は 2026-08-27 に `addOtherMetadata` へ変えた。**測ったのはスタブの DER で、本物の ERS では未測定** |
 | AIP の `state` | `INGEST_PROCESSING`。受入承認された状態ではない |
 
 > **先方と話すときの実務**: 「E-ARK SIP を受けられますか」だけでなく
@@ -146,11 +146,15 @@ submission agreement として明文化」と書いているのはこの文書�
    | `Report.pluginState` | `SUCCESS` / `PARTIAL_SUCCESS` / `FAILURE` / `RUNNING` / `SKIPPED` | **合う**。`SUCCESS` は通り、`PARTIAL_SUCCESS` は通らない (1.4 と一致) |
    | 同じ `Report` の `outcomeObjectState` | `CREATED` / `INGEST_PROCESSING` / `UNDER_APPRAISAL` / `ACTIVE` / … | **壊れる**。受入完了の `ACTIVE` が語彙に無い |
 
-   **さらに深い問題**: RODA の `TransferredResource` には **checksum のフィールドが無く**、
-   `Report` が投入物に紐づくのは名前 (`sourceObjectId` / `sourceObjectOriginalName`) である。
-   つまり **`sipDigest` を先方から得られない** — こちら側の記録から埋めるしかなく、
-   そうすると照合が自分の値を自分と比べる形になり、§0 の「受領証の最低条件」を
-   実質満たせない。**この受け手からは検証可能な受領証を作れない**、というのが現状である。
+   **接続層を書くときの罠**: RODA の `TransferredResource` には **checksum のフィールドが
+   無く**、`Report` が投入物に紐づくのは名前 (`sourceObjectId` / `sourceObjectOriginalName`)
+   である。応答フィールドだけで組み立てると `sipDigest` をこちら側の記録から埋めるしかなく、
+   照合が自分の値を自分と比べる形になって §0 の「受領証の最低条件」が空回りする。
+
+   **ただし逃げ道は在る**: `GET /api/v2/transfers/{uuid}/download` と AIP 側の
+   `download/submission` が**先方の持っているバイト列**を返す。接続層はそれを取って
+   自分でハッシュすること。**未検証**: そのバイト列が送ったものと同一か、
+   受領証を作る時点まで transferred resource が残っているか。
 
    **Archivematica の語彙は未採取。** また、受領証を実際に組み立てて検証する経路は未実装で、
    署名も無い (RODA が返せるものはどれも認証されていない)

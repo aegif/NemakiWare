@@ -152,6 +152,55 @@ class ErsIsInTheSipAtItsDeclaredPlaceTest {
     }
 
     @Test
+    @DisplayName("the read-back oracle really does tell the two declarations apart")
+    void theOracleDiscriminates(@TempDir Path tmp) throws Exception {
+        // The assertion above cannot be isolated by breaking the product: commons-ip2's
+        // addPreservationMetadata moves the FILE as well as the declaration, so any sabotage
+        // trips the path assertion first. That leaves an open question the path assertions
+        // cannot answer -- does reading back through getPreservationMetadata() / getOtherMetadata()
+        // actually DISTINGUISH the two calls, or would it say "other" either way?
+        //
+        // So ask the library directly, with no product code involved. If this ever fails, the
+        // assertion above has stopped meaning anything and would pass a broken package.
+        assertTrue(readBackOtherNames(tmp.resolve("viaOther"), true)
+                        .contains(ErsFormat.CHOSEN.fileName()),
+                "a record added with addOtherMetadata does not read back as OTHER metadata");
+        assertTrue(readBackOtherNames(tmp.resolve("viaPreservation"), false)
+                        .isEmpty(),
+                "a record added with addPreservationMetadata ALSO reads back as OTHER metadata, "
+                        + "so the assertion in the test above cannot tell the two apart and is "
+                        + "not guarding anything");
+    }
+
+    /** Builds a bare SIP with the record added one way or the other, and reads OTHER back. */
+    private static List<String> readBackOtherNames(Path work, boolean asOther) throws Exception {
+        Path record = Files.write(Files.createDirectories(work.resolve("in"))
+                .resolve(ErsFormat.CHOSEN.fileName()), new byte[] {1, 2, 3});
+        org.roda_project.commons_ip2.model.SIP sip =
+                new org.roda_project.commons_ip2.model.impl.eark.EARKSIP("oracle-probe",
+                        org.roda_project.commons_ip2.model.IPContentType.getMIXED(),
+                        org.roda_project.commons_ip2.model.IPContentInformationType.getMIXED(),
+                        EarkSipExporter.CSIP_VERSION);
+        org.roda_project.commons_ip2.model.IPMetadata metadata =
+                new org.roda_project.commons_ip2.model.IPMetadata(
+                        new org.roda_project.commons_ip2.model.IPFile(record),
+                        new org.roda_project.commons_ip2.model.MetadataType(
+                                org.roda_project.commons_ip2.model.MetadataType
+                                        .MetadataTypeEnum.OTHER));
+        if (asOther) {
+            sip.addOtherMetadata(metadata);
+        } else {
+            sip.addPreservationMetadata(metadata);
+        }
+        Path built = sip.build(new org.roda_project.commons_ip2.model.impl.eark.out.writers
+                .factory.ZipWriteStrategyFactory()
+                .create(Files.createDirectories(work.resolve("out"))), false);
+        return fileNames(new org.roda_project.commons_ip2.model.impl.eark.EARKSIP()
+                .parse(built, Files.createDirectories(work.resolve("read")))
+                .getOtherMetadata()).toList();
+    }
+
+    @Test
     @DisplayName("no evidence record means no file — not an empty one")
     void anAbsentRecordWritesNothing(@TempDir Path tmp) throws Exception {
         // This is the shape the RODA test actually submitted. An empty or placeholder ers.der

@@ -120,22 +120,25 @@ class ErsFormatTest {
         // Otherwise the exporter decides it again, differently, on the day it is implemented.
         //
         // This said metadata/preservation until 2026-08-27, with the reasoning "an evidence
-        // record is preservation metadata". That is an OAIS category; CSIP's
-        // metadata/preservation is not that category, it is where CSIP puts PREMIS. An RFC 4998
-        // record is an ASN.1 DER blob, so it does not belong there -- and a receiver that takes
-        // the directory at its word (RODA 6.3.0 parses everything in it as PREMIS) fails the
-        // WHOLE ingest on it. Measured with a control: the same package with the record at
-        // metadata/other ingests and the record survives.
+        // record is preservation metadata" -- an OAIS category mapped onto a CSIP directory.
+        //
+        // The FOLDER was never the problem. What decides the folder is the commons-ip2 call, and
+        // addPreservationMetadata declares the file in <amdSec><digiprovMD> -- the slot CSIP32
+        // names for PREMIS. RODA 6.3.0 reads that slot into SIP.getPreservationMetadata() and
+        // pushes every entry through PremisV3Utils.binaryToGenericPremis, so a DER there fails
+        // the WHOLE ingest. Measured with controls; the same record via addOtherMetadata ingests
+        // and survives. Note CSIP32's level is SHOULD, so this is a departure from its intent,
+        // not a requirement violation -- see ErsFormat's javadoc.
+        //
+        // This constant only DESCRIBES the outcome. The assertion that guards the cause is in
+        // ErsIsInTheSipAtItsDeclaredPlaceTest, over the parsed SIP's metadata lists.
         assertEquals("metadata/other", ErsFormat.CSIP_LOCATION,
                 "the evidence record's declared place changed. If it went back to "
-                        + "metadata/preservation, note that CSIP puts PREMIS there and at least "
-                        + "one receiver rejects the entire package over a DER blob in it "
-                        + "(docs/design/p3-4-custody-transfer.md §11)");
+                        + "metadata/preservation, check the add*Metadata call too: declaring a "
+                        + "DER blob in <digiprovMD> makes at least one receiver reject the "
+                        + "ENTIRE package (docs/design/p3-4-custody-transfer.md §11)");
         // No assertNotEquals("metadata/preservation", ...) here: the assertEquals above already
         // implies it, so it could never fail on its own. An earlier version of this test added
-        // one and the commit message called it extra discrimination -- it was not. The
-        // assertion that actually catches the regression that matters is in
-        // ErsIsInTheSipAtItsDeclaredPlaceTest, over the METS section, because a receiver acts
-        // on <digiprovMD> rather than on the folder name (CSIP32).
+        // one and the commit message called it extra discrimination -- it was not.
     }
 }

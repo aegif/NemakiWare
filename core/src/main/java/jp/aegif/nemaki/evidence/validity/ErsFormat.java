@@ -88,34 +88,50 @@ public enum ErsFormat {
      * <p>What DECIDES both the directory and the METS is which commons-ip2 call the exporter
      * makes. {@code addPreservationMetadata} declares the file in
      * {@code <amdSec><digiprovMD><mdRef>}; {@code addOtherMetadata} declares it in
-     * {@code <dmdSec>}. <b>CSIP 2.2.0 requirement CSIP32</b> — verbatim in commons-ip2's
-     * {@code ConstantsCSIPspec} — says "the standard PREMIS is used. It is mandatory to include
+     * {@code <dmdSec>}. CSIP 2.2.0's <b>CSIP32</b> — in commons-ip2's
+     * {@code ConstantsCSIPspec}, at {@code mets/amdSec/digiprovMD} — reads: "<i>For recording
+     * information about preservation</i> the standard PREMIS is used. It is mandatory to include
      * one {@code <digiprovMD>} element for each piece of PREMIS metadata." An RFC 4998 evidence
-     * record is an ASN.1 DER blob, so declaring it there was a defect on this product's side.
+     * record is an ASN.1 DER blob, so putting it in that slot was unwise on this product's side.
      *
-     * <p><b>The folder was never the violation.</b> CSIPSTR6 is only SHOULD ("preservation
-     * metadata … SHOULD be included in sub-folder preservation"), and CSIPSTR8 names
-     * {@code other} as an <i>example</i> at MAY level. An earlier version of this javadoc said
-     * CSIP makes {@code metadata/preservation} the PREMIS-only place; that was an unverified
-     * reading, and the requirement text does not support it.
+     * <p><b>State that at its real strength.</b> CSIP32's level is <b>SHOULD</b>, cardinality
+     * {@code 0..n} — the same level as CSIPSTR6, the folder rule. And its second sentence runs
+     * one way only (PREMIS ⇒ a {@code digiprovMD}); it does not say every {@code digiprovMD}
+     * must be PREMIS. So <b>this is not a requirement violation</b>, and an earlier version of
+     * this javadoc that said our shape "broke CSIP32" was overstating it. What holds is that we
+     * put a non-PREMIS object in the slot CSIP names for PREMIS.
+     *
+     * <p><b>The folder was never the issue either.</b> CSIPSTR6 is SHOULD and CSIPSTR8 names
+     * {@code other} as an <i>example</i> at MAY. An earlier version said CSIP makes
+     * {@code metadata/preservation} the PREMIS-only place; the requirement text does not.
+     *
+     * <p><b>Why {@code other} and not another section:</b> commons-ip2 couples section to
+     * folder, so escaping {@code digiprovMD} means choosing among {@code addDescriptiveMetadata}
+     * / {@code addOtherMetadata} / {@code addTechnical|Source|RightsMetadata}. {@code other} is
+     * the only one of those whose category label does not assert something false about an
+     * evidence record.
      *
      * <p>How it surfaced: RODA 6.3.0 reads {@code amdSec/digiprovMD} into
      * {@code SIP.getPreservationMetadata()} and hands each entry to
      * {@code PremisV3Utils.binaryToGenericPremis} — {@code Failed to load PREMIS}, transaction
      * rolled back, not one file kept. Measured with controls: the same package without the
-     * record ingests, and the same package with the record in {@code dmdSec} ingests and keeps
-     * it. RODA was behaving to spec.
+     * record ingests, and the same package declared through {@code addOtherMetadata} ingests and
+     * keeps it. That reading is <b>consistent with CSIP32's intent, not required by it</b> —
+     * nothing obliges a consumer to ignore {@code MDTYPE} or to fail the whole transaction.
      *
      * <p><b>Contrast with the BagIt decision in the same increment,</b> where a receiver's
      * parser defect was deliberately NOT allowed to pick this product's format. The directions
-     * are opposite: there our shape was what RFC 8493 §2.1.3 explicitly allows and the receiver
-     * was defective; here our shape broke CSIP32 and the receiver was correct. The alternative's
-     * cost differs too — one payload manifest would have cost the SHA-256 its verified
-     * path→digest binding, while moving to {@code dmdSec} costs nothing.
+     * differ: there our shape was what RFC 8493 §2.1.3 <i>explicitly allows</i> and the receiver
+     * contradicted it; here our shape departed from a SHOULD and the receiver's reading is a
+     * defensible one. The alternative's cost differs too — one payload manifest would have cost
+     * the SHA-256 its verified path→digest binding, while {@code addOtherMetadata} costs nothing
+     * at the package level (though RODA then files the record under {@code metadata/descriptive},
+     * so the "sitting with the preservation evidence" reading is lost).
      *
-     * <p><b>Changing this constant is not enough,</b> and on its own it changes nothing: it
-     * DESCRIBES where the file lands. A negative control that changed only the working directory
-     * left the package identical. Change the {@code add*Metadata} call, and keep this in step.
+     * <p><b>Changing this constant is not enough</b> — on its own it changes nothing, because it
+     * DESCRIBES where the file lands rather than deciding it. (An attempted control that edited
+     * only the working directory left the package byte-identical; that is a tautology, not a
+     * measured control.) Change the {@code add*Metadata} call, and keep this in step.
      */
     public static final String CSIP_LOCATION = "metadata/other";
 

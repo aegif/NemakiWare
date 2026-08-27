@@ -176,7 +176,7 @@ constructor は緩いままにした — 欠けた受領証も「何かが届い
 | **永続化** (transfer の store) | **実装済み** (2026-08-26、§7)。evidence-ledger DB に同居。読み出しは `restore` を通り、履歴が合法な歩みでなければ拒否される |
 | **fail-closed を強制する呼び出し元** | **実装済み** (2026-08-26、§7)。`CustodyTransferService.passCustody` が先に記録し、記録が効いたときだけ進む。`advance` は `CUSTODY_TRANSFERRED` を明示的に拒否する (扉は 1 つ) |
 | **スレッド安全性** | **未**。`state` / `receipt` / `history` は非同期化で、`advance` は check-then-act。呼び出し元が無いので現時点で実害は無いが、"workflow object" と説明する以上は同期か明記が要る |
-| **`reportsSuccess()` の語彙を実機で確認** | **RODA については採れた** (§10 追試 3)。RODA に受領証のリソースは無く、材料は同じ `Report` に載る `pluginState` (`SUCCESS`/`PARTIAL_SUCCESS`/`FAILURE`/`RUNNING`/`SKIPPED`) と `outcomeObjectState` (`ACTIVE` ほか)。**`pluginState` を入れるなら噛み合う** — `SUCCESS` は通り `PARTIAL_SUCCESS` は通らない (§1.4 と一致)。**`outcomeObjectState` を入れると壊れる**: 受入完了の `ACTIVE` がこの語彙に無い。さらに **RODA の応答だけからは `sipDigest` を埋められない** (checksum のフィールドが無い)。**未**: Archivematica の語彙、受領証を実際に組み立てて検証する経路 |
+| **`reportsSuccess()` の語彙を実機で確認** | **RODA については採れた** (§10 追試 3)。RODA に受領証と分かるリソースは無く、材料は同じ `Report` に載る `pluginState` (`SUCCESS`/`PARTIAL_SUCCESS`/`FAILURE`/`RUNNING`/`SKIPPED`) と `outcomeObjectState` (`ACTIVE` ほか)。**`pluginState` を入れるなら噛み合う** — `SUCCESS` は通り `PARTIAL_SUCCESS` は通らない (§1.4 と一致)。**`outcomeObjectState` を入れると壊れる**: 受入完了の `ACTIVE` がこの語彙に無い。さらに **応答フィールドには SIP の checksum が無い**ので、それだけで組み立てると `sipDigest` が自分の値との比較になる — `/transfers/{uuid}/download` で先方の bytes を取ってハッシュすること (§10 追試 3.1)。**未**: Archivematica の語彙、受領証を実際に組み立てて検証する経路 |
 | **submission agreement の明文化** (失敗・再送・重複取込・部分受入・先方 AIP 再生成) | **雛形あり** (2026-08-26): [`docs/operations/custody-submission-agreement.md`](../operations/custody-submission-agreement.md)。7 項目と、本製品が既に決めていて交渉できない側の分離。**合意そのものは当事者間の作業で、software では閉じない** |
 | 実機受入試験 | **RODA 6.3.0 の SIP→AIP プラグインだけ実施済み** (§10)。E-ARK SIP は `EARKSIP2ToAIPPlugin` で AIP object になり、**`ers.der` も `metadata/other` なら取り込まれて残る** (`metadata/preservation` に置くと package ごと rollback する — §11 で直した。**投げたのはスタブの DER で、本物の RFC 3161 ベース ERS では未測定**)。bag は **manifest 1 本なら** AIP object になり、**現行の出荷形 (2 本) は rollback する**。**受入承認まで含む ingest workflow は未実施**で、AIP は `INGEST_PROCESSING` 止まり。**我々の PREMIS 文書は AIP の PREMIS metadata に無い**。**未**: full ingest workflow、**Archivematica (bag も E-ARK も)**、受領証を組み立てる経路、他版の RODA |
 
@@ -402,7 +402,7 @@ sourceObjectsProcessedWithSuccess = 0   ...WithFailure = 0   ...WaitingToBeProce
 
 - **AIP がディスクに在るか** — `docker exec roda-roda-1 find /roda/data/storage/aip/... -type f`。
   索引ではなく storage を見るので、この障害の影響を受けない
-- **`JobReport.pluginState`** — API では引けなかったので、**Solr を直接引いた**:
+- **`Report.pluginState`** — API では引けなかったので、**Solr を直接引いた** (Solr の collection 名は `JobReport` で、こちらは型名ではない):
   `docker exec roda-solr-1 curl -s 'http://localhost:8983/solr/JobReport/select?q=jobId:<id>&wt=json'`。
   ここに `pluginState = SUCCESS / FAILURE` と `outcomeObjectId` が入っている
 
@@ -578,6 +578,7 @@ RODA を立て直し、前の節が「未測定」と書いた 3 つを潰した
 `MIMETYPE="application/x-x509-ca-cert"` も `MDTYPE="OTHER"` も `CHECKSUM` も
 1 本目と同一で、そこは変わっていない。
 → **「commons-ip2 が probe した media type で分岐した」という説は消える**。
+**原因は METS の section** (`<amdSec><digiprovMD>` か `<dmdSec>` か) である。
 
 > **「変数はディレクトリだけ」と書いていたのは誤りだった** (外部レビュー指摘 2026-08-27)。
 > 呼び分けを変えると METS は **4 箇所**変わる。ディレクトリはそのうちの 1 つにすぎない:
@@ -664,18 +665,25 @@ Archivematica は依然として未測定である。
 - `Report` が投入物に紐づくのは `sourceObjectId` / `sourceObjectOriginalName` —
   **名前であって内容ではない**
 
-つまり接続層は `sipDigest` を**こちら側の記録から埋めるしかない**。すると
-`refusalReasonFor` は**自分の値を自分と比べる**ことになり、§2 が
-「AIP checksum だけの受領証は何も証明しない」と言って避けたのと同じ形に戻る。
+つまり **JSON の応答フィールドだけを見て組み立てると、`sipDigest` はこちら側の記録から
+埋めるしかない**。すると `refusalReasonFor` は**自分の値を自分と比べる**ことになり、
+§2 が「AIP checksum だけの受領証は何も証明しない」と言って避けたのと同じ形に戻る。
 
-> **測った範囲は「応答にフィールドが無い」まで** (外部レビュー指摘 2026-08-27)。
-> 「この受け手からは検証可能な受領証を作れない」は一段強い — たとえば接続層が
-> `fullPath` のバイト列を取って自分でハッシュする経路が無いことは、
-> ここからは出ていない。**言えるのは「RODA の応答だけからは `sipDigest` を埋められない」**で、
-> そこから先は接続層の設計判断である。
+> **ただし「この受け手からは作れない」は誤りだった** (外部レビュー指摘 2026-08-27)。
+> RODA は**先方が保持しているバイト列を返す口を持っている**:
 >
-> それでも語彙の話より重い。語彙は綴りを合わせれば済むが、こちらは
-> **素朴に組み立てると §2 が避けた形に戻る**。未解決として残す。
+> ```
+> GET /api/v2/transfers/{uuid}/download      TransferredResourceController
+> GET /api/v2/aips/{id}/download/submission  AIPController (downloadAipSubmission)
+> ```
+>
+> **接続層はこれを取って自分でハッシュできる。** そうすれば `sipDigest` は
+> 「先方が持っているもの」の digest になり、照合は意味を持つ。
+>
+> **未検証**: その bytes が我々の送ったものと byte-identical か、
+> transferred resource が受領証を作る時点まで残っているか。
+> **設計としてはこちらを採るべき**で、応答フィールドだけで組み立てるのは
+> §2 が避けた形に戻る、というのが正しい書き方である。
 
 **署名は無い。** 上記のどれにも署名は付かないので、
 RODA から組み立てた受領証は `signatureVerified = false` のままになる
@@ -794,24 +802,42 @@ commons-ip2 の `ConstantsCSIPspec` に原文で入っており、こちらの�
 |---|---|---|
 | **CSIPSTR6** | SHOULD | "If preservation metadata are available, they SHOULD be included in sub-folder **preservation**." |
 | **CSIPSTR8** | MAY | "If any other metadata are available, they MAY be included in separate sub-folders, **for example** an additional folder named other." |
-| **CSIP32** | — | "For recording information about preservation **the standard PREMIS is used. It is mandatory to include one `<digiprovMD>` element for each piece of PREMIS metadata.**" |
+| **CSIP32** | **SHOULD** (`0..n`) | "For recording information about preservation **the standard PREMIS is used. It is mandatory to include one `<digiprovMD>` element for each piece of PREMIS metadata.**" |
+
+> **`CSIP32` も SHOULD である。** ここを `—` のままにしていた版があった
+> (外部レビュー指摘 2026-08-27)。**CSIPSTR6 と同じ水準**なので、
+> 「フォルダ規則は SHOULD だから拘束しない、CSIP32 が拘束する」という論の立て方は
+> **成り立たない**。水準は同じで、違うのは**何について言っているか**である。
 
 読み取れることは 2 つ:
 
-- **フォルダの水準では、どちらの置き場も CSIP に反しない。** CSIPSTR6 は SHOULD、
-  CSIPSTR8 に至っては `other` を **for example** としか書いていない。
-  「`metadata/other` は CSIP が定めた catch-all である」も**言い過ぎ**だった。
-  同梱の validator も `validateCSIPSTR6` でフォルダの存在しか見ない。
+- **どちらの置き場も CSIP 違反ではない。** CSIPSTR6 は SHOULD、CSIPSTR8 は `other` を
+  **for example** としか書いていない。「`metadata/other` は CSIP が定めた catch-all」も
+  **言い過ぎ**だった。同梱の validator も `validateCSIPSTR6` でフォルダの存在しか見ない。
 - **効くのは CSIP32 である。** 「preservation 情報には PREMIS を使う。**PREMIS 1 件ごとに
   `<digiprovMD>` を 1 つ含めることが必須**」。`addPreservationMetadata` はその枠に
   宣言を書いていた。**ASN.1 の DER をそこに宣言していたことが defect** であって、
   ディレクトリ名ではない。
 
-  > **CSIP32 は「`digiprovMD` に PREMIS 以外を置くな」とまでは書いていない**
-  > (外部レビュー指摘 2026-08-27)。書いてあるのは「PREMIS ごとに 1 つ」である。
-  > だから RODA があの枠を全部 PREMIS として読むのは**実装として妥当**だが、
-  > **CSIP32 がその fail-closed を義務づけている、とまでは言えない。**
-  > 我々の側の defect は「PREMIS の枠に PREMIS でないものを載せた」ことで足りる。
+  > **CSIP32 は SHOULD である** (`LEVEL = SHOULD` / `CARDINALITY = 0..n` — 同じ
+  > `ConstantsCSIPspec` から確認)。しかも書いてあるのは「PREMIS ごとに `digiprovMD` を
+  > 1 つ」という**片方向**で、「`digiprovMD` に PREMIS 以外を置くな」という逆向きでは
+  > ない (外部レビュー指摘 2026-08-27)。
+  >
+  > だから「**CSIP32 に違反していた**」とは書かない。書けるのは
+  > **「CSIP32 の趣旨から外れていた」**まで。そして RODA があの枠を全部 PREMIS として
+  > 読み、読めなければ全体を失敗させるのも、**CSIP32 が義務づけている挙動ではない** —
+  > 趣旨と整合する実装判断である。
+  >
+  > 我々の側の defect は「PREMIS のための枠に PREMIS でないものを載せた」で足りる。
+
+**では、なぜ `metadata/other` なのか** — 「禁じられていないから」だけでは弱い。
+commons-ip2 は **section とフォルダを一体で決める**ので、`digiprovMD` から逃げるには
+`addDescriptiveMetadata` / `addOtherMetadata` / `addTechnical|Source|RightsMetadata` の
+どれかを選ぶことになり、それぞれがフォルダも連れてくる。**`other` は、そのうち
+「証拠記録について嘘にならない」唯一の分類名**である — 証拠記録は記述メタデータでも
+技術メタデータでも権利記述でもない。(RODA が結局 `descriptive/` へ移すのは受け手の判断で、
+こちらが `descriptive` と**宣言する**こととは別である。)
 
 > **だから「我々の形が間違っていた」は成り立つ。** ただし理由は
 > 「CSIP がそのフォルダを PREMIS 専用と定めているから」ではなく、
@@ -827,10 +853,15 @@ commons-ip2 の `ConstantsCSIPspec` に原文で入っており、こちらの�
 > | | 我々の側 | 受け手の側 | 代替の代償 |
 > |---|---|---|---|
 > | bag | RFC 8493 §2.1.3 が明示的に許す形 | `BagitSIP.parse` が manifest ごとに payload を足す (**受け手の欠陥**) | manifest 1 本 = **SHA-256 が検証器の照合対象でなくなる** |
-> | ERS | **CSIP32 の PREMIS の枠に非 PREMIS を宣言** | それを PREMIS として読む (**実装として妥当**) | `dmdSec` へ移す = **package の検証上は無い**。ただし AIP では `descriptive/` へ移されるので、**「保存証跡の場所に在る」という見え方は失う** |
+> | ERS | **CSIP32 (SHOULD) の PREMIS の枠に非 PREMIS を宣言** | それを PREMIS として読む (**CSIP32 の趣旨と整合する実装判断**) | `addOtherMetadata` へ = **package の検証上は無い**。ただし AIP では `descriptive/` へ移されるので、**「保存証跡の場所に在る」という見え方は失う** |
 >
-> あちらは我々が規格どおりで受け手が欠陥、こちらは我々が規格に反していて受け手が
-> 仕様どおり。**向きが逆だから、判断も逆になる。**
+> あちらは我々が規格どおりで受け手が欠陥、こちらは我々が CSIP32 の趣旨から外れていて
+> 受け手の挙動はそれと整合する。**向きが逆だから、判断も逆になる。**
+>
+> **どちらも「規格違反 / 準拠」の話ではない** (外部レビュー指摘 2026-08-27)。CSIP32 の
+> 水準は **SHOULD** (cardinality 0..n) で、「`digiprovMD` に PREMIS 以外を置くな」とも
+> 「受け手は全体を失敗させよ」とも書いていない。**RODA を「仕様どおり」とは呼べない** —
+> 呼べるのは「CSIP32 の趣旨に沿った実装判断」までである。
 
 ### 直した内容と、測り直した結果
 
