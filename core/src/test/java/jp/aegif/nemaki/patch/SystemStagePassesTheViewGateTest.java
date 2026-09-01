@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 import org.junit.jupiter.api.DisplayName;
@@ -143,23 +144,64 @@ class SystemStagePassesTheViewGateTest {
     }
 
     @Test
-    @DisplayName("the always-run override is gated too — it used to skip the gate entirely")
-    void theAlwaysRunOverrideIsGated() throws Exception {
+    @DisplayName("the always-run override is gated too — behaviourally, not by spelling")
+    void theAlwaysRunOverrideIsGated() {
         // Patch_WebAuthnCredentialViews re-implements apply() to run on every startup. The
         // view work in it really is idempotent; isApplied() and createPathHistory() are not,
         // and they were reached with no gate at all.
-        String source = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
-                jp.aegif.nemaki.util.test.JavaSource.read(
-                        "src/main/java/jp/aegif/nemaki/patch/Patch_WebAuthnCredentialViews.java"));
-        String body = jp.aegif.nemaki.util.test.JavaSource.methodBody(source,
-                "public boolean apply()");
+        //
+        // This was a source lock first, and an audit showed a PARTIAL revert that kept it
+        // green: leave the `if (!cmisViewsAreAnswering(...))` in place and drop only the
+        // `continue;`. The strings are all still there and the history is still written.
+        // Counting the writes cannot be fooled that way.
+        Repos repos = new Repos("bedroom", "canopy");
+        RecordingPatchUtil util = new RecordingPatchUtil(repos, Set.of("bedroom"));
+        Patch_WebAuthnCredentialViews patch = new Patch_WebAuthnCredentialViews() {
+            @Override
+            protected void applyPerRepositoryPatch(String repositoryId) {
+                // The view work itself needs a CouchDB client; this test is about the gate.
+            }
+        };
+        patch.setPatchUtil(util);
 
-        assertTrue(body.contains("cmisViewsAreAnswering(repositoryId)"),
-                "the always-run override no longer asks the canary, so its patch-history "
-                        + "write can duplicate a row: " + body);
-        int gateAt = body.indexOf("cmisViewsAreAnswering");
-        int historyAt = body.indexOf("createPathHistory");
-        assertTrue(gateAt >= 0 && historyAt > gateAt,
-                "the canary is asked AFTER the history write, which is no gate at all");
+        patch.apply();
+
+        assertEquals(List.of("bedroom"), util.historyWrites,
+                "the always-run override wrote patch history for a repository whose views "
+                        + "are not answering — isApplied() is a view-based existence check "
+                        + "and createPathHistory() writes under a generated id, which is how "
+                        + "one patch name ended up with two history rows");
+    }
+
+    /** Records which repositories got a history row. */
+    private static class RecordingPatchUtil extends PatchUtil {
+        private final RepositoryInfoMap repos;
+        private final Set<String> answering;
+        final List<String> historyWrites = new java.util.ArrayList<>();
+
+        RecordingPatchUtil(RepositoryInfoMap repos, Set<String> answering) {
+            this.repos = repos;
+            this.answering = answering;
+        }
+
+        @Override
+        public RepositoryInfoMap getRepositoryInfoMap() {
+            return repos;
+        }
+
+        @Override
+        public boolean cmisViewsAreAnswering(String repositoryId) {
+            return answering.contains(repositoryId);
+        }
+
+        @Override
+        protected boolean isApplied(String repositoryId, String name) {
+            return false;
+        }
+
+        @Override
+        protected void createPathHistory(String repositoryId, String name) {
+            historyWrites.add(repositoryId);
+        }
     }
 }

@@ -1457,9 +1457,19 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException cre) {
 			// Infrastructure failure — propagate to caller
 			throw cre;
+		} catch (IllegalStateException ise) {
+			// The fallback below reads by id, and getContent was made to refuse rather than
+			// answer null for a failed read. Catching it here turned that refusal straight
+			// back into "no such child" — which getContentByPath reports as a 404 and any
+			// upsert keyed on path resolution turns into a duplicate. The three other readers
+			// of this same view already fail closed; this was the fourth.
+			throw ise;
 		} catch (Exception e) {
 			log.error("Error getting child by name: " + name + " for parent: " + parentId + " in repository: " + repositoryId, e);
-			return null;
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"the child named '" + name + "' of " + parentId + " in '" + repositoryId
+							+ "' could not be looked up; this is NOT a finding that there is"
+							+ " no such child", e);
 		}
 	}
 
@@ -1599,7 +1609,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				// Reading it by id is the only way left to compare the name, and reporting
 				// "no such child" on an unconvertible row would be a false absence.
 				String objectId = row.getId();
-				if (objectId != null) {
+				if (objectId == null) {
+					throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+							"a row of the children view for " + parentId + " in '" + repositoryId
+									+ "' is neither a document nor addressable by id, so whether"
+									+ " it is the child named '" + name + "' cannot be decided");
+				}
+				{
 					Content byId = getContent(repositoryId, objectId);
 					if (byId != null && name.equals(byId.getName())) {
 						log.warn("children returned a value that is not a document while resolving '"
@@ -1670,12 +1686,27 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			List<String> names = new ArrayList<String>();
 			// CRITICAL FIX (2025-11-02): Check if result is null before calling getRows()
 			// NullPointerException occurs when view query returns null (view doesn't exist or query fails)
+			int unreadableRows = 0;
 			if (result != null && result.getRows() != null) {
 				for (ViewResultRow row : result.getRows()) {
-					if (row.getValue() != null) {
-						names.add(row.getValue().toString());
+					if (row.getValue() == null) {
+						// A row that IS there and carries no name. Dropping it makes the list
+						// SHORT rather than empty, so childrenNamesViewIsAlive — which only
+						// asks whether the view has any rows at all — never fires, and the
+						// CMIS name-uniqueness check concludes "no conflict". A duplicate
+						// sibling name is what nothing repairs.
+						unreadableRows++;
+						continue;
 					}
+					names.add(row.getValue().toString());
 				}
+			}
+			if (unreadableRows > 0) {
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+						unreadableRows + " row(s) of the childrenNames view for " + parentId
+								+ " in '" + repositoryId + "' carry no name, so the set of"
+								+ " names in this folder is not known; a uniqueness check"
+								+ " cannot run on a short list");
 			}
 
 			// An empty list is "this folder has no children" ONLY if the view is working. A view

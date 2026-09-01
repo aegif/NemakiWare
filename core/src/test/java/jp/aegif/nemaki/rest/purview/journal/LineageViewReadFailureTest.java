@@ -50,7 +50,8 @@ class LineageViewReadFailureTest {
             f.setAccessible(true);
             f.set(store, pool);
         } catch (Exception e) {
-            throw new AssertionError(e);
+            throw new jp.aegif.nemaki.util.test.HarnessBroken(
+                    "the store fixture could not be wired, so nothing was checked", e);
         }
         return store;
     }
@@ -176,7 +177,8 @@ class LineageViewReadFailureTest {
             f.setAccessible(true);
             f.set(target, value);
         } catch (Exception e) {
-            throw new AssertionError(e);
+            throw new jp.aegif.nemaki.util.test.HarnessBroken(
+                    "the fixture could not be driven, so nothing was checked", e);
         }
     }
 
@@ -380,7 +382,8 @@ class LineageViewReadFailureTest {
             }
             throw new IllegalStateException(e.getCause());
         } catch (ReflectiveOperationException e) {
-            throw new AssertionError("eventKeyExists is not there, so nothing was checked", e);
+            throw new jp.aegif.nemaki.util.test.HarnessBroken(
+                    "eventKeyExists is not there, so nothing was checked", e);
         }
     }
 
@@ -605,7 +608,8 @@ class LineageViewReadFailureTest {
             }
             throw new IllegalStateException(e.getCause());
         } catch (ReflectiveOperationException e) {
-            throw new AssertionError("queryTargetStatusCount is gone, so nothing was checked", e);
+            throw new jp.aegif.nemaki.util.test.HarnessBroken(
+                    "queryTargetStatusCount is gone, so nothing was checked", e);
         }
     }
 }

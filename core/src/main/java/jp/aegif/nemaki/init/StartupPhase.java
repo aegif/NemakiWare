@@ -41,23 +41,33 @@ package jp.aegif.nemaki.init;
  */
 public final class StartupPhase {
 
-    private static volatile boolean provisioning = false;
+    /**
+     * How many windows are open. Zero — the initial value — is the strict side.
+     *
+     * <p>A counter rather than a flag because the windows NEST: the type registry declares one
+     * around its first initialization, and that initialization can run inside the
+     * provisioning window that {@code DatabasePreInitializer} opened. With a boolean, the
+     * inner {@code end()} closed the OUTER window, and the rest of provisioning ran strict —
+     * a missing view then refused during the very work that creates the views.
+     */
+    private static final java.util.concurrent.atomic.AtomicInteger openWindows =
+            new java.util.concurrent.atomic.AtomicInteger(0);
 
     private StartupPhase() {
     }
 
     /** Marks the beginning of the provisioning window. Pair with {@link #end()} in a finally. */
     public static void begin() {
-        provisioning = true;
+        openWindows.incrementAndGet();
     }
 
     /** Ends the provisioning window. Safe to call when it was never begun. */
     public static void end() {
-        provisioning = false;
+        openWindows.updateAndGet(depth -> depth > 0 ? depth - 1 : 0);
     }
 
     /** Whether database provisioning is running right now. Defaults to false (strict). */
     public static boolean isProvisioning() {
-        return provisioning;
+        return openWindows.get() > 0;
     }
 }

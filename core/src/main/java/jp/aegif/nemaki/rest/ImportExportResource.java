@@ -800,7 +800,17 @@ public class ImportExportResource extends ResourceBase {
             StreamingOutput streamingOutput = new StreamingOutput() {
                 @Override
                 public void write(OutputStream output) throws IOException {
-                    try (ZipOutputStream zos = new ZipOutputStream(output)) {
+                    // NOT try-with-resources. close() calls finish(), which writes the ZIP
+                    // central directory — so on the refusal path the client received a
+                    // 200 and an archive that OPENS, with the last entry silently truncated.
+                    // A review measured it: the "no central directory" this refusal was
+                    // documented to produce only held because the response had not been
+                    // committed yet (a one-document export fits the container buffer). Past
+                    // that point HTTP has no way back, and the only remaining signal is a
+                    // stream that ends without its directory. So the archive is finished on
+                    // the success path only; a refusal propagates with the stream unclosed.
+                    ZipOutputStream zos = new ZipOutputStream(output);
+                    try {
                         Set<String> customTypeIds = new HashSet<>();
                         try {
                             collectCustomTypeIds(repositoryId, folder, customTypeIds);
@@ -876,6 +886,11 @@ public class ImportExportResource extends ResourceBase {
                             audit.logOperation(AuditOperation.EXPORT_EXECUTE, repositoryId,
                                     exportUsername, folderId, true, null);
                         }
+                        // The archive is closed HERE, on the success path only. See the note
+                        // at the top of this method: close() writes the central directory, so
+                        // closing it in a finally would hand back an openable archive for a
+                        // refused export.
+                        zos.close();
                     } catch (Exception e) {
                         log.error("Export streaming failed: " + e.getMessage(), e);
                         AuditLogger audit = getAuditLogger();
@@ -984,7 +999,17 @@ public class ImportExportResource extends ResourceBase {
             StreamingOutput streamingOutput = new StreamingOutput() {
                 @Override
                 public void write(OutputStream output) throws IOException {
-                    try (ZipOutputStream zos = new ZipOutputStream(output)) {
+                    // NOT try-with-resources. close() calls finish(), which writes the ZIP
+                    // central directory — so on the refusal path the client received a
+                    // 200 and an archive that OPENS, with the last entry silently truncated.
+                    // A review measured it: the "no central directory" this refusal was
+                    // documented to produce only held because the response had not been
+                    // committed yet (a one-document export fits the container buffer). Past
+                    // that point HTTP has no way back, and the only remaining signal is a
+                    // stream that ends without its directory. So the archive is finished on
+                    // the success path only; a refusal propagates with the stream unclosed.
+                    ZipOutputStream zos = new ZipOutputStream(output);
+                    try {
                         Set<String> customTypeIds = new HashSet<>();
                         try {
                             for (Content c : contents) {
@@ -1082,6 +1107,8 @@ public class ImportExportResource extends ResourceBase {
                                         java.time.Instant.now().toString());
                             }, "repo=" + repositoryId + " op=" + lineageOperationId + " type=EXPORT_SELECTED_OBJECTS");
                         }
+                        // Success path only — see the note at the top of this method.
+                        zos.close();
                     } catch (Exception e) {
                         log.error("Export streaming failed: " + e.getMessage(), e);
                         throw new IOException("Export failed: " + e.getMessage(), e);

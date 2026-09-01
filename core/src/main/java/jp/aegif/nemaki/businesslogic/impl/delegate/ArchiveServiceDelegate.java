@@ -687,19 +687,18 @@ public class ArchiveServiceDelegate {
 	}
 
 	public Long getAttachmentActualSize(String repositoryId, String attachmentId) {
-		try {
-			Long actualSize = contentDaoService.getAttachmentActualSize(repositoryId, attachmentId);
-			if (actualSize != null && actualSize >= 0) {
-				log.debug("Retrieved actual attachment size from CouchDB: " + actualSize + " bytes for attachment " + attachmentId);
-				return actualSize;
-			}
-
-			log.warn("Could not retrieve actual attachment size from CouchDB for attachment: " + attachmentId);
-			return null;
-
-		} catch (Exception e) {
-			log.error("Error retrieving actual attachment size for " + attachmentId + ": " + e.getMessage(), e);
-			return null;
+		// No catch. This is the PUBLIC route to the size — ContentService reaches the store
+		// through here — and the DAO under it was made to refuse rather than answer "no
+		// measurable size". Catching that refusal and returning null put the flattening back
+		// one layer up, on the only path a caller actually uses: the DAO's own test passed
+		// while the service answered null. Genuine absence still comes back as null, because
+		// the DAO returns it for a document that carries no content attachment.
+		Long actualSize = contentDaoService.getAttachmentActualSize(repositoryId, attachmentId);
+		if (actualSize != null && actualSize >= 0) {
+			log.debug("Retrieved actual attachment size from CouchDB: " + actualSize + " bytes for attachment " + attachmentId);
+			return actualSize;
 		}
+		log.debug("No content attachment to measure for: " + attachmentId);
+		return null;
 	}
 }

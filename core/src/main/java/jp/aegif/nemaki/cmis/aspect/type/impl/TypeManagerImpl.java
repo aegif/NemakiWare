@@ -160,6 +160,16 @@ public class TypeManagerImpl implements TypeManager {
 	// Flag to track initialization
 	// CRITICAL FIX: initialized flag must be static to be shared across all instances for TCK compliance
 	private static volatile boolean initialized = false;
+
+	/**
+	 * Whether init() has run to completion (or failure) once in this process.
+	 *
+	 * <p>Separate from {@code initialized}, which is reset deliberately by refreshTypes() and
+	 * the dynamic-repository path to force a rebuild. Only the FIRST run happens before the
+	 * design documents are provisioned; every later one is a re-read of a provisioned store,
+	 * on whatever thread asked for it.
+	 */
+	private static volatile boolean everInitialized = false;
 	private static final Object initLock = new Object();
 	
 	// CRITICAL FIX: Track types being deleted to prevent infinite recursion during cache refresh
@@ -233,7 +243,7 @@ public class TypeManagerImpl implements TypeManager {
 				return;
 			}
 			
-			// This bean's own init runs BEFORE the design documents are provisioned —
+			// This bean's FIRST init runs BEFORE the design documents are provisioned —
 			// DatabasePreInitializer does that work on an application event, which arrives
 			// later. So the type registry legitimately reads a view that may not exist yet,
 			// and the store layer is right to refuse an undeployed view everywhere else:
@@ -244,7 +254,18 @@ public class TypeManagerImpl implements TypeManager {
 			// refused, init() failed, and the Spring context died — taking the ALREADY
 			// healthy repositories down with it. bedroom alone would never have shown it,
 			// which is the same blind spot that let the base-type regression through.
-			StartupPhase.begin();
+			//
+			// ONLY the first one. init() is also reached lazily: refreshTypes() and the
+			// dynamic-repository path in getTypeById() set initialized=false, and the next
+			// ensureInitialized() re-enters here ON A REQUEST THREAD. The window is
+			// process-wide, so opening it there would hand the provisioning grace to every
+			// request being served at that moment — which is the defect StartupPhase was
+			// built to remove, arriving through a different door. By then the design
+			// documents exist, so a missing view really is a failure.
+			boolean firstInitialization = !everInitialized;
+			if (firstInitialization) {
+				StartupPhase.begin();
+			}
 			try {
 				log.info("Starting TypeManagerImpl initialization process");
 				initGlobalTypes();
@@ -289,7 +310,10 @@ public class TypeManagerImpl implements TypeManager {
 				// finally, not after the try: a begin() whose end() is skipped by a throw
 				// would leave the grace on for the life of the process, and every request
 				// would then read a missing view as "no data".
-				StartupPhase.end();
+				if (firstInitialization) {
+					everInitialized = true;
+					StartupPhase.end();
+				}
 			}
 		}
 		log.info("TypeManagerImpl.init() completed successfully");
@@ -1605,37 +1629,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	}
 
 	
-	/**
-	 * Loads every repository's subtypes, and lets one repository fail WITHOUT taking the
-	 * others with it.
-	 *
-	 * <p>The refusal below is per repository and stays that way — a type system that could
-	 * not be read must not be served as a base-only one. But this loop used to let the first
-	 * refusal escape, and the loop covers every repository in the deployment: one repository
-	 * that had never been provisioned made {@code generate()} fail, and with it type
-	 * creation, type listing and startup FOR EVERY OTHER REPOSITORY. Measured on the running
-	 * stack: registering a type in {@code bedroom} was refused with a message naming a
-	 * different repository.
-	 *
-	 * <p>So the failure is recorded against the repository it belongs to, and
-	 * {@link #assertRepositoryTypesLoaded} refuses reads for that repository alone.
-	 */
-	private void addSubTypes(){
-		for(String key : repositoryInfoMap.keys()){
-			RepositoryInfo info = repositoryInfoMap.get(key);
-			String repositoryId = info.getId();
-			try {
-				addSubTypes(repositoryId);
-				typeLoadFailures.remove(repositoryId);
-			} catch (RuntimeException e) {
-				typeLoadFailures.put(repositoryId,
-						e.getMessage() == null ? e.getClass().getName() : e.getMessage());
-				log.error("The type system of '" + repositoryId + "' could not be loaded."
-						+ " Other repositories continue; every read for THIS one is refused"
-						+ " until a later refresh succeeds.", e);
-			}
-		}
-	}
+	// The no-argument addSubTypes() that used to sit here had NO CALLERS, and a review
+	// found that the per-repository isolation added to it in this batch was therefore dead
+	// code: generate() calls addSubTypes(repositoryId) directly, and the isolation that
+	// actually runs is the try/catch around generate(key) in the loop above. Carrying a
+	// second copy of the same rule in an unreachable method is how two copies drift apart.
 
 	/**
 	 * Refuses reads for a repository whose type system is not loaded.
@@ -2953,6 +2951,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	@Override
 	public TypeDefinition getTypeByQueryName(String repositoryId, String typeQueryName) {
 		ensureInitialized();
+		// The CMIS-visible listings read the same map as the four readers that were
+		// guarded first, and generate() installs the base types BEFORE addSubTypes()
+		// can fail — so a repository whose type system did not load holds a base-only
+		// map, and these are exactly the methods that would report it as the
+		// repository's type system. Found by a sibling sweep: four guarded, four not.
+		assertRepositoryTypesLoaded(repositoryId);
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 		if (types == null) {
 			log.error("CRITICAL: TYPES map is null for repository: " + repositoryId + " in getTypeByQueryName()");
@@ -3389,6 +3393,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	public TypeDefinitionList getTypesChildren(CallContext context,
 			String repositoryId, String typeId,
 			boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount) {
+		// The CMIS-visible listings read the same map as the four readers that were
+		// guarded first, and generate() installs the base types BEFORE addSubTypes()
+		// can fail — so a repository whose type system did not load holds a base-only
+		// map, and these are exactly the methods that would report it as the
+		// repository's type system. Found by a sibling sweep: four guarded, four not.
+		assertRepositoryTypesLoaded(repositoryId);
 		
 		if (log.isDebugEnabled()) {
 			log.debug("getTypesChildren ENTRY: repositoryId=" + repositoryId + ", typeId=" + typeId + 
@@ -3619,6 +3629,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	@Override
 	public List<TypeDefinitionContainer> getTypesDescendants(String repositoryId,
 			String typeId, BigInteger depth, Boolean includePropertyDefinitions) {
+		// The CMIS-visible listings read the same map as the four readers that were
+		// guarded first, and generate() installs the base types BEFORE addSubTypes()
+		// can fail — so a repository whose type system did not load holds a base-only
+		// map, and these are exactly the methods that would report it as the
+		// repository's type system. Found by a sibling sweep: four guarded, four not.
+		assertRepositoryTypesLoaded(repositoryId);
 		
 		if (log.isDebugEnabled()) {
 			log.debug("getTypesDescendants ENTRY: repositoryId=" + repositoryId + 
@@ -4416,6 +4432,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			try {
 				log.info("invalidateTypeDefinitionCache: Regenerating types for repository=" + repositoryId);
 				generate(repositoryId);
+				// A repository that loads cleanly is no longer refused. Without this the
+				// failure marker outlived the failure: the repair path (patches deploy the
+				// views, then invalidate) regenerated the types correctly and every read for
+				// that repository went on refusing until a full refresh happened to run.
+				typeLoadFailures.remove(repositoryId);
 
 				// Log the newly loaded types for verification
 				Map<String, TypeDefinitionContainer> newTypes = TYPES.get(repositoryId);
@@ -4430,7 +4451,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 						.count();
 					log.info("invalidateTypeDefinitionCache: Found " + secondaryCount + " custom/secondary types");
 				}
-			} catch (Exception e) {
+			} catch (RuntimeException e) {
+				// And a regeneration that FAILED marks it, rather than being swallowed while
+				// the caller is told the invalidation succeeded. The map's whole purpose is
+				// that a base-only map is not served as the type system.
+				typeLoadFailures.put(repositoryId,
+						e.getMessage() == null ? e.getClass().getName() : e.getMessage());
 				log.error("invalidateTypeDefinitionCache: Failed to regenerate types for repository=" + repositoryId, e);
 			}
 
@@ -4685,6 +4711,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		if (repositoryId == null || propertyQueryName == null) {
 			return null;
 		}
+		// The CMIS-visible listings read the same map as the four readers that were
+		// guarded first, and generate() installs the base types BEFORE addSubTypes()
+		// can fail — so a repository whose type system did not load holds a base-only
+		// map, and these are exactly the methods that would report it as the
+		// repository's type system. Found by a sibling sweep: four guarded, four not.
+		assertRepositoryTypesLoaded(repositoryId);
 
 		try {
 			// CRITICAL FIX (2025-12-18): Get ALL types from the TYPES map, not just root types

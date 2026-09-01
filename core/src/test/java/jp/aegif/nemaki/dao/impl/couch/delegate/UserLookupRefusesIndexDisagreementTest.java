@@ -112,6 +112,38 @@ class UserLookupRefusesIndexDisagreementTest {
     }
 
     @Test
+    @DisplayName("the GROUP twin refuses too — it was left answering null for 280 lines")
+    void aMismatchedGroupRowRefuses() {
+        // getUserItemById's mismatch arm was changed to refuse and getGroupItemById's — the
+        // same check on the same view in the same file — was not. A sibling sweep found it.
+        // Null there means "no such group": the nested-membership walk then drops every
+        // permission granted through it, and the directory sync creates a duplicate.
+        wire();
+        java.util.Map<String, Object> row = new HashMap<>();
+        row.put("groupId", "kubota");
+        ViewResult matched = resultWithValues(row);
+        when(matched.getRows().get(0).getId()).thenReturn("group-node-1");
+        when(client.queryView(eq("_repo"), eq("groupItemsById"), eq("engineering"),
+                org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(matched);
+        com.ibm.cloud.cloudant.v1.model.Document doc =
+                mock(com.ibm.cloud.cloudant.v1.model.Document.class);
+        when(doc.getId()).thenReturn("group-node-1");
+        when(doc.getRev()).thenReturn("1-abc");
+        java.util.Map<String, Object> props = new HashMap<>();
+        props.put("groupId", "someone-else");
+        props.put("objectType", "nemaki:group");
+        when(doc.getProperties()).thenReturn(props);
+        when(client.get("group-node-1")).thenReturn(doc);
+
+        IllegalStateException refused = assertThrows(IllegalStateException.class,
+                () -> delegate.getGroupItemById(REPO, "engineering"),
+                "the index and the document disagreed about a group and the store answered "
+                        + "'no such group'");
+        assertEquals(true, refused.getMessage().contains("someone-else"),
+                "the refusal does not name what it found: " + refused.getMessage());
+    }
+
+    @Test
     @DisplayName("a view that answered with no rows is still 'no such user' — the control")
     void anAnsweredEmptyViewIsStillAbsence() {
         wire();

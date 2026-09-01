@@ -387,7 +387,14 @@ public class UserGroupDaoDelegate {
 				com.ibm.cloud.cloudant.v1.model.Document freshDoc = client.get(documentId);
 
 				if (freshDoc == null) {
-					return null;
+					// The view MATCHED a row for this groupId, so the document exists; the
+					// read-back by id is what did not produce it. Null here says "no such
+					// group", and the nested-membership walk then drops every permission
+					// granted through it while the directory sync creates a second one.
+					throw new IllegalStateException("the userItemsById view matched group '"
+							+ groupId + "' in '" + repositoryId + "' but document " + documentId
+							+ " could not be read back; this is NOT a finding that the group"
+							+ " does not exist");
 				}
 
 
@@ -405,10 +412,20 @@ public class UserGroupDaoDelegate {
 					log.info("Document contains groupId: " + docMap.get("groupId") + ", _id: " + docMap.get("_id") + ", _rev: " + docMap.get("_rev"));
 
 					// SECURITY FIX: Validate that returned group actually matches requested groupId
+					// The twin of the userId check in getUserItemById, 280 lines above. That
+					// one was changed to refuse and this one was left answering null — the
+					// one-arm correction this batch keeps re-committing, found by a sibling
+					// sweep. Handing back the wrong group is still refused; what changed is
+					// the sentence said instead. Null means "no such group", and on it the
+					// nested-membership expansion silently drops every permission granted
+					// through this group, while the directory sync creates a duplicate.
 					String returnedGroupId = (String) docMap.get("groupId");
 					if (!groupId.equals(returnedGroupId)) {
-						log.warn("SECURITY WARNING: Requested groupId '" + groupId + "' but got groupId '" + returnedGroupId + "' - returning null");
-						return null;
+						log.error("SECURITY WARNING: Requested groupId '" + groupId + "' but got groupId '" + returnedGroupId + "'");
+						throw new IllegalStateException("the view matched a group row for '"
+								+ groupId + "' in '" + repositoryId + "' whose own groupId is '"
+								+ returnedGroupId + "'; the index and the document disagree, so"
+								+ " whether the group exists cannot be established");
 					}
 
 					// Use the Map-based constructor we created

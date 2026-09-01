@@ -118,6 +118,69 @@ class ChildrenPageIsNotSilentlyShortTest {
         return ctx;
     }
 
+    /**
+     * Drives the OVERSAMPLING branch: a folder big enough that the service pages through it.
+     *
+     * <p>The probe branch and this one are different code with the same duty, and only the
+     * probe branch had a fixture — so the paged guard, which the ledger spends a paragraph
+     * on, could be deleted with the whole suite still green. Found by a test-discrimination
+     * audit, not by the runner: a control can only fail a test that exists.
+     */
+    private static NavigationServiceImpl pagedServiceReturning(List<Content> batch, int unreadable) {
+        ContentService contentService = mock(ContentService.class);
+        // Above FULL_FETCH_THRESHOLD (500), so getChildrenInternal takes the paged branch.
+        when(contentService.getChildrenCount(anyString(), anyString())).thenReturn(900L);
+        when(contentService.getChildrenPaged(anyString(), anyString(), anyInt(), anyInt()))
+                .thenReturn(new ArrayList<>(batch));
+        when(contentService.lastUnreadableChildCount()).thenReturn(unreadable);
+
+        Folder folder = new Folder();
+        folder.setId(FOLDER);
+        folder.setName("records");
+        folder.setType("cmis:folder");
+        folder.setObjectType("cmis:folder");
+        when(contentService.getFolder(REPO, FOLDER)).thenReturn(folder);
+        when(contentService.getContent(REPO, FOLDER)).thenReturn(folder);
+
+        NavigationServiceImpl service = new NavigationServiceImpl();
+        service.setContentService(contentService);
+        service.setExceptionService(mock(ExceptionService.class));
+        service.setCompileService(mock(CompileService.class));
+        PermissionService permission = mock(PermissionService.class);
+        when(permission.checkPermissionWithGivenList(any(), anyString(), anyString(), any(),
+                anyString(), any(), anyString(), any())).thenReturn(true);
+        service.setPermissionService(permission);
+        ThreadLockService locks = mock(ThreadLockService.class);
+        when(locks.orderedLocks(anyString(), any(), org.mockito.ArgumentMatchers.anyBoolean()))
+                .thenReturn(List.of());
+        when(locks.getReadLock(anyString(), anyString()))
+                .thenReturn(new java.util.concurrent.locks.ReentrantLock());
+        service.setThreadLockService(locks);
+        service.setPropertyManager(mock(jp.aegif.nemaki.util.PropertyManager.class));
+        return service;
+    }
+
+    @Test
+    @DisplayName("the PAGED branch refuses too — its guard had no fixture at all")
+    void thePagedBranchAlsoRefuses() {
+        List<Content> batch = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            batch.add(child("d" + i));
+        }
+        NavigationServiceImpl service = pagedServiceReturning(batch, 1);
+
+        CmisRuntimeException refused = assertThrows(CmisRuntimeException.class,
+                () -> service.getChildren(adminContext(), REPO, FOLDER, null, null, false,
+                        null, null, false, BigInteger.valueOf(2), BigInteger.ZERO,
+                        new org.apache.chemistry.opencmis.commons.spi.Holder<>(), null),
+                "the oversampling branch served a page missing a child, and no test in the "
+                        + "repository reached that branch at all");
+        assertTrue(refused.getMessage().contains("short by"),
+                "refused by the probe guard instead of the page guard — the two must be "
+                        + "distinguishable or the paged one is still unmeasured: "
+                        + refused.getMessage());
+    }
+
     @Test
     @DisplayName("a page short by an undecodable row refuses rather than answering short")
     void aPageShortByADecodeFailureRefuses() {
@@ -130,9 +193,12 @@ class ChildrenPageIsNotSilentlyShortTest {
                         new org.apache.chemistry.opencmis.commons.spi.Holder<>(), null),
                 "a listing missing a child the folder holds was served as the folder's "
                         + "contents, and nothing in the response said so");
-        assertTrue(refused.getMessage().contains("could not be decoded")
-                        || refused.getMessage().contains("short by"),
-                "refused for some other reason: " + refused.getMessage());
+        // Not a disjunction. Two guards in this method can raise CmisRuntimeException with
+        // a decode complaint, and "either message will do" is how a test survives losing the
+        // guard it names — the shape that has bitten this batch twice.
+        assertTrue(refused.getMessage().contains("could not be decoded"),
+                "refused by the page guard rather than the probe guard: "
+                        + refused.getMessage());
         assertTrue(refused.getMessage().contains("1 row"),
                 "the refusal does not say how much is missing: " + refused.getMessage());
     }

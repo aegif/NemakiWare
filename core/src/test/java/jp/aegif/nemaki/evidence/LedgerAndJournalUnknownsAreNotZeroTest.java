@@ -122,16 +122,71 @@ class LedgerAndJournalUnknownsAreNotZeroTest {
         setField(store, "lineageConfig", config);
         setField(store, "dbProvisioned", new java.util.concurrent.atomic.AtomicBoolean(true));
 
-        org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+        // The exception TYPE and its message, not "any RuntimeException": this fixture is
+        // wired by reflection, so a mis-wired field would also raise something unchecked and
+        // satisfy the broad form without the guard ever running.
+        RuntimeException refused = org.junit.jupiter.api.Assertions.assertThrows(
+                jp.aegif.nemaki.rest.purview.journal.CouchLineageJournalStore.LineageViewUnreadableException.class,
                 () -> store.getRetryCount("rec-1", "purview"),
                 "a retry count that could not be read came back as zero, which reads as "
                         + "'never retried' and keeps the record below every limit for ever");
+        assertTrue(refused.getMessage().contains("retry count"),
+                "refused by a different guard than the retry-count read: "
+                        + refused.getMessage());
     }
 
     private static void setField(Object target, String fieldName, Object value) throws Exception {
         var field = target.getClass().getDeclaredField(fieldName);
         field.setAccessible(true);
         field.set(target, value);
+    }
+
+    @Test
+    @DisplayName("a failed TAIL read is REFUSED — nothing was written, and that is knowable")
+    void aFailedTailReadIsRefusedNotIndeterminate() {
+        // INDETERMINATE was introduced for "the write threw and may have landed". Its catch
+        // covered the whole body, so a tail read that failed BEFORE any write was reported
+        // the same way — safe, but not the split that was promised. A ledger audit caught the
+        // claim and the code disagreeing.
+        EvidenceLedgerStore store = mock(EvidenceLedgerStore.class);
+        when(store.isActive()).thenReturn(true);
+        when(store.highestSequence(anyString()))
+                .thenThrow(new RuntimeException("connection reset"));
+
+        AppendResult result = serviceOver(store).append("custody",
+                EvidenceLedgerEntry.SubjectKind.FIXITY_RESULT, "obj-1", "sha256:aa",
+                "2026-09-01T00:00:00Z");
+
+        assertEquals(AppendOutcome.REFUSED, result.outcome(),
+                "a tail read that failed before any write was reported as 'we do not know "
+                        + "whether the entry landed'");
+        assertTrue(result.reason().contains("unchanged"),
+                "the reason does not say the chain is unchanged: " + result.reason());
+    }
+
+    @Test
+    @DisplayName("a dead discovery view is not an empty set of repositories")
+    void aDeadDiscoveryViewIsNotAnEmptySetOfRepositories() throws Exception {
+        // The ledger's stocktake said getRetryCount was the only fail-open left in this
+        // class. findDistinctNonTerminalRepositoryIds was the other one, and its v2 twin
+        // five lines away in the projection loop halts the target on the same fact.
+        var store = new jp.aegif.nemaki.rest.purview.journal.CouchLineageJournalStore();
+        var client = mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+        when(client.queryView(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.<java.util.Map<String, Object>>any()))
+                .thenReturn(null);
+        var config = mock(jp.aegif.nemaki.rest.purview.journal.LineageConfig.class);
+        when(config.getMode()).thenReturn(
+                jp.aegif.nemaki.rest.purview.journal.LineageMode.JOURNALED);
+        setField(store, "lineageClient", client);
+        setField(store, "lineageConfig", config);
+        setField(store, "dbProvisioned", new java.util.concurrent.atomic.AtomicBoolean(true));
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                jp.aegif.nemaki.rest.purview.journal.CouchLineageJournalStore
+                        .LineageViewUnreadableException.class,
+                () -> store.findDistinctNonTerminalRepositoryIds("purview"),
+                "a view that did not answer was reported as 'no repository has work pending'");
     }
 
     @Test

@@ -232,6 +232,21 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
         if (!existing.isEmpty()) {
             doc.setId(existing.get(0).getId());
             doc.setRev(existing.get(0).getRev());
+        } else {
+            // A DETERMINISTIC id for anything created from here on.
+            //
+            // Existence is decided by a Mango selector, and a selector whose index is being
+            // rebuilt answers "no such connector" — after which this method used to save
+            // under a CouchDB-generated id, so a second document appeared with nothing able
+            // to reject it. Patch_DefaultCloudDriveConnectorProfile does exactly that
+            // sequence at startup. The patch gate added for it probes each repository's
+            // _repo views, which say nothing about THIS database's index; a review pointed
+            // that out. Deriving the id from the connectorId closes it where it actually
+            // happens: the second write is a 409, not a duplicate.
+            //
+            // Documents created before this keep their generated ids and are still found by
+            // the selector above, so nothing needs migrating.
+            doc.setId(ConnectorDefinition.DOC_TYPE + ":" + def.getConnectorId());
         }
 
         PostDocumentOptions options = new PostDocumentOptions.Builder()

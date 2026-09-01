@@ -154,7 +154,9 @@ class EveryRefusalCarriesItsLimitsTest {
                 return;
             }
         }
-        throw new AssertionError("no setHttpRequest on " + controller.getClass());
+        throw new jp.aegif.nemaki.util.test.HarnessBroken(
+                "no setHttpRequest on " + controller.getClass()
+                        + ", so nothing was checked");
     }
 
     private static void setHttpRequest(Object controller) throws Exception {
@@ -169,7 +171,8 @@ class EveryRefusalCarriesItsLimitsTest {
                 return;
             }
         }
-        throw new AssertionError("no setHttpRequest on " + controller.getClass()
+        throw new jp.aegif.nemaki.util.test.HarnessBroken("no setHttpRequest on "
+                + controller.getClass()
                 + ", so the admin gate could not be driven and nothing was checked");
     }
 

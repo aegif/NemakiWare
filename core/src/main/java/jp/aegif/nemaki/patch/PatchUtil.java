@@ -239,14 +239,20 @@ public class PatchUtil {
 	 * upgrade, so this is not a hypothetical window — it is the one the documented upgrade opens.
 	 *
 	 * <p>Rather than repair fourteen existence checks one at a time, this gate refuses to apply a
-	 * patch to a repository whose views are not currently answering. <b>It is not universal:</b>
-	 * {@code applySystemPatch()} runs before any per-repository gating, and a patch that overrides
-	 * {@code apply()} (currently {@code Patch_WebAuthnCredentialViews}) bypasses it. Neither
-	 * exception mutates repository objects today, but a future one would slip past — so this is a
-	 * gate on the ordinary path, not a guarantee about every path. The test is the same
+	 * patch to a repository whose views are not currently answering. The test is the same
 	 * shape as the reindex wipe guard: <b>if the database holds documents but a core view returns
 	 * nothing at all, the views are not built</b>. A genuinely fresh repository has neither, so it
 	 * is not blocked.
+	 *
+	 * <p>This note used to say the gate was "not universal" — that {@code applySystemPatch()} ran
+	 * before any gating, that {@code Patch_WebAuthnCredentialViews} bypassed it by overriding
+	 * {@code apply()}, and that <em>neither exception mutates repository objects today</em>. All
+	 * three were true when written and none is true now: both holes were closed, and the third
+	 * was never quite right — of the 45 system stages, eight touch a store, and
+	 * {@code Patch_DefaultCloudDriveConnectorProfile} asks a Mango selector and creates under a
+	 * generated id, which is exactly the shape this gate exists for. A caveat outliving the state
+	 * it describes is the failure mode this ledger keeps recording; it is corrected here rather
+	 * than deleted, so the next reader sees what changed.
 	 *
 	 * <p>Failing this way costs one startup: the patch is applied on the next one, once the
 	 * rebuild has finished. Applying a non-idempotent patch twice cannot be undone by waiting.

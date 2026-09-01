@@ -128,8 +128,11 @@ class ExportsRefuseMissingBytesTest {
                 "refused somewhere else in the walk, not at the content: "
                         + refused.getMessage());
 
-        // The refusal has to leave an archive that FAILS to open, not one that opens and is
-        // quietly short. Nothing called finish(), so there is no central directory.
+        // Nothing here closes the stream, so no central directory is written — which is a
+        // property of THIS FIXTURE, not of production. In the resource the same guarantee
+        // comes from closing the archive on the success path only; that is measured by
+        // ExportRefusalReachesTheClientTest#theArchiveIsClosedOnlyOnSuccess. Saying it was a
+        // property of the throw itself was wrong, and shipped in the ledger for two rounds.
         assertFalse(entryNames(sink.toByteArray()).contains("report.pdf.meta"),
                 "the metadata sidecar reached the archive without the bytes it describes");
     }

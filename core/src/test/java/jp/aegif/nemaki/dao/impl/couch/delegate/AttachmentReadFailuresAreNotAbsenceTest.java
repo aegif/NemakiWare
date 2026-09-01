@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -64,7 +65,17 @@ class AttachmentReadFailuresAreNotAbsenceTest {
         CloudantClientPool pool = mock(CloudantClientPool.class);
         client = mock(CloudantClientWrapper.class);
         when(pool.getClient(REPO)).thenReturn(client);
-        delegate = new AttachmentDaoDelegate(pool, mock(DaoHelper.class));
+        // A REAL mapper. With a mocked DaoHelper answering null, getRendition NPEs before it
+        // reaches the arm under test and the outer catch turns that into a refusal — so the
+        // first version of the rendition tests passed without ever exercising the guard they
+        // name. The fixture has to get as far as the decision.
+        DaoHelper helper = mock(DaoHelper.class);
+        when(helper.createConfiguredObjectMapper())
+                .thenReturn(tools.jackson.databind.json.JsonMapper.builderWithJackson2Defaults()
+                        .configure(tools.jackson.databind.DeserializationFeature
+                                .FAIL_ON_UNKNOWN_PROPERTIES, false)
+                        .build());
+        delegate = new AttachmentDaoDelegate(pool, helper);
     }
 
     private static CouchAttachmentNode storedNode() {
@@ -102,10 +113,28 @@ class AttachmentReadFailuresAreNotAbsenceTest {
                 .thenThrow(new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
                         "the body could not be fetched"));
 
-        assertThrows(RuntimeException.class,
+        IllegalStateException refused = assertThrows(IllegalStateException.class,
                 () -> delegate.getAttachment(REPO, "att-1"),
                 "the node came back with a null stream, and every exporter wrote its "
                         + "metadata with no bytes beside it");
+        // The type alone is satisfied by at least three guards in this method, so the
+        // message is asserted too — the shape that let a control fire for the wrong reason
+        // earlier in this batch.
+        assertTrue(refused.getMessage().contains("could not be read"),
+                "refused by a different guard than the body read: " + refused.getMessage());
+    }
+
+    @Test
+    @DisplayName("a body that comes back as something other than a stream refuses")
+    void aNonStreamBodyRefuses() {
+        wire();
+        when(client.get(eq(CouchAttachmentNode.class), eq("att-1"))).thenReturn(storedNode());
+        when(client.getAttachment(eq("att-1"), eq("content"))).thenReturn("not a stream");
+
+        IllegalStateException refused = assertThrows(IllegalStateException.class,
+                () -> delegate.getAttachment(REPO, "att-1"));
+        assertTrue(refused.getMessage().contains("rather than a stream"),
+                "refused by a different guard: " + refused.getMessage());
     }
 
     @Test
@@ -132,6 +161,56 @@ class AttachmentReadFailuresAreNotAbsenceTest {
         AttachmentNode node = delegate.getAttachment(REPO, "att-1");
         assertNotNull(node);
         assertNotNull(node.getInputStream(), "the refusal arms broke the ordinary read");
+    }
+
+    @Test
+    @DisplayName("a rendition body that could not be read refuses — the untested twin")
+    void aFailedRenditionBodyReadRefuses() {
+        // getRendition got the same two throws as getAttachment in this batch and had NO
+        // test and NO control: reverting both left every test green. Found by a
+        // test-discrimination audit.
+        wire();
+        com.ibm.cloud.cloudant.v1.model.Document doc =
+                mock(com.ibm.cloud.cloudant.v1.model.Document.class);
+        when(doc.getId()).thenReturn("rend-1");
+        when(doc.getRev()).thenReturn("1-abc");
+        java.util.Map<String, Object> props = new java.util.HashMap<>();
+        props.put("type", "rendition");
+        props.put("mimetype", "image/png");
+        props.put("length", 100L);
+        when(doc.getProperties()).thenReturn(props);
+        when(client.get("rend-1")).thenReturn(doc);
+        when(client.getAttachment(eq("rend-1"), eq("content")))
+                .thenThrow(new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+                        "the body could not be fetched"));
+
+        IllegalStateException refused = assertThrows(IllegalStateException.class,
+                () -> delegate.getRendition(REPO, "rend-1"),
+                "a rendition whose body could not be read came back as a rendition with no "
+                        + "stream, which every caller reads as 'this preview has no bytes'");
+        assertTrue(refused.getMessage().contains("rendition"),
+                "refused by some other guard: " + refused.getMessage());
+    }
+
+    @Test
+    @DisplayName("a rendition that genuinely carries no body still answers — the control")
+    void aBodilessRenditionIsStillAnswered() {
+        wire();
+        com.ibm.cloud.cloudant.v1.model.Document doc =
+                mock(com.ibm.cloud.cloudant.v1.model.Document.class);
+        when(doc.getId()).thenReturn("rend-2");
+        when(doc.getRev()).thenReturn("1-abc");
+        java.util.Map<String, Object> props = new java.util.HashMap<>();
+        props.put("type", "rendition");
+        props.put("mimetype", "image/png");
+        props.put("length", 100L);
+        when(doc.getProperties()).thenReturn(props);
+        when(client.get("rend-2")).thenReturn(doc);
+        when(client.getAttachment(eq("rend-2"), eq("content")))
+                .thenThrow(new CmisObjectNotFoundException("no such attachment"));
+
+        assertNotNull(delegate.getRendition(REPO, "rend-2"),
+                "genuine absence of the rendition body was turned into a refusal");
     }
 
     @Test

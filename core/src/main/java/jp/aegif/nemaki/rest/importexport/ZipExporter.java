@@ -63,12 +63,20 @@ public class ZipExporter {
      * Raised instead of finishing an archive that would be read as a complete export.
      *
      * <p>The ZIP is the response BODY, streamed after the 200 has been committed, so there is
-     * no status code left to change: the only two outcomes available are an archive that
-     * unpacks and one that does not. Until now a document whose content could not be read was
-     * logged and skipped, and the archive still unpacked — with the document's {@code .meta}
-     * sidecar present and its bytes absent, which reads as "this record had no content".
-     * Throwing here aborts the stream before {@code zos.finish()} writes the central
-     * directory, so the receiver's unzip fails instead of succeeding on a hole.
+     * no status code left to change once the first bytes are out. Until now a document whose
+     * content could not be read was logged and skipped, and the archive still unpacked — with
+     * the document's {@code .meta} sidecar present and its bytes absent, which reads as "this
+     * record had no content".
+     *
+     * <p>What throwing actually achieves, stated precisely because the first version of this
+     * note overstated it: the walk stops, so nothing after the failure is written. Whether the
+     * CLIENT can tell depends on how far the response has got. While it is still buffered the
+     * container turns the exception into a 500 and the body is not an archive at all
+     * (measured). Past that point the only signal left is a stream that ends without its
+     * central directory — which is why {@code ImportExportResource} closes the
+     * {@code ZipOutputStream} on the success path only: {@code close()} calls
+     * {@code finish()}, and a {@code finally} would write the directory for a refused export
+     * and hand back an archive that opens with its last entry truncated.
      *
      * <p>{@link jp.aegif.nemaki.rest.eark.EarkSipExporter.ExportRefusedException} is the same
      * decision on the SIP side; this is the pair of it for the NemakiWare ZIP format.

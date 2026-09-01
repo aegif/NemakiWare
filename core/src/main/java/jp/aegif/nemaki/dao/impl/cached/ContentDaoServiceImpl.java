@@ -104,13 +104,20 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		log.debug("No cached typedefs, calling nonCachedContentDaoService");
 		List<NemakiTypeDefinition> result = nonCachedContentDaoService.getTypeDefinitions(repositoryId);
 
-		if (CollectionUtils.isEmpty(result)) {
-			return null;
-		} else {
+		// An EMPTY list is the bootstrap answer the store deliberately preserves — a
+		// repository whose type documents do not exist yet. Turning it into null here undid
+		// that, and getTypeDefinition below iterates the result without a null check, so the
+		// genuine-empty case NPEs. Absence keeps its own value: an empty list stays empty.
+		if (result == null) {
+			throw new IllegalStateException("the type definitions of '" + repositoryId
+					+ "' came back as null from a store that refuses rather than answering"
+					+ " null; this is a wiring fault, not an empty repository");
+		}
+		if (!result.isEmpty()) {
 			log.debug("Caching " + result.size() + " types for repository: " + repositoryId);
 			typeCache.put("typedefs", result);
-			return result;
 		}
+		return result;
 	}
 
 	@Override

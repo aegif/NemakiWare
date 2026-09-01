@@ -653,7 +653,8 @@ class AuthenticityReportTest {
             m.setAccessible(true);
             return (AuthenticityReport.Section) m.invoke(assembler, "bedroom");
         } catch (ReflectiveOperationException e) {
-            throw new AssertionError("ledgerSection is not there, so nothing was checked", e);
+            throw new jp.aegif.nemaki.util.test.HarnessBroken(
+                    "ledgerSection is not there, so nothing was checked", e);
         }
     }
 

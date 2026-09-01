@@ -1592,7 +1592,16 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
 
             ViewResult result = getLineageClient().queryView(DESIGN_DOC, "non_terminal_by_target_repo", params);
             if (result == null || result.getRows() == null) {
-                return List.of();
+                // An empty list here says "no repository has anything pending for this
+                // target", and the projection loop acts on exactly that. Its v2 twin, five
+                // lines further down in LineageProjectionLoop, halts the target on the same
+                // fact — so one view outage had two different answers depending on which
+                // schema asked. Found by a ledger audit that checked the claim "the only one
+                // left was getRetryCount".
+                throw new LineageViewUnreadableException("the non_terminal_by_target_repo view"
+                        + " did not answer for target '" + target + "', so which repositories"
+                        + " have work pending is unknown; this is NOT a finding that none do",
+                        null);
             }
 
             List<String> repositoryIds = new ArrayList<>();
@@ -1606,9 +1615,13 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
                 }
             }
             return repositoryIds;
+        } catch (LineageViewUnreadableException e) {
+            throw e;
         } catch (Exception e) {
-            logger.debug("Error querying distinct non-terminal repository IDs for target {}: {}", target, e.getMessage());
-            return List.of();
+            logger.warn("Error querying distinct non-terminal repository IDs for target {}: {}", target, e.getMessage());
+            throw new LineageViewUnreadableException("which repositories have work pending for"
+                    + " target '" + target + "' could not be read; this is NOT a finding that"
+                    + " none do", e);
         }
     }
 

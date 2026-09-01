@@ -17,6 +17,7 @@
 package jp.aegif.nemaki.cmis.aspect.type;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -77,6 +78,7 @@ class OneRepositoryDoesNotTakeDownTheRegistryTest {
     @BeforeEach
     void resetTheStaticRegistry() throws Exception {
         setStatic("initialized", false);
+        setStatic("everInitialized", false);
         setStatic("TYPES", new java.util.concurrent.ConcurrentHashMap<String,
                 java.util.Map<String, org.apache.chemistry.opencmis.commons.definitions
                         .TypeDefinitionContainer>>());
@@ -165,6 +167,81 @@ class OneRepositoryDoesNotTakeDownTheRegistryTest {
         assertTrue(refused.getMessage().contains("not"),
                 "refused without saying the type system is not loaded: "
                         + refused.getMessage());
+    }
+
+    @Test
+    @DisplayName("the CMIS-visible listings refuse for the broken repository too")
+    void theCmisVisibleListingsRefuseToo() {
+        // Four readers of TYPES were guarded first and four were not — and the four that
+        // were not include getTypesChildren and getTypesDescendants, which ARE the CMIS type
+        // listings. generate() installs the base types before addSubTypes can fail, so an
+        // unguarded reader answers from a base-only map: "this repository has five types".
+        TypeService typeService = mock(TypeService.class);
+        when(typeService.getTypeDefinitions("healthy"))
+                .thenReturn(Collections.singletonList(customType()));
+        when(typeService.getTypeDefinitions("unprovisioned"))
+                .thenThrow(new IllegalStateException("View _repo/typeDefinitions is not deployed"));
+
+        TypeManagerImpl tm = new TypeManagerImpl();
+        tm.setTypeService(typeService);
+        tm.setRepositoryInfoMap(twoRepositories());
+        tm.setPropertyManager(readableConfiguration());
+        tm.init();
+
+        assertThrows(IllegalStateException.class,
+                () -> tm.getTypesDescendants("unprovisioned", null, java.math.BigInteger.ONE,
+                        Boolean.FALSE),
+                "getTypesDescendants answered from the base-only map left behind by a failed "
+                        + "type load");
+        assertThrows(IllegalStateException.class,
+                () -> tm.getTypeByQueryName("unprovisioned", "cmis:document"),
+                "getTypeByQueryName answered from the base-only map");
+        assertThrows(IllegalStateException.class,
+                () -> tm.findSecondaryTypeByPropertyQueryName("unprovisioned", "nemaki:tag"),
+                "findSecondaryTypeByPropertyQueryName answered from the base-only map");
+
+        // The healthy repository is unaffected — the isolation is the point.
+        assertFalse(tm.getTypeDefinitionList("healthy").isEmpty());
+    }
+
+    @Test
+    @DisplayName("a LATER init does not open the window — it can run on a request thread")
+    void aLaterInitDoesNotOpenTheWindow() throws Exception {
+        // init() is reached lazily too: refreshTypes() and the dynamic-repository path in
+        // getTypeById() set initialized=false, and the next ensureInitialized() re-enters it
+        // ON A REQUEST THREAD. The window is process-wide, so opening it there hands the
+        // provisioning grace to every request being served at that moment — which is exactly
+        // the defect StartupPhase was built to remove, arriving through a different door.
+        // By the second init the design documents exist, so a missing view IS a failure.
+        final java.util.List<Boolean> windowDuringRead = new java.util.ArrayList<>();
+        TypeService typeService = mock(TypeService.class);
+        when(typeService.getTypeDefinitions(anyString())).thenAnswer(invocation -> {
+            windowDuringRead.add(StartupPhase.isProvisioning());
+            return Collections.singletonList(customType());
+        });
+
+        RepositoryInfoMap map = mock(RepositoryInfoMap.class);
+        when(map.keys()).thenReturn(new LinkedHashSet<>(List.of("healthy")));
+        RepositoryInfo info = mock(RepositoryInfo.class);
+        when(info.getId()).thenReturn("healthy");
+        when(map.get("healthy")).thenReturn(info);
+
+        TypeManagerImpl tm = new TypeManagerImpl();
+        tm.setTypeService(typeService);
+        tm.setRepositoryInfoMap(map);
+        tm.setPropertyManager(readableConfiguration());
+
+        tm.init();                       // the startup one
+        setStatic("initialized", false); // what refreshTypes() does
+        tm.init();                       // the lazy one, as a request thread reaches it
+
+        assertEquals(2, windowDuringRead.size(), "the second init did not read the store");
+        assertTrue(windowDuringRead.get(0),
+                "the FIRST init must have the grace: the design documents are provisioned "
+                        + "later, on an application event");
+        assertFalse(windowDuringRead.get(1),
+                "a later init opened the process-wide provisioning window. Every request "
+                        + "being served at that moment then reads a missing view as 'no data'");
     }
 
     @Test

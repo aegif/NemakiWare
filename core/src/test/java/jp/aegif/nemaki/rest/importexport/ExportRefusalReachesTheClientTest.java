@@ -45,26 +45,111 @@ class ExportRefusalReachesTheClientTest {
     private static final String SOURCE =
             "src/main/java/jp/aegif/nemaki/rest/ImportExportResource.java";
 
-    @Test
-    @DisplayName("the type-definition export refusal is not swallowed")
-    void theTypeDefinitionRefusalIsNotSwallowed() throws Exception {
-        String source = JavaSource.withoutComments(JavaSource.read(SOURCE));
-        assertFalse(source.contains("log.warn(\"Failed to export type definitions: \""),
-                "the resource logs the refusal and finishes the archive: an importer then "
-                        + "gets a package naming custom types it does not carry");
-        assertTrue(source.contains("the type definitions this archive refers to could not be"),
-                "the refusal no longer travels to the client at all");
+    /**
+     * Every catch inside the two streaming bodies either rethrows or raises a refusal.
+     *
+     * <p>The first version of this test asserted that three particular {@code log.warn}
+     * strings were ABSENT and one refusal string was PRESENT. An audit listed three edits
+     * that restore the swallow and keep it green: reword the log line; build the refusal and
+     * log it instead of throwing; revert only ONE of the two identical call sites. What has
+     * to hold is a property of every catch in those bodies, so that is what is checked.
+     */
+    private static void assertEveryCatchRefuses(String body, String where) {
+        int at = body.indexOf("} catch (");
+        int checked = 0;
+        while (at >= 0) {
+            int end = matchingClose(body, at);
+            String block = body.substring(at, end);
+            boolean refuses = block.contains("throw ");
+            assertTrue(refuses,
+                    "a catch in " + where + " swallows its failure, so the archive is "
+                            + "finished over it:\n" + block);
+            checked++;
+            at = body.indexOf("} catch (", end);
+        }
+        assertTrue(checked >= 3,
+                where + " has fewer catches than the three this test exists for — it was "
+                        + "restructured and the check no longer covers what it named (" 
+                        + checked + " found)");
+    }
+
+    /** End index of the block opened by the first '{' at or after {@code from}. */
+    private static int matchingClose(String text, int from) {
+        int i = text.indexOf('{', from);
+        int depth = 0;
+        for (; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) {
+                    return i + 1;
+                }
+            }
+        }
+        return text.length();
     }
 
     @Test
-    @DisplayName("the relationship and custom-type collection refusals are not swallowed")
-    void theOtherTwoRefusalsAreNotSwallowed() throws Exception {
+    @DisplayName("every catch in the folder-export streamer refuses rather than logging")
+    void theFolderExportStreamerRefuses() throws Exception {
         String source = JavaSource.withoutComments(JavaSource.read(SOURCE));
-        assertFalse(source.contains("log.warn(\"Failed to export relationships: \""),
-                "a failed relationship export still finishes the archive, which then says "
-                        + "the exported objects have no relationships");
-        assertFalse(source.contains("log.warn(\"Failed to collect custom type definitions: \""),
-                "the walk that decides which type definitions the archive needs can fail and "
-                        + "still produce a package that unpacks");
+        // The two streaming bodies are textually identical apart from one lineage call, so
+        // they are located by the call that differs and bounded by brace matching.
+        String body = streamingBodyContaining(source, "publishZipFolderExportLineage(");
+        assertEveryCatchRefuses(body, "the folder-export streamer");
+    }
+
+    @Test
+    @DisplayName("every catch in the objects-export streamer refuses too — the second site")
+    void theObjectsExportStreamerRefuses() throws Exception {
+        String source = JavaSource.withoutComments(JavaSource.read(SOURCE));
+        String body = streamingBodyContaining(source, "publishSelectedObjectsExportLineage(");
+        assertEveryCatchRefuses(body, "the objects-export streamer");
+    }
+
+    @Test
+    @DisplayName("the archive is closed on the success path only")
+    void theArchiveIsClosedOnlyOnSuccess() throws Exception {
+        // close() calls finish(), which writes the ZIP central directory. With
+        // try-with-resources the refusal path therefore handed back an archive that OPENS,
+        // with the last entry truncated — and the ledger claimed the opposite. A reviewer
+        // measured it: the "no central directory" only held while the response was still
+        // uncommitted (a one-document export fits the container buffer).
+        String source = JavaSource.withoutComments(JavaSource.read(SOURCE));
+        for (String marker : new String[] {"publishZipFolderExportLineage(",
+                "publishSelectedObjectsExportLineage("}) {
+            String body = streamingBodyContaining(source, marker);
+            assertFalse(body.contains("try (ZipOutputStream"),
+                    "the streamer at " + marker + " closes the archive in a try-with-resources"
+                            + " again, so a refused export is handed back as an openable one");
+            int close = body.indexOf("zos.close();");
+            // The OUTER catch — the last one in the body — is what a refusal reaches. The
+            // first `} catch (` belongs to an inner try around one step of the walk, and
+            // comparing against that measured nothing.
+            int outerCatch = body.lastIndexOf("} catch (");
+            int finallyAt = body.indexOf("} finally {");
+            assertTrue(close > 0, "the archive is never closed at " + marker);
+            assertTrue(close < outerCatch,
+                    "zos.close() sits in or after the outer catch at " + marker + ", which"
+                            + " writes the central directory for a refused export");
+            assertTrue(finallyAt < 0 || close < finallyAt,
+                    "zos.close() moved into a finally at " + marker + ", which runs on the"
+                            + " refusal path too and finishes the archive");
+        }
+    }
+
+    /** The {@code write(OutputStream)} body that contains {@code marker}. */
+    private static String streamingBodyContaining(String source, String marker) {
+        // lastIndexOf, not indexOf: each of these names is also a method DECLARATION earlier
+        // in the file, and the declaration comes before any streaming body — so searching
+        // forwards found it and the lookup for an enclosing body failed.
+        int markerAt = source.lastIndexOf(marker);
+        assertTrue(markerAt > 0, "the streamer identified by " + marker + " is gone — this "
+                + "test no longer looks at what it names");
+        int bodyStart = source.lastIndexOf("public void write(OutputStream output)", markerAt);
+        assertTrue(bodyStart > 0, "no streaming body before " + marker);
+        return source.substring(bodyStart, matchingClose(source, bodyStart));
     }
 }

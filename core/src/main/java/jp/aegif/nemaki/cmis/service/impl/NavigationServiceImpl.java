@@ -304,6 +304,17 @@ public class NavigationServiceImpl implements NavigationService {
 			// Legacy path: fetch all, filter, sort, subList
 			// Used for small folders (accurate global sort) or when client specifies explicit orderBy
 			List<Content> contents = contentService.getChildren(repositoryId, folderId);
+			// The THIRD branch. The probe guard covers totalCount == 0 and the oversampling
+			// loop covers the large-folder walk; this one — an accurate count of 500 or
+			// fewer, or any request with an orderBy — is the ordinary small-folder path and
+			// had no check at all. A review found it after the other two were closed, which
+			// is the same one-arm shape this batch keeps re-committing.
+			int unreadableHere = contentService.lastUnreadableChildCount();
+			if (unreadableHere > 0) {
+				throw new CmisRuntimeException("the folder's children are short by "
+						+ unreadableHere + " row(s) the store could not decode; serving them "
+						+ "would present a listing that is missing children as a complete one");
+			}
 
 			// The folder itself belongs in this set, not outside it: an ordering is a property of
 			// a set, and a lock taken before it is not ordered against anything in it.

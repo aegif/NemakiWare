@@ -1149,8 +1149,8 @@ CONTROLS = [
         id="LE",
         what="the provisioning window default flips to lenient",
         file="core/src/main/java/jp/aegif/nemaki/init/StartupPhase.java",
-        find="    private static volatile boolean provisioning = false;",
-        replace="    private static volatile boolean provisioning = true;",
+        find="            new java.util.concurrent.atomic.AtomicInteger(0);",
+        replace="            new java.util.concurrent.atomic.AtomicInteger(1);",
         test="StartupPhaseIsDeclaredNotGuessedTest",
         expect_fail=["theDefaultIsStrict"],
     ),
@@ -1547,11 +1547,124 @@ CONTROLS = [
         expect_fail=["aPageShortByADecodeFailureRefuses"],
     ),
     dict(
+        id="NB",
+        what="a lazy re-init opens the process-wide provisioning window again",
+        file="core/src/main/java/jp/aegif/nemaki/cmis/aspect/type/impl/TypeManagerImpl.java",
+        find="\t\t\tboolean firstInitialization = !everInitialized;",
+        replace="\t\t\tboolean firstInitialization = true;",
+        test="OneRepositoryDoesNotTakeDownTheRegistryTest",
+        expect_fail=["aLaterInitDoesNotOpenTheWindow"],
+    ),
+    dict(
+        id="NC",
+        what="the provisioning windows stop nesting (an inner end closes the outer)",
+        file="core/src/main/java/jp/aegif/nemaki/init/StartupPhase.java",
+        find="        openWindows.updateAndGet(depth -> depth > 0 ? depth - 1 : 0);",
+        replace="        openWindows.set(0);",
+        test="StartupPhaseIsDeclaredNotGuessedTest",
+        expect_fail=["theWindowsNest"],
+    ),
+    dict(
+        id="ND",
+        what="the group twin of the userId-mismatch arm answers null again",
+        file="core/src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/UserGroupDaoDelegate.java",
+        find_span=("\t\t\t\t\t\tthrow new IllegalStateException(\"the view matched a group row for '\"",
+                   "cannot be established\");"),
+        replace="\t\t\t\t\t\treturn null;",
+        test="UserLookupRefusesIndexDisagreementTest",
+        expect_fail=["aMismatchedGroupRowRefuses"],
+    ),
+    dict(
+        id="NE",
+        what="childrenNames drops nameless rows again, so the uniqueness check runs short",
+        file="core/src/main/java/jp/aegif/nemaki/dao/impl/couch/ContentDaoServiceImpl.java",
+        find_span=("\t\t\tif (unreadableRows > 0) {\n\t\t\t\tthrow new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(\n\t\t\t\t\t\tunreadableRows + \" row(s) of the childrenNames view",
+                   "cannot run on a short list\");\n\t\t\t}"),
+        replace="",
+        test="ChildrenNamesAreNeverSilentlyShortTest",
+        expect_fail=["aNamelessRowRefusesTheListing"],
+    ),
+    dict(
+        id="NF",
+        what="the four CMIS-visible type listings answer from a base-only map again",
+        file="core/src/main/java/jp/aegif/nemaki/cmis/aspect/type/impl/TypeManagerImpl.java",
+        # getTypeByQueryName, not getTypesDescendants: with this fixture the descendants call
+        # refuses for a second reason even without its guard, so sabotaging it measured
+        # nothing (the runner said DID NOT FIRE). The query-name reader has no other refusal.
+        # The span has to REMOVE the guard. The first version inserted a dead `if (false)`
+        # call above it and left the real one in place, so the sabotage changed nothing —
+        # which the runner reported as DID NOT FIRE, correctly.
+        find_span=("\tpublic TypeDefinition getTypeByQueryName(String repositoryId, String typeQueryName) {\n\t\tensureInitialized();",
+                   "\t\tassertRepositoryTypesLoaded(repositoryId);"),
+        replace="\tpublic TypeDefinition getTypeByQueryName(String repositoryId, String typeQueryName) {\n\t\tensureInitialized();",
+        test="OneRepositoryDoesNotTakeDownTheRegistryTest",
+        expect_fail=["theCmisVisibleListingsRefuseToo"],
+    ),
+    dict(
+        id="NG",
+        what="a rendition body that could not be read is a rendition with no bytes again",
+        file="core/src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/AttachmentDaoDelegate.java",
+        # The outer catch, which is where the test's fixture (a body read that throws) lands.
+        # Sabotaging the non-stream arm instead measured nothing, because that arm is not the
+        # one this fixture reaches — the runner said DID NOT FIRE.
+        find_span=("\t\t\tthrow new IllegalStateException(\"the rendition '\" + objectId + \"' in '\"",
+                   "not exist\", e);"),
+        replace="\t\t\treturn null;",
+        test="AttachmentReadFailuresAreNotAbsenceTest",
+        expect_fail=["aFailedRenditionBodyReadRefuses"],
+    ),
+    dict(
+        id="NH",
+        what="the wrapper answers null for a size it could not measure, under the closed DAO",
+        file="core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CloudantClientWrapper.java",
+        find_span=("\t\t\tthrow new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(\n\t\t\t\t\t\"the stored size of \" + docId",
+                   "it has none\", e);"),
+        replace="\t\t\treturn null;",
+        test="AttachmentSizeRefusalReachesTheDaoTest",
+        expect_fail=["theWrapperRefusesAFailedMeasurement"],
+    ),
+    dict(
+        id="NI",
+        what="the export streamers close the archive on the refusal path again",
+        file="core/src/main/java/jp/aegif/nemaki/rest/ImportExportResource.java",
+        # The sabotage has to restore the DEFECT — try-with-resources — not shuffle the
+        # close() that the fix added. Moving the comment left the close in the same place and
+        # the lock stayed green, which the runner reported as DID NOT FIRE.
+        # Both streamers carry the identical block, so the span is anchored on the ONE line
+        # that differs — the folder streamer's own lineage call is further down, so the
+        # nearest unique text above is the folder-export comment.
+        find="                    ZipOutputStream zos = new ZipOutputStream(output);\n                    try {\n                        Set<String> customTypeIds = new HashSet<>();\n                        try {\n                            collectCustomTypeIds(repositoryId, folder, customTypeIds);",
+        replace="                    try (ZipOutputStream zos = new ZipOutputStream(output)) {\n                        Set<String> customTypeIds = new HashSet<>();\n                        try {\n                            collectCustomTypeIds(repositoryId, folder, customTypeIds);",
+        test="ExportRefusalReachesTheClientTest",
+        expect_fail=["theArchiveIsClosedOnlyOnSuccess"],
+    ),
+    dict(
+        id="NJ",
+        what="the ledger reports a failed TAIL read as unknown-whether-written again",
+        file="core/src/main/java/jp/aegif/nemaki/evidence/EvidenceLedgerService.java",
+        find="                return new AppendResult(AppendOutcome.REFUSED, -1, null,\n                        \"the tail of the chain could not be read (\" + e.getMessage()",
+        replace="                return new AppendResult(AppendOutcome.INDETERMINATE, -1, null,\n                        \"the tail of the chain could not be read (\" + e.getMessage()",
+        test="LedgerAndJournalUnknownsAreNotZeroTest",
+        expect_fail=["aFailedTailReadIsRefusedNotIndeterminate"],
+    ),
+    dict(
+        id="NK",
+        what="repository discovery for a target answers 'none pending' on a dead view again",
+        file="core/src/main/java/jp/aegif/nemaki/rest/purview/journal/CouchLineageJournalStore.java",
+        find_span=("                throw new LineageViewUnreadableException(\"the non_terminal_by_target_repo view\"",
+                   "none do\",\n                        null);"),
+        replace="                return List.of();",
+        test="LedgerAndJournalUnknownsAreNotZeroTest",
+        expect_fail=["aDeadDiscoveryViewIsNotAnEmptySetOfRepositories"],
+    ),
+    dict(
         id="MO",
         what="the type registry reads the store outside the declared startup window",
         file="core/src/main/java/jp/aegif/nemaki/cmis/aspect/type/impl/TypeManagerImpl.java",
-        find="\t\t\tStartupPhase.begin();\n\t\t\ttry {\n\t\t\t\tlog.info(\"Starting TypeManagerImpl initialization process\");",
-        replace="\t\t\ttry {\n\t\t\t\tlog.info(\"Starting TypeManagerImpl initialization process\");",
+        # Re-anchored: the window is now opened only for the FIRST initialization, so the
+        # begin() sits behind a condition rather than directly above the try.
+        find="\t\t\tif (firstInitialization) {\n\t\t\t\tStartupPhase.begin();\n\t\t\t}",
+        replace="\t\t\tif (firstInitialization) {\n\t\t\t}",
         test="OneRepositoryDoesNotTakeDownTheRegistryTest",
         expect_fail=["initDeclaresTheStartupWindow"],
     ),
@@ -1734,7 +1847,11 @@ def failed_as_assertion(report_text: str, method: str) -> bool:
     lines = report_text.splitlines()
     for i, line in enumerate(lines):
         if method in line and ("<<< FAILURE!" in line or "<<< ERROR!" in line):
-            stanza = "\n".join(lines[i:i + 6])
+            # 6 lines was too narrow: surefire prints the assertion, then the stack, then
+            # "Caused by:" — so a HarnessBroken wrapped inside an assertion fell outside the
+            # window and the control counted as fired. 40 lines covers a normal stanza and
+            # stops before the next test's.
+            stanza = "\n".join(lines[i:i + 40])
             # HARNESS BREAKAGE FIRST, and it wins. JavaSource.methodBody and the reflection
             # helpers that report a renamed method used to throw AssertionError, so the one
             # case this function exists to exclude walked straight through the check below:
@@ -1846,7 +1963,46 @@ SELF_TEST_CASES = [
      lambda: _delimiter_delta('log.warn("{ unclosed in a string");'), (0, 0)),
     ("braces inside a line comment do not count",
      lambda: _delimiter_delta("// } stray in a comment\nint x = 1;"), (0, 0)),
+    # The check itself, not just its helper. Every case above exercises _delimiter_delta and
+    # none of them exercised sabotage_text, so deleting the comparison that USES it would have
+    # left all of them green — the runner's own version of "a lock that measures the helper
+    # rather than the call site". A review found it.
+    ("a span whose end marker matched too early is refused by sabotage_text",
+     lambda: _self_test_span_refusal(), "refused"),
+    ("a well-formed span is still applied by sabotage_text",
+     lambda: _self_test_span_applied(), "if (b) {\n\tSOMETHING;\n}\ntail();\n"),
+    # A HarnessBroken that appears deeper in a real surefire stack than the first few lines.
+    ("harness breakage deeper in the stanza still wins",
+     lambda: failed_as_assertion(
+         "someTest -- Time elapsed: 0.1 s <<< ERROR!\n"
+         "org.opentest4j.AssertionFailedError: the lock could not read the method\n"
+         "\tat org.junit.jupiter.api.Assertions.fail(Assertions.java:1)\n"
+         "\tat jp.aegif.nemaki.SomeLock.check(SomeLock.java:2)\n"
+         "\tat jp.aegif.nemaki.SomeLock.aTest(SomeLock.java:3)\n"
+         "\tat java.base/java.lang.reflect.Method.invoke(Method.java:4)\n"
+         "\tat org.junit.platform.Runner.run(Runner.java:5)\n"
+         "Caused by: jp.aegif.nemaki.util.test.HarnessBroken: method not found",
+         "someTest"), False),
 ]
+
+
+def _self_test_span_refusal():
+    """sabotage_text must refuse a span whose end marker lands mid-block."""
+    source = "head();\nif (a) {\n\tif (b) {\n\t\tx();\n\t}\n}\ntail();\n"
+    control = {"id": "SELFTEST", "find_span": ("if (a) {", "\t}"), "replace": ""}
+    try:
+        sabotage_text(source, control)
+    except SystemExit:
+        return "refused"
+    return "applied"
+
+
+def _self_test_span_applied():
+    """...and must still apply a span whose delta matches its replacement."""
+    source = "head();\nif (a) {\n\tSOMETHING;\n}\ntail();\n"
+    control = {"id": "SELFTEST", "find_span": ("if (a) {", "}"),
+               "replace": "if (b) {\n\tSOMETHING;\n}"}
+    return sabotage_text(source, control).replace("head();\n", "")
 
 
 def run_self_test() -> int:

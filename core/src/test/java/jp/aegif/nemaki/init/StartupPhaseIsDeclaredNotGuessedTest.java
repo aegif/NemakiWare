@@ -59,7 +59,7 @@ class StartupPhaseIsDeclaredNotGuessedTest {
         // class. The initializer is the invariant, so the initializer is what is pinned.
         String source = JavaSource.withoutComments(JavaSource.read(
                 "src/main/java/jp/aegif/nemaki/init/StartupPhase.java"));
-        assertTrue(source.contains("private static volatile boolean provisioning = false;"),
+        assertTrue(source.contains("new java.util.concurrent.atomic.AtomicInteger(0)"),
                 "the provisioning grace no longer defaults to OFF — a process that never "
                         + "provisions, and every test, would answer failures as 'no data'");
     }
@@ -69,6 +69,37 @@ class StartupPhaseIsDeclaredNotGuessedTest {
     void theWindowIsExplicit() {
         StartupPhase.begin();
         assertTrue(StartupPhase.isProvisioning());
+        StartupPhase.end();
+        assertFalse(StartupPhase.isProvisioning());
+    }
+
+    @Test
+    @DisplayName("the windows nest — an inner end() does not close the outer one")
+    void theWindowsNest() {
+        // The registry declares a window around its first initialization, and that
+        // initialization can run INSIDE the provisioning window DatabasePreInitializer
+        // opened. While this was a boolean, the inner end() closed the outer window and the
+        // rest of provisioning ran strict — a missing view refusing during the very work
+        // that creates the views.
+        StartupPhase.begin();          // provisioning
+        StartupPhase.begin();          // the registry's first init, inside it
+        StartupPhase.end();            // the registry finishes
+        assertTrue(StartupPhase.isProvisioning(),
+                "the inner window's end() closed the outer one, so provisioning lost the "
+                        + "grace it had declared for itself");
+        StartupPhase.end();            // provisioning finishes
+        assertFalse(StartupPhase.isProvisioning());
+    }
+
+    @Test
+    @DisplayName("an unmatched end() cannot drive the window negative")
+    void anUnmatchedEndIsHarmless() {
+        StartupPhase.end();
+        StartupPhase.end();
+        StartupPhase.begin();
+        assertTrue(StartupPhase.isProvisioning(),
+                "stray end() calls left the counter below zero, so a later begin() no longer "
+                        + "opens the window");
         StartupPhase.end();
         assertFalse(StartupPhase.isProvisioning());
     }

@@ -140,18 +140,34 @@ public class EvidenceLedgerService {
                 }
                 EvidenceLedgerEntry entry = EvidenceLedgerEntry.of(domain, tail + 1, kind,
                         subjectId, payloadDigest, occurredAt, prevHash);
-                if (store.append(entry)) {
+                boolean written;
+                try {
+                    written = store.append(entry);
+                } catch (Exception writeFailure) {
+                    // The ONLY call whose outcome is genuinely unknown. The catch below used
+                    // to cover the whole body — the tail reads included — so a failure that
+                    // provably happened BEFORE any write was also reported as "we do not know
+                    // whether it landed". Safe direction, but not the split that was promised:
+                    // a caller asking "is the chain as I last saw it?" got "unknown" for a
+                    // read that never wrote anything.
+                    logger.warn("Evidence ledger write failed for {}: {}", domain,
+                            writeFailure.toString());
+                    return new AppendResult(AppendOutcome.INDETERMINATE, -1, null,
+                            "the append failed: " + writeFailure.getMessage() + ". Whether the"
+                                    + " entry reached the store is unknown — a write whose"
+                                    + " response was lost may have landed — so this is NOT a"
+                                    + " statement that the chain is unchanged");
+                }
+                if (written) {
                     return new AppendResult(AppendOutcome.APPENDED, entry.sequence(),
                             entry.entryHash(), null);
                 }
                 // Position taken. Re-read and aim past it.
             } catch (Exception e) {
                 logger.warn("Evidence ledger append failed for {}: {}", domain, e.toString());
-                return new AppendResult(AppendOutcome.INDETERMINATE, -1, null,
-                        "the append failed: " + e.getMessage() + ". Whether the entry reached "
-                                + "the store is unknown — a write whose response was lost may "
-                                + "have landed — so this is NOT a statement that the chain is "
-                                + "unchanged");
+                return new AppendResult(AppendOutcome.REFUSED, -1, null,
+                        "the tail of the chain could not be read (" + e.getMessage()
+                                + "), so no entry was written. The chain is unchanged.");
             }
         }
         return new AppendResult(AppendOutcome.CONTENDED, -1, null,

@@ -104,8 +104,16 @@ class HarnessBreakageIsNotAFiringTest {
                                         text.substring(lineStart, at).isBlank();
                                 String statement = text.substring(at,
                                         Math.min(text.length(), at + 300));
+                                // The vocabulary, widened after a ledger audit found
+                                // CouchModelSerializationShapeTest signalling breakage with
+                                // "model class missing for a source file" — which neither of
+                                // the first two phrases matches. Anything that says the lock
+                                // cannot SEE its subject belongs to HarnessBroken.
                                 if (startsTheLine && (statement.contains("was renamed")
-                                        || statement.contains("reshaped"))) {
+                                        || statement.contains("reshaped")
+                                        || statement.contains("missing for a source file")
+                                        || statement.contains("nothing was checked")
+                                        || statement.contains("no longer exists"))) {
                                     return true;
                                 }
                                 at = text.indexOf(needle, at + 1);

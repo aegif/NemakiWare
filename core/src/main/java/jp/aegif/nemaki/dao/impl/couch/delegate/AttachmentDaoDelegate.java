@@ -104,6 +104,12 @@ public class AttachmentDaoDelegate {
 				log.warn("CouchAttachmentNode is null for: " + attachmentId);
 				return null;
 			}
+		} catch (IllegalStateException e) {
+			// The arms above each name what they found — a body that came back as something
+			// other than a stream, in particular. Letting this general catch re-wrap them
+			// replaced that with one sentence about a read that failed, which is the wrong
+			// sentence and unhelpful for the operator. Same shape as getUserItemById.
+			throw e;
 		} catch (Exception e) {
 			log.error("Error getting attachment: " + attachmentId + " in repository: " + repositoryId, e);
 			throw new IllegalStateException("the attachment '" + attachmentId + "' in '"
@@ -310,6 +316,8 @@ public class AttachmentDaoDelegate {
 				return rendition;
 			}
 			return null;
+		} catch (IllegalStateException e) {
+			throw e;
 		} catch (Exception e) {
 			log.error("Error getting rendition: " + objectId + " in repository: " + repositoryId, e);
 			throw new IllegalStateException("the rendition '" + objectId + "' in '"

@@ -788,8 +788,15 @@ public class CloudantClientWrapper {
 			log.debug("Attachment not found: " + docId + "/" + attachmentName);
 			return null;
 		} catch (Exception e) {
-			log.warn("Error getting attachment size for " + docId + "/" + attachmentName + ": " + e.getMessage(), e);
-			return null;
+			// AttachmentDaoDelegate.getAttachmentActualSize was made to refuse rather than
+			// answer "no measurable size" — but it only sees this method's return value, and
+			// a null here walked straight past that refusal into the caller's fallback to the
+			// document's OWN recorded length, which is the number the fixity check exists to
+			// corroborate. The DAO was closed and the wrapper under it was not.
+			log.error("Error getting attachment size for " + docId + "/" + attachmentName + ": " + e.getMessage(), e);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"the stored size of " + docId + "/" + attachmentName + " could not be"
+							+ " measured; this is NOT a finding that it has none", e);
 		}
 	}
 
@@ -1493,8 +1500,23 @@ public class CloudantClientWrapper {
 			return result;
 
 		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
-			log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found - returning null. This is normal during initial startup.");
-			return null;
+			// The raw overload gates this on the declared provisioning window and this one
+			// did not, so OUTSIDE startup a missing design document came back as null — and
+			// getPropertyDefinitionCoreByPropertyId reads a null/empty answer as "that
+			// property is not defined", which is the duplicate-core route the whole property
+			// definition work exists to close. During provisioning the view legitimately
+			// does not exist yet, so that case keeps its null.
+			if (isStartupPhase()) {
+				log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found"
+						+ " during startup - returning null. This is normal before design"
+						+ " documents are created.");
+				return null;
+			}
+			log.error("Design document '" + designDoc + "' or view '" + viewName + "' is not"
+					+ " deployed; a caller would otherwise read that as 'no such row'");
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"View " + designDoc + "/" + viewName + " is not deployed in database '"
+							+ databaseName + "', so it cannot answer for key '" + key + "'", e);
 		} catch (Exception e) {
 			log.error("Error querying view " + designDoc + "/" + viewName + " with key: " + key + ": " + e.getMessage(), e);
 			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(

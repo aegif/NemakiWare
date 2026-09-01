@@ -5679,3 +5679,129 @@ decode できない行がある一覧は、**足りないまま完全な一覧�
 - 私の事故: **片腕修正 2 回** (export resource の呼び出し側 / Navigation の分岐)、
   **測っていない self-test ケース 1 件**、**HarnessBroken の判定が広すぎて
   自分の錠を殺した 1 件**。いずれもコントロール実行か runner 自身が捕まえた
+
+---
+
+## 62. 40 巡目 (Codex + サブエージェント 3 面) — **測定器と台帳の両方が過大だった** (2026-09-02)
+
+兄弟掃討 / テストの判別力監査 / 台帳の主張検証の 3 面。
+**過大主張 5・WRONG 5・数え違い 4** と、**片腕修正 6 件**が出た。
+以下、§60・§61 への訂正印を先に置く。
+
+### 訂正印 (§60 / §61 の記述を取り消す)
+
+- **§60「throw → `finish()` に到達せず central directory 無し」は誤り。**
+  本番の 2 経路は try-with-resources で、例外時も `close()` → `finish()` が走り
+  **中央ディレクトリは書かれる**。レビュアが実測 (JDK 26、entry 途中で throw →
+  255 byte・EOCD 有り・`ZipFile` も Python `zipfile` も開けた)。
+  38 巡の実機で 500 + BadZipFile になったのは**レスポンスが未 commit だった**
+  (1 文書の小さい export がコンテナのバッファに収まった) からで、
+  **バッファを超える export では 200 + 開けるアーカイブ + 切り詰められた entry** になる。
+  → **実装を主張に合わせた**: 2 つの streamer を try-with-resources から外し、
+  `zos.close()` を**成功経路だけ**で呼ぶ。拒否は stream を閉じずに伝播する。
+  錠 `theArchiveIsClosedOnlyOnSuccess` + コントロール NI。
+  同じ誤りが `ZipExporter` の javadoc とテストのコメントにもあったので両方訂正。
+- **§60「NotFound のみ null → CMIS 1.1 通り 404」は誤り**(§61 で 409 と訂正済みだが
+  §60 の本文が残っていた)。null を返す腕は 3 つあり、
+  `NemakiBrowserBindingServlet` がそれを **409** に写す。
+- **§61「区別は成立」は過大。** 38 巡の export 500 は
+  `attachmentNodeId` を存在しない ID にしたもので、delegate としては
+  **409 側とまったく同じ「真の不在」の腕**を通っている。500 と 409 の差は
+  `ZipExporter` と `ObjectServiceImpl` の**方針の差**であって、
+  「不在 vs 読めない」を実機で測った証拠ではない。**区別は単体テストでのみ測れている。**
+- **§61「`INDETERMINATE` は `store.append` が投げた場合のみ」は誤り**だった。
+  catch が try 全体を覆っており、tail 読み (`highestSequence` / `range` /
+  `unreadableCount`) の失敗も同じ枝に落ちていた。**書く前の失敗は書いていないと
+  分かる**ので、`store.append` だけを内側の try で囲み、外側は `REFUSED` に。
+  錠 `aFailedTailReadIsRefusedNotIndeterminate` + NJ。
+- **§61「残っていたのは `getRetryCount` だけ」は誤り。**
+  `findDistinctNonTerminalRepositoryIds` も fail-open のままで、
+  **5 行下の v2 版は同じ事実で target ごと停止**していた。閉じた (NK)。
+- **§61「全ヘルパーを移行」は過大。** 未移行が 1 件あり、
+  sweep の語彙 (`was renamed` / `reshaped`) にも掛からなかった。語彙を広げたところ
+  **さらに 3 ファイル**が出た (計 4 件、6 か所を移行)。
+- **§61「7 つは安定 ID で作る」は 1 件外れ。** `Patch_SearchIndexReconcileV1Cleanup` は
+  **create せず delete のみ**。gate 外での危険は重複ではなく削除漏れ。正しくは 6。
+- **数え違い**: 「14 の patch」→ 13 patch + `PatchService`。
+  「錠 2 本」→ 3 本。「§29」→ **§26**。「新規 12 本 (MR〜NA)」→
+  commit 時点では **10 本 (MR〜NA)**、NB/NC は未コミットだった。
+- **§60 表 1「要素が null｜旧: (無し・NPE)」も誤り。** 旧コードには null ガードが在り、
+  **黙って skip** していた (NPE ではない)。
+
+### 片腕修正 6 件 (すべて自分の今回の変更)
+
+| 直した腕 | 残っていた兄弟 |
+|---|---|
+| `getUserItemById` の userId 不一致 | **`getGroupItemById` の groupId 不一致** — 同ファイル 280 行下。null は「そのグループは無い」で、入れ子グループ展開が**その経由の権限を全部落とし**、ディレクトリ同期は重複を作る (ND) |
+| `getChildren` 系 3 経路 | **`getChildByName` の catch → null** — 直下の fallback が `getContent` の新しい throw を受け、そのまま「そんな子は無い」に戻していた |
+| `childrenNames` の空・例外 | **行ごとの `value == null` skip** — 短い名前一覧は空ではないので alive 判定が発火せず、**同名の兄弟**が作れる (NE) |
+| `TYPES` 読み手 4 つ | **残り 4 つ** (`getTypeByQueryName` / `getTypesChildren` / `getTypesDescendants` / `findSecondaryTypeByPropertyQueryName`)。うち 2 つは**CMIS が見せる型一覧**そのもの (NF) |
+| `getAttachmentActualSize` (DAO) | **wrapper の `getAttachmentSize`** が失敗時 null。DAO の拒否に**到達しないまま**呼び出し側が記録 length に落ちていた (NH) |
+| `lengthFromMetadata` の catch | **`ref == null` 経路**と `AttachmentContent.NONE` が今も 0 を索引 |
+
+加えて `getAttachment` / `getRendition` の外側 catch が**具体的な拒否を再ラップ**していた
+(`getUserItemById` で直した形と同じ)。`addSubTypes()` (引数なし) は**呼び出し元が無く**、
+そこに書いた分離は死んでいた (実際に効いているのは `generate()` のループ) ので削除。
+
+### 私が入れた回帰 2 件 (38 巡の `StartupPhase` 変更)
+
+1. **`init()` は request スレッドからも走る。** `refreshTypes()` と
+   `getTypeById` の動的初期化が `initialized = false` を書くので、次の
+   `ensureInitialized()` が**リクエスト処理中に**再入する。そこで
+   プロセス全体の窓を開けると、**同時に処理中の全リクエストが猶予を得る** —
+   `StartupPhase` が消したはずの defect が別の扉から戻っていた。
+   **最初の 1 回だけ**開ける形に (NB)
+2. **窓が入れ子にならない。** boolean だったので、内側の `end()` が
+   **外側の provisioning の窓を閉じて**いた。`AtomicInteger` の深さに (NC)
+
+### テストの判別力 (監査指摘)
+
+- **Navigation の paged 経路の拒否は、どの fixture からも到達できていなかった** —
+  probe 経路しか測っておらず、消しても全スイートが緑。paged 用 fixture を追加
+- `ExportRefusalReachesTheClientTest` は綴りの錠で、**3 通りの復活**が緑のまま通った。
+  2 つの streaming body を brace matching で切り出し、
+  **その中の catch が全部 throw すること**を測る形に
+- `SystemStagePassesTheViewGateTest` の override 検査は `continue;` だけ落とす
+  部分復活が緑。**履歴書き込みの数を数える**行動テストに
+- `SolrUtil` の「フィールドを書かない」は測っていなかった (`-1` が索引されても緑)
+- `getRendition` の 2 つの throw、`getAttachment` の非 stream 腕は**錠も控えも無し**
+- 広すぎる `assertThrows(RuntimeException.class)` を 2 か所、型とメッセージに絞った
+
+### 私の事故 (このラウンド)
+
+- **自分で書いたコントロールが 4 本、測っていない腕を狙っていた** (NF/NG/NH/NI)。
+  NF は「死んだ `if (false)` を足して本物のガードを残す」細工、
+  NG は fixture が通らない腕、NH は**テストが wrapper を mock している**ので
+  wrapper を壊しても何も起きない、NI は close の位置を変えていなかった。
+  すべて runner の「DID NOT FIRE」が捕まえた
+- 新しい rendition テストが**fixture の NPE で通っていた** (mock の
+  `createConfiguredObjectMapper()` が null)。実物の mapper を配線して修正
+
+### Codex の指摘のうち、直したもの・記録に留めたもの
+
+**直した (6 件)**
+
+| 指摘 | 直し |
+|---|---|
+| **Navigation の legacy 経路**(件数が正で 500 以下、または `orderBy` 指定) に検査が無い — probe と oversampling を閉じた後に残っていた**通常の小フォルダ経路** | 同じ拒否を追加 |
+| `typeLoadFailures` が**再生成の成功で消えない**。修復経路 (patch が view を配備 → invalidate) が正しく再生成しても、その後も全読みが拒否され続ける。逆に**再生成の失敗は握り潰されていた** | 成功で `remove`、失敗で `put` |
+| `ArchiveServiceDelegate.getAttachmentActualSize` の catch → null。**ContentService が通る公開経路**がこれで、DAO の拒否は**そこに到達しない**。DAO のテストは緑のままサービスは null を返していた | catch を削除 |
+| typed `queryView` の NotFound が**起動窓に関係なく null**。raw 版は窓で分けている。`getPropertyDefinitionCoreByPropertyId` はそれを「未定義」と読むので、閉じたはずの重複 core 経路が残っていた | 窓の外では throw |
+| **system 段の gate が測っている store が違う**。gate は各リポジトリの `_repo` view を見るが、`Patch_DefaultCloudDriveConnectorProfile` の存在検査は別 DB の Mango セレクタ。健全な CMIS view はその索引について何も言わない | gate ではなく**発生箇所**で塞いだ: コネクタ文書の新規作成に `connector:<id>` の**決定的 ID** を与える。2 通目は 409 になる。既存文書は生成 ID のままセレクタで見つかるので移行不要 |
+| runner: `--self-test` が `sabotage_text` を一度も呼んでおらず、**delta 比較を丸ごと消しても 14 件全部緑**。`_harness_broke` の走査窓が 6 行で、実際の surefire スタックでは `Caused by:` が窓の外 | span 検査そのものを走らせる 2 ケースを追加、窓を 40 行に。両方 revert→fail 済み (17/17) |
+
+**記録に留めたもの (2 件、根拠つき)**
+
+- **型削除は `TypeManagerImpl.findChildTypes` を通らない経路がある** (browser servlet /
+  `DeleteTypeFilter` / `TypeResource` が `TypeService` を直接呼ぶ)。実機で測った拒否は
+  REST の `type/delete` 経路のもので、**CMIS の deleteType 経路は別**。
+  さらに `TypeServiceImpl` の後始末は**非原子的**で、先に消えた detail は
+  後段の読み取り失敗で拒否しても戻らない。**今回は触っていない** —
+  経路の統合は型サービスの再設計になり、この bundle の射程を超える
+- **起動窓の中では、view が未配備のとき `getTypeDefinitions` が base 型の
+  fallback を返し、`generate()` がそのリポジトリの失敗マークを消す**。
+  新規リポジトリではこれが正しい bootstrap だが、**型を持つリポジトリの view が
+  起動時に落ちていた場合**も同じ道を通り、base-only の型システムが健全として載る。
+  修復は patch 実行後の invalidate (これは上で直した)。
+  **窓の中でしか起きず、窓は最初の 1 回だけ**なので、露出は
+  「起動時に view が無い」に限られる。実装は変えず、ここに書いて持ち越す
