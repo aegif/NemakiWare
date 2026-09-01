@@ -100,9 +100,15 @@ public class DelegatedCallContextFactory {
             // upstream). So "not findable" IS the inactive predicate.
             return new SyntheticCallContext(repositoryId, username);
         } catch (RuntimeException e) {
-            logger.warn("UserItem lookup failed for delegated scheduler (repo={}, user={}): {}",
+            // "not findable IS the inactive predicate" holds for an ANSWER of not-found; it
+            // does not hold for a failure to ask. Returning null here reported a CouchDB
+            // blip to the caller as CREATOR_USER_INACTIVE — a statement about the user,
+            // made from an outage.
+            logger.error("UserItem lookup failed for delegated scheduler (repo={}, user={}): {}",
                     repositoryId, username, e.getMessage());
-            return null;
+            throw new IllegalStateException("the delegated run's user '" + username
+                    + "' could not be looked up in '" + repositoryId + "'; this is NOT a"
+                    + " finding that the user is inactive", e);
         }
     }
 

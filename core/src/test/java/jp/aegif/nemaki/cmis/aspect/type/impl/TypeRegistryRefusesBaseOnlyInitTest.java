@@ -17,6 +17,8 @@
 package jp.aegif.nemaki.cmis.aspect.type.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
@@ -148,6 +150,46 @@ class TypeRegistryRefusesBaseOnlyInitTest {
         assertEquals(-1, clampType("clampDepth", java.math.BigInteger.valueOf(-1)));
         assertEquals(Integer.MAX_VALUE,
                 clampType("clampDepth", java.math.BigInteger.ONE.shiftLeft(32)));
+    }
+
+    @Test
+    @DisplayName("a failed forced refresh refuses — the registry-level twin of the arms above")
+    void aFailedForcedRefreshRefuses() throws Exception {
+        // refreshTypes() clears the registry before rebuilding it, so swallowing a failure
+        // here left it base-only and answered the caller "no such type" — the same
+        // statement addSubTypes' arms were closed against, made one level up. Pinned in
+        // source: driving getTypeDefinition needs the whole registry wired, and what is
+        // asserted is that the catch refuses rather than returns.
+        String source = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/cmis/aspect/type/impl/TypeManagerImpl.java"));
+        assertTrue(source.contains("could not be refreshed while looking up"),
+                "the forced-refresh catch swallows again, so a failed refresh is served as "
+                        + "'that type does not exist'");
+    }
+
+    @Test
+    @DisplayName("the type listing's call sites use the clamps — the sibling that had no lock")
+    void theTypeListingCallSitesUseTheClamps() throws Exception {
+        // Navigation, the compile service and the query pager each pin their CALL SITES;
+        // the type listing pinned only the helpers, so reverting
+        // `int max = (maxItems == null) ? Integer.MAX_VALUE : maxItems.intValue();`
+        // left every test here green while 2^32 returned an empty type list again.
+        String source = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/cmis/aspect/type/impl/TypeManagerImpl.java"));
+        assertTrue(source.contains("int max = clampPage(maxItems);"),
+                "the type listing no longer clamps maxItems at its call site");
+        assertTrue(source.contains("int skip = clampSkip(skipCount);"),
+                "the type listing no longer clamps skipCount at its call site");
+        assertTrue(source.contains("int d = clampDepth(depth);"),
+                "the type descendants listing no longer clamps depth");
+        assertFalse(source.contains("maxItems == null) ? Integer.MAX_VALUE : maxItems.intValue()"),
+                "the raw maxItems call site came back");
+        assertFalse(source.contains("skipCount == null ? 0 : skipCount.intValue()"),
+                "the raw skipCount call site came back");
+        assertFalse(source.contains("depth == null ? -1 : depth.intValue()"),
+                "the raw depth call site came back");
     }
 
     private static int clampType(String method, java.math.BigInteger value) throws Exception {

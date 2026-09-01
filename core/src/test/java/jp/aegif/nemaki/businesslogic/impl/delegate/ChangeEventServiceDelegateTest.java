@@ -144,8 +144,13 @@ class ChangeEventServiceDelegateTest {
         when(dao.lastUnreadableChangeCount()).thenReturn(0);
         ChangeEventServiceDelegate delegate = new ChangeEventServiceDelegate(dao);
 
+        // A value that truncates to a POSITIVE but wrong number. 2^31 and 2^32 truncate to
+        // MIN_VALUE and 0, which the non-positive normalisation added later would rescue to
+        // MAX_VALUE anyway — so testing only those made this lock unobservable and the
+        // runner reported the control as protecting nothing. 2^32 + 5 becomes 5: a client
+        // asking for four billion changes would be served five, silently.
         delegate.getLatestChanges(REPO, null, new Holder<>("100"), false, null, false, false,
-                BigInteger.valueOf(Integer.MAX_VALUE).add(BigInteger.ONE), null);
+                BigInteger.ONE.shiftLeft(32).add(BigInteger.valueOf(5)), null);
 
         org.mockito.Mockito.verify(dao).getLatestChanges(REPO, "100", Integer.MAX_VALUE);
     }

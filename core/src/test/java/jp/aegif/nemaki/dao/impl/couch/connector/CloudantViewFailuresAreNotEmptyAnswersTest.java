@@ -18,6 +18,7 @@ package jp.aegif.nemaki.dao.impl.couch.connector;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -45,9 +46,10 @@ import com.ibm.cloud.sdk.core.http.ServiceCall;
  * the delegate, not the wrapper under it. (The paged catch also wrapped its per-row decode
  * loop, so one undecodable archive used to empty the whole page.)
  *
- * <p>The undeployed-view (NotFound) arms keep a STARTUP-phase grace that thread-name
- * heuristics make untestable here; these tests pin the generic-failure arms, which have no
- * phase exception.
+ * <p>The undeployed-view (NotFound) arms keep a STARTUP-phase grace. It used to be inferred
+ * from the thread's name, which is why the typed-get test below runs on a request-named
+ * thread; the window is declared now ({@code StartupPhase}), so these tests measure the
+ * strict side simply by not opening it.
  */
 class CloudantViewFailuresAreNotEmptyAnswersTest {
 
@@ -196,9 +198,16 @@ class CloudantViewFailuresAreNotEmptyAnswersTest {
         when(row.getDoc()).thenReturn(null);
         when(row.getError()).thenReturn(null);
 
-        assertThrows(CmisRuntimeException.class,
+        // The MESSAGE, not just the type: a later completeness check (added for the
+        // requested-id-with-no-row case) throws for this input too, so asserting only
+        // "something threw" let a revert of THIS guard stay green — the runner reported it
+        // as a control that protects nothing.
+        CmisRuntimeException thrown = assertThrows(CmisRuntimeException.class,
                 () -> wrapperWithBulkRows(row).getBulkDocuments(java.util.List.of("doc-1")),
                 "a row that answered neither way shortened the map silently");
+        assertTrue(thrown.getMessage().contains("carries neither a document nor an error"),
+                "a different guard answered for this row, so the row-shape refusal itself is "
+                        + "unmeasured: " + thrown.getMessage());
     }
 
     @Test
@@ -209,8 +218,10 @@ class CloudantViewFailuresAreNotEmptyAnswersTest {
         when(row.getKey()).thenReturn("doc-1");
         when(row.getError()).thenReturn("internal_server_error");
 
-        assertThrows(CmisRuntimeException.class,
+        CmisRuntimeException thrown = assertThrows(CmisRuntimeException.class,
                 () -> wrapperWithBulkRows(row).getBulkDocuments(java.util.List.of("doc-1")));
+        assertTrue(thrown.getMessage().contains("internal_server_error"),
+                "the row's own error was not what refused the batch: " + thrown.getMessage());
     }
 
     @Test
@@ -225,10 +236,12 @@ class CloudantViewFailuresAreNotEmptyAnswersTest {
         CloudantClientWrapper wrapper = new CloudantClientWrapper(cloudant, "bedroom",
                 new tools.jackson.databind.ObjectMapper());
 
-        assertThrows(CmisRuntimeException.class,
+        CmisRuntimeException thrown = assertThrows(CmisRuntimeException.class,
                 () -> wrapper.getBulkDocuments(java.util.List.of("doc-1")),
                 "'continue with next batch' made a failed batch look like a batch of "
                         + "absent ids");
+        assertTrue(thrown.getMessage().contains("bulk read batch"),
+                "the batch failure was not what refused: " + thrown.getMessage());
     }
 
     @Test

@@ -264,8 +264,21 @@ public class IngestSchedulerService {
         }
 
         // 4. UserItem must exist (== "active" in NemakiWare's model)
-        CallContext ctx = delegatedCallContextFactory.buildOrNull(
-                profile.getRepositoryId(), creatorUser);
+        CallContext ctx;
+        try {
+            ctx = delegatedCallContextFactory.buildOrNull(
+                    profile.getRepositoryId(), creatorUser);
+        } catch (RuntimeException e) {
+            // "Not findable == inactive" is the model's definition, and it holds for an
+            // ANSWER of not-found. A failure to ask is a different fact: denying is still
+            // right (the run must not proceed), but calling it CREATOR_USER_INACTIVE put a
+            // statement about the user into the audit trail, and the streak it fed would
+            // auto-disable a legitimate profile after three CouchDB blips.
+            auditScheduledDelegatedDenial(profile, null,
+                    DenialReason.CREATOR_LOOKUP_FAILED,
+                    "Creator " + creatorUser + " could not be looked up: " + e.getMessage());
+            return null;
+        }
         if (ctx == null) {
             handleInactiveCreator(profile, creatorUser);
             return null;

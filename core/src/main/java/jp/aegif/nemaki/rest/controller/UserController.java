@@ -248,13 +248,14 @@ public class UserController {
 
         // Check if user already exists
         if (StringUtils.isNotBlank(userId)) {
-            try {
-                UserItem existingUser = getContentService().getUserItemById(repositoryId, userId);
-                if (existingUser != null) {
-                    errors.add("User ID already exists");
-                }
-            } catch (Exception e) {
-                // User doesn't exist, which is good for creation
+            // NOT caught into "the user does not exist": the lookup answers null only for a
+            // genuine absence now, and throws when it could not tell. Swallowing that throw
+            // read a CouchDB blip as "the id is free" and went on to create a SECOND user
+            // document with the same userId — ContentService performs no uniqueness check of
+            // its own. Letting it propagate turns the blip into a retryable 500.
+            UserItem existingUser = getContentService().getUserItemById(repositoryId, userId);
+            if (existingUser != null) {
+                errors.add("User ID already exists");
             }
         }
         

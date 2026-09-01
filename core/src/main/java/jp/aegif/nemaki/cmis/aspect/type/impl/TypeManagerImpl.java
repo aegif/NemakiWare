@@ -1610,11 +1610,27 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 							+ repositoryId + "'; refusing to assemble the registry around it");
 				}
 				
-				if (subtype.getBaseId() == null || subtype.getParentId() == null) {
+				if (subtype.getBaseId() == null) {
 					throw new IllegalStateException("type definition '"
 							+ (subtype.getTypeId() != null ? subtype.getTypeId() : "unknown")
-							+ "' in '" + repositoryId + "' has no BaseId or no ParentId;"
-							+ " refusing to serve a registry that silently omits it");
+							+ "' in '" + repositoryId + "' has no BaseId; refusing to serve a"
+							+ " registry that silently omits it");
+				}
+				if (subtype.getParentId() == null) {
+					// A BASE type legitimately has no parent — in CMIS that is what makes it
+					// a base type — and generate() has already installed it. Demanding a
+					// parentId of every definition refused the empty-view bootstrap, which
+					// emits exactly these two: a fresh repository could not start. Anything
+					// else with no parent cannot be placed in the hierarchy at all, and
+					// dropping it silently is what this arm exists to stop.
+					if (subtype.getTypeId() != null
+							&& subtype.getTypeId().equals(subtype.getBaseId().value())) {
+						continue;
+					}
+					throw new IllegalStateException("type definition '"
+							+ (subtype.getTypeId() != null ? subtype.getTypeId() : "unknown")
+							+ "' in '" + repositoryId + "' has no ParentId and is not a base"
+							+ " type; refusing to serve a registry that silently omits it");
 				}
 				try {
 					if (subtype.getBaseId().value().equals(subtype.getParentId())) {
@@ -2834,8 +2850,14 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 							return null;
 						}
 					} catch (Exception e) {
+						// refreshTypes() clears the registry before rebuilding it, so a
+						// failure here leaves it BASE-ONLY and this null tells the caller
+						// "no such type" — the registry-level twin of the arms that were
+						// closed inside addSubTypes. The startup path already rethrows.
 						log.error("Exception during dynamic repository initialization for " + repositoryId, e);
-						return null;
+						throw new IllegalStateException("the type registry of '" + repositoryId
+								+ "' could not be initialized; this is NOT a finding that the"
+								+ " type does not exist", e);
 					}
 				}
 			}
@@ -3058,9 +3080,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 					}
 				}
 			} catch (Exception e) {
+				// The forced refresh clears the registry first. Swallowing left it
+				// base-only and answered the caller "no such type" — the same statement
+				// the arms inside addSubTypes were closed against, made one level up.
 				log.error("NEMAKI TYPE ERROR: Exception during forced refresh", e);
-				log.error("Exception during forced refresh: " + e.getMessage());
-				e.printStackTrace();
+				throw new IllegalStateException("the type registry of '" + repositoryId
+						+ "' could not be refreshed while looking up '" + typeId + "'; this"
+						+ " is NOT a finding that the type does not exist", e);
 			}
 			
 			return null;
@@ -3315,9 +3341,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 						generate(repositoryId);
 						log.info("*** DYNAMIC INIT: Successfully generated base types for repository: " + repositoryId + " ***");
 					} catch (Exception e) {
+						// Continuing here left TYPES holding whatever generate() managed
+						// before it failed, and every later lookup answered from that
+						// partial registry as if it were the type system.
 						log.error("*** DYNAMIC INIT ERROR: Failed to generate base types for repository: " + repositoryId + " - error: " + e.getMessage() + " ***");
-						log.warn("*** DYNAMIC INIT ERROR: Failed to generate base types for: " + repositoryId + " - " + e.getMessage());
-						e.printStackTrace(System.err);
+						throw new IllegalStateException("the base types of '" + repositoryId
+								+ "' could not be generated; refusing to serve a partial type"
+								+ " registry", e);
 					}
 					
 					// Re-get the types after generation

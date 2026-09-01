@@ -22,6 +22,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -94,10 +95,17 @@ class StartupPhaseIsDeclaredNotGuessedTest {
     void theStoreLayerAsksStartupPhase() throws Exception {
         String source = JavaSource.withoutComments(JavaSource.read(
                 "src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CloudantClientWrapper.java"));
-        assertTrue(source.contains("StartupPhase.isProvisioning()"),
-                "the wrapper no longer asks the declared window");
-        assertFalse(source.contains("threadName.contains(\"main\")"),
-                "the thread-name heuristic came back");
+        // The METHOD BODY, not the absence of one spelling. Asserting only that the old
+        // spelling is gone let `isProvisioning() || threadName.contains("main")` pass — the
+        // defect returns while both assertions stay green. What must hold is that the
+        // decision is nothing but the delegation.
+        String body = JavaSource.methodBody(source, "private boolean isStartupPhase()");
+        assertTrue(body.contains("StartupPhase.isProvisioning()"),
+                "the wrapper no longer asks the declared window: " + body);
+        assertFalse(body.contains("Thread") || body.contains("getName"),
+                "the decision consults the thread again — `isProvisioning() || "
+                        + "Thread.currentThread().getName().contains(\"main\")` passed the "
+                        + "previous version of this check: " + body);
     }
 
     @Test
@@ -105,11 +113,16 @@ class StartupPhaseIsDeclaredNotGuessedTest {
     void provisioningDeclaresTheWindow() throws Exception {
         String source = JavaSource.withoutComments(JavaSource.read(
                 "src/main/java/jp/aegif/nemaki/init/DatabasePreInitializer.java"));
-        assertTrue(source.contains("StartupPhase.begin()"),
-                "provisioning no longer opens the window, so it runs under the strict rules "
-                        + "it needs the grace for");
-        assertTrue(source.contains("} finally {") && source.contains("StartupPhase.end();"),
-                "the window is not closed in a finally — a leaked begin() would leave the "
-                        + "grace on for the life of the process");
+        // The STRUCTURE, not two independent substrings. The first version asserted that
+        // "} finally {" and "StartupPhase.end();" each appeared SOMEWHERE in the file —
+        // and this file has another, unrelated finally, so removing the try/finally around
+        // provisioning left both assertions green while a leaked begin() would hold the
+        // grace open for the life of the process.
+        String normalized = source.replaceAll("\\s+", " ");
+        assertTrue(normalized.contains(
+                "StartupPhase.begin(); try { provisionDatabases(event); } finally {"
+                        + " StartupPhase.end(); }"),
+                "provisioning no longer opens the window inside a try/finally — a begin() "
+                        + "without its end() leaves the grace on for the whole process");
     }
 }

@@ -5105,6 +5105,10 @@ Codex: P1 2・P2 3・P3 2 / 判別レビュー: ギャップ 3 + runner 注意 3
 - 負のコントロール **KA〜KO (15 本)**。`JA` は今回の変更でアンカーが失効したため
   カウンタ判定の新形へ再アンカー。runner は **100 controls**、
   今巡分は **17/17 発火** (KH・KM は 1 度目 DID NOT FIRE → 錠を測れる形に直して再発火)
+  > **§59 で訂正**: 「17」は**錠の本数**で、コントロールは KA〜KO の **15 本**
+  > (+ 再アンカーした JA)。発火の主語に錠の数を書いた。さらに **KC/KD/KE は
+  > §57 で KV を足した時点から発火しなくなっていた** — 新規 id しか走らせない
+  > 運用がそれを隠した
 
 ### 実機プローブが見つけた 7 件目 — clamp の下流が生の値を受けていた
 
@@ -5215,8 +5219,12 @@ legacy 分岐はクランプ後の値を渡すように統一。`skipCount + max
 ### 締め
 
 - フルスイート **6394 / 0**
-- 実機: Group-2 WAR をデプロイ。**起動は clean** (新しい拒否ログ 0 件 —
-  StartupPhase の窓が provisioning を覆えている)、TCK Basics 3/3・Query 6/6・Control 1/1。
+- 実機: Group-2 WAR をデプロイ。**起動は clean** (新しい拒否ログ 0 件)、
+  TCK Basics 3/3・Query 6/6・Control 1/1。
+  > **§59 で訂正**: 「StartupPhase の窓が provisioning を覆えている」は過大。
+  > 窓が覆うのは `DatabasePreInitializer.provisionDatabases()` **だけ**で、
+  > Setup Wizard 有効時の DB 作成 (apply エンドポイント)、`CMISPostInitializer`、
+  > `PatchService` は窓の外。観測は wizard 非経由の起動 1 回に対するもの
   実測: 型一覧 `maxItems=2³²` → **6 型** (以前は空)、children `maxItems=0` →
   **既定ページ 100 件** (以前は空ページ)、`maxItems=-1` は OpenCMIS 側が 400 で拒否 (従来どおり)
 - 未コミット (依頼があるまでコミットしない)
@@ -5232,7 +5240,11 @@ legacy 分岐はクランプ後の値を渡すように統一。`skipCount + max
 | `getUserItemById` | 例外は throw。**null result / 空 rows は null**、非 Map 行は continue、必須欠落は null。認証とディレクトリ同期がこの null を「居ない」と読む。**同じ view を読む `getUserItems` は既に拒否していた** — 同じ答えに 2 通りあった | 4 腕とも throw。view が「答えて 0 行」だけが不在 |
 | `getGroupItemByIdInternal` | 無応答は null (必須欠落と外側 catch は 33 巡で閉じ済み) | throw |
 | 保持期限スキャン 2 本 | catch は throw、**無応答は空リスト**。scheduler は「候補 0 件で完走」と記録 | throw |
-| 型一覧 / query の非正 maxItems | `clampPage` / `clampQueryPage` が 0 (空一覧・空ページ) を返す。compile / Navigation は同じ入力を 100 | 既定ページ 100 に統一。**同じ入力に 3 通りの答え**があった |
+| 型一覧 / query の非正 maxItems | `clampPage` / `clampQueryPage` が 0 (空一覧・空ページ) を返す。compile / Navigation は同じ入力を 100 | 既定ページ 100 に統一 |
+> **§59 で訂正**: 「3 通り」は 2 通り (0 と 100) の数え違い。また統一したのは
+> **`signum() <= 0` の場合だけ**で、**`maxItems == null` は今も 4 通り**
+> (Navigation 100 / compile 100 / 型一覧 10,000 / query は認可済み全件)。
+> 錠も 0 と負値しか測っていない
 
 ### 錠と runner
 
@@ -5246,4 +5258,74 @@ legacy 分岐はクランプ後の値を渡すように統一。`skipCount + max
 - フルスイート **6402 / 0**
 - **コミット方針を変更** (依頼による): `master` から `fix/v34-fail-closed-reads` を切り、
   検証が済んだ単位でコミットする。現在 4 コミット
-  (コード+テスト / 負のコントロール / 文書 / 本節の 4 件)。push はしていない
+  (コード+テスト / 負のコントロール / 文書 / 本節)。push はしていない
+  > **§59 で訂正**: この時点で **5 コミット**。4 番目はコード+テスト+コントロールで、
+  > 本節は 5 番目。数え違いをそのまま書いた
+
+## 59. 37 巡目 (Codex + サブエージェント 2 面) — 私の修正が私のコントロールを殺していた (2026-09-01)
+
+Codex P1 2・P2 4・P3 3 / 兄弟掃討 P1 7・P2 14・P3 群 (13 ファイル・全メソッド読み) /
+錠と主張の監査 (132 本のアンカー全件照合 + 主張 16 件)。
+
+### 私が壊していたもの (回帰 1 件・最優先)
+
+**型の bootstrap が起動を止める**。35 巡で `addSubTypes` に入れた
+「BaseId か ParentId が無い型定義は拒否」が、**CMIS の base type を拒否していた** —
+base type は parentId を持たないのが正しく、空 view の fallback が出すのはまさにそれ。
+新規リポジトリ (view が 0 行) では起動が失敗する。実機で気づかなかったのは
+bedroom に型定義が既にあり fallback が走らなかったため。
+BaseId 欠落は拒否のまま、**ParentId 欠落は「自分が base type である」ときだけ通す**形に修正。
+
+なお旧コードでは同じ型が warn+skip されていたので、**この fallback は元から
+registry には届いていなかった** (base 型は `generate()` が入れている)。
+「空 view でも 2 型で立ち上がる」の実体はそちらで、fallback の 2 型は
+他の consumer (型 diff 等) 向け。
+
+### 私の変更が新たに到達させた再平坦化 (3 件)
+
+| 場所 | 何が起きるか |
+|---|---|
+| `UserController.createUser` の `catch (Exception) → "User doesn't exist"` | 新しい throw が「その ID は空いている」と読まれ、**同じ userId の 2 つ目のユーザー文書**が作られる (ContentService 側に一意性検査は無い) |
+| `DelegatedCallContextFactory` の `catch (RuntimeException) → null` | 「見つからない = 非アクティブ」という定義は**答えとしての not-found** には成り立つが、**訊けなかった**ことには成り立たない。障害が `CREATOR_USER_INACTIVE` として報告される |
+| `PurviewStateStoreImpl` の `catch (RuntimeException) → null` と `getConfigurationMap()` の `isLoadFailed` 無視 | 値が `""` になり、**リポジトリロックが「未取得」と読まれて 2 つ目のジョブが取得**する。同ファイルの `getRaw` と `getOrCreateSystemConfiguration` は同じ事実を正しく扱っている |
+
+### 錠と runner の欠陥 (監査指摘)
+
+- **KC/KD/KE が死んでいた**。§57 で足した KV (要求 ID の完全性チェック) が
+  KC/KD/KE の細工で生じる「短い Map」を全部拾って throw し直すため、
+  細工しても錠が緑のまま = 「保護していない」判定になる。
+  **新規 id だけを走らせる運用**がこの退行を 2 巡隠した。
+  3 本の錠を「**どのガードが発火したか**」をメッセージで区別する形に直した
+- **S1/S2: 防御の綴りを固定していただけの錠**。
+  `} finally {` と `end();` が「ファイルのどこかにある」ことしか見ておらず、
+  try/finally を外すリバートが緑。`threadName.contains("main")` の**不在**しか
+  見ておらず、`isProvisioning() || Thread...` の追加が緑。
+  前者は try/finally の**構造**を、後者は**メソッド本文**を固定する形に
+- **S3: 型一覧だけ呼び出し側の錠が無かった**。兄弟 3 サービスは全て
+  「clamp を通ること」を測っているのに、型一覧はヘルパーだけ。錠 + LR を追加
+- **TypeManager の握り潰し 3 経路** (`getTypeDefinition` の強制 refresh /
+  動的 repo 初期化 / `generate()` 失敗) が、registry を clear した後で
+  base-only のまま「そんな型は無い」を返していた。3 つとも throw に (LS)
+
+### runner の観測欠陥 (記録のみ・未対応)
+
+- `failed_as_assertion` が `AssertionError` 全般を発火として受理する。
+  `JavaSource.methodBody` と reflection ヘルパーは**ハーネス破壊**時に
+  `AssertionError` を投げるので、判定関数の docstring が排除したい形が通る
+- Mockito の `TooFew/TooManyActualInvocations` `NoInteractionsWanted`
+  `VerificationInOrderFailure` が未カバー (HG・HT が `atLeast` を使用)
+- `find_span` は end marker の一意性を見ない (17 本が該当。全件目視確認済み)
+
+### §59 締め
+
+- **通し実行で 132 本中 131 本しか発火せず、IW がもう 1 本の「死んだコントロール」だった**。
+  36 巡で足した非正 normalisation (`limit <= 0 → MAX_VALUE`) が IW の細工を救っており、
+  2³¹ も 2³² も切り詰め後に MAX_VALUE へ戻るため観測できなくなっていた。
+  **2³² + 5 → 5** という「正の値に切り詰まる」入力に錠を移して発火を回復。
+  KC/KD/KE と合わせ、**同じ遮蔽が 4 本**あったことになる
+- 最終: フルスイート **6404 / 0**、負のコントロール **132 / 132 発火** (通し実行)
+- `DelegatedCallContextFactory` を throw にした結果、スケジューラの
+  「見つからない = 非アクティブ」テストが赤になった。throw で壊すのではなく
+  **消費側で 2 つの答えを区別**する形に: 拒否は同じ (安全側) だが理由は
+  `CREATOR_LOOKUP_FAILED` で、**自動無効化の連続カウントには数えない**
+  (CouchDB の瞬断 3 回で正当な profile が無効化されていた)
