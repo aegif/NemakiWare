@@ -56,9 +56,18 @@ python3 render-mock.py && python3 check-mock.py
 
 ## 主張が壊れないための型 (schema に埋め込んだ制約)
 
+> **見出しが 2026-08-28 まで嘘だった。** 下の 2 行 —
+> 「`independentOfOperator` は無い」「`ATLAS_CATALOG` は `independenceCaveat` が非 null 必須」 —
+> は **`check-mock.py` (この repo 専用) だけが強制**しており、
+> **`schema.json` は素通しだった** (`trustLevel` に `additionalProperties: false` が無く、
+> caveat も `null` を許していた)。外部のツールがスキーマだけで検証すると、
+> **ローカルのチェッカーが禁じている当の主張を受け入れる。**
+> 両方をスキーマ側に移し、外部の検証器 (`jsonschema`) で拒否されることを確かめた。
+> **「schema に埋め込んだ」と題した表は、埋め込まれていることを確かめてから書く。**
+
 | 仕組み | 何を防ぐか |
 |---|---|
-| `evidence.trustLevel.independentOfOperator` は段 2 以上でのみ true | 段 1 (組織内 Atlas) だけの構成で「管理者でも書き換えられない」と書いてしまうこと |
+| ~~`evidence.trustLevel.independentOfOperator` は段 2 以上でのみ true~~ **この欄は無い** — `check-mock.py` は現れたら**ビルドを落とす** (2026-08-28 訂正) | 独立性を**製品が計算すること**そのもの。5 巡のレビューで、第三者のアンカーと運用者が自前で動かしているアンカーを**区別できる計算可能な検査は無い**と分かった (`AnchorKind` の javadoc)。正直な成果物は**何を検査したか**を記録し、独立かどうかの判断は読み手に残す。**この行は取り下げた仕組みを「主張を守る仕組み」として掲げていた** — 表の性質上、読む人はここに在るものを「効いている」と受け取る |
 | `externalAnchors[].timeSemantics` が 3 値 | OpenTimestamps の**上限のみ**の証明を、TSA の双方向証明と同じ言葉で書いてしまうこと |
 | `ATLAS_CATALOG` は `independenceCaveat` が **非 null 必須** | 同一 tenant のカタログを独立した証拠のように見せること |
 | `fixityHistory[].outcome` が `MATCH` / `MISMATCH` / **`UNREADABLE`** の 3 値 | 「読めなかった」を「変わっていない」に丸めること |

@@ -17,7 +17,7 @@ submission agreement として明文化」と書いているのはこの文書�
 | | 本製品の挙動 |
 |---|---|
 | custody が渡る条件 | **引き渡しが証拠連鎖に記録できたときだけ**。記録できなければ渡らない (fail-CLOSED)。capture の逆で、capture は既に起きているので拒否できないが、custody は**まだ起きていない**ので拒否の代償は再試行だけである |
-| 受領証の最低条件 | `sipDigest` が**こちらが送った package を指すこと**。加えて `submissionId` / `aipId` / `aipChecksum` / `receivingAgent` / `receivedAt` が全部揃うこと。1 つでも欠ければ検証に進まない |
+| 受領証の最低条件 | `sipDigest` が**こちらが送った package を指すこと**。加えて `submissionId` / `aipId` / `receivingAgent` / `receivedAt` が全部揃うこと。1 つでも欠ければ検証に進まない。**`aipChecksum` は必須ではない** (2026-08-27 変更) — **測った RODA の取込は自分の AIP の checksum を返さなかった**ので、必須にすると成功した RODA の受領証が必ず拒否される。この欄は照合に使っておらず (照合は `sipDigest`)、欄が空の受領証は `limits()` が**「この受領証は先方のコピーの checksum を持たない」**と述べる (「先方が返さなかった」ではない — 空欄は呼び出し元が渡さなかった場合もあり、**AM は pointer file の PREMIS に AIP の checksum を持っている**)。設計 §16 |
 | 未知の検証結果 | **成功として扱わない**。`PASSED` / `PASS` / `VALID` / `SUCCESS` / `ACCEPTED` / `OK` 以外は不成功。**語彙は増やさない** — 受け手の語彙が違うときは接続層が写像し、生の語は `reportedOutcome` に残す (設計 §13.1) |
 | 署名 | **必須ではない**。署名が無い受領証は「認証されていない陳述」として保存し、そう明記する。鍵があるときだけ検査し、鍵が無いのは「検査していない」であって不正ではない |
 | 保存された状態 | 読み戻すとき履歴を検査する。1 フィールド編集して `RECEIPT_VERIFIED` を名乗る行は**読んだ時点で拒否**される |
@@ -97,7 +97,11 @@ submission agreement として明文化」と書いているのはこの文書�
 - **正規形に入る検証結果の語は、受け手が出した語そのもの**である (2026-08-27)。
   受け手の語彙が本製品と違うとき、接続層は写像するが、**署名は写像前の語を覆う** —
   先方はこちらの語彙を知らないので、写像後に署名を求めることはできない。
-  受領証は両方を持つ (`verificationOutcome` = 写像後、`reportedOutcome` = 生)。
+  受領証は**写像があったときだけ**両方を持つ (`verificationOutcome` = 写像後、
+  `reportedOutcome` = 生)。**写像が要らなかったとき** — 受け手の語が既に本製品の語である
+  場合、たとえば RODA の `SUCCESS` — は `reportedOutcome` を**空にしなければならず**、
+  両方に同じ語を入れて POST すると **409 で拒否されます**。
+  「生の語を保つ」と「写像したことにする」は別の主張だからです。
   **したがって写像後の語は先方の署名では覆われない** — 検めるなら署名された生の語から
   再導出すること (設計 §13.1)
 - 鍵の失効・更新の手順
@@ -109,7 +113,8 @@ submission agreement として明文化」と書いているのはこの文書�
 - **移管したから安全になった、とは言わない。** `CUSTODY_TRANSFERRED` は
   「引き渡しを記録し、その受領証を検証した」であって、
   **先方が今も持っている**ことではない
-- **受け手の検証が十分だった、とは言わない。** 受領証は先方の陳述である
+- **受け手の検証が十分だった、とは言わない。** 検証は先方の手続きで、その結果を受領証が報告しているだけである
+- **受領証が先方の陳述である、とも言わない。** 署名を検証できたときにだけ、**渡された鍵の持ち主がこの受領証を作った**ことが言える。署名が無い受領証について言えるのは**「この受領証がそう報告している」**までで、誰が書いたかは別の問いである (鍵の入手と信頼は 1.7 で決める)
 - **bag に包んだから相互運用できる、とは言わない。** **bag 経路では** METS は読まれず、
   構造も尊重されない (E-ARK 経路で受け取る先方なら読まれる — 下記 3)。
   **ただし「payload の中の 1 ファイルのまま残る」とも言わない** — Archivematica の
@@ -165,15 +170,16 @@ E-ARK AIP ではない。
    | `Report.pluginState` | `SUCCESS` / `PARTIAL_SUCCESS` / `FAILURE` / `RUNNING` / `SKIPPED` | **合う**。`SUCCESS` は通り、`PARTIAL_SUCCESS` は通らない (1.4 と一致) |
    | 同じ `Report` の `outcomeObjectState` | `CREATED` / `INGEST_PROCESSING` / `UNDER_APPRAISAL` / `ACTIVE` / … | **壊れる**。受入完了の `ACTIVE` が語彙に無い |
 
-   **接続層を書くときの罠**: RODA の `TransferredResource` には **checksum のフィールドが
+   **接続層が踏む罠** (実装済み — 設計 §14 がこれを避けている): RODA の `TransferredResource` には **checksum のフィールドが
    無く**、`Report` が投入物に紐づくのは名前 (`sourceObjectId` / `sourceObjectOriginalName`)
    である。応答フィールドだけで組み立てると `sipDigest` をこちら側の記録から埋めるしかなく、
    照合が自分の値を自分と比べる形になって §0 の「受領証の最低条件」が空回りする。
 
    **ただし逃げ道は在る**: `GET /api/v2/transfers/{uuid}/download` と AIP 側の
    `download/submission` が**先方の持っているバイト列**を返す。接続層はそれを取って
-   自分でハッシュすること。**未検証**: そのバイト列が送ったものと同一か、
-   受領証を作る時点まで transferred resource が残っているか。
+   自分でハッシュする。**実測した** (2026-08-27、設計 §16): 返る bytes は投入した zip と
+   **byte 単位で同一**、SHA-256 も一致し、取込完了後も transferred resource は残っていた
+   (同一ジョブ内で測っている — **長期に残るかは測っていない**)。
 
    **Archivematica 1.18.0 の語彙は採取した** (2026-08-27、設計 §12)。
    Dashboard の transfer/SIP `status` は `COMPLETE` / `FAILED` (ほかソース上
@@ -181,8 +187,10 @@ E-ARK AIP ではない。
    `check_fixity.success` は boolean。**どれも `reportsSuccess()` に無い** —
    正常終了の `COMPLETE` をそのまま入れると拒否になる。接続層は写像が要る。
    AIP checksum は pointer file の PREMIS `messageDigest` (AIP 7z のもの)。
-   送った bag の SHA-256 は AIP 内 `metadata/transfers/.../manifest-sha256.txt` に残った。
-   **受領証を実際に組み立てて検証する経路は未実装。** 署名も無い
+   送った bag が積んでいた **SIP の SHA-256** は AIP 内
+   `metadata/transfers/.../manifest-sha256.txt` に残った (**bag 自身の digest ではない**
+   — manifest は payload を記述し、自分は記述しない。設計 §13.2)。
+   **受領証の組み立ては実装済み** (設計 §14)。**RODA 実機で一周した** (2026-08-27、§16) — 回収値は送った物と一致し、状態機械が `RECEIPT_VERIFIED` を受理した。**Archivematica 実機でも一周した** (2026-08-27、§17) — 非対称な経路 (同梱 manifest の 1 行) でも回収値は一致し、**AIP ルートに在る AM 自身の manifest (囮) は拒否される**ことも実機で確かめた。**送る口は依然として無く**、署名も無い
 2. ~~Archivematica で同じことを測る~~ **測った** (2026-08-27)。出荷形 (manifest 2 本) の
    `zipped bag` は `Verify bag` を通り AIP `UPLOADED`。同じ E-ARK SIP は `zipfile` でも
    AIP になるので **BagIt は必須ではない**。`standard` に zip を渡すと FAILED

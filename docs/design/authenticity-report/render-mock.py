@@ -47,8 +47,8 @@ CHROME = {
         "indep": "第三者が検証可", "self": "本システム依存",
         "notConfigured": "未構成", "match": "一致",
         "footer": ('本レポートは NemakiWare が自動生成したものです。<b>「本システム依存」と記した検査は本システムを信頼することを前提とします</b>'
-                   ' — 本システムの管理者による改変を排除する検査は「独立検証可」と記したもののみです。'
-                   '本レポートは InterPARES の Benchmark / Baseline Requirements に<b>対応付けて</b>設計されていますが、'
+                   ' — 「独立検証可」と記した検査は、本システムに接続せずに実行できます — 本システムの管理者による改変を<b>検出可能にする</b>のがアンカーの働きで、<b>防ぐ</b>ものではありません。'
+                   '<b>本レポートはアンカーが独立であるとは一切主張しません</b>: 何を誰が検査したかを記録し、その判断は読み手に残します。本レポートは InterPARES の Benchmark / Baseline Requirements に<b>対応付けて</b>設計されていますが、'
                    'InterPARES に適合性を認証する制度は存在せず、「InterPARES 準拠」を主張するものではありません。'),
         "generated": "このページは example.json から render-mock.py が生成したものです。手で編集しないでください。",
     },
@@ -77,7 +77,7 @@ CHROME = {
         "indep": "THIRD PARTY CAN CHECK", "self": "RELIES ON THIS SYSTEM",
         "notConfigured": "Not configured", "match": "Match",
         "footer": ('This report was generated automatically by NemakiWare. <b>Checks marked RELIES ON THIS SYSTEM presuppose trust in this system</b>'
-                   ' — only the checks marked THIRD PARTY CAN CHECK exclude alteration by an administrator of this deployment. This report never asserts that an anchor is independent: it records what was checked and by whom, and leaves that judgement to the reader.'
+                   ' — the checks marked THIRD PARTY CAN CHECK can be run without contacting this system — an anchor makes alteration by an administrator of this deployment <b>DETECTABLE</b>, it does not <b>prevent</b> it. This report never asserts that an anchor is independent: it records what was checked and by whom, and leaves that judgement to the reader.'
                    ' This report is designed <b>with reference to</b> the InterPARES Benchmark and Baseline Requirements.'
                    ' No scheme exists that certifies conformance to InterPARES, and no claim of "InterPARES compliance" is made here.'),
         "generated": "This page was generated from example.json by render-mock.py. Do not edit it by hand.",

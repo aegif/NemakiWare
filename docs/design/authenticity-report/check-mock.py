@@ -132,8 +132,32 @@ def main() -> int:
             if a.get("opentimestamps")):
         note("verificationPerformed=CHAIN_VERIFIED but no anchor records a verified chain")
 
+    # Both footers must CARRY the independence non-claim. The banned-word scan below cannot see
+    # this: it fails a page that ASSERTS independence, and says nothing about a page that forgets
+    # to DENY it. The English footer carried the sentence and the Japanese one did not, so the
+    # disclaimer was missing from the primary audience's page while every check passed --
+    # two dicts in render-mock.py, one of them corrected.
+    for page, needle in (("report-mock.html", "独立であるとは一切主張しません"),
+                         ("report-mock-en.html", "never asserts that an anchor is independent")):
+        text = (HERE / page).read_text(encoding="utf-8")
+        if needle not in text:
+            note(f"{page} does not carry the independence non-claim: the other language does, "
+                 f"and a reader of this one is not told")
+
+    # The banned list has to cover the ways independence gets ASSERTED, not one phrasing of it.
+    # Both footers said the report never asserts independence while the Atlas row in the same
+    # page said "Independence is supplied by the OpenTimestamps record below" -- an assertion
+    # the checker walked past because it was looking for different words. Every phrase below was
+    # in a shipped page at some point.
     for page_text in pages.values():
-        for banned in ("独立している", "independent of the operator"):
+        # "exclude alteration by an administrator" was in BOTH footers, one clause before the
+        # sentence denying that the report asserts independence -- and this list, which had just
+        # been widened to stop banning one phrasing, walked past it. An anchor makes alteration
+        # DETECTABLE; nothing here prevents or excludes it (AnchorController's own limits say so).
+        for banned in ("独立している", "independent of the operator",
+                       "Independence is supplied", "独立性は", "is independent evidence",
+                       "独立した証拠です", "改変を排除", "exclude alteration",
+                       "prevents alteration", "改変を防"):
             if banned in page_text:
                 note(f"a rendered page asserts independence: {banned!r}")
 

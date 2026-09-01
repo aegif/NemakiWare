@@ -217,8 +217,8 @@
         "timeSemantics": "NOT_A_TIME_PROOF",
         "independenceCaveat": {
           "key": "anchor.sameTenantCatalog",
-          "ja": "この Atlas は本デプロイと同一組織・同一 tenant の管理下にあります。したがってカタログへの記録は、組織の管理者による改変に対する独立した証拠にはなりません。独立性は OpenTimestamps の記録によって与えられます。",
-          "en": "This Atlas instance is administered by the same organization and tenant as this deployment. Its record therefore does not constitute independent evidence against alteration by an administrator of that organization. Independence is supplied by the OpenTimestamps record below."
+          "ja": "この Atlas は本デプロイと同一組織・同一 tenant の管理下にあります。したがってカタログへの記録は、組織の管理者による改変に対する独立した証拠にはなりません。下の OpenTimestamps の記録は、本デプロイにも OpenTimestamps のカレンダーにも接続せずに検証できます — 独立かどうかの判断は、そこに記録された事実から読み手が行ってください。",
+          "en": "This Atlas instance is administered by the same organization and tenant as this deployment. Its record therefore does not constitute independent evidence against alteration by an administrator of that organization. The OpenTimestamps record below can be verified without contacting this deployment or the OpenTimestamps calendars; whether that makes it independent is a judgement for the reader, from the recorded facts."
         },
         "opentimestamps": null,
         "rfc3161": null

@@ -216,7 +216,7 @@ GET /core/api/v1/admin/capture-intents/verify-metadata?repositoryId=bedroom&obje
 ```
 
 取込のときに記録した**適用済みメタデータの hash (mh1)** と、いま保存されている値から
-計算し直した hash を突き合わせます。応答は**証拠の区画ごとに三値**です。
+計算し直した hash を突き合わせます。応答は**証拠の区画ごとに四値**です。
 
 | 区画 | 何の hash か |
 |---|---|
@@ -227,8 +227,14 @@ GET /core/api/v1/admin/capture-intents/verify-metadata?repositoryId=bedroom&obje
 | 値 | 意味 | すること |
 |---|---|---|
 | `MATCH` | 記録時と同じ | なし |
+| `ABSENT` | **その区画は最初から無い** — chat 文書に archetype 属性は無く、mail 文書に chat 属性は無い。「検査できなかった」ではありません | なし |
 | `UNVERIFIABLE` | 判定できない (hash を持つ完了行が無い、オブジェクトが読めない、後続 pass が hash 無しで走った) | §5.5.1 |
 | `MISMATCH` | 記録時と違う | **§5.5.1 を必ず読んでから**報告する |
+
+> `ABSENT` は 2026-08-24 の復元演習で足されました。それまで健全な chat 捕獲が
+> `MATCH / MATCH / UNVERIFIABLE` と読め、**恒久的に出続けて意味を持たない値**を
+> 運用者が読み飛ばすようになると、本物の `UNVERIFIABLE` も一緒に飛ばされます。
+> この表は三値のままだったので、**コードが 4 値を返すのに手順が 3 値で書かれていました**。
 
 ### 5.5.1 `MISMATCH` は 1 度再検証してから報せる
 

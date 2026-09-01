@@ -79,7 +79,7 @@
   <table class="ev">
     <tr><th style="width:106px">アンカー先</th><th style="width:72px">状態</th>
         <th style="width:126px">時刻の意味</th><th>内容</th></tr>
-    <tr><td>Atlas カタログ</td><td>確定</td><td>時刻証明ではない</td><td>2026-07-29 00:05:02 UTC<div class="caveat">この Atlas は本デプロイと同一組織・同一 tenant の管理下にあります。したがってカタログへの記録は、組織の管理者による改変に対する独立した証拠にはなりません。独立性は OpenTimestamps の記録によって与えられます。</div></td></tr><tr><td>OpenTimestamps</td><td>確定</td><td><b>上限のみ</b><br><span class='muted'>「この時刻より前に存在した」</span></td><td>Bitcoin block 921447 (2026-07-29 04:37:41 UTC)<br><span class="muted">alice, bob / <span class="mono">SHA256(digest || 16 random bytes)</span></span></td></tr><tr><td>RFC 3161 TSA</td><td>未構成</td><td>双方向 (精度内)</td><td><span class="muted">未構成.</span></td></tr>
+    <tr><td>Atlas カタログ</td><td>確定</td><td>時刻証明ではない</td><td>2026-07-29 00:05:02 UTC<div class="caveat">この Atlas は本デプロイと同一組織・同一 tenant の管理下にあります。したがってカタログへの記録は、組織の管理者による改変に対する独立した証拠にはなりません。下の OpenTimestamps の記録は、本デプロイにも OpenTimestamps のカレンダーにも接続せずに検証できます — 独立かどうかの判断は、そこに記録された事実から読み手が行ってください。</div></td></tr><tr><td>OpenTimestamps</td><td>確定</td><td><b>上限のみ</b><br><span class='muted'>「この時刻より前に存在した」</span></td><td>Bitcoin block 921447 (2026-07-29 04:37:41 UTC)<br><span class="muted">alice, bob / <span class="mono">SHA256(digest || 16 random bytes)</span></span></td></tr><tr><td>RFC 3161 TSA</td><td>未構成</td><td>双方向 (精度内)</td><td><span class="muted">未構成.</span></td></tr>
   </table>
 </section>
 
@@ -113,7 +113,7 @@
   </table>
 </section>
 
-<footer>本レポートは NemakiWare が自動生成したものです。<b>「本システム依存」と記した検査は本システムを信頼することを前提とします</b> — 本システムの管理者による改変を排除する検査は「独立検証可」と記したもののみです。本レポートは InterPARES の Benchmark / Baseline Requirements に<b>対応付けて</b>設計されていますが、InterPARES に適合性を認証する制度は存在せず、「InterPARES 準拠」を主張するものではありません。<br><span class="mono">schema: authenticity-report/schema.json (reportVersion 0-mock) — このページは example.json から render-mock.py が生成したものです。手で編集しないでください。</span></footer>
+<footer>本レポートは NemakiWare が自動生成したものです。<b>「本システム依存」と記した検査は本システムを信頼することを前提とします</b> — 「独立検証可」と記した検査は、本システムに接続せずに実行できます — 本システムの管理者による改変を<b>検出可能にする</b>のがアンカーの働きで、<b>防ぐ</b>ものではありません。<b>本レポートはアンカーが独立であるとは一切主張しません</b>: 何を誰が検査したかを記録し、その判断は読み手に残します。本レポートは InterPARES の Benchmark / Baseline Requirements に<b>対応付けて</b>設計されていますが、InterPARES に適合性を認証する制度は存在せず、「InterPARES 準拠」を主張するものではありません。<br><span class="mono">schema: authenticity-report/schema.json (reportVersion 0-mock) — このページは example.json から render-mock.py が生成したものです。手で編集しないでください。</span></footer>
 
 </body>
 </html>

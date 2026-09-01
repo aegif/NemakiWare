@@ -29,7 +29,7 @@ fixity の `PARTIAL` で 2 度学んだ形をここでも適用する。
 | **content** | `nemaki:contentHash` + P1-2 の再検証 | 記録された digest と、**いま**読み直した digest の一致 | 改竄されていないこと (§0 / P1-2 §0)。digest も普通の保存プロパティである |
 | **custody** | capture intent 行 (**lineage イベントは読んでいない** — 2026-08-25 訂正) | 記録された取込・配送の経過 | **記録が完全であること**。台帳に入る経路を通らなかった操作は無い |
 | **integrity of the record** (JSON 上の節名は **`ledger`**) | P1-3 の連鎖検証 (**inclusion proof は出していない** — 2026-08-25 訂正) | 台帳自身の内部整合。checkpoint 以前の書き換え・削除・並べ替えの検出 | 外部からの独立性 (P2 のアンカー待ち) |
-| **versions** | CMIS version series | この文書の版系譜 | 版の間で何が変わったか |
+| **versions** | CMIS version series | **この文書が版系列のどこに居るか** (版系譜そのものではない) | 他の版を列挙すること。版の間で何が変わったか。版が消されていないこと。**読めなかったときは `ABSENT` ではなく `UNAVAILABLE`** (2026-08-28 訂正: `null instanceof Document` が false なので CouchDB 障害が「この記録は文書ではない」という所見になっていた) |
 | **access** | 監査ログ | **何も言えない** (§3.5) — ログはプロセス外に出るため読み戻せない | 同左。`ABSENT` ではなく `UNAVAILABLE` |
 | **environment** | barrier の binary digest | 動いていたバイナリの指紋 | **その値を我々自身が報告している**こと (循環) |
 
