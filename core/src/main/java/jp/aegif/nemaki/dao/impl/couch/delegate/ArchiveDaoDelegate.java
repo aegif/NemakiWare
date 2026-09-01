@@ -1186,7 +1186,15 @@ public class ArchiveDaoDelegate {
 					client.queryView("_repo", "documentsByExpirationDate", params);
 
 			List<String> ids = new ArrayList<String>();
-			if (viewResult != null && viewResult.getRows() != null) {
+			if (viewResult == null || viewResult.getRows() == null) {
+				// The catch below refuses a failed sweep; an unanswered view is the same
+				// failure through the other door, and the scheduler records it as a
+				// completed pass that found no candidates.
+				throw new IllegalStateException("the retention view did not answer for '"
+						+ repositoryId + "'; that is not the same as there being no"
+						+ " candidates");
+			}
+			{
 				for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : viewResult.getRows()) {
 					if (row.getValue() != null) {
 						ids.add(row.getValue().toString().replace("\"", ""));
@@ -1224,7 +1232,15 @@ public class ArchiveDaoDelegate {
 					client.queryView("_repo", "documentsByLastModification", params);
 
 			List<String> ids = new ArrayList<String>();
-			if (viewResult != null && viewResult.getRows() != null) {
+			if (viewResult == null || viewResult.getRows() == null) {
+				// The catch below refuses a failed sweep; an unanswered view is the same
+				// failure through the other door, and the scheduler records it as a
+				// completed pass that found no candidates.
+				throw new IllegalStateException("the retention view did not answer for '"
+						+ repositoryId + "'; that is not the same as there being no"
+						+ " candidates");
+			}
+			{
 				for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : viewResult.getRows()) {
 					if (row.getValue() != null) {
 						ids.add(row.getValue().toString().replace("\"", ""));

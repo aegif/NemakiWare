@@ -1272,10 +1272,16 @@ public class SolrQueryProcessor implements QueryProcessor {
 	/** The largest query page assembled in memory in one response. */
 	private static final int MAX_QUERY_PAGE = 10_000;
 
+	/** A non-positive maxItems is not "nothing": it is the ordinary default page. */
+	private static final int DEFAULT_QUERY_PAGE_FOR_NON_POSITIVE = 100;
+
 	/** Converts a client's query maxItems without truncating it into 0 or a negative. */
 	private static int clampQueryPage(java.math.BigInteger maxItems) {
 		if (maxItems == null || maxItems.signum() <= 0) {
-			return 0;
+			// The default page, matching the children listing and the compile service. A
+			// query asked with maxItems=0 used to answer with an empty page here while the
+			// same value returned 100 items one service over.
+			return DEFAULT_QUERY_PAGE_FOR_NON_POSITIVE;
 		}
 		return maxItems.compareTo(java.math.BigInteger.valueOf(MAX_QUERY_PAGE)) >= 0
 				? MAX_QUERY_PAGE

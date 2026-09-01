@@ -131,6 +131,15 @@ class TypeRegistryRefusesBaseOnlyInitTest {
     }
 
     @Test
+    @DisplayName("a non-positive maxItems is the default page — one answer across services")
+    void aNonPositiveTypeMaxItemsIsTheDefaultPage() throws Exception {
+        // maxItems=0 used to mean "100 items" at the children listing and "an empty type
+        // list" here. Same input, two answers, both served as a clean 200.
+        assertEquals(100, clampType("clampPage", java.math.BigInteger.ZERO));
+        assertEquals(100, clampType("clampPage", java.math.BigInteger.valueOf(-2)));
+    }
+
+    @Test
     @DisplayName("a type listing's skip and depth keep their meaning")
     void typeListingSkipAndDepthKeepTheirMeaning() throws Exception {
         assertEquals(0, clampType("clampSkip", java.math.BigInteger.valueOf(-3)));

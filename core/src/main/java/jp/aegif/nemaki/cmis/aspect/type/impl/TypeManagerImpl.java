@@ -4653,6 +4653,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	/** The largest page of type definitions this server serves in one response. */
 	private static final int MAX_TYPE_PAGE = 10_000;
 
+	/** A non-positive maxItems is not "nothing": it is the ordinary default page. */
+	private static final int DEFAULT_TYPE_PAGE_FOR_NON_POSITIVE = 100;
+
 	/**
 	 * Converts a client's maxItems for a type listing without truncating it.
 	 *
@@ -4665,7 +4668,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			return MAX_TYPE_PAGE;
 		}
 		if (maxItems.signum() <= 0) {
-			return 0;
+			// The DEFAULT page, not an empty one — the same input must not mean "100 items"
+			// at the children listing and "nothing" here. Answering 0 made maxItems=0 return
+			// an empty type list, which is the shape the 2^32 truncation was fixed for,
+			// reached by a value a client can send on purpose.
+			return DEFAULT_TYPE_PAGE_FOR_NON_POSITIVE;
 		}
 		return maxItems.compareTo(java.math.BigInteger.valueOf(MAX_TYPE_PAGE)) >= 0
 				? MAX_TYPE_PAGE

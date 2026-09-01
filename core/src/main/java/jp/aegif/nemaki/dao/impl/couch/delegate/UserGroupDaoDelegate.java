@@ -66,7 +66,17 @@ public class UserGroupDaoDelegate {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			ViewResult result = client.queryView("_repo", "userItemsById", userId);
 
-			if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
+			// The catch below refuses a failed read; these two doors let the SAME failure
+			// through as "no such user". getUserItems already refuses them for this very
+			// view — authentication and the directory sync (which decides whether an account
+			// still exists) read this answer.
+			if (result == null || result.getRows() == null) {
+				throw new IllegalStateException("the userItemsById view did not answer for '"
+						+ userId + "' in '" + repositoryId + "'; that is not the same as the"
+						+ " user not existing");
+			}
+
+			if (!result.getRows().isEmpty()) {
 				log.info("Found " + result.getRows().size() + " matching user documents");
 
 				// Iterate through all rows to find the actual user document (nemaki:user),
@@ -76,8 +86,12 @@ public class UserGroupDaoDelegate {
 					Object rawDoc = row.getValue(); // Use getValue() not getDoc()
 
 					if (!(rawDoc instanceof Map)) {
-						log.error("Raw document is not a Map: " + rawDoc.getClass().getName());
-						continue;
+						// The row the answer may hinge on. Skipping it silently narrows the
+						// search for the user document to the rows that happened to decode.
+						throw new IllegalStateException("a userItemsById row for '" + userId
+								+ "' has an unreadable shape ("
+								+ (rawDoc == null ? "null" : rawDoc.getClass().getName())
+								+ "); refusing to decide the user's existence without it");
 					}
 
 					@SuppressWarnings("unchecked")
@@ -111,14 +125,19 @@ public class UserGroupDaoDelegate {
 					if (cui.getUserId() != null && cui.getId() != null && cui.getType() != null) {
 						return cui.convert();
 					} else {
+						// The document is THERE and unusable; null says the user does not
+						// exist, which authentication and the directory sync act on.
 						log.error("Missing required fields - userId: " + cui.getUserId() +
 							", id: " + cui.getId() + ", type: " + cui.getType());
-						return null;
+						throw new IllegalStateException("user '" + userId + "' exists but its"
+								+ " document is missing required fields; this is NOT a finding"
+								+ " that the user does not exist");
 					}
 				}
 
 				log.warn("No nemaki:user document found among " + result.getRows().size() + " results for userId: " + userId);
 			} else {
+				// A view that ANSWERED with no rows: the user genuinely is not there.
 				log.warn("No user found with userId: " + userId + " in repository: " + repositoryId);
 			}
 
@@ -327,7 +346,14 @@ public class UserGroupDaoDelegate {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			ViewResult result = client.queryView("_repo", "groupItemsById", groupId, forceUpdate);
 
-			if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
+			// Same pair of doors as the user twin: the catch refuses, these did not.
+			if (result == null || result.getRows() == null) {
+				throw new IllegalStateException("the groupItemsById view did not answer for '"
+						+ groupId + "' in '" + repositoryId + "'; that is not the same as the"
+						+ " group not existing");
+			}
+
+			if (!result.getRows().isEmpty()) {
 				log.info("Found " + result.getRows().size() + " matching group documents");
 
 				ViewResultRow firstRow = result.getRows().get(0);

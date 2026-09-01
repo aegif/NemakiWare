@@ -66,6 +66,13 @@ class QueryPagingArgumentsAreNotTruncatedTest {
     }
 
     @Test
+    @DisplayName("a non-positive maxItems is the default page — one answer across services")
+    void aNonPositiveQueryMaxItemsIsTheDefaultPage() throws Exception {
+        assertEquals(100, clamp("clampQueryPage", BigInteger.ZERO));
+        assertEquals(100, clamp("clampQueryPage", BigInteger.valueOf(-7)));
+    }
+
+    @Test
     @DisplayName("a skipCount beyond int range is a position, not a wrapped one")
     void aHugeQuerySkipIsAPosition() throws Exception {
         assertEquals(Integer.MAX_VALUE, clamp("clampQuerySkip", BigInteger.ONE.shiftLeft(40)));

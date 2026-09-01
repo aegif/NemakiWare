@@ -197,6 +197,20 @@ class ArchiveCountsAreNotZeroOnFailureTest {
     }
 
     @Test
+    @DisplayName("an unanswered retention view refuses — the catch is not the only door")
+    void anUnansweredRetentionViewRefuses() {
+        wire();
+        when(client.queryView(org.mockito.ArgumentMatchers.eq("_repo"),
+                org.mockito.ArgumentMatchers.eq("documentsByExpirationDate"),
+                org.mockito.ArgumentMatchers.anyMap())).thenReturn(null);
+
+        assertThrows(IllegalStateException.class,
+                () -> delegate.getExpiredDocumentIds(REPO, new java.util.GregorianCalendar()),
+                "an unanswered view was recorded by the scheduler as a completed pass that "
+                        + "found no candidates");
+    }
+
+    @Test
     @DisplayName("an ordinary count still answers — the control")
     void anOrdinaryCountStillAnswers() {
         wire();

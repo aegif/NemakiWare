@@ -116,6 +116,88 @@ class IdentityAndPolicyLookupsRefuseFailuresTest {
     }
 
     @Test
+    @DisplayName("an unanswered user view refuses — the catch is not the only door")
+    void anUnansweredUserViewRefuses() {
+        // getUserItems already refuses this for the SAME view; the by-id twin let it
+        // through as "no such user", which authentication and the directory sync act on.
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.queryView(eq("_repo"), eq("userItemsById"), eq("miyata")))
+                .thenReturn(null);
+
+        assertThrows(IllegalStateException.class,
+                () -> delegateWith(client).getUserItemById(REPO, "miyata"));
+    }
+
+    @Test
+    @DisplayName("a user row with an unreadable shape refuses instead of being skipped")
+    void anUnreadableUserRowRefuses() {
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        com.ibm.cloud.cloudant.v1.model.ViewResultRow row =
+                mock(com.ibm.cloud.cloudant.v1.model.ViewResultRow.class);
+        when(row.getValue()).thenReturn("not-a-map");
+        com.ibm.cloud.cloudant.v1.model.ViewResult result =
+                mock(com.ibm.cloud.cloudant.v1.model.ViewResult.class);
+        when(result.getRows()).thenReturn(java.util.List.of(row));
+        when(client.queryView(eq("_repo"), eq("userItemsById"), eq("miyata")))
+                .thenReturn(result);
+
+        assertThrows(IllegalStateException.class,
+                () -> delegateWith(client).getUserItemById(REPO, "miyata"),
+                "the row the answer hinges on was skipped, narrowing the search to the "
+                        + "rows that happened to decode");
+    }
+
+    @Test
+    @DisplayName("an unanswered group view refuses — the twin")
+    void anUnansweredGroupViewRefuses() {
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.queryView(eq("_repo"), eq("groupItemsById"), eq("sec"),
+                org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(null);
+
+        assertThrows(IllegalStateException.class,
+                () -> delegateWith(client).getGroupItemById(REPO, "sec"));
+    }
+
+    @Test
+    @DisplayName("an existing but unusable user document refuses — not 'no such user'")
+    void anUnusableExistingUserRefuses() {
+        // The document IS there (the view returned it, it is the right user), but it cannot
+        // be made into a UserItem. Answering null says the user does not exist, which
+        // authentication and the directory sync act on. The runner found this arm
+        // unmeasured: the existing test drives the CATCH, not this branch.
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        java.util.Map<String, Object> bare = new java.util.HashMap<>();
+        bare.put("objectType", "nemaki:user");
+        bare.put("userId", "miyata");   // right user, but no id / type
+        com.ibm.cloud.cloudant.v1.model.ViewResultRow row =
+                mock(com.ibm.cloud.cloudant.v1.model.ViewResultRow.class);
+        when(row.getValue()).thenReturn(bare);
+        com.ibm.cloud.cloudant.v1.model.ViewResult result =
+                mock(com.ibm.cloud.cloudant.v1.model.ViewResult.class);
+        when(result.getRows()).thenReturn(java.util.List.of(row));
+        when(client.queryView(eq("_repo"), eq("userItemsById"), eq("miyata")))
+                .thenReturn(result);
+
+        assertThrows(IllegalStateException.class,
+                () -> delegateWith(client).getUserItemById(REPO, "miyata"),
+                "an existing-but-unusable user document was answered as 'does not exist'");
+    }
+
+    @Test
+    @DisplayName("a view that ANSWERED with no rows is still 'not there' — the control")
+    void anEmptyAnswerIsStillAbsence() {
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        com.ibm.cloud.cloudant.v1.model.ViewResult empty =
+                mock(com.ibm.cloud.cloudant.v1.model.ViewResult.class);
+        when(empty.getRows()).thenReturn(java.util.List.of());
+        when(client.queryView(eq("_repo"), eq("userItemsById"), eq("ghost")))
+                .thenReturn(empty);
+
+        assertNull(delegateWith(client).getUserItemById(REPO, "ghost"),
+                "the refusal arms broke the ordinary 'that user is not there' answer");
+    }
+
+    @Test
     @DisplayName("a genuine absence is still null — the control")
     void aGenuineAbsenceIsStillNull() {
         CloudantClientWrapper client = mock(CloudantClientWrapper.class);
