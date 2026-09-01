@@ -90,6 +90,26 @@ C.auth = ("admin", "password")
 BODY = b"B1 reproduction fixture"
 
 
+# The reindex ends on one of these. "completed_with_errors" is the newest and was added to
+# the server on both the CMIS and RAG sides; a poller that waits for "completed" alone runs to
+# its deadline instead, and for THIS probe that is not merely slow — it keeps sampling after the
+# run is over and dilutes the peak it exists to measure.
+#
+# Unknown statuses stop the wait too, loudly. An accept-list breaks when a value is ADDED (this
+# is the second time), and `!= "running"` breaks when a non-terminal value is added, which is
+# worse for a probe because it ends early and reports a partial measurement as a whole one.
+TERMINAL = ("completed", "completed_with_errors", "error", "cancelled")
+
+
+def is_terminal(status):
+    if status == "running":
+        return False
+    if status in TERMINAL:
+        return True
+    raise SystemExit(f"the reindex reported a status this probe does not know: {status!r}. "
+                     f"Add it to TERMINAL if it is an end state; measuring against an "
+                     f"unrecognised status would report whatever the last poll happened to see.")
+
 def oid(j):
     return (j.get("succinctProperties") or {}).get("cmis:objectId") \
         or j["properties"]["cmis:objectId"]["value"]
@@ -135,7 +155,7 @@ def reindex_and_wait(timeout_s=1800):
         st = S.get(f"{BASE}/api/v1/cmis/repositories/{REPO}/search-engine/status",
                    timeout=120).json()
         last = st
-        if st.get("status") in ("completed", "error", "cancelled"):
+        if is_terminal(st.get("status")):
             return st
         time.sleep(2)
     return last
@@ -227,7 +247,11 @@ def break_and_reindex():
     # Three outcomes, and they must not be confused with each other.
     refused = st.get("status") == "error" and before_solr == after_solr
     wiped = before_solr > 10 and after_solr <= 2
-    silent = (st.get("status") == "completed") and not st.get("errorCount")
+    # Both completion words. The point of this probe is a wipe reported as a success, and
+    # "completed_with_errors" over an emptied index is still that — the count is what makes it
+    # silent, not the word.
+    silent = (st.get("status") in ("completed", "completed_with_errors")
+              and not st.get("errorCount"))
     print("\n== VERDICT ==", flush=True)
     if refused:
         print("  GUARDED (this is the FIXED behaviour). The walk found almost nothing, so the"

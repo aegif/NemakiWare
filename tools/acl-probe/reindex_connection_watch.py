@@ -42,6 +42,26 @@ MAX_WAIT_S = 20000
 AUTH = "Basic " + __import__("base64").b64encode(b"admin:admin").decode()
 
 
+# The reindex ends on one of these. "completed_with_errors" is the newest and was added to
+# the server on both the CMIS and RAG sides; a poller that waits for "completed" alone runs to
+# its deadline instead, and for THIS probe that is not merely slow — it keeps sampling after the
+# run is over and dilutes the peak it exists to measure.
+#
+# Unknown statuses stop the wait too, loudly. An accept-list breaks when a value is ADDED (this
+# is the second time), and `!= "running"` breaks when a non-terminal value is added, which is
+# worse for a probe because it ends early and reports a partial measurement as a whole one.
+TERMINAL = ("completed", "completed_with_errors", "error", "cancelled")
+
+
+def is_terminal(status):
+    if status == "running":
+        return False
+    if status in TERMINAL:
+        return True
+    raise SystemExit(f"the reindex reported a status this probe does not know: {status!r}. "
+                     f"Add it to TERMINAL if it is an end state; measuring against an "
+                     f"unrecognised status would report whatever the last poll happened to see.")
+
 def sh(cmd):
     return subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60).stdout.strip()
 
@@ -129,7 +149,7 @@ def main():
             print(f"  t+{elapsed:>4}s established={c:<5} peak={peak:<5} "
                   f"indexed={st.get('indexedCount')}/{st.get('totalDocuments')}", flush=True)
             last_report = elapsed
-        if st.get("status") == "completed":
+        if is_terminal(st.get("status")):
             break
         time.sleep(POLL_S)
     duration = round(time.time() - t0, 1)
