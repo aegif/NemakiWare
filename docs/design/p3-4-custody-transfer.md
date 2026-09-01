@@ -5221,3 +5221,29 @@ legacy 分岐はクランプ後の値を渡すように統一。`skipCount + max
   **既定ページ 100 件** (以前は空ページ)、`maxItems=-1` は OpenCMIS 側が 400 で拒否 (従来どおり)
 - 未コミット (依頼があるまでコミットしない)
 
+
+## 58. 36 巡目 — catch の隣の扉、3 度目 (2026-09-01)
+
+指摘 3 件。いずれも**前巡で catch を閉じた当のメソッド**に、同じ失敗が別の扉から
+入っていた。29 巡目の `getGroupItems` と同型が、これで 3 度目になる。
+
+| 腕 | 直す前 | 直した後 |
+|---|---|---|
+| `getUserItemById` | 例外は throw。**null result / 空 rows は null**、非 Map 行は continue、必須欠落は null。認証とディレクトリ同期がこの null を「居ない」と読む。**同じ view を読む `getUserItems` は既に拒否していた** — 同じ答えに 2 通りあった | 4 腕とも throw。view が「答えて 0 行」だけが不在 |
+| `getGroupItemByIdInternal` | 無応答は null (必須欠落と外側 catch は 33 巡で閉じ済み) | throw |
+| 保持期限スキャン 2 本 | catch は throw、**無応答は空リスト**。scheduler は「候補 0 件で完走」と記録 | throw |
+| 型一覧 / query の非正 maxItems | `clampPage` / `clampQueryPage` が 0 (空一覧・空ページ) を返す。compile / Navigation は同じ入力を 100 | 既定ページ 100 に統一。**同じ入力に 3 通りの答え**があった |
+
+### 錠と runner
+
+- 錠 8 本追加。負のコントロール **LK〜LQ (7 本)**、runner は **128 controls**、7/7 発火
+- **LQ は 1 度目 DID NOT FIRE**: 既存テストが catch を踏んでおり、必須欠落の腕を
+  測っていなかった。その腕を駆動する錠 (`anUnusableExistingUserRefuses`) を書いて向け直した。
+  「catch のテストがあるから他の腕も測れている」は成り立たない、という同じ教訓の再演
+
+### 締め
+
+- フルスイート **6402 / 0**
+- **コミット方針を変更** (依頼による): `master` から `fix/v34-fail-closed-reads` を切り、
+  検証が済んだ単位でコミットする。現在 4 コミット
+  (コード+テスト / 負のコントロール / 文書 / 本節の 4 件)。push はしていない
