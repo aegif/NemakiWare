@@ -108,11 +108,24 @@ public class UserGroupDaoDelegate {
 
 					log.info("Document contains userId: " + docMap.get("userId") + ", admin: " + docMap.get("admin"));
 
-					// SECURITY FIX: Validate that returned user actually matches requested userId
+					// SECURITY FIX: Validate that returned user actually matches requested userId.
+					// Handing back the wrong user is the danger this door was built for, and
+					// that part stays. What must not stay is the ANSWER: the view keyed on
+					// userId matched a row whose userId is a different string, so the index
+					// and the document disagree and nothing here can say whether the
+					// requested user exists. Null says it does not — and auto-provisioning
+					// creates a second account on that answer, while the directory sync
+					// deletes on it.
+					// The non-user objectTypes (WebAuthn credentials and the like) are still
+					// skipped above; this is a row that CLAIMS to be the user document.
 					String returnedUserId = (String) docMap.get("userId");
 					if (!userId.equals(returnedUserId)) {
-						log.warn("SECURITY WARNING: Requested userId '" + userId + "' but got userId '" + returnedUserId + "' - returning null");
-						return null;
+						log.error("SECURITY WARNING: Requested userId '" + userId + "' but got userId '" + returnedUserId + "'");
+						throw new IllegalStateException("the userItemsById view matched a"
+								+ " nemaki:user row for '" + userId + "' in '" + repositoryId
+								+ "' whose own userId is '" + returnedUserId + "'; the index"
+								+ " and the document disagree, so whether the user exists"
+								+ " cannot be established");
 					}
 
 					// Use the Map-based constructor we created
@@ -143,6 +156,13 @@ public class UserGroupDaoDelegate {
 
 			return null;
 
+		} catch (IllegalStateException e) {
+			// The four refusal arms above each name what they found — an unanswered view, a
+			// row with an unreadable shape, an index that disagrees with the document, a
+			// document missing required fields. Letting the general catch below re-wrap them
+			// replaced all four with one sentence about a read that failed, which is the
+			// wrong sentence for three of them and unhelpful for the operator in all four.
+			throw e;
 		} catch (Exception e) {
 			// The authentication and authorisation paths read this. Answering null makes a
 			// CouchDB hiccup indistinguishable from "that user does not exist".

@@ -5329,3 +5329,234 @@ registry には届いていなかった** (base 型は `generate()` が入れて
   **消費側で 2 つの答えを区別**する形に: 拒否は同じ (安全側) だが理由は
   `CREATOR_LOOKUP_FAILED` で、**自動無効化の連続カウントには数えない**
   (CouchDB の瞬断 3 回で正当な profile が無効化されていた)
+
+---
+
+## 60. 38 巡目 — 第 1 群 6 件を「メソッド × arm」で閉じる (2026-09-01)
+
+指示された 6 件。**いずれも「訊けなかった ≠ 無かった」**で、今回は
+「catch だけ throw にして null 戻り・空リスト・skip を残す」を避けるため、
+**先に兄弟を列挙してから直す**手順を固定した。
+
+### 6 件の arm 表
+
+**閉じた腕 (throw / 拒否)** と **残した腕 (genuine absence)** を同じ表に置く。
+残した腕にはその理由を必ず書く — 「全部 throw にした」は
+bootstrap を壊す (35 巡の base type 回帰がそれ)。
+
+#### 1. `TypeManagerImpl.findChildTypes`
+
+| arm | 旧 | 新 | 理由 |
+|---|---|---|---|
+| `allTypes == null` | 空リスト | **throw** | 空は「この型は誰の親でもない」と読まれ、子型を残したまま親型が消える |
+| 要素が null | (無し・NPE) | **throw** | 同上。読めなかった 1 行が「子ではない」になる |
+| `getNemakiTypeDefinitions` が失敗 | catch → 空リスト | **throw** (catch を削除) | 隣の `checkTypeHasInstances` は 1 巡前に同じ理由で throw 済み |
+
+一層上: `checkTypeDependencies` の外側 catch が throw を
+`issues.add("Error checking dependencies: ...")` に変換し、
+`deleteTypeDefinition` が issues 非空で `CmisConstraintException`。
+**throw は削除を拒否する向きに働く** (再平坦化ではない)。
+
+さらに一層上: `TypeServiceImpl.deleteTypeDefinition` の
+**per-detail catch が「続行」していた**ので、ここも直した。
+プロパティ定義が解決できないまま型を消すと、detail と core が
+誰からも指されないまま残る。失敗を集めて**型削除自体を拒否**する。
+
+#### 2. `TypeDefinitionDaoDelegate` のプロパティ定義読み (6 メソッド)
+
+| メソッド | 閉じた arm | 残した arm |
+|---|---|---|
+| `getPropertyDefinitionCores` | row.doc == null / Map でも Document でもない / decode 失敗 / propertyId が null・空 / 外側 catch | view が 0 行・design document 未作成 (`queryView` が null) → 空リスト |
+| `getPropertyDefinitionCore(nodeId)` | propertyId が null・空 / 外側 catch | wrapper の `get` が NotFound で返す null |
+| `getPropertyDefinitionCoreByPropertyId` | 一致行が decode できない / 外側 catch | view が答えて 0 行 → null |
+| `getPropertyDefinitionDetail(nodeId)` | 外側 catch | NotFound の null |
+| `getPropertyDefinitionDetails` | row.doc == null / Document でない / properties == null / decode 失敗 / cpdd == null / 外側 catch | view が 0 行 → 空リスト |
+| `getPropertyDefinitionDetailByCoreNodeId` | row.doc == null / Map でも Document でもない / docMap == null / **空だった catch** / 外側 catch | coreNodeId が一致しない行 (読めている) |
+
+**なぜ空が危険か**: 14 の patch が「もう在るか?」をこの読みで判定し、
+無いと答えられれば**作る**。つまり失われるのではなく **重複が生まれる**
+(CouchDB 生成 ID なので conflict も出ない)。`.system` フォルダ 2 個と同じ形。
+
+**一層下** (`CloudantClientWrapper`):
+
+- `get(Class, id, revision)` が全例外を null にしていた (2 引数版は 34 巡で
+  throw 済み・**overload の片割れが残っていた**)。呼び手は Purview の journal /
+  projection cursor / **leader election** で、null は「その文書はまだ無い」と
+  読まれる — 失敗が**2 人目のリーダー**か cursor 巻き戻しになる。NotFound のみ null
+- typed `queryView(..., key, Class)` が **decode できない row を warn して捨てて**
+  いた。短いリストは完全なリストと見分けが付かない。件数を数えて throw
+
+**一層上**: cached 層 6 メソッドは catch 無し (素通し)。
+`PatchService.initializeSystemPropertyDefinitionDetails` は catch → `false` →
+`allSucceeded = false` で、**作成の前に中断する**ので重複は生まれない。
+`CatalogPropertyMappingResolver.getResolvedMappings` は
+`catch → core = null → そのマッピングを skip` **かつ結果をキャッシュ**していた
+(一度の瞬断で、その属性が以後ずっと catalog payload から落ちる)。catch を削除。
+
+#### 3. `PatchUtil.cmisViewsAreAnswering`
+
+| arm | 旧 | 新 |
+|---|---|---|
+| `client == null` | `false` (無言) | `false` + 理由をログ |
+| `getDatabaseInfo() == null` | **`0L` → floor 以下 → `true`** | `false` |
+| `getDocCount() == null` | NPE → catch → `false` | `false` |
+| view が 0 行 & 文書あり | `false` | 変更なし |
+| `VIEW_CANARY_FLOOR` 以下 | `true` | **件数が届いたときだけ** `true` |
+
+`getDatabaseInfo()` の 2 回呼びも 1 回に (間で null になれば NPE だった)。
+兄弟 `ContentDaoServiceImpl.childrenNamesViewIsAlive` は同じ事実に対して
+既に拒否しており、**同じ事実に 2 つの答え**が消えた。
+`applySystemPatch` / `apply()` override の迂回は**今回触っていない** (記録のみ)。
+
+#### 4. `ZipExporter` / `FilesystemExporter` の本文
+
+ZIP は**レスポンス body** で、200 は既に出ている。取れる態度は 2 つだけ:
+「開けるアーカイブ」か「開けないアーカイブ」。旧実装は
+`if (attachment != null && getInputStream() != null)` に else が無く、
+catch は `log.warn` — **開けるが中身が欠けたアーカイブ**を返していた
+(`.meta` は在るのに本文が無い = 「本文が無い記録」と読まれる)。
+
+| arm | ZipExporter | FilesystemExporter |
+|---|---|---|
+| 本文 (フォルダ内) | **throw** (`ExportRefusedException`) → `finish()` に到達せず central directory 無し | `errors` に記録 (呼び出し側が `status: "partial"`) |
+| 本文 (単一文書) | 同上 (3 か所を 1 メソッドに統合) | — |
+| attachment == null | **throw** | **`errors` に記録** (旧: 何も記録せず success) |
+| stream == null | **throw** | **`errors` に記録** (同上) |
+| 版本文 | **throw** | **`errors` に記録** (旧: **完全に無記録**。版の `.meta` だけが書かれていた) |
+| 版履歴の外側 catch | **throw** | `errors` に記録 |
+| 型定義/プロパティ定義の export skip | 別腕・今回対象外 | — |
+
+`EarkSipExporter.writePayload` が 1 増分前に同じ判断をしている。今回はその 2 つの
+取り残し。3 か所に散っていた同じ握り潰しは `writeContent` 1 つに畳んだ
+(次の読者が 2 つ直して 3 つ目を残せないように)。
+
+#### 5. `AttachmentDaoDelegate`
+
+| メソッド | 閉じた arm | 残した arm |
+|---|---|---|
+| `getAttachmentRef` | 外側 catch | wrapper の NotFound → null |
+| `getAttachment` | 本文取得の失敗 / stream でない値 / 外側 catch | **`CmisObjectNotFoundException` のみ** → stream 無しノード |
+| `getRendition` | 本文取得の失敗 / stream でない値 / 外側 catch | 同上 |
+| `getAttachmentActualSize` | client == null / 外側 catch | wrapper が null (content 添付が無い) |
+
+サイズの扉が一番効く: null は上位で「記録された length を使う」と読まれ、
+それは**fixity が突き合わせようとしている当の数値**。同じ数と自分を比べる検査になる。
+
+一層上: `FixityScanService` は catch → `unverifiable`(理由付き) で正しい
+(`verified` にも「本文無し」にもならない)。`ObjectServiceImpl.getContentStream` は
+NotFound のみ null、他は rethrow (CMIS 1.1 準拠・**404 と 5xx が分かれる**)。
+`SolrUtil` は throw を「テキスト無しで索引」に落とすが、これは
+**索引から文書ごと消えるより良い**という既存の設計判断なので変更せず記録に留める
+(`lengthFromMetadata` の 0L も同様)。
+
+#### 6. `UserGroupDaoDelegate.getUserItemById`
+
+| arm | 旧 | 新 |
+|---|---|---|
+| view が答えない | throw (36 巡) | 変更なし |
+| 非 Map 行 | throw (36 巡) | 変更なし |
+| **userId 不一致行** | **`return null`** | **throw** |
+| 必須欠落 | throw (36 巡) | 変更なし |
+| 外側 catch | throw (36 巡) | 変更なし + **specific を再ラップしない** |
+| 別 objectType (WebAuthn 等) | continue | 変更なし (残す) |
+
+不一致は「間違ったユーザーを返さない」防御としては正しく、そこは残した。
+変えたのは**代わりに言う文**: index と文書が食い違っているとき、
+`null` は「そのユーザーは居ない」であり、自動プロビジョニングは**2 つ目の
+アカウントを作り**、ディレクトリ同期は**消す**。
+
+なお外側 catch が 4 つの specific な拒否を 1 つの汎用文に再ラップしていた
+(自分のテストのメッセージ assertion で発覚)。`catch (IllegalStateException) → rethrow` を追加。
+
+### 事故 (自分で踏んだ)
+
+1. **MA/MB が発火しなかった**。テストが typeService しか配線しておらず、
+   `checkTypeHasInstances` が「content DAO 未配線」で自力で拒否するため、
+   測っている腕を壊しても緑のまま。**KC/KD/KE と同じ遮蔽**。
+   健全な DAO を配線し、**どのガードが発火したかをメッセージで検証**する形に
+2. **MI が WRONG TEST FIRED**。本文の拒否を外すと walk が版履歴まで進み、
+   そこの拒否が**同じ例外型**を投げるので `assertThrows(型)` だけでは緑。
+   メッセージ (`the content of report.pdf`) まで固定
+3. **ML の細工がコンパイルエラー**になった (span の end marker が早く一致)。
+   runner の「compile 失敗は測定ではない」判定に拾われた
+4. **runner を走らせたまま source を編集した** (`CatalogPropertyMappingResolver`)。
+   通し実行は中止し、**木を確定させてから 1 回だけ通す**手順に戻した
+
+### 既存テストが旧契約を固定していた 2 本 (正直に書き換え)
+
+- `AttachmentBodyOpenCountTest.aFailedBodyStillReturnsTheMetadata` —
+  「本文取得が失敗してもメタデータは返る」= **本件 5 が消した答えそのもの**。
+  メタデータだけ欲しい呼び手には `getAttachmentRef` があり (この test class が
+  据えた扉)、失っているものは無い。拒否を測る形に書き換え
+- `CloudantClientWrapperViewValueTest.aProjectionFallsBackToAReadById` —
+  「projection は部分オブジェクトにせず**空で返す**」を許容していた。
+  空で返した先が `getPropertyDefinitionCoreByPropertyId` の「未定義」だった。
+  **拒否**を測る形に書き換え (projection を変換しない、という本来の主張は維持)
+
+### 負のコントロール 14 本追加 (MA〜MN)
+
+MA/MB (findChildTypes 2 腕) · MC〜MF (プロパティ定義 4 腕) ·
+MG (wrapper の row 落とし) · MH (view canary の docCount) ·
+MI (ZIP 本文) · MJ/MK (filesystem の本文・版本文) ·
+ML/MM (attachment 本文・サイズ) · MN (userId 不一致)。
+
+### 実機確認 — **「型定義が空のリポジトリで起動」が回帰を 2 つ出した**
+
+bedroom だけでは出ない。`repositories.yml` に**一度も provision されていない
+リポジトリ (attic)** を足して起動したところ:
+
+**回帰 1: 新規リポジトリが Spring context ごと落とす**
+
+```
+RuntimeException: View _repo/typeDefinitions is not deployed in database 'attic'
+  at CloudantClientWrapper.queryView:1013
+  at TypeDefinitionDaoDelegate.getTypeDefinitions:56
+  ...
+  at TypeManagerImpl.init:240
+```
+
+→ **bedroom も canopy も 404**。原因は「未配備の view を拒否する」判断ではなく、
+**`TypeManagerImpl.init()` が宣言された startup window の外で store を読む**こと。
+design document を作るのは `DatabasePreInitializer` で、それは
+ApplicationEvent で**後から**走る。`init()` を
+`StartupPhase.begin() / try / finally end()` で囲んだ (35 巡で入れた
+`DatabasePreInitializer` と同じ形。`finally` である理由も同じ)。
+
+**回帰 2: 1 つのリポジトリの失敗が全リポジトリの型操作を止める**
+
+起動が通った後、**bedroom** に型を作ろうとすると
+
+```
+{"error":"the type definitions of 'attic' could not be loaded into the type registry;
+  refusing to serve a base-only type system"}
+```
+
+拒否そのものは正しいが、`generate()` は**デプロイの全リポジトリを回す**ループで、
+最初の拒否がそこから抜けていた。リポジトリ単位で捕まえて
+`typeLoadFailures` に記録し、**そのリポジトリの読みだけ**を
+`assertRepositoryTypesLoaded` で拒否する形に
+(`getTypeById` / `getTypeDefinitionList` / `getRootTypes` / `getTypeDefinition`)。
+記録しないと分離が「base-only の地図から答える」に戻る — 拒否が防いでいた当のもの。
+
+錠: `OneRepositoryDoesNotTakeDownTheRegistryTest` (2 本) + コントロール MO / MP / MQ。
+MP は最初「WRONG REASON」で、`init()` が投げてテストが**セットアップで死ぬ**ため
+runner が発火として数えなかった。`init()` が生き延びること自体が保護の前半なので
+`assertDoesNotThrow` にして、テスト自身の assertion で落ちるようにした。
+
+### 実機で測った挙動 (bedroom, デプロイ済み WAR)
+
+| 対象 | 結果 |
+|---|---|
+| 型削除の拒否 | 親型 `nemaki:r38parent` + 子型 `nemaki:r38child` を作成 → 親の削除は拒否され、**子の型 ID を名指し**。後片付け済み |
+| export (健全) | フォルダ 1 件 → `http=200`, ZIP entries = `['r38doc.txt', 'r38doc.txt.meta.json']` |
+| export (本文が読めない文書 1 件) | 同じフォルダで `attachmentNodeId` を**存在しない ID に差し替え** (削除はしていない) → `http=500`, body は**ZIP として開けない** (`BadZipFile`)。ログの理由は `ZipExporter$ExportRefusedException: the attachment ... could not be read. This is NOT a statement that the document has no content.` — `writeContent:521` から |
+| 復旧後 export | ポインタを戻すと再び `200` + 2 entries。フォルダは deleteTree で撤去し、root の r38 残骸 0 |
+| 添付 404 vs 5xx | `getContentStream` は NotFound のみ null → CMIS 1.1 通り 404、他は rethrow。**live では cache が効いて 404 側を再現できず**、単体テストでの測定に留まる (記録) |
+
+### §60 締め
+
+- フルスイート **6441 / 0** (実機 TCK 群込み)
+- 負のコントロール **17 本追加** (MA〜MQ)。通し実行は木を確定させてから 1 回
+- 実機: bedroom / canopy 200、未 provision の attic が在っても他は落ちない
+- **attic は fixture**。`repositories.yml` からは外したが、CouchDB の
+  `attic` / `attic_closet` (空・doc_count 2) は**消していない**

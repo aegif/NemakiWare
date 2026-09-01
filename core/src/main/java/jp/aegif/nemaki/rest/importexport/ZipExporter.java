@@ -59,6 +59,28 @@ public class ZipExporter {
 
     private static final Log log = LogFactory.getLog(ZipExporter.class);
 
+    /**
+     * Raised instead of finishing an archive that would be read as a complete export.
+     *
+     * <p>The ZIP is the response BODY, streamed after the 200 has been committed, so there is
+     * no status code left to change: the only two outcomes available are an archive that
+     * unpacks and one that does not. Until now a document whose content could not be read was
+     * logged and skipped, and the archive still unpacked — with the document's {@code .meta}
+     * sidecar present and its bytes absent, which reads as "this record had no content".
+     * Throwing here aborts the stream before {@code zos.finish()} writes the central
+     * directory, so the receiver's unzip fails instead of succeeding on a hole.
+     *
+     * <p>{@link jp.aegif.nemaki.rest.eark.EarkSipExporter.ExportRefusedException} is the same
+     * decision on the SIP side; this is the pair of it for the NemakiWare ZIP format.
+     */
+    public static class ExportRefusedException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        public ExportRefusedException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
     // ========== Type Definition Export ==========
 
     @SuppressWarnings("unchecked")
@@ -233,22 +255,7 @@ public class ZipExporter {
                 }
 
                 if (doc.getAttachmentNodeId() != null) {
-                    try {
-                        var attachment = cs.getAttachment(repositoryId, doc.getAttachmentNodeId());
-                        if (attachment != null && attachment.getInputStream() != null) {
-                            zos.putNextEntry(new ZipEntry(childPath));
-                            byte[] buffer = new byte[8192];
-                            int len;
-                            try (InputStream is = attachment.getInputStream()) {
-                                while ((len = is.read(buffer)) != -1) {
-                                    zos.write(buffer, 0, len);
-                                }
-                            }
-                            zos.closeEntry();
-                        }
-                    } catch (Exception e) {
-                        log.warn("Failed to export content for: " + childPath, e);
-                    }
+                    writeContent(repositoryId, doc.getAttachmentNodeId(), childPath, zos, cs);
                 }
 
                 JSONObject metadata = buildDocumentMetadata(repositoryId, doc, callContext);
@@ -268,22 +275,7 @@ public class ZipExporter {
     public void exportSingleDocument(String repositoryId, Document doc, String path,
             ZipOutputStream zos, CallContext callContext, ContentService cs) throws Exception {
         if (doc.getAttachmentNodeId() != null) {
-            try {
-                var attachment = cs.getAttachment(repositoryId, doc.getAttachmentNodeId());
-                if (attachment != null && attachment.getInputStream() != null) {
-                    zos.putNextEntry(new ZipEntry(path));
-                    byte[] buffer = new byte[8192];
-                    int len;
-                    try (InputStream is = attachment.getInputStream()) {
-                        while ((len = is.read(buffer)) != -1) {
-                            zos.write(buffer, 0, len);
-                        }
-                    }
-                    zos.closeEntry();
-                }
-            } catch (Exception e) {
-                log.warn("Failed to export content for: " + path, e);
-            }
+            writeContent(repositoryId, doc.getAttachmentNodeId(), path, zos, cs);
         }
 
         JSONObject metadata = buildDocumentMetadata(repositoryId, doc, callContext);
@@ -475,22 +467,7 @@ public class ZipExporter {
 
                 String versionPath = basePath + VERSION_PREFIX + versionNum;
                 if (version.getAttachmentNodeId() != null) {
-                    try {
-                        var attachment = cs.getAttachment(repositoryId, version.getAttachmentNodeId());
-                        if (attachment != null && attachment.getInputStream() != null) {
-                            zos.putNextEntry(new ZipEntry(versionPath));
-                            byte[] buffer = new byte[8192];
-                            int len;
-                            try (InputStream is = attachment.getInputStream()) {
-                                while ((len = is.read(buffer)) != -1) {
-                                    zos.write(buffer, 0, len);
-                                }
-                            }
-                            zos.closeEntry();
-                        }
-                    } catch (Exception e) {
-                        log.warn("Failed to export version content: " + versionPath, e);
-                    }
+                    writeContent(repositoryId, version.getAttachmentNodeId(), versionPath, zos, cs);
                 }
 
                 JSONObject versionMeta = new JSONObject();
@@ -506,8 +483,64 @@ public class ZipExporter {
                 versionNum++;
             }
 
+        } catch (ExportRefusedException e) {
+            throw e;
         } catch (Exception e) {
-            log.warn("Failed to export version history for: " + basePath, e);
+            // The version history is part of the record, not an extra: an archive whose
+            // earlier versions were dropped because the series could not be read is an
+            // archive that says this document has only ever had one.
+            throw new ExportRefusedException("the version history of " + doc.getId()
+                    + " could not be exported to " + basePath + ", and an archive without it"
+                    + " would be read as a document that was never revised", e);
+        }
+    }
+
+    /**
+     * Writes one attachment into the archive, or refuses the archive.
+     *
+     * <p>The three call sites — a document inside a folder, a single document, and each
+     * earlier version — used to hold three copies of the same swallow. They are one method
+     * now so that the next reader cannot close two of them and leave the third.
+     */
+    /**
+     * The content arm on its own, for tests.
+     *
+     * <p>The three public entry points all build metadata through the Spring context, so
+     * driving them in a unit test measures the container rather than this decision.
+     */
+    void writeContentForTest(String repositoryId, String attachmentNodeId, String entryPath,
+            ZipOutputStream zos, ContentService cs) {
+        writeContent(repositoryId, attachmentNodeId, entryPath, zos, cs);
+    }
+
+    private void writeContent(String repositoryId, String attachmentNodeId, String entryPath,
+            ZipOutputStream zos, ContentService cs) {
+        try {
+            var attachment = cs.getAttachment(repositoryId, attachmentNodeId);
+            if (attachment == null) {
+                throw new ExportRefusedException("the attachment " + attachmentNodeId
+                        + " of " + entryPath + " could not be read. This is NOT a statement"
+                        + " that the document has no content.", null);
+            }
+            zos.putNextEntry(new ZipEntry(entryPath));
+            try (InputStream is = attachment.getInputStream()) {
+                if (is == null) {
+                    throw new ExportRefusedException("the attachment " + attachmentNodeId
+                            + " of " + entryPath + " produced no stream", null);
+                }
+                byte[] buffer = new byte[8192];
+                int len;
+                while ((len = is.read(buffer)) != -1) {
+                    zos.write(buffer, 0, len);
+                }
+            }
+            zos.closeEntry();
+        } catch (ExportRefusedException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ExportRefusedException("the content of " + entryPath + " could not be"
+                    + " written to the archive; finishing it would hand over a package whose"
+                    + " metadata describes bytes that are not in it", e);
         }
     }
 

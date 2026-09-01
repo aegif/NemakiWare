@@ -255,13 +255,30 @@ public class PatchUtil {
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			if (client == null) {
+				log.error("Refusing to apply patches to repository '" + repositoryId
+						+ "': there is no CouchDB client for it, so whether its views are"
+						+ " answering cannot be established");
 				return false;
 			}
-			long documents = client.getDatabaseInfo() == null
-					? 0L : client.getDatabaseInfo().getDocCount();
+			// This used to read `getDatabaseInfo() == null ? 0L : ...`, which turned "could
+			// not ask how many documents there are" into "there are none" — and none is
+			// below the floor, so the gate ANSWERED THAT THE VIEWS ARE FINE on exactly the
+			// repository it could not reach. childrenNamesViewIsAlive separates the same two
+			// facts with the same count and refuses when it does not arrive; the same fact
+			// must not get two answers. The call is also made once now: it used to be made
+			// twice, so a null between the two calls was an NPE.
+			com.ibm.cloud.cloudant.v1.model.DatabaseInformation info = client.getDatabaseInfo();
+			if (info == null || info.getDocCount() == null) {
+				log.error("Refusing to apply patches to repository '" + repositoryId
+						+ "': its document count did not answer, so a view returning nothing"
+						+ " cannot be told from a repository that is genuinely empty");
+				return false;
+			}
+			long documents = info.getDocCount();
 			if (documents <= VIEW_CANARY_FLOOR) {
 				// Too small to tell a fresh repository from a broken one — and too small to lose
-				// anything either.
+				// anything either. This grace is kept, but it is now reached only with a count
+				// that actually arrived.
 				return true;
 			}
 			// A MISSING view is not the same as a SILENT one, and conflating them deadlocks the

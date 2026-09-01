@@ -34,6 +34,7 @@ import org.apache.commons.logging.LogFactory;
 import org.json.simple.JSONObject;
 
 import java.io.FileWriter;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -55,16 +56,33 @@ public class FilesystemExporter {
     public ExportResult exportToFilesystemDirectory(String repositoryId, Folder folder,
             java.nio.file.Path targetDir, CallContext callContext, boolean allowOverwrite) throws Exception {
 
+        return exportToFilesystemDirectory(repositoryId, folder, targetDir, callContext,
+                allowOverwrite, getContentService());
+    }
+
+    /**
+     * The same export, driven with an explicit store.
+     *
+     * <p>The store used to be fetched from the Spring context inside the walk, which put the
+     * refusal arms out of reach of any test that does not stand a container up. They are the
+     * arms that decide whether an export that lost a document's bytes still reports success,
+     * so they are the ones that most need measuring.
+     */
+    ExportResult exportToFilesystemDirectory(String repositoryId, Folder folder,
+            java.nio.file.Path targetDir, CallContext callContext, boolean allowOverwrite,
+            ContentService cs) throws Exception {
+
         ExportResult result = new ExportResult();
-        exportFolderToFilesystem(repositoryId, folder, targetDir, callContext, result, allowOverwrite);
+        exportFolderToFilesystem(repositoryId, folder, targetDir, callContext, result,
+                allowOverwrite, cs);
         return result;
     }
 
     @SuppressWarnings("unchecked")
     private void exportFolderToFilesystem(String repositoryId, Folder folder, java.nio.file.Path targetDir,
-            CallContext callContext, ExportResult result, boolean allowOverwrite) throws Exception {
+            CallContext callContext, ExportResult result, boolean allowOverwrite,
+            ContentService cs) throws Exception {
 
-        ContentService cs = getContentService();
         List<Content> children = cs.getChildren(repositoryId, folder.getId());
         // A short listing makes this export INCOMPLETE, and nothing else would say so: rows
         // the repository cannot decode are absent without an exception, and an export that
@@ -106,7 +124,7 @@ public class FilesystemExporter {
                 result.foldersExported++;
                 result.recordExported(child.getId(), child.getName(), true);
 
-                exportFolderToFilesystem(repositoryId, (Folder) child, childPath, callContext, result, allowOverwrite);
+                exportFolderToFilesystem(repositoryId, (Folder) child, childPath, callContext, result, allowOverwrite, cs);
 
             } else if (child instanceof Document) {
                 Document doc = (Document) child;
@@ -117,24 +135,38 @@ public class FilesystemExporter {
                 }
 
                 if (doc.getAttachmentNodeId() != null) {
+                    // A content read that FAILED and an attachment that produced no stream
+                    // both used to leave the file absent while the export walked on. Only
+                    // the first of the two recorded an error, and the response reads
+                    // "success" whenever errors is empty — so the silent one handed back a
+                    // directory that looked complete. Both are errors now; the caller turns
+                    // a non-empty errors list into status "partial".
                     try {
                         var attachment = cs.getAttachment(repositoryId, doc.getAttachmentNodeId());
-                        if (attachment != null && attachment.getInputStream() != null) {
-                            StandardOpenOption[] options = allowOverwrite
-                                ? new StandardOpenOption[] { StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING }
-                                : new StandardOpenOption[] { StandardOpenOption.CREATE_NEW };
-                            try (InputStream is = attachment.getInputStream();
-                                 OutputStream os = Files.newOutputStream(childPath, options)) {
-                                byte[] buffer = new byte[8192];
-                                int len;
-                                while ((len = is.read(buffer)) != -1) {
-                                    os.write(buffer, 0, len);
-                                }
+                        if (attachment == null) {
+                            throw new IOException("the attachment " + doc.getAttachmentNodeId()
+                                    + " could not be read. This is NOT a statement that the"
+                                    + " document has no content.");
+                        }
+                        StandardOpenOption[] options = allowOverwrite
+                            ? new StandardOpenOption[] { StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING }
+                            : new StandardOpenOption[] { StandardOpenOption.CREATE_NEW };
+                        try (InputStream is = attachment.getInputStream();
+                             OutputStream os = Files.newOutputStream(childPath, options)) {
+                            if (is == null) {
+                                throw new IOException("the attachment "
+                                        + doc.getAttachmentNodeId() + " produced no stream");
+                            }
+                            byte[] buffer = new byte[8192];
+                            int len;
+                            while ((len = is.read(buffer)) != -1) {
+                                os.write(buffer, 0, len);
                             }
                         }
                     } catch (Exception e) {
                         log.warn("Failed to export content for: " + childPath, e);
-                        result.errors.add("Failed to export content: " + child.getName());
+                        result.errors.add("Failed to export content: " + child.getName()
+                                + " (" + e.getMessage() + ")");
                         continue;
                     }
                 }
@@ -155,17 +187,17 @@ public class FilesystemExporter {
                 result.documentsExported++;
                 result.recordExported(doc.getId(), doc.getName(), false);
 
-                exportVersionHistoryToFilesystem(repositoryId, doc, targetDir, callContext, result, allowOverwrite);
+                exportVersionHistoryToFilesystem(repositoryId, doc, targetDir, callContext, result, allowOverwrite, cs);
             }
         }
     }
 
     @SuppressWarnings("unchecked")
     private void exportVersionHistoryToFilesystem(String repositoryId, Document doc, java.nio.file.Path targetDir,
-            CallContext callContext, ExportResult result, boolean allowOverwrite) {
+            CallContext callContext, ExportResult result, boolean allowOverwrite,
+            ContentService cs) {
 
         try {
-            ContentService cs = getContentService();
             VersionSeries vs = cs.getVersionSeries(repositoryId, doc);
             if (vs == null) {
                 return;
@@ -215,23 +247,37 @@ public class FilesystemExporter {
                 }
 
                 if (version.getAttachmentNodeId() != null) {
+                    // This arm recorded NOTHING at all: the version's .meta sidecar was
+                    // written next to a version file that was never created, and the export
+                    // still reported "success".
                     try {
                         var attachment = cs.getAttachment(repositoryId, version.getAttachmentNodeId());
-                        if (attachment != null && attachment.getInputStream() != null) {
-                            StandardOpenOption[] options = allowOverwrite
-                                ? new StandardOpenOption[] { StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING }
-                                : new StandardOpenOption[] { StandardOpenOption.CREATE_NEW };
-                            try (InputStream is = attachment.getInputStream();
-                                 OutputStream os = Files.newOutputStream(versionPath, options)) {
-                                byte[] buffer = new byte[8192];
-                                int len;
-                                while ((len = is.read(buffer)) != -1) {
-                                    os.write(buffer, 0, len);
-                                }
+                        if (attachment == null) {
+                            throw new IOException("the attachment "
+                                    + version.getAttachmentNodeId() + " could not be read");
+                        }
+                        StandardOpenOption[] options = allowOverwrite
+                            ? new StandardOpenOption[] { StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING }
+                            : new StandardOpenOption[] { StandardOpenOption.CREATE_NEW };
+                        try (InputStream is = attachment.getInputStream();
+                             OutputStream os = Files.newOutputStream(versionPath, options)) {
+                            if (is == null) {
+                                throw new IOException("the attachment "
+                                        + version.getAttachmentNodeId()
+                                        + " produced no stream");
+                            }
+                            byte[] buffer = new byte[8192];
+                            int len;
+                            while ((len = is.read(buffer)) != -1) {
+                                os.write(buffer, 0, len);
                             }
                         }
                     } catch (Exception e) {
                         log.warn("Failed to export version content: " + versionFileName, e);
+                        result.errors.add("Failed to export version content: "
+                                + versionFileName + " (" + e.getMessage() + ")");
+                        versionNum++;
+                        continue;
                     }
                 }
 
@@ -255,6 +301,8 @@ public class FilesystemExporter {
 
         } catch (Exception e) {
             log.warn("Failed to export version history for: " + doc.getName(), e);
+            result.errors.add("Failed to export version history: " + doc.getName()
+                    + " (" + e.getMessage() + ")");
         }
     }
 

@@ -37,6 +37,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import jp.aegif.nemaki.businesslogic.TypeService;
 import jp.aegif.nemaki.dao.ContentDaoService;
+import jp.aegif.nemaki.init.StartupPhase;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
@@ -134,6 +135,15 @@ public class TypeManagerImpl implements TypeManager {
 	// CRITICAL FIX: TYPES must be static to be shared across all instances for TCK compliance
 	private static Map<String, Map<String, TypeDefinitionContainer>> TYPES;
 
+	/**
+	 * Repositories whose type system could not be loaded, and why.
+	 *
+	 * <p>Static beside {@code TYPES} because it qualifies {@code TYPES}: an entry here means
+	 * that repository's map in {@code TYPES} holds only the base types installed before the
+	 * load failed, so answering from it would report a base-only type system.
+	 */
+	private static final Map<String, String> typeLoadFailures = new ConcurrentHashMap<>();
+
 	// Map of all base types
 	// CRITICAL FIX: basetypes must be static to be shared across all instances for TCK compliance
 	private static Map<String, TypeDefinitionContainer> basetypes;
@@ -223,6 +233,18 @@ public class TypeManagerImpl implements TypeManager {
 				return;
 			}
 			
+			// This bean's own init runs BEFORE the design documents are provisioned —
+			// DatabasePreInitializer does that work on an application event, which arrives
+			// later. So the type registry legitimately reads a view that may not exist yet,
+			// and the store layer is right to refuse an undeployed view everywhere else:
+			// a request that reads a missing view as "no data" is what the whole fail-closed
+			// batch is about. Declaring the window here is what tells the two apart.
+			//
+			// Found by starting a repository that had never been provisioned: the store
+			// refused, init() failed, and the Spring context died — taking the ALREADY
+			// healthy repositories down with it. bedroom alone would never have shown it,
+			// which is the same blind spot that let the base-type regression through.
+			StartupPhase.begin();
 			try {
 				log.info("Starting TypeManagerImpl initialization process");
 				initGlobalTypes();
@@ -263,6 +285,11 @@ public class TypeManagerImpl implements TypeManager {
 			} catch (Exception e) {
 				log.error("INITIALIZATION FAILED WITH EXCEPTION: " + e.getMessage(), e);
 				throw e;
+			} finally {
+				// finally, not after the try: a begin() whose end() is skipped by a throw
+				// would leave the grace on for the life of the process, and every request
+				// would then read a missing view as "no data".
+				StartupPhase.end();
 			}
 		}
 		log.info("TypeManagerImpl.init() completed successfully");
@@ -392,7 +419,22 @@ public class TypeManagerImpl implements TypeManager {
 				// CRITICAL FIX: Use ConcurrentHashMap for thread safety
 				TYPES.put(key, new ConcurrentHashMap<String, TypeDefinitionContainer>());
 			}
-			generate(key);
+			// Per repository, and isolated per repository. The refusal inside generate() is
+			// right — a type system that could not be read must not be served as a base-only
+			// one — but this loop covers the WHOLE deployment, so letting the first refusal
+			// escape made one unprovisioned repository fail startup, type creation and type
+			// listing for every other repository. Measured on the running stack: registering
+			// a type in bedroom was refused with a message naming a different repository.
+			try {
+				generate(key);
+				typeLoadFailures.remove(key);
+			} catch (RuntimeException e) {
+				typeLoadFailures.put(key,
+						e.getMessage() == null ? e.getClass().getName() : e.getMessage());
+				log.error("The type system of '" + key + "' could not be generated. Other"
+						+ " repositories continue; every type read for THIS one is refused"
+						+ " until a later refresh succeeds.", e);
+			}
 		}
 		
 		// Debug: Log final state
@@ -1563,11 +1605,52 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	}
 
 	
+	/**
+	 * Loads every repository's subtypes, and lets one repository fail WITHOUT taking the
+	 * others with it.
+	 *
+	 * <p>The refusal below is per repository and stays that way — a type system that could
+	 * not be read must not be served as a base-only one. But this loop used to let the first
+	 * refusal escape, and the loop covers every repository in the deployment: one repository
+	 * that had never been provisioned made {@code generate()} fail, and with it type
+	 * creation, type listing and startup FOR EVERY OTHER REPOSITORY. Measured on the running
+	 * stack: registering a type in {@code bedroom} was refused with a message naming a
+	 * different repository.
+	 *
+	 * <p>So the failure is recorded against the repository it belongs to, and
+	 * {@link #assertRepositoryTypesLoaded} refuses reads for that repository alone.
+	 */
 	private void addSubTypes(){
 		for(String key : repositoryInfoMap.keys()){
 			RepositoryInfo info = repositoryInfoMap.get(key);
 			String repositoryId = info.getId();
-			addSubTypes(repositoryId);
+			try {
+				addSubTypes(repositoryId);
+				typeLoadFailures.remove(repositoryId);
+			} catch (RuntimeException e) {
+				typeLoadFailures.put(repositoryId,
+						e.getMessage() == null ? e.getClass().getName() : e.getMessage());
+				log.error("The type system of '" + repositoryId + "' could not be loaded."
+						+ " Other repositories continue; every read for THIS one is refused"
+						+ " until a later refresh succeeds.", e);
+			}
+		}
+	}
+
+	/**
+	 * Refuses reads for a repository whose type system is not loaded.
+	 *
+	 * <p>Without this, isolating the load failure above would reintroduce exactly what the
+	 * refusal exists to prevent: {@code refreshTypes} clears the registry and installs the
+	 * base types before the read, so a repository that failed to load holds a base-only map
+	 * that answers "that custom type does not exist".
+	 */
+	private void assertRepositoryTypesLoaded(String repositoryId) {
+		String reason = typeLoadFailures.get(repositoryId);
+		if (reason != null) {
+			throw new IllegalStateException("the type system of '" + repositoryId + "' is not"
+					+ " loaded (" + reason + "); answering type questions for it would report"
+					+ " a base-only type system");
 		}
 	}
 	
@@ -2822,6 +2905,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	@Override
 	public TypeDefinitionContainer getTypeById(String repositoryId, String typeId) {
 		ensureInitialized();
+		assertRepositoryTypesLoaded(repositoryId);
 
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 
@@ -2889,6 +2973,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	@Override
 	public Collection<TypeDefinitionContainer> getTypeDefinitionList(String repositoryId) {
 		ensureInitialized();
+		assertRepositoryTypesLoaded(repositoryId);
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 		
 		List<TypeDefinitionContainer> typeRoots = new ArrayList<TypeDefinitionContainer>();
@@ -2904,6 +2989,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	@Override
 	public List<TypeDefinitionContainer> getRootTypes(String repositoryId) {
 		ensureInitialized();
+		assertRepositoryTypesLoaded(repositoryId);
 		List<TypeDefinitionContainer> rootTypes = new ArrayList<TypeDefinitionContainer>();
 		for (Map.Entry<String, TypeDefinitionContainer> entry : basetypes.entrySet()) {
 			rootTypes.add(entry.getValue());
@@ -2987,6 +3073,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			}
 		}
 		ensureInitialized();
+		assertRepositoryTypesLoaded(repositoryId);
 		
 		// DEBUG: Check TYPES state after ensureInitialized
 		if (log.isDebugEnabled()) {
@@ -4197,17 +4284,27 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	private List<String> findChildTypes(String repositoryId, String typeId) {
 		List<String> childTypes = new ArrayList<>();
 		
-		try {
-			List<NemakiTypeDefinition> allTypes = getNemakiTypeDefinitions(repositoryId);
-			if (allTypes != null) {
-				for (NemakiTypeDefinition type : allTypes) {
-					if (type != null && type.getParentId() != null && type.getParentId().equals(typeId)) {
-						childTypes.add(type.getTypeId());
-					}
-				}
+		// Every arm here refuses, because an empty answer is read by checkTypeDependencies as
+		// "this type is nobody's parent" and deleteType then removes a type that still has
+		// subtypes. checkTypeHasInstances — the question next to this one — was already made
+		// to throw for exactly this reason, and checkTypeDependencies' outer catch turns a
+		// throw into a dependency ISSUE, which refuses the delete. The three arms are: an
+		// unanswered list, a null element, and the read itself failing.
+		List<NemakiTypeDefinition> allTypes = getNemakiTypeDefinitions(repositoryId);
+		if (allTypes == null) {
+			throw new IllegalStateException("the type definitions of '" + repositoryId
+					+ "' did not answer, so whether '" + typeId + "' is a parent cannot be"
+					+ " established");
+		}
+		for (NemakiTypeDefinition type : allTypes) {
+			if (type == null) {
+				throw new IllegalStateException("a null type definition is in the list for '"
+						+ repositoryId + "', so whether '" + typeId + "' is a parent cannot be"
+						+ " established");
 			}
-		} catch (Exception e) {
-			log.error("findChildTypes: Error finding child types for parentId=" + typeId, e);
+			if (type.getParentId() != null && type.getParentId().equals(typeId)) {
+				childTypes.add(type.getTypeId());
+			}
 		}
 		
 		return childTypes;

@@ -1,0 +1,143 @@
+/**
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ */
+package jp.aegif.nemaki.dao.impl.couch.delegate;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import com.ibm.cloud.cloudant.v1.model.ViewResult;
+import com.ibm.cloud.cloudant.v1.model.ViewResultRow;
+
+import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
+import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
+import jp.aegif.nemaki.model.UserItem;
+
+/**
+ * A row whose id disagrees with the index is not evidence that the user does not exist.
+ *
+ * <h2>The answer that created accounts</h2>
+ *
+ * <p>The {@code userItemsById} view is keyed on {@code userId}. When it matched a
+ * {@code nemaki:user} row whose own {@code userId} is a DIFFERENT string, the index and the
+ * document disagree — and the old code returned null, which every caller reads as "there is no
+ * such user". Auto-provisioning creates an account on that answer and the directory sync
+ * deletes on it, so a disagreement the store could not explain became either a second account
+ * or a removed one.
+ *
+ * <p>The security half of that door is kept and measured: the mismatched document is never
+ * handed back as the requested user. What changed is the sentence said instead — a refusal
+ * rather than an absence.
+ */
+class UserLookupRefusesIndexDisagreementTest {
+
+    private static final String REPO = "bedroom";
+
+    private CloudantClientWrapper client;
+    private UserGroupDaoDelegate delegate;
+
+    private void wire() {
+        CloudantClientPool pool = mock(CloudantClientPool.class);
+        client = mock(CloudantClientWrapper.class);
+        when(pool.getClient(REPO)).thenReturn(client);
+        delegate = new UserGroupDaoDelegate(pool, mock(DaoHelper.class));
+    }
+
+    @SafeVarargs
+    private static ViewResult resultWithValues(Map<String, Object>... values) {
+        ViewResult result = mock(ViewResult.class);
+        List<ViewResultRow> rows = new ArrayList<>();
+        for (Map<String, Object> value : values) {
+            ViewResultRow row = mock(ViewResultRow.class);
+            when(row.getValue()).thenReturn(value);
+            rows.add(row);
+        }
+        when(result.getRows()).thenReturn(rows);
+        return result;
+    }
+
+    private static Map<String, Object> userDocument(String userId) {
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("objectType", "nemaki:user");
+        doc.put("userId", userId);
+        doc.put("_id", "user-node-" + userId);
+        doc.put("type", "user");
+        doc.put("name", userId);
+        return doc;
+    }
+
+    @Test
+    @DisplayName("a matched row whose userId differs refuses — it does not say 'no such user'")
+    void aMismatchedRowRefuses() {
+        wire();
+        ViewResult disagreeing = resultWithValues(userDocument("someone-else"));
+        when(client.queryView(eq("_repo"), eq("userItemsById"), eq("kubota")))
+                .thenReturn(disagreeing);
+
+        IllegalStateException refused = assertThrows(IllegalStateException.class,
+                () -> delegate.getUserItemById(REPO, "kubota"),
+                "the index and the document disagreed and the store answered 'that user "
+                        + "does not exist' — auto-provisioning creates a second account on "
+                        + "that answer and the directory sync deletes on it");
+        assertEquals(true, refused.getMessage().contains("someone-else"),
+                "the refusal no longer names the document it actually found: "
+                        + refused.getMessage());
+    }
+
+    @Test
+    @DisplayName("a view that answered with no rows is still 'no such user' — the control")
+    void anAnsweredEmptyViewIsStillAbsence() {
+        wire();
+        ViewResult noRows = resultWithValues();
+        when(client.queryView(eq("_repo"), eq("userItemsById"), anyString()))
+                .thenReturn(noRows);
+
+        assertNull(delegate.getUserItemById(REPO, "nobody"),
+                "a user that genuinely is not there must still read as absent, or nothing "
+                        + "could ever be created");
+    }
+
+    @Test
+    @DisplayName("other objectTypes on the same key are still skipped — the kept arm")
+    void otherObjectTypesAreStillSkipped() {
+        wire();
+        Map<String, Object> webauthn = new HashMap<>();
+        webauthn.put("objectType", "nemaki:webauthnCredential");
+        webauthn.put("userId", "kubota");
+        ViewResult mixed = resultWithValues(webauthn, userDocument("kubota"));
+        when(client.queryView(eq("_repo"), eq("userItemsById"), eq("kubota")))
+                .thenReturn(mixed);
+
+        UserItem found = delegate.getUserItemById(REPO, "kubota");
+        assertNotNull(found, "a WebAuthn credential sharing the key stopped the user from "
+                + "being found");
+        assertEquals("kubota", found.getUserId());
+    }
+}

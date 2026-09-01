@@ -1351,7 +1351,13 @@ public class CloudantClientWrapper {
 			
 			List<T> objects = new ArrayList<T>();
 			ObjectMapper mapper = getObjectMapper();
-			
+			// Rows the fallback could not turn into a document used to be logged and dropped,
+			// so this method answered a SHORT list that reads exactly like a complete one.
+			// The keyed callers are the worst case: getPropertyDefinitionCoreByPropertyId
+			// asks "is this property already defined?", an empty list says no, and the patch
+			// creates a second core for a property that is already there.
+			int unreadableRows = 0;
+
 			for (ViewResultRow row : result.getRows()) {
 				{
 					Map<String, Object> docMap = documentMapFromRow(row);
@@ -1383,15 +1389,25 @@ public class CloudantClientWrapper {
 						
 						objects.add(obj);
 					} else {
+						unreadableRows++;
 						log.warn("No document available for view row " + row.getId()
-								+ " in " + viewPath + ", skipping object creation");
+								+ " in " + viewPath);
 					}
 				}
 			}
-			
+
+			if (unreadableRows > 0) {
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+						unreadableRows + " row(s) of " + viewPath + " could not be read as a"
+								+ " document; the remaining " + objects.size() + " are NOT the"
+								+ " complete answer to key '" + key + "'");
+			}
+
 			log.debug("Retrieved " + objects.size() + " objects from view " + viewPath + " with key: " + key);
 			return objects;
-			
+
+		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException e) {
+			throw e;
 		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
 			log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found - returning null. This is normal during initial startup.");
 			return null;
@@ -3082,11 +3098,21 @@ public class CloudantClientWrapper {
 			log.debug("Document not found with ID: " + id + " (revision: " + revision + ")");
 			return null;
 		} catch (Exception e) {
-			log.warn("Error getting document with ID: " + id + " (revision: " + revision + ") as class: " + clazz.getName() + " - returning null. This is normal during initial startup: " + e.getMessage());
-			return null;
+			// The two-argument get() above was already made to refuse here; this one — the
+			// same read, one overload over — kept answering null for every failure. Its
+			// callers are the Purview journal stores, the projection cursor and the leader
+			// election, and each of them reads null as "that document does not exist yet":
+			// a failed read elects a SECOND leader, or rewinds the cursor to the beginning
+			// and republishes from zero. NotFound above stays null, because that one really
+			// is absence.
+			log.error("Error getting document with ID: " + id + " (revision: " + revision
+					+ ") as class: " + clazz.getName() + ": " + e.getMessage(), e);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"the document '" + id + "' could not be read; this is NOT a finding that"
+							+ " it does not exist", e);
 		}
 	}
-	
+
 	/**
 	 * Get document with revision (returns raw Document)
 	 */

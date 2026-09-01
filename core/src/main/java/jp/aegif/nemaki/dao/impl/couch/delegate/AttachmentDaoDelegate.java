@@ -48,12 +48,18 @@ public class AttachmentDaoDelegate {
 	public AttachmentNode getAttachmentRef(String repositoryId, String attachmentId) {
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			// The wrapper's get() answers null only for NotFound and throws for everything
+			// else, so a null here is genuine absence — and this catch must not put the
+			// two back together. The fixity scan reads a null as "this document has no
+			// attachment" and reports the record as having nothing to check.
 			CouchAttachmentNode can = client.get(CouchAttachmentNode.class, attachmentId);
 			return can == null ? null : can.convertRef();
 		} catch (Exception e) {
 			log.error("Error getting attachment metadata: " + attachmentId + " in repository: "
 					+ repositoryId, e);
-			return null;
+			throw new IllegalStateException("the attachment metadata of '" + attachmentId
+					+ "' in '" + repositoryId + "' could not be read; this is NOT a finding"
+					+ " that the document has no attachment", e);
 		}
 	}
 
@@ -71,25 +77,38 @@ public class AttachmentDaoDelegate {
 				// here, where the repository is already known.
 				AttachmentNode result = can.convertRef();
 
+				// A node handed back with a null stream is the sentence "this document
+				// exists and has no content" — and every reader downstream believes it:
+				// the exporters wrote a metadata sidecar with no bytes beside it, and the
+				// fixity scan had nothing to hash. The wrapper distinguishes the two cases
+				// for us: CmisObjectNotFound means the `content` attachment genuinely is
+				// not on the document, anything else means the read failed.
 				try {
 					Object attachmentObj = client.getAttachment(attachmentId, "content");
-					if (attachmentObj != null && attachmentObj instanceof InputStream) {
+					if (attachmentObj instanceof InputStream) {
 						result.setInputStream((InputStream) attachmentObj);
 					} else {
-						log.debug("No binary attachment stream found for: " + attachmentId);
+						throw new IllegalStateException("the attachment body of '"
+								+ attachmentId + "' came back as "
+								+ (attachmentObj == null ? "null" : attachmentObj.getClass().getName())
+								+ " rather than a stream");
 					}
-				} catch (Exception streamEx) {
-					log.warn("Error retrieving binary attachment stream for: " + attachmentId + " - " + streamEx.getMessage());
+				} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException notFound) {
+					// Genuine absence: the document carries no `content` attachment.
+					log.debug("No binary attachment stream found for: " + attachmentId);
 				}
 
 				return result;
 			} else {
+				// The wrapper's get() throws on failure, so null is genuine absence.
 				log.warn("CouchAttachmentNode is null for: " + attachmentId);
 				return null;
 			}
 		} catch (Exception e) {
 			log.error("Error getting attachment: " + attachmentId + " in repository: " + repositoryId, e);
-			return null;
+			throw new IllegalStateException("the attachment '" + attachmentId + "' in '"
+					+ repositoryId + "' could not be read; this is NOT a finding that the"
+					+ " document has no content", e);
 		}
 	}
 
@@ -273,15 +292,19 @@ public class AttachmentDaoDelegate {
 
 				try {
 					Object attachmentObj = client.getAttachment(objectId, "content");
-					if (attachmentObj != null && attachmentObj instanceof InputStream) {
+					if (attachmentObj instanceof InputStream) {
 						InputStream attachmentStream = (InputStream) attachmentObj;
 						rendition.setInputStream(attachmentStream);
 						log.debug("Successfully set rendition binary stream for: " + objectId);
 					} else {
-						log.warn("No binary attachment found for rendition: " + objectId);
+						throw new IllegalStateException("the rendition body of '" + objectId
+								+ "' came back as "
+								+ (attachmentObj == null ? "null" : attachmentObj.getClass().getName())
+								+ " rather than a stream");
 					}
-				} catch (Exception streamEx) {
-					log.error("Error retrieving rendition binary stream for: " + objectId, streamEx);
+				} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException notFound) {
+					// Genuine absence: no `content` attachment on the rendition document.
+					log.warn("No binary attachment found for rendition: " + objectId);
 				}
 
 				return rendition;
@@ -289,7 +312,9 @@ public class AttachmentDaoDelegate {
 			return null;
 		} catch (Exception e) {
 			log.error("Error getting rendition: " + objectId + " in repository: " + repositoryId, e);
-			return null;
+			throw new IllegalStateException("the rendition '" + objectId + "' in '"
+					+ repositoryId + "' could not be read; this is NOT a finding that it does"
+					+ " not exist", e);
 		}
 	}
 
@@ -737,18 +762,29 @@ public class AttachmentDaoDelegate {
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			if (client == null) {
-				return null;
+				throw new IllegalStateException("there is no CouchDB client for '" + repositoryId
+						+ "', so the size of attachment '" + attachmentId + "' cannot be"
+						+ " established");
 			}
 
 			Long size = client.getAttachmentSize(attachmentId, "content");
 			if (size != null && size >= 0) {
 				return size;
 			}
+			// The wrapper answers null when the document carries no `content` attachment.
 			return null;
 
+		} catch (IllegalStateException e) {
+			throw e;
 		} catch (Exception e) {
+			// A null size is read as "unknown, use the metadata length" — which is exactly
+			// the number the fixity check is trying to CORROBORATE. Handing back the
+			// document's own claim when the stored bytes could not be measured turns the
+			// check into a comparison of a number with itself.
 			log.error("Error retrieving attachment size for " + attachmentId + ": " + e.getMessage(), e);
-			return null;
+			throw new IllegalStateException("the stored size of attachment '" + attachmentId
+					+ "' in '" + repositoryId + "' could not be read; this is NOT a finding"
+					+ " that it matches the recorded length", e);
 		}
 	}
 }

@@ -155,14 +155,20 @@ public class CloudantClientWrapperViewValueTest {
 		CloudantClientWrapper wrapper = wrapperReturning(new ArrayList<>(List.of(row)));
 
 		// The read by id goes back to the same mocked client, which has no document to answer
-		// with; the point is that the projection was REFUSED rather than converted into a
-		// half-populated object.
-		List<CouchDocument> found =
-				wrapper.queryView("_repo", "versionSeries", "vs-1", CouchDocument.class);
-
-		assertTrue(found == null || found.isEmpty(),
-				"a projection converted into a partial document is worse than no answer — it "
-						+ "looks like a real object with fields silently missing");
+		// with. Two things must hold, and only the first one used to: the projection was
+		// REFUSED rather than converted into a half-populated object, AND the caller is told.
+		// This assertion used to accept an empty list — which is how a row that EXISTS and
+		// could not be read reached getPropertyDefinitionCoreByPropertyId as "that property
+		// is not defined", and a patch created a second core for it.
+		org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException refused =
+				org.junit.jupiter.api.Assertions.assertThrows(
+						org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException.class,
+						() -> wrapper.queryView("_repo", "versionSeries", "vs-1",
+								CouchDocument.class),
+						"a row the store could not turn into a document was dropped, and the "
+								+ "shortened list reads exactly like a complete one");
+		assertTrue(refused.getMessage().contains("could not be read"),
+				"refused for some other reason: " + refused.getMessage());
 	}
 
 	/**
