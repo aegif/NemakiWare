@@ -217,17 +217,17 @@ class AnchorReceiptPersistenceTest {
         service.anchor(EvidenceCheckpoint.of(DOMAIN, 0, 5, ROOT, null, "2026-08-24T00:00:00Z"));
 
         // Before the block lands: nothing changes, and that is the ordinary answer.
-        assertEquals(List.of(), service.upgradePending(DOMAIN, 10),
+        assertEquals(List.of(), service.upgradePending(DOMAIN, 10).upgraded(),
                 "an unsettled commitment was reported as upgraded");
         assertEquals(AnchorStatus.PENDING, receipts.forCheckpoint(DOMAIN, 5).get(0).status());
 
         rung.settled = true;
-        List<AnchorReceipt> upgraded = service.upgradePending(DOMAIN, 10);
+        List<AnchorReceipt> upgraded = service.upgradePending(DOMAIN, 10).upgraded();
 
         assertEquals(1, upgraded.size(), "the settled commitment was not upgraded");
         assertEquals(AnchorStatus.CONFIRMED, receipts.forCheckpoint(DOMAIN, 5).get(0).status(),
                 "the upgrade was not written back, so the next restart loses it again");
-        assertEquals(List.of(), service.upgradePending(DOMAIN, 10),
+        assertEquals(List.of(), service.upgradePending(DOMAIN, 10).upgraded(),
                 "an already-confirmed receipt was offered for upgrade again");
     }
 
@@ -243,7 +243,7 @@ class AnchorReceiptPersistenceTest {
 
         // The operator turns rung 2 off. The calendar still holds the commitment.
         service.setTargets(List.of());
-        assertEquals(List.of(), service.upgradePending(DOMAIN, 10));
+        assertEquals(List.of(), service.upgradePending(DOMAIN, 10).upgraded());
 
         assertEquals(AnchorStatus.PENDING, receipts.forCheckpoint(DOMAIN, 5).get(0).status(),
                 "an orphaned commitment was marked something other than pending; failing it "
@@ -285,7 +285,7 @@ class AnchorReceiptPersistenceTest {
         service.setTargets(List.of(confused));
         service.anchor(EvidenceCheckpoint.of(DOMAIN, 0, 5, ROOT, null, "2026-08-24T00:00:00Z"));
 
-        assertEquals(List.of(), service.upgradePending(DOMAIN, 10));
+        assertEquals(List.of(), service.upgradePending(DOMAIN, 10).upgraded());
 
         // Saving it would write a row under the OTHER rung's key and leave this one pending for
         // ever: the commitment reads as unsettled while a settled proof sits one row away under
@@ -355,7 +355,7 @@ class AnchorReceiptPersistenceTest {
         service.anchor(EvidenceCheckpoint.of(DOMAIN, 0, 5, ROOT, null, "2026-08-24T00:00:00Z"));
         rung.settled = true;
 
-        service.upgradePending(DOMAIN, 10);
+        service.upgradePending(DOMAIN, 10).upgraded();
 
         assertEquals(AnchorStatus.CONFIRMED, receipts.forCheckpoint(DOMAIN, 5).get(0).status(),
                 "the settled proof was refused, so nothing can ever be confirmed");
@@ -602,6 +602,51 @@ class AnchorReceiptPersistenceTest {
     }
 
     @Test
+    @DisplayName("the fallback does not STRENGTHEN a rung whose honest claim is weaker")
+    void anUnreadableSemanticsDoesNotPromoteACatalogAnchor() {
+        // The test above overwrites `kind` to RFC3161_TSA before asserting -- so it measures the
+        // one arm where UPPER_BOUND_ONLY is a downgrade, and its @DisplayName generalises to all
+        // three rungs. ATLAS_CATALOG claims NOT_A_TIME_PROOF, so on that arm the same fallback
+        // was a PROMOTION: a corrupt row rendered an in-organization catalog receipt as "the
+        // commitment existed no later than that time". This class's contract is that reload must
+        // not be able to strengthen a receipt.
+        //
+        // Written over EVERY rung, because "one arm of a fan-out was fixed and that arm was
+        // tested" is the mechanic behind this finding and four others beside it.
+        for (AnchorKind kind : AnchorKind.values()) {
+            CatalogAnchorTarget minter = new CatalogAnchorTarget();
+            minter.setEnabled(true);
+            minter.setPublisher(digest -> "entity-1");
+            Map<String, Object> doc = AnchorReceiptCodec.toDocument(minter.anchor(ROOT));
+            doc.put("kind", kind.name());
+            doc.put("timeSemantics", "GIBBERISH");
+
+            AnchorReceipt reloaded = AnchorReceiptCodec.fromDocument(doc);
+
+            // Fixture check, as its sibling anUnreadableSemanticsDowngrades has. AnchorReceipt
+            // .failed(...) defaults timeSemantics to NOT_A_TIME_PROOF -- which is exactly the
+            // expected value for the ATLAS_CATALOG arm this test exists for, so if the codec
+            // ever downgrades that row to FAILED the arm passes vacuously.
+            assertEquals(AnchorStatus.CONFIRMED, reloaded.status(),
+                    kind + ": the row came back FAILED, so the semantics assertion below is "
+                            + "checking a default rather than the fallback");
+
+            // LITERAL expectations, one per rung. Computing the expectation with weakerOf --
+            // the function under test -- meant inverting its ordering left this green while the
+            // defect returned, and weakerOf has no other lock in the repo. A test that asks the
+            // code what the answer should be is asking the defendant for the verdict.
+            AnchorKind.TimeSemantics expected = switch (kind) {
+                case ATLAS_CATALOG -> AnchorKind.TimeSemantics.NOT_A_TIME_PROOF;
+                case OPENTIMESTAMPS -> AnchorKind.TimeSemantics.UPPER_BOUND_ONLY;
+                case RFC3161_TSA -> AnchorKind.TimeSemantics.UPPER_BOUND_ONLY;
+            };
+            assertEquals(expected, reloaded.timeSemantics(),
+                    kind + ": an unreadable semantics field produced a claim STRONGER than "
+                            + "this rung's own, so a corrupt row upgrades what the receipt says");
+        }
+    }
+
+    @Test
     @DisplayName("an ordinary receipt round-trips unchanged — the control")
     void anOrdinaryReceiptRoundTrips() {
         // Without this, refusing everything would pass the three tests above.
@@ -622,5 +667,41 @@ class AnchorReceiptPersistenceTest {
         assertEquals("entity-42", reloaded.attributes().get("catalogEntityId"));
         assertNull(reloaded.failureReason());
         assertNotNull(reloaded.attemptedAt());
+    }
+
+    @Test
+    @DisplayName("weakerOf orders the three claims, weakest first")
+    void weakerOfPicksTheWeakerClaim() {
+        // The ordering had no lock at all: the codec's caller computed its expectation with
+        // this very function, so inverting it left everything green. Declaration order in the
+        // enum is NOT the strength order, which is exactly why the method exists.
+        AnchorKind.TimeSemantics none = AnchorKind.TimeSemantics.NOT_A_TIME_PROOF;
+        AnchorKind.TimeSemantics upper = AnchorKind.TimeSemantics.UPPER_BOUND_ONLY;
+        AnchorKind.TimeSemantics both = AnchorKind.TimeSemantics.BIDIRECTIONAL_WITHIN_ACCURACY;
+
+        assertEquals(none, AnchorKind.TimeSemantics.weakerOf(none, upper));
+        assertEquals(none, AnchorKind.TimeSemantics.weakerOf(upper, none));
+        assertEquals(none, AnchorKind.TimeSemantics.weakerOf(none, both));
+        assertEquals(upper, AnchorKind.TimeSemantics.weakerOf(upper, both));
+        assertEquals(upper, AnchorKind.TimeSemantics.weakerOf(both, upper));
+        assertEquals(both, AnchorKind.TimeSemantics.weakerOf(both, both));
+        for (AnchorKind.TimeSemantics one : AnchorKind.TimeSemantics.values()) {
+            assertEquals(one, AnchorKind.TimeSemantics.weakerOf(one, one),
+                    one + " is not its own weaker self");
+        }
+
+        // strongerOf had no lock of its own -- its only caller computed nothing from it that a
+        // test looked at. It is the function AnchorController uses to choose which rung to
+        // quote beside the exposure number, so getting it backwards names the WEAKEST anchor
+        // as the cover.
+        assertEquals(upper, AnchorKind.TimeSemantics.strongerOf(none, upper));
+        assertEquals(upper, AnchorKind.TimeSemantics.strongerOf(upper, none));
+        assertEquals(both, AnchorKind.TimeSemantics.strongerOf(none, both));
+        assertEquals(both, AnchorKind.TimeSemantics.strongerOf(both, upper));
+        assertEquals(both, AnchorKind.TimeSemantics.strongerOf(upper, both));
+        for (AnchorKind.TimeSemantics one : AnchorKind.TimeSemantics.values()) {
+            assertEquals(one, AnchorKind.TimeSemantics.strongerOf(one, one),
+                    one + " is not its own stronger self");
+        }
     }
 }

@@ -49,6 +49,9 @@ public class ContentServiceImplSystemSubFolderTest {
     @BeforeEach
     public void setUp() {
         service = spy(new ContentServiceImpl());
+        // The helper now refuses over a decode-shortened listing; these tests are about the
+        // find-or-create logic itself, so the listing reads as fully decoded.
+        doReturn(0).when(service).lastUnreadableChildCount();
     }
 
     private Folder folder(String id, String name) {

@@ -68,6 +68,21 @@ export function displayProcessIdentity(event: LineageEventSummary): string {
   return event.processIdentity ?? event.eventKey;
 }
 
+/**
+ * One page of journal events, and what the server could not put in it.
+ *
+ * `undecodableRows` is the number of rows the view returned whose document did not come with
+ * them. They are NOT in `events`, and the server says so explicitly — dropping the field here
+ * meant the page presented itself as the whole of what the journal holds. Absent when nothing
+ * was lost.
+ */
+export interface LineageEventPage {
+  events: LineageEventSummary[];
+  total: number;
+  undecodableRows?: number;
+  undecodableRowsNote?: string;
+}
+
 export interface DeadLetterRecord {
   eventId: string;
   eventKey: string;
@@ -108,7 +123,7 @@ export async function getEvents(params: {
   offset?: number;
   repositoryId?: string;
   processType?: string;
-} = {}): Promise<{ events: LineageEventSummary[]; total: number }> {
+} = {}): Promise<LineageEventPage> {
   const query = new URLSearchParams();
   if (params.limit) query.set('limit', String(params.limit));
   if (params.offset != null) query.set('offset', String(params.offset));
@@ -117,7 +132,7 @@ export async function getEvents(params: {
 
   const res = await fetchWithAuth(`${BASE_URL}/events?${query}`);
   ensureOk(res, 'getEvents');
-  return (await parseJsonResponseBody(res, 'getEvents')) as unknown as { events: LineageEventSummary[]; total: number };
+  return (await parseJsonResponseBody(res, 'getEvents')) as unknown as LineageEventPage;
 }
 
 /**

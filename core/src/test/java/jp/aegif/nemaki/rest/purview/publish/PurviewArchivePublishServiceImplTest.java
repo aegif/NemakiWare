@@ -275,4 +275,24 @@ public class PurviewArchivePublishServiceImplTest {
         int count = entities instanceof List<?> list ? list.size() : 0;
         return PurviewEntityPublishResult.success(count, "published");
     }
+
+    @org.junit.jupiter.api.Test
+    public void anUnreadableArchiveRowRefusesTheSyncInsteadOfReconciling() {
+        // A row the archive view returned and the DAO could not decode is an archive that
+        // EXISTS. Before this guard the row was warn-and-dropped with no counter, the short
+        // page read as the last page, and the snapshot diff then reconciled every hidden
+        // archive out of the external catalog as "missing" — absence-equals-delete over a
+        // listing that was known (to nobody) to be short. There is no total to bound a
+        // skip-forward here, so the honest response is refusal: sync fails, cursor stays,
+        // dead letter lives, nothing is deleted.
+        when(contentDaoService.getArchives("bedroom", 0, 100, Boolean.FALSE))
+                .thenReturn(java.util.List.of());
+        when(contentDaoService.lastUnreadableArchiveCount()).thenReturn(1);
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> service.syncRepositoryArchivesIfChanged("bedroom",
+                        "archive-hidden|orig-1|hash"),
+                "a listing that lost rows was diffed against the snapshot anyway, so the "
+                        + "hidden archives get reconciled out of the catalog");
+    }
 }

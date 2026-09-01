@@ -36,8 +36,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -702,5 +706,287 @@ class AnchorServiceTest {
                 "the reader is not told where the authority's time actually is: " + limits);
         assertFalse(limits.contains("read the time from the block"),
                 "a TSA token was described as committing to a block: " + limits);
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("every configured rung FAILED is a refusal, not a success")
+    void everyRungFailedIsARefusal() {
+        // AnchorTarget's contract is that ordinary remote failure comes back as a FAILED
+        // RECEIPT rather than an exception -- all three implementations follow it. anchor()
+        // collected those receipts and still returned refusedReason == null, and the controller
+        // arm that decides the HTTP status reads only refusedReason. So a checkpoint anchored
+        // NOWHERE came back 200 success, with the failure visible only in the nested rows.
+        AnchorService service = serviceWith(storeAt(5), alwaysFailing(AnchorKind.RFC3161_TSA));
+
+        AnchorService.Outcome outcome = service.anchor(checkpoint(5));
+
+        org.junit.jupiter.api.Assertions.assertNotNull(outcome.refusedReason(),
+                "every configured rung failed and the outcome reports no refusal: "
+                        + outcome.asMap());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                outcome.refusedReason().contains("not anchored anywhere"),
+                outcome.refusedReason());
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("one rung settling is NOT a refusal — the control")
+    void oneSettledRungIsNotARefusal() {
+        // Without this, refusing whenever any rung failed would make a partially-anchored
+        // checkpoint -- the ordinary case with three rungs and one outage -- read as anchored
+        // nowhere.
+        jp.aegif.nemaki.rest.purview.anchor.CatalogAnchorTarget catalog =
+                new jp.aegif.nemaki.rest.purview.anchor.CatalogAnchorTarget();
+        catalog.setEnabled(true);
+        catalog.setPublisher(digest -> "entity-1");
+        AnchorService service =
+                serviceWith(storeAt(5), alwaysFailing(AnchorKind.RFC3161_TSA), catalog);
+
+        AnchorService.Outcome outcome = service.anchor(checkpoint(5));
+
+        org.junit.jupiter.api.Assertions.assertNull(outcome.refusedReason(),
+                "a checkpoint with one settled rung was reported as anchored nowhere: "
+                        + outcome.refusedReason());
+    }
+
+    private static jp.aegif.nemaki.rest.purview.anchor.AnchorTarget alwaysFailing(
+            AnchorKind kind) {
+        return new jp.aegif.nemaki.rest.purview.anchor.AnchorTarget() {
+            @Override
+            public AnchorKind kind() {
+                return kind;
+            }
+
+            @Override
+            public boolean isConfigured() {
+                return true;
+            }
+
+            @Override
+            public jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt anchor(String digest) {
+                return jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt.failed(kind, digest,
+                        java.time.Instant.parse("2026-08-28T00:00:00Z"), "the TSA was down");
+            }
+        };
+    }
+
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("a receipt row that could not be READ stops a re-anchor")
+    void unreadableRowsStopARetry() {
+        // A row that cannot be decoded is not an absent receipt. The store dropped such rows
+        // silently, so an unreadable PENDING or CONFIRMED receipt looked like a rung that had
+        // never been anchored -- and retryUnsettled contacts exactly those. Contacting a rung
+        // that is already committed mints a second OpenTimestamps commitment, or BUYS A SECOND
+        // RFC 3161 TOKEN. The store's exception path was already a refusal; its decode path
+        // was not.
+        AnchorReceiptStore store = new StubStore() {
+            @Override
+            public int unreadableCount() {
+                return 2;
+            }
+        };
+        AnchorService service = serviceWith(storeAt(5), alwaysFailing(AnchorKind.RFC3161_TSA));
+        service.setReceiptStore(store);
+
+        AnchorService.Outcome outcome = service.retryUnsettled(checkpoint(5));
+
+        org.junit.jupiter.api.Assertions.assertNotNull(outcome.refusedReason(),
+                "rows that could not be read were treated as rungs with nothing, so a settled "
+                        + "rung is about to be contacted again");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                outcome.refusedReason().contains("could not be read"), outcome.refusedReason());
+        org.junit.jupiter.api.Assertions.assertTrue(outcome.receipts().isEmpty(),
+                "a rung was contacted anyway");
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("readable rows do NOT stop a retry — the control")
+    void readableRowsDoNotStopARetry() {
+        // Without this, refusing whenever the count is consulted would make every retry a
+        // refusal and the way back from a failed anchor would be closed again.
+        AnchorService service = serviceWith(storeAt(5), alwaysFailing(AnchorKind.RFC3161_TSA));
+        service.setReceiptStore(new StubStore());
+
+        AnchorService.Outcome outcome = service.retryUnsettled(checkpoint(5));
+
+        org.junit.jupiter.api.Assertions.assertNull(outcome.refusedReason(),
+                "a store with nothing unreadable refused the retry: " + outcome.refusedReason());
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("a commitment whose receipt could not be STORED is a refusal")
+    void aLostReceiptIsARefusal() {
+        // The worst outcome in this class: the external commitment HAS been made and this
+        // deployment has no record of it. For a PENDING OpenTimestamps receipt the proof cannot
+        // be recovered by re-anchoring -- re-anchoring mints a NEW commitment -- and persist()
+        // caught the write failure, logged it, and returned. anchor() reported no refusal, so
+        // the controller answered 200 success over a proof that had just been lost.
+        AnchorReceiptStore refusingToWrite = new StubStore() {
+            @Override
+            public SaveOutcome save(String domain, long toSequence,
+                    jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt receipt) {
+                throw new IllegalStateException("couchdb is down");
+            }
+        };
+        AnchorService service = serviceWith(storeAt(5), alwaysPending(AnchorKind.OPENTIMESTAMPS));
+        service.setReceiptStore(refusingToWrite);
+
+        AnchorService.Outcome outcome = service.anchor(checkpoint(5));
+
+        org.junit.jupiter.api.Assertions.assertNotNull(outcome.refusedReason(),
+                "a commitment was made and its receipt was lost, and the outcome says nothing: "
+                        + outcome.asMap());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                outcome.refusedReason().contains("NOT stored"), outcome.refusedReason());
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("a FAILED receipt that could not be stored is not — the control")
+    void aLostFailedReceiptIsNotARefusal() {
+        // A FAILED receipt has no commitment behind it, so losing the row loses nothing.
+        // Without this, refusing on every write failure would turn an ordinary TSA outage into
+        // "a proof was lost", which is the strongest sentence this class has.
+        AnchorReceiptStore refusingToWrite = new StubStore() {
+            @Override
+            public SaveOutcome save(String domain, long toSequence,
+                    jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt receipt) {
+                throw new IllegalStateException("couchdb is down");
+            }
+        };
+        AnchorService service = serviceWith(storeAt(5), alwaysFailing(AnchorKind.RFC3161_TSA));
+        service.setReceiptStore(refusingToWrite);
+
+        AnchorService.Outcome outcome = service.anchor(checkpoint(5));
+
+        org.junit.jupiter.api.Assertions.assertTrue(
+                outcome.refusedReason() != null
+                        && outcome.refusedReason().contains("not anchored anywhere"),
+                "a lost FAILED row was reported as a lost proof rather than as a failed rung: "
+                        + outcome.refusedReason());
+    }
+
+    private static jp.aegif.nemaki.rest.purview.anchor.AnchorTarget alwaysPending(
+            AnchorKind kind) {
+        return new jp.aegif.nemaki.rest.purview.anchor.AnchorTarget() {
+            @Override
+            public AnchorKind kind() {
+                return kind;
+            }
+
+            @Override
+            public boolean isConfigured() {
+                return true;
+            }
+
+            @Override
+            public jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt anchor(String digest) {
+                return jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt.pending(kind, digest,
+                        java.time.Instant.parse("2026-08-28T00:00:00Z"),
+                        new byte[] { 1, 2, 3 }, "d1", java.util.Map.of());
+            }
+        };
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("a store that could not be asked is not 'nothing settled'")
+    void anUnaskableStoreIsNotNothingSettled() {
+        // anchor() and retryUnsettled() both carry refusal in an Outcome and the controller maps
+        // both; this third verb returned a bare List, so "the store is not wired" and "asked,
+        // nothing had settled" were the SAME VALUE. The endpoint then told the operator
+        // "nothing had settled yet ... not a failure -- DO NOT RE-ANCHOR" for a deployment that
+        // had never been asked -- advice to leave a commitment unupgraded for ever.
+        //
+        // AnchorReceiptStore.isActive()'s javadoc says callers must not read "no pending
+        // receipts" from a store that could not be asked. /status, LongTermValidityService and
+        // EvidenceRecordService all consult it; this class never did.
+        for (AnchorReceiptStore store : new AnchorReceiptStore[] { null, new StubStore() {
+                @Override
+                public boolean isActive() {
+                    return false;
+                }
+            } }) {
+            AnchorService service = new AnchorService();
+            service.setReceiptStore(store);
+
+            AnchorService.Upgraded result = service.upgradePending(DOMAIN, 10);
+
+            org.junit.jupiter.api.Assertions.assertNotNull(result.unavailable(),
+                    "a store that could not be asked answered as though it had been: "
+                            + result.upgraded());
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    result.unavailable().contains("NOT a finding"), result.unavailable());
+        }
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("an answered, empty store is NOT unavailable — the control")
+    void anAnsweredEmptyStoreIsNotUnavailable() {
+        AnchorService service = new AnchorService();
+        service.setReceiptStore(new StubStore());
+
+        AnchorService.Upgraded result = service.upgradePending(DOMAIN, 10);
+
+        org.junit.jupiter.api.Assertions.assertNull(result.unavailable(),
+                "an answered, empty store was reported as unreachable: " + result.unavailable());
+        org.junit.jupiter.api.Assertions.assertTrue(result.upgraded().isEmpty());
+    }
+
+    /** Answers everything emptily; subclasses change the one thing under test. */
+    private static class StubStore implements AnchorReceiptStore {
+        @Override
+        public SaveOutcome save(String domain, long toSequence,
+                jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt receipt) {
+            return SaveOutcome.STORED;
+        }
+
+        @Override
+        public List<jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt> forCheckpoint(
+                String domain, long toSequence) {
+            return List.of();
+        }
+
+        @Override
+        public List<PendingReceipt> pending(String domain, int limit) {
+            return List.of();
+        }
+
+        @Override
+        public List<PendingReceipt> confirmed(String domain, int limit) {
+            return List.of();
+        }
+
+        @Override
+        public boolean isActive() {
+            return true;
+        }
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("a partly-readable pending list refuses BEFORE upgrading")
+    void aPartlyReadablePendingListRefusesBeforeActing() {
+        // Checked after the loop, this method upgraded and SAVED the rows it could read and
+        // then answered "upgradedCount: 0, unavailable" — work that happened, reported as not
+        // having happened, on every run until the broken row was repaired. The sibling verb
+        // (retryUnsettled) already refuses before acting; the two were asymmetric.
+        AnchorReceiptStore store = mock(AnchorReceiptStore.class);
+        when(store.isActive()).thenReturn(true);
+        when(store.pending(anyString(), anyInt())).thenReturn(java.util.List.of(
+                new AnchorReceiptStore.PendingReceipt(DOMAIN, 5L,
+                        AnchorReceipt.pending(AnchorKind.RFC3161_TSA, "ab".repeat(32),
+                                Instant.now(), new byte[] {1}, "tsa", java.util.Map.of()))));
+        when(store.unreadableCount()).thenReturn(1);
+        AnchorTarget target = mock(AnchorTarget.class);
+        AnchorService service = new AnchorService();
+        service.setReceiptStore(store);
+        service.setTargets(List.of(target));
+
+        AnchorService.Upgraded result = service.upgradePending(DOMAIN, 10);
+
+        assertTrue(result.upgraded().isEmpty(),
+                "rows were upgraded from a list the store could not fully read, so the answer "
+                        + "denies work that happened: " + result.upgraded());
+        assertNotNull(result.unavailable(), "the refusal carries no reason");
+        verify(target, org.mockito.Mockito.never()).upgrade(any());
+        verify(store, org.mockito.Mockito.never()).save(anyString(), anyLong(), any());
     }
 }

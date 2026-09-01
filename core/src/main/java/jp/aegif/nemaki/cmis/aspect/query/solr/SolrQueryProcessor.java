@@ -631,8 +631,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 				// page is sliced here so a full authorized page is returned even when
 				// the Solr window contained non-authorized documents.
 				int totalAuthorized = ordered.size();
-				int skip = (skipCount == null) ? 0 : Math.max(0, skipCount.intValue());
-				int max = (maxItems == null) ? totalAuthorized : Math.max(0, maxItems.intValue());
+				// Math.max(0, ...) bounds the RESULT of the truncation, not the truncation:
+				// intValue() keeps the low 32 bits first, so 2^32 arrives as 0 and this page
+				// comes back empty. Compare before converting, like the children and type
+				// listings.
+				int skip = clampQuerySkip(skipCount);
+				int max = (maxItems == null) ? totalAuthorized : clampQueryPage(maxItems);
 				List<Content> pageContents;
 				if (skip >= totalAuthorized) {
 					pageContents = new ArrayList<Content>();
@@ -1265,4 +1269,27 @@ public class SolrQueryProcessor implements QueryProcessor {
 	public void setThreadLockService(ThreadLockService threadLockService) {
 		this.threadLockService = threadLockService;
 	}
+	/** The largest query page assembled in memory in one response. */
+	private static final int MAX_QUERY_PAGE = 10_000;
+
+	/** Converts a client's query maxItems without truncating it into 0 or a negative. */
+	private static int clampQueryPage(java.math.BigInteger maxItems) {
+		if (maxItems == null || maxItems.signum() <= 0) {
+			return 0;
+		}
+		return maxItems.compareTo(java.math.BigInteger.valueOf(MAX_QUERY_PAGE)) >= 0
+				? MAX_QUERY_PAGE
+				: maxItems.intValue();
+	}
+
+	/** A skip count is a position: never negative, never truncated. */
+	private static int clampQuerySkip(java.math.BigInteger skipCount) {
+		if (skipCount == null || skipCount.signum() <= 0) {
+			return 0;
+		}
+		return skipCount.compareTo(java.math.BigInteger.valueOf(Integer.MAX_VALUE)) >= 0
+				? Integer.MAX_VALUE
+				: skipCount.intValue();
+	}
+
 }

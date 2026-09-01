@@ -58,13 +58,18 @@ public class TypeDefinitionDaoDelegate {
 			List<NemakiTypeDefinition> typeDefinitions = new ArrayList<NemakiTypeDefinition>();
 
 			// Handle null result gracefully (occurs during initial startup when design documents may not exist yet)
+			int unreadableRows = 0;
 			if (result != null && result.getRows() != null) {
 				int processedCount = 0;
 
 				for (ViewResultRow row : result.getRows()) {
 					processedCount++;
 
-					if (row.getDoc() != null) {
+					if (row.getDoc() == null) {
+						unreadableRows++;
+						continue;
+					}
+					{
 						// Convert document to CouchTypeDefinition, then to NemakiTypeDefinition
 						try {
 							// Handle both Document and Map types from Cloudant SDK
@@ -90,6 +95,7 @@ public class TypeDefinitionDaoDelegate {
 									}
 
 								} else {
+									unreadableRows++;
 									continue;
 							}
 									String typeId = (String) docMap.get("typeId");
@@ -123,8 +129,8 @@ public class TypeDefinitionDaoDelegate {
 							} catch (Exception ex) {
 								// Ignore, use default "unknown"
 							}
-								e.printStackTrace();
-							log.warn("Failed to convert type definition document: " + e.getMessage());
+							unreadableRows++;
+							log.warn("Failed to convert type definition document (typeId=" + typeId + "): " + e.getMessage());
 							if (log.isDebugEnabled()) {
 								e.printStackTrace();
 							}
@@ -133,6 +139,17 @@ public class TypeDefinitionDaoDelegate {
 				}
 			}
 
+
+			// A SHORT type list is not a smaller type system. Every dropped row is a type
+			// that exists: the CMIS type registry would treat its objects as broken, and
+			// the Purview type-definition sync diffs this list against its snapshot and
+			// DELETES the "missing" type entities from the external catalog —
+			// classifications and terms attached to them do not come back on republish.
+			if (unreadableRows > 0) {
+				throw new IllegalStateException(unreadableRows + " type definition row(s) in '"
+						+ repositoryId + "' could not be read; serving the remaining types as"
+						+ " the complete type system would delete the unreadable ones downstream");
+			}
 
 			// If no types found via ViewQuery, return basic CMIS types as fallback
 			if (typeDefinitions.isEmpty()) {
@@ -158,28 +175,21 @@ public class TypeDefinitionDaoDelegate {
 			log.debug("Retrieved " + typeDefinitions.size() + " type definitions from repository: " + repositoryId);
 			return typeDefinitions;
 
+		} catch (IllegalStateException e) {
+			throw e;
 		} catch (Exception e) {
+			// The old arm synthesized cmis:folder + cmis:document here — so one transient
+			// CouchDB failure answered "this repository has exactly two types", the
+			// type-definition sync diffed that against its snapshot, and every custom
+			// type's external entity was deleted and later re-created under a new GUID
+			// (losing whatever the catalog had attached to the old one). A failure to
+			// read the type system is a failure, not a smaller type system. The
+			// genuinely-empty fallback above stays: it is reached only when the view
+			// ANSWERED with no rows (bootstrap before the type documents exist).
 			log.error("Error retrieving type definitions from repository '" + repositoryId + "': " + e.getMessage(), e);
-
-			// Return basic CMIS types as fallback in case of error
-			List<NemakiTypeDefinition> fallbackTypes = new ArrayList<NemakiTypeDefinition>();
-
-			NemakiTypeDefinition folderType = new NemakiTypeDefinition();
-			folderType.setId("cmis:folder");
-			folderType.setType("typeDefinition");
-			folderType.setBaseId(BaseTypeId.CMIS_FOLDER);
-			folderType.setTypeId("cmis:folder");
-			fallbackTypes.add(folderType);
-
-			NemakiTypeDefinition documentType = new NemakiTypeDefinition();
-			documentType.setId("cmis:document");
-			documentType.setType("typeDefinition");
-			documentType.setBaseId(BaseTypeId.CMIS_DOCUMENT);
-			documentType.setTypeId("cmis:document");
-			fallbackTypes.add(documentType);
-
-			log.warn("Using fallback type definitions due to error");
-			return fallbackTypes;
+			throw new IllegalStateException("the type definitions of '" + repositoryId
+					+ "' could not be read; this is NOT a finding that only the base types"
+					+ " exist", e);
 		}
 	}
 

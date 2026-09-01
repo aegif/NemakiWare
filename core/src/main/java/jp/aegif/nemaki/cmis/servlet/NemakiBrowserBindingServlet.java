@@ -4593,17 +4593,32 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 cmisService = getCmisService(callContext);
             
                 // Perform the deleteTree operation using CmisService
-                cmisService.deleteTree(repositoryId, folderId, allVersions, unfileObjects, continueOnFailure, null);
-            
-                // Return success response (empty JSON object like standard Browser Binding)
+                org.apache.chemistry.opencmis.commons.data.FailedToDeleteData failed =
+                        cmisService.deleteTree(repositoryId, folderId, allVersions,
+                                unfileObjects, continueOnFailure, null);
+
+                // The result used to be DISCARDED and {} returned unconditionally — so every
+                // guard that RETAINS a folder (short listing, failed descendant) looked like a
+                // clean success to the bundled UI, which uses this binding for folder deletion.
+                // The folder stayed, the user saw success, and the reason lived only in a
+                // server log. The Browser Binding spec's own response for deleteTree carries
+                // the ids that could not be deleted; {} stays the shape when nothing failed.
                 response.setStatus(HttpServletResponse.SC_OK);
                 response.setContentType("application/json");
                 response.setCharacterEncoding("UTF-8");
-            
-                try (java.io.PrintWriter writer = response.getWriter()) {
-                    writer.write("{}"); // Empty JSON response indicates success
+
+                String body = "{}";
+                if (failed != null && failed.getIds() != null && !failed.getIds().isEmpty()) {
+                    org.json.simple.JSONObject json = new org.json.simple.JSONObject();
+                    org.json.simple.JSONArray ids = new org.json.simple.JSONArray();
+                    ids.addAll(failed.getIds());
+                    json.put("ids", ids);
+                    body = json.toJSONString();
                 }
-            
+                try (java.io.PrintWriter writer = response.getWriter()) {
+                    writer.write(body);
+                }
+
                 return true; // Successfully handled
             } finally {
                 if (cmisService != null) {

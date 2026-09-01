@@ -33,7 +33,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -161,6 +163,20 @@ class ReceiptSignatureIsCheckedOnArrivalTest {
         assertTrue(outcome.done(), String.valueOf(outcome.refusedReason()));
         assertFalse(outcome.transfer().receipt().signatureVerified(),
                 "a signature made with another key was recorded as verified");
+        // And the finding LEAVES this JVM. signatureVerified=false has three producers -- no
+        // key, a check that ran and did not match, an unreadable signature -- and the receipt
+        // holds one boolean. Its limits used to name the harmless one ("this product holds no
+        // key material"), so a receipt demonstrably not from the holder of the configured key
+        // was reported to the operator as an unconfigured deployment: the strongest of the
+        // three read as the weakest. Checked.asMap() had no caller anywhere in main.
+        assertNotNull(outcome.signatureCheck(),
+                "the signature check's result was dropped, so nothing outside this JVM can tell "
+                        + "a FAILED check from a missing key");
+        assertEquals(Boolean.TRUE, outcome.signatureCheck().get("signatureCheckRan"));
+        assertEquals(Boolean.FALSE, outcome.signatureCheck().get("signatureValid"));
+        assertFalse(outcome.transfer().receipt().limits().contains("holds no key material"),
+                "the receipt names 'no key material' as the reason after a check that RAN and "
+                        + "FAILED: " + outcome.transfer().receipt().limits());
     }
 
     @Test

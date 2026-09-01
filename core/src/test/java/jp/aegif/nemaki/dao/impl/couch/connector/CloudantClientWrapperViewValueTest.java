@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -89,6 +90,16 @@ public class CloudantClientWrapperViewValueTest {
 		when(call.execute()).thenReturn(response);
 		captor = ArgumentCaptor.forClass(PostViewOptions.class);
 		when(client.postView(captor.capture())).thenReturn(call);
+		// The id fallback reads a document that is genuinely NOT THERE. Modelled explicitly:
+		// leaving getDocument unstubbed used to work only because an unstubbed mock NPEs and
+		// the wrapper swallowed that as "startup", which is exactly the grace that is now
+		// declared rather than guessed. A not-found is the answer this test means.
+		ServiceCall<com.ibm.cloud.cloudant.v1.model.Document> docCall = mock(ServiceCall.class);
+		Response<com.ibm.cloud.cloudant.v1.model.Document> docResponse = mock(Response.class);
+		when(docResponse.getResult()).thenReturn(null);
+		when(docCall.execute()).thenReturn(docResponse);
+		when(client.getDocument(any(com.ibm.cloud.cloudant.v1.model.GetDocumentOptions.class)))
+				.thenReturn(docCall);
 		return new CloudantClientWrapper(client, DB, ObjectMapperFactory.createDefaultObjectMapper());
 	}
 

@@ -125,6 +125,54 @@ class CustodyTransferServiceTest {
     }
 
     @Test
+    @DisplayName("a mapped word nobody could have derived is refused before anything else")
+    void aForgedMappingIsRefused() {
+        // Splitting the outcome into a mapped slot and a raw slot opened a hole: the far end's
+        // signature covers only the RAW word, while the state machine judges the MAPPED one. So
+        // verificationOutcome=SUCCESS with reportedOutcome=FAILED would verify AND be accepted,
+        // and nothing inside the receipt contradicts it. The pair has to be re-derivable.
+        assertTrue(service.open(REPO, "t-1", "doc-1", DIGEST, "am").done());
+        for (CustodyState next : List.of(CustodyState.SENT, CustodyState.RECEIVED,
+                CustodyState.VALIDATED, CustodyState.INGEST_ACCEPTED, CustodyState.AIP_CREATED)) {
+            assertTrue(service.advance(REPO, "t-1", next, "step").done(), next.name());
+        }
+
+        CustodyReceipt forged = new CustodyReceipt("sub-1", "aip-1", "c".repeat(64), DIGEST,
+                "SUCCESS", "FAILED", "am-agent", "2026-08-27T00:00:00Z", null, false);
+
+        CustodyTransferService.Outcome outcome = service.verifyReceipt(REPO, "t-1", forged);
+
+        assertFalse(outcome.done(),
+                "a receipt claiming the receiver said FAILED and that this means SUCCESS was "
+                        + "accepted. A signature would only ever cover the FAILED");
+        assertTrue(outcome.refusedReason().contains("re-derive")
+                        || outcome.refusedReason().contains("maps"),
+                outcome.refusedReason());
+        assertEquals(CustodyState.AIP_CREATED, store.find(REPO, "t-1").state(),
+                "the transfer moved on a mapping nobody could derive");
+    }
+
+    @Test
+    @DisplayName("a genuine mapping IS derivable, so it still passes")
+    void aGenuineMappingIsAccepted() {
+        // The check above must not be a blanket refusal of mapped receipts -- Archivematica's
+        // COMPLETE -> SUCCESS is the whole reason the second slot exists.
+        assertTrue(service.open(REPO, "t-1", "doc-1", DIGEST, "am").done());
+        for (CustodyState next : List.of(CustodyState.SENT, CustodyState.RECEIVED,
+                CustodyState.VALIDATED, CustodyState.INGEST_ACCEPTED, CustodyState.AIP_CREATED)) {
+            assertTrue(service.advance(REPO, "t-1", next, "step").done(), next.name());
+        }
+
+        CustodyReceipt mapped = new CustodyReceipt("sub-1", "aip-1", "c".repeat(64), DIGEST,
+                "SUCCESS", "COMPLETE", "am-agent", "2026-08-27T00:00:00Z", null, false);
+
+        CustodyTransferService.Outcome outcome = service.verifyReceipt(REPO, "t-1", mapped);
+
+        assertTrue(outcome.done(), String.valueOf(outcome.refusedReason()));
+        assertEquals(CustodyState.RECEIPT_VERIFIED, store.find(REPO, "t-1").state());
+    }
+
+    @Test
     @DisplayName("custody does NOT pass when the handover could not be recorded")
     void anUnrecordableHandoverDoesNotPassCustody() {
         // The rule, executed. Custody has not passed when we try to chain it, so refusing costs

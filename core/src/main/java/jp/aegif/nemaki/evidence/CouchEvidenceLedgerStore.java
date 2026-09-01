@@ -270,7 +270,21 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
         params.put("startkey", List.of(domain, maxKey()));
         params.put("endkey", List.of(domain, 0));
         ViewResult result = client().queryView(DESIGN_DOC, VIEW_ENTRIES, params);
-        if (result == null || result.getRows() == null || result.getRows().isEmpty()) {
+        // -1 has ONE meaning here: this domain has no entries yet. Two other things used to
+        // return it — a view that answered with nothing at all, and a row whose key this store
+        // cannot read — and both of those are "the question was not answered". The callers act
+        // on the difference: AnchorController turns -1 into `unanchoredEntries: 0` and prints
+        // "nothing is unanchored", the number an operator uses to size the window in which the
+        // chain is still quietly rewritable; and append() reads it as "the chain is empty, so
+        // there is no previous hash to link to" and would start a SECOND chain at sequence 0
+        // beside the real one. The sibling method 20 lines up refuses the same substitution
+        // ("a database that is down would then look like a position already written").
+        if (result == null || result.getRows() == null) {
+            throw new IllegalStateException("the evidence ledger view returned no result for "
+                    + "domain " + domain + ", so the highest sequence in the chain is unknown. "
+                    + "This is NOT a finding that the chain is empty");
+        }
+        if (result.getRows().isEmpty()) {
             return -1L;
         }
         Object key = result.getRows().get(0).getKey();
@@ -278,11 +292,18 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
                 && parts.get(1) instanceof Number n) {
             return n.longValue();
         }
-        return -1L;
+        throw new IllegalStateException("the evidence ledger view answered for domain " + domain
+                + " with a row this store cannot read (" + key + "), so the highest sequence in "
+                + "the chain is unknown. This is NOT a finding that the chain is empty");
     }
 
     @Override
     public List<EvidenceLedgerEntry> findBySubject(String domain, String subjectId, int limit) {
+        // Before the early return, not after it. The counter is per-thread and the threads are
+        // pooled, so returning without resetting hands the NEXT caller on this thread whatever
+        // the last read left behind — and the authenticity report reads it straight after this
+        // one, attributing rows nobody looked at to the chain it is describing.
+        lastUnreadable.set(0);
         if (subjectId == null || subjectId.isBlank()) {
             return List.of();
         }
@@ -298,11 +319,20 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
         }
         ViewResult result = client().queryView(DESIGN_DOC, VIEW_ENTRIES_BY_SUBJECT, params);
         List<EvidenceLedgerEntry> entries = new ArrayList<>();
+        // An empty list here means "the chain holds nothing for this". A view that did not
+        // answer is not that, and the consumers cannot survive the substitution: the
+        // authenticity report emits ABSENT ("no copy of this record in another format is
+        // recorded"), the E-ARK exporter writes "no capture entry was found" INTO THE SIP that
+        // leaves the organisation, and the custody duplicate check reads it as "not already
+        // recorded" and appends again. highestSequence and firstCheckpoint in this same file
+        // were corrected for this a few hours earlier; these two reads are the neighbours the
+        // correction did not reach.
         if (result == null || result.getRows() == null) {
-            return entries;
+            throw new IllegalStateException("an evidence ledger view returned no result, so what "
+                    + "the chain holds is unknown. This is NOT a finding that it holds nothing");
         }
         for (ViewResultRow row : result.getRows()) {
-            EvidenceLedgerEntry entry = decode(row);
+            EvidenceLedgerEntry entry = decodeCounting(row);
             if (entry != null) {
                 entries.add(entry);
             }
@@ -320,15 +350,25 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
         if (limit > 0) {
             params.put("limit", limit);
         }
+        lastUnreadable.set(0);
         ViewResult result = client().queryView(DESIGN_DOC, VIEW_ENTRIES, params);
         List<EvidenceLedgerEntry> entries = new ArrayList<>();
+        // An empty list here means "the chain holds nothing for this". A view that did not
+        // answer is not that, and the consumers cannot survive the substitution: the
+        // authenticity report emits ABSENT ("no copy of this record in another format is
+        // recorded"), the E-ARK exporter writes "no capture entry was found" INTO THE SIP that
+        // leaves the organisation, and the custody duplicate check reads it as "not already
+        // recorded" and appends again. highestSequence and firstCheckpoint in this same file
+        // were corrected for this a few hours earlier; these two reads are the neighbours the
+        // correction did not reach.
         if (result == null || result.getRows() == null) {
-            return entries;
+            throw new IllegalStateException("an evidence ledger view returned no result, so what "
+                    + "the chain holds is unknown. This is NOT a finding that it holds nothing");
         }
         for (ViewResultRow row : result.getRows()) {
             // Rows at the same sequence are BOTH returned. Collapsing them here would make the
             // verifier structurally unable to report a fork.
-            EvidenceLedgerEntry entry = decode(row);
+            EvidenceLedgerEntry entry = decodeCounting(row);
             if (entry != null) {
                 entries.add(entry);
             }
@@ -392,12 +432,66 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
         }
     }
 
+    /**
+     * The checkpoint a view answered with, or {@code null} when it answered that there is none.
+     *
+     * <p>{@code null} carries ONE meaning: no checkpoint has been sealed. Two other things
+     * produced it — a view that did not answer at all, and a row that came back but could not be
+     * decoded — and the callers cannot survive that substitution:
+     * {@code EvidenceLedgerService.closeCheckpoint} reads {@code null} as "start the span at
+     * sequence 0" and would seal a SECOND checkpoint over a range already sealed, then anchor
+     * it, buying a second RFC 3161 token for it; {@code AnchorController.status} prints "this
+     * repository has no checkpoint yet, so there is nothing anchored and nothing to anchor
+     * against" — three assertions about the world, from a read that failed.
+     */
     private EvidenceCheckpoint firstCheckpoint(ViewResult result) {
-        if (result == null || result.getRows() == null || result.getRows().isEmpty()) {
+        if (result == null || result.getRows() == null) {
+            throw new IllegalStateException("the evidence checkpoint view returned no result, so "
+                    + "it is unknown whether a checkpoint has been sealed. This is NOT a finding "
+                    + "that none has");
+        }
+        if (result.getRows().isEmpty()) {
             return null;
         }
         Map<String, Object> doc = documentOf(result.getRows().get(0));
-        return doc == null ? null : EvidenceCheckpoint.fromDocument(doc);
+        if (doc == null) {
+            throw new IllegalStateException("the evidence checkpoint view answered with a row "
+                    + "this store cannot read, so it is unknown whether a checkpoint has been "
+                    + "sealed. This is NOT a finding that none has");
+        }
+        return EvidenceCheckpoint.fromDocument(doc);
+    }
+
+    /**
+     * Rows the last read on this thread returned and could not decode.
+     *
+     * <p>A row the view gave back and this store could not read is an entry that EXISTS. It
+     * cannot go into the returned list, and with every row undecodable the answer is "the chain
+     * holds nothing for this subject" — the same substitution the two throws above exist to
+     * stop, arriving one loop further in.
+     *
+     * <p>The policy was split inside this one class until 2026-08-28: {@code highestSequence}
+     * threw for a key it could not read while these two list reads dropped the row in silence.
+     * Counting rather than throwing is the sibling stores' shape ({@code
+     * CouchAnchorReceiptStore}, {@code CouchCustodyTransferStore}) and the right one for a list:
+     * one unreadable row must not cost a caller the rows it CAN have.
+     */
+    private final ThreadLocal<Integer> lastUnreadable = ThreadLocal.withInitial(() -> 0);
+
+    /** {@inheritDoc} */
+    @Override
+    public int unreadableCount() {
+        return lastUnreadable.get();
+    }
+
+    private EvidenceLedgerEntry decodeCounting(ViewResultRow row) {
+        EvidenceLedgerEntry entry = decode(row);
+        if (entry == null) {
+            lastUnreadable.set(lastUnreadable.get() + 1);
+            logger.warn("An evidence ledger row could not be decoded and is NOT in the returned "
+                    + "list; it is not an absent entry");
+        }
+        return entry;
     }
 
     private EvidenceLedgerEntry decode(ViewResultRow row) {

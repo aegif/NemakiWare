@@ -35,7 +35,22 @@ public interface SolrIndexMaintenanceService {
      */
     public static class ReindexStatus {
         private String repositoryId;
-        private String status; // "idle", "running", "completed", "error"
+        /**
+         * One of {@code idle}, {@code running}, {@code completed},
+         * {@code completed_with_errors}, {@code error}, {@code cancelled}.
+         *
+         * <p>This list is read by people writing consumers, so it being short is how consumers
+         * end up with short accept-lists. It has been wrong twice: {@code cancelled} was emitted
+         * and unlisted, and {@code completed_with_errors} was added to the service while four
+         * polling scripts under {@code tools/acl-probe} still waited for {@code completed}
+         * alone — one of them the connection-leak probe whose numbers CLAUDE.md quotes, which
+         * would have gone on sampling past the end of the run it was measuring.
+         *
+         * <p>{@code ReindexTerminalWordsHaveConsumersTest} derives the terminal words from the
+         * implementation and checks those scripts against them, so adding a sixth here without
+         * its consumers fails on the day it is added.
+         */
+        private String status;
         private long totalDocuments;
         private long indexedCount;
         private long errorCount;

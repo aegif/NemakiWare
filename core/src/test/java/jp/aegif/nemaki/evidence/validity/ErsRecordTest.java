@@ -17,6 +17,7 @@
 package jp.aegif.nemaki.evidence.validity;
 
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.tsp.TimeStampRequest;
 import org.bouncycastle.tsp.TimeStampRequestGenerator;
 import org.bouncycastle.tsp.TimeStampResponse;
@@ -298,6 +299,87 @@ class ErsRecordTest {
     }
 
     @Test
+    @DisplayName("the counts always agree with the results they summarise")
+    void theCountsAgreeWithTheResults() throws Exception {
+        // There are two producers of NOT_CHECKED: the uncheckable-link path, and check() itself
+        // when a token cannot be parsed. Only the first incremented notChecked, so an unreadable
+        // token would have given timestampsNotChecked=0 beside a NOT_CHECKED row -- readable as
+        // A FINDING ABOUT THE RECORD next to prose saying it was not one. p2-3 §8 records fixing
+        // that exact shape once already. The production code now counts both.
+        //
+        // BOTH producers are exercised, and reverting the fix turns this red. That was not
+        // true when this test was written: three fixtures had failed to reach check()'s parse
+        // failure and the comment here said "THIS TEST DOES NOT MEASURE THAT FIX". A fourth
+        // construction does reach it (see recordWithUnparseableToken) -- and the stale sentence
+        // survived 30 lines above the fixture that disproved it, which is the same shape as
+        // every other correction that reached one place and not its neighbour.
+        //
+        // What is locked is the invariant: the totals and the rows cannot disagree. A consumer
+        // reading numbers and a consumer reading rows must not get different reports.
+        for (byte[] der : List.of(uncheckableLinkRecord(), recordWithUnparseableToken())) {
+            assertCountsAgree(ErsVerifier.verify(der, dataObjectHash()));
+        }
+    }
+
+    private static void assertCountsAgree(ErsVerifier.Report report) {
+
+        assertTrue(report.results().stream()
+                        .anyMatch(r -> r.status()
+                                == ErsVerifier.TimestampResult.Status.NOT_CHECKED),
+                "this fixture produced no NOT_CHECKED position, so it does not exercise the "
+                        + "counting at all: " + report.asMap());
+        long notCheckedRows = report.results().stream()
+                .filter(r -> r.status() == ErsVerifier.TimestampResult.Status.NOT_CHECKED)
+                .count();
+        assertEquals(notCheckedRows, report.timestampsNotChecked(),
+                "the counts disagree with the rows they summarise: " + report.asMap());
+        assertEquals(report.results().size(),
+                report.timestampsChecked() + report.timestampsNotChecked(),
+                "positions were lost or double-counted: " + report.asMap());
+    }
+
+    /**
+     * A single-position record whose token parses as a {@link ContentInfo} and is not a token.
+     *
+     * <p>This DOES reach {@code check()}'s parse failure — the second producer of NOT_CHECKED.
+     *
+     * <p><b>Two earlier attempts failed, and why each failed is the point.</b> Damaging a valid
+     * token breaks the record's own ASN.1, so {@code verify} returns zero results and the
+     * assertion goes vacuous. Building a bad token into a hash-tree RENEWAL fails differently:
+     * the position never reaches {@code check()} because {@code expectedImprint} throws first,
+     * and the NOT_CHECKED it produces comes from the uncheckable-link path that already counted
+     * correctly. After the second failure this file recorded "reachability is unresolved" —
+     * better than the "unreachable" it said after the first, and still wrong.
+     *
+     * <p>What works is a record with the {@code [0]} algorithm field omitted, which the RFC
+     * allows: {@code ErsRecord} then calls {@code imprintAlgorithmOf}, which CATCHES every
+     * exception and defaults to SHA-256. An unreadable token is therefore designed to survive
+     * record parsing — <b>the leniency that made this path look unreachable is what makes it
+     * reachable.</b>
+     */
+    private static byte[] recordWithUnparseableToken() throws Exception {
+        byte[] notATimestamp = new ContentInfo(
+                org.bouncycastle.asn1.cms.CMSObjectIdentifiers.signedData,
+                new org.bouncycastle.asn1.DEROctetString(new byte[] { 1, 2, 3 }))
+                .getEncoded(org.bouncycastle.asn1.ASN1Encoding.DER);
+        return derWithoutAlgorithm(notATimestamp);
+    }
+
+    /** The §5.3 case: a renewal under a new algorithm with no H(d) to check the link against. */
+    private byte[] uncheckableLinkRecord() {
+        try {
+            ErsRecord first = firstRecord();
+            byte[] hUnderNew = MessageDigest.getInstance("SHA-512").digest(dataObject());
+            ErsRecord.HashTreeRenewalInputs inputs =
+                    first.inputsForHashTreeRenewal(hUnderNew, SHA512_OID);
+            return first.withHashTreeRenewal(inputs.hPrime(),
+                    tokenOver(inputs.imprint(), SHA512_OID), SHA512_OID).der();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    @Test
     @DisplayName("the RFC's own reduced tree verifies — pht1=(h2abc,h1), pht2=(h3)")
     void theRfcsOwnExampleVerifies() throws Exception {
         // RFC 4998 §4.2 Figure 2, built exactly as written. A reduced tree stores the SIBLINGS
@@ -472,5 +554,114 @@ class ErsRecordTest {
                 () -> ErsRecord.first(h, new byte[0]));
         assertThrows(IllegalArgumentException.class,
                 () -> firstRecord().withHashTreeRenewal(h, tokenOver(h), "  "));
+    }
+
+    @Test
+    @DisplayName("the two shipped limits strings describe the same artefact")
+    void theFormatLimitsDescribeWhatIsActuallyBuilt() {
+        // ErsFormat.LIMITS goes out to callers as renewalFormatLimits; ErsRecord.LIMITS travels
+        // with every record. They disagreed: one called the checkpoint HASH the data object
+        // (p2-3 §8 records that doing so produced records no standard tool could read) and said
+        // "the reduced hash tree carries one node" (§8 rejected that alternative, and
+        // ErsRecord.first() passes List.of() -- there is no tree). A caller reading one and a
+        // reader holding the other got different descriptions of one artefact.
+        assertFalse(ErsFormat.LIMITS.contains("DATA OBJECT is a checkpoint hash"),
+                "the format limits call the checkpoint's HASH the data object: "
+                        + ErsFormat.LIMITS);
+        assertFalse(ErsFormat.LIMITS.contains("hash tree carries one node"),
+                "the format limits describe a one-node hash tree that is not built: "
+                        + ErsFormat.LIMITS);
+        assertFalse(ErsFormat.LIMITS.contains("nothing generates a record automatically"),
+                "the format limits deny generating records, in a sentence its own next clause "
+                        + "contradicts: " + ErsFormat.LIMITS);
+        assertTrue(ErsFormat.LIMITS.contains("canonical serialisation"),
+                "the format limits no longer say what the data object IS: " + ErsFormat.LIMITS);
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName(
+            "'this build does not know that algorithm' is not a finding about the record")
+    void aBuildLimitIsNotAFindingAgainstTheRecord() throws Exception {
+        // The catch that turns a computation failure into DOES_NOT_MATCH takes two messages
+        // that are about THE READER, not the record: "this build does not know digest algorithm
+        // <oid>" and "this JVM does not provide <name>". DOES_NOT_MATCH says the timestamp
+        // covers something else — a finding against a record that may be perfectly sound and
+        // merely written with an algorithm this build has not been taught.
+        //
+        // Latent today (production builds SHA-256 records and algorithmNameFor knows
+        // SHA-256/384/512) and certain on the first renewal into a new family, which is what
+        // renewal is FOR. Driven through the classifier rather than through a forged record,
+        // because building one in an unknown algorithm needs the very code that refuses.
+        // Thrown by ErsRecord, not typed out here. The classifier matches on the MESSAGE, so a
+        // hand-written string tests the test's own spelling: rewording ErsRecord.digest's
+        // message would send the classification silently back to DOES_NOT_MATCH with the suite
+        // still green. The javadoc claims "a test pins that they still are" — this is what
+        // makes that true.
+        RuntimeException unknownAlgorithm = assertThrows(IllegalArgumentException.class,
+                () -> ErsRecord.digest("2.16.840.1.101.3.4.2.8", new byte[] {1, 2, 3}),
+                "fixture check: this build now KNOWS that OID, so the throw under test no "
+                        + "longer happens and nothing is being classified");
+        assertTrue(isAboutThisBuild(unknownAlgorithm),
+                "an unknown algorithm is still reported as the record disagreeing with itself: "
+                        + unknownAlgorithm.getMessage());
+        // The JVM-provider arm cannot be driven without removing a provider, so its string is
+        // pinned against the source that writes it rather than against a throw.
+        assertTrue(jp.aegif.nemaki.util.test.JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/evidence/validity/ErsRecord.java")
+                        .contains("\"this JVM does not provide \""),
+                "ErsRecord no longer writes the message the classifier looks for, so a JVM "
+                        + "missing a provider is reported as a finding about the record");
+        assertTrue(isAboutThisBuild(new IllegalStateException(
+                        "this JVM does not provide SHA3-256")),
+                "a missing JVM provider is still reported as a finding about the record");
+        // The control: a real structural disagreement must NOT be excused as a build limit,
+        // which would turn a genuine mismatch into "not checked".
+        assertFalse(isAboutThisBuild(new IllegalStateException(
+                        "the reduced hash tree does not contain the data object hash")),
+                "a real disagreement was excused as a limit of this build, so a record that "
+                        + "does not hold would be reported as unchecked");
+        assertFalse(isAboutThisBuild(new IllegalArgumentException((String) null)),
+                "a message-less failure was treated as a build limit");
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName(
+            "the verifier USES the classifier, not merely defines it")
+    void theVerifierAppliesTheClassifier() throws Exception {
+        // The test above drives the helper directly, so deleting the branch that CALLS it —
+        // leaving the helper compiled and unused — kept the suite green and restored
+        // DOES_NOT_MATCH. A helper nothing calls is not a protection.
+        String catchBody = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/evidence/validity/ErsVerifier.java"));
+        int applied = catchBody.split("isAboutThisBuild\\(", -1).length - 1;
+        assertTrue(applied >= 2,
+                "isAboutThisBuild appears " + applied + " time(s) in ErsVerifier: it is defined "
+                        + "but never applied, so a limit of this build is reported as a finding "
+                        + "against the record again");
+        // Not "if (isAboutThisBuild(e))" -- that pinned the catch variable's NAME and the
+        // spacing, so renaming `e` to `ex` would have failed correct code.
+        java.util.regex.Matcher guard = java.util.regex.Pattern
+                .compile("if\\s*\\(\\s*isAboutThisBuild\\s*\\(").matcher(catchBody);
+        assertTrue(guard.find(),
+                "the catch no longer asks whether the failure is about this build before "
+                        + "calling it DOES_NOT_MATCH");
+        int index = guard.start();
+        String afterGuard = catchBody.substring(index, Math.min(catchBody.length(), index + 400));
+        assertTrue(afterGuard.contains("Status.NOT_CHECKED"),
+                "the guard fires but does not produce NOT_CHECKED: " + afterGuard);
+    }
+
+    private static boolean isAboutThisBuild(RuntimeException e) {
+        try {
+            java.lang.reflect.Method m = ErsVerifier.class.getDeclaredMethod(
+                    "isAboutThisBuild", RuntimeException.class);
+            m.setAccessible(true);
+            return (boolean) m.invoke(null, e);
+        } catch (ReflectiveOperationException ex) {
+            throw new AssertionError("ErsVerifier.isAboutThisBuild is gone, so the two messages "
+                    + "that are about this deployment are being reported as findings about the "
+                    + "record again", ex);
+        }
     }
 }

@@ -141,6 +141,18 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 						content.getId(), allVersions, deleteWithParent);
 			} else if (content.isFolder()) {
 				List<Content> children = contentService.getChildren(repositoryId, objectId);
+				// A folder whose only children are rows the repository cannot decode LOOKS
+				// empty here, slips past the constraint check below, and is deleted over them
+				// — the same orphaning deleteTreeDFS guards against, reachable through plain
+				// deleteObject. Refused for both arms: as a "leaf" delete and as a cascade.
+				if (contentService.lastUnreadableChildCount() > 0) {
+					exceptionService.constraint(objectId,
+							"this folder's listing is incomplete ("
+									+ contentService.lastUnreadableChildCount()
+									+ " child row(s) could not be read), so whether it is empty"
+									+ " is unknown; deleting it could orphan the unreadable"
+									+ " children.");
+				}
 				if (!CollectionUtils.isEmpty(children)) {
 					// Allow deletion of folders with children during cascading operations (deleteWithParent=true)
 					// or when the folder deletion is part of a larger operation

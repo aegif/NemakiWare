@@ -602,8 +602,8 @@ public class CompileServiceImpl implements CompileService {
 
 			// Set metadata
 			ObjectListImpl list = new ObjectListImpl();
-			Integer _skipCount = skipCount.intValue();
-			Integer _maxItems = maxItems.intValue();
+			int _skipCount = clampSkipCount(skipCount);
+			int _maxItems = clampMaxItems(skipCount, maxItems);
 
 			if (_skipCount >= objectDataList.size()) {
 				list.setHasMoreItems(false);
@@ -679,8 +679,8 @@ public class CompileServiceImpl implements CompileService {
 
 			// Set metadata
 			ObjectListImpl list = new ObjectListImpl();
-			Integer _skipCount = skipCount.intValue();
-			Integer _maxItems = maxItems.intValue();
+			int _skipCount = clampSkipCount(skipCount);
+			int _maxItems = clampMaxItems(skipCount, maxItems);
 
 			if (_skipCount >= numFound) {
 				list.setHasMoreItems(false);
@@ -2851,6 +2851,58 @@ public class CompileServiceImpl implements CompileService {
 				+ ", name=" + content.getName() + ", type=" + objectType);
 
 		return properties;
+	}
+
+	/**
+	 * The largest page this server assembles in one response.
+	 *
+	 * <p>Same reasoning (and same number) as the change feed's page cap: a client asking for
+	 * everything gets a page plus {@code hasMoreItems}, not a request nobody can serve.
+	 */
+	private static final int MAX_PAGE = 10_000;
+
+	/** A non-positive maxItems is not "no limit" and not "nothing": it is the default page. */
+	private static final int DEFAULT_PAGE_FOR_NON_POSITIVE = 100;
+
+	/**
+	 * Converts a client's skipCount without truncating it.
+	 *
+	 * <p>{@code BigInteger.intValue()} keeps only the low 32 bits. A live probe found what
+	 * that costs here: {@code maxItems = 2^32} became 0, so {@code subList(0, 0)} returned an
+	 * EMPTY page with {@code hasMoreItems = true} — the client asked for everything and was
+	 * told, with a 200, that the folder's first page is empty. Navigation clamped its own
+	 * copies, but its small-folder branch passes the raw values here, and so do query and
+	 * relationships.
+	 */
+	private static int clampSkipCount(BigInteger skipCount) {
+		if (skipCount == null || skipCount.signum() <= 0) {
+			return 0;
+		}
+		return skipCount.compareTo(BigInteger.valueOf(Integer.MAX_VALUE)) >= 0
+				? Integer.MAX_VALUE
+				: skipCount.intValue();
+	}
+
+	/**
+	 * Converts a client's maxItems, bounded so that {@code skipCount + maxItems} cannot
+	 * overflow into a negative index either.
+	 */
+	private static int clampMaxItems(BigInteger skipCount, BigInteger maxItems) {
+		if (maxItems == null || maxItems.signum() <= 0) {
+			// A non-positive ask is a DEFAULT page, not an empty one. Two callers of this
+			// service disagreed about that: navigation mapped the same input to its default
+			// page while query and relationships handed the raw value straight through and
+			// got an empty page — the same 200-with-nothing the live probe found, reached by
+			// the other door. One answer per input, decided here.
+			return DEFAULT_PAGE_FOR_NON_POSITIVE;
+		}
+		int page = maxItems.compareTo(BigInteger.valueOf(MAX_PAGE)) >= 0
+				? MAX_PAGE
+				: maxItems.intValue();
+		// skipCount is already clamped to <= Integer.MAX_VALUE; keep the sum in range so the
+		// subList bounds below stay positive.
+		int skip = clampSkipCount(skipCount);
+		return Math.min(page, Integer.MAX_VALUE - skip);
 	}
 
 }

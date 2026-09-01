@@ -1568,10 +1568,13 @@ public class ObjectServiceImpl implements ObjectService {
 		// BTL-005: DFS post-order traversal — process children before parent
 		// without materializing the entire tree in memory.
 		List<String> failedIds = new ArrayList<>();
-		deleteTreeDFS(callContext, repositoryId, folder, allVersions, failedIds);
+		deleteTreeDFS(callContext, repositoryId, folder, allVersions, continueOnFailure, failedIds);
 
-		// Delete folder from Solr index
-		if (folder != null) {
+		// Delete folder from Solr index — ONLY when the folder itself was actually deleted.
+		// Every guard in the DFS that RETAINS the folder (short listing, failed descendant)
+		// left this postlude unconditional, so the folder stayed in CouchDB while vanishing
+		// from every search result: retained for safety, and unfindable because of it.
+		if (folder != null && !failedIds.contains(folder.getId())) {
 			solrUtil.deleteDocument(repositoryId, folder.getId());
 		}
 
@@ -1606,9 +1609,23 @@ public class ObjectServiceImpl implements ObjectService {
 	 * - Objects of type "nemaki:user" or "nemaki:group" (safety net)
 	 */
 	private void deleteTreeDFS(CallContext callContext, String repositoryId,
-			Content node, Boolean allVersions, List<String> failedIds) {
+			Content node, Boolean allVersions, Boolean continueOnFailure, List<String> failedIds) {
+		int failuresBefore = failedIds.size();
+		int unreadableChildren = 0;
 		if (node.isFolder()) {
 			List<Content> children = contentService.getChildren(repositoryId, node.getId());
+			// Read IMMEDIATELY: the counter is per-thread and per-read, and every recursive
+			// call below overwrites it. Rows the repository cannot decode are absent from
+			// `children` without any exception — they are not deleted, not counted as
+			// failures, and deleting their parent would orphan them: content that exists, is
+			// reachable by id, and hangs from a folder that no longer does. A deletion has no
+			// reconcile pass to catch that later.
+			//
+			// This guard was first written into ContentServiceImpl.deleteTree — a method NO
+			// production caller reaches. Every binding funnels into THIS walk. A protection on
+			// the wrong sibling protects nothing, which is this batch's oldest lesson applied
+			// to its own newest fix.
+			unreadableChildren = contentService.lastUnreadableChildCount();
 			if (CollectionUtils.isNotEmpty(children)) {
 				// Separate sub-folders (recurse) from non-folders (parallel delete)
 				List<Content> subFolders = new ArrayList<>();
@@ -1628,11 +1645,68 @@ public class ObjectServiceImpl implements ObjectService {
 				}
 
 				// Recurse into sub-folders first (post-order)
-				for (Content subFolder : subFolders) {
-					deleteTreeDFS(callContext, repositoryId, subFolder, allVersions, failedIds);
+				//
+				// Only an EXPLICIT false stops early. CMIS §2.2.4.17 defaults the parameter to
+				// false, so a strict reading would make a null behave the same — but this
+				// server has answered continue-always for null since its first release, the
+				// sequential arm below trades away parallel deletion, and the bundled UI sends
+				// an explicit value. Changing the null default would slow and re-shape every
+				// existing caller that omits it; deliberately not done, and written down so
+				// the next reader knows it was a choice and not the usual missed sibling.
+				//
+				// The CMIS argument, honoured: continueOnFailure=false means "stop attempting
+				// more once something failed" (§2.2.4.17), and it was received by the public
+				// method and then ignored — every caller got continue-always. Two details the
+				// first version of this fix missed:
+				//  - the check has to run BEFORE each attempt, not after — a protected or
+				//    unreadable child is recorded above, before any recursion, and stopping
+				//    "after the next one" attempts one more than the caller allowed;
+				//  - everything NOT attempted still goes into failedIds. The spec defines the
+				//    output as the ids that were not deleted, and an early stop that forgets
+				//    the remainder reports them as deleted by omission.
+				for (int i = 0; i < subFolders.size(); i++) {
+					if (Boolean.FALSE.equals(continueOnFailure) && !failedIds.isEmpty()) {
+						for (int j = i; j < subFolders.size(); j++) {
+							failedIds.add(subFolders.get(j).getId());
+						}
+						for (Content notAttempted : nonFolders) {
+							failedIds.add(notAttempted.getId());
+						}
+						nonFolders.clear();
+						break;
+					}
+					deleteTreeDFS(callContext, repositoryId, subFolders.get(i), allVersions,
+							continueOnFailure, failedIds);
 				}
 
-				// Delete non-folder children in parallel using deleteTree executor
+				// Delete non-folder children in parallel using deleteTree executor.
+				// With continueOnFailure=false they run SEQUENTIALLY instead: the parallel arm
+				// submits everything before observing anything, which attempts the whole batch
+				// after a failure the caller asked to stop on. Sequential-on-false is the
+				// spec's semantics at the spec's own cost — false is the rare mode.
+				if (Boolean.FALSE.equals(continueOnFailure) && !failedIds.isEmpty()) {
+					for (Content notAttempted : nonFolders) {
+						failedIds.add(notAttempted.getId());
+					}
+					nonFolders.clear();
+				}
+				if (Boolean.FALSE.equals(continueOnFailure) && !nonFolders.isEmpty()) {
+					for (int i = 0; i < nonFolders.size(); i++) {
+						Content child = nonFolders.get(i);
+						try {
+							objectServiceInternal.deleteObjectInternal(callContext, repositoryId,
+									child, allVersions, true);
+						} catch (Exception e) {
+							logDeleteTreeFailure(child.getId(), e);
+							failedIds.add(child.getId());
+							for (int j = i + 1; j < nonFolders.size(); j++) {
+								failedIds.add(nonFolders.get(j).getId());
+							}
+							break;
+						}
+					}
+					nonFolders.clear();
+				}
 				if (!nonFolders.isEmpty()) {
 					List<Future<String>> futures = new ArrayList<>();
 					for (Content child : nonFolders) {
@@ -1646,7 +1720,21 @@ public class ObjectServiceImpl implements ObjectService {
 							}
 						}));
 					}
+					boolean interrupted = false;
+					boolean nodeMarked = false;
 					for (Future<String> f : futures) {
+						if (interrupted) {
+							// The wait was interrupted: whether this job ran is UNKNOWN, and
+							// unknown must not read as deleted — the guard below keys on
+							// failedIds, and a folder deleted over a child in an unknown
+							// state is the orphan this walk exists to prevent.
+							f.cancel(true);
+							if (!nodeMarked) {
+								failedIds.add(node.getId());
+								nodeMarked = true;
+							}
+							continue;
+						}
 						try {
 							String failedId = f.get();
 							if (failedId != null) {
@@ -1654,12 +1742,47 @@ public class ObjectServiceImpl implements ObjectService {
 							}
 						} catch (InterruptedException e) {
 							Thread.currentThread().interrupt();
+							interrupted = true;
+							f.cancel(true);
+							if (!nodeMarked) {
+								failedIds.add(node.getId());
+								nodeMarked = true;
+							}
 						} catch (ExecutionException e) {
-							// should not happen since we catch in the callable
+							// The callable catches its own exceptions, so this arm SHOULD be
+							// unreachable — but "should not happen" was written where "is not
+							// recorded" was the effect, and an unrecorded failure lets the
+							// parent delete itself over it.
+							logDeleteTreeFailure(node.getId(), e);
+							if (!nodeMarked) {
+								failedIds.add(node.getId());
+								nodeMarked = true;
+							}
 						}
 					}
 				}
 			}
+		}
+
+		// The node deletes itself ONLY when everything under it is gone: nothing unreadable
+		// in its own listing, and no failure recorded anywhere in its subtree during this
+		// call. Deleting a folder over surviving descendants converts their bounded failures
+		// into orphans.
+		if (unreadableChildren > 0 || failedIds.size() > failuresBefore) {
+			if (unreadableChildren > 0) {
+				log.warn("[deleteTree] Keeping " + node.getId() + ": " + unreadableChildren
+						+ " child row(s) could not be decoded, so they were neither deleted nor"
+						+ " listed as failures — deleting this folder would orphan them.");
+			}
+			// contains() before add: the interrupt arm above already marks this node, and its
+			// nodeMarked flag lives inside the future loop — so without this, an interrupted
+			// walk listed the same folder twice and a caller counting failedToDelete counted
+			// one undeleted folder as two. (The ledger claimed this was deduplicated one round
+			// before it actually was.)
+			if (!failedIds.contains(node.getId())) {
+				failedIds.add(node.getId());
+			}
+			return;
 		}
 
 		// Delete the node itself (folder after its children, or non-folder leaf)

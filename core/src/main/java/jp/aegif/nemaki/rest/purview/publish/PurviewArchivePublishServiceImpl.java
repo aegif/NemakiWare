@@ -108,6 +108,20 @@ public class PurviewArchivePublishServiceImpl implements PurviewArchivePublishSe
         List<Archive> archives = new ArrayList<>();
         for (int skip = 0; ; skip += ARCHIVE_FETCH_PAGE_SIZE) {
             List<Archive> page = contentDaoService.getArchives(repositoryId, skip, ARCHIVE_FETCH_PAGE_SIZE, Boolean.FALSE);
+            // The same two-step failure the folder walks had, in the archive DAO: a row that
+            // will not decode is absent from the page without an exception, and the short page
+            // then reads as the LAST page — so one bad row hid the remainder, and the caller's
+            // snapshot diff reconciled every hidden archive out of the external catalog as
+            // "missing". Unlike the folder walks there is no total to bound a skip-forward
+            // (this loop pages until empty), so the honest response is to REFUSE: the sync
+            // fails, the cursor stays, the dead letter lives, and nothing is deleted on the
+            // strength of a listing that is known to be short.
+            if (contentDaoService.lastUnreadableArchiveCount() > 0) {
+                throw new IllegalStateException("the archive listing for '" + repositoryId
+                        + "' lost " + contentDaoService.lastUnreadableArchiveCount()
+                        + " row(s) to decode failures; diffing it against the snapshot would"
+                        + " reconcile real archives out of the catalog as missing");
+            }
             if (page == null || page.isEmpty()) {
                 break;
             }

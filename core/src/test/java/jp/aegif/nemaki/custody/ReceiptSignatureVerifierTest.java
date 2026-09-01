@@ -105,6 +105,28 @@ class ReceiptSignatureVerifierTest {
     }
 
     @Test
+    @DisplayName("altering the AIP checksum after signing breaks the signature too")
+    void anAlteredAipChecksumIsCaught() throws Exception {
+        // `aipChecksum` stopped being a REQUIRED field (design §16): no receiver's checksum is
+        // ever compared here, and RODA reports none at all. That made it easy to read the field
+        // as inert and drop it from canonicalForm() as tidy-up — at which point the one check on
+        // it that CAN fail disappears, and every existing test stays green because the tampering
+        // test above alters sipDigest instead. When a receiver DOES report a checksum, altering
+        // it afterwards has to break the signature.
+        CustodyReceipt signed = signedBy(theirs);
+        CustodyReceipt altered = new CustodyReceipt(signed.submissionId(), signed.aipId(),
+                "d".repeat(64), signed.sipDigest(), signed.verificationOutcome(),
+                signed.receivingAgent(), signed.receivedAt(), signed.signature(), false);
+
+        ReceiptSignatureVerifier.Checked checked = ReceiptSignatureVerifier.verify(
+                altered, theirs.getPublic(), ALGORITHM);
+
+        assertFalse(checked.valid(),
+                "the receiver's reported AIP checksum was changed after signing and the "
+                        + "signature still passed, so nothing covers that field any more");
+    }
+
+    @Test
     @DisplayName("no key is 'not checked', not 'invalid'")
     void noKeyIsNotAFinding() throws Exception {
         ReceiptSignatureVerifier.Checked checked = ReceiptSignatureVerifier.verify(

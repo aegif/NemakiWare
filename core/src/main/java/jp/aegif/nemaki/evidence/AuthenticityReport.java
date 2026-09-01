@@ -100,13 +100,6 @@ public record AuthenticityReport(String repositoryId, String objectId, String ge
     }
 
     /**
-     * What the report as a whole does not establish.
-     *
-     * <p>A constant, not a caller-supplied string: this is the paragraph that must survive
-     * every future edit of the assembler, and a caller that could choose it could choose to
-     * leave it out.
-     */
-    /**
      * The identity section's bookkeeping key for how many properties were withheld.
      *
      * <p>A constant because a second reader appeared: {@code EarkSipExporter} both skips this
@@ -124,6 +117,17 @@ public record AuthenticityReport(String repositoryId, String objectId, String ge
     public static final java.util.Set<String> IDENTITY_BOOKKEEPING_KEYS =
             java.util.Set.of(WITHHELD_COUNT_KEY, INCLUDES_PERSONAL_DATA_KEY);
 
+    /**
+     * What the report as a whole does not establish.
+     *
+     * <p>A constant, not a caller-supplied string: this is the paragraph that must survive
+     * every future edit of the assembler, and a caller that could choose it could choose to
+     * leave it out.
+     *
+     * <p>It sat above {@code WITHHELD_COUNT_KEY} with a second javadoc between it and this
+     * declaration, so javadoc dropped it and a reader of the generated documentation met the
+     * report's limits nowhere at all.
+     */
     public static final String REPORT_LIMITS =
             "This report gathers evidence; it does not decide whether a record is authentic — "
             + "that judgement is a person's, made with these limits in view. Specifically: "

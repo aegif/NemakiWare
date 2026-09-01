@@ -28,6 +28,10 @@ import jp.aegif.nemaki.model.Content;
 @Service
 public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetadataPublishService {
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(PurviewCloudMetadataPublishServiceImpl.class);
+
+
     private static final int CHILD_FETCH_PAGE_SIZE = 100;
     private static final String CLOUD_LINEAGE_STREAM_KIND = "cloud-sync-lineage";
     private static final String CLOUD_LINEAGE_TYPE_NAME = "nemaki_cloud_sync_process";
@@ -56,12 +60,29 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
 
     @Override
     public String buildRepositoryCloudMetadataSnapshot(String repositoryId) {
-        return buildSnapshot(loadCloudMetadataDocuments(repositoryId));
+        String snapshot = buildSnapshot(loadCloudMetadataDocuments(repositoryId));
+        if (lastWalkIncomplete.get()) {
+            // A snapshot built from a short walk becomes the baseline every later diff deletes
+            // against. Today's callers sit behind walks that already refuse — this guard is
+            // for the caller that will not.
+            throw new IllegalStateException("the cloud-metadata walk could not read every child"
+                    + " row, so a snapshot built from it would be a short baseline");
+        }
+        return snapshot;
     }
 
     @Override
     public int publishRepositoryCloudSyncLineage(String repositoryId) {
         List<Content> cloudMetadataDocuments = loadCloudMetadataDocuments(repositoryId);
+        if (lastWalkIncomplete.get()) {
+            // Today this runs after the FULL hierarchy walk, which refuses first — but that is
+            // an ordering fact, not a property of this method, and the delete below erases the
+            // repository's lineage dead letter on "success". A short walk must not count as
+            // one.
+            throw new IllegalStateException("the cloud-metadata walk could not read every child"
+                    + " row; publishing the visible subset as a successful lineage pass would"
+                    + " also clear the dead letter that says a retry is owed");
+        }
         if (cloudMetadataDocuments.isEmpty()) {
             return 0;
         }
@@ -82,6 +103,18 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
     public int retryRepositoryCloudSyncLineage(String repositoryId, String previousSnapshot) {
         List<Content> cloudMetadataDocuments = loadCloudMetadataDocuments(repositoryId);
         String normalizedPreviousSnapshot = normalizeSnapshot(previousSnapshot);
+        if (lastWalkIncomplete.get()) {
+            // The normal sync arm got this rule and THIS one — reachable through dead-letter
+            // retry — did not: with an incomplete walk, every document hidden behind an
+            // unreadable row lands in previousByObjectId and is reconciled as REMOVED, which
+            // deletes its process entities and possibly shared external assets from the
+            // catalog. Throwing keeps the dead letter alive (the retry service records the
+            // failure), and nothing absence-based runs until a complete walk succeeds.
+            throw new IllegalStateException("the cloud-metadata walk for " + repositoryId
+                    + " could not read every child row, so absence cannot be told from"
+                    + " invisibility; the lineage retry is refused rather than deleting"
+                    + " entities for documents that may still exist");
+        }
         Map<String, String> previousByObjectId = parseSnapshot(normalizedPreviousSnapshot);
         List<Content> changedDocuments = new ArrayList<>();
         for (Content content : cloudMetadataDocuments) {
@@ -113,6 +146,7 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
     @Override
     public PurviewCloudMetadataSyncResult syncRepositoryCloudMetadataIfChanged(String repositoryId, String previousSnapshot) {
         List<Content> cloudMetadataDocuments = loadCloudMetadataDocuments(repositoryId);
+        boolean walkIncomplete = lastWalkIncomplete.get();
         String currentSnapshot = buildSnapshot(cloudMetadataDocuments);
         // Format-normalised as well as null-normalised: a cursor stored before the URL left the
         // format must compare equal to a fresh snapshot of unchanged documents, or the first sync
@@ -147,6 +181,61 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
 
         // After the loop, previousByObjectId contains only documents that
         // disappeared from the current set (cloud link removed or document deleted).
+        //
+        // Unless the walk was INCOMPLETE — then "disappeared" may just mean "hidden behind a
+        // row that would not decode", and every arm below that acts on absence (clearing the
+        // catalog copy, reconciling lineage away, deleting obsolete external assets) would be
+        // destroying records for documents that still exist. Publishing what WAS seen is safe;
+        // the deletions wait for a complete walk, and the snapshot stays at the previous value
+        // so that walk diffs against an honest baseline.
+        if (walkIncomplete) {
+            log.warn("Cloud-metadata walk for " + repositoryId + " could not read every child "
+                    + "row; publishing " + changedDocuments.size() + " changed document(s), "
+                    + "deleting nothing, and widening the previous snapshot with what was "
+                    + "published until a complete walk succeeds");
+            // The previous snapshot alone leaves a hole: a document CREATED during this round
+            // is published here, yet absent from the baseline — if its cloud link vanishes
+            // before a complete walk, that walk sees it in neither side and the external asset
+            // is never cleared. So the baseline widens to previous ∪ published.
+            //
+            // Published PER DOCUMENT, not as one batch: upsertContents' return value counts
+            // entities AND relationships, so "batch count == input size" is not "every
+            // document published" (one document can count 2+, and a partial batch can
+            // coincidentally equal the size). A single-document call is unambiguous — > 0
+            // means THIS document's entity landed; a failed or unbuildable one contributes 0,
+            // stays OUT of the baseline, and retries next round.
+            int publishedDocuments = 0;
+            Map<String, String> merged = parseSnapshot(normalizedPreviousSnapshot);
+            boolean widened = false;
+            for (Content changedDocument : changedDocuments) {
+                // NOT "> 0": the return value is entities PLUS containment PLUS
+                // document-type relationships, so a document whose ENTITY failed can still
+                // make a single-document call return a positive number through its
+                // companion or its edges — and enter the baseline as if it had landed.
+                // The per-call failure counter answers the actual question.
+                documentPublishService.upsertContents(repositoryId, List.of(changedDocument));
+                if (documentPublishService.lastEntityPublishFailureCount() == 0) {
+                    publishedDocuments++;
+                    merged.put(changedDocument.getId(), CloudMetadataSnapshotFormat
+                            .normalizeLineForCompare(buildSnapshotEntry(changedDocument)));
+                    widened = true;
+                } else {
+                    log.warn("Cloud-metadata walk for " + repositoryId + ": document '"
+                            + changedDocument.getId() + "' was not published; it stays out"
+                            + " of the baseline so its publish retries");
+                }
+            }
+            // Sorted by objectId like a fresh buildSnapshot (loadCloudMetadataDocuments
+            // sorts by Content::getId) — an order-only difference would read as a change.
+            String snapshotToKeep = widened
+                    ? merged.entrySet().stream()
+                            .sorted(Map.Entry.comparingByKey())
+                            .map(Map.Entry::getValue)
+                            .collect(java.util.stream.Collectors.joining("\n"))
+                    : normalizedPreviousSnapshot;
+            return new PurviewCloudMetadataSyncResult(snapshotToKeep,
+                    publishedDocuments > 0, publishedDocuments, 0, true);
+        }
         Map<String, String> obsoleteSnapshotEntries = previousByObjectId;
 
         // Collect the set of stable keys still in active use, so reconciliation
@@ -160,7 +249,26 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
         }
 
         List<Content> clearedDocuments = loadClearedDocuments(repositoryId, previousByObjectId.keySet());
-        int publishedCount = changedDocuments.isEmpty() ? 0 : documentPublishService.upsertContents(repositoryId, changedDocuments);
+        // Per document, for the same reason as the incomplete arm: the batch return counts
+        // entities AND relationships, so it cannot say WHICH documents landed — and the
+        // complete arm used to advance the baseline over every one of them regardless. A
+        // document whose entity failed then read as "unchanged" next round and was never
+        // republished (its dead letter has no retry arm). Publishing one by one makes the
+        // failure per-document, and the baseline below keeps failed ones "changed".
+        List<Content> failedPublishDocuments = new ArrayList<>();
+        int publishedCount = 0;
+        for (Content changedDocument : changedDocuments) {
+            // Same rule as the incomplete arm above: the batch return is a mixed count.
+            documentPublishService.upsertContents(repositoryId, List.of(changedDocument));
+            if (documentPublishService.lastEntityPublishFailureCount() == 0) {
+                publishedCount++;
+            } else {
+                failedPublishDocuments.add(changedDocument);
+                log.warn("Cloud-metadata sync for " + repositoryId + ": document '"
+                        + changedDocument.getId() + "' was not published; its baseline entry"
+                        + " stays at the previous value so it republishes next round");
+            }
+        }
         int reconciledCount = clearedDocuments.isEmpty() ? 0 : documentPublishService.upsertContents(repositoryId, clearedDocuments);
         int lineagePublishedCount = 0;
         int lineageReconciledCount = 0;
@@ -182,12 +290,32 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
                     normalizedPreviousSnapshot,
                     buildErrorSummary(e)));
         }
+        // The baseline advances only over what actually landed: a failed document keeps
+        // its PREVIOUS entry (or stays absent if it is new), so the next round re-detects
+        // it as changed and republishes.
+        String snapshotToPersist = currentSnapshot;
+        if (!failedPublishDocuments.isEmpty()) {
+            Map<String, String> adjusted = new LinkedHashMap<>(currentByObjectId);
+            Map<String, String> previousEntries = parseSnapshot(normalizedPreviousSnapshot);
+            for (Content failed : failedPublishDocuments) {
+                String previousEntry = previousEntries.get(failed.getId());
+                if (previousEntry != null) {
+                    adjusted.put(failed.getId(), previousEntry);
+                } else {
+                    adjusted.remove(failed.getId());
+                }
+            }
+            snapshotToPersist = String.join("\n", adjusted.values());
+        }
         return new PurviewCloudMetadataSyncResult(
-                currentSnapshot,
+                snapshotToPersist,
                 true,
                 publishedCount + lineagePublishedCount,
                 reconciledCount + lineageReconciledCount);
     }
+
+    /** Set by {@link #loadCloudMetadataDocuments}: whether the last walk saw every row. */
+    private final ThreadLocal<Boolean> lastWalkIncomplete = ThreadLocal.withInitial(() -> false);
 
     private List<Content> loadCloudMetadataDocuments(String repositoryId) {
         String rootFolderId = resolveRootFolderId(repositoryId);
@@ -200,12 +328,27 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
         Deque<String> folderQueue = new ArrayDeque<>();
         folderQueue.add(rootFolderId);
 
+        boolean incomplete = false;
         while (!folderQueue.isEmpty()) {
             String folderId = folderQueue.removeFirst();
             long totalChildren = Math.max(0L, contentDaoService.getChildrenCount(repositoryId, folderId));
             for (int skip = 0; skip < totalChildren; skip += CHILD_FETCH_PAGE_SIZE) {
                 List<Content> children = contentDaoService.getChildrenPaged(repositoryId, folderId, skip, CHILD_FETCH_PAGE_SIZE);
+                // Same defect, same day, as the containment walk one package over: a row the
+                // store cannot decode is absent from the page without an exception, the count
+                // was never read, and the short page tripped the last-page break below — so
+                // one unreadable row hid a subtree, and every hidden document then read as
+                // DISAPPEARED, which is the arm that deletes external assets.
+                if (contentDaoService.lastUnreadableChildCount() > 0) {
+                    incomplete = true;
+                }
                 if (children == null || children.isEmpty()) {
+                    // Only a TRULY empty page ends the folder. A page whose every row failed
+                    // to decode is also empty here — but later offsets may hold readable rows,
+                    // and the loop is already bounded by totalChildren.
+                    if (contentDaoService.lastUnreadableChildCount() > 0) {
+                        continue;
+                    }
                     break;
                 }
 
@@ -222,12 +365,12 @@ public class PurviewCloudMetadataPublishServiceImpl implements PurviewCloudMetad
                     }
                 }
 
-                if (children.size() < CHILD_FETCH_PAGE_SIZE) {
-                    break;
-                }
+                // No early break on a short page: the loop is bounded by totalChildren, and
+                // a short page is exactly what a decode-shortened one looks like.
             }
         }
 
+        lastWalkIncomplete.set(incomplete);
         return documents.stream()
                 .sorted(Comparator.comparing(Content::getId))
                 .toList();

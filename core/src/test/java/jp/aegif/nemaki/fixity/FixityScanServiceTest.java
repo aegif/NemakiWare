@@ -191,4 +191,37 @@ class FixityScanServiceTest {
         assertEquals("SHA-256", body.get("algorithm"));
         assertEquals("stored-reverified", body.get("subject"));
     }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("a capped findings list says it was capped")
+    void aCappedFindingsListSaysSo() {
+        // The cap was silent. Every other truncation in this layer says so out loud, and a
+        // reader could only infer this one by comparing findings.size() with
+        // mismatch + unverifiable -- which nobody does. (The chain was never affected:
+        // FixityLedgerRecorder commits to the COUNTS, not to the list.)
+        //
+        // Both sides, because a flag that is always true and one that is always false are
+        // equally useless and the fix has no other lock.
+        java.util.List<FixityScanReport.Finding> many = new java.util.ArrayList<>();
+        for (int i = 0; i < FixityScanService.MAX_FINDINGS; i++) {
+            many.add(new FixityScanReport.Finding("doc-" + i, FixityOutcome.MISMATCH,
+                    "a".repeat(64), "b".repeat(64), "differs"));
+        }
+        java.util.Map<String, Object> capped = new FixityScanReport(
+                FixityScanReport.Verdict.COMPLETE, "bedroom", 999, 0, 999, 0, 0, many, null)
+                .asMap();
+        java.util.Map<String, Object> small = new FixityScanReport(
+                FixityScanReport.Verdict.COMPLETE, "bedroom", 1, 0, 1, 0, 0,
+                java.util.List.of(new FixityScanReport.Finding("doc-1", FixityOutcome.MISMATCH,
+                        "a".repeat(64), "b".repeat(64), "differs")),
+                null).asMap();
+
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.TRUE,
+                capped.get("findingsTruncated"),
+                "a list capped at " + FixityScanService.MAX_FINDINGS + " does not say it was "
+                        + "capped, so it reads as every finding there is");
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.FALSE,
+                small.get("findingsTruncated"),
+                "a short list claims it was capped: " + small);
+    }
 }

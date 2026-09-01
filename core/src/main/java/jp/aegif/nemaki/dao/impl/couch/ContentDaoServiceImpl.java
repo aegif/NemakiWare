@@ -123,6 +123,28 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	private static final String DESIGN_DOCUMENT = "_design/_repo";
 
+	/**
+	 * Children the last enumeration ON THIS THREAD returned but could not decode.
+	 *
+	 * <p>A row the view gave back and this class could not turn into a {@code Content} is a
+	 * child that EXISTS. It cannot go into the returned list, and every caller reads that list
+	 * as the folder — so with the rows undecodable the answer is "an empty folder", the same
+	 * substitution the two throws in {@code getChildren} exist to stop, arriving one loop
+	 * further in. The list cannot carry the fact, so this does.
+	 *
+	 * <p>Thread-local and per-call, the shape the custody and anchor stores already use.
+	 * Callers that must not read a short list as a whole folder — the fixity scan, which writes
+	 * its verdict into an append-only chain — consult it; ordinary CMIS navigation does not,
+	 * because a listing missing one broken document is still the best answer available.
+	 */
+	private final ThreadLocal<Integer> lastUnreadableChildren = ThreadLocal.withInitial(() -> 0);
+
+	/** {@inheritDoc} */
+	@Override
+	public int lastUnreadableChildCount() {
+		return lastUnreadableChildren.get();
+	}
+
 	// Per-repository childByName view availability cache.
 	// TRUE = confirmed available (permanent — view won't disappear at runtime).
 	// FALSE = confirmed missing — but re-probed after PROBE_RETRY_MS because
@@ -463,8 +485,15 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				return convertedContent;
 			}
 		} catch (Exception e) {
+			// The wrapper already splits the answers: get() returns null ONLY for a genuine
+			// NotFound and THROWS for everything else. Flattening that throw back into null
+			// here made "CouchDB hiccupped" identical to "the object does not exist" — and
+			// the consumers that act on absence (tombstone resolution deleting catalog
+			// entities, archive reconciliation, principal-delete reference stripping) acted
+			// on it. Null stays the not-found answer; a failure is a failure.
 			log.error("ERROR in getContent for " + objectId + " in repository " + repositoryId + ": " + e.getMessage(), e);
-			return null;
+			throw new IllegalStateException("the content '" + objectId + "' in '" + repositoryId
+					+ "' could not be read; this is NOT a finding that it does not exist", e);
 		}
 	}
 
@@ -495,20 +524,37 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 				try {
 					Content content = convertCloudantDocumentToContent(doc);
-					if (content != null) {
-						result.put(objectId, content);
+					if (content == null) {
+						// A fetched document that converts to nothing is not "absent" — the
+						// incremental sync reads a missing map entry as "nothing to publish"
+						// and advances its cursor over the change for ever.
+						throw new IllegalStateException("document '" + objectId
+								+ "' was fetched but could not be converted; a bulk read must"
+								+ " not answer short");
 					}
+					result.put(objectId, content);
+				} catch (IllegalStateException e) {
+					throw e;
 				} catch (Exception e) {
-					log.warn("Failed to convert document " + objectId + ": " + e.getMessage());
+					throw new IllegalStateException("document '" + objectId + "' was fetched"
+							+ " but could not be converted; a bulk read must not answer short",
+							e);
 				}
 			}
 
 			log.debug("getContentsByIds completed: " + result.size() + " contents converted");
 			return result;
 
+		} catch (IllegalStateException e) {
+			throw e;
 		} catch (Exception e) {
+			// A PARTIAL map said "these are the only ones that exist" — the Purview
+			// incremental sync filtered the rest away, published nothing for them,
+			// advanced the cursor, and reported COMPLETED.
 			log.error("ERROR in getContentsByIds for repository " + repositoryId + ": " + e.getMessage(), e);
-			return result;
+			throw new IllegalStateException("the bulk read of " + objectIds.size()
+					+ " object(s) in '" + repositoryId + "' failed; a partial answer would be"
+					+ " read as the whole", e);
 		}
 	}
 
@@ -936,8 +982,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			
 			return documents;
 		} catch (Exception e) {
+			// NOT an empty list: "no PWCs" and "the PWC view could not be read" are different
+			// facts, and cancel-checkout / checkin flows act on this answer.
 			log.error("Error getting checked out documents for parent: " + parentFolderId + " in repository: " + repositoryId, e);
-			return new ArrayList<Document>();
+			throw new IllegalStateException("the checked-out documents could not be read in '"
+					+ repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -953,7 +1002,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			return null;
 		} catch (Exception e) {
 			log.error("Error getting version series: " + nodeId + " in repository: " + repositoryId, e);
-			return null;
+			// Null is the absence answer (restore re-creates a version series on it;
+			// checkin/checkout decide succession on it). A failure is not absence.
+			throw new IllegalStateException("the version lookup for '" + nodeId + "' in '" + repositoryId + "' failed; this is NOT a finding that none exists", e);
 		}
 	}
 
@@ -970,7 +1021,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			log.debug("DEBUGGING: Query returned " + (couchDocs != null ? couchDocs.size() : "null") + " documents");
 
 			if (couchDocs == null) {
-				return new ArrayList<Document>();
+				// A version series with an unanswerable view is not a series with no versions
+				// — deleteAllVersions and checkin read this list and act on every member.
+				throw new IllegalStateException("the version list could not be read for series '"
+						+ versionSeriesId + "' in '" + repositoryId + "'; this is NOT a finding"
+						+ " that there are no versions");
 			}
 			List<Document> documents = new ArrayList<Document>();
 			for (CouchDocument couchDoc : couchDocs) {
@@ -980,7 +1035,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			return documents;
 		} catch (Exception e) {
 			log.error("Error getting all versions for series: " + versionSeriesId + " in repository: " + repositoryId, e);
-			return new ArrayList<Document>();
+			throw new IllegalStateException("the version list could not be read for series '" + versionSeriesId + "' in '" + repositoryId + "'; this is NOT a finding that there are no versions", e);
 		}
 	}
 
@@ -1004,7 +1059,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		} catch (Exception e) {
 			log.error("Error getting latest version for series: " + versionSeriesId + 
 					" in repository: " + repositoryId + " - " + e.getMessage(), e);
-			return null;
+			// Null is the absence answer (restore re-creates a version series on it;
+			// checkin/checkout decide succession on it). A failure is not absence.
+			throw new IllegalStateException("the version lookup for '" + versionSeriesId + "' in '" + repositoryId + "' failed; this is NOT a finding that none exists", e);
 		}
 	}
 
@@ -1030,7 +1087,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		} catch (Exception e) {
 			log.error("Error getting latest major version for series: " + versionSeriesId + 
 					" in repository: " + repositoryId + " - " + e.getMessage(), e);
-			return null;
+			// Null is the absence answer (restore re-creates a version series on it;
+			// checkin/checkout decide succession on it). A failure is not absence.
+			throw new IllegalStateException("the version lookup for '" + versionSeriesId + "' in '" + repositoryId + "' failed; this is NOT a finding that none exists", e);
 		}
 	}
 
@@ -1187,6 +1246,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 				log.debug("DEBUG getChildren: repositoryId=" + repositoryId + ", parentId=" + parentId);
 			}
 
+			lastUnreadableChildren.set(0);
 			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "children", queryParams);
 
 			// A null result is "the view could not answer" — an undeployed design document, or
@@ -1199,25 +1259,45 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 						+ "same as the folder being empty");
 			}
 
-			List<Content> children = new ArrayList<Content>();
+			// The THIRD answer, which the arm above does not cover and the comment above got
+			// wrong: "an EMPTY folder is a result with no rows" is true of a result carrying an
+			// EMPTY list, not of one carrying a NULL list. A null here never told us there are
+			// no children; it told us nothing, and it walked past the throw into the empty
+			// list below because it is not an exception either.
+			if (result.getRows() == null) {
+				throw new IllegalStateException("the children view answered without rows for "
+						+ "parent '" + parentId + "' in repository '" + repositoryId + "'; that "
+						+ "is not the same as the folder being empty");
+			}
 
-			if (result.getRows() != null) {
-				if (log.isDebugEnabled()) {
-					log.debug("DEBUG getChildren: found " + result.getRows().size() + " raw rows");
-				}
-				for (ViewResultRow row : result.getRows()) {
-					try {
-						Content content = convertViewValueToContent(row.getValue());
-						if (content != null) {
-							children.add(content);
-						} else if (log.isDebugEnabled()) {
-							log.debug("DEBUG getChildren: could not convert view value for id=" + row.getId());
-						}
-					} catch (Exception e) {
-						log.warn("Failed to convert child document: " + e.getMessage());
+			List<Content> children = new ArrayList<Content>();
+			int unreadable = 0;
+
+			if (log.isDebugEnabled()) {
+				log.debug("DEBUG getChildren: found " + result.getRows().size() + " raw rows");
+			}
+			for (ViewResultRow row : result.getRows()) {
+				try {
+					Content content = convertViewValueToContent(row.getValue());
+					if (content != null) {
+						children.add(content);
+					} else {
+						// COUNTED, not just logged at debug. A row the view returned and this
+						// code could not turn into a Content is a child that exists; dropping
+						// it makes the list shorter than the folder, and every caller reads the
+						// list as the folder. With all rows undecodable the answer is an empty
+						// folder, which is the substitution the throw above exists to stop —
+						// arriving one loop further in.
+						unreadable++;
+						log.warn("A child of '" + parentId + "' could not be read (id=" + row.getId()
+								+ ") and is NOT in the returned list; it is not an absent child");
 					}
+				} catch (Exception e) {
+					unreadable++;
+					log.warn("Failed to convert child document: " + e.getMessage());
 				}
 			}
+			lastUnreadableChildren.set(unreadable);
 
 			log.debug("Retrieved " + children.size() + " children for parent '" + parentId + "' from repository: " + repositoryId);
 			return children;
@@ -1247,21 +1327,35 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			queryParams.put("skip", skip);
 			queryParams.put("limit", limit);
 
+			lastUnreadableChildren.set(0);
 			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "children", queryParams);
 
+			// The same two refusals as the unpaged form. This variant kept BOTH substitutions:
+			// a null result and a null row list both produced an empty page, and a caller
+			// paging through a folder reads an empty page as the end of it.
+			if (result == null || result.getRows() == null) {
+				throw new IllegalStateException("the children view did not answer for parent '"
+						+ parentId + "' in repository '" + repositoryId + "' (skip=" + skip
+						+ ", limit=" + limit + "); that is not the same as the page being empty");
+			}
 			List<Content> children = new ArrayList<Content>();
-			if (result != null && result.getRows() != null) {
-				for (ViewResultRow row : result.getRows()) {
-					try {
-						Content content = convertViewValueToContent(row.getValue());
-						if (content != null) {
-							children.add(content);
-						}
-					} catch (Exception e) {
-						log.warn("Failed to convert child document in paged query: " + e.getMessage());
+			int unreadable = 0;
+			for (ViewResultRow row : result.getRows()) {
+				try {
+					Content content = convertViewValueToContent(row.getValue());
+					if (content != null) {
+						children.add(content);
+					} else {
+						unreadable++;
+						log.warn("A child of '" + parentId + "' could not be read (id=" + row.getId()
+								+ ") and is NOT in the returned page; it is not an absent child");
 					}
+				} catch (Exception e) {
+					unreadable++;
+					log.warn("Failed to convert child document in paged query: " + e.getMessage());
 				}
 			}
+			lastUnreadableChildren.set(unreadable);
 			return children;
 		} catch (Exception e) {
 			// Same rule as the unpaged form above: an empty page is a fact, a failed read is
@@ -1282,7 +1376,22 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "children", queryParams);
 
-			if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
+			// The same third answer as getChildren, in the method next door. A reduce that
+			// ANSWERED with no rows is a genuine zero; a null result or a null row list is the
+			// view not answering, and this returned 0 for all three with a comment saying "the
+			// view answered and had nothing to reduce".
+			//
+			// Zero here is not harmless. LineageCatalogReconciliationServiceImpl.childFolders
+			// stops on a 0 without ever calling the paged read, so a folder that is there is
+			// walked as having no children; CMIS navigation happens to probe with
+			// getChildrenPaged, which now refuses, so it is the catalog side that reads the lie.
+			if (result == null || result.getRows() == null) {
+				throw new IllegalStateException("the children view did not answer the count for "
+						+ "parent '" + parentId + "' in repository '" + repositoryId + "'; that "
+						+ "is not the same as the folder having no children");
+			}
+
+			if (!result.getRows().isEmpty()) {
 				Object value = result.getRows().get(0).getValue();
 				if (value instanceof Number) {
 					return ((Number) value).longValue();
@@ -1295,8 +1404,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 						log.warn("Could not parse children count value: " + value);
 					}
 				}
+				// A row came back and its value is not a number this code can read. Falling
+				// through to the zero below would say "no children" about a folder the view
+				// just answered FOR — the fourth way into the same lie, after the null result,
+				// the null row list, and the catch.
+				throw new IllegalStateException("the children view answered the count for parent "
+						+ "'" + parentId + "' with a value this store cannot read (" + value
+						+ "); that is not the same as the folder having no children");
 			}
-			// The view answered and had nothing to reduce: genuinely no children.
+			// The view answered with NO ROWS, which for a group=true reduce is the shape of a
+			// key that has nothing under it: genuinely no children.
 			return 0;
 		} catch (Exception e) {
 			// Fail-fast (roadmap §2-1). Zero here meant three different things at once —
@@ -1510,7 +1627,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			if (client == null) {
-				return true;
+				// "Say alive" here is the same answer the catch below refuses, one door
+				// earlier: with no client the probe cannot tell a rebuilding view from a
+				// healthy one, and blessing the uniqueness check that follows makes a
+				// duplicate sibling name — which nothing repairs.
+				throw new IllegalStateException("no CouchDB client for '" + repositoryId
+						+ "'; whether the childrenNames view is answering cannot be"
+						+ " established, so a uniqueness check must not run");
 			}
 			if (client.queryViewCount("_repo", "childrenNames") > 0) {
 				return true;
@@ -1518,11 +1641,23 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			// Zero rows for the whole view: either a genuinely empty repository (fine) or a view
 			// that is not answering (not fine). The database's own document count separates them.
 			com.ibm.cloud.cloudant.v1.model.DatabaseInformation info = client.getDatabaseInfo();
-			return info == null || info.getDocCount() == null || info.getDocCount() <= 10L;
+			if (info == null || info.getDocCount() == null) {
+				// The separating fact did not arrive. "Alive" here is the same unmeasured
+				// blessing the client == null door and the catch below both refuse: a view
+				// that answered zero rows stays indistinguishable from a rebuilding one.
+				throw new IllegalStateException("the document count of '" + repositoryId
+						+ "' did not answer, so an empty childrenNames view cannot be told"
+						+ " from a rebuilding one; a uniqueness check must not run");
+			}
+			return info.getDocCount() <= 10L;
 		} catch (Exception e) {
-			// Cannot tell — say alive. The catch below already fails closed on a thrown query,
-			// and blocking every create because this probe failed would be worse than the hole.
-			return true;
+			// Cannot tell — REFUSE. "Say alive" opened one combination the round-33 review
+			// found: the names view answers 200 with zero rows (a rebuild — the very case
+			// this probe exists for) while the count probe fails on connection; "alive"
+			// then blessed a blind uniqueness check and a duplicate sibling name is
+			// permanent. A refused create is retryable; a duplicate is not.
+			throw new IllegalStateException("could not establish whether the childrenNames"
+					+ " view is answering; a uniqueness check cannot run blind", e);
 		}
 	}
 
@@ -1604,9 +1739,14 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 			return relationships;
 		} catch (Exception e) {
+			// NOT an empty list. deleteInternal reads this to delete an object's relationships
+			// before the object; an empty answer here leaves the relationships behind, pointing
+			// at an object that no longer exists. "Could not ask" must fail the delete (the
+			// caller reports it) rather than orphan the edges.
 			log.error("Error getting relationships by source: " + sourceId + " in repository: " + repositoryId, e);
-			log.warn("GET RELATIONSHIPS BY SOURCE ERROR: " + e.getMessage());
-			return new ArrayList<Relationship>();
+			throw new IllegalStateException("the relationships by source could not be read for '"
+					+ sourceId + "' in '" + repositoryId + "'; this is NOT a finding that there"
+					+ " are none", e);
 		}
 	}
 
@@ -1633,7 +1773,7 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		} catch (Exception e) {
 			log.error("Error getting relationships by target: " + targetId + " in repository: " + repositoryId, e);
 			log.warn("GET RELATIONSHIPS BY TARGET ERROR: " + e.getMessage());
-			return new ArrayList<Relationship>();
+			throw new IllegalStateException("the relationships by target could not be read for '" + targetId + "' in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -1648,8 +1788,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 			return null;
 		} catch (Exception e) {
+			// Null is "there is no such policy" — served to the client as a 404. A failed read
+			// is not that fact.
 			log.error("Error getting policy: " + objectId + " in repository: " + repositoryId, e);
-			return null;
+			throw new IllegalStateException("the policy '" + objectId + "' in '" + repositoryId
+					+ "' could not be read; this is NOT a finding that it does not exist", e);
 		}
 	}
 
@@ -1663,20 +1806,25 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			// CRITICAL FIX: Handle null result from queryView to prevent NullPointerException
 			if (couchPolicies == null) {
 				log.warn("queryView returned null for policiesByAppliedObject - objectId: " + objectId + ", repository: " + repositoryId);
-				return new ArrayList<Policy>();
+				throw new IllegalStateException("the applied policies could not be read for '" + objectId + "' in '" + repositoryId + "'; this is NOT a finding that none is applied");
 			}
 			
 			List<Policy> policies = new ArrayList<Policy>();
 			for (CouchPolicy couchPolicy : couchPolicies) {
-				if (couchPolicy != null) {
-					policies.add(couchPolicy.convert());
+				if (couchPolicy == null) {
+					// An applied policy that will not decode is still APPLIED — a control the
+					// caller would silently stop enforcing.
+					throw new IllegalStateException("an applied policy could not be decoded for '"
+							+ objectId + "' in '" + repositoryId + "'; refusing to answer the"
+							+ " policy list short");
 				}
+				policies.add(couchPolicy.convert());
 			}
 			
 			return policies;
 		} catch (Exception e) {
 			log.error("Error getting applied policies for: " + objectId + " in repository: " + repositoryId, e);
-			return new ArrayList<Policy>();
+			throw new IllegalStateException("the applied policies could not be read for '" + objectId + "' in '" + repositoryId + "'; this is NOT a finding that none is applied", e);
 		}
 	}
 
@@ -1691,8 +1839,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 			return null;
 		} catch (Exception e) {
+			// Null is "there is no such item" — served to the client as a 404. A failed read
+			// is not that fact.
 			log.error("Error getting item: " + objectId + " in repository: " + repositoryId, e);
-			return null;
+			throw new IllegalStateException("the item '" + objectId + "' in '" + repositoryId
+					+ "' could not be read; this is NOT a finding that it does not exist", e);
 		}
 	}
 
@@ -2685,6 +2836,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc) {
 		return archiveDao.getArchives(repositoryId, skip, limit, desc);
+	}
+
+	@Override
+	public int lastUnreadableArchiveCount() {
+		return archiveDao.lastUnreadableArchiveCount();
+	}
+
+	@Override
+	public int lastUnreadableChangeCount() {
+		return changeEventDao.lastUnreadableChangeCount();
 	}
 
 	@Override

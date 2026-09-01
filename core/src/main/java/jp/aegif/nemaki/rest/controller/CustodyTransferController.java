@@ -49,8 +49,8 @@ import java.util.Map;
  * <p>{@code /advance} cannot reach {@code CUSTODY_TRANSFERRED}; {@code /pass-custody} is the
  * only route to it, and it records the handover before moving. Two endpoints rather than one
  * with a state parameter, because the difference is not a parameter: every other move is a note
- * about what the far end said, and this one is where this repository stops being answerable for
- * the record.
+ * somebody recorded, and this one is where this repository stops being answerable for the
+ * record.
  *
  * <p>Admin only. A handover decides who holds a record; it is not an ordinary user operation.
  */
@@ -61,12 +61,35 @@ public class CustodyTransferController {
     /** What these endpoints do NOT establish, in the response rather than in a manual. */
     static final String CUSTODY_LIMITS =
             "These endpoints record what THIS repository knows about a handover: what it "
-                    + "packaged, what the receiving system reported, and whether that report "
-                    + "was about the package we sent. They do NOT send anything, do not check "
-                    + "the receiving system's claims, and do not establish that the far end "
-                    + "still holds the record. A transfer reaching CUSTODY_TRANSFERRED means "
-                    + "this repository recorded a handover it verified a receipt for — not "
-                    + "that the record is safe somewhere else.";
+                    // "what the receiving system reported" used to stand here, and the first
+                    // correction only softened it to "what a receipt SAYS the receiving system
+                    // reported" -- which still hands the receiver's name to a value a REST
+                    // caller typed. A receipt has an outcome field; that the field means
+                    // "what the receiving system reported" is the very assumption a verified
+                    // signature would have to establish. So the receiver leaves the sentence.
+                    // The half-fix survived a round because the test that locked it REQUIRED
+                    // the phrase "a receipt SAYS" -- a lock can pin the surviving exit.
+                    // ... and it USED to continue "do not check any claim in a receipt",
+                    // three words after saying the endpoints record whether the report was
+                    // about the package we sent -- which verifyReceipt establishes by checking
+                    // the digest, the required fields and the outcome mapping. A correction
+                    // that lands too weak is as wrong as the overclaim it replaced, and this
+                    // one made RECEIPT_VERIFIED read as meaning nothing.
+                    //
+                    // The retracted phrase stays HERE and not in the sentence itself: a
+                    // response an operator reads is not the place for the changelog, and a
+                    // banned phrase quoted in its own retraction is a trap this project has
+                    // shipped twice.
+                    + "packaged, what outcome a receipt reports, and whether that report was "
+                    + "about the package we sent. The receipt IS checked: that it names the "
+                    + "package we sent, that its required fields are there, and that the "
+                    + "outcome it reports maps to one we accept. What is NOT done: they do "
+                    + "NOT send anything, do not check the report against the far end itself, "
+                    + "do not establish who wrote a receipt unless its signature was "
+                    + "verified, and do not establish that the far end still holds the "
+                    + "record. A transfer reaching CUSTODY_TRANSFERRED "
+                    + "means this repository recorded a handover it verified a receipt for — "
+                    + "not that the record is safe somewhere else.";
 
     @Autowired(required = false)
     private CustodyTransferService service;
@@ -120,7 +143,14 @@ public class CustodyTransferController {
         try {
             candidate = new CustodyReceipt(str(body.get("submissionId")), str(body.get("aipId")),
                     str(body.get("aipChecksum")), str(body.get("sipDigest")),
-                    str(body.get("verificationOutcome")), str(body.get("receivingAgent")),
+                    str(body.get("verificationOutcome")),
+                    // The receiver's own word, when a connector mapped its vocabulary into ours
+                    // (design §13.1). Absent means nothing was mapped -- then the receiver's
+                    // word IS verificationOutcome. Dropping it here, as this endpoint used to,
+                    // loses the ability to answer "what did the far end actually say?", and it
+                    // is the value the far end's signature covers.
+                    str(body.get("reportedOutcome")),
+                    str(body.get("receivingAgent")),
                     str(body.get("receivedAt")), str(body.get("signature")),
                     // NEVER taken from the request. A caller that could set this could tell
                     // this repository a signature had been verified by asserting it.
@@ -224,6 +254,13 @@ public class CustodyTransferController {
             HttpStatus onSuccess) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("limits", CUSTODY_LIMITS);
+        if (outcome.signatureCheck() != null) {
+            // BEFORE the branch, like the limits above: a signature check that ran and failed
+            // is exactly as reportable on a refusal as on a success, and putting it in one arm
+            // is how the receipt's own boolean came to be the only trace. The receipt carries
+            // signatureVerified=false for three different reasons; this says which.
+            body.put("signatureCheck", outcome.signatureCheck());
+        }
         if (!outcome.done()) {
             // A refusal is the designed outcome for "the rule said no", so it is a 409 with the
             // reason rather than a 500 with a stack trace.

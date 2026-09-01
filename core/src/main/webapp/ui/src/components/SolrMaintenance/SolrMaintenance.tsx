@@ -441,6 +441,8 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
         return <Tag color="processing" icon={<SyncOutlined spin />}>{t('solrMaintenance.status.running')}</Tag>;
       case 'completed':
         return <Tag color="success" icon={<CheckCircleOutlined />}>{t('solrMaintenance.status.completed')}</Tag>;
+      case 'completed_with_errors':
+        return <Tag color="warning" icon={<WarningOutlined />}>{t('solrMaintenance.status.completedWithErrors')}</Tag>;
       case 'error':
         return <Tag color="error" icon={<WarningOutlined />}>{t('solrMaintenance.status.error')}</Tag>;
       case 'cancelled':

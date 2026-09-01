@@ -30,18 +30,60 @@ public class ChangeEventServiceDelegate {
 			Boolean includeProperties, String filter, Boolean includePolicyIds, Boolean includeAcl, BigInteger maxItems,
 			ExtensionsData extension) {
 		String startToken = changeLogToken.getValue();
-		int limit = maxItems.intValue();
+		// intValue() TRUNCATES: 2^31 becomes negative, 2^32 becomes 0 — and a non-positive
+		// limit reads as "no limit" one layer down, so an out-of-range maxItems bought an
+		// unbounded query over the whole change log. Compare first, truncate never.
+		int limit = maxItems.compareTo(java.math.BigInteger.valueOf(Integer.MAX_VALUE)) >= 0
+				? Integer.MAX_VALUE
+				: maxItems.intValue();
+		// A non-positive ask means "one page" here, BEFORE the resume adjustment below.
+		// Normalising only at the DAO left maxItems=0 + a resume token computing
+		// fetchLimit = 0 + 1 = 1: the single fetched row is the already-delivered resume
+		// row, skipFirst removes it, the token never advances, and a polling client loops
+		// on the same empty page for ever while hasMoreItems stays true (round-33 review).
+		if (limit <= 0) {
+			limit = Integer.MAX_VALUE;
+		}
 
 		// CouchDB startkey is inclusive, so when resuming from a previous token
 		// we fetch one extra and drop the first row to avoid returning the
 		// event that was already delivered as the last item of the prior batch.
 		boolean skipFirst = (startToken != null);
-		int fetchLimit = skipFirst ? limit + 1 : limit;
+		// limit + 1 overflows for Integer.MAX_VALUE (the "give me everything" request) and a
+		// negative limit reads as "no limit" one layer down — an accidental unbounded query.
+		int fetchLimit = (skipFirst && limit < Integer.MAX_VALUE) ? limit + 1 : limit;
 
 		List<Change> changes = contentDaoService.getLatestChanges(repositoryId, startToken, fetchLimit);
 
+		// A change row that would not decode is a change that HAPPENED, at a token between the
+		// ones that did. compileChangeDataList advances the CLIENT's changeLogToken over the
+		// consecutive range it receives — it can only guard against compile failures INSIDE the
+		// list, not against rows the DAO already dropped, which look perfectly consecutive from
+		// here. Serving [100, 102] advances the client to 102 and the change at 101 is never
+		// delivered to that client again; if it was a DELETE, the client keeps the object for
+		// ever. The Purview sync got this guard first and this — the CMIS path every external
+		// subscriber uses — did not.
+		if (contentDaoService.lastUnreadableChangeCount() > 0) {
+			throw new IllegalStateException("the change log lost "
+					+ contentDaoService.lastUnreadableChangeCount() + " row(s) to decode"
+					+ " failures after token '" + (startToken == null ? "" : startToken)
+					+ "'; serving the remainder would advance the client's changeLogToken past"
+					+ " changes it never received");
+		}
+
 		if (skipFirst && changes != null && !changes.isEmpty()) {
-			changes.remove(0);
+			// Only the row that WAS already delivered. The unconditional remove(0) assumed the
+			// first row is always the startToken's own event — but if that row failed to
+			// decode (or was purged), position 0 holds the NEXT real change, and dropping it
+			// silently swallowed one event per resume. Purview's normalizeChanges has checked
+			// the token for as long as it has existed; this sibling did not.
+			Change first = changes.get(0);
+			// EQUALITY only, like Purview's normalizeChanges: a null-token first row is NOT
+			// the already-delivered event — the first version of this check also removed
+			// null-token rows, which "delivered-and-dropped" a change nobody had seen.
+			if (first != null && startToken.equals(first.getToken())) {
+				changes.remove(0);
+			}
 		}
 
 		// NOTE: Token advancement is intentionally NOT done here.

@@ -78,6 +78,42 @@ class StoredTransferIsNotAssertedTest {
     }
 
     @Test
+    @DisplayName("a row whose mapped word nobody could derive is refused on read-back")
+    void aForgedMappingInARowIsRefused() {
+        // The database is the OTHER place a forged pair arrives. reportsSuccess() reads the
+        // mapped word, so a stored SUCCESS/FAILED pair passes every other check here: it names
+        // this transfer's package, it carries every identifying field, and the history really
+        // does reach RECEIPT_VERIFIED. Only re-deriving the mapping catches it -- which is why
+        // the rule lives on the receipt rather than in the service that happens to be today's
+        // only caller.
+        Map<String, Object> doc = CouchCustodyTransferStore.document(walked());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> receipt = (Map<String, Object>) doc.get("receipt");
+        receipt.put("verificationOutcome", "SUCCESS");
+        receipt.put("reportedOutcome", "FAILED");
+
+        assertNull(CouchCustodyTransferStore.decode(doc),
+                "a row claiming the receiver said FAILED and that this means SUCCESS was read "
+                        + "back as a verified receipt. A signature would only ever cover FAILED");
+    }
+
+    @Test
+    @DisplayName("a row with a genuine mapping still round-trips")
+    void aGenuineMappingInARowIsRead() {
+        // The check above must not refuse every mapped receipt -- Archivematica's
+        // COMPLETE -> SUCCESS is the whole reason the second slot exists.
+        Map<String, Object> doc = CouchCustodyTransferStore.document(walked());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> receipt = (Map<String, Object>) doc.get("receipt");
+        receipt.put("verificationOutcome", "SUCCESS");
+        receipt.put("reportedOutcome", "COMPLETE");
+
+        CustodyTransfer restored = CouchCustodyTransferStore.decode(doc);
+        assertNotNull(restored, "a genuine Archivematica mapping was refused on read-back");
+        assertEquals("COMPLETE", restored.receipt().reportedOutcome());
+    }
+
+    @Test
     @DisplayName("a row edited to claim a state its history does not reach is refused")
     void aForgedStateIsRefused() {
         Map<String, Object> doc = CouchCustodyTransferStore.document(walked());
@@ -273,5 +309,38 @@ class StoredTransferIsNotAssertedTest {
                         CustodyState.INGEST_ACCEPTED, null, history));
 
         assertTrue(refused.getMessage().contains("does not walk"), refused.getMessage());
+    }
+
+    @Test
+    @DisplayName("a forged pair is refused even when the history never reached RECEIPT_VERIFIED")
+    void aForgedMappingIsRefusedEvenWhereItUnlocksNothing() {
+        // The mapping check used to sit inside `if (everVerified)`. A row whose history stops at
+        // AIP_CREATED but which carries a receipt therefore came back unchecked -- and the
+        // describe endpoint renders it. It unlocks nothing, so it is not a route to custody; it
+        // is a forged pair displayed to an operator as a record, which is the false diagnosis
+        // this class exists to refuse. A direct database edit is exactly restore()'s threat
+        // model, so "only reachable by editing the row" is not a reason to let it through.
+        CustodyReceipt forged = new CustodyReceipt("sub-1", "aip-1", "b".repeat(64),
+                "a".repeat(64), "SUCCESS", "FAILED", "am-agent", "2026-08-27T00:00:00Z",
+                null, false);
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> CustodyTransfer.restore("t-1", "bedroom", "doc-1", "a".repeat(64), "RODA",
+                        CustodyState.AIP_CREATED, forged,
+                        List.of(new CustodyTransfer.Step(null, CustodyState.PACKAGE_CREATED,
+                                        "2026-08-26T00:00:00Z", "built"),
+                                new CustodyTransfer.Step(CustodyState.PACKAGE_CREATED,
+                                        CustodyState.SENT, "2026-08-26T00:01:00Z", "sent"),
+                                new CustodyTransfer.Step(CustodyState.SENT,
+                                        CustodyState.RECEIVED, "2026-08-26T00:02:00Z", "there"),
+                                new CustodyTransfer.Step(CustodyState.RECEIVED,
+                                        CustodyState.VALIDATED, "2026-08-26T00:03:00Z", "ok"),
+                                new CustodyTransfer.Step(CustodyState.VALIDATED,
+                                        CustodyState.INGEST_ACCEPTED, "2026-08-26T00:04:00Z", "in"),
+                                new CustodyTransfer.Step(CustodyState.INGEST_ACCEPTED,
+                                        CustodyState.AIP_CREATED, "2026-08-26T00:05:00Z", "aip"))),
+                "a stored receipt whose outcome pair no receiver produces was read back without "
+                        + "being questioned, because its history stopped one state short");
+        assertTrue(e.getMessage().contains("cannot be re-derived"), e.getMessage());
     }
 }

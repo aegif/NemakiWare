@@ -39,6 +39,9 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
     private static final int ENTITY_BATCH_SIZE = 100;
     private static final String DOCUMENT_ENTITY_STREAM_KIND = "document-entity";
 
+    /** See {@link PurviewDocumentPublishService#lastEntityPublishFailureCount()}. */
+    private final ThreadLocal<Integer> lastEntityPublishFailures = ThreadLocal.withInitial(() -> 0);
+
     private final MetadataCatalogConnectionResolver connectionResolver;
     private final RepositoryInfoMap repositoryInfoMap;
     private final ContentDaoService contentDaoService;
@@ -111,6 +114,19 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
                         folderId,
                         skip,
                         CHILD_FETCH_PAGE_SIZE);
+                // FULL sync is the one walk that must not tolerate a short page at all: it
+                // reports COMPLETED and seeds the change token PAST everything it visited, so
+                // an object hidden behind an unreadable row here is not merely missing — it is
+                // missing with no later mechanism that would ever revisit it (incremental sync
+                // starts after the seeded token). Refusing fails the job and keeps the cursor,
+                // which is retryable; a silent omission is not.
+                if (contentDaoService.lastUnreadableChildCount() > 0) {
+                    throw new IllegalStateException("folder " + folderId + "'s listing lost "
+                            + contentDaoService.lastUnreadableChildCount() + " row(s) to decode"
+                            + " failures during FULL sync; completing would seed the change"
+                            + " token past objects that were never published, so the sync is"
+                            + " refused instead");
+                }
                 if (children == null || children.isEmpty()) {
                     break;
                 }
@@ -162,6 +178,7 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
 
     @Override
     public int upsertContents(String repositoryId, List<Content> contents) {
+        lastEntityPublishFailures.set(0);
         if (contents == null || contents.isEmpty()) {
             return 0;
         }
@@ -184,6 +201,9 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
             String folderPath = resolveFolderPath(repositoryId, content, pathCache);
             Map<String, Object> entity = buildContentEntity(repositoryId, content, folderPath);
             if (entity == null) {
+                // Never even attempted — from the caller's point of view this document did
+                // not land, and the count below has to say so.
+                lastEntityPublishFailures.set(lastEntityPublishFailures.get() + 1);
                 continue;
             }
             pending.add(entity);
@@ -203,6 +223,7 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
             processedCount += flushIfNeeded(repositoryId, pending, guidAccumulator, failedQualifiedNames);
         }
         processedCount += flushEntities(repositoryId, pending, guidAccumulator, failedQualifiedNames);
+        countEntityPublishFailures(repositoryId, contents, failedQualifiedNames);
         pruneFailedCandidates(repositoryId, containmentCandidates, failedQualifiedNames);
         pruneFailedCandidates(repositoryId, relationshipCandidates, failedQualifiedNames);
         pruneFailedCandidates(repositoryId, companionCandidates, failedQualifiedNames);
@@ -339,6 +360,30 @@ public class PurviewDocumentPublishServiceImpl implements PurviewDocumentPublish
      * Removes Content items from the candidate list whose entity upsert failed.
      * Matches by converting Content.getId() to the qualifiedName format used by the payload factory.
      */
+    @Override
+    public int lastEntityPublishFailureCount() {
+        return lastEntityPublishFailures.get();
+    }
+
+    /** Adds the documents whose entity the bulk reported as failed to the per-call counter. */
+    private void countEntityPublishFailures(String repositoryId, List<Content> contents,
+            Set<String> failedQualifiedNames) {
+        if (failedQualifiedNames == null || failedQualifiedNames.isEmpty()) {
+            return;
+        }
+        int failures = 0;
+        for (Content content : contents) {
+            if (content == null || content.getId() == null) {
+                continue;
+            }
+            if (failedQualifiedNames.contains(
+                    entityPayloadFactory.buildObjectQualifiedName(repositoryId, content.getId()))) {
+                failures++;
+            }
+        }
+        lastEntityPublishFailures.set(lastEntityPublishFailures.get() + failures);
+    }
+
     private void pruneFailedCandidates(String repositoryId, List<Content> candidates, Set<String> failedQualifiedNames) {
         if (failedQualifiedNames == null || failedQualifiedNames.isEmpty()) {
             return;

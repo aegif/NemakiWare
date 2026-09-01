@@ -166,14 +166,37 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
      * without waiting for the first write.
      *
      * @return {@code true} if the lineage client is now available
+     *
+     * What a read can expect of the journal database right now.
      */
-    private boolean ensureClientForRead() {
+    private enum Readiness {
+        /** The client is up and the database is there. */
+        READY,
+        /** The database does not exist. Nothing has ever been journalled: a real "nothing". */
+        ABSENT,
+        /** It could not be reached, or the probe failed. NOT the same as ABSENT. */
+        UNREACHABLE
+    }
+
+    /**
+     * Whether a read may proceed, and if not, WHICH not.
+     *
+     * <p>This returned a plain boolean until 2026-08-28, and {@code false} covered both a
+     * database that does not exist and one that could not be reached. Eighteen read methods
+     * turn that {@code false} into an empty list, a zero or a null — so a transient outage made
+     * every one of them answer "there are no events", "no repository has anything pending",
+     * "every processType is at 0". One catch, eighteen confident negatives.
+     *
+     * <p>ABSENT really is nothing: no journal database has ever been created. That answer is
+     * kept, because a deployment that has never journalled must not have its reads fail.
+     */
+    private Readiness readiness() {
         if (lineageClient != null) {
-            return true;
+            return Readiness.READY;
         }
         synchronized (this) {
             if (lineageClient != null) {
-                return true;
+                return Readiness.READY;
             }
             try {
                 CloudantClientWrapper anyRepoClient = connectorPool.getClient("nemaki_conf");
@@ -186,15 +209,47 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
                 deployViews();
                 dbProvisioned.set(true);
                 logger.info("Discovered existing lineage journal database '{}' for read access", DB_NAME);
-                return true;
+                return Readiness.READY;
             } catch (NotFoundException e) {
-                // DB does not exist — no data to read
-                return false;
+                // The database does not exist. Nothing has ever been journalled, which IS an
+                // empty answer, and the only one of the three that is.
+                return Readiness.ABSENT;
             } catch (Exception e) {
-                logger.debug("Lineage DB not available for read: {}", e.getMessage());
-                return false;
+                // WARN, not DEBUG. This is the arm that used to be indistinguishable from the
+                // one above, and at debug level nothing recorded that eighteen reads had just
+                // answered "there is nothing" without asking.
+                logger.warn("The lineage journal could not be reached ({}); reads will refuse "
+                        + "rather than report an empty journal", e.getMessage());
+                return Readiness.UNREACHABLE;
             }
         }
+    }
+
+    /**
+     * For {@link #isActive()} and the schedulers: false for both no-database cases.
+     *
+     * <p>Deliberately NOT throwing. {@code isActive()} is polled by the projection loop and the
+     * purge scheduler, and an exception out of a {@code scheduleAtFixedRate} task cancels every
+     * later run — so a transient outage would stop projection for good. A scheduler skipping a
+     * tick is the right response to "cannot reach it"; a READ answering "there is nothing" is
+     * not, which is why the two have different helpers.
+     */
+    private boolean ensureClientForRead() {
+        return readiness() == Readiness.READY;
+    }
+
+    /**
+     * For the read methods: true to proceed, false when the journal genuinely does not exist,
+     * and an exception when it could not be asked.
+     */
+    private boolean requireClientForRead() {
+        Readiness readiness = readiness();
+        if (readiness == Readiness.UNREACHABLE) {
+            throw new LineageViewUnreadableException("the lineage journal could not be reached, "
+                    + "so what it holds is unknown; this is NOT a finding that it holds nothing",
+                    null);
+        }
+        return readiness == Readiness.READY;
     }
 
     /**
@@ -659,7 +714,7 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
     public java.util.List<Map<String, Object>> queryRawView(String designDocName, String viewName,
             Map<String, Object> params) {
         try {
-            if (!ensureClientForRead()) {
+            if (!requireClientForRead()) {
                 // Read-only: a listing must not CREATE the lineage database. Going through
                 // getLineageClient() provisioned it — and deployed both design documents — on
                 // the first admin GET of a deployment that had never used lineage (external
@@ -690,12 +745,28 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
                                 + "be deployed, or the database could not be read", null);
             }
             if (result.getRows() == null) {
-                return List.of();
+                // The SAME reasoning as three lines above, which this arm did not get. A result
+                // object that carries no rows at all has not told us there are none; an answered
+                // view with nothing in it carries an EMPTY list, not a null one. Returning []
+                // here renders "the view did not answer" as "nothing is unresolved" — precisely
+                // what the arm above refuses to do.
+                throw new LineageViewUnreadableException(
+                        "view " + designDocName + "/" + viewName + " answered without rows, so "
+                                + "what it holds is unknown; this is NOT a finding that it holds "
+                                + "nothing", null);
             }
             List<Map<String, Object>> rows = new ArrayList<>();
+            int unreadable = 0;
             for (ViewResultRow row : result.getRows()) {
                 com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
                 if (doc == null) {
+                    // COUNTED, like its sibling queryRowsFromView. Both throws were propagated
+                    // to this method when that one was corrected and the ROW-LEVEL loss was
+                    // not, so the same class answered two ways about the same shape. What this
+                    // one feeds is worse: the authenticity report's "No RETAINED capture row
+                    // was found for this object", and the E-ARK package's "no capture entry" —
+                    // written into a SIP that leaves the organisation.
+                    unreadable++;
                     continue;
                 }
                 Map<String, Object> props = new HashMap<>();
@@ -703,6 +774,12 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
                 if (doc.getRev() != null) props.put("_rev", doc.getRev());
                 if (doc.getProperties() != null) props.putAll(doc.getProperties());
                 rows.add(props);
+            }
+            if (unreadable > 0) {
+                logger.warn("{} row(s) from {}/{} came back without a document and are NOT in "
+                        + "the returned list; they are not absent rows", unreadable,
+                        designDocName, viewName);
+                lastUnreadableRows.set(lastUnreadableRows.get() + unreadable);
             }
             return rows;
         } catch (Exception e) {
@@ -727,7 +804,7 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
 
     @Override
     public Long reduceCount(String designDocName, String viewName) {
-        if (!ensureClientForRead()) {
+        if (!requireClientForRead()) {
             return null;
         }
         try {
@@ -735,7 +812,15 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
             p.put("reduce", true);
             p.put("group", false);
             ViewResult result = lineageClient.queryView(designDocName, viewName, p);
-            if (result == null || result.getRows() == null || result.getRows().isEmpty()) {
+            if (result == null || result.getRows() == null) {
+                // "Cannot answer", which this method already has a value for: null sends the
+                // caller to the bounded scan. Only the EMPTY-rows arm below is a legitimate
+                // zero. Folding all three into 0L made a view that did not reply report an
+                // EXACT count of nothing — and exact is how the caller presents it, since a
+                // reduce answer is the one number here that is not a lower bound.
+                return null;
+            }
+            if (result.getRows().isEmpty()) {
                 // An EMPTY view answers a group=false reduce with no rows at all, which is a
                 // legitimate zero — not "cannot answer". Distinguishing the two matters: a
                 // null here sends the caller to a scan that would also find zero, so the
@@ -755,7 +840,7 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
 
     @Override
     public int countRawView(String designDocName, String viewName, int limit) {
-        if (!ensureClientForRead()) {
+        if (!requireClientForRead()) {
             throw new LineageViewUnreadableException(
                     "the lineage database is not available, so view " + designDocName + "/"
                             + viewName + " could not be counted", null);
@@ -770,7 +855,17 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
                         "view " + designDocName + "/" + viewName + " did not answer; it may not "
                                 + "be deployed, or the database could not be read", null);
             }
-            return result.getRows() == null ? 0 : result.getRows().size();
+            if (result.getRows() == null) {
+                // The SAME condition queryRawView refuses eighty lines up. A result carrying no
+                // rows has not said there are none, and this method's answer is a COUNT — the
+                // shape most readily believed. countByState falls back here when the reduce is
+                // unavailable, and a 0 from this path reads as "nothing is unresolved".
+                throw new LineageViewUnreadableException(
+                        "view " + designDocName + "/" + viewName + " answered without rows, so "
+                                + "its count is unknown; this is NOT a finding that it is 0",
+                        null);
+            }
+            return result.getRows().size();
         } catch (LineageViewUnreadableException e) {
             throw e;
         } catch (Exception e) {
@@ -842,7 +937,7 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
 
     @Override
     public List<LineageJournalRow> findByRepositoryId(String repositoryId, int limit, int offset) {
-        if (!ensureClientForRead()) {
+        if (!requireClientForRead()) {
             return List.of();
         }
 
@@ -857,12 +952,13 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
         params.put("include_docs", true);
         params.put("descending", true);
 
+        resetUnreadableRows();
         return queryRowsFromView("by_repository_and_time", params);
     }
 
     @Override
     public List<LineageJournalRow> findByProcessType(String repositoryId, LineageProcessType processType, int limit, int offset) {
-        if (!ensureClientForRead()) {
+        if (!requireClientForRead()) {
             return List.of();
         }
         // Use by_repo_process_type_time view: key [repositoryId, processType, occurredAt]
@@ -876,12 +972,13 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
             params.put("skip", offset);
         }
         params.put("include_docs", true);
+        resetUnreadableRows();
         return queryRowsFromView("by_repo_process_type_time", params);
     }
 
     @Override
     public List<LineageJournalRow> findByProcessType(LineageProcessType processType, int limit, int offset) {
-        if (!ensureClientForRead()) {
+        if (!requireClientForRead()) {
             return List.of();
         }
 
@@ -897,6 +994,7 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
         }
         params.put("include_docs", true);
 
+        resetUnreadableRows();
         return queryRowsFromView("by_process_type_time", params);
     }
 
@@ -1145,7 +1243,7 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
 
     @Override
     public long countNonTerminalByTarget(String target) {
-        if (!ensureClientForRead()) {
+        if (!requireClientForRead()) {
             return 0;
         }
 
@@ -1164,7 +1262,7 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
 
     @Override
     public List<LineageJournalRow> findAll(int limit, int offset) {
-        if (!ensureClientForRead()) {
+        if (!requireClientForRead()) {
             return List.of();
         }
 
@@ -1177,6 +1275,7 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
         // descending=true → newest first.
         int cappedOffset = boundedListingOffset(offset);
         int fetch = cappedOffset + cappedLimit; // both bounded: no overflow, bounded memory
+        resetUnreadableRows();
         Map<String, Object> v1Params = new HashMap<>();
         v1Params.put("limit", fetch);
         v1Params.put("include_docs", true);
@@ -1235,7 +1334,7 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
 
     @Override
     public LineageJournalRow findByRecordId(String recordId) {
-        if (!ensureClientForRead() || recordId == null || recordId.isEmpty()) {
+        if (!requireClientForRead() || recordId == null || recordId.isEmpty()) {
             return null;
         }
 
@@ -1248,14 +1347,19 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
             }
             return LineageEventCodec.decodeRow(doc);
         } catch (Exception e) {
-            logger.debug("Error finding lineage row by record id {}: {}", recordId, e.getMessage());
-            return null;
+            // NOT null. The endpoint turns null into 404 "Event not found", which is a
+            // statement about the journal; a read that failed is a statement about this node.
+            // At DEBUG, nothing recorded which one the operator had been given.
+            logger.warn("The lineage row {} could not be read: {}", recordId, e.getMessage());
+            throw new LineageViewUnreadableException("the event " + recordId + " could not be "
+                    + "read (" + e.getMessage() + "); this is NOT a finding that it does not "
+                    + "exist", e);
         }
     }
 
     @Override
     public Map<LineageProcessType, Long> countByProcessType() {
-        if (!ensureClientForRead()) {
+        if (!requireClientForRead()) {
             return Map.of();
         }
 
@@ -1266,7 +1370,11 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
 
             ViewResult result = getLineageClient().queryView(DESIGN_DOC, "by_process_type", params);
             if (result == null || result.getRows() == null) {
-                return Map.of();
+                // An empty map here reaches /stats as `totalEvents: 0` — "this repository has
+                // journalled nothing" — from a view that did not answer.
+                throw new LineageViewUnreadableException("the by_process_type view did not "
+                        + "answer, so the per-type counts are unknown; this is NOT a finding "
+                        + "that they are all 0", null);
             }
 
             Map<LineageProcessType, Long> counts = new LinkedHashMap<>();
@@ -1283,15 +1391,18 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
                 }
             }
             return counts;
+        } catch (LineageViewUnreadableException e) {
+            throw e;
         } catch (Exception e) {
             logger.error("Error querying countByProcessType: {}", e.getMessage(), e);
-            return Map.of();
+            throw new LineageViewUnreadableException("the per-type counts could not be read ("
+                    + e.getMessage() + "); this is NOT a finding that they are all 0", e);
         }
     }
 
     @Override
     public List<LineageJournalRow> findByTargetAndStatus(String target, LineagePublishStatus status, int limit) {
-        if (!ensureClientForRead()) {
+        if (!requireClientForRead()) {
             return List.of();
         }
         Map<String, Object> params = new HashMap<>();
@@ -1301,12 +1412,13 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
         params.put("reduce", false);
         params.put("limit", limit);
         params.put("include_docs", true);
+        resetUnreadableRows();
         return queryRowsFromView("by_target_status", params);
     }
 
     @Override
     public List<LineageJournalRow> findByTargetAndStatusOldestFirst(String target, LineagePublishStatus status, int limit) {
-        if (!ensureClientForRead()) {
+        if (!requireClientForRead()) {
             return List.of();
         }
         Map<String, Object> params = new HashMap<>();
@@ -1315,12 +1427,13 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
         params.put("endkey", List.of(target, status.name(), "\ufff0"));
         params.put("limit", limit);
         params.put("include_docs", true);
+        resetUnreadableRows();
         return queryRowsFromView("by_target_status_time", params);
     }
 
     @Override
     public int reapStaleProjecting(String target, int staleMinutes) {
-        if (!ensureClientForRead()) {
+        if (!requireClientForRead()) {
             return 0;
         }
         Instant staleCutoff = Instant.now().minus(Duration.ofMinutes(staleMinutes));
@@ -1378,7 +1491,7 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
 
     @Override
     public int getRetryCount(String recordId, String target) {
-        if (!ensureClientForRead() || recordId == null || recordId.isBlank()) {
+        if (!requireClientForRead() || recordId == null || recordId.isBlank()) {
             return 0;
         }
         try {
@@ -1403,12 +1516,13 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
 
     @Override
     public List<LineageJournalRow> findByDateRange(String start, String end, int limit, int offset) {
-        if (!ensureClientForRead()) return List.of();
+        if (!requireClientForRead()) return List.of();
         int cappedLimit = Math.min(Math.max(limit, 1), 200);
         // Same read-only merge as findAll (the view split is for purge/old-binary isolation;
         // listings remain dual-schema). Ascending here.
         int cappedOffset = boundedListingOffset(offset);
         int fetch = cappedOffset + cappedLimit;
+        resetUnreadableRows();
         List<LineageJournalRow> merged = mergeByOccurredAt(
                 queryRowsFromView("by_occurred_at", start, end, false, fetch, 0),
                 queryRowsFromView("v2_by_occurred_at", start, end, false, fetch, 0),
@@ -1418,7 +1532,7 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
 
     @Override
     public List<LineageJournalRow> findByRepositoryAndSequenceRange(String repositoryId, long fromSequence, int limit) {
-        if (!ensureClientForRead()) return List.of();
+        if (!requireClientForRead()) return List.of();
         int cappedLimit = Math.min(Math.max(limit, 1), 200);
 
         // by_repository_and_sequence view key = [repositoryId, sequenceNumber]
@@ -1429,6 +1543,7 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
         params.put("limit", cappedLimit);
         params.put("include_docs", true);
         params.put("reduce", false);
+        resetUnreadableRows();
         return queryRowsFromView("by_repository_and_sequence", params);
     }
 
@@ -1453,7 +1568,7 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
 
     @Override
     public List<String> findDistinctNonTerminalRepositoryIds(String target) {
-        if (!ensureClientForRead()) {
+        if (!requireClientForRead()) {
             return List.of();
         }
         try {
@@ -1521,6 +1636,19 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
 
     /**
      * Check if an event with the given eventKey already exists.
+     *
+     * Whether an event with this key is already stored.
+     *
+     * <p>{@code append} uses this as its idempotency check, so a {@code false} it cannot stand
+     * behind writes a SECOND journal row for one event. It answered {@code false} for a read
+     * that failed and for a view that returned nothing — both "we could not look" — and the
+     * WARN beside it did not stop the append that followed.
+     *
+     * <p>Refusing is affordable here and it is not in the custody recorder: {@code
+     * JournaledLineageEmitter} is fail-open with a DEAD-LETTER SINK, so an exception means the
+     * event is written to a file for later rather than lost. Between a duplicate that nobody
+     * can remove from an append-only journal and a row in the dead-letter log, the second is
+     * the recoverable one.
      */
     private boolean eventKeyExists(String eventKey) {
         try {
@@ -1530,10 +1658,20 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
             params.put("include_docs", false);
 
             ViewResult result = getLineageClient().queryView(DESIGN_DOC, "by_event_key", params);
-            return result != null && result.getRows() != null && !result.getRows().isEmpty();
+            if (result == null || result.getRows() == null) {
+                throw new LineageViewUnreadableException("the by_event_key view did not answer "
+                        + "for '" + eventKey + "', so whether this event is already stored is "
+                        + "unknown; this is NOT a finding that it is not", null);
+            }
+            return !result.getRows().isEmpty();
+        } catch (LineageViewUnreadableException e) {
+            throw e;
         } catch (Exception e) {
             logger.warn("Error checking eventKey existence: {}", e.getMessage());
-            return false;
+            throw new LineageViewUnreadableException("whether event '" + eventKey + "' is "
+                    + "already stored could not be checked (" + e.getMessage() + "); this is NOT "
+                    + "a finding that it is not, and appending on the strength of it would write "
+                    + "a second row for one event", e);
         }
     }
 
@@ -1597,15 +1735,38 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
      *
      * <p>Note: Cloudant SDK's {@code Document} does NOT implement {@code Map<String, Object>};
      * properties are extracted via {@code getProperties()} and {@code getId()}/{@code getRev()}.
+     *
+     * Rows from a journal view, or an exception saying the view could not be read.
+     *
+     * <p>The last of this class's reads to answer "there is nothing" for three different
+     * questions: a view that did not answer, a row whose document did not come back, and any
+     * exception at all — the last of them behind an ERROR log and an empty list, which every
+     * caller reads as "no events".
+     *
+     * <p>{@code queryRawView} was corrected for the first of these; this is its sibling, and it
+     * is the one the projector, the stale-claim reclaim and every listing go through.
+     *
+     * <p>Throwing is safe for the schedulers here, unlike {@code isActive()}: the three
+     * {@code scheduleWithFixedDelay} tasks in {@code LineageProjectionLoop} each wrap their
+     * whole body in {@code try/catch (Exception)} and log, so a refusal skips a tick rather
+     * than cancelling the task. That difference is why one of them refuses and the other does
+     * not — not a preference.
      */
     private List<LineageJournalRow> queryRowsFromView(String viewName, Map<String, Object> params) {
+        // NOT reset here. The listings read TWO views — v1 and v2 — and merge them, so
+        // resetting per read meant a docless row in the v1 arm was erased by a clean v2 read
+        // and the endpoint reported nothing lost. The reset belongs at the start of the
+        // OPERATION, which is what resetUnreadableRows() marks; every read after that accrues.
         try {
             ViewResult result = getLineageClient().queryView(DESIGN_DOC, viewName, params);
             if (result == null || result.getRows() == null) {
-                return List.of();
+                throw new LineageViewUnreadableException("view " + viewName + " did not answer, "
+                        + "so what the journal holds is unknown; this is NOT a finding that it "
+                        + "holds nothing", null);
             }
 
             List<LineageJournalRow> rows = new ArrayList<>();
+            int unreadable = 0;
             for (ViewResultRow row : result.getRows()) {
                 com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
                 if (doc != null) {
@@ -1614,17 +1775,61 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
                     if (doc.getRev() != null) props.put("_rev", doc.getRev());
                     if (doc.getProperties() != null) props.putAll(doc.getProperties());
                     rows.add(LineageEventCodec.decodeRow(props));
+                } else {
+                    // A row the view returned whose document did not come with it. Counted
+                    // rather than thrown: one missing document must not cost a caller the rows
+                    // it CAN have, and the count is what lets a caller that needs completeness
+                    // — anything reporting "nothing is pending" — tell a short list from a whole
+                    // one.
+                    unreadable++;
                 }
             }
+            if (unreadable > 0) {
+                logger.warn("{} row(s) from lineage view {} came back without a document and are "
+                        + "NOT in the returned list; they are not absent events", unreadable,
+                        viewName);
+            }
+            lastUnreadableRows.set(lastUnreadableRows.get() + unreadable);
             return rows;
+        } catch (LineageViewUnreadableException e) {
+            throw e;
         } catch (Exception e) {
+            // NOT an empty list. "The view blew up" was logged at ERROR and then handed back as
+            // "no events", so the log said one thing and the return value said another — and
+            // only the return value reaches a caller.
             logger.error("Error querying lineage view {}: {}", viewName, e.getMessage(), e);
-            return List.of();
+            throw new LineageViewUnreadableException("view " + viewName + " could not be read ("
+                    + e.getMessage() + "); this is NOT a finding that the journal holds nothing",
+                    e);
         }
     }
 
     /**
+     * Rows this thread's current listing operation could not turn into events.
+     *
+     * <p>Accrues ACROSS the reads of one operation rather than resetting per read: the listings
+     * query the v1 and v2 views and merge them, so a per-read counter reported only the second
+     * arm — a docless row in v1 was erased by a clean v2 read, and the endpoint said nothing
+     * had been lost. Each public entry point calls {@link #resetUnreadableRows()} first.
+     */
+    private final ThreadLocal<Integer> lastUnreadableRows = ThreadLocal.withInitial(() -> 0);
+
+    /** Starts a fresh accrual. Called by each public read before its first view query. */
+    private void resetUnreadableRows() {
+        lastUnreadableRows.set(0);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public int lastUnreadableRowCount() {
+        return lastUnreadableRows.get();
+    }
+
+    /**
      * Convenience overload for range queries on single-key views.
+     *
+     * Convenience overload. Does NOT reset the accrual — the merged listings call it twice on
+     * purpose, and a reset here would put back the per-read counter that lost the v1 arm.
      */
     private List<LineageJournalRow> queryRowsFromView(String viewName, String startKey, String endKey,
                                                       boolean descending, int limit, int offset) {
@@ -1666,16 +1871,38 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
             params.put("group", true);
 
             ViewResult result = getLineageClient().queryView(DESIGN_DOC, "by_target_status", params);
-            if (result != null && result.getRows() != null && !result.getRows().isEmpty()) {
-                Object value = result.getRows().get(0).getValue();
-                if (value instanceof Number) {
-                    return ((Number) value).longValue();
-                }
+            // FOUR things used to answer 0 here: a null result, a null row list, a value that
+            // is not a number, and any exception at all (at DEBUG). Only the fourth shape —
+            // rows present and empty — is a real zero for a grouped reduce.
+            //
+            // This is inside the class whose other reads were just corrected, and its caller
+            // countNonTerminalByTarget already refuses when the journal is UNREACHABLE — so one
+            // method answered two different ways about the same kind of failure. The number
+            // feeds LineageProjectionLoop's backlog ceiling: a fabricated 0 means the ceiling
+            // never fires and the journal grows without bound.
+            if (result == null || result.getRows() == null) {
+                throw new LineageViewUnreadableException("the by_target_status view did not "
+                        + "answer for [" + target + ", " + status + "], so the backlog is "
+                        + "unknown; this is NOT a finding that it is 0", null);
             }
-            return 0;
+            if (result.getRows().isEmpty()) {
+                return 0;
+            }
+            Object value = result.getRows().get(0).getValue();
+            if (value instanceof Number number) {
+                return number.longValue();
+            }
+            throw new LineageViewUnreadableException("the by_target_status view answered for ["
+                    + target + ", " + status + "] with a value this store cannot read (" + value
+                    + "), so the backlog is unknown; this is NOT a finding that it is 0", null);
+        } catch (LineageViewUnreadableException e) {
+            throw e;
         } catch (Exception e) {
-            logger.debug("Error querying target status count for [{}, {}]: {}", target, status, e.getMessage());
-            return 0;
+            logger.warn("Error querying target status count for [{}, {}]: {}", target, status,
+                    e.getMessage());
+            throw new LineageViewUnreadableException("the backlog for [" + target + ", " + status
+                    + "] could not be counted (" + e.getMessage() + "); this is NOT a finding "
+                    + "that it is 0", e);
         }
     }
     // ==================================================================

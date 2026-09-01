@@ -179,7 +179,28 @@ public final class ErsVerifier {
                     notChecked++;
                     continue;
                 } catch (RuntimeException e) {
-                    // A structural disagreement IS a finding about the record.
+                    // A structural disagreement IS a finding about the record -- but not
+                    // everything reaching this catch is one. ErsRecord throws
+                    // IllegalArgumentException for "this build does not know digest algorithm
+                    // <oid>" and IllegalStateException for "this JVM does not provide <name>",
+                    // and both are statements about THE READER, not the record. Called
+                    // DOES_NOT_MATCH they say the timestamp covers something else, which is a
+                    // finding against a record that may be perfectly sound and merely written
+                    // with an algorithm this build has not been taught.
+                    //
+                    // Latent today (algorithmNameFor knows SHA-256/384/512 and production only
+                    // builds SHA-256 records) and certain on the first renewal into a new
+                    // family -- which is what renewal is FOR. This is the third producer of
+                    // NOT_CHECKED, ten lines above the note about the first two.
+                    if (isAboutThisBuild(e)) {
+                        results.add(new TimestampResult(c, i, TimestampResult.Status.NOT_CHECKED,
+                                ats.digestAlgorithmOid(), null,
+                                "this link was NOT checked: " + e.getMessage()
+                                        + " — a limit of this build, not a finding about the "
+                                        + "record"));
+                        notChecked++;
+                        continue;
+                    }
                     results.add(new TimestampResult(c, i, TimestampResult.Status.DOES_NOT_MATCH,
                             ats.digestAlgorithmOid(), null,
                             "what this timestamp should cover could not be computed: "
@@ -190,14 +211,37 @@ public final class ErsVerifier {
                 }
                 TimestampResult result = check(c, i, ats, expected);
                 results.add(result);
-                checked++;
-                allHold &= result.imprintMatches();
+                // check() has its OWN NOT_CHECKED path -- a token that cannot be parsed -- and
+                // this counted it as checked. The UncheckableLinkException arm above gets this
+                // right; there were two producers of NOT_CHECKED and only one was counted.
+                //
+                // What that cost: an unreadable token gave linksHold=false with
+                // timestampsNotChecked=0, i.e. machine-readable as A FINDING ABOUT THE RECORD,
+                // while the prose beside it said "which is not a finding that it is wrong".
+                // p2-3 §8 records fixing exactly that shape once already: the structured verdict
+                // is the stronger reading and it said the opposite of the sentence.
+                if (result.status() == TimestampResult.Status.NOT_CHECKED) {
+                    notChecked++;
+                } else {
+                    checked++;
+                    allHold &= result.imprintMatches();
+                }
             }
         }
-        if (checked == 0) {
+        if (checked == 0 && notChecked == 0) {
             return new Report(false, 0, 0, results, ErsRecord.LIMITS,
                     "The record contains no archive timestamp, so there was nothing to check. "
                             + NOT_CHECKED);
+        }
+        if (checked == 0) {
+            // Some timestamps were present and NONE could be checked. The old condition was
+            // `checked == 0` alone, which fell into the branch above and answered "the record
+            // contains no archive timestamp" -- discarding a non-zero notChecked and asserting
+            // an absence. Unreachable before the count above was fixed; the substitution was
+            // written down all the same.
+            return new Report(false, 0, notChecked, results, ErsRecord.LIMITS,
+                    "None of this record's " + notChecked + " archive timestamp(s) could be "
+                            + "checked. That is NOT a finding that they are wrong. " + NOT_CHECKED);
         }
         return new Report(allHold && notChecked == 0, checked, notChecked, results,
                 ErsRecord.LIMITS, NOT_CHECKED);
@@ -329,5 +373,21 @@ public final class ErsVerifier {
                     "this timestamp could not be read (" + e.getMessage() + "), which is not a "
                             + "finding that it is wrong");
         }
+    }
+
+    /**
+     * Whether a failure is about this deployment rather than about the record.
+     *
+     * <p>Matched on the sentence rather than the exception type: both messages are raised as
+     * plain {@code IllegalArgumentException} / {@code IllegalStateException} by ErsRecord, which
+     * throws those for structural disagreements too. The strings are the ones ErsRecord writes,
+     * and a test pins that they still are — the substring is the seam, so it is the seam a
+     * rename has to break loudly.
+     */
+    private static boolean isAboutThisBuild(RuntimeException e) {
+        String message = e.getMessage();
+        return message != null
+                && (message.contains("this build does not know digest algorithm")
+                        || message.contains("this JVM does not provide"));
     }
 }

@@ -367,6 +367,27 @@ public interface ContentDaoService {
 	List<Content> getChildren(String repositoryId, String parentId);
 
 	/**
+	 * How many children the last enumeration on this thread could not decode.
+	 *
+	 * <p>Zero means the enumeration was complete. A POSITIVE number is how many rows the store
+	 * returned and could not read — children that exist and are not in the list.
+	 *
+	 * <p>The cached decorator answers for the listing it hands back, including on a cache HIT:
+	 * the count is taken when the tree is built and stored with it. It briefly answered
+	 * {@code -1} ("unknown") on every hit instead, which was honest and was also an outage — a
+	 * hit is the ordinary state of a working cache, and the callers refuse on a non-zero count,
+	 * so external ingest stopped for any folder listed twice. Callers may still write
+	 * {@code != 0} defensively; nothing returns a negative today.
+	 *
+	 * <p>Anything recording a verdict about "everything under here" — the fixity scan writes
+	 * one into an append-only chain — must consult this before calling a listing whole.
+	 */
+	default int lastUnreadableChildCount() {
+		return 0;
+	}
+
+
+	/**
 	 * Get a page of children in a folder using CouchDB skip/limit.
 	 * @param repositoryId repository ID
 	 * @param parentId parent folder ID
@@ -828,6 +849,29 @@ public interface ContentDaoService {
 	List<Archive> getAllArchives(String repositoryId);
 
 	List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc);
+
+	/**
+	 * Rows the most recent {@link #getArchives} on THIS thread could not decode.
+	 *
+	 * <p>Same contract as {@link #lastUnreadableChildCount()}: zero is the ordinary answer, and
+	 * a caller that diffs the returned list against a snapshot must consult this first — a
+	 * dropped row is an archive that exists, and treating it as absent deletes it from the
+	 * external catalog.
+	 */
+	default int lastUnreadableArchiveCount() {
+		return 0;
+	}
+
+	/**
+	 * Rows the most recent {@code getLatestChanges} on THIS thread could not decode.
+	 *
+	 * <p>A change row that will not decode is a change that happened. A consumer that advances
+	 * a cursor to "the last token it decoded" must consult this first, or the skipped change is
+	 * never visited again.
+	 */
+	default int lastUnreadableChangeCount() {
+		return 0;
+	}
 
 	/**
 	 * Get archives created (deleted) by a specific user.

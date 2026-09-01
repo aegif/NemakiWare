@@ -80,9 +80,18 @@ class ErsFormatTest {
         // part that is still narrower than the name: WHAT the record is about, and what nobody
         // checked.
         String limits = String.valueOf(body.get("renewalFormatLimits"));
-        assertTrue(limits.contains("checkpoint hash"),
+        // The INTENT, not the phrasing. This asserted contains("checkpoint hash") -- and
+        // "checkpoint hash" is the exact wording p2-3 §8 records as WRONG: calling the hash the
+        // data object produced records no standard tool could read. So the lock was pinning the
+        // sentence it should have been rejecting, and correcting the shipped text made the test
+        // go red. A lock written against the words you just typed keeps whatever was typed.
+        assertTrue(limits.contains("checkpoint") && limits.contains("not a document"),
                 "the disclaimer does not say the record is about a checkpoint rather than a "
                         + "document, which is the assumption the name invites: " + limits);
+        assertFalse(limits.contains("DATA OBJECT is a checkpoint hash"),
+                "the disclaimer calls the checkpoint's HASH the data object; the data object is "
+                        + "the checkpoint's canonical bytes and h = H(d) is its hash (p2-3 §8): "
+                        + limits);
         assertTrue(limits.contains("not a claim of conformance"), limits);
         assertTrue(limits.contains("signature and certificate are not verified"), limits);
         assertFalse(limits.contains("does NOT generate"),

@@ -218,6 +218,32 @@ class CustodyLedgerRecorderTest {
     }
 
     @Test
+    @DisplayName("the receiver's reported AIP checksum is committed to as well")
+    void theReportedAipChecksumIsCommittedTo() {
+        // aipChecksum stopped being a REQUIRED field (design §16) because nothing compares it.
+        // "Nothing compares it" is one step from "nothing needs it", and dropping it from THIS
+        // digest would leave every other test here green -- the both-ends test above varies
+        // aipId, not the checksum. When a receiver does report one, the ledger has to be
+        // committed to the value it reported, or the entry can be re-pointed at a different
+        // statement about the far end's copy without the chain noticing.
+        String base = CustodyLedgerRecorder.receiptDigest(verifiedTransfer(null, false));
+
+        CustodyTransfer otherChecksum = new CustodyTransfer("t-1", "bedroom", "doc-1", SIP_DIGEST,
+                "RODA", "t");
+        for (CustodyState next : List.of(CustodyState.SENT, CustodyState.RECEIVED,
+                CustodyState.VALIDATED, CustodyState.INGEST_ACCEPTED,
+                CustodyState.AIP_CREATED)) {
+            otherChecksum.advance(next, "t", "step");
+        }
+        otherChecksum.verifyReceipt(new CustodyReceipt("sub-1", "aip-1", "d".repeat(64),
+                SIP_DIGEST, "PASSED", "roda-agent", "2026-08-26T01:00:00Z", null, false), "t");
+
+        assertNotEquals(base, CustodyLedgerRecorder.receiptDigest(otherChecksum),
+                "the checksum the receiver reported for its own copy is not in the digest, so "
+                        + "the ledger entry says nothing about which value was reported");
+    }
+
+    @Test
     @DisplayName("a receipt taken on trust does not digest the same as a verified one")
     void trustAndVerificationAreDifferentFacts() {
         // The distinction disappears exactly when it matters: somebody asking, later, whether
@@ -256,5 +282,39 @@ class CustodyLedgerRecorderTest {
         when(service.append(anyString(), any(), anyString(), anyString(), anyString()))
                 .thenReturn(new EvidenceLedgerService.AppendResult(outcome, 1, "hash", reason));
         return service;
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("a duplicate check that could not run is not silent")
+    void aDuplicateCheckThatCouldNotRunSaysSo() throws Exception {
+        // The evidence store was changed to THROW rather than answer "the chain holds nothing"
+        // for a view that did not reply, and the comment on that change names three consumers
+        // that must not read the empty answer. This is the third of them — and the throw
+        // arrived here and was turned straight back into `false`, at DEBUG, where nothing
+        // records that the check never ran. An outer guard that the inner catch swallows is a
+        // shape this project has shipped before.
+        //
+        // Answering false is the DESIGN (see the javadoc: a duplicate an operator can see beats
+        // a handover nobody recorded), so the behaviour is not what this pins. What it pins is
+        // that the decision leaves a trace an operator can find, at a level they will see.
+        String source = jp.aegif.nemaki.util.test.JavaSource.read(
+                "src/main/java/jp/aegif/nemaki/custody/CustodyLedgerRecorder.java");
+        // withoutComments, like every other source-text test here. methodBody KEEPS comments,
+        // and the catch under test is one whose comment argues about WARN versus DEBUG — so
+        // writing the words "logger.debug" in that argument would have failed correct code.
+        // The one source-text test in the repository that omitted this strip was the one whose
+        // subject is the difference between two log levels.
+        String body = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.methodBody(source,
+                        "private boolean alreadyRecorded"));
+
+        org.junit.jupiter.api.Assertions.assertFalse(body.contains("logger.debug"),
+                "the branch that gives up on the duplicate check logs at DEBUG, so a chain that "
+                        + "may hold two CUSTODY_RECEIPTs for one handover leaves no trace in a "
+                        + "default deployment");
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("logger.warn"),
+                "nothing warns when the append that follows is unprotected");
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("NOT protected"),
+                "the warning does not say what was given up: " + body);
     }
 }

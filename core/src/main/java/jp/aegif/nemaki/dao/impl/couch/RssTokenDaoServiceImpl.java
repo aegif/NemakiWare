@@ -94,8 +94,11 @@ public class RssTokenDaoServiceImpl implements RssTokenDaoService {
         } catch (NotFoundException e) {
             return null;
         } catch (Exception e) {
+            // Null is "no such token" — the answer disable/delete report as "Token not
+            // found", telling the administrator a token that still works is already gone.
             log.error("Failed to get RSS token: " + e.getMessage(), e);
-            return null;
+            throw new IllegalStateException("the RSS token '" + tokenId
+                    + "' could not be read; this is NOT a finding that it does not exist", e);
         }
     }
 
@@ -142,7 +145,12 @@ public class RssTokenDaoServiceImpl implements RssTokenDaoService {
                 }
             }
         } catch (Exception e) {
+            // Null here becomes 401 "Invalid or expired token" — the safe DIRECTION for an
+            // access check, but a false statement: the token may be perfectly valid while
+            // CouchDB times out. Throwing turns it into a 500 the subscriber retries.
             log.error("Failed to search RSS token in repository " + repositoryId + ": " + e.getMessage(), e);
+            throw new IllegalStateException("the RSS token could not be validated against '"
+                    + repositoryId + "'; this is NOT a finding that it is invalid", e);
         }
         return null;
     }
@@ -155,27 +163,32 @@ public class RssTokenDaoServiceImpl implements RssTokenDaoService {
             return tokens;
         }
 
-        try {
-            Map<String, Object> queryParams = new HashMap<>();
-            queryParams.put("key", userId);
-            queryParams.put("include_docs", true);
+        // This listing is what an administrator REVOKES from: a silently short answer means
+        // a token that keeps its access after the admin believes every token is gone. Same
+        // fail-closed rule as the user/group listings.
+        Map<String, Object> queryParams = new HashMap<>();
+        queryParams.put("key", userId);
+        queryParams.put("include_docs", true);
 
-            ViewResult result = connectorPool.getClient(repositoryId)
-                .queryView("_repo", "rssTokensByUserId", queryParams);
+        ViewResult result = connectorPool.getClient(repositoryId)
+            .queryView("_repo", "rssTokensByUserId", queryParams);
 
-            if (result != null && result.getRows() != null) {
-                for (ViewResultRow row : result.getRows()) {
-                    if (row.getDoc() != null) {
-                        Map<String, Object> docMap = extractDocMap(row.getDoc());
-                        if (docMap != null) {
-                            CouchRssToken couchToken = new CouchRssToken(docMap);
-                            tokens.add(couchToken.convertToRssToken());
-                        }
-                    }
-                }
+        if (result == null || result.getRows() == null) {
+            throw new IllegalStateException("the RSS token view answered without rows for user '"
+                    + userId + "'; that is not the same as the user having no tokens");
+        }
+        for (ViewResultRow row : result.getRows()) {
+            if (row.getDoc() == null) {
+                throw new IllegalStateException("an RSS token row for user '" + userId
+                        + "' carries no document; refusing to answer the token list short");
             }
-        } catch (Exception e) {
-            log.error("Failed to get RSS tokens for user " + userId + ": " + e.getMessage(), e);
+            Map<String, Object> docMap = extractDocMap(row.getDoc());
+            if (docMap == null) {
+                throw new IllegalStateException("an RSS token row for user '" + userId
+                        + "' could not be read; refusing to answer the token list short");
+            }
+            CouchRssToken couchToken = new CouchRssToken(docMap);
+            tokens.add(couchToken.convertToRssToken());
         }
 
         return tokens;
@@ -231,7 +244,12 @@ public class RssTokenDaoServiceImpl implements RssTokenDaoService {
         } catch (NotFoundException e) {
             log.debug("RSS token not found for deletion: " + tokenId);
         } catch (Exception e) {
+            // Swallowing here let the caller report "Token deleted" (and audit it as a
+            // success) while the document survived — the revoked token then reloaded into
+            // the cache on the next miss and kept its feed access.
             log.error("Failed to delete RSS token: " + e.getMessage(), e);
+            throw new IllegalStateException("the RSS token '" + tokenId + "' could not be"
+                    + " deleted; reporting success would leave a revoked token alive", e);
         }
     }
 

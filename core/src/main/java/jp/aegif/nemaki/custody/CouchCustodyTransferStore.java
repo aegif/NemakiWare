@@ -107,21 +107,33 @@ public class CouchCustodyTransferStore implements CustodyTransferStore {
             return false;
         }
         String id = documentId(transfer.repositoryId(), transfer.transferId());
-        Document existing = client.get(id);
+        // The revision this transfer was READ at — never a fresh lookup. Looking it up here is
+        // what the first version did, and it cannot detect the loss it was written to detect:
+        // the lookup returns the NEWEST revision, including one a concurrent request has just
+        // written, so the update it authorises silently overwrites that request's move and both
+        // callers are told they succeeded. See CustodyTransfer#storedRevision.
+        String revision = transfer.storedRevision();
         Map<String, Object> doc = document(transfer);
         try {
             com.ibm.cloud.cloudant.v1.model.DocumentResult result;
-            if (existing == null) {
+            if (revision == null) {
                 result = client.create(id, doc);
             } else {
                 doc.put("_id", id);
-                doc.put("_rev", existing.getRev());
+                doc.put("_rev", revision);
                 result = client.update(doc);
             }
             // The RESULT is checked, not the absence of an exception: create() answers null
             // during startup by design, and reporting a move as saved when nothing was written
             // is how a transfer comes to mean one thing here and another after a restart.
-            return result != null && Boolean.TRUE.equals(result.isOk());
+            boolean written = result != null && Boolean.TRUE.equals(result.isOk());
+            if (written) {
+                // So that a second write of the same object in the same request goes against
+                // what the first one produced, rather than against a revision CouchDB has
+                // already superseded.
+                transfer.storedRevision(result.getRev());
+            }
+            return written;
         } catch (RuntimeException e) {
             if (isConflict(e)) {
                 // NOT retried. A retry would re-read the winner's revision and write THIS
@@ -130,8 +142,10 @@ public class CouchCustodyTransferStore implements CustodyTransferStore {
                 // optimistic concurrency would become last-retry-wins. Returning false makes
                 // the caller refuse the move, which is what a lost race means: the move did
                 // not happen, and the operator repeats it against the current state.
-                logger.info("The custody transfer {} was changed by another writer, so this "
-                        + "move was not applied", id);
+                logger.info("The custody transfer {} was {}, so this move was not applied", id,
+                        revision == null
+                                ? "already stored under this id by another writer"
+                                : "changed by another writer since it was read");
                 return false;
             }
             logger.warn("The custody transfer {} was not written: {}", id, e.getMessage());
@@ -160,6 +174,11 @@ public class CouchCustodyTransferStore implements CustodyTransferStore {
                     + "absent. A row exists; what it says is not something this product will "
                     + "act on.");
         }
+        // Carried out of the read, so the write that follows is made against THIS revision. A
+        // transfer that reached the caller without one would be saved by create(), and a create
+        // of an id that already exists is refused — the move would be lost loudly rather than
+        // silently, but it would still be lost.
+        decoded.storedRevision(existing.getRev());
         return decoded;
     }
 
@@ -172,8 +191,24 @@ public class CouchCustodyTransferStore implements CustodyTransferStore {
         }
     }
 
-    /** How many rows the last findByObject on THIS thread could not read. */
+    /**
+     * How much the last {@code findByObject} on THIS thread could not account for.
+     *
+     * <p>Rows that would not decode, PLUS a view that did not answer at all — which counts as
+     * one, because something unaccounted for is the fact, and how many is not known. So this is
+     * a floor on what is missing, not a count of transfers that exist: a consumer that renders
+     * it as "N stored transfer(s) could not be read" asserts an existence this store never
+     * established.
+     */
     private final ThreadLocal<Integer> lastUnreadable = ThreadLocal.withInitial(() -> 0);
+
+    /** Set when the view did not answer, which is not the same as rows that would not decode. */
+    private final ThreadLocal<Boolean> queryFailed = ThreadLocal.withInitial(() -> false);
+
+    @Override
+    public boolean lastQueryFailed() {
+        return queryFailed.get();
+    }
 
     @Override
     public int unreadableCount() {
@@ -183,6 +218,7 @@ public class CouchCustodyTransferStore implements CustodyTransferStore {
     @Override
     public List<CustodyTransfer> findByObject(String repositoryId, String objectId, int limit) {
         lastUnreadable.set(0);
+        queryFailed.set(false);
         CloudantClientWrapper client = client();
         if (client == null || objectId == null || objectId.isBlank()) {
             return List.of();
@@ -201,6 +237,26 @@ public class CouchCustodyTransferStore implements CustodyTransferStore {
                 params);
         List<CustodyTransfer> transfers = new ArrayList<>();
         if (result == null || result.getRows() == null) {
+            // Not a complete, empty history. lastUnreadable is what carries "something is
+            // unaccounted for" out of this store — CustodyTransferService turns it into
+            // complete=false and the endpoint says so — and this arm left it at zero, so a view
+            // that did not answer produced `complete: true, transfers: []`: "this record was
+            // never sent anywhere", from a question nobody managed to ask. The service's own
+            // javadoc says completeness has to travel with the list; this is the one path where
+            // it did not.
+            // One, meaning "at least something is unaccounted for" -- NOT "one transfer
+            // exists and could not be read". There may be none. The sibling store spells the
+            // convention out where it counts ("rows that would not decode, plus a view that did
+            // not answer at all, which is counted as one") and this one did not, so the service
+            // rendered it as "1 stored transfer(s) for this record could not be read", which
+            // asserts an existence nobody established. The javadoc below carries the rule now.
+            // Both, and they mean different things. The count keeps the guard working for
+            // every consumer that only asks "is anything unaccounted for"; the flag is what
+            // stops the ANSWER claiming a transfer exists. Folded into the integer alone, "1"
+            // was rendered as "at least 1 stored transfer could not be read" — an existence
+            // nobody established, in front of an operator who then goes looking for it.
+            queryFailed.set(true);
+            lastUnreadable.set(1);
             return transfers;
         }
         int unreadable = 0;
@@ -208,6 +264,7 @@ public class CouchCustodyTransferStore implements CustodyTransferStore {
             CustodyTransfer decoded = decode(row.getDoc() == null
                     ? null : row.getDoc().getProperties());
             if (decoded != null) {
+                decoded.storedRevision(row.getDoc().getRev());
                 transfers.add(decoded);
             } else {
                 unreadable++;

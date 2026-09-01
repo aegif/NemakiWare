@@ -32,6 +32,10 @@ import jp.aegif.nemaki.model.Content;
 @Service
 public class PurviewContainmentRelationshipServiceImpl implements PurviewContainmentRelationshipService {
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(PurviewContainmentRelationshipServiceImpl.class);
+
+
     private static final int CHILD_FETCH_PAGE_SIZE = 100;
     private static final String STATE_KEY_PREFIX = "purview.containment.relationship.guid";
 
@@ -82,9 +86,16 @@ public class PurviewContainmentRelationshipServiceImpl implements PurviewContain
 
     @Override
     public String buildRepositoryContainmentSnapshot(String repositoryId) {
-        return loadContainmentEdges(repositoryId).stream()
+        String snapshot = loadContainmentEdges(repositoryId).stream()
                 .map(ContainmentEdge::edgeKey)
                 .collect(java.util.stream.Collectors.joining("\n"));
+        if (lastWalkIncomplete.get()) {
+            // A snapshot built from a short walk becomes the baseline every later diff deletes
+            // against. Guarded here, not only in the diff, so a new caller cannot seed it.
+            throw new IllegalStateException("the containment walk could not read every child"
+                    + " row, so a snapshot built from it would be a short baseline");
+        }
+        return snapshot;
     }
 
     @Override
@@ -94,6 +105,39 @@ public class PurviewContainmentRelationshipServiceImpl implements PurviewContain
                 .map(ContainmentEdge::edgeKey)
                 .collect(java.util.stream.Collectors.joining("\n"));
         String normalizedPreviousSnapshot = normalizeSnapshot(previousSnapshot);
+        if (lastWalkIncomplete.get()) {
+            // An edge that is merely INVISIBLE must not be treated as deleted. Adding what WAS
+            // seen is safe (those edges exist); deleting by absence from an incomplete walk
+            // removed real containment from the external catalog. The snapshot must not become
+            // this walk — that would make the invisible edges "new" next time and, worse, make
+            // this walk the baseline a later complete walk diffs against.
+            //
+            // But the PREVIOUS snapshot alone is a hole too: an edge CREATED during this round
+            // is published below, yet absent from the baseline — if it vanishes before a
+            // complete walk, that walk sees it in neither side and the external catalog keeps
+            // it for ever. So the snapshot becomes previous ∪ published. Reaching the return
+            // means the loop finished without throwing, so every added key was either
+            // created just now or has a GUID this store recorded at some earlier create.
+            // A recorded GUID is what WE did, not proof of what the catalog still holds —
+            // a relationship deleted externally out-of-band is not DETECTED here (that would
+            // mean reading every relationship back on every cycle). It is REPAIRABLE:
+            // forgetRecordedRelationshipGuids() drops the records so the next sync re-creates
+            // every edge.
+            log.warn("Containment walk for " + repositoryId + " could not read every child row;"
+                    + " publishing the edges that were seen, deleting nothing, and widening the"
+                    + " previous snapshot with them until a complete walk succeeds");
+            Set<String> previousKeys = parseSnapshot(normalizedPreviousSnapshot);
+            LinkedHashSet<String> mergedKeys = new LinkedHashSet<>(previousKeys);
+            int published = 0;
+            for (ContainmentEdge edge : currentEdges) {
+                if (!previousKeys.contains(edge.edgeKey())) {
+                    published += createRelationship(repositoryId, edge.relationshipPayload());
+                    mergedKeys.add(edge.edgeKey());
+                }
+            }
+            return new PurviewContainmentSyncResult(String.join("\n", mergedKeys),
+                    published > 0, published, 0);
+        }
         if (Objects.equals(currentSnapshot, normalizedPreviousSnapshot)) {
             return new PurviewContainmentSyncResult(currentSnapshot, false, 0, 0);
         }
@@ -141,6 +185,9 @@ public class PurviewContainmentRelationshipServiceImpl implements PurviewContain
         return null;
     }
 
+    /** Set by {@link #loadContainmentEdges}: whether the last walk saw every child row. */
+    private final ThreadLocal<Boolean> lastWalkIncomplete = ThreadLocal.withInitial(() -> false);
+
     private List<ContainmentEdge> loadContainmentEdges(String repositoryId) {
         RepositoryInfo repositoryInfo = repositoryInfoMap.get(repositoryId);
         if (repositoryInfo == null || repositoryInfo.getRootFolderId() == null || repositoryInfo.getRootFolderId().isBlank()) {
@@ -161,12 +208,27 @@ public class PurviewContainmentRelationshipServiceImpl implements PurviewContain
 
         Deque<String> folderQueue = new ArrayDeque<>();
         folderQueue.add(rootFolderId);
+        boolean incomplete = false;
         while (!folderQueue.isEmpty()) {
             String folderId = folderQueue.removeFirst();
             long totalChildren = Math.max(0L, contentDaoService.getChildrenCount(repositoryId, folderId));
             for (int skip = 0; skip < totalChildren; skip += CHILD_FETCH_PAGE_SIZE) {
                 List<Content> children = contentDaoService.getChildrenPaged(repositoryId, folderId, skip, CHILD_FETCH_PAGE_SIZE);
+                // A row the store could not decode is ABSENT from this page without any
+                // exception. Two things used to go wrong at once: the count was never read,
+                // so the missing edge was later treated as a DELETED relationship and removed
+                // from the external catalog; and the short page tripped the last-page break
+                // below, abandoning every later page of the folder — multiplying one unreadable
+                // row into a missing subtree.
+                if (contentDaoService.lastUnreadableChildCount() > 0) {
+                    incomplete = true;
+                }
                 if (children == null || children.isEmpty()) {
+                    // Only a TRULY empty page ends the folder: a page whose every row failed
+                    // to decode is empty too, and later offsets may still hold readable rows.
+                    if (contentDaoService.lastUnreadableChildCount() > 0) {
+                        continue;
+                    }
                     break;
                 }
 
@@ -179,13 +241,13 @@ public class PurviewContainmentRelationshipServiceImpl implements PurviewContain
                         folderQueue.addLast(child.getId());
                     }
                 }
-
-                if (children.size() < CHILD_FETCH_PAGE_SIZE) {
-                    break;
-                }
+                // No early break on a short page: the loop is already bounded by
+                // totalChildren, and "shorter than the page size" is exactly what a
+                // decode-shortened page looks like.
             }
         }
 
+        lastWalkIncomplete.set(incomplete);
         return edges.stream()
                 .sorted(Comparator.comparing(ContainmentEdge::edgeKey))
                 .toList();
@@ -193,6 +255,15 @@ public class PurviewContainmentRelationshipServiceImpl implements PurviewContain
 
     private int createRelationship(String repositoryId, Map<String, Object> relationship) {
         String edgeKey = buildRelationshipKey(relationship);
+        // Already created: the GUID is recorded on success, and an INCOMPLETE walk keeps the
+        // previous snapshot — so on every cycle until the broken row is repaired, the same
+        // seen-edges diff arrives here again. Without this check that meant re-sending the
+        // same create to the external catalog each cycle, and whether that is a harmless
+        // upsert or a duplicate is the far end's choice, not ours to gamble on.
+        String existingGuid = stateStore.getString(buildRelationshipGuidStateKey(repositoryId, edgeKey));
+        if (existingGuid != null && !existingGuid.isBlank()) {
+            return 0;
+        }
         try {
             PurviewEntityPublishResult result = entityRegistryClient.createRelationship(
                     buildConnectionRequest(),
@@ -260,6 +331,20 @@ public class PurviewContainmentRelationshipServiceImpl implements PurviewContain
 
     private String normalizeSnapshot(String snapshot) {
         return snapshot == null ? "" : snapshot;
+    }
+
+    @Override
+    public int forgetRecordedRelationshipGuids(String repositoryId) {
+        String prefix = STATE_KEY_PREFIX + "." + repositoryId + ".";
+        java.util.Set<String> keys = stateStore.getAllByPrefix(prefix).keySet();
+        if (keys.isEmpty()) {
+            return 0;
+        }
+        stateStore.removeAll(new java.util.ArrayList<>(keys));
+        log.warn("Forgot " + keys.size() + " recorded containment relationship GUID(s) for "
+                + repositoryId + "; the next sync will re-create every edge in the external"
+                + " catalog");
+        return keys.size();
     }
 
     private String buildRelationshipGuidStateKey(String repositoryId, String edgeKey) {

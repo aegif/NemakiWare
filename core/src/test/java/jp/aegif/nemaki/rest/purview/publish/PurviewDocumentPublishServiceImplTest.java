@@ -453,4 +453,48 @@ public class PurviewDocumentPublishServiceImplTest {
         int count = entities instanceof List<?> list ? list.size() : 0;
         return PurviewEntityPublishResult.success(count, "published");
     }
+
+    @org.junit.jupiter.api.Test
+    public void aFullSyncRefusesADecodeShortenedPage() {
+        // FULL sync is the walk that must not tolerate a short page at all: after it reports
+        // COMPLETED, the change token is seeded PAST everything visited — an object hidden
+        // behind an unreadable row is not merely missing, it is missing with no later
+        // mechanism that would ever revisit it. Refusing keeps the job FAILED and the token
+        // unseeded, which is retryable.
+        RepositoryInfo repositoryInfo = new RepositoryInfo();
+        repositoryInfo.setId("bedroom");
+        repositoryInfo.setName("Bedroom Repository");
+        repositoryInfo.setRootFolder("root-001");
+        when(repositoryInfoMap.get("bedroom")).thenReturn(repositoryInfo);
+        when(contentDaoService.getContent("bedroom", "root-001")).thenReturn(folder("root-001"));
+        when(contentDaoService.getChildrenCount("bedroom", "root-001")).thenReturn(2L);
+        when(contentDaoService.getChildrenPaged("bedroom", "root-001", 0, 100))
+                .thenReturn(List.of(document("doc-001", "root-001")));
+        when(contentDaoService.lastUnreadableChildCount()).thenReturn(1);
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> service.publishRepositoryHierarchy("bedroom"),
+                "a FULL sync walked past an unreadable row, so its COMPLETED seeds the change "
+                        + "token over objects that were never published");
+    }
+    @org.junit.jupiter.api.Test
+    public void anUnbuildableEntityIsCountedAsAPublishFailure() {
+        // The runner caught this arm as UNMEASURED: the cloud-metadata tests mock this
+        // service entirely, so removing the counter increment changed nothing there. The
+        // count is what the cloud baseline now trusts to decide whether a document landed —
+        // a content whose entity cannot be built (neither folder nor document) never
+        // reaches the catalog, and must not read as published.
+        jp.aegif.nemaki.model.Content neitherFolderNorDocument = new jp.aegif.nemaki.model.Content();
+        neitherFolderNorDocument.setId("item-1");
+        neitherFolderNorDocument.setType("cmis:item");
+
+        int published = service.upsertContents("bedroom",
+                java.util.List.of(neitherFolderNorDocument));
+
+        org.junit.jupiter.api.Assertions.assertEquals(1,
+                service.lastEntityPublishFailureCount(),
+                "a document whose entity was never built counted as published (" + published
+                        + " returned), so the cloud baseline advances over it");
+    }
+
 }

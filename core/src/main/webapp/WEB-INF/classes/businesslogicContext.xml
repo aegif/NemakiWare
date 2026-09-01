@@ -78,9 +78,10 @@
 			<!-- P3-2: explicit, not @Autowired. Every other dependency of this bean is an
 		     explicit <property>, and an annotation here would rely on a component-scan
 		     element elsewhere in this file continuing to register the post-processor. A
-		     null recorder is silent by design (the rendition still succeeds), so the
-		     failure would be a feature that quietly stopped recording. This project has
-		     already shipped that exact mistake once, in serviceContext.xml. -->
+		     null recorder does not stop the rendition; the record of it is missing and
+		     recordFormatDuplication logs a WARN saying so (it used to be silent — that
+		     was withdrawn, because a feature that quietly stops recording is how this
+		     project shipped exactly this mistake once, in serviceContext.xml). -->
 		<property name="formatDuplicationRecorder" ref="formatDuplicationRecorder" />
 	</bean>
 

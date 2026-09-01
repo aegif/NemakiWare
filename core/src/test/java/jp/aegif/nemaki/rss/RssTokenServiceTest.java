@@ -41,6 +41,67 @@ public class RssTokenServiceTest {
         tokenService = new RssTokenService();
         tokenService.setDefaultExpiryDays(30);
         tokenService.setMaxExpiryDays(365);
+        // A STORE, because there is no longer a process-local token cache to answer from.
+        // These tests used to run the service unwired and read their answers out of that
+        // cache — the very arrangement that let a token revoked on one replica keep working
+        // on every other one. Validation now reads through, so the tests wire the store
+        // production always has.
+        tokenService.setRssTokenDaoService(new InMemoryRssTokenDao());
+    }
+
+    /** A store, not a cache: every read goes to it, which is the point of the change. */
+    private static final class InMemoryRssTokenDao implements jp.aegif.nemaki.rss.RssTokenDaoService {
+        private final java.util.Map<String, RssToken> byId = new java.util.LinkedHashMap<>();
+
+        @Override
+        public RssToken create(String repositoryId, RssToken token) {
+            byId.put(token.getId(), token);
+            return token;
+        }
+
+        @Override
+        public RssToken getById(String repositoryId, String tokenId) {
+            return byId.get(tokenId);
+        }
+
+        @Override
+        public RssToken getByToken(String repositoryId, String tokenValue) {
+            for (RssToken token : byId.values()) {
+                if (token.getToken() != null && token.getToken().equals(tokenValue)) {
+                    return token;
+                }
+            }
+            return null;
+        }
+
+        @Override
+        public List<RssToken> getByUserId(String repositoryId, String userId) {
+            List<RssToken> found = new java.util.ArrayList<>();
+            for (RssToken token : byId.values()) {
+                if (userId != null && userId.equals(token.getUserId())) {
+                    found.add(token);
+                }
+            }
+            return found;
+        }
+
+        @Override
+        public RssToken update(String repositoryId, RssToken token) {
+            byId.put(token.getId(), token);
+            return token;
+        }
+
+        @Override
+        public void delete(String repositoryId, String tokenId) {
+            byId.remove(tokenId);
+        }
+
+        @Override
+        public int deleteExpired(String repositoryId) {
+            int before = byId.size();
+            byId.values().removeIf(RssToken::isExpired);
+            return before - byId.size();
+        }
     }
     
     @Test
@@ -215,7 +276,30 @@ public class RssTokenServiceTest {
     }
     
     @Test
-    public void testClearExpiredTokens() {
-        tokenService.clearExpiredTokens();
+    public void validationReadsThroughSoARevokeElsewhereTakesEffect() {
+        // The process-local cache is gone. A token revoked by another replica (modelled here
+        // as a change made straight in the store, without going through this service) must
+        // stop validating immediately — with the cache it kept working until this JVM
+        // restarted, because nothing invalidated it across replicas.
+        RssToken token = tokenService.generateToken(
+            "repo1", "user1", "Token", null, null, null, null);
+        assertNotNull(tokenService.validateToken("repo1", token.getToken()));
+
+        RssToken storedElsewhere = tokenService.getTokenById("repo1", token.getId());
+        storedElsewhere.setEnabled(false);
+
+        assertNull(tokenService.validateToken("repo1", token.getToken()),
+            "a token revoked outside this service still validated — the answer came from a "
+            + "process-local cache that no other replica can invalidate");
+    }
+
+    @Test
+    public void anUnwiredStoreRefusesInsteadOfAnsweringInvalid() {
+        RssTokenService unwired = new RssTokenService();
+        unwired.setDefaultExpiryDays(30);
+
+        assertThrows(IllegalStateException.class,
+            () -> unwired.validateToken("repo1", "some-token"),
+            "a service that cannot look a token up answered 'invalid token'");
     }
 }

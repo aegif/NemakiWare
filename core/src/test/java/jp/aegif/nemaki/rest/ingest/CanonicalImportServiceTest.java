@@ -1415,4 +1415,82 @@ class CanonicalImportServiceTest {
         return ctx;
     }
 
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("dedupe refuses on an incomplete listing rather than importing a duplicate")
+    void dedupeRefusesOnAnIncompleteListing() throws Exception {
+        // findExistingDocument answering null means "no existing document", and the caller's
+        // response is to CREATE one. Two ways to get a null it cannot stand behind:
+        //
+        //   * the enumeration THROWS — closed first, because it was the loud one; and
+        //   * the enumeration SUCCEEDS but the store could not decode some rows. No exception,
+        //     a short list, and the duplicate simply is not in it.
+        //
+        // The second is the door beside the one that was just closed, and it is the one an
+        // undecodable row actually takes.
+        //
+        // This drove -1 as well, for a "cache cannot vouch for itself" answer that was
+        // retracted: it made a warm cache hit — the ordinary state — refuse every import. The
+        // test outlived the behaviour by one pass, which is a lock on something the product no
+        // longer does.
+        for (int count : new int[] { 3, 12 }) {
+            jp.aegif.nemaki.dao.ContentDaoService dao =
+                    org.mockito.Mockito.mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+            org.mockito.Mockito.when(dao.getChildren(org.mockito.ArgumentMatchers.anyString(),
+                            org.mockito.ArgumentMatchers.anyString()))
+                    .thenReturn(java.util.List.of());
+            org.mockito.Mockito.when(dao.lastUnreadableChildCount()).thenReturn(count);
+            CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+            setPrivateField(service, "contentDaoService", dao);
+
+            java.lang.reflect.Method finder = CanonicalImportServiceImpl.class
+                    .getDeclaredMethod("findExistingDocument", String.class, String.class,
+                            String.class, String.class, String.class, String.class, String.class);
+            finder.setAccessible(true);
+
+            java.lang.reflect.InvocationTargetException thrown =
+                    org.junit.jupiter.api.Assertions.assertThrows(
+                            java.lang.reflect.InvocationTargetException.class,
+                            () -> finder.invoke(service, "bedroom", "f-1", "a.pdf", "acme",
+                                    "src-1", "mail", "source_id"),
+                            "an incomplete listing (" + count + ") answered 'there is no "
+                                    + "existing document', and the caller creates one on that");
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    String.valueOf(thrown.getCause().getMessage()).contains("unknown"),
+                    "the refusal does not say the answer is unknown: " + thrown.getCause());
+        }
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("a complete listing with no match still imports — the control")
+    void aCompleteListingStillImports() throws Exception {
+        // Without this, refusing on every listing would satisfy the test above and no document
+        // could ever be imported into a folder.
+        jp.aegif.nemaki.dao.ContentDaoService dao =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(dao.getChildren(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(dao.lastUnreadableChildCount()).thenReturn(0);
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        setPrivateField(service, "contentDaoService", dao);
+
+        java.lang.reflect.Method finder = CanonicalImportServiceImpl.class
+                .getDeclaredMethod("findExistingDocument", String.class, String.class,
+                        String.class, String.class, String.class, String.class, String.class);
+        finder.setAccessible(true);
+
+        org.junit.jupiter.api.Assertions.assertNull(
+                finder.invoke(service, "bedroom", "f-1", "a.pdf", "acme", "src-1", "mail",
+                        "source_id"),
+                "a folder that was read in full and holds no match was refused, so nothing "
+                        + "could ever be imported");
+    }
+
+    private static void setPrivateField(Object target, String name, Object value)
+            throws Exception {
+        java.lang.reflect.Field f = target.getClass().getDeclaredField(name);
+        f.setAccessible(true);
+        f.set(target, value);
+    }
 }

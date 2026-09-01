@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -568,5 +569,132 @@ class AuthenticityReportTest {
         assertNotNull(null, "the report has no '" + name + "' section; it has "
                 + report.sections().stream().map(Section::name).toList());
         return null;
+    }
+
+    @Test
+    @DisplayName("an unreadable object leaves EVERY section unavailable, not just identity")
+    void unreadableIsNotEmptyInAnySection() {
+        // The existing unreadableIsNotEmpty makes getContent throw and then asserts on the
+        // identity section only. The same assemble() produced a versions section saying ABSENT
+        // -- "there is genuinely nothing of this kind for this object" -- i.e. the report
+        // affirmed the object is not a document because CouchDB was down. Reverting the shared
+        // read still goes red on identity, so revert->fail could not see it.
+        //
+        // Written over ALL sections rather than over the one that was wrong, because the defect
+        // was "one arm of a fan-out was missed" and naming the arms is what let it happen.
+        ContentService contentService = mock(ContentService.class);
+        when(contentService.getContent(anyString(), anyString()))
+                .thenThrow(new RuntimeException("couchdb is down"));
+        AuthenticityReportAssembler assembler = new AuthenticityReportAssembler();
+        assembler.setContentService(contentService);
+
+        AuthenticityReport report =
+                assembler.assemble(REPO, OBJECT, "2026-08-24T00:00:00Z", false);
+
+        for (Section section : report.sections()) {
+            assertNotEquals(Verdict.ABSENT, section.verdict(),
+                    "section '" + section.name() + "' reports ABSENT -- 'there is genuinely "
+                            + "nothing of this kind for this object' -- when the object could "
+                            + "not be read at all: " + section.limits());
+        }
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("ledger rows that could not be read are not ABSENT or VERIFIED")
+    void undecodableLedgerRowsAreNeitherAbsentNorVerified() {
+        // Two wrong answers from one lossy read: with every row undecodable the section says
+        // "this ledger has no entries", and with some of them the verifier runs over a list
+        // that is missing links and can answer VERIFIED. Both are findings about the chain
+        // drawn from a read that lost part of it.
+        EvidenceLedgerStore store = org.mockito.Mockito.mock(EvidenceLedgerStore.class);
+        org.mockito.Mockito.when(store.isActive()).thenReturn(true);
+        org.mockito.Mockito.when(store.highestSequence(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(3L);
+        org.mockito.Mockito.when(store.range(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(store.unreadableCount()).thenReturn(2);
+        AuthenticityReportAssembler assembler = new AuthenticityReportAssembler();
+        assembler.setLedgerStore(store);
+
+        AuthenticityReport.Section section = ledgerSectionOf(assembler);
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                AuthenticityReport.Verdict.UNAVAILABLE, section.verdict(),
+                "a lossy read was reported as a finding about the chain: " + section.content());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                section.limits().contains("NOT a statement that it is intact"),
+                "the section does not say what its silence is not: " + section.limits());
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("a clean, empty ledger is still ABSENT — the control")
+    void aCleanEmptyLedgerIsStillAbsent() {
+        EvidenceLedgerStore store = org.mockito.Mockito.mock(EvidenceLedgerStore.class);
+        org.mockito.Mockito.when(store.isActive()).thenReturn(true);
+        org.mockito.Mockito.when(store.highestSequence(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(-1L);
+        org.mockito.Mockito.when(store.unreadableCount()).thenReturn(0);
+        AuthenticityReportAssembler assembler = new AuthenticityReportAssembler();
+        assembler.setLedgerStore(store);
+
+        org.junit.jupiter.api.Assertions.assertEquals(AuthenticityReport.Verdict.ABSENT,
+                ledgerSectionOf(assembler).verdict(),
+                "a repository that genuinely has no entries was reported as unreadable");
+    }
+
+    private static AuthenticityReport.Section ledgerSectionOf(
+            AuthenticityReportAssembler assembler) {
+        try {
+            java.lang.reflect.Method m = AuthenticityReportAssembler.class.getDeclaredMethod(
+                    "ledgerSection", String.class);
+            m.setAccessible(true);
+            return (AuthenticityReport.Section) m.invoke(assembler, "bedroom");
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("ledgerSection is not there, so nothing was checked", e);
+        }
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("the ledger window can carry one more row than it spans")
+    void theLedgerWindowCanCarryAFork() {
+        // A window of N sequences read with a limit of N cannot show a FORK at the newest
+        // sequence: two rows there make N+1, CouchDB returns the first N, and the extra arm is
+        // cut. EvidenceChainVerifier only compares ADJACENT entries, so what is left looks
+        // unbroken and this section answers VERIFIED over a forked ledger — permanently, on any
+        // repository with at least a full window of entries.
+        //
+        // Asserted on the ARGUMENT, not on a verdict: with a mocked store there is no way to
+        // reproduce the truncation itself — the truncation is CouchDB's, and the only thing
+        // this code controls is the limit it asks for. EvidenceLedgerService made the same fix
+        // in closeCheckpoint and inclusionProof with the same reasoning.
+        EvidenceLedgerStore store = org.mockito.Mockito.mock(EvidenceLedgerStore.class);
+        org.mockito.Mockito.when(store.isActive()).thenReturn(true);
+        org.mockito.Mockito.when(store.highestSequence(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(5_000L);
+        org.mockito.Mockito.when(store.range(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(store.unreadableCount()).thenReturn(0);
+        AuthenticityReportAssembler assembler = new AuthenticityReportAssembler();
+        assembler.setLedgerStore(store);
+
+        ledgerSectionOf(assembler);
+
+        org.mockito.ArgumentCaptor<Long> from = org.mockito.ArgumentCaptor.forClass(Long.class);
+        org.mockito.ArgumentCaptor<Long> to = org.mockito.ArgumentCaptor.forClass(Long.class);
+        org.mockito.ArgumentCaptor<Integer> limit =
+                org.mockito.ArgumentCaptor.forClass(Integer.class);
+        org.mockito.Mockito.verify(store).range(org.mockito.ArgumentMatchers.anyString(),
+                from.capture(), to.capture(), limit.capture());
+        long span = to.getValue() - from.getValue() + 1;
+        org.junit.jupiter.api.Assertions.assertTrue(limit.getValue() > span,
+                "the read asks for " + limit.getValue() + " rows over a window of " + span
+                        + " sequences, so a fork at the newest one is cut off before the "
+                        + "verifier ever sees it");
     }
 }

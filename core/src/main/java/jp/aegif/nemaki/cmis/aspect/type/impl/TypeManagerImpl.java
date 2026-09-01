@@ -1584,30 +1584,46 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				log.debug("Retrieved " + (subtypes != null ? subtypes.size() : 0) + " type definitions from database");
 			}
 		} catch (Exception e) {
+			// Returning here rebuilt, one layer up, exactly the fallback the DAO withdrew:
+			// refreshTypes() has already CLEARED the registry and installed the base types,
+			// so swallowing this failure completes initialization (initialized=true) with a
+			// base-only type system — every custom type absent for every client until the
+			// next refresh, reported as a successful startup. "Unknown means no" is the
+			// project's startup rule (CouchDbVersionRequirement); a type system that could
+			// not be read is unknown.
 			log.error("Failed to get type definitions for repository: " + repositoryId, e);
-			return;
+			throw new IllegalStateException("the type definitions of '" + repositoryId
+					+ "' could not be loaded into the type registry; refusing to serve a"
+					+ " base-only type system", e);
 		}
 		
 		List<NemakiTypeDefinition> firstGeneration = new ArrayList<NemakiTypeDefinition>();
 		if(CollectionUtils.isNotEmpty(subtypes)){
+			// Every skip here drops ONE type from the registry that the repository actually
+			// has. Smaller than the two-type synthesis this method's catch was fixed for,
+			// but the same direction: the type-definition sync diffs the registry's answer
+			// and reads the missing type as gone. A type system that could not be assembled
+			// in full is not a smaller type system.
 			for (NemakiTypeDefinition subtype : subtypes) {
 				if (subtype == null) {
-					log.warn("Null subtype found in type definitions");
-					continue;
+					throw new IllegalStateException("a null type definition came back for '"
+							+ repositoryId + "'; refusing to assemble the registry around it");
 				}
 				
-				// Skip subtypes with null BaseId (prevents NullPointerException)
-				if (subtype.getBaseId() != null && subtype.getParentId() != null) {
-					try {
-						if (subtype.getBaseId().value().equals(subtype.getParentId())) {
-							firstGeneration.add(subtype);
-						}
-					} catch (Exception e) {
-						log.warn("Error processing type definition " + subtype.getTypeId() + ": " + e.getMessage());
+				if (subtype.getBaseId() == null || subtype.getParentId() == null) {
+					throw new IllegalStateException("type definition '"
+							+ (subtype.getTypeId() != null ? subtype.getTypeId() : "unknown")
+							+ "' in '" + repositoryId + "' has no BaseId or no ParentId;"
+							+ " refusing to serve a registry that silently omits it");
+				}
+				try {
+					if (subtype.getBaseId().value().equals(subtype.getParentId())) {
+						firstGeneration.add(subtype);
 					}
-				} else {
-					log.warn("Skipping type definition with null BaseId or ParentId: " + 
-						(subtype.getTypeId() != null ? subtype.getTypeId() : "unknown"));
+				} catch (Exception e) {
+					throw new IllegalStateException("type definition '" + subtype.getTypeId()
+							+ "' in '" + repositoryId + "' could not be placed in the"
+							+ " hierarchy; refusing to serve a registry that omits it", e);
 				}
 			}
 
@@ -1632,10 +1648,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	private void addSubTypesInternal(String repositoryId,
 			List<NemakiTypeDefinition> subtypes, NemakiTypeDefinition type, Set<String> processingTypes) {
 		
-		// CRITICAL FIX: Circular reference detection
+		// The assembly half of the arms addSubTypes refuses: returning here drops this type
+		// (and its whole subtree) from the registry, then initialization completes and the
+		// type-definition sync reads the missing types as gone. Same direction, one method in.
 		if (type == null || type.getTypeId() == null) {
-			log.warn("Null type or typeId detected, skipping processing");
-			return;
+			throw new IllegalStateException("a type definition with no typeId came back for '"
+					+ repositoryId + "'; refusing to assemble the registry around it");
 		}
 		
 		String typeId = type.getTypeId();
@@ -1656,13 +1674,18 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			try {
 				AbstractTypeDefinition typeDefinition = buildTypeDefinitionFromDB(repositoryId, type);
 				if (typeDefinition == null) {
-					log.warn("buildTypeDefinitionFromDB returned null for type: " + typeId);
-					return;
+					throw new IllegalStateException("type '" + typeId + "' in '" + repositoryId
+							+ "' could not be built; refusing to serve a registry that omits"
+							+ " it and its subtypes");
 				}
 				container.setTypeDefinition(typeDefinition);
+			} catch (IllegalStateException e) {
+				throw e;
 			} catch (Exception e) {
 				log.error("Failed to build type definition for type: " + typeId, e);
-				return;
+				throw new IllegalStateException("type '" + typeId + "' in '" + repositoryId
+						+ "' could not be built; refusing to serve a registry that omits it"
+						+ " and its subtypes", e);
 			}
 			
 			container.setChildren(new ArrayList<TypeDefinitionContainer>());
@@ -1703,8 +1726,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			if (subtypes != null) {
 				for (NemakiTypeDefinition subtype : subtypes) {
 					if (subtype == null) {
-						log.warn("Null subtype detected, skipping");
-						continue;
+						throw new IllegalStateException("a null type definition is in the"
+								+ " subtype list for '" + repositoryId + "'; refusing to"
+								+ " assemble the registry around it");
 					}
 					
 					// CRITICAL FIX: Add null safety check for subtype.getParentId()
@@ -3319,12 +3343,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		TypeDefinitionListImpl result = new TypeDefinitionListImpl(
 				new ArrayList<TypeDefinition>());
 
-		int skip = (skipCount == null ? 0 : skipCount.intValue());
+		int skip = clampSkip(skipCount);
 		if (skip < 0) {
 			skip = 0;
 		}
 
-		int max = (maxItems == null ? Integer.MAX_VALUE : maxItems.intValue());
+		int max = clampPage(maxItems);
 		if (max < 1) {
 			return result;
 		}
@@ -3381,7 +3405,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			// CRITICAL FIX: Correct hasMoreItems calculation for base types paging
 			// hasMoreItems should be true only if there are more items beyond what we've returned
 			int totalItems = basetypes.size();
-			int originalSkip = (skipCount == null ? 0 : skipCount.intValue());
+			int originalSkip = clampSkip(skipCount);
 			boolean hasMore = (originalSkip + result.getList().size()) < totalItems;
 			result.setHasMoreItems(hasMore);
 			result.setNumItems(BigInteger.valueOf(totalItems));
@@ -3490,7 +3514,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		List<TypeDefinitionContainer> result = new ArrayList<TypeDefinitionContainer>();
 
 		// check depth
-		int d = (depth == null ? -1 : depth.intValue());
+		int d = clampDepth(depth);
 		if (d == 0) {
 			throw new CmisInvalidArgumentException("Depth must not be 0!");
 		} else if (d < -1) {
@@ -4626,4 +4650,46 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 		return null;
 	}
+	/** The largest page of type definitions this server serves in one response. */
+	private static final int MAX_TYPE_PAGE = 10_000;
+
+	/**
+	 * Converts a client's maxItems for a type listing without truncating it.
+	 *
+	 * <p>The same {@code intValue()} trap the children listing was fixed for, one service
+	 * over: 2^32 became 0 and the type list came back EMPTY. The clamp is here rather than at
+	 * the caller because getTypeChildren and getTypeDescendants both read these.
+	 */
+	private static int clampPage(java.math.BigInteger maxItems) {
+		if (maxItems == null) {
+			return MAX_TYPE_PAGE;
+		}
+		if (maxItems.signum() <= 0) {
+			return 0;
+		}
+		return maxItems.compareTo(java.math.BigInteger.valueOf(MAX_TYPE_PAGE)) >= 0
+				? MAX_TYPE_PAGE
+				: maxItems.intValue();
+	}
+
+	/** A skip count is a position: never negative, never truncated. */
+	private static int clampSkip(java.math.BigInteger skipCount) {
+		if (skipCount == null || skipCount.signum() <= 0) {
+			return 0;
+		}
+		return skipCount.compareTo(java.math.BigInteger.valueOf(Integer.MAX_VALUE)) >= 0
+				? Integer.MAX_VALUE
+				: skipCount.intValue();
+	}
+
+	/** Depth keeps CMIS's -1 (unlimited); a huge depth must not truncate to 0. */
+	private static int clampDepth(java.math.BigInteger depth) {
+		if (depth == null || depth.signum() < 0) {
+			return -1;
+		}
+		return depth.compareTo(java.math.BigInteger.valueOf(Integer.MAX_VALUE)) >= 0
+				? Integer.MAX_VALUE
+				: depth.intValue();
+	}
+
 }

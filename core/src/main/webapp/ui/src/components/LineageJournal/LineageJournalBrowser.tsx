@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Table, Tag, Button, Space, Select, message, Drawer } from 'antd';
+import { Alert, Button, Drawer, Select, Space, Table, Tag, message } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { displayProcessIdentity, getEvents, type LineageEventSummary } from '../../services/lineageJournal';
@@ -13,6 +13,7 @@ export default function LineageJournalBrowser() {
   const [pagination, setPagination] = useState({ current: 1, pageSize: 50 });
   const [processTypeFilter, setProcessTypeFilter] = useState<string | undefined>();
   const [selectedEvent, setSelectedEvent] = useState<LineageEventSummary | null>(null);
+  const [undecodableRows, setUndecodableRows] = useState(0);
 
   const fetchEvents = useCallback(async () => {
     setLoading(true);
@@ -27,6 +28,10 @@ export default function LineageJournalBrowser() {
       // Server uses limit+1 pattern: total is an estimate that ensures
       // the "next page" button appears when hasMore is true.
       setTotal(result.total ?? result.events?.length ?? 0);
+      // Rows the server could not turn into events are NOT in this page, and it says so. Not
+      // showing that leaves the table presenting itself as the whole of what the journal holds
+      // — the substitution the server side was corrected for, arriving at the last step.
+      setUndecodableRows(result.undecodableRows ?? 0);
     } catch {
       message.error(t('integrationSettings.lineage.loadFailed'));
     } finally {
@@ -103,6 +108,14 @@ export default function LineageJournalBrowser() {
 
   return (
     <>
+      {undecodableRows > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={t('integrationSettings.lineage.undecodableRows', { count: undecodableRows })}
+        />
+      )}
       <Space style={{ marginBottom: 16 }}>
         <Select
           allowClear

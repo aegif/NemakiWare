@@ -111,6 +111,27 @@ public interface ContentService {
 	List<Content> getChildren(String repositoryId, String folderId);
 
 	/**
+	 * How many children the last enumeration on this thread could not decode.
+	 *
+	 * <p>Zero means the enumeration was complete. A POSITIVE number is how many rows the store
+	 * returned and could not read — children that exist and are not in the list.
+	 *
+	 * <p>The cached decorator answers for the listing it hands back, including on a cache HIT:
+	 * the count is taken when the tree is built and stored with it. It briefly answered
+	 * {@code -1} ("unknown") on every hit instead, which was honest and was also an outage — a
+	 * hit is the ordinary state of a working cache, and the callers refuse on a non-zero count,
+	 * so external ingest stopped for any folder listed twice. Callers may still write
+	 * {@code != 0} defensively; nothing returns a negative today.
+	 *
+	 * <p>Anything recording a verdict about "everything under here" — the fixity scan writes
+	 * one into an append-only chain — must consult this before calling a listing whole.
+	 */
+	default int lastUnreadableChildCount() {
+		return 0;
+	}
+
+
+	/**
 	 * Get a page of children under a folder
 	 * @param repositoryId repository ID
 	 * @param folderId parent folder ID
@@ -867,6 +888,11 @@ public interface ContentService {
 	 * @return
 	 */
 	List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc);
+
+	/** Rows the most recent {@code getArchives} on THIS thread could not decode. */
+	default int lastUnreadableArchiveCount() {
+		return 0;
+	}
 
 	/**
 	 * Get archives created (deleted) by a specific user.

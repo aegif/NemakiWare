@@ -134,6 +134,9 @@ public class CustodyLedgerRecorder {
                 + "will try again.");
     }
 
+    /** How far back the duplicate check looks. A cap, and the code says when it hit it. */
+    private static final int ALREADY_RECORDED_SCAN = 500;
+
     /**
      * Whether this exact handover is already in the chain.
      *
@@ -141,10 +144,10 @@ public class CustodyLedgerRecorder {
      * is not the same as it not being there, and the safe direction is to attempt the append —
      * which the ledger itself can refuse — rather than to report a handover as recorded on the
      * strength of a lookup that did not run.
+     *
+     * <p>This paragraph used to sit above the constant, with the constant's own one-liner
+     * between it and this method — so javadoc dropped it and the method it describes had none.
      */
-    /** How far back the duplicate check looks. A cap, and the code says when it hit it. */
-    private static final int ALREADY_RECORDED_SCAN = 500;
-
     private boolean alreadyRecorded(CustodyTransfer transfer, String digest) {
         try {
             // Through the SERVICE, not a second injection of the store. A deployment with the
@@ -158,6 +161,16 @@ public class CustodyLedgerRecorder {
                     return true;
                 }
             }
+            int undecodable = ledgerService.lastUnreadableCount();
+            if (undecodable > 0) {
+                // Rows the store returned and could not decode are NOT in `entries`, so "it is
+                // not among them" is not "it is not there". Same WARN as the read that threw:
+                // the decision to append anyway stands, and it stops being silent.
+                logger.warn("{} chain row(s) for {} could not be decoded, so the duplicate check "
+                        + "for this handover was made against an incomplete list; the append "
+                        + "that follows may write a second CUSTODY_RECEIPT for one handover",
+                        undecodable, transfer.objectId());
+            }
             if (entries.size() >= ALREADY_RECORDED_SCAN) {
                 // Said out loud. findBySubject answers in ascending order with the limit applied
                 // by the view, so a full result means the entries NOT read are the most recent
@@ -170,8 +183,19 @@ public class CustodyLedgerRecorder {
                         ALREADY_RECORDED_SCAN, transfer.objectId());
             }
         } catch (RuntimeException e) {
-            logger.debug("Could not check whether the handover of {} is already chained: {}",
-                    transfer.objectId(), e.getMessage());
+            // WARN, not DEBUG. Answering false here is deliberate — see the javadoc — but it is
+            // a decision to append WITHOUT the duplicate check, and at DEBUG nothing recorded
+            // that the check had not run. The store two layers down was just changed to throw
+            // rather than answer "the chain holds nothing" for a view that did not reply, and
+            // its comment names THIS caller as one of the three consumers that must not read
+            // the empty answer; the throw arrives here and is turned back into the same false.
+            //
+            // The behaviour stays (a duplicate the operator can see beats a handover nobody
+            // recorded), but it stops being silent: this line is the only trace that an
+            // append-only entry was written without checking for its twin.
+            logger.warn("The duplicate check for the handover of {} could not run ({}), so the "
+                    + "append that follows is NOT protected against writing a second "
+                    + "CUSTODY_RECEIPT for one handover", transfer.objectId(), e.getMessage());
         }
         return false;
     }
@@ -183,6 +207,13 @@ public class CustodyLedgerRecorder {
      * artefact ({@code aipId} / {@code aipChecksum}), plus who said so. A digest over their side
      * alone would be a commitment to a value we have never seen; over ours alone it would not
      * record the handover at all.
+     *
+     * <p><b>It does not distinguish a receipt whose signature was VERIFIED from an otherwise
+     * identical one taken on trust.</b> The input is there, and in the flow this product
+     * actually has it is always {@code false} — see the comment beside it. It does still
+     * separate a signed receipt from an unsigned one, which is a different fact. Say what the
+     * entry establishes, and do not let the presence of an input read as the presence of a
+     * distinction.
      */
     static String receiptDigest(CustodyTransfer transfer) {
         CustodyReceipt receipt = transfer.receipt();
@@ -196,10 +227,33 @@ public class CustodyLedgerRecorder {
                 // dispute turns on. Empty when nothing was mapped.
                 receipt.reportedOutcome() == null ? "" : receipt.reportedOutcome(),
                 receipt.receivingAgent(),
-                // Whether it was signed AND whether that was checked. A receipt taken on trust
-                // and one whose signature was verified are different facts, and an entry that
-                // digested the same for both would lose the distinction the moment it mattered.
+                // WHETHER IT WAS SIGNED. This one is live: `signature` is stored on the row
+                // and read back, so the digest really does separate a signed receipt from an
+                // unsigned one.
                 String.valueOf(receipt.signature() != null && !receipt.signature().isBlank()),
+                // WHETHER THAT WAS CHECKED — and in the REST flow this input is ALWAYS "false".
+                //
+                // Measured, not reasoned (StaleWritesAreRefusedTest): passCustody LOADS the
+                // transfer, and the store's decode deliberately forces signatureVerified to
+                // false, because "a finding read back out of a row anyone with database access
+                // can edit is an assertion wearing a finding's name". That rule is right. The
+                // consequence is that by the time this digest is taken the finding is gone.
+                //
+                // PRECISELY: two receipts that differ ONLY in whether the signature was
+                // verified digest identically. They still differ if one is signed and the
+                // other is not, because the input above is live — so "a verified receipt and a
+                // trusted one always digest the same" is too strong, and the first draft of
+                // this correction said it. What is lost is the VERIFICATION, not the signature.
+                //
+                // This comment used to claim the opposite — "an entry that digested the same
+                // for both would lose the distinction the moment it mattered" — describing a
+                // property the code does not have. It also used to say the gap was "two bits
+                // for three facts", i.e. a migration away from being fixed by adding an input.
+                // Adding an input would not fix it: the fact is not present here to commit.
+                //
+                // Committing it needs one of two things, and neither is a wording change:
+                // digesting at VERIFICATION time rather than at handover time, or persisting
+                // the finding — which is what the store refuses, for a good reason. Design §29.
                 String.valueOf(receipt.signatureVerified()));
     }
 }

@@ -185,7 +185,7 @@ class LegacyEarkParserRejectsOurSipTest {
         EarkSipExporter exporter = new EarkSipExporter();
         exporter.setContentService(contentService);
         exporter.setReportAssembler(assembler);
-        return exporter.export(REPO, OBJECT, EarkSipExporter.Options.withholdingPersonalData(),
+        return exporter.export(REPO, OBJECT, EarkSipExporter.Options.withoutInternalOnlyProperties(),
                 Files.createDirectories(tmp.resolve("export"))).sip();
     }
 }

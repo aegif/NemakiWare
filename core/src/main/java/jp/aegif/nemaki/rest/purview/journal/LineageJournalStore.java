@@ -220,6 +220,18 @@ public interface LineageJournalStore {
      */
     void append(LineageEvent event);
 
+    /**
+     * Rows the last journal view read on this thread returned without a usable document.
+     *
+     * <p>Zero from a store that does not track it. A caller that presents a listing as the
+     * whole of what the journal holds — or a projector treating it as its complete workset —
+     * must consult this: a row the view returned whose document did not come with it is an
+     * event that exists and is NOT in the list.
+     */
+    default int lastUnreadableRowCount() {
+        return 0;
+    }
+
     void appendAll(List<LineageEvent> events);
 
     /**

@@ -337,14 +337,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			return null;
 		}
 
-		// Critical dependency checks
+		// Critical dependency checks. NOT null: a misconfiguration answering "the object
+		// does not exist" is the same lie the catch below was just closed against, arriving
+		// through the door directly above it — and this is the MAINLINE read, so it is
+		// deleteObject, the lineage reconciler and the principal-strip that receive it.
 		if (nemakiCachePool == null) {
-			log.error("CRITICAL: nemakiCachePool is NULL in cached ContentDaoService");
-			return null;
+			throw new IllegalStateException(
+					"nemakiCachePool is not wired; getContent cannot answer");
 		}
 		if (nonCachedContentDaoService == null) {
-			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
-			return null;
+			throw new IllegalStateException(
+					"nonCachedContentDaoService is not wired; getContent cannot answer");
 		}
 
 		try {
@@ -376,8 +379,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 			return content;
 		} catch (Exception e) {
+			// The round-32 root fix made the couch layer throw for failures and keep null
+			// strictly for absence — and THIS catch, on the only wired path every consumer
+			// uses, flattened the throw back into null. A cache-miss during a CouchDB
+			// hiccup then told deleteObject "already gone" (fake success), told the
+			// lineage reconciler "the folder is absent" (ORPHAN mis-marking), and told
+			// user/group deletion "nothing to strip". Null stays the absence answer;
+			// a failure is a failure, at every layer.
 			log.error("Exception in cache.getContent for " + objectId + ": " + e.getMessage(), e);
-			return null;
+			throw new IllegalStateException("the content '" + objectId
+					+ "' could not be read through the cache; this is NOT a finding that it"
+					+ " does not exist", e);
 		}
 	}
 
@@ -432,110 +444,95 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		}
 
 		if (nonCachedContentDaoService == null) {
-			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
-			return null;
+			// A wiring failure answered "the object does not exist" — the callers that act
+			// on absence would then act on a misconfiguration.
+			throw new IllegalStateException(
+					"nonCachedContentDaoService is not wired; getContentFresh cannot answer");
 		}
 
-		try {
-			Content freshContent = nonCachedContentDaoService.getContent(repositoryId, objectId);
-			if (log.isDebugEnabled() && freshContent != null) {
-				log.debug("Fresh content retrieved: " + objectId + ", revision=" + freshContent.getRevision());
-			}
-			return freshContent;
-		} catch (Exception e) {
-			log.error("Error in getContentFresh", e);
-			return null;
+		// No catch: the delegate throws for failures and returns null only for genuine
+		// absence. Re-flattening its throw into null here re-created exactly the
+		// "could not read == does not exist" confusion the delegate was fixed for.
+		Content freshContent = nonCachedContentDaoService.getContent(repositoryId, objectId);
+		if (log.isDebugEnabled() && freshContent != null) {
+			log.debug("Fresh content retrieved: " + objectId + ", revision=" + freshContent.getRevision());
 		}
+		return freshContent;
 	}
 
 	@Override
 	public Document getDocumentFresh(String repositoryId, String objectId) {
 		if (nonCachedContentDaoService == null) {
-			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
-			return null;
+			throw new IllegalStateException(
+					"nonCachedContentDaoService is not wired; getDocumentFresh cannot answer");
 		}
-		try {
-			Document freshDocument = nonCachedContentDaoService.getDocument(repositoryId, objectId);
-			if (log.isDebugEnabled() && freshDocument != null) {
-				log.debug("Fresh document retrieved: " + objectId);
-			}
-			return freshDocument;
-		} catch (Exception e) {
-			log.error("Error in getDocumentFresh", e);
-			return null;
+		// No catch: same rule as getContentFresh — a failure below must not become
+		// the absence answer here.
+		Document freshDocument = nonCachedContentDaoService.getDocument(repositoryId, objectId);
+		if (log.isDebugEnabled() && freshDocument != null) {
+			log.debug("Fresh object retrieved: " + objectId);
 		}
+		return freshDocument;
 	}
 
 	@Override
 	public Folder getFolderFresh(String repositoryId, String objectId) {
 		if (nonCachedContentDaoService == null) {
-			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
-			return null;
+			throw new IllegalStateException(
+					"nonCachedContentDaoService is not wired; getFolderFresh cannot answer");
 		}
-		try {
-			Folder freshFolder = nonCachedContentDaoService.getFolder(repositoryId, objectId);
-			if (log.isDebugEnabled() && freshFolder != null) {
-				log.debug("Fresh folder retrieved: " + objectId);
-			}
-			return freshFolder;
-		} catch (Exception e) {
-			log.error("Error in getFolderFresh", e);
-			return null;
+		// No catch: same rule as getContentFresh — a failure below must not become
+		// the absence answer here.
+		Folder freshFolder = nonCachedContentDaoService.getFolder(repositoryId, objectId);
+		if (log.isDebugEnabled() && freshFolder != null) {
+			log.debug("Fresh object retrieved: " + objectId);
 		}
+		return freshFolder;
 	}
 
 	@Override
 	public Relationship getRelationshipFresh(String repositoryId, String objectId) {
 		if (nonCachedContentDaoService == null) {
-			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
-			return null;
+			throw new IllegalStateException(
+					"nonCachedContentDaoService is not wired; getRelationshipFresh cannot answer");
 		}
-		try {
-			Relationship freshRelationship = nonCachedContentDaoService.getRelationship(repositoryId, objectId);
-			if (log.isDebugEnabled() && freshRelationship != null) {
-				log.debug("Fresh relationship retrieved: " + objectId);
-			}
-			return freshRelationship;
-		} catch (Exception e) {
-			log.error("Error in getRelationshipFresh", e);
-			return null;
+		// No catch: same rule as getContentFresh — a failure below must not become
+		// the absence answer here.
+		Relationship freshRelationship = nonCachedContentDaoService.getRelationship(repositoryId, objectId);
+		if (log.isDebugEnabled() && freshRelationship != null) {
+			log.debug("Fresh object retrieved: " + objectId);
 		}
+		return freshRelationship;
 	}
 
 	@Override
 	public Policy getPolicyFresh(String repositoryId, String objectId) {
 		if (nonCachedContentDaoService == null) {
-			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
-			return null;
+			throw new IllegalStateException(
+					"nonCachedContentDaoService is not wired; getPolicyFresh cannot answer");
 		}
-		try {
-			Policy freshPolicy = nonCachedContentDaoService.getPolicy(repositoryId, objectId);
-			if (log.isDebugEnabled() && freshPolicy != null) {
-				log.debug("Fresh policy retrieved: " + objectId);
-			}
-			return freshPolicy;
-		} catch (Exception e) {
-			log.error("Error in getPolicyFresh", e);
-			return null;
+		// No catch: same rule as getContentFresh — a failure below must not become
+		// the absence answer here.
+		Policy freshPolicy = nonCachedContentDaoService.getPolicy(repositoryId, objectId);
+		if (log.isDebugEnabled() && freshPolicy != null) {
+			log.debug("Fresh object retrieved: " + objectId);
 		}
+		return freshPolicy;
 	}
 
 	@Override
 	public Item getItemFresh(String repositoryId, String objectId) {
 		if (nonCachedContentDaoService == null) {
-			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
-			return null;
+			throw new IllegalStateException(
+					"nonCachedContentDaoService is not wired; getItemFresh cannot answer");
 		}
-		try {
-			Item freshItem = nonCachedContentDaoService.getItem(repositoryId, objectId);
-			if (log.isDebugEnabled() && freshItem != null) {
-				log.debug("Fresh item retrieved: " + objectId);
-			}
-			return freshItem;
-		} catch (Exception e) {
-			log.error("Error in getItemFresh", e);
-			return null;
+		// No catch: same rule as getContentFresh — a failure below must not become
+		// the absence answer here.
+		Item freshItem = nonCachedContentDaoService.getItem(repositoryId, objectId);
+		if (log.isDebugEnabled() && freshItem != null) {
+			log.debug("Fresh object retrieved: " + objectId);
 		}
+		return freshItem;
 	}
 
 	@Override
@@ -597,13 +594,10 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Folder getFolder(String repositoryId, String objectId) {
 		// CRITICAL: Enhanced implementation with type hierarchy support for Cloudant migration
-		Content content = null;
-		try {
-			content = this.getContent(repositoryId, objectId);
-		} catch (Exception e) {
-			log.error("cache.getFolder: Exception in getContent for " + objectId + ": " + e.getMessage(), e);
-			return null;
-		}
+		// No catch: getContent now throws for failures and returns null only for absence.
+		// Re-flattening the throw here would re-create the exact confusion the round-33
+		// review found one method over.
+		Content content = this.getContent(repositoryId, objectId);
 
 		if (content == null) {
 			if (log.isDebugEnabled()) {
@@ -659,28 +653,106 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		return nonCachedContentDaoService.getFolderByPath(repositoryId, path);
 	}
 
+	/**
+	 * Children the last enumeration on this thread could not read.
+	 *
+	 * <p>THIS class has to carry it, not just pass it through. The count is a per-call fact and
+	 * this decorator is what the container wires: {@code daoContext.xml} binds
+	 * {@code contentDaoService} to this class, so every caller — including the fixity scan, which
+	 * records a verdict about "everything under here" into an append-only chain — asks this
+	 * object. Inheriting the interface's default 0 threw away whatever the store underneath had
+	 * counted, and the fix that added the counter would have been dead in every deployment
+	 * while its unit test, which stubs the service, stayed green.
+	 *
+	 * <p>The tree-cache branch below has its OWN drop to count, and does not reach the store at
+	 * all — so a pass-through alone would still answer 0 exactly where the cache is enabled.
+	 */
+	private final ThreadLocal<Integer> lastUnreadableChildren = ThreadLocal.withInitial(() -> 0);
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>Never negative. It briefly was — a warm tree-cache hit answered {@code -1}
+	 * ("unknown") because the store read that built the tree was over — and that was an outage
+	 * rather than honesty: a hit is the ordinary state of a working cache, and the consumers
+	 * refuse on a non-zero count. The number is taken when the tree is BUILT and carried on the
+	 * cache entry, so a warm hit answers for the listing it hands back.
+	 */
+	@Override
+	public int lastUnreadableChildCount() {
+		return lastUnreadableChildren.get();
+	}
+
 	@Override
 	public List<Content> getChildren(String repositoryId, String parentId) {
+		lastUnreadableChildren.set(0);
 		if(nemakiCachePool.get(repositoryId).getTreeCache().isCacheEnabled()){
 			List<Content> result = new ArrayList<Content>();
+			// The count travels WITH the tree. On a cache hit the store is never called, so
+			// reading its counter afterwards would report a different enumeration's number —
+			// possibly a different folder, in a different request, on the same pooled thread.
+			//
+			// The first version answered -1 ("unknown") on a hit. That is honest and it is also
+			// an outage: a hit is the ORDINARY state of a working cache, not a failure, so
+			// every warm listing became "unknown" — external ingest refuses on that, and the
+			// fixity scan wrote `folder-children-uncounted` into the append-only chain on every
+			// pass. A guard that fires on ordinary work is not a guard, which is the sentence
+			// the RAG guard is commented with.
+			//
+			// So the number is recorded when the tree is BUILT and carried in the cache entry.
 			Tree tree = getOrCreateTreeCache(repositoryId, parentId);
+			int fromStore = tree.getUnreadableAtBuild();
 			Set<String> children = tree.getChildren();
 			for(String childId : children){
 				Content content = getContent(repositoryId, childId);
-				if(content != null){
-					result.add(content);
+				if(content == null){
+					// The tree says this child is there and its document did not come back.
+					// This path CANNOT tell "unreadable" from "deleted since the tree was
+					// cached", and the difference matters: the fixity scan turns a non-zero
+					// count into status "partial" AND into the scope string it writes to the
+					// append-only chain, so guessing "unreadable" would stamp a permanent claim
+					// of incompleteness on a folder that is merely stale in this cache.
+					//
+					// The cache disagreeing with the database is itself a reason to stop
+					// trusting it for this call, so this re-reads from the store, which CAN
+					// tell the two apart — a deleted child is not in the view at all, and an
+					// undecodable row is counted there.
+					log.warn("A child of '" + parentId + "' is in the tree cache but its document "
+							+ "did not come back (id=" + childId + "); re-reading this folder "
+							+ "from the store, which can tell a deleted child from an "
+							+ "unreadable one");
+					// EVICTED, not just bypassed. Without this the entry stays and every later
+					// call pays the same double cost — walk the cached ids, hit the missing
+					// one, then read the whole folder from the store — for as long as the
+					// entry lives. Removing it means the next call rebuilds once and the cache
+					// is right again.
+					nemakiCachePool.get(repositoryId).getTreeCache().remove(parentId);
+					List<Content> fresh =
+							nonCachedContentDaoService.getChildren(repositoryId, parentId);
+					lastUnreadableChildren.set(
+							nonCachedContentDaoService.lastUnreadableChildCount());
+					return fresh;
 				}
+				result.add(content);
 			}
+			lastUnreadableChildren.set(fromStore);
 			return result;
 		}else{
-			return nonCachedContentDaoService.getChildren(repositoryId, parentId);
+			List<Content> children =
+					nonCachedContentDaoService.getChildren(repositoryId, parentId);
+			lastUnreadableChildren.set(nonCachedContentDaoService.lastUnreadableChildCount());
+			return children;
 		}
 	}
 
 	@Override
 	public List<Content> getChildrenPaged(String repositoryId, String parentId, int skip, int limit) {
 		// Bypass cache for paged queries — cache benefit is minimal for paginated access
-		return nonCachedContentDaoService.getChildrenPaged(repositoryId, parentId, skip, limit);
+		lastUnreadableChildren.set(0);
+		List<Content> children =
+				nonCachedContentDaoService.getChildrenPaged(repositoryId, parentId, skip, limit);
+		lastUnreadableChildren.set(nonCachedContentDaoService.lastUnreadableChildCount());
+		return children;
 	}
 
 	@Override
@@ -834,8 +906,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public GroupItem getGroupItemByIdFresh(String repositoryId, String groupId) {
 		if (nonCachedContentDaoService == null) {
-			log.error("CRITICAL: nonCachedContentDaoService is NULL in cached ContentDaoService");
-			return null;
+			throw new IllegalStateException(
+					"nonCachedContentDaoService is not wired; getGroupItemByIdFresh cannot answer");
 		}
 		try {
 			// CRITICAL FIX: Call Fresh method on non-cached layer (not regular method!)
@@ -845,8 +917,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			}
 			return freshGroup;
 		} catch (Exception e) {
+			// Null is "no such group" — the principal-delete walk aborts on it, and the
+			// membership-update retry loop SKIPS on it. A failure is neither.
 			log.error("Error in getGroupItemByIdFresh", e);
-			return null;
+			throw new IllegalStateException("group '" + groupId
+					+ "' could not be freshly read; this is NOT a finding that it does not"
+					+ " exist", e);
 		}
 	}
 
@@ -1002,12 +1078,17 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		Tree tree = treeCache.get(parentId);
 		if(tree == null){
 			List<Content> list = nonCachedContentDaoService.getChildren(repositoryId, parentId);
+			int unreadable = nonCachedContentDaoService.lastUnreadableChildCount();
 			tree = new Tree(parentId);
 			if(org.apache.commons.collections4.CollectionUtils.isNotEmpty(list)){
 				for(Content child : list){
 					tree.add(child.getId());
 				}
 			}
+			// Built HERE, from the store, so the store's count is about THIS enumeration.
+			// Stored on the tree rather than in the ThreadLocal, because the next reader of
+			// this tree will be a different call and the fact belongs to the listing.
+			tree.setUnreadableAtBuild(unreadable);
 			treeCache.put(tree.getParent(), tree);
 		}
 
@@ -1033,6 +1114,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 		Tree tree = getOrCreateTreeCache(repositoryId, content.getParentId());
 
+		// unreadableAtBuild is NOT touched here, and should not be. It counts rows the store
+		// could not decode when this listing was read; adding a child that was just created
+		// does not make any of those readable, and clearing it would claim a completeness the
+		// original read never had. Adding one cannot lower it either, so THIS operation only
+		// ever leaves it too high.
+		//
+		// The number can still be too LOW, and not because of anything here: a child that
+		// became undecodable after the tree was built is not counted until the next rebuild,
+		// and a cache hit keeps answering the old number meanwhile. That is the same limit
+		// FixityController.scopeLimits states — a statement about the list, not about the
+		// folder as the database holds it now. An earlier version of this comment said the
+		// count "can never under-report", which contradicted it.
 		if(content instanceof Document){
 			Document doc = (Document)content;
 			if(doc.isPrivateWorkingCopy()){
@@ -1912,6 +2005,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc) {
 		return nonCachedContentDaoService.getArchives(repositoryId, skip, limit, desc);
+	}
+
+	@Override
+	public int lastUnreadableChangeCount() {
+		return nonCachedContentDaoService.lastUnreadableChangeCount();
+	}
+
+	@Override
+	public int lastUnreadableArchiveCount() {
+		// Archives are never tree-cached, so the store's per-thread count is always the count
+		// for the listing just returned — no carried-at-build subtlety here.
+		return nonCachedContentDaoService.lastUnreadableArchiveCount();
 	}
 
 	@Override

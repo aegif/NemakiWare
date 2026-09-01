@@ -1305,6 +1305,26 @@ export class CMISService {
       const response = await this.httpClient.postUrlEncoded(url, params);
 
       if (response.status === 200 || response.status === 204) {
+        // deleteTree answers 200 even when some objects could NOT be deleted — the Browser
+        // Binding reports them in the body as { ids: [...] }. The server used to discard that
+        // list and always send {}, so a folder RETAINED by a server-side guard (its listing
+        // could not be fully read, or a descendant failed) looked like a clean success here
+        // while the folder stayed. An empty body or {} still means everything was deleted.
+        if (isFolder && typeof response.responseText === 'string' && response.responseText.length > 2) {
+          try {
+            const body = JSON.parse(response.responseText);
+            if (Array.isArray(body?.ids) && body.ids.length > 0) {
+              throw new Error(
+                `Delete did not complete: ${body.ids.length} object(s) could not be deleted ` +
+                `(first: ${body.ids[0]}). The folder was kept rather than orphaning them.`);
+            }
+          } catch (parseError) {
+            if (parseError instanceof Error && parseError.message.startsWith('Delete did not complete')) {
+              throw parseError;
+            }
+            // Not JSON — the old empty-body success shape.
+          }
+        }
         return;
       }
 

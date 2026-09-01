@@ -314,6 +314,18 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- Mango indexes on each content DB for the type-dependency check. It runs
+				     TWO selectors: confirmNoInstances on {objectType} and, whenever the first
+				     finds nothing (i.e. whenever the deletion should SUCCEED),
+				     isUsedAsSecondaryType on {secondaryIds}. Unindexed either one scans the
+				     whole database, times out on a large repository, and the fail-closed
+				     caller then refuses every type deletion for ever. Found by the TCK once
+				     bedroom passed 800k documents. -->
+				<bean class="jp.aegif.nemaki.patch.Patch_ObjectTypeMangoIndex">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 				<!-- (type) Mango index on each content DB so getApiKeys resolves
 				     {type:apiKey} via _find without a full collection scan. -->
 				<bean class="jp.aegif.nemaki.patch.Patch_ApiKeyMangoIndex">
@@ -593,6 +605,15 @@
 		</property>
 	</bean>
 	<bean id="patch_PurviewStateMigration" class="jp.aegif.nemaki.patch.Patch_PurviewStateMigration">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<!-- Top-level bean as well as the inline one, so the fallback
+	     NemakiPatchInitializationListener.getBeansOfType() path collects it too — the
+	     registration asymmetry RC4 (R1) fixed for the others. -->
+	<bean id="patch_ObjectTypeMangoIndex" class="jp.aegif.nemaki.patch.Patch_ObjectTypeMangoIndex">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

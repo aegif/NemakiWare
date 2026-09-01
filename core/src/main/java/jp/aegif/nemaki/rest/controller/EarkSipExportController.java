@@ -54,16 +54,39 @@ import java.util.Map;
  *
  * <h2>Admin only, and the reason is not squeamishness</h2>
  *
- * <p>A SIP is handed to another organisation. With {@code includeInternalOnly=true} it carries
- * the properties the disclosure table marks as personal data, and once it has left there is no
- * recall. That decision belongs to an administrator, and the parameter defaults to false so that
- * nobody makes it by accident.
+ * <p>A SIP is handed to another organisation, and once it has left there is no recall. That
+ * decision belongs to an administrator whatever the flags say — <b>the document's own bytes are
+ * packaged either way</b>, so a record whose CONTENT holds personal data leaves with it at the
+ * default setting. {@code includeInternalOnly} widens what leaves by adding the METADATA
+ * PROPERTIES the disclosure table marks INTERNAL_ONLY; it is not a switch that keeps personal
+ * data in. It defaults to false so that the wider disclosure is not made by accident.
+ *
+ * <p>This paragraph said the narrower thing until 2026-08-28 — the fourth exit of that one claim
+ * in this file, after the two header names and the exporter's own option javadoc were corrected
+ * for it. It sits two lines above the comment that records those corrections.
  */
 @RestController
 @RequestMapping("/v1/admin/eark")
 public class EarkSipExportController {
 
     private static final Logger logger = LoggerFactory.getLogger(EarkSipExportController.class);
+
+    /**
+     * What the export limits mean when NO package was produced.
+     *
+     * <p>{@link #EXPORT_LIMITS} is written about a package in the caller's hands — "This package
+     * is built to E-ARK CSIP 2.2.0", "whether the validator was RUN on it is in the
+     * X-Nemaki-Csip-Validated header". On a 409 or a 500 there is no package and no such header,
+     * and the sentences describe an artefact that does not exist.
+     *
+     * <p>The success path of the bag route gained a qualifying prefix in this change set and its
+     * refusal paths did not — the success ↔ error seam, on the fix itself. The custody endpoints
+     * avoid the whole shape by putting their limits BEFORE the branch, so no arm can differ;
+     * that is not available here because the two arms genuinely mean different things.
+     */
+    private static final String NO_PACKAGE_WAS_PRODUCED =
+            "NO PACKAGE WAS PRODUCED by this request, so the limits below describe what one "
+                    + "would have been rather than anything you are holding: ";
 
     /**
      * What this endpoint does NOT establish, said in the response rather than in a manual.
@@ -104,7 +127,15 @@ public class EarkSipExportController {
         this.httpRequest = httpRequest;
     }
 
-    /** Says whether an export could be made here, without making one. */
+    /**
+     * Says whether the EXPORTER is wired here, without making a package.
+     *
+     * <p>Not "whether an export could be made", which is what this said. The flag reports one
+     * bean's presence; {@code EarkSipExporter.export} also refuses when the content service is
+     * not wired, so a node can answer {@code available: true} and then refuse every export. A
+     * capability endpoint that overstates the capability is the kind of answer somebody
+     * schedules a migration around.
+     */
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> status() {
         ResponseEntity<Map<String, Object>> forbidden = requireAdmin();
@@ -114,17 +145,24 @@ public class EarkSipExportController {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", "success");
         body.put("available", exporter != null);
+        body.put("availableMeans", "the E-ARK exporter bean is wired on this node. Export ALSO "
+                + "requires the content service, which this does not check — so true here is "
+                + "not a promise that a package can be produced.");
         body.put("csipVersion", EarkSipExporter.CSIP_VERSION);
-        body.put("limits", EXPORT_LIMITS);
+        // Same qualification as the refusal paths: this endpoint reports a capability, and
+        // EXPORT_LIMITS is written about a package in the caller's hands.
+        body.put("limits", NO_PACKAGE_WAS_PRODUCED + EXPORT_LIMITS);
         return ResponseEntity.ok(body);
     }
 
     /**
      * Builds a SIP for one object and returns it.
      *
-     * @param includeInternalOnly whether to include the properties the disclosure table marks
-     *        INTERNAL_ONLY. <b>Defaults to false.</b> Setting it true puts personal data into a
-     *        file that is about to leave this organisation and cannot be recalled.
+     * @param includeInternalOnly whether to include the METADATA PROPERTIES the disclosure
+     *        table marks INTERNAL_ONLY. <b>Defaults to false.</b> Setting it true widens what
+     *        leaves this organisation in a file that cannot be recalled. It does <b>not</b>
+     *        govern the document's bytes: {@code EarkSipExporter.writePayload} packages the
+     *        content unconditionally, so false is not "no personal data leaves".
      */
     @PostMapping("/export")
     public ResponseEntity<?> export(
@@ -152,7 +190,6 @@ public class EarkSipExportController {
                             submittingOrganisation.isBlank() ? "NemakiWare deployment"
                                     : submittingOrganisation),
                     workDir);
-            Resource body = new FileSystemResource(exported.sip().toFile());
             HttpHeaders headers = new HttpHeaders();
             headers.setContentDisposition(org.springframework.http.ContentDisposition
                     .attachment().filename(exported.sip().getFileName().toString()).build());
@@ -161,7 +198,16 @@ public class EarkSipExportController {
             // reads as a complete record of what was captured.
             headers.add("X-Nemaki-Withheld-Property-Count",
                     String.valueOf(exported.withheldPropertyCount()));
-            headers.add("X-Nemaki-Includes-Personal-Data", String.valueOf(includeInternalOnly));
+            // NOT "X-Nemaki-Includes-Personal-Data". That name answered a question this
+            // flag does not: includeInternalOnly selects METADATA PROPERTIES, and the
+            // document body is written unconditionally, so a package could carry personal
+            // data in its content while the header said "false". A machine-readable
+            // "false" is worse than prose, because a caller can act on it. The prose was
+            // corrected first and this header kept saying the retracted thing -- one
+            // claim, several exits, for the third time in this change.
+            headers.add("X-Nemaki-Includes-Internal-Only-Properties",
+                    String.valueOf(includeInternalOnly));
+            headers.add("X-Nemaki-Content-Included", "true");
             // The validator's verdict, in a header for the same reason as the omissions: a
             // caller streaming the zip to disk never reads a JSON body. "Not checked on this
             // node" is a different answer from "checked and accepted", and a receiver that
@@ -177,20 +223,125 @@ public class EarkSipExportController {
             for (String note : exported.notes()) {
                 headers.add("X-Nemaki-Export-Note", note.replace('\n', ' '));
             }
-            return ResponseEntity.ok().headers(headers)
-                    .contentType(MediaType.APPLICATION_OCTET_STREAM).body(body);
+            return streaming(headers, exported.sip(), workDir);
         } catch (EarkSipExporter.ExportRefusedException e) {
             // Refusals are the designed outcome for "we would have had to ship something
             // incomplete", so they are a 409 with the reason, not a 500 with a stack trace.
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("status", "refused");
             body.put("message", e.getMessage());
-            body.put("limits", EXPORT_LIMITS);
+            body.put("limits", NO_PACKAGE_WAS_PRODUCED + EXPORT_LIMITS);
             logger.warn("E-ARK export of {}/{} refused: {}", repositoryId, objectId,
                     e.getMessage());
+            // Nothing is being streamed out of this directory, so it goes now. Every call to
+            // this endpoint made one under the system temp directory and none of them was ever
+            // removed: a refused export — the DESIGNED outcome for an incomplete record —
+            // left a half-built package on disk for ever, on the endpoint an operator retries.
+            deleteWorkDir(workDir);
             return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+        } catch (java.io.IOException e) {
+            // The package was built and then could not be opened to stream out. Same shape as
+            // the refusal: nothing is being served, so the directory goes now.
+            deleteWorkDir(workDir);
+            logger.warn("The E-ARK package for {}/{} could not be streamed: {}", repositoryId,
+                    objectId, e.getMessage());
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("status", "error");
+            body.put("message", "the package was built but could not be read back to send: "
+                    + e.getMessage());
+            body.put("limits", NO_PACKAGE_WAS_PRODUCED + EXPORT_LIMITS);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+        } catch (RuntimeException e) {
+            deleteWorkDir(workDir);
+            throw e;
         }
     }
+
+    /**
+     * The built package, streamed out, with its working directory removed once it has been.
+     *
+     * <h2>Why not a {@link FileSystemResource}</h2>
+     *
+     * <p>Every call to {@code /export} and {@code /bag} made a directory under the system temp
+     * directory and nothing ever removed it. The refusal paths were cleaned first because they
+     * are easy: nothing is being served, so the directory can go before the method returns. The
+     * SUCCESS path cannot do that — Spring writes the body after this controller has returned —
+     * so the directory has to outlive the call, and "outlive the call" quietly became "outlive
+     * the JVM".
+     *
+     * <p>A {@code FileSystemResource} reports {@code isFile() == true}, which lets the servlet
+     * container take a zero-copy path that never opens {@code getInputStream()} — so a delete
+     * hung off stream close would sometimes not run, and sometimes run while the response was
+     * still being written. An {@code InputStreamResource} takes that choice away: Spring copies
+     * through the stream exactly once, and closing it is the last thing that happens to the
+     * file. The length is set explicitly because this resource cannot report one.
+     *
+     * <p>Deletion failure is logged and swallowed. An export that succeeded must not become an
+     * error because a temporary file could not be removed — and by then the bytes are already
+     * on their way.
+     */
+    private static ResponseEntity<Resource> streaming(HttpHeaders headers, Path file, Path workDir)
+            throws java.io.IOException {
+        long length = Files.size(file);
+        java.io.InputStream in = Files.newInputStream(file);
+        Resource body = new org.springframework.core.io.InputStreamResource(
+                new java.io.FilterInputStream(in) {
+                    @Override
+                    public void close() throws java.io.IOException {
+                        try {
+                            super.close();
+                        } finally {
+                            deleteWorkDir(workDir);
+                        }
+                    }
+                });
+        headers.setContentLength(length);
+        return ResponseEntity.ok().headers(headers)
+                .contentType(MediaType.APPLICATION_OCTET_STREAM).body(body);
+    }
+
+    /**
+     * Removes a working directory once nothing is being served out of it.
+     *
+     * <p>Called from two places, for the same reason at different times. The refusal and error
+     * paths call it directly: nothing is being served, so the directory can go before the
+     * method returns. The success path cannot — Spring writes the body after the controller
+     * returns — so {@link #streaming} hangs this off the stream's close instead.
+     *
+     * <p>The success path was a known leak for one round, and the javadoc here said so. It is
+     * fixed; the sentence is gone rather than left standing, because a caveat that outlives
+     * what it describes is read as a live limitation. Design §25, §29.
+     *
+     * <p>Failure to delete is logged and swallowed: an export that succeeded must not be turned
+     * into an error because a temporary file could not be removed.
+     */
+    private static void deleteWorkDir(Path workDir) {
+        if (workDir == null) {
+            return;
+        }
+        try (java.util.stream.Stream<Path> walk = Files.walk(workDir)) {
+            walk.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (Exception e) {
+                    logger.warn("Could not remove {}: {}", path, e.getMessage());
+                }
+            });
+        } catch (Exception e) {
+            logger.warn("Could not remove the E-ARK working directory {}: {}", workDir,
+                    e.getMessage());
+        }
+    }
+
+    /**
+     * What every statement on a bag response is about.
+     *
+     * <p>The validator, the export limits and the notes all describe the E-ARK SIP. The artefact
+     * the caller receives is the bag around it. One prefix, used everywhere on this route, so
+     * the response cannot qualify one sentence and leave its neighbour bare.
+     */
+    private static final String SIP_INSIDE_BAG =
+            "About the E-ARK SIP inside this bag, not about the bag: ";
 
     /**
      * The same package, in the transfer format Archivematica accepts.
@@ -217,15 +368,16 @@ public class EarkSipExportController {
             body.put("status", "error");
             body.put("message", "a transfer needs a submission id: a bag with no "
                     + "External-Identifier cannot be referred to in a later receipt");
-            body.put("limits", EXPORT_LIMITS);
+            body.put("limits", NO_PACKAGE_WAS_PRODUCED + EXPORT_LIMITS);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
         }
         java.nio.file.Path workDir = null;
         try {
             workDir = java.nio.file.Files.createTempDirectory("nemaki-bag-");
             EarkSipExporter.Exported exported = exporter.export(repositoryId, objectId,
-                    // The same construction the export endpoint uses, so the two
-                    // cannot disagree about what "include personal data" means.
+                    // The same construction the export endpoint uses, so the two cannot
+                    // disagree about which METADATA PROPERTIES are included. Neither of them
+                    // governs the payload — the document's bytes are written either way.
                     new EarkSipExporter.Options(includeInternalOnly,
                             "NemakiWare deployment"),
                     workDir);
@@ -238,32 +390,69 @@ public class EarkSipExportController {
                     .attachment().filename(bagged.zippedBag().getFileName().toString()).build());
             headers.add("X-Nemaki-Withheld-Property-Count",
                     String.valueOf(exported.withheldPropertyCount()));
-            headers.add("X-Nemaki-Includes-Personal-Data", String.valueOf(includeInternalOnly));
-            headers.add("X-Nemaki-Export-Limits", EXPORT_LIMITS);
+            // NOT "X-Nemaki-Includes-Personal-Data". That name answered a question this
+            // flag does not: includeInternalOnly selects METADATA PROPERTIES, and the
+            // document body is written unconditionally, so a package could carry personal
+            // data in its content while the header said "false". A machine-readable
+            // "false" is worse than prose, because a caller can act on it. The prose was
+            // corrected first and this header kept saying the retracted thing -- one
+            // claim, several exits, for the third time in this change.
+            headers.add("X-Nemaki-Includes-Internal-Only-Properties",
+                    String.valueOf(includeInternalOnly));
+            headers.add("X-Nemaki-Content-Included", "true");
+            // Prefixed for the same reason the CSIP limits are, below. EXPORT_LIMITS says
+            // "THIS package is built to E-ARK CSIP 2.2.0" and points at the validated header,
+            // which is true of the SIP and false of the bag around it — so on this response the
+            // unqualified sentence told the reader the verdict was about the artefact in hand.
+            // Qualifying only the CSIP limits and leaving this one bare made the response
+            // disagree with itself.
+            headers.add("X-Nemaki-Export-Limits", SIP_INSIDE_BAG + EXPORT_LIMITS);
+            // The SAME verdict the /export response carries. The SIP inside this bag went
+            // through the same validation, and omitting the header here left a caller unable to
+            // tell "checked and accepted" from "not checked on this node" for a package that is
+            // MORE likely to be handed straight to a receiver, not less.
+            EarkSipExporter.Validation validation = exported.validation();
+            headers.add("X-Nemaki-Csip-Validated",
+                    validation == null ? "unknown" : String.valueOf(validation.ran()));
+            if (validation != null) {
+                // Prefixed, because the artefact being downloaded here is the BAG and the
+                // validator never saw a bag. The limits text says "this package's structure and
+                // METS", which is true of the SIP inside and false of the thing in the reader's
+                // hands — the same sentence, on this response, would name the wrong object.
+                headers.add("X-Nemaki-Csip-Validation-Limits",
+                        SIP_INSIDE_BAG + validation.limits().replace('\n', ' '));
+            }
             // The bag's OWN limits, separately: what a reader must not conclude about the
             // receiving system reading the SIP inside it is a different statement from what
             // the package itself establishes.
             headers.add("X-Nemaki-Bag-Limits", bagged.limits().replace('\n', ' '));
             headers.add("X-Nemaki-Payload-Oxum", bagged.payloadOxum());
             for (String note : exported.notes()) {
-                headers.add("X-Nemaki-Export-Note", note.replace('\n', ' '));
+                // Same prefix. When the validator did not run, EarkSipExporter puts the very
+                // sentence carried by X-Nemaki-Csip-Validation-Limits into notes as well — so
+                // without this the identical text appeared twice on one response, once saying
+                // which object it was about and once not.
+                headers.add("X-Nemaki-Export-Note", SIP_INSIDE_BAG + note.replace('\n', ' '));
             }
-            return ResponseEntity.ok().headers(headers)
-                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                    .body(new FileSystemResource(bagged.zippedBag().toFile()));
+            return streaming(headers, bagged.zippedBag(), workDir);
         } catch (EarkSipExporter.ExportRefusedException e) {
+            // Same as the export route: no file is being served, so the directory goes now.
+            // This route makes TWO levels of temporary output (the SIP and the bag around it),
+            // so a failed bag left more behind than a failed export did.
+            deleteWorkDir(workDir);
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("status", "refused");
             body.put("message", e.getMessage());
-            body.put("limits", EXPORT_LIMITS);
+            body.put("limits", NO_PACKAGE_WAS_PRODUCED + EXPORT_LIMITS);
             return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
         } catch (Exception e) {
+            deleteWorkDir(workDir);
             logger.warn("The bag for {}/{} could not be built: {}", repositoryId, objectId,
                     e.getMessage());
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("status", "error");
             body.put("message", "the bag could not be built: " + e.getMessage());
-            body.put("limits", EXPORT_LIMITS);
+            body.put("limits", NO_PACKAGE_WAS_PRODUCED + EXPORT_LIMITS);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
         }
     }
@@ -298,6 +487,11 @@ public class EarkSipExportController {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", "error");
         body.put("message", "Admin access required");
+        // Prefixed, because nothing was built. This class's own javadoc records that the bag
+        // route's success path got the prefix and its refusal path did not — "the seam between
+        // success and error, on top of the correction itself". These two shared helpers are the
+        // last exits with neither the prefix nor the limits, and they serve all three endpoints.
+        body.put("limits", NO_PACKAGE_WAS_PRODUCED + EXPORT_LIMITS);
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
     }
 
@@ -305,6 +499,7 @@ public class EarkSipExportController {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", "error");
         body.put("message", message);
+        body.put("limits", NO_PACKAGE_WAS_PRODUCED + EXPORT_LIMITS);
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
     }
 }

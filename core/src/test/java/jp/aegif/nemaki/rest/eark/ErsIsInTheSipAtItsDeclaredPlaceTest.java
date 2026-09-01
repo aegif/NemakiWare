@@ -269,7 +269,7 @@ class ErsIsInTheSipAtItsDeclaredPlaceTest {
         exporter.setContentService(contentService);
         exporter.setReportAssembler(assembler);
         exporter.setEvidenceRecordService(records);
-        return exporter.export(REPO, OBJECT, EarkSipExporter.Options.withholdingPersonalData(),
+        return exporter.export(REPO, OBJECT, EarkSipExporter.Options.withoutInternalOnlyProperties(),
                 Files.createDirectories(tmp.resolve("out"))).sip();
     }
 

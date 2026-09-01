@@ -10,6 +10,7 @@ import jp.aegif.nemaki.rest.purview.state.PurviewStateStore;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -197,5 +198,111 @@ public class PurviewContainmentRelationshipServiceImplTest {
         document.setId(id);
         document.setParentId(parentId);
         return document;
+    }
+
+    @Test
+    public void anIncompleteWalkPublishesButNeverDeletes() throws Exception {
+        // A row the store cannot decode is absent from the page without an exception. Before
+        // this guard, the missing edge was diffed as a DELETED relationship and removed from
+        // the external catalog, and the shortened page ended the folder walk early — one bad
+        // row hid a subtree and then erased its containment. The rule: an incomplete walk may
+        // ADD what it saw (those edges exist), deletes NOTHING, and WIDENS the previous
+        // snapshot with what it published — never narrows it — so the next complete walk
+        // diffs against a baseline that still holds the invisible edges AND now holds the
+        // published ones (see the round-trip test below for why the second half matters).
+        Folder root = folder("root-001", null);
+        when(contentDaoService.getContent("bedroom", "root-001")).thenReturn(root);
+        when(contentDaoService.getChildrenCount("bedroom", "root-001")).thenReturn(2L);
+        when(contentDaoService.getChildrenPaged("bedroom", "root-001", 0, 100))
+                .thenReturn(List.of((Content) folder("folder-001", "root-001")));
+        when(contentDaoService.lastUnreadableChildCount()).thenReturn(1);
+        when(contentDaoService.getChildrenCount("bedroom", "folder-001")).thenReturn(0L);
+
+        // The previous snapshot holds an edge the walk cannot see this round: the one that
+        // used to be deleted for being invisible. Its GUID is tracked, so with the guard
+        // removed the delete is REACHED and the verify below goes red on its own assertion —
+        // without the stub, the sabotaged run died on "GUID is not tracked" instead, which
+        // the control runner rightly refuses to count as the lock firing.
+        String previousSnapshot = "nemaki_folder_contains_document|nemaki://bedroom/objects/"
+                + "folder-001|nemaki://bedroom/objects/doc-hidden";
+        // The state key is Base64 of the edge key, so match any key: every edge in this
+        // fixture then "has" a GUID, which (a) lets the sabotaged run REACH the delete and
+        // fail on the verify's own assertion rather than dying on "GUID is not tracked",
+        // and (b) exercises the already-created skip on the publish side.
+        when(stateStore.getString(anyString())).thenReturn("hidden-rel-guid");
+
+        PurviewContainmentSyncResult result =
+                service.syncRepositoryContainmentRelationshipsIfChanged("bedroom", previousSnapshot);
+
+        verify(entityRegistryClient, org.mockito.Mockito.never()).deleteRelationshipByGuid(any(), any());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                result.getSnapshot().contains(previousSnapshot),
+                "an incomplete walk NARROWED the snapshot — the invisible edge left the "
+                        + "baseline, so a later complete walk cannot tell it from a deletion: "
+                        + result.getSnapshot());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                result.getSnapshot().contains("nemaki_folder_contains_folder|"
+                        + "nemaki://bedroom/objects/root-001|nemaki://bedroom/objects/folder-001"),
+                "the edge published this round is missing from the baseline — if it vanishes "
+                        + "before a complete walk, the external catalog keeps it for ever: "
+                        + result.getSnapshot());
+    }
+
+    @Test
+    public void theRecordedGuidsCanBeForgottenSoTheCatalogIsRepairable() throws Exception {
+        // The publish path skips an edge whose GUID this store already holds. That is right
+        // whenever we are the only writer — and a relationship deleted in the catalog
+        // out-of-band breaks it: our snapshot and the catalog agree from our side, so no diff
+        // will ever notice. Detecting it would mean reading every relationship back on every
+        // cycle. Making it REPAIRABLE costs one call, and without that call an operator has
+        // no way back at all.
+        when(stateStore.getAllByPrefix("purview.containment.relationship.guid.bedroom."))
+                .thenReturn(java.util.Map.of(
+                        "purview.containment.relationship.guid.bedroom.abc", "guid-1",
+                        "purview.containment.relationship.guid.bedroom.def", "guid-2"));
+
+        int forgotten = service.forgetRecordedRelationshipGuids("bedroom");
+
+        assertEquals(2, forgotten);
+        ArgumentCaptor<java.util.Collection<String>> removed =
+                ArgumentCaptor.forClass(java.util.Collection.class);
+        verify(stateStore).removeAll(removed.capture());
+        org.junit.jupiter.api.Assertions.assertEquals(2, removed.getValue().size(),
+                "the recorded GUIDs were not dropped, so the next sync still skips every "
+                        + "edge it believes it already created");
+    }
+
+    @Test
+    public void aCreatedEdgeFromAnIncompleteRoundIsDeletedOnceItVanishes() throws Exception {
+        // The §44-1 hole this pins: an edge CREATED during an incomplete round was published
+        // to the external catalog but left out of the persisted baseline. If it vanished
+        // before a complete walk, that walk found it in NEITHER side of the diff — the stale
+        // relationship (and its GUID in the state store) stayed in the external catalog for
+        // ever. With the widened baseline, the complete walk sees it in the previous side
+        // only and reconciles it away like any other deletion.
+        Folder root = folder("root-001", null);
+        when(contentDaoService.getContent("bedroom", "root-001")).thenReturn(root);
+        when(contentDaoService.getChildrenCount("bedroom", "root-001")).thenReturn(2L, 0L);
+        when(contentDaoService.getChildrenPaged("bedroom", "root-001", 0, 100))
+                .thenReturn(List.of((Content) folder("folder-001", "root-001")))
+                .thenReturn(List.of());
+        // Round 1: one row of the page would not decode. Round 2: the walk is complete.
+        when(contentDaoService.lastUnreadableChildCount()).thenReturn(1, 0);
+        when(contentDaoService.getChildrenCount("bedroom", "folder-001")).thenReturn(0L);
+        when(stateStore.getString(anyString())).thenReturn("created-rel-guid");
+
+        PurviewContainmentSyncResult incompleteRound =
+                service.syncRepositoryContainmentRelationshipsIfChanged("bedroom", "");
+        // folder-001 has meanwhile been deleted; the second walk reads cleanly.
+        PurviewContainmentSyncResult completeRound = service
+                .syncRepositoryContainmentRelationshipsIfChanged("bedroom",
+                        incompleteRound.getSnapshot());
+
+        verify(entityRegistryClient, org.mockito.Mockito.atLeastOnce())
+                .deleteRelationshipByGuid(any(), eq("created-rel-guid"));
+        org.junit.jupiter.api.Assertions.assertFalse(
+                completeRound.getSnapshot().contains("folder-001"),
+                "the vanished edge survived into the complete walk's snapshot: "
+                        + completeRound.getSnapshot());
     }
 }

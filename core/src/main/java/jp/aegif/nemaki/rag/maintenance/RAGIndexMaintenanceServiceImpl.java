@@ -288,12 +288,83 @@ public class RAGIndexMaintenanceServiceImpl implements RAGIndexMaintenanceServic
         }
     }
 
+    /**
+     * How many RAG items this repository already has indexed, or {@code -1} for "unknown".
+     *
+     * <p>Deliberately NOT zero on failure. Zero is the value that lets the guard pass, and a
+     * count that could not be taken is the case the guard exists for. Zero IS returned when
+     * there is no Solr client at all, because then {@code clearRAGIndex} deletes nothing and
+     * there is no index to protect — the same reasoning as the CMIS side.
+     *
+     * <p>Counts PARENT DOCUMENTS, matching what the folder walk counts. Counting chunks as well
+     * compares different units, and one long document then looks like a 20-fold loss.
+     */
+    private long countIndexedRagDocuments(String repositoryId) {
+        try {
+            org.apache.solr.client.solrj.SolrClient solrClient = solrClientProvider.getClient();
+            if (solrClient == null) {
+                return 0;
+            }
+            // PARENT DOCUMENTS ONLY. The first version counted chunks too, and the walk it is
+            // compared against counts DOCUMENTS — so one ordinary document with 20 chunks put
+            // 21 items in the index against 1 in the walk, and the 10x refusal fired on a
+            // healthy repository. A guard that refuses ordinary work is not a guard; it is an
+            // outage, and it would have been met by an operator running the upgrade step
+            // CLAUDE.md requires.
+            //
+            // clearRAGIndex deletes both kinds. That is right and unrelated: the guard's job is
+            // to compare LIKE WITH LIKE, not to describe everything the clear removes.
+            org.apache.solr.client.solrj.request.SolrQuery query =
+                    new org.apache.solr.client.solrj.request.SolrQuery(
+                            "doc_type:document AND repository_id:"
+                                    + org.apache.solr.client.solrj.util.ClientUtils
+                                            .escapeQueryChars(repositoryId));
+            query.setRows(0);
+            return solrClient.query("nemaki", query).getResults().getNumFound();
+        } catch (Exception e) {
+            log.error("Could not count RAG items for repository " + repositoryId
+                    + " — treating it as unknown rather than as an empty index", e);
+            return -1;
+        }
+    }
+
     @Override
     public boolean isRAGEnabled() {
         return ragConfig.isEnabled() && ragIndexingService.isEnabled();
     }
 
     // Private helper methods
+
+    /**
+     * The final status of a walk, which is not "completed" when the walk dropped folders.
+     *
+     * <p>Both entry points wrote {@code "completed"} on anything that was not cancelled. The
+     * catch inside the recursive walk sits INSIDE the recursion, so a sub-tree that could not
+     * be enumerated was skipped and the walk carried on — and {@code addError} only appends to
+     * a capped list, never touching {@code errorCount}, which {@code processBatch} alone
+     * increments. So the summary said "errors: 0" for a run that had cleared the index and then
+     * silently left part of the repository out of it.
+     */
+    private void settleStatus(String repositoryId, RAGReindexStatus status) {
+        // Here, so every ending gets it: this is the one place all of them pass through.
+        noteTruncation(status);
+        if (getCancelFlag(repositoryId).get()) {
+            return;
+        }
+        if (status.getErrorCount() > 0) {
+            status.setStatus("completed_with_errors");
+            status.setErrorMessage(status.getErrorCount() + " folder(s) or batch(es) failed and "
+                    + "are NOT in the rebuilt index. This is NOT a complete reindex.");
+            return;
+        }
+        status.setStatus("completed");
+    }
+
+    /** The gap at which the walk is not believed. Same shape as the CMIS reindex guard. */
+    private static final long ENUMERATION_GUARD_FACTOR = 10L;
+
+    /** Below this, there is not enough in the index for the ratio to mean anything. */
+    private static final long ENUMERATION_GUARD_FLOOR = 20L;
 
     private void runFullRAGReindex(String repositoryId, RAGReindexStatus status) {
         log.info("Starting full RAG reindex for repository: " + repositoryId);
@@ -311,15 +382,62 @@ public class RAGIndexMaintenanceServiceImpl implements RAGIndexMaintenanceServic
             long totalDocs = countDocumentsInFolder(repositoryId, rootFolder.getId(), true);
             status.setTotalDocuments(totalDocs);
 
-            // Clear existing RAG index
-            clearRAGIndex(repositoryId);
+            // ── Refuse to destroy an index we cannot rebuild ────────────────────────────────
+            // The same guard the CMIS reindex has had since the incident, and the RAG path had
+            // none — while CLAUDE.md tells operators to run BOTH as a required upgrade step.
+            //
+            // The walk below cannot tell "this folder has no children" from "the children could
+            // not be read", and no exception fixes that: a CouchDB view whose map function
+            // fails answers HTTP 200 with ZERO ROWS. That was reproduced on the CMIS side — a
+            // 164-object repository reindexed to one document, errorCount 0, status completed.
+            // Refusing an unanswered view (2026-08-28) narrows the window; it does not close
+            // this one, because there is no error to see.
+            //
+            // The only thing that catches it is a yardstick the same failure cannot silence:
+            // what the index ALREADY holds. Finding almost nothing to index while about to
+            // delete a great deal is not a reindex, it is a wipe.
+            long alreadyIndexed = countIndexedRagDocuments(repositoryId);
+            if (alreadyIndexed < 0) {
+                status.setStatus("error");
+                status.setErrorMessage("Refusing to reindex: the RAG index could not be counted, "
+                        + "so there is no way to tell a working enumeration from a silently "
+                        + "empty one. Nothing was cleared.");
+                status.setEndTime(System.currentTimeMillis());
+                return;
+            }
+            if (alreadyIndexed >= ENUMERATION_GUARD_FLOOR
+                    && totalDocs * ENUMERATION_GUARD_FACTOR < alreadyIndexed) {
+                String msg = "Refusing to reindex: the folder walk found only " + totalDocs
+                        + " document(s) while the RAG index currently holds " + alreadyIndexed
+                        + " indexed document(s). That gap means the enumeration is not seeing "
+                        + "the repository, and clearing now would destroy the index with "
+                        + "nothing to put back. Nothing was cleared. If the repository really "
+                        + "did shrink this much, clear it explicitly first.";
+                log.error(msg);
+                status.setStatus("error");
+                status.setErrorMessage(msg);
+                status.setEndTime(System.currentTimeMillis());
+                return;
+            }
+            log.warn("RAG reindex for {} is about to clear {} indexed item(s) and expects to "
+                    + "index {} document(s)", repositoryId, alreadyIndexed, totalDocs);
+
+            // Clear existing RAG index. Its return value is not decoration: it catches its own
+            // failures and answers false, and carrying on from there rebuilds ON TOP of entries
+            // for documents that no longer exist — then reports the run as completed.
+            if (!clearRAGIndex(repositoryId)) {
+                status.setStatus("error");
+                status.setErrorMessage("Refusing to reindex: the existing RAG index could not be "
+                        + "cleared, so a rebuild would leave stale entries for documents that "
+                        + "are gone. Nothing was indexed.");
+                status.setEndTime(System.currentTimeMillis());
+                return;
+            }
 
             // Process all folders recursively
             reindexFolderRecursive(repositoryId, rootFolder.getId(), true, status);
 
-            if (!getCancelFlag(repositoryId).get()) {
-                status.setStatus("completed");
-            }
+            settleStatus(repositoryId, status);
             status.setEndTime(System.currentTimeMillis());
             log.info(String.format("RAG reindex completed for repository: %s (indexed: %d, skipped: %d, errors: %d)",
                     repositoryId, status.getIndexedCount(), status.getSkippedCount(), status.getErrorCount()));
@@ -345,9 +463,7 @@ public class RAGIndexMaintenanceServiceImpl implements RAGIndexMaintenanceServic
             // Process folder
             reindexFolderRecursive(repositoryId, folderId, recursive, status);
 
-            if (!getCancelFlag(repositoryId).get()) {
-                status.setStatus("completed");
-            }
+            settleStatus(repositoryId, status);
             status.setEndTime(System.currentTimeMillis());
             log.info(String.format("RAG folder reindex completed for repository: %s (indexed: %d, skipped: %d, errors: %d)",
                     repositoryId, status.getIndexedCount(), status.getSkippedCount(), status.getErrorCount()));
@@ -377,6 +493,14 @@ public class RAGIndexMaintenanceServiceImpl implements RAGIndexMaintenanceServic
             List<Content> children = contentService.getChildren(repositoryId, folderId);
             if (children == null) {
                 return;
+            }
+            // Same rule as the CMIS walk, added the same day for once — the last three of
+            // these arrived one review round apart each.
+            int unreadableHere = contentService.lastUnreadableChildCount();
+            if (unreadableHere > 0) {
+                status.setErrorCount(status.getErrorCount() + unreadableHere);
+                addError(status, "Folder " + folderId + ": " + unreadableHere + " child row(s) "
+                        + "could not be decoded and were NOT indexed");
             }
 
             List<Document> batch = new ArrayList<>();
@@ -410,8 +534,11 @@ public class RAGIndexMaintenanceServiceImpl implements RAGIndexMaintenanceServic
             }
 
         } catch (Exception e) {
+            // COUNTED. addError appends to a capped list and nothing else; errorCount is
+            // what the summary and settleStatus read, and a skipped folder never reached it.
             log.error("Error processing folder: " + folderId, e);
             addError(status, "Error processing folder " + folderId + ": " + e.getMessage());
+            status.setErrorCount(status.getErrorCount() + 1);
         }
     }
 
@@ -516,5 +643,26 @@ public class RAGIndexMaintenanceServiceImpl implements RAGIndexMaintenanceServic
         if (status.getErrors().size() < MAX_ERRORS) {
             status.getErrors().add(error);
         }
+    }
+
+    /**
+     * Says out loud that the message list is shorter than the count.
+     *
+     * <p>The CMIS sibling was corrected for this and THIS one was not, which is the shape this
+     * batch keeps finding. The UI renders both numbers side by side — "5000" beside "error
+     * details (100)" — through the same component for both reindexes, so the gap that was just
+     * explained on one tab was still unexplained on the other. And this is the reindex CLAUDE.md
+     * names as a required upgrade step.
+     *
+     * <p>Keyed on the COUNT, not the list size: exactly 100 failures fit in exactly 100
+     * messages and nothing was dropped, so saying otherwise is its own small overclaim.
+     */
+    private void noteTruncation(RAGReindexStatus status) {
+        if (status.getErrors() == null || status.getErrorCount() <= MAX_ERRORS) {
+            return;
+        }
+        status.getErrors().add("... only the first " + MAX_ERRORS + " messages are kept; "
+                + (status.getErrorCount() - MAX_ERRORS) + " further failure(s) are counted "
+                + "above but not described here.");
     }
 }

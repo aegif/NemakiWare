@@ -297,23 +297,19 @@ class DaoFailsFastTest {
         when(wrapper.create(org.mockito.ArgumentMatchers.<java.util.Map<String, Object>>any()))
                 .thenCallRealMethod();
 
-        // The current thread is the test runner's; isStartupPhase() keys on the thread NAME,
-        // so run it on one that looks like startup.
+        // The provisioning window is DECLARED now, not inferred from the thread's name — so
+        // this test opens it the way DatabasePreInitializer does instead of naming a thread
+        // "main" and hoping the heuristic agrees.
         java.util.concurrent.atomic.AtomicReference<Object> result =
                 new java.util.concurrent.atomic.AtomicReference<>("not-run");
-        Thread startup = new Thread(() -> {
-            try {
-                result.set(wrapper.create(new java.util.HashMap<>(
-                        java.util.Map.of("type", "x"))));
-            } catch (Throwable t) {
-                result.set(t);
-            }
-        }, "main");
-        startup.start();
+        jp.aegif.nemaki.init.StartupPhase.begin();
         try {
-            startup.join(10_000);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            result.set(wrapper.create(new java.util.HashMap<>(
+                    java.util.Map.of("type", "x"))));
+        } catch (Throwable t) {
+            result.set(t);
+        } finally {
+            jp.aegif.nemaki.init.StartupPhase.end();
         }
 
         org.junit.jupiter.api.Assertions.assertNull(result.get(),
@@ -341,5 +337,186 @@ class DaoFailsFastTest {
         // null view result, whatever the wrapper decided to do about startup.
         assertThrows(RuntimeException.class, () -> dao.getChildren("bedroom", "folder-1"),
                 "an undeployed view was reported as a folder with no children");
+    }
+
+    @Test
+    @DisplayName("a result carrying NO ROW LIST is refused, in both children reads")
+    void aResultWithNullRowsIsNotAnEmptyFolder() throws Exception {
+        // The third answer. This class already covers "the view returned null" (refused) and
+        // "the view answered with no rows" (an empty folder). Between them sat a result object
+        // whose row list is null: not an exception, so the fail-fast catch never saw it, and
+        // not covered by the null-result guard, so it fell through to the empty list — with a
+        // comment three lines above saying "an EMPTY folder is a result with no rows", which is
+        // true of an empty list and not of a null one.
+        //
+        // It matters most one layer up: /fixity/scan/folder scans whatever this returns and
+        // writes verdict=COMPLETE, scanned=0 into an append-only chain for a folder that IS
+        // there. Both reads are driven, because getChildrenPaged kept BOTH substitutions and a
+        // test naming only the unpaged one passes while paging still answers "end of folder".
+        offStartupThread(() -> {
+            ContentDaoServiceImpl dao = new ContentDaoServiceImpl();
+            CloudantClientPool pool = mock(CloudantClientPool.class);
+            CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+            when(pool.getClient(anyString())).thenReturn(client);
+            com.ibm.cloud.cloudant.v1.model.ViewResult noRowList =
+                    mock(com.ibm.cloud.cloudant.v1.model.ViewResult.class);
+            when(noRowList.getRows()).thenReturn(null);
+            when(client.queryView(anyString(), anyString(),
+                    org.mockito.ArgumentMatchers.<java.util.Map<String, Object>>any()))
+                    .thenReturn(noRowList);
+            dao.setConnectorPool(pool);
+
+            assertThrows(RuntimeException.class, () -> dao.getChildren("bedroom", "folder-1"),
+                    "a view that answered without rows was reported as an empty folder");
+            assertThrows(RuntimeException.class,
+                    () -> dao.getChildrenPaged("bedroom", "folder-1", 0, 100),
+                    "the paged read reported an unanswered view as the end of the folder");
+        });
+    }
+
+    @Test
+    @DisplayName("a paged read of a real, empty page still answers empty — the control")
+    void anEmptyPageIsStillEmpty() throws Exception {
+        offStartupThread(() -> {
+            ContentDaoServiceImpl dao = new ContentDaoServiceImpl();
+            CloudantClientPool pool = mock(CloudantClientPool.class);
+            CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+            when(pool.getClient(anyString())).thenReturn(client);
+            com.ibm.cloud.cloudant.v1.model.ViewResult empty =
+                    mock(com.ibm.cloud.cloudant.v1.model.ViewResult.class);
+            when(empty.getRows()).thenReturn(java.util.List.of());
+            when(client.queryView(anyString(), anyString(),
+                    org.mockito.ArgumentMatchers.<java.util.Map<String, Object>>any()))
+                    .thenReturn(empty);
+            dao.setConnectorPool(pool);
+
+            assertTrue(dao.getChildrenPaged("bedroom", "folder-1", 0, 100).isEmpty(),
+                    "a genuinely empty page was refused — over-throwing breaks every listing "
+                            + "that pages past the end");
+        });
+    }
+
+    @Test
+    @DisplayName("a child the store cannot decode is counted, not silently dropped")
+    void anUndecodableChildIsCounted() throws Exception {
+        // A row the view RETURNED and this class could not turn into a Content is a child that
+        // exists. It cannot go into the list, and every caller reads the list as the folder —
+        // so with every row undecodable the answer is "an empty folder", which is the same
+        // substitution the throws above exist to stop, one loop further in.
+        //
+        // The list cannot carry the fact, so the counter does. The fixity scan consults it
+        // before recording a verdict about "everything under here"; ordinary navigation does
+        // not, because a listing missing one broken document is still the best answer there is.
+        offStartupThread(() -> {
+            ContentDaoServiceImpl dao = new ContentDaoServiceImpl();
+            CloudantClientPool pool = mock(CloudantClientPool.class);
+            CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+            when(pool.getClient(anyString())).thenReturn(client);
+            com.ibm.cloud.cloudant.v1.model.ViewResult rows =
+                    mock(com.ibm.cloud.cloudant.v1.model.ViewResult.class);
+            com.ibm.cloud.cloudant.v1.model.ViewResultRow undecodable =
+                    mock(com.ibm.cloud.cloudant.v1.model.ViewResultRow.class);
+            when(undecodable.getValue()).thenReturn(null);
+            when(undecodable.getId()).thenReturn("doc-1");
+            when(rows.getRows()).thenReturn(java.util.List.of(undecodable));
+            when(client.queryView(anyString(), anyString(),
+                    org.mockito.ArgumentMatchers.<java.util.Map<String, Object>>any()))
+                    .thenReturn(rows);
+            dao.setConnectorPool(pool);
+
+            assertTrue(dao.getChildren("bedroom", "folder-1").isEmpty());
+            org.junit.jupiter.api.Assertions.assertEquals(1, dao.lastUnreadableChildCount(),
+                    "a child that could not be decoded left the list short with nothing "
+                            + "recording that it had been dropped");
+        });
+    }
+
+    @Test
+    @DisplayName("a folder whose children all decode counts none unreadable — the control")
+    void aReadableFolderCountsNothingUnreadable() throws Exception {
+        offStartupThread(() -> {
+            ContentDaoServiceImpl dao = new ContentDaoServiceImpl();
+            CloudantClientPool pool = mock(CloudantClientPool.class);
+            CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+            when(pool.getClient(anyString())).thenReturn(client);
+            com.ibm.cloud.cloudant.v1.model.ViewResult empty =
+                    mock(com.ibm.cloud.cloudant.v1.model.ViewResult.class);
+            when(empty.getRows()).thenReturn(java.util.List.of());
+            when(client.queryView(anyString(), anyString(),
+                    org.mockito.ArgumentMatchers.<java.util.Map<String, Object>>any()))
+                    .thenReturn(empty);
+            dao.setConnectorPool(pool);
+
+            dao.getChildren("bedroom", "folder-1");
+            org.junit.jupiter.api.Assertions.assertEquals(0, dao.lastUnreadableChildCount(),
+                    "a folder read in full was reported as having dropped children");
+        });
+    }
+
+    @Test
+    @DisplayName("the child COUNT refuses a view that did not answer, and an unreadable value")
+    void theChildCountRefusesAnUnansweredView() throws Exception {
+        // The same third answer as getChildren, in the method next door — and the existing lock
+        // here only covers the arm that THROWS, so this stayed green through the whole
+        // correction. A count is worse than a list: a caller that asks only for the number has
+        // no probe to fall back on. LineageCatalogReconciliationServiceImpl.childFolders stops
+        // on a 0 without ever calling the paged read, so a folder that is there is walked as
+        // having no children.
+        //
+        // Three shapes, one loop: no result, a result with no row list, and a row whose value
+        // is not a number this store can read. The third used to fall through to the same
+        // "genuinely no children" zero as an answered, empty reduce.
+        com.ibm.cloud.cloudant.v1.model.ViewResult nullRows =
+                mock(com.ibm.cloud.cloudant.v1.model.ViewResult.class);
+        when(nullRows.getRows()).thenReturn(null);
+        com.ibm.cloud.cloudant.v1.model.ViewResult unreadableValue =
+                mock(com.ibm.cloud.cloudant.v1.model.ViewResult.class);
+        com.ibm.cloud.cloudant.v1.model.ViewResultRow row =
+                mock(com.ibm.cloud.cloudant.v1.model.ViewResultRow.class);
+        when(row.getValue()).thenReturn("not-a-number");
+        when(unreadableValue.getRows()).thenReturn(java.util.List.of(row));
+
+        for (com.ibm.cloud.cloudant.v1.model.ViewResult answer
+                : new com.ibm.cloud.cloudant.v1.model.ViewResult[] {
+                        null, nullRows, unreadableValue }) {
+            offStartupThread(() -> {
+                ContentDaoServiceImpl dao = new ContentDaoServiceImpl();
+                CloudantClientPool pool = mock(CloudantClientPool.class);
+                CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+                when(pool.getClient(anyString())).thenReturn(client);
+                when(client.queryView(anyString(), anyString(),
+                        org.mockito.ArgumentMatchers.<java.util.Map<String, Object>>any()))
+                        .thenReturn(answer);
+                dao.setConnectorPool(pool);
+
+                assertThrows(RuntimeException.class,
+                        () -> dao.getChildrenCount("bedroom", "folder-1"),
+                        "a count the view did not give was reported as zero children");
+            });
+        }
+    }
+
+    @Test
+    @DisplayName("a reduce that answered with no rows still counts zero — the control")
+    void anAnsweredEmptyReduceStillCountsZero() throws Exception {
+        // A group=true reduce answers a key with nothing under it by returning no rows at all.
+        // That IS zero children, and refusing it would break every empty folder.
+        offStartupThread(() -> {
+            ContentDaoServiceImpl dao = new ContentDaoServiceImpl();
+            CloudantClientPool pool = mock(CloudantClientPool.class);
+            CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+            when(pool.getClient(anyString())).thenReturn(client);
+            com.ibm.cloud.cloudant.v1.model.ViewResult empty =
+                    mock(com.ibm.cloud.cloudant.v1.model.ViewResult.class);
+            when(empty.getRows()).thenReturn(java.util.List.of());
+            when(client.queryView(anyString(), anyString(),
+                    org.mockito.ArgumentMatchers.<java.util.Map<String, Object>>any()))
+                    .thenReturn(empty);
+            dao.setConnectorPool(pool);
+
+            org.junit.jupiter.api.Assertions.assertEquals(0L,
+                    dao.getChildrenCount("bedroom", "folder-1"),
+                    "a folder that genuinely has no children was refused");
+        });
     }
 }

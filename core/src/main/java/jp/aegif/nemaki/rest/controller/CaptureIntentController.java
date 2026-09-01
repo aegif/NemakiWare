@@ -181,18 +181,6 @@ public class CaptureIntentController {
     }
 
     /**
-     * Recomputes the applied-metadata hashes for one object and compares them to the latest
-     * hash-bearing completed capture row (design p1-1d-metadata-hash.md §4).
-     *
-     * <p>Three-valued per hash, deliberately: {@code MATCH} / {@code MISMATCH} /
-     * {@code UNVERIFIABLE}. A would-be mismatch DOWNGRADES to {@code UNVERIFIABLE} when a later
-     * row for the same source item exists without a hash — a partial failure's unresolved row,
-     * or a wrapper that completed without hashing — because "an unrecorded change" must not be
-     * claimed while a record of a later pass sits in the store. And a transient MISMATCH is
-     * possible while a pass is in flight, so the operational rule is: re-verify once; two
-     * consecutive mismatches with no pass between them are the real thing.
-     */
-    /**
      * Whether a completed capture row carries ANY applied-metadata hash.
      *
      * <p>One predicate, used by both the baseline search and the later-activity scan. The two
@@ -206,6 +194,18 @@ public class CaptureIntentController {
         return jp.aegif.nemaki.rest.ingest.capture.CaptureIntent.carriesAppliedHash(row);
     }
 
+    /**
+     * Recomputes the applied-metadata hashes for one object and compares them to the latest
+     * hash-bearing completed capture row (design p1-1d-metadata-hash.md §4).
+     *
+     * <p>FOUR-valued per hash, deliberately: {@code MATCH} / {@code MISMATCH} / {@code ABSENT} /
+     * {@code UNVERIFIABLE}. A would-be mismatch DOWNGRADES to {@code UNVERIFIABLE} when a later
+     * row for the same source item exists without a hash — a partial failure's unresolved row,
+     * or a wrapper that completed without hashing — because "an unrecorded change" must not be
+     * claimed while a record of a later pass sits in the store. And a transient MISMATCH is
+     * possible while a pass is in flight, so the operational rule is: re-verify once; two
+     * consecutive mismatches with no pass between them are the real thing.
+     */
     @GetMapping("/verify-metadata")
     public ResponseEntity<Map<String, Object>> verifyMetadata(
             @RequestParam String repositoryId,
@@ -352,9 +352,10 @@ public class CaptureIntentController {
         }
     }
 
-    /** One hash's verdict. Absent on either side is not a mismatch — it is unverifiable. */
     /**
      * The verdict for one evidence compartment.
+     *
+     * <p>One hash's verdict. Absent on either side is not a mismatch — it is unverifiable.
      *
      * <h2>Why {@code ABSENT} is not {@code UNVERIFIABLE}</h2>
      *

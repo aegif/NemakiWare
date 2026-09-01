@@ -221,14 +221,56 @@ public class AnchorService {
                     checkpoint.merkleRoot(), List.of(), refusal);
         }
         List<AnchorReceipt> receipts = new ArrayList<>(targets.size());
+        List<String> lost = new ArrayList<>();
+        int configured = 0;
+        int settled = 0;
         for (AnchorTarget target : targets) {
             AnchorReceipt receipt = receiptFrom(target, checkpoint.merkleRoot());
             receipts.add(receipt);
-            persist(checkpoint.domain(), checkpoint.toSequence(), receipt);
+            if (target.isConfigured()) {
+                configured++;
+                if (receipt.status() != AnchorStatus.FAILED) {
+                    settled++;
+                }
+            }
+            if (!persist(checkpoint.domain(), checkpoint.toSequence(), receipt)) {
+                lost.add(receipt.kind().name());
+            }
+        }
+        // Two refusals the caller could not see before, both after a commitment was made.
+        //
+        // 1. A receipt this deployment could not STORE. AnchorTarget's contract is that ordinary
+        //    remote failure comes back as a FAILED receipt rather than an exception, so persist()
+        //    returning quietly meant the OUTER call reported no refusal -- and for a PENDING
+        //    OpenTimestamps receipt the commitment has been made and the state needed to upgrade
+        //    it is gone. The proof cannot be recovered by re-anchoring; it has to be re-minted.
+        // 2. Every configured rung FAILED. The nested receipt rows have always disclosed this,
+        //    but refusedReason stayed null, so the controller's status arm -- which reads only
+        //    refusedReason -- answered 200 success over an anchor that anchored nothing.
+        if (!lost.isEmpty()) {
+            return new Outcome(checkpoint.domain(), checkpoint.toSequence(),
+                    checkpoint.merkleRoot(), receipts,
+                    "a commitment was made and its receipt was NOT stored (" + lost
+                            + "). It cannot be upgraded or shown later, and re-anchoring mints a "
+                            + "new one rather than recovering this");
+        }
+        if (configured > 0 && settled == 0) {
+            return new Outcome(checkpoint.domain(), checkpoint.toSequence(),
+                    checkpoint.merkleRoot(), receipts,
+                    "every configured rung FAILED, so this checkpoint is not anchored anywhere");
         }
         return new Outcome(checkpoint.domain(), checkpoint.toSequence(), checkpoint.merkleRoot(),
                 receipts, null);
     }
+
+    /**
+     * What an upgrade pass found, and why it found nothing when that is the answer.
+     *
+     * @param unavailable non-null when the store could not be asked. An empty {@code upgraded}
+     *        beside a null {@code unavailable} means "asked, nothing had settled" — a different
+     *        answer, and the one the endpoint used to give for both.
+     */
+    public record Upgraded(List<AnchorReceipt> upgraded, String unavailable) {}
 
     /**
      * Anchors only the rungs that have nothing to show for this checkpoint yet.
@@ -293,6 +335,33 @@ public class AnchorService {
                     "the stored receipts could not be read (" + e.getMessage() + "), so it is "
                             + "unknown which rungs already hold a commitment");
         }
+        // A row that could not be DECODED is not an absent receipt. The store dropped such rows
+        // silently, so an unreadable PENDING or CONFIRMED receipt looked like a rung that had
+        // never been anchored -- and this method would contact it again, minting a second
+        // OpenTimestamps commitment or BUYING A SECOND RFC 3161 TOKEN. That is the outcome the
+        // refusals above exist to prevent; the store's exception path was covered and its
+        // decode path was not.
+        int unreadable = receiptStore.unreadableCount();
+        if (unreadable > 0) {
+            // Two sentences for two facts. "N row(s) could not be read" asserts rows exist,
+            // and when the view simply did not answer there may be none — the custody store
+            // was split for this a round earlier and this sibling was not. The refusal itself
+            // is identical either way: anything unaccounted for means a re-anchor could buy a
+            // second RFC 3161 token.
+            return new Outcome(checkpoint.domain(), checkpoint.toSequence(),
+                    checkpoint.merkleRoot(), List.of(),
+                    (receiptStore.lastQueryFailed()
+                            ? "the stored receipts for this checkpoint could NOT BE QUERIED, so "
+                                    + "which rungs already hold a commitment is unknown — this "
+                                    + "is not a finding that any receipt exists, and not a "
+                                    + "finding that none does."
+                            : unreadable + " stored receipt row(s) for this checkpoint could "
+                                    + "not be read, so it is unknown which rungs already hold a "
+                                    + "commitment.")
+                            + " Contacting them could mint a second commitment for one that is "
+                            + "already settled -- and a second RFC 3161 token is bought, not "
+                            + "just made");
+        }
 
         List<AnchorReceipt> receipts = new ArrayList<>();
         for (AnchorTarget target : targets) {
@@ -327,13 +396,44 @@ public class AnchorService {
      * @return the receipts that CHANGED. An empty list means nothing had settled yet, which is
      *         the ordinary answer during the hours a block takes and not a failure.
      */
-    public List<AnchorReceipt> upgradePending(String domain, int limit) {
+    public Upgraded upgradePending(String domain, int limit) {
         List<AnchorReceipt> upgraded = new ArrayList<>();
+        // A REASON, not an empty list. anchor() and retryUnsettled() both carry refusal in an
+        // Outcome and the controller maps both to CONFLICT; this third verb returned a bare
+        // List, so "the store is not wired" and "asked, nothing had settled" were the same
+        // value -- and the endpoint told the operator "nothing had settled yet ... not a
+        // failure -- do not re-anchor" for a deployment that had never been asked.
         if (receiptStore == null) {
             logger.warn("No anchor receipt store: pending commitments cannot be upgraded");
-            return upgraded;
+            return new Upgraded(upgraded, "the anchor receipt store is not wired on this node, "
+                    + "so no pending commitment could be looked at. This is NOT a finding that "
+                    + "none is waiting");
         }
-        for (AnchorReceiptStore.PendingReceipt pending : receiptStore.pending(domain, limit)) {
+        if (!receiptStore.isActive()) {
+            // AnchorReceiptStore.isActive()'s own javadoc: "Callers must not read 'no pending
+            // receipts' from a store that could not be asked." /status, LongTermValidityService
+            // and EvidenceRecordService all consult it; this class never did.
+            return new Upgraded(upgraded, "the anchor receipt store could not be reached, so no "
+                    + "pending commitment could be looked at. This is NOT a finding that none "
+                    + "is waiting");
+        }
+        List<AnchorReceiptStore.PendingReceipt> pendingRows = receiptStore.pending(domain, limit);
+        if (receiptStore.unreadableCount() > 0) {
+            // BEFORE any upgrade, like retryUnsettled — the sibling verb refuses before acting
+            // for the same reason. Checked afterwards, this method upgraded and SAVED the rows
+            // it could read and then reported "upgradedCount: 0, unavailable" — work that
+            // happened, reported as not having happened, on every run until the broken row was
+            // repaired. Refusing first means nothing is done that the answer then denies.
+            return new Upgraded(List.of(), receiptStore.lastQueryFailed()
+                    ? "the pending receipts could NOT BE QUERIED, so what is waiting is "
+                            + "unknown — not a finding that anything is, or is not. Nothing was "
+                            + "upgraded"
+                    : receiptStore.unreadableCount() + " pending row(s) could not be read, so "
+                            + "which commitments are waiting is not fully known. Nothing was "
+                            + "upgraded — an upgrade pass over a partly-readable list would do "
+                            + "work its own answer then has to deny");
+        }
+        for (AnchorReceiptStore.PendingReceipt pending : pendingRows) {
             AnchorTarget target = targetFor(pending.receipt().kind());
             if (target == null) {
                 // The rung that made this receipt is no longer configured. Leaving the row
@@ -376,7 +476,9 @@ public class AnchorService {
             }
             upgraded.add(after);
         }
-        return upgraded;
+        // The unreadable check happened before the loop, so reaching here means the whole
+        // list was read. Save-time failures are carried per-rung above.
+        return new Upgraded(upgraded, null);
     }
 
     private AnchorTarget targetFor(AnchorKind kind) {
@@ -388,15 +490,19 @@ public class AnchorService {
         return null;
     }
 
-    private void persist(String domain, long toSequence, AnchorReceipt receipt) {
+    /** @return whether the receipt was stored. False means a commitment exists with no record. */
+    private boolean persist(String domain, long toSequence, AnchorReceipt receipt) {
         if (receiptStore == null) {
             if (receipt.status() == AnchorStatus.PENDING) {
                 // Worth saying loudly: a pending commitment that is never written down can
                 // never be upgraded, so rung 2 silently becomes decorative.
                 logger.warn("A PENDING {} receipt was not stored (no receipt store); it can "
                         + "never be upgraded and the proof will be lost", receipt.kind());
+                return false;
             }
-            return;
+            // A FAILED receipt has nothing to lose; a CONFIRMED one carries its own proof in
+            // the response even when this deployment keeps no copy.
+            return true;
         }
         try {
             // The monotonicity rule lives in the STORE, inside the same compare-and-set as the
@@ -413,9 +519,14 @@ public class AnchorService {
                         + "would have weakened it", receipt.kind(), domain, toSequence,
                         receipt.status());
             }
+            return true;
         } catch (RuntimeException e) {
             logger.warn("Could not store the {} anchor receipt for {}@{}: {}", receipt.kind(),
                     domain, toSequence, e.getMessage());
+            // The commitment was made and this deployment has no record of it. Reported, not
+            // swallowed: the caller's status arm reads the Outcome, and a write that failed
+            // after an external commitment is the one outcome an operator must act on.
+            return receipt.status() == AnchorStatus.FAILED;
         }
     }
 

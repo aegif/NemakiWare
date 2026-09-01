@@ -95,15 +95,37 @@ public class EarkSipExporter {
     /** The organisation agent's role. MUST be CREATOR with a TYPE that is not OTHER (SIP15). */
     private static final String SUBMITTER_ROLE = "CREATOR";
 
-    /** What the evidence package does and does not let a third party conclude. */
+    /** What is true of every package, audit path or not. */
+    private static final String EVIDENCE_LIMITS_TAIL =
+            " It does NOT prove the checkpoint itself was not rewritten — that needs the "
+                    + "checkpoint hash to exist somewhere outside this repository's database, "
+                    + "which is what an external anchor is for. It also says nothing about "
+                    + "whether the capture was complete or its metadata true: the chain fixes "
+                    + "WHAT WAS RECORDED and WHEN, not whether the record is accurate.";
+
+    /**
+     * What the evidence package lets a third party conclude, for a package that carries a
+     * usable audit path.
+     */
     static final String EVIDENCE_PACKAGE_LIMITS =
             "The audit path proves that the entry named here was in the span its checkpoint "
-                    + "sealed, given the checkpoint. It does NOT prove the checkpoint itself "
-                    + "was not rewritten — that needs the checkpoint hash to exist somewhere "
-                    + "outside this repository's database, which is what an external anchor is "
-                    + "for. It also says nothing about whether the capture was complete or its "
-                    + "metadata true: the chain fixes WHAT WAS RECORDED and WHEN, not whether "
-                    + "the record is accurate.";
+                    + "sealed, given the checkpoint." + EVIDENCE_LIMITS_TAIL;
+
+    /**
+     * For a package that carries none — which is most of the failure arms.
+     *
+     * <p>{@code limits} is written once, near the top, so every arm has one. That made the
+     * sentence above travel with packages that have no {@code inclusionProof} at all: the
+     * unavailable, error, not-chained and proof-failed arms all shipped "the audit path proves
+     * that the entry named here was in the span its checkpoint sealed" into
+     * nemaki-evidence.json, which leaves the organisation and cannot be corrected afterwards.
+     *
+     * <p>The comment beside the proof-failed arm had already NAMED this, and the correction
+     * there stopped at the status and a new key. The sentence it named stayed.
+     */
+    static final String EVIDENCE_PACKAGE_LIMITS_NO_PATH =
+            "This package carries NO audit path, so nothing in it proves that any entry named "
+                    + "here was in the span a checkpoint sealed." + EVIDENCE_LIMITS_TAIL;
 
     private ContentService contentService;
     private AuthenticityReportAssembler reportAssembler;
@@ -145,8 +167,17 @@ public class EarkSipExporter {
     /** What the caller asked for. */
     public record Options(boolean includeInternalOnly, String submittingOrganisation) {
 
-        /** Withholds personal data; names the deployment rather than an organisation. */
-        public static Options withholdingPersonalData() {
+        /**
+         * Leaves out the properties the disclosure table marks INTERNAL_ONLY.
+         *
+         * <p><b>Not "withholds personal data", which is what this was called.</b> The flag
+         * selects METADATA PROPERTIES; {@code writePayload} adds the document body
+         * unconditionally, so a package built this way can still carry personal data in its
+         * content. A method name is the machine-readable side of a claim — a caller reads it and
+         * concludes something from it — so this had the same defect as the response header that
+         * used to say {@code X-Nemaki-Includes-Personal-Data: false}. Design §21.
+         */
+        public static Options withoutInternalOnlyProperties() {
             return new Options(false, "NemakiWare deployment");
         }
     }
@@ -649,7 +680,13 @@ public class EarkSipExporter {
         evidence.put("objectId", objectId);
         evidence.put("chainedEntries", List.of());
         evidence.put("inclusionProof", null);
-        evidence.put("limits", EVIDENCE_PACKAGE_LIMITS);
+        // The WEAKER sentence is the default, and the stronger one is earned further down when
+        // an audit path is actually built. Written the other way round — strong by default,
+        // corrected in the arms that fail — it was wrong in five of them, because each new
+        // failure arm has to remember. This direction is wrong only if a package that HAS a
+        // usable path forgets to upgrade, which is one place, on the success path, where the
+        // proof object is right there to check.
+        evidence.put("limits", EVIDENCE_PACKAGE_LIMITS_NO_PATH);
         if (ledgerStore == null || ledgerService == null) {
             evidence.put("status", "unavailable");
             evidence.put("message", "the evidence ledger is not wired on the node that built "
@@ -661,6 +698,7 @@ public class EarkSipExporter {
         List<Map<String, Object>> chained = new ArrayList<>();
         List<EvidenceLedgerEntry> entries;
         List<EvidenceLedgerEntry> captureEntries = List.of();
+        int undecodableEntries = 0;
         String captureLookupFailed = null;
         try {
             // TWO lookups, because the chain files two kinds of thing under two subjects.
@@ -679,6 +717,12 @@ public class EarkSipExporter {
             // subject would have been the other way to close it, and it would break every
             // inclusion proof already issued over them.
             entries = new ArrayList<>(ledgerStore.findBySubject(repositoryId, objectId, 50));
+            // Rows the store returned and could not decode are NOT in `entries`. With all of
+            // them undecodable the list is empty, and the branch below writes "no ledger entry
+            // names this object" into nemaki-evidence.json — inside the package that leaves the
+            // organisation, where it cannot be corrected. The read that threw is handled; the
+            // read that partly succeeded was not.
+            undecodableEntries = ledgerStore.unreadableCount();
         } catch (RuntimeException e) {
             evidence.put("status", "error");
             evidence.put("message", "the evidence ledger could not be read (" + e.getMessage()
@@ -688,7 +732,12 @@ public class EarkSipExporter {
             return evidence;
         }
         try {
-            captureEntries = captureEntriesFor(repositoryId, objectId);
+            CaptureEntries captures = captureEntriesFor(repositoryId, objectId);
+            captureEntries = captures.entries();
+            // Carried out in the return value. The lookup makes one store read per capture
+            // intent and each resets the store's counter, so the number taken after the
+            // object-subject lookup says nothing about these.
+            undecodableEntries += captures.undecodable();
         } catch (CaptureLookupFailed e) {
             // Reported, not swallowed. The package still carries the object's own entries; what
             // it must not do is go on to say "no capture entry was found for this record" when
@@ -696,16 +745,61 @@ public class EarkSipExporter {
             captureLookupFailed = e.getMessage();
         }
         if (entries.isEmpty() && captureEntries.isEmpty()) {
-            evidence.put("status", captureLookupFailed != null ? "error" : "not-chained");
-            evidence.put("message", captureLookupFailed != null
-                    ? "no ledger entry names this object, and the capture rows could not be "
-                            + "read (" + captureLookupFailed + "). This is NOT a statement that "
-                            + "the record was never chained."
-                    : "no ledger entry names this object, and no capture entry was found for it "
-                            + "either. The chain only holds what was written to it from the day "
-                            + "the producer shipped, with no back-fill, so this says nothing "
-                            + "about whether the record is genuine.");
+            // Two independent failures, and they were written as alternatives. Rows this store
+            // could not decode and a capture lookup that threw can BOTH happen — a repository
+            // with damaged rows is exactly the one whose views are struggling — and the
+            // `else if` meant the undecodableEntries key was left out of the package entirely
+            // whenever the capture read had also failed. What shipped was "no ledger entry
+            // names this object", in a file that leaves the organisation and cannot be
+            // corrected afterwards, while N rows naming it sat unread.
+            if (captureLookupFailed != null || undecodableEntries > 0) {
+                evidence.put("status", "error");
+                StringBuilder why = new StringBuilder();
+                if (undecodableEntries > 0) {
+                    evidence.put("undecodableEntries", undecodableEntries);
+                    why.append(undecodableEntries).append(" ledger row(s) for this object could "
+                            + "not be read");
+                    notes.add("This package's evidence is incomplete: " + undecodableEntries
+                            + " chain row(s) for this object could not be read.");
+                }
+                if (captureLookupFailed != null) {
+                    evidence.put("captureLookupFailed", captureLookupFailed);
+                    if (why.length() > 0) {
+                        why.append(", and ");
+                    }
+                    why.append("the capture rows could not be read (")
+                            .append(captureLookupFailed).append(")");
+                    // A note as well. These are the HEAVIEST failures here — nothing at all was
+                    // established — and they were the only arms with no note, so a caller
+                    // streaming the zip to disk saw the light failure announced in a header and
+                    // the total one announced nowhere.
+                    notes.add("This package's evidence is incomplete: the capture rows could not "
+                            + "be read (" + captureLookupFailed + ").");
+                }
+                evidence.put("message", "no entry was found among the rows that WERE read, and "
+                        + why + ". This is NOT a statement that the record was never chained.");
+            } else {
+                evidence.put("status", "not-chained");
+                evidence.put("message", "no ledger entry names this object, and no capture entry "
+                        + "was found for it either. The chain only holds what was written to it "
+                        + "from the day the producer shipped, with no back-fill, so this says "
+                        + "nothing about whether the record is genuine.");
+            }
             return evidence;
+        }
+        // The gap travels even when SOMETHING was read. The branch above only fires when both
+        // lists are empty, so one decodable row was enough to ship status:"success" with the
+        // dropped rows nowhere in the package — and this map is written into
+        // nemaki-evidence.json, which leaves the organisation. "All of them were unreadable"
+        // and "some of them were" are the same fact about what this list does not contain.
+        if (undecodableEntries > 0) {
+            evidence.put("undecodableEntries", undecodableEntries);
+            evidence.put("undecodableEntriesNote", undecodableEntries + " ledger row(s) for this "
+                    + "object could not be read and are NOT among the entries below. The entries "
+                    + "that ARE here were read; this is NOT a statement that the chain holds "
+                    + "nothing else about this record.");
+            notes.add("This package's evidence is incomplete: " + undecodableEntries
+                    + " chain row(s) for this object could not be read.");
         }
         List<EvidenceLedgerEntry> all = new ArrayList<>(captureEntries);
         all.addAll(entries);
@@ -720,7 +814,21 @@ public class EarkSipExporter {
             chained.add(row);
         }
         evidence.put("chainedEntries", chained);
-        evidence.put("status", "success");
+        // "success" only when nothing is unaccounted for. The gap was disclosed in its own key
+        // and the STATUS still said success — so the word a reader takes first said the
+        // opposite of the key beside it, in a file that leaves the organisation and cannot be
+        // corrected afterwards. The both-empty arm above was corrected for exactly this a round
+        // earlier; the arm where SOMETHING was read kept the defect.
+        boolean anythingUnread = undecodableEntries > 0 || captureLookupFailed != null;
+        if (captureLookupFailed != null) {
+            // And a note, which this arm never added either: a caller streaming the zip to disk
+            // never sees the JSON, and the header is the only place it would learn that the
+            // capture evidence was not read.
+            notes.add("This package's evidence is incomplete: the capture rows for this record "
+                    + "could not be read (" + captureLookupFailed + ").");
+            evidence.put("captureLookupFailed", captureLookupFailed);
+        }
+        evidence.put("status", anythingUnread ? "incomplete" : "success");
         // The proof is for the CAPTURE when there is one, and it says which entry it is about.
         // The previous version proved `entries.get(0)` and called it "the capture" — but that
         // list is the object's own entries, so the label named a capture while the proof was
@@ -733,8 +841,44 @@ public class EarkSipExporter {
         proof.put("provesEntry", proved.subjectKind().name());
         proof.put("provesSubjectId", proved.subjectId());
         proof.put("provesSequence", proved.sequence());
-        proof.putAll(ledgerService.inclusionProof(repositoryId, proved.sequence()));
+        Map<String, Object> built = ledgerService.inclusionProof(repositoryId, proved.sequence());
+        proof.putAll(built);
         evidence.put("inclusionProof", proof);
+        // inclusionProof reports its refusals -- unverifying checkpoint, short read, fork, root
+        // mismatch and the rest -- in its RETURNED map. Merging that map into a nested key left
+        // the OUTER status saying "success", and this object is written into the SIP as
+        // nemaki-evidence.json, so the wrong word travels to the receiving organisation and
+        // cannot be corrected afterwards.
+        //
+        // (This comment said "eight refusals" and "the three other failure arms each add a
+        // note". Both were counts of things nobody recounted afterwards: inclusionProof has
+        // seven non-success arms, and the arms here that add a note were outnumbered by the
+        // ones that did not. The counts are gone rather than corrected — a number in a comment
+        // earns nothing and goes stale on the next edit.)
+        //
+        // The limits sentence this comment named is fixed too, not just described — and by
+        // flipping the default rather than by patching each arm, so the next failure arm is
+        // correct without remembering anything.
+        String proofStatus = String.valueOf(built.get("status"));
+        if ("success".equals(proofStatus)) {
+            // The one place the stronger sentence is earned.
+            evidence.put("limits", EVIDENCE_PACKAGE_LIMITS);
+        } else {
+            // This overwrites "incomplete" when BOTH happened — rows this store could not read
+            // AND a proof that could not be built. Deliberate, and it is not concealment: the
+            // stronger statement wins the one-word slot, and the weaker fact stays visible in
+            // undecodableEntries, undecodableEntriesNote and the export note, all of which are
+            // set before this point and none of which this arm touches. Written down because a
+            // reader comparing the two arms would otherwise have to work out whether the first
+            // fact was lost.
+            evidence.put("status", proofStatus);
+            evidence.put("inclusionProofFailed", "the audit path for this record could not be "
+                    + "built (" + built.get("message") + "). The entries listed above are what "
+                    + "the chain holds; NOTHING here proves any of them was in the span its "
+                    + "checkpoint sealed.");
+            notes.add("This package's evidence carries NO usable audit path: "
+                    + built.get("message"));
+        }
         if (captureEntries.isEmpty()) {
             evidence.put("captureProof", captureLookupFailed != null
                     ? "the capture rows for this record COULD NOT BE READ (" + captureLookupFailed
@@ -750,6 +894,19 @@ public class EarkSipExporter {
         return evidence;
     }
 
+
+    /**
+     * The capture entries, and how many rows the lookups could not decode.
+     *
+     * <p>A RETURN VALUE, not a field. The first version of this correction put the count on the
+     * exporter — which Spring builds ONCE — so two exports running at the same time reset and
+     * overwrote each other's number, and a package could be built saying "no capture entry was
+     * found" because another request had just cleared the counter. A per-call fact belongs in
+     * the value the call returns.
+     */
+    private record CaptureEntries(List<EvidenceLedgerEntry> entries, int undecodable) {
+    }
+
     /**
      * The chain entries for this record's CAPTURE, found the way the report finds them.
      *
@@ -758,23 +915,36 @@ public class EarkSipExporter {
      * still a package, and it reports what it did find rather than failing over what it did
      * not.
      */
-    private List<EvidenceLedgerEntry> captureEntriesFor(String repositoryId, String objectId) {
+    private CaptureEntries captureEntriesFor(String repositoryId, String objectId) {
         if (captureMaintenanceStore == null) {
-            return List.of();
+            return new CaptureEntries(List.of(), 0);
         }
+        int capturesUndecodable = 0;
         List<EvidenceLedgerEntry> found = new ArrayList<>();
         try {
             for (Map<String, Object> row : captureMaintenanceStore.listCapturedForObject(
                     repositoryId, objectId, 20)) {
                 Object intentId = row.get("intentId");
                 if (intentId == null) {
+                    // Counted, like every other row this loop cannot use. Skipped in silence, a
+                    // set of capture rows that ALL lacked one produced "no capture entry was
+                    // found for it either" in the exported nemaki-evidence.json — the confident
+                    // negative, drawn from rows that were right there. The accumulation ten
+                    // lines down was added for exactly this and did not cover this arm.
+                    capturesUndecodable++;
                     continue;
                 }
                 found.addAll(ledgerStore.findBySubject(repositoryId, String.valueOf(intentId),
                         10));
+                // ACCUMULATED, and inside the loop. unreadableCount is per-READ, so each turn
+                // of this loop resets it: reading it once afterwards would report only the last
+                // intent's losses, and reading it in the caller would report none of them. An
+                // undecodable capture entry that went uncounted here becomes "no capture entry
+                // was found for it either" inside the exported nemaki-evidence.json.
+                capturesUndecodable += ledgerStore.unreadableCount();
             }
             if (found.isEmpty()) {
-                return found;
+                return new CaptureEntries(found, capturesUndecodable);
             }
         } catch (RuntimeException e) {
             // NOT an empty list. Returning one here turns "we could not look" into "there is no
@@ -783,7 +953,7 @@ public class EarkSipExporter {
                     objectId, e.getMessage());
             throw new CaptureLookupFailed(e.getMessage());
         }
-        return found;
+        return new CaptureEntries(found, capturesUndecodable);
     }
 
     /** Raised when the capture rows could not be read — never collapsed into "none". */

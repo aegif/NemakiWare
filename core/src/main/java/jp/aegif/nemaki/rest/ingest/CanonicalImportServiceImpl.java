@@ -3360,11 +3360,41 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             try {
                 children = contentDaoService.getChildren(repositoryId, targetFolderId);
             } catch (Exception e) {
-                logger.debug("Dedupe: failed to load children for {}: {}", targetFolderId, e.getMessage());
-                return null;
+                // NOT null. The caller reads null as "no existing document" and goes on to
+                // CREATE one — so a folder that could not be enumerated produced a duplicate,
+                // reported the import as successful, and left one line at DEBUG. The store was
+                // changed to refuse an unanswered view rather than report an empty folder;
+                // this catch turned that refusal straight back into the empty answer, one
+                // layer up, which is the shape this project keeps finding.
+                //
+                // Refusing costs a retry. Not refusing costs a duplicate document that nobody
+                // is told about, and dedupe is the one operation whose whole job is to not do
+                // that. The idempotency key stops a repeat of the SAME request; it does not
+                // stop a re-sync whose key differs.
+                logger.warn("Dedupe could not enumerate {} ({}), so whether this document is "
+                        + "already there is UNKNOWN; refusing rather than importing a possible "
+                        + "duplicate", targetFolderId, e.getMessage());
+                throw new IllegalStateException("the target folder could not be enumerated, so "
+                        + "it is unknown whether this document is already there; the import was "
+                        + "refused rather than risking a duplicate", e);
             }
         }
         if (children == null) return null;
+        // The throw above covers "the view did not answer". A child row the store RETURNED and
+        // could not decode does not throw — it is counted and left out of the list — so a
+        // duplicate whose row is undecodable is simply not seen here, and the caller creates a
+        // second document. Same outcome, the door next to the one just closed.
+        //
+        int unreadableChildren = contentDaoService.lastUnreadableChildCount();
+        if (unreadableChildren > 0) {
+            String detail = unreadableChildren + " child row(s) could not be read";
+            logger.warn("Dedupe for {} in {} was made against an incomplete listing ({}), so "
+                    + "refusing rather than importing a possible duplicate", fileName,
+                    targetFolderId, detail);
+            throw new IllegalStateException("the target folder's listing is incomplete ("
+                    + detail + "), so it is unknown whether this document is already there; the "
+                    + "import was refused rather than risking a duplicate");
+        }
 
         // Pass 1: search by sourceObjectId (unless filename-only mode)
         if (trySourceId && sourceObjectId != null && !sourceObjectId.isBlank()) {

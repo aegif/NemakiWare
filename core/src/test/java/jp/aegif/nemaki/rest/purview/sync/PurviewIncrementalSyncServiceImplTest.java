@@ -363,6 +363,37 @@ public class PurviewIncrementalSyncServiceImplTest {
     }
 
     @Test
+    public void anIncompleteCloudWalkPersistsTheWidenedBaselineWhileStillFailing() {
+        // The stream stays FAILED (dead letter kept, COMPLETED_WITH_ERRORS) — but the cursor
+        // takes the result's snapshot, not the stored one. For the exception arms they are
+        // the same value; for the incomplete-walk arm the result carries the WIDENED baseline
+        // (previous ∪ published), and re-saving the old cursor here dropped it — reopening
+        // the created-then-vanished hole on exactly the path that runs on a schedule.
+        when(schemaPlannerService.getSchemaDiff()).thenReturn(new PurviewSchemaDiff(
+                "NemakiWare", "1", "current-hash", "1", "current-hash", false,
+                java.util.List.of(), java.util.List.of(), java.util.List.of()));
+        when(cursorStateService.getCursorState("bedroom", "cloud-metadata-snapshot")).thenReturn(new PurviewCursorState(
+                "bedroom", "cloud-metadata-snapshot", "cloud-1", "snapshot",
+                "2026-03-20T01:00:00Z", "2026-03-20T00:55:00Z", "", "", 0, 0));
+        when(cloudMetadataPublishService.syncRepositoryCloudMetadataIfChanged("bedroom", "cloud-1"))
+                .thenReturn(new PurviewCloudMetadataSyncResult(
+                        "cloud-1\ndoc-new|google|cloud-new||2026-03-20T03:00:00.000+0000",
+                        true, 1, 0, true));
+
+        PurviewJobState result = service.startIncrementalSync("bedroom", "admin");
+
+        assertEquals("COMPLETED_WITH_ERRORS", result.getStatus());
+        verify(cursorStateService).saveCursorState(argThat(state ->
+                "cloud-metadata-snapshot".equals(state.getStreamKind())
+                        && state.getCursor().contains("doc-new|google|cloud-new")
+                        && state.getCursor().contains("cloud-1")
+                        && state.getConsecutiveFailureCount() == 1));
+        verify(deadLetterStateService).saveDeadLetterState(argThat(state ->
+                "cloud-metadata-snapshot".equals(state.getStreamKind())
+                        && "bedroom".equals(state.getEntryKey())));
+    }
+
+    @Test
     public void testStartIncrementalSyncStagesTombstoneForDeletedChange() {
         when(schemaPlannerService.getSchemaDiff()).thenReturn(new PurviewSchemaDiff(
                 "NemakiWare", "2", "current-hash", "2", "current-hash", false,
@@ -583,4 +614,43 @@ public class PurviewIncrementalSyncServiceImplTest {
                 m.invoke(service, current, "2026-08-01T00:00:00Z", "boom");
     }
 
+
+    @org.junit.jupiter.api.Test
+    public void anUnreadableChangeRowKeepsTheCursorWhereItWas() {
+        // A change row that will not decode is a change that HAPPENED, at a token between the
+        // ones that did decode. Before this guard the sync advanced the cursor to the last
+        // DECODED token — past the broken row — and that change was never visited again; a
+        // deleted object sat in the external catalog until a full sync. The same token-overrun
+        // the FULL sync was corrected for, arriving through the change log.
+        when(schemaPlannerService.getSchemaDiff()).thenReturn(new PurviewSchemaDiff(
+                "NemakiWare", "1", "current-hash", "1", "current-hash", false,
+                java.util.List.of(), java.util.List.of(), java.util.List.of()));
+        when(cursorStateService.getCursorState("bedroom", "content-change-log"))
+                .thenReturn(new PurviewCursorState(
+                        "bedroom", "content-change-log", "100", "changeToken",
+                        "2026-03-20T01:00:00Z", "2026-03-20T01:00:00Z", "2026-03-20T00:50:00Z",
+                        "", 0, 0));
+        Change change1 = createChange("100");
+        Change change3 = createChange("102");
+        when(contentDaoService.getLatestChanges("bedroom", "100", 101))
+                .thenReturn(List.of(change1, change3));
+        // The row between them did not decode.
+        when(contentDaoService.lastUnreadableChangeCount()).thenReturn(1);
+
+        PurviewJobState result = service.startIncrementalSync("bedroom", "admin");
+
+        org.junit.jupiter.api.Assertions.assertNotEquals("COMPLETED", result.getStatus(),
+                "a sync that lost a change row reported a clean completion");
+        ArgumentCaptor<PurviewCursorState> cursorCaptor =
+                ArgumentCaptor.forClass(PurviewCursorState.class);
+        verify(cursorStateService, org.mockito.Mockito.atLeastOnce())
+                .saveCursorState(cursorCaptor.capture());
+        for (PurviewCursorState saved : cursorCaptor.getAllValues()) {
+            if ("content-change-log".equals(saved.getStreamKind())) {
+                org.junit.jupiter.api.Assertions.assertEquals("100", saved.getCursor(),
+                        "the cursor advanced past a change nobody decoded — that change is "
+                                + "never visited again: " + saved.getCursor());
+            }
+        }
+    }
 }

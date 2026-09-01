@@ -290,6 +290,11 @@ public class ContentServiceImpl implements ContentService {
 		return getFolder(repositoryId, content.getParentId());
 	}
 
+	@Override
+	public int lastUnreadableChildCount() {
+		return contentDaoService.lastUnreadableChildCount();
+	}
+
 	/**
 	 * Get children contents in a given folder
 	 */
@@ -634,6 +639,15 @@ public class ContentServiceImpl implements ContentService {
 
 		// Return the existing sub-folder if present.
 		List<Content> children = getChildren(repositoryId, systemFolder.getId());
+		// Find-or-CREATE over a short listing creates a duplicate: the existing folder may BE
+		// the row that would not decode. This is the consolidation helper the sync and auth
+		// paths were pointed at — the guard has to live here or every caller inherits the hole.
+		if (lastUnreadableChildCount() > 0) {
+			throw new IllegalStateException("the .system folder's listing is incomplete ("
+					+ lastUnreadableChildCount() + " child row(s) could not be read), so whether"
+					+ " a '" + name + "' folder already exists is unknown; refusing to create a"
+					+ " possible duplicate");
+		}
 		if (CollectionUtils.isNotEmpty(children)) {
 			for (Content child : children) {
 				if (child instanceof Folder && java.util.Objects.equals(name, child.getName())) {
@@ -785,10 +799,21 @@ public class ContentServiceImpl implements ContentService {
 		}
 		for (String parentId : parents) {
 			// Re-fetch a full, revision-bearing document before persisting the update; the view
-			// value carries no revision.
-			jp.aegif.nemaki.model.GroupItem g = getGroupItemById(repositoryId, parentId);
+			// value carries no revision. FRESH, not cached: the reverse view is
+			// cross-replica truth, but the cache can hold a parent from before another
+			// replica added this membership — a stale hit here read as "does not contain
+			// it" and skipped the strip, the multi-replica twin of the null-skip below.
+			jp.aegif.nemaki.model.GroupItem g = getGroupItemByIdFresh(repositoryId, parentId);
 			if (g == null) {
-				continue;
+				// The view SAID this group references the principal being deleted; a re-fetch
+				// that comes back empty is "could not confirm", not "no longer references".
+				// Skipping updated the OTHER parents and let the delete report success — the
+				// dangling id then sat in this parent's nested list, and re-creating the same
+				// group id later silently revived the nesting. Same argument as
+				// parentGroupIdsFrom's javadoc, one hop later.
+				throw new IllegalStateException("group '" + parentId + "' references group '"
+						+ groupId + "' but could not be re-fetched; aborting the delete"
+						+ " instead of leaving a dangling nested reference");
 			}
 			List<String> current = g.getGroups();
 			if (current == null || !current.contains(groupId)) {
@@ -862,9 +887,14 @@ public class ContentServiceImpl implements ContentService {
 		}
 		for (String parentId : parents) {
 			// the view value carries no revision; re-fetch a full, revision-bearing document
-			jp.aegif.nemaki.model.GroupItem g = getGroupItemById(repositoryId, parentId);
+			// (FRESH — same stale-cache argument as the group twin above)
+			jp.aegif.nemaki.model.GroupItem g = getGroupItemByIdFresh(repositoryId, parentId);
 			if (g == null) {
-				continue;
+				// Same as the group twin above: re-creating the same user id later would
+				// silently inherit this group's ACEs through the dangling membership.
+				throw new IllegalStateException("group '" + parentId + "' references user '"
+						+ userId + "' but could not be re-fetched; aborting the delete"
+						+ " instead of leaving a dangling membership");
 			}
 			List<String> current = g.getUsers();
 			if (current == null || !current.contains(userId)) {
@@ -3431,12 +3461,13 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		if (!relationshipIds.isEmpty()) {
-			try {
-				log.debug("Deleting " + relationshipIds.size() + " relationships for object: " + objectId);
-				deleteRelationshipsBatch(repositoryId, relationshipIds);
-			} catch (Exception e) {
-				log.error("Error deleting relationships for object " + objectId + ": " + e.getMessage(), e);
-			}
+			// No catch: these edges belong to the object about to be deleted. Proceeding
+			// past a failed edge delete removes the object and leaves relationships whose
+			// end no longer exists — the write-side twin of the short-listing orphans the
+			// read paths refuse. An aborted delete is rerunnable; an orphaned edge is not
+			// swept by anything.
+			log.debug("Deleting " + relationshipIds.size() + " relationships for object: " + objectId);
+			deleteRelationshipsBatch(repositoryId, relationshipIds);
 		}
 
 		try {
@@ -3494,10 +3525,12 @@ public class ContentServiceImpl implements ContentService {
 		log.debug("deleteRelationshipsBatch: Deleting " + relationshipIds.size() + " relationships in bulk");
 		int deletedCount = contentDaoService.deleteBulk(repositoryId, relationshipIds);
 		if (deletedCount < relationshipIds.size()) {
-			log.warn("deleteRelationshipsBatch: Only " + deletedCount + " of " + relationshipIds.size() + " relationships were deleted");
-		} else {
-			log.debug("deleteRelationshipsBatch: Successfully deleted " + deletedCount + " relationships");
+			// A WARN here let the object deletion proceed over edges that survived.
+			throw new IllegalStateException("only " + deletedCount + " of "
+					+ relationshipIds.size() + " relationships could be deleted; aborting the"
+					+ " object delete instead of orphaning the survivors");
 		}
+		log.debug("deleteRelationshipsBatch: Successfully deleted " + deletedCount + " relationships");
 	}
 
 	@Override
@@ -3580,10 +3613,15 @@ public class ContentServiceImpl implements ContentService {
 					versionList.add(document);
 				}
 			} catch (Exception e) {
+				// "Falling back to single version deletion" here kept allVersions=true, so
+				// the version-SERIES document was still deleted afterwards — over sibling
+				// versions this walk never saw. The version list's own refusal ("this list
+				// is read and acted on for every member") was inverted by this catch into
+				// exactly the orphaning it exists to stop.
 				log.error("getAllVersions failed for versionSeriesId {}: {}", versionSeriesId, e.getMessage(), e);
-				// Fall back to single version deletion
-				log.warn("Falling back to single version deletion for document: {}", objectId);
-				versionList.add(document);
+				throw new IllegalStateException("the version series '" + versionSeriesId
+						+ "' could not be enumerated; deleting all versions without the list"
+						+ " would orphan the versions it hides", e);
 			}
 		} else {
 			// Single version deletion - need to handle version promotion first
@@ -3602,7 +3640,13 @@ public class ContentServiceImpl implements ContentService {
 					}
 				}
 			} catch (Exception e) {
+				// An empty list here reads as "this is the only version", which ESCALATES a
+				// single-version delete into deleting the whole version series — one view
+				// failure turned "remove v1.3" into "remove the series record".
 				log.error("Failed to get all versions for single version deletion: {}", e.getMessage(), e);
+				throw new IllegalStateException("the version series '" + versionSeriesId
+						+ "' could not be enumerated; a single-version delete cannot decide"
+						+ " succession (or that it is the last version) without the list", e);
 			}
 
 			// Filter out PWC and the document being deleted
@@ -3739,25 +3783,53 @@ public class ContentServiceImpl implements ContentService {
 
 		// Delete children
 		List<Content> children = getChildren(repositoryId, folderId);
+		// Read BEFORE the recursive deletes below: the counter is per-thread and per-read, so
+		// every nested getChildren overwrites it.
+		int unreadableChildren = lastUnreadableChildCount();
 		if (!CollectionUtils.isEmpty(children)) {
 			for (Content child : children) {
 				try {
 					if (child.isFolder()) {
-						deleteTree(callContext, repositoryId, child.getId(), allVersions, continueOnFailure, true);
+						// The nested result used to be DISCARDED, so a subtree that could not
+						// be fully deleted reported nothing to this level, and the loop below
+						// deleted this folder over the survivors.
+						failureIds.addAll(deleteTree(callContext, repositoryId, child.getId(),
+								allVersions, continueOnFailure, true));
 					} else if (child.isDocument()) {
 						deleteDocument(callContext, repositoryId, child.getId(), allVersions, true);
 					} else {
 						delete(callContext, repositoryId, child.getId(), true);
 					}
 				} catch (Exception e) {
+					// Recorded in BOTH modes. With continueOnFailure=false this used to log and
+					// fall through, so a failed non-folder child left no entry — and the guard
+					// below, which keys on failureIds, then deleted the folder over it. The
+					// CMIS meaning of continueOnFailure is "stop attempting more", not "forget
+					// what already failed".
+					failureIds.add(child.getId());
 					if (continueOnFailure) {
-						failureIds.add(child.getId());
 						continue;
-					} else {
-						log.error("", e);
 					}
+					log.error("", e);
+					break;
 				}
 			}
+		}
+
+		// The folder itself is deleted ONLY when everything under it is gone. Two ways for that
+		// to be false: a child failed to delete (failureIds), or the listing itself was SHORT —
+		// rows the repository could not decode are not in `children`, so they were neither
+		// deleted nor counted as failures, and removing their parent would orphan them: content
+		// that exists, is reachable by id, and hangs from a folder that no longer does. A
+		// deletion has no reconcile pass to catch that later.
+		if (unreadableChildren > 0 || !failureIds.isEmpty()) {
+			if (unreadableChildren > 0) {
+				log.warn("deleteTree(" + folderId + "): " + unreadableChildren + " child row(s) "
+						+ "of this folder could not be decoded. They were NOT deleted, so the "
+						+ "folder itself is kept — deleting it would orphan them.");
+			}
+			failureIds.add(folderId);
+			return failureIds;
 		}
 
 		// Delete the folder itself
@@ -4186,6 +4258,19 @@ public class ContentServiceImpl implements ContentService {
 			jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat target,
 			jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation pdfa) {
 		if (formatDuplicationRecorder == null) {
+			// Said out loud. Every other unwired-bean arm in this batch answers with a word --
+			// the SIP exporter ships status:"unavailable" plus a note, the fixity and anchor
+			// endpoints answer 503 -- and this one returned in silence, so a node with the
+			// recorder missing produced renditions with no trace and nothing anywhere saying
+			// why. An operator reading the release note ("the one path always records") would
+			// believe the trail exists.
+			//
+			// A rendition is still produced: refusing the conversion over a missing evidence
+			// bean would be out of proportion. What must not happen is the silence.
+			log.warn("No FormatDuplicationRecorder is wired on this node, so the rendition of "
+					+ (document != null ? document.getId() : "(unknown)") + " in " + repositoryId
+					+ " was produced with NO duplication entry. This is a gap in the record, "
+					+ "not a finding that the rendition is untrustworthy.");
 			return;
 		}
 		try {
@@ -4400,10 +4485,13 @@ public class ContentServiceImpl implements ContentService {
 	/**
 	 * Wired explicitly in {@code businesslogicContext.xml}, deliberately NOT by annotation.
 	 *
-	 * <p>A null recorder is SILENT by design — the rendition still succeeds, and only the record
-	 * of it is missing. That makes an injection that stopped firing indistinguishable from a
-	 * healthy deployment, which is precisely how this project shipped a broken wiring once
-	 * already.
+	 * <p>A null recorder does not stop the rendition — only the record of it is missing — and
+	 * {@code recordFormatDuplication} logs a WARN naming the document when that happens. An
+	 * earlier version of this comment said a null recorder was "SILENT by design"; the silence
+	 * was withdrawn (18 巡目), because it made an injection that stopped firing
+	 * indistinguishable from a healthy deployment — which is precisely how this project shipped
+	 * a broken wiring once already. The WARN is the fix for that, not a violation of this
+	 * comment: do not remove it to restore the old sentence.
 	 */
 	public void setFormatDuplicationRecorder(
 			jp.aegif.nemaki.evidence.FormatDuplicationRecorder formatDuplicationRecorder) {
@@ -4627,6 +4715,11 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc) {
 		return archiveDelegate.getArchives(repositoryId, skip, limit, desc);
+	}
+
+	@Override
+	public int lastUnreadableArchiveCount() {
+		return contentDaoService.lastUnreadableArchiveCount();
 	}
 
 	@Override

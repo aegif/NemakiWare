@@ -66,6 +66,15 @@ public class FilesystemExporter {
 
         ContentService cs = getContentService();
         List<Content> children = cs.getChildren(repositoryId, folder.getId());
+        // A short listing makes this export INCOMPLETE, and nothing else would say so: rows
+        // the repository cannot decode are absent without an exception, and an export that
+        // presents itself as the folder's contents is exactly where that silence becomes a
+        // false completeness claim — often in a backup someone restores from later.
+        if (cs.lastUnreadableChildCount() > 0) {
+            result.errors.add("Folder '" + folder.getName() + "' (" + folder.getId() + "): "
+                    + cs.lastUnreadableChildCount() + " child row(s) could not be decoded and "
+                    + "are NOT in this export");
+        }
 
         for (Content child : children) {
             if (child.getName() == null) {

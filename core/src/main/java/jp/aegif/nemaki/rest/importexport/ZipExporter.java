@@ -174,6 +174,17 @@ public class ZipExporter {
 
         ContentService cs = getContentService();
         List<Content> children = cs.getChildren(repositoryId, folder.getId());
+        // Same rule as FilesystemExporter, but this method STREAMS into a zip and has no
+        // error channel — by the time a short listing is discovered, headers are sent and a
+        // note cannot reach the caller. So it throws: a visibly broken download beats a
+        // well-formed zip that silently misrepresents the folder's contents, because the
+        // second one gets restored from.
+        if (cs.lastUnreadableChildCount() > 0) {
+            throw new IllegalStateException("folder '" + folder.getName() + "' ("
+                    + folder.getId() + "): " + cs.lastUnreadableChildCount() + " child row(s) "
+                    + "could not be decoded, so this export would be missing content while "
+                    + "presenting itself as complete; the export was aborted");
+        }
 
         if (exportedObjectIds != null) {
             exportedObjectIds.add(folder.getId());

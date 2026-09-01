@@ -321,4 +321,48 @@ class EvidenceRecordServiceTest {
         assertTrue(String.valueOf(absent.get("limits")).contains("not a document"),
                 String.valueOf(absent.get("limits")));
     }
+
+    @Test
+    @DisplayName("receipt rows that could not be read are not 'this checkpoint has no token'")
+    void droppedReceiptRowsAreNotAnAbsentToken() {
+        // This absence statement does not stay in a response: EarkSipExporter writes it into
+        // nemaki-evidence.json, inside the package that leaves the organisation, where it
+        // cannot be corrected. The store drops rows it cannot decode and counts them for
+        // exactly this reason -- AnchorService reads that count in both of its verbs -- and
+        // this caller, the one whose sentence travels furthest, did not.
+        EvidenceCheckpoint checkpoint = checkpoint();
+        EvidenceLedgerStore ledger = mock(EvidenceLedgerStore.class);
+        when(ledger.isActive()).thenReturn(true);
+        when(ledger.latestCheckpoint(anyString())).thenReturn(checkpoint);
+        AnchorReceiptStore lossy = mock(AnchorReceiptStore.class);
+        when(lossy.isActive()).thenReturn(true);
+        when(lossy.forCheckpoint(anyString(), anyLong())).thenReturn(List.of());
+        when(lossy.unreadableCount()).thenReturn(2);
+        EvidenceRecordService service = new EvidenceRecordService();
+        service.setLedgerStore(ledger);
+        service.setAnchorReceiptStore(lossy);
+
+        EvidenceRecordService.Built built = service.latest(DOMAIN);
+
+        org.junit.jupiter.api.Assertions.assertFalse(built.present(), built.toString());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                String.valueOf(built.unavailable()).contains("NOT a finding"),
+                "an unreadable row was reported as an absent token, in a sentence that gets "
+                        + "packaged and shipped: " + built.unavailable());
+    }
+
+    @Test
+    @DisplayName("a clean read with no token still says there is none — the control")
+    void aCleanReadStillReportsAnAbsentToken() {
+        // Without this, hedging every absence would satisfy the test above and no deployment
+        // could ever be told it has not anchored with RFC 3161.
+        EvidenceRecordService service = serviceWith(checkpoint(), List.of());
+
+        EvidenceRecordService.Built built = service.latest(DOMAIN);
+
+        org.junit.jupiter.api.Assertions.assertFalse(built.present());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                String.valueOf(built.unavailable()).contains("no CONFIRMED RFC 3161"),
+                "a store that answered cleanly did not give the plain answer: " + built.unavailable());
+    }
 }

@@ -37,6 +37,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -199,10 +200,89 @@ class EarkSipExportControllerTest {
 
         assertEquals("3", headers.getFirst("X-Nemaki-Withheld-Property-Count"),
                 "the number of withheld properties is not in the response headers: " + headers);
-        assertEquals("false", headers.getFirst("X-Nemaki-Includes-Personal-Data"));
+        // The header used to be called X-Nemaki-Includes-Personal-Data and this line locked
+        // it to "false" whenever includeInternalOnly was false. The flag governs METADATA
+        // PROPERTIES; the document body is written unconditionally, so a package whose CONTENT
+        // holds personal data was announced as holding none -- in a form a caller can branch on.
+        assertEquals("false",
+                headers.getFirst("X-Nemaki-Includes-Internal-Only-Properties"),
+                "the header does not report what the flag actually governs");
+        assertNull(headers.getFirst("X-Nemaki-Includes-Personal-Data"),
+                "a header claiming the package holds no personal data is still being sent; the "
+                        + "document body is always included and this flag never inspected it");
+        assertEquals("true", headers.getFirst("X-Nemaki-Content-Included"),
+                "nothing on the response says the document body travels in the package");
         assertNotNull(headers.getFirst("X-Nemaki-Export-Note"),
                 "the exporter's notes did not reach the caller");
         assertNotNull(headers.getFirst("X-Nemaki-Export-Limits"));
+    }
+
+    @Test
+    @DisplayName("the bag response says whether the validator ran, like /export does")
+    void theBagResponseCarriesTheValidatorVerdict(@org.junit.jupiter.api.io.TempDir Path tmp)
+            throws Exception {
+        // The SIP inside a bag went through the same validation as one fetched from /export, and
+        // the bag is the artefact MORE likely to be handed straight to a receiver. Without the
+        // header a caller cannot tell "checked and accepted" from "not checked on this node" --
+        // and the weaker of those reads as the stronger, which is the whole point of shipping a
+        // verdict rather than a silence. Two cases, because a header that is always "false" and
+        // one that is always "true" are both wrong in the way that matters.
+        for (boolean ran : new boolean[] { true, false }) {
+            EarkSipExportController controller = controllerFor(true);
+            Path sip = Files.write(tmp.resolve("payload-" + ran + ".zip"),
+                    "bytes".getBytes(StandardCharsets.UTF_8));
+            EarkSipExporter exporter = mock(EarkSipExporter.class);
+            when(exporter.export(anyString(), anyString(), any(), any()))
+                    // A NOTE, so the notes loop actually runs. Both bag tests used List.of(),
+                    // so that loop's body never executed anywhere and deleting it stayed green —
+                    // and it is one of the three places the SIP_INSIDE_BAG prefix is applied.
+                    .thenReturn(new EarkSipExporter.Exported(sip, 0,
+                            List.of("a note about the package"),
+                            new EarkSipExporter.Validation(ran, ran, 0, 0,
+                                    ran ? "the validator ran" : "not checked on this node")));
+            setField(controller, "exporter", exporter);
+
+            Object response = EarkSipExportController.class.getDeclaredMethod("bag",
+                            String.class, String.class, boolean.class, String.class)
+                    .invoke(controller, "bedroom", "doc-1", false, "sub-1");
+            org.springframework.http.HttpHeaders headers =
+                    (org.springframework.http.HttpHeaders) response.getClass()
+                            .getMethod("getHeaders").invoke(response);
+
+            assertEquals(String.valueOf(ran), headers.getFirst("X-Nemaki-Csip-Validated"),
+                    "the bag response does not say whether the CSIP validator ran, so a "
+                            + "receiver cannot tell an unchecked package from a checked one");
+            String csipLimits = headers.getFirst("X-Nemaki-Csip-Validation-Limits");
+            assertNotNull(csipLimits,
+                    "the verdict travels with no statement of what it does and does not mean");
+            // The validator never saw a bag. Its limits text says "this package's structure and
+            // METS", which names the SIP inside and not the artefact the caller is holding, so
+            // on THIS response it has to say which object it is about.
+            assertTrue(csipLimits.startsWith("About the E-ARK SIP inside this bag"),
+                    "the CSIP verdict on a bag response reads as though the bag was validated: "
+                            + csipLimits);
+            // The bag branch writes its headers by hand, in a second block. The personal-data
+            // rename was locked on /export only, so putting the old name back HERE stayed green
+            // -- the same "one claim, several exits" shape, in the tests this time.
+            assertNull(headers.getFirst("X-Nemaki-Includes-Personal-Data"),
+                    "the bag response still claims the package holds no personal data");
+            assertEquals("false",
+                    headers.getFirst("X-Nemaki-Includes-Internal-Only-Properties"),
+                    "the bag response does not report what the flag actually governs");
+            assertEquals("true", headers.getFirst("X-Nemaki-Content-Included"),
+                    "the bag response does not say the document body travels in the package");
+            // All THREE statements on this response describe the SIP, not the bag around it.
+            // Qualifying one and leaving its neighbours bare is how the response came to
+            // disagree with itself in the first place, so all three are pinned.
+            assertTrue(headers.getFirst("X-Nemaki-Export-Limits")
+                            .startsWith("About the E-ARK SIP inside this bag"),
+                    "the export limits on a bag response name the wrong object: "
+                            + headers.getFirst("X-Nemaki-Export-Limits"));
+            assertTrue(headers.getFirst("X-Nemaki-Export-Note")
+                            .startsWith("About the E-ARK SIP inside this bag"),
+                    "an export note on a bag response names the wrong object: "
+                            + headers.getFirst("X-Nemaki-Export-Note"));
+        }
     }
 
     @Test
@@ -283,5 +363,143 @@ class EarkSipExportControllerTest {
         assertTrue(limits.contains("X-Nemaki-Csip-Validated"),
                 "the limits do not say where the actual verdict is: " + limits);
         assertTrue(limits.contains("could not check"), limits);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    @DisplayName("EVERY response that carries no package says so beside the export limits")
+    void aResponseWithoutAPackageSaysSo() throws Exception {
+        // EXPORT_LIMITS is written about a package in the caller's hands -- "This package is
+        // built to E-ARK CSIP 2.2.0", "whether the validator was RUN on it is in the
+        // X-Nemaki-Csip-Validated header". On a 409, a 400, a 500 or /status there is no package
+        // and no such header, and the sentences describe an artefact that does not exist.
+        //
+        // The bag route's SUCCESS path gained a qualifying prefix in this change set and its
+        // REFUSAL paths did not -- the success/error seam, on the fix itself. Written over every
+        // no-package response rather than the one that was wrong, because naming arms is what
+        // let the others through.
+        EarkSipExportController controller = controllerFor(true);
+        EarkSipExporter exporter = mock(EarkSipExporter.class);
+        when(exporter.export(anyString(), anyString(), any(), any()))
+                .thenThrow(new EarkSipExporter.ExportRefusedException("no attachment"));
+        setField(controller, "exporter", exporter);
+
+        for (Object response : List.of(
+                EarkSipExportController.class.getDeclaredMethod("status").invoke(controller),
+                EarkSipExportController.class.getDeclaredMethod("export", String.class,
+                                String.class, boolean.class, String.class)
+                        .invoke(controller, "bedroom", "doc-1", false, ""),
+                EarkSipExportController.class.getDeclaredMethod("bag", String.class,
+                                String.class, boolean.class, String.class)
+                        .invoke(controller, "bedroom", "doc-1", false, "sub-1"))) {
+            Object body = response.getClass().getMethod("getBody").invoke(response);
+            if (!(body instanceof java.util.Map)) {
+                continue;
+            }
+            Object limits = ((java.util.Map<String, Object>) body).get("limits");
+            org.junit.jupiter.api.Assertions.assertNotNull(limits,
+                    "a response with no package carries no limits at all: " + body);
+            assertTrue(String.valueOf(limits).startsWith("NO PACKAGE WAS PRODUCED"),
+                    "this response carries no package and says the limits are about one: "
+                            + limits);
+        }
+    }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("a refused export does not leave its working directory behind")
+    void aRefusedExportCleansUpAfterItself() throws Exception {
+        // Every call to /export and /bag made a directory under the system temp directory and
+        // none of them was ever removed. A REFUSAL is the designed outcome for a record this
+        // product will not ship incomplete, and it is the case an operator retries -- so the
+        // endpoint most likely to be called repeatedly was the one that leaked hardest.
+        //
+        // The success path is covered by aSuccessfulExportCleansUpWhenTheBodyIsRead below,
+        // which could not be written until the body stopped being file-backed. This test stays
+        // scoped to the refusal because the two clean up at different MOMENTS — here before
+        // returning, there on stream close — and one test covering both would not pin either.
+        java.util.Set<java.nio.file.Path> before = tempDirs();
+
+        EarkSipExporter refusing = org.mockito.Mockito.mock(EarkSipExporter.class);
+        org.mockito.Mockito.when(refusing.export(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new EarkSipExporter.ExportRefusedException("no content to package"));
+        EarkSipExportController controller = controllerFor(true);
+        setField(controller, "exporter", refusing);
+
+        org.springframework.http.ResponseEntity<?> response =
+                controller.export("bedroom", "obj-1", false, "");
+
+        assertEquals(409, response.getStatusCode().value(), String.valueOf(response.getBody()));
+        java.util.Set<java.nio.file.Path> after = tempDirs();
+        after.removeAll(before);
+        org.junit.jupiter.api.Assertions.assertTrue(after.isEmpty(),
+                "a refused export left its working directory on disk: " + after);
+    }
+
+    private static java.util.Set<java.nio.file.Path> tempDirs() throws java.io.IOException {
+        java.nio.file.Path tmp = java.nio.file.Path.of(System.getProperty("java.io.tmpdir"));
+        try (java.util.stream.Stream<java.nio.file.Path> list = java.nio.file.Files.list(tmp)) {
+            return list.filter(p -> p.getFileName().toString().startsWith("nemaki-eark-")
+                            || p.getFileName().toString().startsWith("nemaki-bag-"))
+                    .collect(java.util.stream.Collectors.toCollection(java.util.HashSet::new));
+        }
+    }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("a SUCCESSFUL export removes its working directory once the body is streamed")
+    void aSuccessfulExportCleansUpWhenTheBodyIsRead() throws Exception {
+        // The refusal paths were cleaned first because they are easy: nothing is being served,
+        // so the directory can go before the method returns. The success path could not do that
+        // — Spring writes the body AFTER this controller returns — and "outlive the call"
+        // quietly became "outlive the JVM": every successful export left a package on disk.
+        //
+        // The body is an InputStreamResource on purpose. A FileSystemResource reports
+        // isFile() == true, which lets the container take a zero-copy path that never opens
+        // getInputStream(), so a delete hung off stream close would sometimes not run at all.
+        // This asserts the delete happens ON CLOSE, which is the contract the choice buys.
+        java.util.Set<java.nio.file.Path> before = tempDirs();
+
+        EarkSipExporter exporter = org.mockito.Mockito.mock(EarkSipExporter.class);
+        org.mockito.Mockito.when(exporter.export(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(invocation -> {
+                    java.nio.file.Path workDir = invocation.getArgument(3);
+                    java.nio.file.Path sip = workDir.resolve("package.zip");
+                    java.nio.file.Files.write(sip, "zip-bytes".getBytes(StandardCharsets.UTF_8));
+                    return new EarkSipExporter.Exported(sip, 0, List.of(), null);
+                });
+        EarkSipExportController controller = controllerFor(true);
+        setField(controller, "exporter", exporter);
+
+        org.springframework.http.ResponseEntity<?> response =
+                controller.export("bedroom", "obj-1", false, "");
+
+        assertEquals(200, response.getStatusCode().value());
+        java.util.Set<java.nio.file.Path> during = tempDirs();
+        during.removeAll(before);
+        assertEquals(1, during.size(),
+                "fixture check: the export did not make a working directory, so this test is "
+                        + "not looking at the thing it exists to cover: " + during);
+
+        org.springframework.core.io.Resource body =
+                (org.springframework.core.io.Resource) response.getBody();
+        // Present until it is read. Deleting before the body is written would truncate the
+        // download, which is the failure the whole shape has to avoid.
+        assertTrue(java.nio.file.Files.isDirectory(during.iterator().next()),
+                "the working directory was removed before the body was streamed");
+        try (java.io.InputStream in = body.getInputStream()) {
+            assertEquals("zip-bytes", new String(in.readAllBytes(), StandardCharsets.UTF_8),
+                    "the body did not carry the package");
+        }
+
+        java.util.Set<java.nio.file.Path> after = tempDirs();
+        after.removeAll(before);
+        assertTrue(after.isEmpty(),
+                "a successful export left its working directory on disk after the body had "
+                        + "been streamed: " + after);
     }
 }

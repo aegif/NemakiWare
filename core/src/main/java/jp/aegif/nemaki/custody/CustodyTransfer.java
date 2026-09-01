@@ -16,6 +16,8 @@
  */
 package jp.aegif.nemaki.custody;
 
+import jp.aegif.nemaki.custody.connector.ReceivingSystem;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -61,6 +63,40 @@ public final class CustodyTransfer {
     private CustodyReceipt receipt;
 
     /**
+     * The revision this transfer was read at, or null when it has never been stored.
+     *
+     * <h2>Not part of the record</h2>
+     *
+     * <p>It is an optimistic-lock token, and it is deliberately absent from {@link #asMap()}, the
+     * history, and every other reader: it says nothing about the handover. It exists so a store
+     * can require that a write be made against the revision the writer actually read.
+     *
+     * <h2>Why it lives on the object rather than in the store</h2>
+     *
+     * <p>The store's alternative is to look the current revision up at write time, and that is
+     * the bug this replaces. <b>That lookup always succeeds, and always returns the newest
+     * revision — including one another request wrote a moment ago.</b> So the update it
+     * authorises is exactly the lost update it appears to be guarding against: two requests both
+     * load the transfer at revision 3, both move it, and both are told they succeeded while only
+     * the second move survives. A conflict check that reads the winner's revision first cannot
+     * see the loss it exists to see.
+     *
+     * <p>Nothing outside this package can set it, so a caller cannot claim a revision it did not
+     * read.
+     */
+    private String storedRevision;
+
+    /** The revision this transfer was read at, for the store that has to write against it. */
+    String storedRevision() {
+        return storedRevision;
+    }
+
+    /** Set by the store when it reads a row, and when its own write produces a new revision. */
+    void storedRevision(String revision) {
+        this.storedRevision = revision;
+    }
+
+    /**
      * @param sipDigest the digest of the package that will be sent. Required: a transfer that
      *        does not know what it sent can never check a receipt, and the point at which that
      *        is discovered would be the point at which it mattered
@@ -83,8 +119,18 @@ public final class CustodyTransfer {
             // stops being a comment.
             throw new IllegalArgumentException("a transfer has to record when it was opened");
         }
+        // NOT "a package was built". This constructor takes a digest from its caller; nothing
+        // here builds, reads or checks a package, and the endpoint that reaches it takes the
+        // digest from a request body. The step goes into the transfer's persisted history —
+        // which outlives every response — so it is the one place the wording cannot be
+        // corrected later.
+        //
+        // The same claim was taken out of RECEIVED / VALIDATED / INGEST_ACCEPTED / AIP_CREATED
+        // in an earlier round. PACKAGE_CREATED is the first arm of that same switch, and the
+        // correction did not reach it: "the exits found last are the ones furthest from the
+        // string you searched for", and this one is in a different file from limits().
         this.history.add(new Step(null, CustodyState.PACKAGE_CREATED, createdAt,
-                "a package was built for this record"));
+                "a transfer was opened for this record, naming the digest of a package"));
     }
 
     /**
@@ -142,6 +188,20 @@ public final class CustodyTransfer {
         // one.
         boolean everVerified = history.stream()
                 .anyMatch(step -> step.to() == CustodyState.RECEIPT_VERIFIED);
+        // Checked whenever a receipt is STORED, not only when the history says one was verified.
+        // The rest of the checks below are about whether the receipt could have unlocked
+        // RECEIPT_VERIFIED, so they belong under `everVerified`; this one is about whether the
+        // receipt is coherent at all, and an incoherent one is worth refusing wherever it sits.
+        // Without this, a row carrying a forged (SUCCESS, FAILED) pair and a history that stops
+        // at AIP_CREATED is restored unchecked and rendered by the describe endpoint — a pair
+        // the product refuses everywhere else, shown to an operator as though it were a record.
+        if (receipt != null) {
+            String incoherent = receipt.mappingRefusalReason();
+            if (incoherent != null) {
+                throw new IllegalArgumentException("the stored receipt's outcome cannot be "
+                        + "re-derived: " + incoherent);
+            }
+        }
         if (everVerified) {
             if (receipt == null) {
                 throw new IllegalArgumentException("this transfer's history says a receipt was "
@@ -151,7 +211,9 @@ public final class CustodyTransfer {
             }
             // The same checks verifyReceipt makes. A stored row is read back through the rules,
             // or the rules only ever applied to the live path — and the live path is not where
-            // an attacker is.
+            // an attacker is. (The mapping check is NOT repeated here: it moved above, out of
+            // this block, so that a receipt on a row whose history stopped short is checked too.
+            // Leaving a second copy here would read as a live guard and never fire.)
             String refusal = receipt.refusalReasonFor(sipDigest);
             if (refusal != null) {
                 throw new IllegalArgumentException("the stored receipt is not about this "
@@ -204,6 +266,13 @@ public final class CustodyTransfer {
 
     public List<Step> history() {
         return List.copyOf(history);
+    }
+
+    /** RODA's word for an ingest that neither succeeded nor was refused. */
+    private static final String PARTIAL = "PARTIAL_SUCCESS";
+
+    private static String normalise(String word) {
+        return word == null ? null : word.trim().toUpperCase(java.util.Locale.ROOT);
     }
 
     /** Whether a move was taken, and why not when it was not. */
@@ -301,8 +370,12 @@ public final class CustodyTransfer {
                     + "cannot change the record of the handover that happened");
         }
         if (!CustodyState.RECEIPT_VERIFIED.isReachableFrom(state)) {
-            return new Moved(false, state, "a receipt can only be verified once the receiving "
-                    + "system has reported an AIP; this transfer is at " + state);
+            // The guard is "is this transfer at AIP_CREATED", and that state is reached by an
+            // operator advancing it -- not by hearing from a receiver. Saying "once the
+            // receiving system has reported an AIP" describes the intent of the state, not
+            // anything established, and it goes out in a 409 body.
+            return new Moved(false, state, "a receipt can only be verified once this transfer "
+                    + "has been recorded as reaching AIP_CREATED; it is at " + state);
         }
         if (at == null || at.isBlank()) {
             // The same rule every other move follows. Without it a public call could produce an
@@ -312,6 +385,13 @@ public final class CustodyTransfer {
                     + "history whose steps have no times is a list of claims in an order "
                     + "somebody chose");
         }
+        String forged = candidate.mappingRefusalReason();
+        if (forged != null) {
+            // First: before the receipt is examined as a receipt at all. A mapped word that
+            // cannot be re-derived is not a weak receipt, it is one asking to be judged on a
+            // word the far end never said.
+            return new Moved(false, state, forged);
+        }
         String missing = candidate.missingRequiredField();
         if (missing != null) {
             // Before the digest check, because this is about the receipt being a receipt at
@@ -319,22 +399,93 @@ public final class CustodyTransfer {
             // something; it does not say who holds it or when they said so, and the state it
             // would unlock is one step from custody passing.
             return new Moved(false, state, "the receipt does not carry '" + missing + "'. A "
-                    + "receipt has to name who is answerable for the copy and when they said "
-                    + "so, or custody passes to nobody in particular and there is no later "
-                    + "conversation to have about this record.");
+                    + "receipt has to say which submission it answers, what the receiver made, "
+                    + "who is answerable for it and when they said so, or custody passes to "
+                    + "nobody in particular and there is no later conversation to have about "
+                    + "this record.");
         }
         String refusal = candidate.refusalReasonFor(sipDigest);
         if (refusal != null) {
             return new Moved(false, state, refusal);
         }
         if (!candidate.reportsSuccess()) {
-            // The receipt is about our package AND says the far end did not accept it. Moving
-            // to RECEIPT_VERIFIED would name the state "we checked" for a check that came back
-            // negative, and the next state along passes custody.
+            // The receipt is about our package AND does not report an outcome that can pass.
+            // Moving to RECEIPT_VERIFIED would name the state "we checked" for a check that did
+            // not come back positive, and the next state along passes custody.
+            //
+            // FIVE different situations end up here, and telling an operator the wrong one
+            // sends them to the wrong place. "The receiver did not accept it" is true of exactly
+            // one of them; said of the others it starts a conversation with the receiving
+            // organisation about a rejection that never happened. Only the third branch reports
+            // a refusal, and only for a word some measured receiver actually uses for one.
+            //
+            // The WORD is quoted in all of them, because that is what an operator is trying to
+            // find out — but it is quoted as the receipt's, not as the receiver's. It reaches
+            // this class from a REST request body, and without a verified signature nothing
+            // establishes who wrote it; the attribution CUSTODY_LIMITS denies on the very same
+            // response.
+            //
+            // FOUR of the five carried it, and they were found in two passes. The first pass
+            // took out "what the receiving system found" and "a receipt that says the receiving
+            // system did not accept" — and its lock asserted contains("the receiving system "),
+            // with a trailing space, which matches NEITHER "the receiving system's own
+            // documentation" (leftover) NOR "this receiving system was never measured"
+            // (unrecognised). A ban written against the two strings in front of you is not a
+            // ban on the claim: it is a ban on those two strings.
+            String said = candidate.asReported();
+            if (said == null || said.isBlank()) {
+                // No word at all. Not a rejection either -- there is nothing to have been
+                // rejected by. Reachable from the REST endpoint, which does not require the
+                // field.
+                return new Moved(false, state, "the receipt carries no verification outcome at "
+                        + "all, so nothing here knows what was found. That is not a rejection; "
+                        + "it is a receipt that has not said anything yet.");
+            }
+            if (ReceivingSystem.UNRECOGNISED.equals(candidate.verificationOutcome())) {
+                return new Moved(false, state, "the receipt is about this package and reports '"
+                        + said + "', which is not a word ANY connector in this build was "
+                        + "measured to use. (Not this transfer's receiver in particular: "
+                        + "receivingSystem is free text an operator types, so mapping it to a "
+                        + "connector would be a guess — the neighbouring refusal already says "
+                        + "'a receiver of this kind' for the same reason.) That is not a "
+                        + "rejection — it is a word "
+                        + "this product cannot read as an outcome, so nothing here knows whether "
+                        + "the package was accepted. Check the vocabulary in the submission "
+                        + "agreement before checking the handover.");
+            }
+            if (ReceivingSystem.isRecordedRefusal(said)) {
+                return new Moved(false, state, "the receipt is about this package and reports '"
+                        + said + "', which is a word a receiver of this kind uses to turn a "
+                        + "package down. A receipt reporting a refusal is a reason to stop, not "
+                        + "a step towards custody passing.");
+            }
+            if (PARTIAL.equals(normalise(said))) {
+                // Its own branch. Dropping it from the refusal set was right -- a partial ingest
+                // is not a refusal -- but the leftover bucket says "may mean they have not
+                // finished", and a partial ingest IS finished. Sending an operator to wait is as
+                // wrong as sending them to complain. The question this actually raises is the
+                // one the submission agreement leaves open.
+                return new Moved(false, state, "the receipt is about this package and reports '"
+                        + said + "'. That is not a refusal and not an unfinished ingest: part of "
+                        + "it succeeded. This product does not treat a partial ingest as an "
+                        + "acceptance, and whether the parties do is a submission-agreement "
+                        + "question (§1.4), not one this repository answers.");
+            }
+            // Everything else: not a word any receiver is recorded to use for a refusal. RODA's
+            // RUNNING and SKIPPED and Archivematica's PROCESSING and USER_INPUT land here.
+            // Calling these a rejection was the same defect as the UNRECOGNISED case, one branch
+            // along -- the first correction split out only the case it had an example of.
+            // The leftover bucket, and it says so. RODA's RUNNING and Archivematica's
+            // PROCESSING do mean "not finished"; SKIPPED means a plugin did not run, which is
+            // not the same thing, and a word from a third receiver could mean anything. So this
+            // claims only what is true of all of them -- it is not a refusal and it does not
+            // pass -- and names not-finished as one possibility rather than the reading.
             return new Moved(false, state, "the receipt is about this package and reports '"
-                    + candidate.verificationOutcome() + "'. A receipt that says the receiving "
-                    + "system did not accept the package is a reason to stop, not a step "
-                    + "towards custody passing.");
+                    + said + "', which is not an outcome that lets custody pass. It is not a "
+                    + "rejection either: no receiver this product has recorded uses this word to "
+                    + "turn a package down. What it does mean is not something this product "
+                    + "knows — an unfinished ingest is one possibility — so read it against the "
+                    + "vocabulary the submission agreement records for this transfer.");
         }
         this.receipt = candidate;
         history.add(new Step(state, CustodyState.RECEIPT_VERIFIED, at,

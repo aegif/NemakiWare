@@ -65,14 +65,33 @@ public final class EvidenceChainVerifier {
     public record Report(boolean intact, long from, long to, long verified,
                          List<Finding> findings) {
 
+        /**
+         * Whether anything was actually walked.
+         *
+         * <p>{@code intact} is vacuously true for an empty span — nothing was found wrong
+         * because nothing was looked at — and "the chain is intact" is what a reader takes from
+         * it either way. Every caller guards the empty case today, so this is latent; it is a
+         * public static that answers a question about a span nobody walked, which is the same
+         * shape as an index verdict meaning "everything present is stamped".
+         */
+        public boolean walkedAnything() {
+            return verified > 0 || !findings.isEmpty();
+        }
+
         public Map<String, Object> asMap() {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("intact", intact);
+            // Beside the verdict, not somewhere else: `intact: true, verifiedEntries: 0` is
+            // read as "checked and fine" unless something says otherwise on the same line.
+            m.put("walkedAnything", walkedAnything());
             m.put("fromSequence", from);
             m.put("toSequence", to);
             m.put("verifiedEntries", verified);
             m.put("findings", findings.stream().map(Finding::asMap).toList());
-            m.put("limits", "This checks the chain against ITSELF. It detects a rewrite, a "
+            m.put("limits", (walkedAnything() ? "" : "NOTHING WAS WALKED: this span is empty, "
+                    + "so 'intact' means only that no fault was found in zero entries. It is "
+                    + "NOT a finding that the chain is sound. ")
+                    + "This checks the chain against ITSELF. It detects a rewrite, a "
                     + "deletion, a reordering and a fork WITHIN the span walked. It cannot "
                     + "detect a rewrite that also rewrote every following entry and the "
                     + "checkpoints — that needs an anchor outside this database (P2). Entries "
@@ -90,6 +109,10 @@ public final class EvidenceChainVerifier {
     public static Report verify(List<EvidenceLedgerEntry> entries) {
         List<Finding> findings = new ArrayList<>();
         if (entries == null || entries.isEmpty()) {
+            // `intact` stays true because every caller reads it as "no fault found" and an
+            // empty span has none -- flipping it would make an empty ledger report a break.
+            // What changes is that the Report now says it walked nothing, in the body and in
+            // the limits, so the two readings cannot be confused.
             return new Report(true, 0, 0, 0, List.of());
         }
         long from = entries.get(0).sequence();

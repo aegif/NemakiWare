@@ -69,8 +69,13 @@ public class ArchiveDaoDelegate {
 
 			return null;
 		} catch (Exception e) {
+			// Null is "no archive exists for this original" — the answer tombstone
+			// resolution DELETES catalog entities on, and deleteDocumentArchive orphans
+			// attachment archives on. A failed lookup is neither.
 			log.error("Error getting archive by original ID: " + originalId + " in repository: " + repositoryId, e);
-			return null;
+			throw new IllegalStateException("the archive for original '" + originalId + "' in '"
+					+ repositoryId + "' could not be looked up; this is NOT a finding that"
+					+ " none exists", e);
 		}
 	}
 
@@ -161,7 +166,7 @@ public class ArchiveDaoDelegate {
 			return archives;
 		} catch (Exception e) {
 			log.error("Error getting child archives for: " + archive.getId() + " in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
+			throw new IllegalStateException("the child archives could not be read for '" + archive.getId() + "' in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -182,7 +187,7 @@ public class ArchiveDaoDelegate {
 			return archives;
 		} catch (Exception e) {
 			log.error("Error getting archives of version series: " + versionSeriesId + " in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
+			throw new IllegalStateException("the version-series archives could not be read for '" + versionSeriesId + "' in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -203,11 +208,19 @@ public class ArchiveDaoDelegate {
 			return archives;
 		} catch (Exception e) {
 			log.error("Error getting all archives in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
+			throw new IllegalStateException("the archives could not be read in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
+	/** Rows the most recent getArchives on THIS thread could not decode (view rows or nulls). */
+	private final ThreadLocal<Integer> lastUnreadableArchives = ThreadLocal.withInitial(() -> 0);
+
+	public int lastUnreadableArchiveCount() {
+		return lastUnreadableArchives.get();
+	}
+
 	public List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc) {
+		lastUnreadableArchives.set(0);
 		try {
 			// Query allByCreated view with pagination parameters (same as v2.4)
 			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
@@ -229,6 +242,13 @@ public class ArchiveDaoDelegate {
 			ViewResult result = client.queryView("_repo", "allByCreated", queryParams);
 			List<Archive> archives = new ArrayList<Archive>();
 
+			if (result.getRows() == null) {
+				// The door getChildren closed first: "answered without rows" is not "there are
+				// no archives", and the caller diffs this list against a snapshot and deletes
+				// by absence — an empty page here would reconcile the whole catalog away.
+				throw new IllegalStateException("the archive view answered without rows for '"
+						+ repositoryId + "'; that is not the same as there being no archives");
+			}
 			if (result.getRows() != null) {
 				for (ViewResultRow row : result.getRows()) {
 					// The 'allByCreated' view emits: emit(doc.created, doc)
@@ -240,18 +260,33 @@ public class ArchiveDaoDelegate {
 							CouchArchive ca = mapper.convertValue(docValue, CouchArchive.class);
 							if (ca != null) {
 								archives.add(ca.convert());
+							} else {
+								lastUnreadableArchives.set(lastUnreadableArchives.get() + 1);
 							}
 						} catch (Exception e) {
-							log.warn("Failed to convert archive document: " + e.getMessage());
+							// COUNTED, not just logged. A row the view returned and this code
+							// could not decode is an archive that exists; dropping it makes the
+							// list shorter than the archive database, and the Purview sync
+							// diffs that list against its snapshot — so a dropped row read as
+							// a DELETED archive and was reconciled out of the catalog.
+							lastUnreadableArchives.set(lastUnreadableArchives.get() + 1);
+							log.warn("Failed to convert archive document (counted as unreadable,"
+									+ " not as absent): " + e.getMessage());
 						}
+					} else {
+						lastUnreadableArchives.set(lastUnreadableArchives.get() + 1);
 					}
 				}
 			}
 
 			return archives;
 		} catch (Exception e) {
+			// NOT an empty list. "The archive view could not be asked" and "there are no
+			// archives" are different facts, and the callers of this list include a diff
+			// that deletes by absence — the exact substitution getChildren stopped making.
 			log.error("Error getting archives in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
+			throw new IllegalStateException("the archive view could not be read for '"
+					+ repositoryId + "'; this is NOT a finding that there are no archives", e);
 		}
 	}
 
@@ -263,47 +298,67 @@ public class ArchiveDaoDelegate {
 			// Cloudant SDK auto-serializes key to JSON, so pass raw string without quotes
 			queryParams.put("key", creator);
 
+			lastUnreadableArchives.set(0);
 			ViewResult result = client.queryView("_repo", "byCreator", queryParams);
+			// The byArchivedBy standard, applied to its twin: this listing is UNIONed into
+			// the non-admin trash, so a row dropped here is a document the user cannot find
+			// or restore, presented inside a listing that claims to be complete.
+			if (result == null || result.getRows() == null) {
+				throw new IllegalStateException("the byCreator view answered without rows in '"
+						+ repositoryId + "'; that is not the same as the trash being empty");
+			}
 			List<Archive> archives = new ArrayList<Archive>();
-
-			if (result != null && result.getRows() != null) {
-				ObjectMapper mapper = daoHelper.createConfiguredObjectMapper();
-				for (ViewResultRow row : result.getRows()) {
-					// Use row.getDoc() instead of row.getValue() because the emit value
-					// contains raw timestamps (long) that cannot be deserialized to GregorianCalendar.
-					// includeDocs=true is set in queryView, so getDoc() returns the full document.
-					com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
-					if (doc != null) {
-						try {
-							Map<String, Object> docMap = doc.getProperties();
-							if (docMap != null) {
-								if (!docMap.containsKey("_id") && doc.getId() != null) {
-									docMap.put("_id", doc.getId());
-								}
-								if (!docMap.containsKey("_rev") && doc.getRev() != null) {
-									docMap.put("_rev", doc.getRev());
-								}
-								String jsonString = mapper.writeValueAsString(docMap);
-								CouchArchive ca = mapper.readValue(jsonString, CouchArchive.class);
-								if (ca != null) {
-									archives.add(ca.convert());
-								}
-							}
-						} catch (Exception e) {
-							log.warn("Failed to convert archive document: " + e.getMessage());
-						}
-					}
+			int unreadable = 0;
+			ObjectMapper mapper = daoHelper.createConfiguredObjectMapper();
+			for (ViewResultRow row : result.getRows()) {
+				// Use row.getDoc() instead of row.getValue() because the emit value
+				// contains raw timestamps (long) that cannot be deserialized to GregorianCalendar.
+				// includeDocs=true is set in queryView, so getDoc() returns the full document.
+				com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+				if (doc == null) {
+					unreadable++;
+					continue;
 				}
+				try {
+					Map<String, Object> docMap = doc.getProperties();
+					if (docMap == null) {
+						unreadable++;
+						continue;
+					}
+					if (!docMap.containsKey("_id") && doc.getId() != null) {
+						docMap.put("_id", doc.getId());
+					}
+					if (!docMap.containsKey("_rev") && doc.getRev() != null) {
+						docMap.put("_rev", doc.getRev());
+					}
+					String jsonString = mapper.writeValueAsString(docMap);
+					CouchArchive ca = mapper.readValue(jsonString, CouchArchive.class);
+					if (ca != null) {
+						archives.add(ca.convert());
+					} else {
+						unreadable++;
+					}
+				} catch (Exception e) {
+					unreadable++;
+					log.warn("Failed to convert archive document: " + e.getMessage());
+				}
+			}
+			lastUnreadableArchives.set(unreadable);
+			if (unreadable > 0) {
+				throw new IllegalStateException(unreadable + " archive row(s) by creator could"
+						+ " not be read in '" + repositoryId + "'; serving the remainder as"
+						+ " the whole trash would hide restorable documents");
 			}
 
 			return archives;
 		} catch (Exception e) {
 			log.error("Error getting archives by creator in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
+			throw new IllegalStateException("the archives by creator could not be read in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
 	public List<Archive> getArchivesByArchivedBy(String repositoryId, String archivedBy) {
+		lastUnreadableArchives.set(0);
 		try {
 			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
 			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
@@ -314,11 +369,21 @@ public class ArchiveDaoDelegate {
 			ViewResult result = client.queryView("_repo", "byArchivedBy", queryParams);
 			List<Archive> archives = new ArrayList<Archive>();
 
-			if (result != null && result.getRows() != null) {
+			if (result == null || result.getRows() == null) {
+				// Same rule as getArchives: "answered without rows" is not "there are none".
+				throw new IllegalStateException("the byArchivedBy view answered without rows"
+						+ " for '" + repositoryId + "'; that is not the same as there being"
+						+ " no archives");
+			}
+			{
 				ObjectMapper mapper = daoHelper.createConfiguredObjectMapper();
 				for (ViewResultRow row : result.getRows()) {
 					com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
-					if (doc != null) {
+					if (doc == null) {
+						lastUnreadableArchives.set(lastUnreadableArchives.get() + 1);
+						continue;
+					}
+					{
 						try {
 							Map<String, Object> docMap = doc.getProperties();
 							if (docMap != null) {
@@ -332,10 +397,18 @@ public class ArchiveDaoDelegate {
 								CouchArchive ca = mapper.readValue(jsonString, CouchArchive.class);
 								if (ca != null) {
 									archives.add(ca.convert());
+								} else {
+									lastUnreadableArchives.set(lastUnreadableArchives.get() + 1);
 								}
+							} else {
+								lastUnreadableArchives.set(lastUnreadableArchives.get() + 1);
 							}
 						} catch (Exception e) {
-							log.warn("Failed to convert archive document: " + e.getMessage());
+							// COUNTED, per the same-file rule getArchives set: a row that will
+							// not decode is an archive that exists.
+							lastUnreadableArchives.set(lastUnreadableArchives.get() + 1);
+							log.warn("Failed to convert archive document (counted as"
+									+ " unreadable, not as absent): " + e.getMessage());
 						}
 					}
 				}
@@ -344,7 +417,7 @@ public class ArchiveDaoDelegate {
 			return archives;
 		} catch (Exception e) {
 			log.error("Error getting archives by archivedBy in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
+			throw new IllegalStateException("the archives could not be read in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -884,7 +957,7 @@ public class ArchiveDaoDelegate {
 			return archives;
 		} catch (Exception e) {
 			log.error("Error getting archives by state: " + state + " in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
+			throw new IllegalStateException("the archives could not be read in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -906,7 +979,7 @@ public class ArchiveDaoDelegate {
 			return archives;
 		} catch (Exception e) {
 			log.error("Error getting paged archives in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
+			throw new IllegalStateException("the archives could not be read in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -917,8 +990,11 @@ public class ArchiveDaoDelegate {
 			// Count-only query: includeDocs=false, limit=0, returns only total_rows
 			return client.queryViewCount("_repo", "archivesByArchivedAt");
 		} catch (Exception e) {
+			// 0 is "the trash is empty", which this failure does not establish — the pager
+			// built on it renders an empty listing over archives that still exist.
 			log.error("Error getting archive count in repository: " + repositoryId, e);
-			return 0;
+			throw new IllegalStateException("the archives could not be counted in '"
+					+ repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -935,7 +1011,7 @@ public class ArchiveDaoDelegate {
 			return archives;
 		} catch (Exception e) {
 			log.error("Error getting paged archives by state" + (state != null ? " (state=" + state + ")" : "") + " in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
+			throw new IllegalStateException("the archives could not be read in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -945,8 +1021,10 @@ public class ArchiveDaoDelegate {
 			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
 			return client.queryViewCountByKey("_repo", "searchableArchives", state);
 		} catch (Exception e) {
+			// Same rule as the unfiltered count above: a failed count is not zero.
 			log.error("Error getting archive count by state" + (state != null ? " (state=" + state + ")" : "") + " in repository: " + repositoryId, e);
-			return 0;
+			throw new IllegalStateException("the archives could not be counted in '"
+					+ repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -973,7 +1051,7 @@ public class ArchiveDaoDelegate {
 			return candidates;
 		} catch (Exception e) {
 			log.error("Error getting archives for cold transition in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
+			throw new IllegalStateException("the archives could not be read in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -1117,8 +1195,14 @@ public class ArchiveDaoDelegate {
 			}
 			return ids;
 		} catch (Exception e) {
-			log.warn("Error querying documentsByExpirationDate view (may not exist yet): " + e.getMessage());
-			return new ArrayList<String>();
+			// An empty list here is "nothing has expired", and the scheduler records that as
+			// a completed sweep. A retention policy that could not be evaluated has not been
+			// evaluated — the direction is safe (nothing is archived) but the audit record
+			// would say the opposite. The scheduler catches this per repository and logs it
+			// as an error rather than as "0 candidates".
+			log.error("Error querying documentsByExpirationDate view: " + e.getMessage(), e);
+			throw new IllegalStateException("the expired documents of '" + repositoryId
+					+ "' could not be listed; this is NOT a finding that none have expired", e);
 		}
 	}
 
@@ -1149,8 +1233,10 @@ public class ArchiveDaoDelegate {
 			}
 			return ids;
 		} catch (Exception e) {
-			log.warn("Error querying documentsByLastModification view (may not exist yet): " + e.getMessage());
-			return new ArrayList<String>();
+			// Same rule as the expiration sweep above.
+			log.error("Error querying documentsByLastModification view: " + e.getMessage(), e);
+			throw new IllegalStateException("the stale documents of '" + repositoryId
+					+ "' could not be listed; this is NOT a finding that none are stale", e);
 		}
 	}
 

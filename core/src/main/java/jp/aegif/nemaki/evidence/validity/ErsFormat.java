@@ -180,15 +180,32 @@ public enum ErsFormat {
      * What a reader must not conclude from this declaration.
      *
      * <p>Travels with the format wherever it is reported. A product that names a standard is
-     * routinely read as implementing it, and this one does not.
+     * routinely read as implementing it, and what this one implements is narrower than the
+     * standard — which is what the text below says, one item at a time.
      */
     public static final String LIMITS =
-            "This product produces and checks RFC 4998 evidence records whose DATA OBJECT is a "
-                    + "checkpoint hash of its evidence ledger — not a document. Naming RFC 4998 "
+            // Three sentences here described an artefact this build does not produce, and this
+            // string ships to callers as `renewalFormatLimits`. p2-3 §8 records that calling
+            // the checkpoint HASH the data object produced records no standard tool could read:
+            // the data object is the checkpoint's canonical BYTES and h = H(d) is its hash --
+            // which is what ErsRecord.LIMITS has always said, so the two shipped strings
+            // disagreed. §8 also rejected the one-node-tree alternative (it needs a second
+            // token) and ErsRecord.first() passes List.of(): the
+    // FIRST timestamp has no reduced hash tree. A later one DOES -- withHashTreeRenewal builds
+    // a one-node tree -- so this is a statement about the first timestamp, not about the record. And
+            // "nothing generates a record automatically" was contradicted by this string's own
+            // next sentence.
+            "This product produces and checks RFC 4998 evidence records whose DATA OBJECT is "
+                    + "the canonical serialisation of a checkpoint of its evidence ledger — not "
+                    + "a document. Naming RFC 4998 "
                     + "is not a claim of conformance to everything the standard covers: the "
-                    + "reduced hash tree carries one node, the timestamp authority's signature "
-                    + "and certificate are not verified here, and nothing generates a record "
-                    + "automatically. A record IS put into an E-ARK SIP when this node has one, "
+                    + "first Archive Timestamp carries no reduced hash tree, the timestamp "
+                    + "authority's signature "
+                    + "and certificate are not verified here, and a record exists only where "
+                    + "this node has a CONFIRMED external anchor to build one from -- there is "
+                    + "no setting that turns generation on or off, which the earlier wording "
+                    + "here ('configured to') implied. A record IS put into an E-ARK SIP when "
+                    + "this node has one, "
                     + "at metadata/other -- but where it ENDS UP is the receiver's decision, not "
                     + "this product's: RODA 6.3.0 keeps the record and files it under "
                     + "metadata/descriptive instead (measured 2026-08-27 with a STUB record, not "

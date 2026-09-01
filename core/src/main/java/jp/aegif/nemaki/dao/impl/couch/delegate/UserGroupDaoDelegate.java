@@ -50,8 +50,11 @@ public class UserGroupDaoDelegate {
 			}
 			return null;
 		} catch (Exception e) {
+			// Identity data: null is "no such user", which the callers act on (a 404, or a
+			// directory sync deciding the user is gone). A failed read is not that.
 			log.error("Error getting user item: " + objectId + " in repository: " + repositoryId, e);
-			return null;
+			throw new IllegalStateException("the user item '" + objectId + "' in '" + repositoryId
+					+ "' could not be read; this is NOT a finding that it does not exist", e);
 		}
 	}
 
@@ -122,8 +125,11 @@ public class UserGroupDaoDelegate {
 			return null;
 
 		} catch (Exception e) {
+			// The authentication and authorisation paths read this. Answering null makes a
+			// CouchDB hiccup indistinguishable from "that user does not exist".
 			log.error("Error in getUserItemById for userId '" + userId + "' in repository '" + repositoryId + "'", e);
-			return null;
+			throw new IllegalStateException("the user '" + userId + "' could not be read in '"
+					+ repositoryId + "'; this is NOT a finding that it does not exist", e);
 		}
 	}
 
@@ -139,35 +145,55 @@ public class UserGroupDaoDelegate {
 			ViewResult result = client.queryView("_repo", "userItemsById");
 
 			List<UserItem> userItems = new ArrayList<UserItem>();
-			if (result != null && result.getRows() != null) {
+			if (result == null || result.getRows() == null) {
+				// Identity data fails CLOSED like the group side: "answered without rows" is
+				// not "there are no users", and this list feeds admin screens and sync jobs
+				// that act on absence.
+				throw new IllegalStateException("the userItemsById view answered without rows"
+						+ " in '" + repositoryId + "'; that is not the same as there being"
+						+ " none");
+			}
+			{
 				log.info("getUserItems: Retrieved " + result.getRows().size() + " users from CouchDB");
 
 				for (ViewResultRow row : result.getRows()) {
 					try {
 						Object rawDoc = row.getValue(); // Use getValue() not getDoc()
 
-						if (rawDoc instanceof Map) {
-							@SuppressWarnings("unchecked")
-							Map<String, Object> docMap = (Map<String, Object>) rawDoc;
-
-							// Use Map-based constructor to ensure proper subTypeProperties conversion
-							CouchUserItem cui = new CouchUserItem(docMap);
-
-							if (cui.getUserId() != null && cui.getId() != null && cui.getType() != null) {
-								UserItem converted = cui.convert();
-								if (converted != null) {
-									userItems.add(converted);
-									log.debug("getUserItems: Successfully converted user: " + converted.getUserId());
-								}
-							} else {
-								log.warn("getUserItems: Missing required fields for user: " + cui.getUserId());
-							}
-						} else {
-							log.warn("getUserItems: Raw document is not a Map: " + (rawDoc != null ? rawDoc.getClass().getName() : "null"));
+						if (!(rawDoc instanceof Map)) {
+							// The null RETURNS fail closed like the catch below: a row this
+							// code walks past is a user that exists and is not in the answer.
+							throw new IllegalStateException("a user item row is not a document"
+									+ " in '" + repositoryId + "'; refusing to answer the user"
+									+ " list short");
 						}
+						@SuppressWarnings("unchecked")
+						Map<String, Object> docMap = (Map<String, Object>) rawDoc;
+
+						// Use Map-based constructor to ensure proper subTypeProperties conversion
+						CouchUserItem cui = new CouchUserItem(docMap);
+
+						if (cui.getUserId() == null || cui.getId() == null || cui.getType() == null) {
+							throw new IllegalStateException("a user item is missing required"
+									+ " fields in '" + repositoryId + "'; refusing to answer"
+									+ " the user list short");
+						}
+						UserItem converted = cui.convert();
+						if (converted == null) {
+							throw new IllegalStateException("a user item could not be converted"
+									+ " in '" + repositoryId + "'; refusing to answer the user"
+									+ " list short");
+						}
+						userItems.add(converted);
+						log.debug("getUserItems: Successfully converted user: " + converted.getUserId());
+					} catch (IllegalStateException e) {
+						throw e;
 					} catch (Exception convertException) {
-						log.error("getUserItems: Exception during conversion", convertException);
-						// Skip failed conversions
+						// A user that will not decode still EXISTS — a directory sync that
+						// reads this list decides creations and removals from it.
+						throw new IllegalStateException("a user item could not be decoded in '"
+								+ repositoryId + "'; refusing to answer the user list short",
+								convertException);
 					}
 				}
 			}
@@ -198,24 +224,42 @@ public class UserGroupDaoDelegate {
 			ViewResult result = client.queryView("_repo", "userItemsById", queryParams);
 
 			List<UserItem> userItems = new ArrayList<UserItem>();
-			if (result != null && result.getRows() != null) {
-				for (ViewResultRow row : result.getRows()) {
-					try {
-						Object rawDoc = row.getValue();
-						if (rawDoc instanceof Map) {
-							@SuppressWarnings("unchecked")
-							Map<String, Object> docMap = (Map<String, Object>) rawDoc;
-							CouchUserItem cui = new CouchUserItem(docMap);
-							if (cui.getUserId() != null && cui.getId() != null && cui.getType() != null) {
-								UserItem converted = cui.convert();
-								if (converted != null) {
-									userItems.add(converted);
-								}
-							}
-						}
-					} catch (Exception convertException) {
-						log.error("getUserItems(paginated): Exception during conversion", convertException);
+			if (result == null || result.getRows() == null) {
+				// The unpaged overload got this one round earlier and this one did not — the
+				// same one-arm-of-the-pair the group side had just been corrected for.
+				throw new IllegalStateException("the userItemsById view answered without rows"
+						+ " in '" + repositoryId + "'; that is not the same as there being"
+						+ " none");
+			}
+			for (ViewResultRow row : result.getRows()) {
+				try {
+					Object rawDoc = row.getValue();
+					if (!(rawDoc instanceof Map)) {
+						throw new IllegalStateException("a user item row is not a document in '"
+								+ repositoryId + "'; refusing to answer the user list short");
 					}
+					@SuppressWarnings("unchecked")
+					Map<String, Object> docMap = (Map<String, Object>) rawDoc;
+					CouchUserItem cui = new CouchUserItem(docMap);
+					if (cui.getUserId() == null || cui.getId() == null || cui.getType() == null) {
+						throw new IllegalStateException("a user item is missing required fields"
+								+ " in '" + repositoryId + "'; refusing to answer the user list"
+								+ " short");
+					}
+					UserItem converted = cui.convert();
+					if (converted == null) {
+						throw new IllegalStateException("a user item could not be converted in '"
+								+ repositoryId + "'; refusing to answer the user list short");
+					}
+					userItems.add(converted);
+				} catch (IllegalStateException e) {
+					throw e;
+				} catch (Exception convertException) {
+					// A user that will not decode still EXISTS; a directory sync reading this
+					// list decides creations and removals from it.
+					throw new IllegalStateException("a user item could not be decoded in '"
+							+ repositoryId + "'; refusing to answer the user list short",
+							convertException);
 				}
 			}
 			return userItems;
@@ -228,10 +272,13 @@ public class UserGroupDaoDelegate {
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			ViewResult result = client.queryView("_repo", "userItemsById");
-			if (result != null && result.getRows() != null) {
-				return result.getRows().size();
+			if (result == null || result.getRows() == null) {
+				// 0 is "there are none", which an unanswered view does not establish — the
+				// group-side count was corrected one round earlier and this sibling was not.
+				throw new IllegalStateException("the userItemsById view answered without rows"
+						+ " in '" + repositoryId + "'; a count cannot be taken from that");
 			}
-			return 0;
+			return result.getRows().size();
 		} catch (Exception e) {
 			throw new RuntimeException("Failed to count user items for repository: " + repositoryId, e);
 		}
@@ -247,8 +294,10 @@ public class UserGroupDaoDelegate {
 			}
 			return null;
 		} catch (Exception e) {
+			// Same rule as the user twin above.
 			log.error("Error getting group item: " + objectId + " in repository: " + repositoryId, e);
-			return null;
+			throw new IllegalStateException("the group item '" + objectId + "' in '" + repositoryId
+					+ "' could not be read; this is NOT a finding that it does not exist", e);
 		}
 	}
 
@@ -328,9 +377,15 @@ public class UserGroupDaoDelegate {
 						log.info("GroupItem converted - id: " + result_groupItem.getId() + ", revision: " + result_groupItem.getRevision());
 						return result_groupItem;
 					} else {
+						// The group EXISTS (the fresh read returned its document); answering
+						// null says "no such group" — the principal-delete walk would abort
+						// on it (safe), but the membership-update path reads null as
+						// deletable/skippable. An unusable existing group is a failure.
 						log.error("Missing required fields - groupId: " + cgi.getGroupId() +
 							", id: " + cgi.getId() + ", revision: " + cgi.getRevision() + ", type: " + cgi.getType());
-						return null;
+						throw new IllegalStateException("group '" + groupId + "' exists but its"
+								+ " document is missing required fields; this is NOT a finding"
+								+ " that the group does not exist");
 					}
 				}
 			} else {
@@ -339,9 +394,13 @@ public class UserGroupDaoDelegate {
 
 			return null;
 
+		} catch (IllegalStateException e) {
+			throw e;
 		} catch (Exception e) {
+			// Null is "no such group"; a failed read is not that answer.
 			log.error("Error in getGroupItemByIdInternal for groupId '" + groupId + "' in repository '" + repositoryId + "'", e);
-			return null;
+			throw new IllegalStateException("group '" + groupId + "' could not be read in '"
+					+ repositoryId + "'; this is NOT a finding that it does not exist", e);
 		}
 	}
 
@@ -360,7 +419,12 @@ public class UserGroupDaoDelegate {
 	private List<String> parentGroupIdsFrom(ViewResult result, String subject) {
 		List<String> parents = new ArrayList<String>();
 		if (result == null || result.getRows() == null) {
-			return parents;
+			// The javadoc above already makes the argument; this arm just did not follow it.
+			// An unanswered view is not "nobody references it" — the callers strip a deleted
+			// principal from everyone who references it, and an empty answer here means the
+			// delete succeeds with the dangling reference left in place.
+			throw new CmisRuntimeException("the reverse-lookup view answered without rows for "
+					+ subject + "; that is not the same as nothing referencing it");
 		}
 		Set<String> seen = new HashSet<String>();
 		int rows = 0;
@@ -472,33 +536,47 @@ public class UserGroupDaoDelegate {
 
 			List<GroupItem> groupItems = new ArrayList<GroupItem>();
 
-			if (result.getRows() != null) {
-				for (ViewResultRow row : result.getRows()) {
-					if (row.getDoc() != null) {
-						try {
-							ObjectMapper mapper = daoHelper.createConfiguredObjectMapper();
-
-							// CRITICAL FIX: Use Document.getProperties() to get Map<String, Object>
-							// Cloudant SDK Document needs to be converted to Map before passing to ObjectMapper
-							com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
-							Map<String, Object> docProperties = doc.getProperties();
-
-							CouchGroupItem cgi = mapper.convertValue(docProperties, CouchGroupItem.class);
-							if (cgi != null) {
-								GroupItem gi = cgi.convert();
-								groupItems.add(gi);
-							}
-						} catch (Exception e) {
-							log.error("Failed to convert group item document: " + e.getMessage(), e);
-						}
+			if (result.getRows() == null) {
+				// Authorisation data fails CLOSED: "answered without rows" is not "no group
+				// items", and a membership check over a short list answers questions about
+				// who may see what.
+				throw new IllegalStateException("the groupItemsById view answered without rows"
+						+ " in '" + repositoryId + "'; that is not the same as there being"
+						+ " none");
+			}
+			for (ViewResultRow row : result.getRows()) {
+				if (row.getDoc() == null) {
+					// Fail-closed applies to the null RETURNS too, not only the catch.
+					throw new IllegalStateException("a group item row carries no document in '"
+							+ repositoryId + "'; refusing to answer membership from a short"
+							+ " list");
+				}
+				try {
+					ObjectMapper mapper = daoHelper.createConfiguredObjectMapper();
+					com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+					Map<String, Object> docProperties = doc.getProperties();
+					CouchGroupItem cgi = mapper.convertValue(docProperties, CouchGroupItem.class);
+					if (cgi == null) {
+						throw new IllegalStateException("a group item could not be decoded in '"
+								+ repositoryId + "'; refusing to answer membership from a"
+								+ " short list");
 					}
+					GroupItem gi = cgi.convert();
+					groupItems.add(gi);
+				} catch (Exception e) {
+					// Authorisation data fails CLOSED. A group item that will not
+					// decode still GRANTS things; walking past it answers membership
+					// questions from a list that is silently missing members.
+					throw new IllegalStateException("a group item could not be decoded"
+							+ " in '" + repositoryId + "'; refusing to answer"
+							+ " membership from a short list", e);
 				}
 			}
 
 			return groupItems;
 		} catch (Exception e) {
 			log.error("Error getting group items for repository: " + repositoryId + ", error: " + e.getMessage(), e);
-			return new ArrayList<GroupItem>();
+			throw new IllegalStateException("the group items could not be read in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -511,28 +589,46 @@ public class UserGroupDaoDelegate {
 			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "groupItemsById", queryParams);
 
 			List<GroupItem> groupItems = new ArrayList<GroupItem>();
-			if (result.getRows() != null) {
-				for (ViewResultRow row : result.getRows()) {
-					if (row.getDoc() != null) {
-						try {
-							ObjectMapper mapper = daoHelper.createConfiguredObjectMapper();
-							com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
-							Map<String, Object> docProperties = doc.getProperties();
-							CouchGroupItem cgi = mapper.convertValue(docProperties, CouchGroupItem.class);
-							if (cgi != null) {
-								GroupItem gi = cgi.convert();
-								groupItems.add(gi);
-							}
-						} catch (Exception e) {
-							log.error("Failed to convert group item document: " + e.getMessage(), e);
-						}
+			if (result.getRows() == null) {
+				// The unpaged overload got this and the paged one did not — the exact
+				// "one arm of the pair" this batch keeps finding in its own fixes.
+				throw new IllegalStateException("the groupItemsById view answered without rows"
+						+ " in '" + repositoryId + "'; that is not the same as there being"
+						+ " none");
+			}
+			for (ViewResultRow row : result.getRows()) {
+				if (row.getDoc() == null) {
+					// Fail-closed applies to the null RETURNS too, not only the catch: a row
+					// with no document is a group item that exists and cannot be read.
+					throw new IllegalStateException("a group item row carries no document in '"
+							+ repositoryId + "'; refusing to answer membership from a short"
+							+ " list");
+				}
+				try {
+					ObjectMapper mapper = daoHelper.createConfiguredObjectMapper();
+					com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+					Map<String, Object> docProperties = doc.getProperties();
+					CouchGroupItem cgi = mapper.convertValue(docProperties, CouchGroupItem.class);
+					if (cgi == null) {
+						throw new IllegalStateException("a group item could not be decoded in '"
+								+ repositoryId + "'; refusing to answer membership from a"
+								+ " short list");
 					}
+					GroupItem gi = cgi.convert();
+					groupItems.add(gi);
+				} catch (Exception e) {
+					// Authorisation data fails CLOSED. A group item that will not
+					// decode still GRANTS things; walking past it answers membership
+					// questions from a list that is silently missing members.
+					throw new IllegalStateException("a group item could not be decoded"
+							+ " in '" + repositoryId + "'; refusing to answer"
+							+ " membership from a short list", e);
 				}
 			}
 			return groupItems;
 		} catch (Exception e) {
 			log.error("Error getting group items (paginated) for repository: " + repositoryId + ", error: " + e.getMessage(), e);
-			return new ArrayList<GroupItem>();
+			throw new IllegalStateException("the group items could not be read in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -541,13 +637,18 @@ public class UserGroupDaoDelegate {
 			Map<String, Object> queryParams = new HashMap<String, Object>();
 			queryParams.put("include_docs", false);
 			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "groupItemsById", queryParams);
-			if (result != null && result.getRows() != null) {
-				return result.getRows().size();
+			if (result == null || result.getRows() == null) {
+				throw new IllegalStateException("the groupItemsById view answered without rows"
+						+ " in '" + repositoryId + "'; a count cannot be taken from that");
 			}
-			return 0;
+			return result.getRows().size();
+		} catch (IllegalStateException e) {
+			throw e;
 		} catch (Exception e) {
+			// 0 is "there are none", which this failure does not establish.
 			log.error("Error counting group items for repository: " + repositoryId, e);
-			return 0;
+			throw new IllegalStateException("the group items could not be counted in '"
+					+ repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -566,20 +667,49 @@ public class UserGroupDaoDelegate {
 			// CRITICAL FIX: Add visited groups tracking to prevent infinite loops
 			Set<String> visitedGroups = new HashSet<String>();
 
-			if (result.getRows() != null) {
+			if (result.getRows() == null) {
+				// A user's group memberships decide what they may see. "Answered without
+				// rows" served as "belongs to nothing", which silently shrank the user's
+				// permissions — safe in direction, wrong as a statement, and invisible to
+				// the user who just lost access.
+				throw new IllegalStateException("the joined-groups view answered without rows"
+						+ " for user '" + userId + "'; that is not the same as belonging to"
+						+ " no groups");
+			}
+			{
 				for (ViewResultRow row : result.getRows()) {
-					if (row.getValue() != null) {
+					if (row.getValue() == null) {
+						throw new IllegalStateException("a joined-group row for user '" + userId
+								+ "' carries no value; refusing to answer the membership short");
+					}
+					{
 						// Extract groupId from the CouchGroupItem document
 						try {
 							Map<String, Object> doc = (Map<String, Object>) row.getValue();
 							String groupId = (String) doc.get("groupId");
-							if (groupId != null) {
+							if (groupId == null || groupId.isEmpty()) {
+								// A row that decodes but carries no usable groupId is still
+								// a membership row — skipping it shrank the membership the
+								// same way a decode failure did.
+								throw new IllegalStateException("a joined-group row for user '"
+										+ userId + "' carries no usable groupId; refusing to"
+										+ " answer the membership short");
+							}
+							{
 								groupIdsToCheck.add(groupId);
 								resultGroupIds.add(groupId);
 								visitedGroups.add(groupId); // Track visited groups
 							}
+						} catch (IllegalStateException e) {
+							// Not re-wrapped: the groupId-missing arm above already says
+							// exactly what happened, and "could not be read" would bury it.
+							throw e;
 						} catch (Exception e) {
-							log.warn("Error parsing group document for user " + userId + ": " + e.getMessage());
+							// Warn-and-skip made an unreadable membership row identical to "not
+							// a member" — the user silently loses whatever this group granted.
+							throw new IllegalStateException("a joined-group row for user '"
+									+ userId + "' could not be read; refusing to answer the"
+									+ " membership short", e);
 						}
 					}
 				}
@@ -626,9 +756,13 @@ public class UserGroupDaoDelegate {
 				return new jp.aegif.nemaki.dao.TruncatedGroupResolution(resultGroupIds, maxIterations);
 			}
 			return resultGroupIds;
+		} catch (IllegalStateException e) {
+			throw e;
 		} catch (Exception e) {
+			// An empty list is "belongs to no groups", which this failure does not establish.
 			log.error("Error getting joined groups for user: " + userId + ", error: " + e.getMessage());
-			return new ArrayList<String>();
+			throw new IllegalStateException("the joined groups of user '" + userId
+					+ "' could not be resolved; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -665,29 +799,52 @@ public class UserGroupDaoDelegate {
 				queryParams.put("startkey", Arrays.asList(groupId, 0));
 				queryParams.put("endkey", Arrays.asList(groupId, 0));
 
-				try {
-					ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "joinedDirectGroupsByGroupId", queryParams);
-					if (result.getRows() != null) {
-						for (ViewResultRow row : result.getRows()) {
-							if (row.getValue() != null) {
-								try {
-									Map<String, Object> doc = (Map<String, Object>) row.getValue();
-									String parentGroupId = (String) doc.get("groupId");
-									if (parentGroupId != null && !resultGroupIds.contains(parentGroupId)) {
-										resultGroupIds.add(parentGroupId);
-									}
-								} catch (Exception e) {
-									log.warn("Error parsing group hierarchy for group " + groupId + ": " + e.getMessage());
-								}
-							}
-						}
+				// This expansion is the NESTED half of the same membership answer the caller
+				// throws for. A group skipped here (unanswered view, unreadable row, any
+				// failure) removes every permission the user held through that nesting —
+				// silently, per group. Same rule as the direct half: refuse, do not shorten.
+				ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "joinedDirectGroupsByGroupId", queryParams);
+				if (result == null || result.getRows() == null) {
+					throw new IllegalStateException("the group-hierarchy view answered without"
+							+ " rows for group '" + groupId + "'; that is not the same as it"
+							+ " belonging to no groups");
+				}
+				for (ViewResultRow row : result.getRows()) {
+					if (row.getValue() == null) {
+						throw new IllegalStateException("a group-hierarchy row for group '"
+								+ groupId + "' carries no value; refusing to answer the"
+								+ " membership short");
 					}
-				} catch (Exception e) {
-					log.warn("Error checking indirect groups for " + groupId + ": " + e.getMessage());
+					try {
+						Map<String, Object> doc = (Map<String, Object>) row.getValue();
+						String parentGroupId = (String) doc.get("groupId");
+						if (parentGroupId == null || parentGroupId.isEmpty()) {
+							// Same rule as the direct half: no usable groupId is not "not
+							// a parent", it is "could not tell".
+							throw new IllegalStateException("a group-hierarchy row for group '"
+									+ groupId + "' carries no usable groupId; refusing to"
+									+ " answer the membership short");
+						}
+						if (!resultGroupIds.contains(parentGroupId)) {
+							resultGroupIds.add(parentGroupId);
+						}
+					} catch (IllegalStateException e) {
+						// Same as the direct half: the specific arm's message survives.
+						throw e;
+					} catch (Exception e) {
+						throw new IllegalStateException("a group-hierarchy row for group '"
+								+ groupId + "' could not be read; refusing to answer the"
+								+ " membership short", e);
+					}
 				}
 			}
+		} catch (IllegalStateException e) {
+			throw e;
 		} catch (Exception e) {
+			// A partial result here is a shortened membership, same as above.
 			log.error("Error in checkIndirectGroup: " + e.getMessage());
+			throw new IllegalStateException(
+					"nested group expansion failed; refusing to answer the membership short", e);
 		}
 
 		return resultGroupIds;
