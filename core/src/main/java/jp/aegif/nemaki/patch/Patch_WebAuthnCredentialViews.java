@@ -108,6 +108,18 @@ public class Patch_WebAuthnCredentialViews extends AbstractNemakiPatch {
                 }
                 continue;
             }
+            // The gate, which this override used to skip entirely. "Always run, idempotent"
+            // is true of the VIEW work — views.has() is read from the design document — but
+            // not of the two lines below it: isApplied() is a view-based existence check and
+            // createPathHistory() writes under a generated id, which is exactly how bedroom
+            // ended up with two history rows for one patch name.
+            if (!patchUtil.cmisViewsAreAnswering(repositoryId)) {
+                log.error("[patch=" + getName() + ", repositoryId=" + repositoryId
+                        + "] skipped: the repository's views are not answering, so its patch"
+                        + " history cannot be read without risking a duplicate row.");
+                allSucceeded = false;
+                continue;
+            }
             try {
                 applyPerRepositoryPatch(repositoryId);
                 if (!patchUtil.isApplied(repositoryId, getName())) {

@@ -16,6 +16,8 @@
  */
 package jp.aegif.nemaki.cmis.aspect.type.impl;
 
+import jp.aegif.nemaki.util.test.HarnessBroken;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -199,7 +201,7 @@ class TypeRegistryRefusesBaseOnlyInitTest {
             m.setAccessible(true);
             return (Integer) m.invoke(null, value);
         } catch (NoSuchMethodException e) {
-            throw new AssertionError(method + " was renamed — update this test with it, or "
+            throw new HarnessBroken(method + " was renamed — update this test with it, or "
                     + "the clamp is unmeasured", e);
         }
     }
@@ -213,7 +215,7 @@ class TypeRegistryRefusesBaseOnlyInitTest {
             m.setAccessible(true);
             m.invoke(manager, "bedroom", java.util.List.of(), type);
         } catch (NoSuchMethodException e) {
-            throw new AssertionError("addSubTypesInternal was renamed or reshaped — update "
+            throw new HarnessBroken("addSubTypesInternal was renamed or reshaped — update "
                     + "this test to keep driving the assembly the registry drives", e);
         }
     }
@@ -224,7 +226,7 @@ class TypeRegistryRefusesBaseOnlyInitTest {
             m.setAccessible(true);
             m.invoke(manager, "bedroom");
         } catch (NoSuchMethodException e) {
-            throw new AssertionError("addSubTypes(String) was renamed or reshaped — update "
+            throw new HarnessBroken("addSubTypes(String) was renamed or reshaped — update "
                     + "this test to keep driving the walk refreshTypes drives", e);
         }
     }

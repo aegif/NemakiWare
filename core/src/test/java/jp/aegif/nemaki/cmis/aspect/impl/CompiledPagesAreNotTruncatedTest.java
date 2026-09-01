@@ -16,6 +16,7 @@
  */
 package jp.aegif.nemaki.cmis.aspect.impl;
 
+import jp.aegif.nemaki.util.test.HarnessBroken;
 import jp.aegif.nemaki.util.test.JavaSource;
 
 import org.junit.jupiter.api.DisplayName;
@@ -54,7 +55,7 @@ class CompiledPagesAreNotTruncatedTest {
             m.setAccessible(true);
             return (Integer) m.invoke(null, args);
         } catch (NoSuchMethodException e) {
-            throw new AssertionError(method + " was renamed or reshaped — update this test "
+            throw new HarnessBroken(method + " was renamed or reshaped — update this test "
                     + "with it, or the clamp is unmeasured", e);
         }
     }

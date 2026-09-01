@@ -86,11 +86,27 @@ public class ZipExporter {
     @SuppressWarnings("unchecked")
     public void exportTypeDefinitions(String repositoryId, Set<String> customTypeIds,
             ZipOutputStream zos) throws Exception {
+        exportTypeDefinitions(repositoryId, customTypeIds, zos, getTypeService());
+    }
 
-        TypeService ts = getTypeService();
+    /**
+     * The same export with an explicit type service, so its refusals can be measured.
+     *
+     * <p>Fetching the service from the Spring context inside the walk put these arms out of
+     * reach of any test that does not stand a container up — and they are the arms that decide
+     * whether an archive that cannot be restored is handed over as if it could.
+     */
+    @SuppressWarnings("unchecked")
+    void exportTypeDefinitions(String repositoryId, Set<String> customTypeIds,
+            ZipOutputStream zos, TypeService ts) throws Exception {
+
         if (ts == null) {
-            log.warn("TypeService not available, skipping type definition export");
-            return;
+            // The archive names custom types in every object's metadata sidecar. Shipping it
+            // without .nemaki-types/ produces a package the importer cannot restore — and it
+            // unpacks cleanly, so nothing says the definitions are missing.
+            throw new ExportRefusedException("the type service is not wired on this node, so "
+                    + "the custom type definitions this export refers to cannot be written",
+                    null);
         }
 
         // Also collect parent types that are custom
@@ -110,8 +126,12 @@ public class ZipExporter {
         for (String typeId : allTypeIds) {
             NemakiTypeDefinition typeDef = ts.getTypeDefinition(repositoryId, typeId);
             if (typeDef == null) {
-                log.warn("Type definition not found for export: " + typeId);
-                continue;
+                // The id came from an object IN this export, so the type is in use. "Not
+                // found" here is the store failing to produce it, and skipping leaves the
+                // archive describing objects of a type it does not carry.
+                throw new ExportRefusedException("type '" + typeId + "' is used by an object in"
+                        + " this export and its definition could not be read; the package would"
+                        + " describe objects of a type it does not carry", null);
             }
 
             JSONObject typeJson = buildTypeDefinitionJson(repositoryId, typeDef, ts);
@@ -149,9 +169,19 @@ public class ZipExporter {
             for (String propertyDetailId : propertyIds) {
                 try {
                     NemakiPropertyDefinitionDetail detail = ts.getPropertyDefinitionDetail(repositoryId, propertyDetailId);
-                    if (detail != null) {
+                    if (detail == null) {
+                        throw new ExportRefusedException("type " + typeDef.getTypeId()
+                                + " declares property detail " + propertyDetailId
+                                + ", which does not exist", null);
+                    }
+                    {
                         NemakiPropertyDefinitionCore core = ts.getPropertyDefinitionCore(repositoryId, detail.getCoreNodeId());
-                        if (core != null) {
+                        if (core == null) {
+                            throw new ExportRefusedException("the property definition core "
+                                    + detail.getCoreNodeId() + " of type "
+                                    + typeDef.getTypeId() + " does not exist", null);
+                        }
+                        {
                             JSONObject propJson = new JSONObject();
                             propJson.put("id", core.getPropertyId());
                             propJson.put("localName", core.getPropertyId());
@@ -164,8 +194,17 @@ public class ZipExporter {
                             propertiesArray.add(propJson);
                         }
                     }
+                } catch (ExportRefusedException e) {
+                    throw e;
                 } catch (Exception e) {
-                    log.warn("Failed to export property definition: " + propertyDetailId, e);
+                    // A property the type declares, absent from the exported definition: on
+                    // re-import the type comes back MISSING that property, and the values the
+                    // objects carry for it have nowhere to land. The reads below refuse now
+                    // rather than answering null, which is how a failure reaches here.
+                    throw new ExportRefusedException("the property definition "
+                            + propertyDetailId + " of type " + typeDef.getTypeId()
+                            + " could not be read; a type exported without one of its declared"
+                            + " properties loses that property's values on import", e);
                 }
             }
         }

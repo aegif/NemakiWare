@@ -805,7 +805,15 @@ public class ImportExportResource extends ResourceBase {
                         try {
                             collectCustomTypeIds(repositoryId, folder, customTypeIds);
                         } catch (Exception e) {
-                            log.warn("Failed to collect custom type definitions: " + e.getMessage(), e);
+                            // Warned and carried on: the walk that decides WHICH type
+                            // definitions the archive needs failed, so .nemaki-types/ was
+                            // written from a short list — and the package still unpacked.
+                            // The archive is the response body; an aborted stream is the only
+                            // way it can say "incomplete".
+                            throw new ZipExporter.ExportRefusedException(
+                                    "the custom types used by this folder could not be"
+                                            + " collected, so the archive's type definitions"
+                                            + " would be incomplete", e);
                         }
 
                         Set<String> exportedObjectIds = new HashSet<>();
@@ -817,16 +825,25 @@ public class ImportExportResource extends ResourceBase {
                         try {
                             Set<String> relTypeIds = zipExporter.collectAndExportRelationships(repositoryId, exportedObjectIds, zos, callContext);
                             customTypeIds.addAll(relTypeIds);
+                        } catch (ZipExporter.ExportRefusedException e) {
+                            throw e;
                         } catch (Exception e) {
-                            log.warn("Failed to export relationships: " + e.getMessage(), e);
+                            throw new ZipExporter.ExportRefusedException(
+                                    "the relationships between the exported objects could not"
+                                            + " be written, so the archive would say they have"
+                                            + " none", e);
                         }
 
                         try {
                             if (!customTypeIds.isEmpty()) {
                                 zipExporter.exportTypeDefinitions(repositoryId, customTypeIds, zos);
                             }
+                        } catch (ZipExporter.ExportRefusedException e) {
+                            throw e;
                         } catch (Exception e) {
-                            log.warn("Failed to export type definitions: " + e.getMessage(), e);
+                            throw new ZipExporter.ExportRefusedException(
+                                    "the type definitions this archive refers to could not be"
+                                            + " written; the importer cannot restore it", e);
                         }
 
                         // The artifact exists only once the ZIP central directory is written —
@@ -981,7 +998,13 @@ public class ImportExportResource extends ResourceBase {
                                 }
                             }
                         } catch (Exception e) {
-                            log.warn("Failed to collect custom type definitions: " + e.getMessage(), e);
+                            // The objects-export sibling of the folder-export refusal above.
+                            // Fixed one and left the other, which is the shape this batch has
+                            // spent five rounds on; the control run is what showed it.
+                            throw new ZipExporter.ExportRefusedException(
+                                    "the custom types used by the selected objects could not"
+                                            + " be collected, so the archive's type"
+                                            + " definitions would be incomplete", e);
                         }
 
                         ContentService cs = getContentService();
@@ -1013,16 +1036,25 @@ public class ImportExportResource extends ResourceBase {
                         try {
                             Set<String> relTypeIds = zipExporter.collectAndExportRelationships(repositoryId, exportedObjectIds, zos, callContext);
                             customTypeIds.addAll(relTypeIds);
+                        } catch (ZipExporter.ExportRefusedException e) {
+                            throw e;
                         } catch (Exception e) {
-                            log.warn("Failed to export relationships: " + e.getMessage(), e);
+                            throw new ZipExporter.ExportRefusedException(
+                                    "the relationships between the exported objects could not"
+                                            + " be written, so the archive would say they have"
+                                            + " none", e);
                         }
 
                         try {
                             if (!customTypeIds.isEmpty()) {
                                 zipExporter.exportTypeDefinitions(repositoryId, customTypeIds, zos);
                             }
+                        } catch (ZipExporter.ExportRefusedException e) {
+                            throw e;
                         } catch (Exception e) {
-                            log.warn("Failed to export type definitions: " + e.getMessage(), e);
+                            throw new ZipExporter.ExportRefusedException(
+                                    "the type definitions this archive refers to could not be"
+                                            + " written; the importer cannot restore it", e);
                         }
 
                         // The artifact exists only once the ZIP central directory is written.

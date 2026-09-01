@@ -61,19 +61,23 @@ public class EvidenceLedgerService {
         /** Every attempt lost the position to another writer. Nothing was recorded. */
         CONTENDED,
         /**
-         * The append did not go through as a recorded entry.
+         * The append was refused BEFORE anything was written, and the chain is unchanged.
          *
-         * <p><b>Not "nothing was recorded".</b> Most refusals happen before any write — a fork
-         * at the tail, an undecodable row, a tail that could not be read back. But the catch
-         * that produces this also covers {@code store.append} THROWING, and a write whose
-         * response was lost may well have landed. Saying "nothing was recorded" there is the
-         * same substitution this class refuses everywhere else: "could not" reported as
-         * "did not".
-         *
-         * <p>Callers treat it as "custody did not pass" / "the gap is reported", which is right
-         * either way. What must not be built on it is a claim about the ledger's contents.
+         * <p>A fork at the tail, a row that would not decode, a tail that could not be read
+         * back: in each the decision is taken before {@code store.append} is called, so this
+         * one really does mean "nothing was recorded".
          */
-        REFUSED
+        REFUSED,
+        /**
+         * The append was attempted and its outcome is unknown.
+         *
+         * <p>{@code store.append} threw. A write whose response was lost may well have
+         * landed, so this is NOT a statement that the chain is unchanged — and that is
+         * precisely why it is no longer reported as {@link #REFUSED}. The two were one
+         * constant, distinguished only by a paragraph of javadoc, which meant a consumer
+         * asking "is the ledger as I last saw it?" got "yes" for a write that may be in it.
+         */
+        INDETERMINATE
     }
 
     public record AppendResult(AppendOutcome outcome, long sequence, String entryHash,
@@ -143,7 +147,7 @@ public class EvidenceLedgerService {
                 // Position taken. Re-read and aim past it.
             } catch (Exception e) {
                 logger.warn("Evidence ledger append failed for {}: {}", domain, e.toString());
-                return new AppendResult(AppendOutcome.REFUSED, -1, null,
+                return new AppendResult(AppendOutcome.INDETERMINATE, -1, null,
                         "the append failed: " + e.getMessage() + ". Whether the entry reached "
                                 + "the store is unknown — a write whose response was lost may "
                                 + "have landed — so this is NOT a statement that the chain is "

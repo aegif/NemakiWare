@@ -55,9 +55,17 @@ public abstract class AbstractNemakiPatch {
 
 	public boolean apply(){
 		log.info("Applying patch: " + getName());
-		applySystemPatch();
 
 		boolean allSucceeded = true;
+		if (!systemStageMayRun()) {
+			log.error("[patch=" + getName() + "] the SYSTEM stage was skipped: at least one"
+					+ " repository's views are not answering. It will be applied on a later"
+					+ " startup.");
+			allSucceeded = false;
+		} else {
+			applySystemPatch();
+		}
+
 		for(String repositoryId : patchUtil.getRepositoryInfoMap().keys()){
 			// Skip archive repositories — patches are only for main repositories
 			if (patchUtil.getRepositoryInfoMap().isArchiveRepository(repositoryId)) {
@@ -124,6 +132,36 @@ public abstract class AbstractNemakiPatch {
 		log.info("Patch " + getName() + " completed (success=" + allSucceeded + ")");
 		return allSucceeded;
 	}
+	/**
+	 * May the repository-independent stage run?
+	 *
+	 * <p>{@code applySystemPatch()} used to run before any gating at all, and that was
+	 * recorded as a known hole for two rounds on the assumption that the stage does no
+	 * repository work. It does: of the 45 implementations, eight touch a store, and
+	 * {@code Patch_DefaultCloudDriveConnectorProfile} is the shape the gate exists for —
+	 * {@code exists("google-drive-default")} is answered by a MANGO SELECTOR, and the create
+	 * that follows is saved under a GENERATED id, so an index that is being rebuilt answers
+	 * "no such connector" and a second {@code google-drive-default} document appears with no
+	 * conflict to stop it. The others create under stable ids (design documents, Mango index
+	 * names, {@code system_config_*}, migrated {@code docId}s), where a duplicate is refused
+	 * by CouchDB.
+	 *
+	 * <p>The stage is repository-independent, so it is gated on ALL of them: if any
+	 * repository's views are not answering, the design-document layer as a whole is suspect
+	 * and one startup is the price. That is the same trade the per-repository gate makes.
+	 */
+	private boolean systemStageMayRun() {
+		for (String repositoryId : patchUtil.getRepositoryInfoMap().keys()) {
+			if (patchUtil.getRepositoryInfoMap().isArchiveRepository(repositoryId)) {
+				continue;
+			}
+			if (!patchUtil.cmisViewsAreAnswering(repositoryId)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	protected abstract void applySystemPatch();
 	protected abstract void applyPerRepositoryPatch(String repositoryId);
 	public abstract String getName();

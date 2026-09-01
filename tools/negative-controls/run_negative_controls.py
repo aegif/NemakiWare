@@ -1447,6 +1447,106 @@ CONTROLS = [
         expect_fail=["aMismatchedRowRefuses"],
     ),
     dict(
+        id="MR",
+        what="a lock reports harness breakage as an AssertionError again",
+        file="core/src/test/java/jp/aegif/nemaki/cmis/aspect/query/solr/QueryPagingArgumentsAreNotTruncatedTest.java",
+        find="            throw new HarnessBroken(method + \" was renamed — update this test with it, or \"",
+        replace="            throw new AssertionError(method + \" was renamed — update this test with it, or \"",
+        test="HarnessBreakageIsNotAFiringTest",
+        expect_fail=["noTestStillReportsBreakageAsAnAssertion"],
+    ),
+    dict(
+        id="MS",
+        what="JavaSource says 'method not found' with an AssertionError again",
+        file="core/src/test/java/jp/aegif/nemaki/util/test/JavaSource.java",
+        find='        throw new HarnessBroken("method not found, so nothing was checked: " + signatureFragment);',
+        replace='        throw new AssertionError("method not found, so nothing was checked: " + signatureFragment);',
+        test="HarnessBreakageIsNotAFiringTest",
+        expect_fail=["aMissingMethodRaisesHarnessBroken"],
+    ),
+    dict(
+        id="MT",
+        what="the system stage runs before any gate again",
+        file="core/src/main/java/jp/aegif/nemaki/patch/AbstractNemakiPatch.java",
+        find_span=("\t\tboolean allSucceeded = true;\n\t\tif (!systemStageMayRun()) {",
+                   "\t\t} else {\n\t\t\tapplySystemPatch();\n\t\t}"),
+        replace="\t\tapplySystemPatch();\n\t\tboolean allSucceeded = true;",
+        test="SystemStagePassesTheViewGateTest",
+        expect_fail=["aSilentRepositoryStopsTheSystemStage"],
+    ),
+    dict(
+        id="MU",
+        what="the always-run patch override skips the view gate again",
+        file="core/src/main/java/jp/aegif/nemaki/patch/Patch_WebAuthnCredentialViews.java",
+        find_span=("            if (!patchUtil.cmisViewsAreAnswering(repositoryId)) {\n                log.error(\"[patch=\" + getName() + \", repositoryId=\" + repositoryId\n                        + \"] skipped: the repository's views are not answering",
+                   "                allSucceeded = false;\n                continue;\n            }"),
+        replace="",
+        test="SystemStagePassesTheViewGateTest",
+        expect_fail=["theAlwaysRunOverrideIsGated"],
+    ),
+    dict(
+        id="MV",
+        what="the evidence ledger reports a lost write as a refusal again",
+        file="core/src/main/java/jp/aegif/nemaki/evidence/EvidenceLedgerService.java",
+        find="                return new AppendResult(AppendOutcome.INDETERMINATE, -1, null,",
+        replace="                return new AppendResult(AppendOutcome.REFUSED, -1, null,",
+        test="LedgerAndJournalUnknownsAreNotZeroTest",
+        expect_fail=["aThrownWriteIsIndeterminate"],
+    ),
+    dict(
+        id="MW",
+        what="an unreadable retry count is 'never retried' again",
+        file="core/src/main/java/jp/aegif/nemaki/rest/purview/journal/CouchLineageJournalStore.java",
+        find_span=("            logger.warn(\"The retry count of record {} on target {} could not be read: {}\",\n                    recordId, target, e.getMessage());\n            throw new LineageViewUnreadableException(\"the retry count of record \" + recordId",
+                   "been\"\n                    + \" retried\", e);"),
+        replace="            logger.debug(\"Error reading retry count\");\n            return 0;",
+        test="LedgerAndJournalUnknownsAreNotZeroTest",
+        expect_fail=["anUnreadableRetryCountRefuses"],
+    ),
+    dict(
+        id="MX",
+        what="a type definition the archive refers to is skipped with a warn again",
+        file="core/src/main/java/jp/aegif/nemaki/rest/importexport/ZipExporter.java",
+        find_span=("            if (typeDef == null) {\n                // The id came from an object IN this export",
+                   "it does not carry\", null);\n            }"),
+        replace="            if (typeDef == null) {\n                log.warn(\"Type definition not found for export: \" + typeId);\n                continue;\n            }",
+        test="ExportsRefuseMissingBytesTest",
+        expect_fail=["anUnreadableTypeDefinitionAbortsTheZip"],
+    ),
+    dict(
+        id="MY",
+        what="the export resource swallows the custom-type collection refusal again",
+        file="core/src/main/java/jp/aegif/nemaki/rest/ImportExportResource.java",
+        # The type-definition catch is textually identical at both call sites, so the runner
+        # refused an ambiguous span start — the uniqueness check added to it this round doing
+        # its job. The custom-type COLLECTION refusal is unique and is asserted by the same
+        # lock, so that is what this control removes.
+        find_span=("                        } catch (Exception e) {\n                            // Warned and carried on: the walk that decides WHICH type",
+                   "would be incomplete\", e);\n                        }"),
+        replace="                        } catch (Exception e) {\n                            log.warn(\"Failed to collect custom type definitions: \" + e.getMessage(), e);\n                        }",
+        test="ExportRefusalReachesTheClientTest",
+        expect_fail=["theOtherTwoRefusalsAreNotSwallowed"],
+    ),
+    dict(
+        id="MZ",
+        what="a length nobody could read is indexed as 0 again",
+        file="core/src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrUtil.java",
+        find="\t\t\treturn AttachmentContent.LENGTH_UNKNOWN;",
+        replace="\t\t\treturn 0L;",
+        test="SolrUtilAttachmentSingleReadTest",
+        expect_fail=["aLengthThatCouldNotBeReadIsNotZero"],
+    ),
+    dict(
+        id="NA",
+        what="a children listing short by undecodable rows is served again",
+        file="core/src/main/java/jp/aegif/nemaki/cmis/service/impl/NavigationServiceImpl.java",
+        find_span=("\t\t\tint probeUnreadable = contentService.lastUnreadableChildCount();\n\t\t\tif (probeUnreadable > 0) {",
+                   "read as complete\");\n\t\t\t}"),
+        replace="\t\t\tint probeUnreadable = 0;\n\t\t\tif (probeUnreadable > 0) {\n\t\t\t\tthrow new CmisRuntimeException(\"unreachable\");\n\t\t\t}",
+        test="ChildrenPageIsNotSilentlyShortTest",
+        expect_fail=["aPageShortByADecodeFailureRefuses"],
+    ),
+    dict(
         id="MO",
         what="the type registry reads the store outside the declared startup window",
         file="core/src/main/java/jp/aegif/nemaki/cmis/aspect/type/impl/TypeManagerImpl.java",
@@ -1505,7 +1605,60 @@ def sabotage_text(source: str, control: dict) -> str:
     if end < 0:
         raise SystemExit(f"[{control['id']}] span end not found after start: {end_marker!r}")
     end += len(end_marker)
+    span = source[start:end]
+    # The end marker's FIRST occurrence is taken, and nothing used to check that it was the
+    # right one. A marker that also matches earlier inside the block cuts the span short, the
+    # sabotage then deletes half a statement, and the run reports "nothing was measured" —
+    # which is the good case. The bad case is a short span that still compiles and sabotages
+    # something other than the arm under measurement. ML hit exactly this shape.
+    #
+    # The property checked is that the span and its replacement OPEN AND CLOSE THE SAME
+    # AMOUNT. Requiring the span itself to balance was tried first and was wrong: a catch
+    # block legitimately begins with the closing brace of the try before it, so
+    # `} catch (E e) { ... }` has a delta of -1 and is perfectly well formed. What must not
+    # differ is the two deltas — that is what leaves the file unbalanced.
+    span_delta = _delimiter_delta(span)
+    replacement_delta = _delimiter_delta(control["replace"])
+    if span_delta != replacement_delta:
+        occurrences = source.count(end_marker, start)
+        raise SystemExit(
+            f"[{control['id']}] the span and its replacement do not open and close the same "
+            f"amount (span {span_delta}, replacement {replacement_delta}), so the end marker "
+            f"matched at the wrong place — it occurs {occurrences} time(s) after the start. "
+            f"Lengthen the end marker until the two agree.\nSpan:\n{span}")
     return source[:start] + control["replace"] + source[end:]
+
+
+def _delimiter_delta(span: str) -> tuple:
+    """How many braces and parentheses the fragment opens minus closes.
+
+    String/char literals and comments are skipped, so a brace inside a message does not count.
+    """
+    depth = {"{": 0, "(": 0}
+    closing = {"}": "{", ")": "("}
+    i, n = 0, len(span)
+    while i < n:
+        c = span[i]
+        if c == '"':
+            i += 1
+            while i < n and span[i] != '"':
+                i += 2 if span[i] == "\\" else 1
+        elif c == "'":
+            i += 1
+            while i < n and span[i] != "'":
+                i += 2 if span[i] == "\\" else 1
+        elif c == "/" and i + 1 < n and span[i + 1] == "/":
+            while i < n and span[i] != "\n":
+                i += 1
+        elif c == "/" and i + 1 < n and span[i + 1] == "*":
+            i = span.find("*/", i)
+            i = n if i < 0 else i + 1
+        elif c in depth:
+            depth[c] += 1
+        elif c in closing:
+            depth[closing[c]] -= 1
+        i += 1
+    return (depth["{"], depth["("])
 
 
 def run_test(test_class: str) -> tuple[bool, str, str]:
@@ -1552,6 +1705,24 @@ def run_test(test_class: str) -> tuple[bool, str, str]:
     return (len(failures) == 0, "\n".join(failures), "\n".join(report_text))
 
 
+def _harness_broke(stanza: str) -> bool:
+    """Was HarnessBroken RAISED here, or merely named?
+
+    "Anywhere in the stanza" was too blunt: a lock whose whole subject is HarnessBroken —
+    `assertThrows(HarnessBroken.class, ...)` — names it in its failure message, and that lock
+    firing was scored as harness breakage. A raised exception appears as a type prefix at the
+    start of a line, or after "Caused by: "; a mention appears inside a message.
+    """
+    for line in stanza.splitlines():
+        text = line.strip()
+        if text.startswith("Caused by: "):
+            text = text[len("Caused by: "):]
+        head = text.split(":", 1)[0]
+        if head.endswith("HarnessBroken"):
+            return True
+    return False
+
+
 def failed_as_assertion(report_text: str, method: str) -> bool:
     """Whether METHOD failed on the lock's own assertion, not on an unrelated error.
 
@@ -1564,23 +1735,147 @@ def failed_as_assertion(report_text: str, method: str) -> bool:
     for i, line in enumerate(lines):
         if method in line and ("<<< FAILURE!" in line or "<<< ERROR!" in line):
             stanza = "\n".join(lines[i:i + 6])
+            # HARNESS BREAKAGE FIRST, and it wins. JavaSource.methodBody and the reflection
+            # helpers that report a renamed method used to throw AssertionError, so the one
+            # case this function exists to exclude walked straight through the check below:
+            # rename the method a control sabotages and the control reported FIRED while
+            # measuring nothing. They now throw HarnessBroken, which is deliberately not an
+            # AssertionError, and this is where it is rejected.
+            if _harness_broke(stanza):
+                return False
             # Mockito's verify() failures extend AssertionError but print their own class
             # names; a verify(never()) lock firing IS the assertion firing. And surefire's
             # .txt often starts the stanza with the MESSAGE, not the class name — "Wanted
             # but not invoked:" with spaces — which is how two real firings (HT, HV) were
             # misread as harness breakage until the message forms were added here.
+            #
+            # The count and ordering verifications were missing until a review pointed at
+            # HG and HT, which use atLeast(): a lock that fires by "wanted 2 times but was 1"
+            # printed TooFewActualInvocations, matched nothing here, and was read as harness
+            # breakage — a real firing scored as "protects nothing".
             if ("AssertionFailedError" in stanza or "AssertionError" in stanza
                     or "NeverWantedButInvoked" in stanza or "WantedButNotInvoked" in stanza
                     or "MockitoAssertionError" in stanza
                     or "ArgumentsAreDifferent" in stanza
+                    or "TooFewActualInvocations" in stanza
+                    or "TooManyActualInvocations" in stanza
+                    or "NoInteractionsWanted" in stanza
+                    or "VerificationInOrderFailure" in stanza
                     or "Wanted but not invoked" in stanza
                     or "Never wanted here" in stanza
-                    or "Argument(s) are different" in stanza):
+                    or "Argument(s) are different" in stanza
+                    or "No interactions wanted here" in stanza
+                    or "Verification in order failure" in stanza
+                    or "Wanted at least" in stanza
+                    or "Wanted 1 time" in stanza
+                    or "Wanted 2 times" in stanza
+                    or "Wanted 3 times" in stanza):
                 return True
     return False
 
 
+# The judgement functions above decide what every control REPORTS, so they need controls of
+# their own. Each case below is a pair: an input the function must accept and an input it must
+# reject. A one-sided check ("it accepts a real firing") is what let three of these defects sit
+# in the runner while 149 controls reported green.
+SELF_TEST_CASES = [
+    # (name, callable -> actual, expected)
+    ("a JUnit assertion is a firing",
+     lambda: failed_as_assertion(
+         "someTest -- Time elapsed: 0.1 s <<< FAILURE!\n"
+         "org.opentest4j.AssertionFailedError: expected true", "someTest"), True),
+    # The first version of this case used a stanza naming ONLY HarnessBroken — which the
+    # matcher below rejects anyway, since it names no assertion. Reverting the rejection left
+    # it green: it measured nothing. The shape that has to be refused is the one surefire
+    # actually prints when a lock's helper breaks inside an assertion — BOTH names in the
+    # stanza — because that is what walked through when these helpers threw AssertionError.
+    ("harness breakage wins over an assertion name in the same stanza",
+     lambda: failed_as_assertion(
+         "someTest -- Time elapsed: 0.1 s <<< ERROR!\n"
+         "org.opentest4j.AssertionFailedError: the lock could not read the method\n"
+         "\tCaused by: jp.aegif.nemaki.util.test.HarnessBroken: method not found",
+         "someTest"), False),
+    ("a lock ABOUT HarnessBroken firing is still a firing",
+     lambda: failed_as_assertion(
+         "someTest -- Time elapsed: 0.1 s <<< FAILURE!\n"
+         "org.opentest4j.AssertionFailedError: Unexpected exception type thrown, "
+         "expected: <jp.aegif.nemaki.util.test.HarnessBroken> "
+         "but was: <java.lang.AssertionError>", "someTest"), True),
+    # A case that asserted "an AssertionError whose MESSAGE mentions HarnessBroken is not a
+    # firing" was removed rather than kept: it contradicts the line above it. Mention is not
+    # raising, and treating it as raising makes a lock whose subject IS HarnessBroken unable
+    # to fire — which the runner demonstrated by scoring MS as harness breakage. The Java
+    # side is what stops the old shape: no test may throw AssertionError for breakage, and
+    # HarnessBreakageIsNotAFiringTest sweeps for it.
+    ("an NPE is NOT a firing",
+     lambda: failed_as_assertion(
+         "someTest -- Time elapsed: 0.1 s <<< ERROR!\n"
+         "java.lang.NullPointerException: Cannot invoke", "someTest"), False),
+    ("verify(never()) firing is a firing",
+     lambda: failed_as_assertion(
+         "someTest -- Time elapsed: 0.1 s <<< FAILURE!\n"
+         "org.mockito.exceptions.verification.NeverWantedButInvoked: \nNever wanted here",
+         "someTest"), True),
+    ("atLeast() falling short is a firing",
+     lambda: failed_as_assertion(
+         "someTest -- Time elapsed: 0.1 s <<< FAILURE!\n"
+         "org.mockito.exceptions.verification.TooFewActualInvocations: \n"
+         "Wanted at least 2 times but was 1", "someTest"), True),
+    ("too many invocations is a firing",
+     lambda: failed_as_assertion(
+         "someTest -- Time elapsed: 0.1 s <<< FAILURE!\n"
+         "org.mockito.exceptions.verification.TooManyActualInvocations: \n"
+         "Wanted 1 time but was 3", "someTest"), True),
+    ("verifyNoMoreInteractions firing is a firing",
+     lambda: failed_as_assertion(
+         "someTest -- Time elapsed: 0.1 s <<< FAILURE!\n"
+         "org.mockito.exceptions.verification.NoInteractionsWanted: \n"
+         "No interactions wanted here", "someTest"), True),
+    ("inOrder firing is a firing",
+     lambda: failed_as_assertion(
+         "someTest -- Time elapsed: 0.1 s <<< FAILURE!\n"
+         "org.mockito.exceptions.verification.VerificationInOrderFailure: \n"
+         "Verification in order failure", "someTest"), True),
+    ("a balanced fragment has a zero delta",
+     lambda: _delimiter_delta("if (x > 0) {\n\tthrow new E(\"}\");\n}"), (0, 0)),
+    ("a fragment ending mid-block does not",
+     lambda: _delimiter_delta("if (x > 0) {\n\tthrow new E(\"a\");"), (1, 0)),
+    ("a catch fragment legitimately closes one more than it opens",
+     lambda: _delimiter_delta("} catch (Exception e) {\n\tlog.warn(\"x\");\n}"), (-1, 0)),
+    ("braces inside a string literal do not count",
+     lambda: _delimiter_delta('log.warn("{ unclosed in a string");'), (0, 0)),
+    ("braces inside a line comment do not count",
+     lambda: _delimiter_delta("// } stray in a comment\nint x = 1;"), (0, 0)),
+]
+
+
+def run_self_test() -> int:
+    """Measures the runner itself. Returns the number of failures."""
+    failures = 0
+    for name, thunk, expected in SELF_TEST_CASES:
+        try:
+            actual = thunk()
+        except Exception as e:  # noqa: BLE001 - a raising judgement is a failing judgement
+            actual = f"raised {type(e).__name__}: {e}"
+        if actual != expected:
+            failures += 1
+            print(f"  SELF-TEST FAILED: {name}\n    expected {expected!r}, got {actual!r}")
+        else:
+            print(f"  ok: {name}")
+    print(f"self-test: {len(SELF_TEST_CASES) - failures}/{len(SELF_TEST_CASES)} passed")
+    return failures
+
+
 def main() -> None:
+    if "--self-test" in sys.argv[1:]:
+        raise SystemExit(1 if run_self_test() else 0)
+
+    # The judgement functions decide every result below, so they are checked before any
+    # control runs. A runner whose verdicts are wrong reports confidently either way.
+    if run_self_test():
+        raise SystemExit("the runner's own judgement functions are wrong; fix them before "
+                         "trusting any control result")
+
     # Recover from a previous interrupted run FIRST: a leftover .nc-backup means a control
     # died between sabotage and restore, and the production file may still carry the edit.
     # Scoped to the source tree. rglob over the whole repo once picked up a backup the IDE's

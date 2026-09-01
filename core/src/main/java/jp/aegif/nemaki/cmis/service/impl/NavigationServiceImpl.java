@@ -265,10 +265,17 @@ public class NavigationServiceImpl implements NavigationService {
 			// An empty probe whose rows ALL failed to decode is not an empty folder — it is a
 			// folder whose children are invisible, and answering "no children" here hides them
 			// from every listing until the rows are repaired, with nothing saying so.
-			if (probe.isEmpty() && contentService.lastUnreadableChildCount() > 0) {
+			// Not just when the probe came back EMPTY. A probe of two readable rows and one
+			// the store could not decode is the small-folder branch's whole listing, and it
+			// was served as the folder's contents with the third child simply absent — the
+			// same defect the oversampling branch has, in the branch this test suite's small
+			// fixtures actually take. Fixing the paged branch alone would have been the
+			// one-arm correction this batch keeps finding.
+			int probeUnreadable = contentService.lastUnreadableChildCount();
+			if (probeUnreadable > 0) {
 				throw new CmisRuntimeException("the folder's children could not be decoded ("
-						+ contentService.lastUnreadableChildCount() + " row(s)); this is NOT a "
-						+ "finding that the folder is empty");
+						+ probeUnreadable + " row(s)); this is NOT a finding that they do not "
+						+ "exist, and a listing without them would be read as complete");
 			}
 			if (probe.isEmpty()) {
 				// "No children" and "no folder" look identical from here, and this is the branch a
@@ -356,6 +363,14 @@ public class NavigationServiceImpl implements NavigationService {
 			List<Content> pageContents = new ArrayList<>();
 			long scanned = 0;
 			boolean pageFilled = false;
+			// Rows consumed while assembling THIS page that the store could not decode. They
+			// are not "children that are not there": they shift the page boundary and shorten
+			// the answer, and a client cannot tell a page of nine from a page of nine-plus-one
+			// it never heard about. The empty-probe refusal above is the same rule for the
+			// whole folder; this is it for the page — recorded as a known approximation for
+			// several rounds on the grounds that it was "the same layer as numItems", which
+			// is a statement about a COUNT and this is a statement about which objects exist.
+			int unreadableOnThisPage = 0;
 
 			while (!pageFilled) {
 				List<Content> batch = contentService.getChildrenPaged(repositoryId, folderId, dbSkip, dbLimit);
@@ -364,6 +379,7 @@ public class NavigationServiceImpl implements NavigationService {
 				// "is this the last page?" and "where does the next page start?" need the raw
 				// count, not the decoded size.
 				int unreadableInBatch = contentService.lastUnreadableChildCount();
+				unreadableOnThisPage += unreadableInBatch;
 				if (batch.isEmpty()) {
 					if (unreadableInBatch > 0) {
 						// Every row of this page failed to decode. The page is spent; the
@@ -414,6 +430,12 @@ public class NavigationServiceImpl implements NavigationService {
 					// A genuinely short page IS the end.
 					break;
 				}
+			}
+
+			if (unreadableOnThisPage > 0) {
+				throw new CmisRuntimeException("this page of the folder's children is short by "
+						+ unreadableOnThisPage + " row(s) the store could not decode; serving it "
+						+ "would present a listing that is missing children as a complete one");
 			}
 
 			// hasMore: true if page was filled AND there are unscanned rows,

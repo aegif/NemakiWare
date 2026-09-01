@@ -17,6 +17,7 @@
 package jp.aegif.nemaki.businesslogic.impl;
 
 import jp.aegif.nemaki.dao.ContentDaoService;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 import jp.aegif.nemaki.util.test.JavaSource;
 
 import org.junit.jupiter.api.DisplayName;
@@ -117,7 +118,7 @@ class DeleteFlowsRefuseBlindVersionListsTest {
             m.setAccessible(true);
             m.invoke(service, "bedroom", ids);
         } catch (NoSuchMethodException e) {
-            throw new AssertionError("deleteRelationshipsBatch was renamed — update this test",
+            throw new HarnessBroken("deleteRelationshipsBatch was renamed — update this test",
                     e);
         }
     }

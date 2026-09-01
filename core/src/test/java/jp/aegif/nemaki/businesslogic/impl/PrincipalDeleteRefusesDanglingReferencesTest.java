@@ -16,6 +16,8 @@
  */
 package jp.aegif.nemaki.businesslogic.impl;
 
+import jp.aegif.nemaki.util.test.HarnessBroken;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -101,7 +103,7 @@ class PrincipalDeleteRefusesDanglingReferencesTest {
             m.setAccessible(true);
             m.invoke(service, REPO, principal);
         } catch (NoSuchMethodException e) {
-            throw new AssertionError(method + " was renamed or reshaped — update this test to "
+            throw new HarnessBroken(method + " was renamed or reshaped — update this test to "
                     + "keep driving the walk the delete drives", e);
         }
     }

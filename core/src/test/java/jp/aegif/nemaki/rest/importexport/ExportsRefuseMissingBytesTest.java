@@ -182,6 +182,63 @@ class ExportsRefuseMissingBytesTest {
         return names;
     }
 
+    @Test
+    @DisplayName("a type definition the archive refers to and cannot read aborts it too")
+    void anUnreadableTypeDefinitionAbortsTheZip() throws Exception {
+        // The other half of the same package. Objects' .meta sidecars name their custom type;
+        // .nemaki-types/ is what lets an importer recreate it. Skipping a definition with a
+        // warn produced an archive that unpacks and cannot be restored — and nothing in it
+        // said so. Deferred for one round as "a different arm", which it is: this arm carries
+        // no bytes of content, only the shape the content needs.
+        jp.aegif.nemaki.businesslogic.TypeService ts =
+                mock(jp.aegif.nemaki.businesslogic.TypeService.class);
+        when(ts.getTypeDefinition(eq(REPO), anyString())).thenReturn(null);
+
+        ZipExporter exporter = new ZipExporter();
+        ZipOutputStream zos = new ZipOutputStream(new ByteArrayOutputStream());
+
+        assertThrows(ZipExporter.ExportRefusedException.class,
+                () -> exporter.exportTypeDefinitions(REPO, java.util.Set.of("nemaki:custom"),
+                        zos, ts),
+                "a type used by an object in this export had no definition written, and the "
+                        + "archive was finished anyway");
+    }
+
+    @Test
+    @DisplayName("an unwired type service aborts rather than shipping a package with no types")
+    void anUnwiredTypeServiceAborts() {
+        ZipOutputStream zos = new ZipOutputStream(new ByteArrayOutputStream());
+        assertThrows(ZipExporter.ExportRefusedException.class,
+                () -> new ZipExporter().exportTypeDefinitions(REPO,
+                        java.util.Set.of("nemaki:custom"), zos, null));
+    }
+
+    @Test
+    @DisplayName("a readable type definition is still written — the control")
+    void aReadableTypeDefinitionIsStillWritten() throws Exception {
+        jp.aegif.nemaki.model.NemakiTypeDefinition td =
+                new jp.aegif.nemaki.model.NemakiTypeDefinition();
+        td.setTypeId("nemaki:custom");
+        td.setId("nemaki:custom");
+        td.setParentId("cmis:document");
+        td.setBaseId(org.apache.chemistry.opencmis.commons.enums.BaseTypeId.CMIS_DOCUMENT);
+
+        jp.aegif.nemaki.businesslogic.TypeService ts =
+                mock(jp.aegif.nemaki.businesslogic.TypeService.class);
+        when(ts.getTypeDefinition(eq(REPO), eq("nemaki:custom"))).thenReturn(td);
+
+        ByteArrayOutputStream sink = new ByteArrayOutputStream();
+        try (ZipOutputStream zos = new ZipOutputStream(sink)) {
+            new ZipExporter().exportTypeDefinitions(REPO,
+                    java.util.Set.of("nemaki:custom"), zos, ts);
+        }
+
+        assertTrue(entryNames(sink.toByteArray()).stream()
+                        .anyMatch(n -> n.contains("nemaki:custom")),
+                "the refusal arms broke the ordinary type export: "
+                        + entryNames(sink.toByteArray()));
+    }
+
     // ---------- the filesystem export ----------
 
     @Test

@@ -1506,9 +1506,21 @@ public class CouchLineageJournalStore implements LineageJournalStore, LineageSeq
 
             Object count = retryCounts.get(target);
             return (count instanceof Number) ? ((Number) count).intValue() : 0;
+        } catch (LineageViewUnreadableException e) {
+            throw e;
         } catch (Exception e) {
-            logger.debug("Error reading retry count for record {}: {}", recordId, e.getMessage());
-            return 0;
+            // Zero here meant "never retried", and the projection loop reads that as "well
+            // below the max, keep going" — so a record whose count could not be read is
+            // retried for ever and the operator's max-retry policy silently does not apply
+            // to it. The nulls above are genuine absence (no journal document, no counter for
+            // this target) and keep their zero; a FAILED read does not. The by-id read under
+            // this now refuses too, which is how the failure reaches here at all.
+            logger.warn("The retry count of record {} on target {} could not be read: {}",
+                    recordId, target, e.getMessage());
+            throw new LineageViewUnreadableException("the retry count of record " + recordId
+                    + " on target " + target + " could not be read, so whether it has passed"
+                    + " the retry limit is unknown; this is NOT a finding that it has not been"
+                    + " retried", e);
         }
     }
 

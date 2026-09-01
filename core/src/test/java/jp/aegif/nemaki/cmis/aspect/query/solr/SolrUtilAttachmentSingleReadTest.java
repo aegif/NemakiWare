@@ -164,6 +164,30 @@ class SolrUtilAttachmentSingleReadTest {
 	}
 
 	/**
+	 * A length that could not be read is UNKNOWN, and unknown is not zero.
+	 *
+	 * <p>Both reads failing used to produce {@code content_length = 0}, which the indexer wrote
+	 * to Solr — so the index stated a size the document does not have, and a range query
+	 * answered it confidently. The field is left out instead: an absent field is answered
+	 * honestly by Solr, a wrong one is not. Recorded as a known gap for two rounds under
+	 * "the indexer degrades deliberately", which is true of the TEXT and was not true of this.
+	 */
+	@Test
+	void aLengthThatCouldNotBeReadIsNotZero() {
+		when(contentService.getAttachment(REPO, ATTACHMENT))
+				.thenThrow(new IllegalStateException("the attachment could not be read"));
+		when(contentService.getAttachmentRef(REPO, ATTACHMENT))
+				.thenThrow(new IllegalStateException("nor could its metadata"));
+
+		SolrUtil.AttachmentContent result = solrUtil.readAttachment(REPO, ATTACHMENT);
+
+		assertNull(result.text);
+		assertEquals(SolrUtil.AttachmentContent.LENGTH_UNKNOWN, result.length,
+				"a length nobody could read was reported as 0, and the index then carried "
+						+ "content_length=0 for a document with content");
+	}
+
+	/**
 	 * With nothing to extract, the body must not be opened at all — that is the F3 separation
 	 * between the metadata path and the body path.
 	 */

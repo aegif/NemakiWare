@@ -16,6 +16,7 @@
  */
 package jp.aegif.nemaki.cmis.aspect.query.solr;
 
+import jp.aegif.nemaki.util.test.HarnessBroken;
 import jp.aegif.nemaki.util.test.JavaSource;
 
 import org.junit.jupiter.api.DisplayName;
@@ -50,7 +51,7 @@ class QueryPagingArgumentsAreNotTruncatedTest {
             m.setAccessible(true);
             return (Integer) m.invoke(null, value);
         } catch (NoSuchMethodException e) {
-            throw new AssertionError(method + " was renamed — update this test with it, or "
+            throw new HarnessBroken(method + " was renamed — update this test with it, or "
                     + "the clamp is unmeasured", e);
         }
     }

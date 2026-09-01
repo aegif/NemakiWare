@@ -5560,3 +5560,122 @@ runner が発火として数えなかった。`init()` が生き延びること�
 - 実機: bedroom / canopy 200、未 provision の attic が在っても他は落ちない
 - **attic は fixture**。`repositories.yml` からは外したが、CouchDB の
   `attic` / `attic_closet` (空・doc_count 2) は**消していない**
+
+---
+
+## 61. 39 巡目 — 「記録のみ」で持ち越していた残件の消化 (2026-09-01)
+
+台帳に**未対応と書いたまま**の項目を全部洗い出し、直すか、
+**根拠を測ってから閉じる**かのどちらかにした。棚卸しの結果、
+半分は既に閉じていて注記が古かった (それも訂正)。
+
+### 1. runner 自身の観測欠陥 3 件 (§59 で「記録のみ」)
+
+測定器の欠陥なので最優先。**通し実行で 149/149 発火**という数字は、
+この 3 件が生きている間は「その判定関数の下での 149」でしかなかった。
+
+| 欠陥 | 何が通っていたか | 直し |
+|---|---|---|
+| `failed_as_assertion` が `AssertionError` を全部受理 | `JavaSource.methodBody` と reflection ヘルパーが**ハーネス破壊時に `AssertionError`** を投げていた。錠が読むメソッドを rename すると、**何も測っていないのに FIRED** | `HarnessBroken` (**意図的に `AssertionError` ではない**) を新設し、全ヘルパーを移行。runner は「**投げられた**」場合だけ拒否 (**名前が出ただけ**は拒否しない — さもないと HarnessBroken 自体を測る錠が発火できない。MS がそれで一度 WRONG REASON になった) |
+| Mockito の回数・順序検証が未カバー | `atLeast()` を使う HG・HT が「2 回のはずが 1 回」で落ちても、`TooFewActualInvocations` はどの語にも一致せず**ハーネス破壊扱い** = 「保護していない」判定 | 4 クラス名 + メッセージ形を追加 |
+| `find_span` が end marker の一意性を見ない | ML が「span が早く終わってコンパイルエラー」。悪い方は**短い span がコンパイルも通って別の腕を壊す** | **span と replacement の開閉数が一致すること**を検査。最初「span 自体が balance すること」にしたら、`} catch (E e) {` (try の閉じ括弧で始まるのは正常) を弾いたので差分比較に直した |
+
+**runner に `--self-test` を新設** (14 ケース)。判定関数は毎回の本実行の**前に**走り、
+落ちたら控除せず止まる。各ケースは revert→fail で確認済み
+(「ハーネス破壊は発火ではない」の最初の版は**細工しても緑**で、
+何も測っていなかった — 実際に通っていた形 (同じ stanza に両方の名前) に直した)。
+
+### 2. patch の system 段が gate の外 (§60 で「記録のみ」)
+
+「system 段はリポジトリを触らないから無害」と書いていた。**数えたら 45 実装中 8 が触る**。
+7 つは安定 ID (design document / Mango index 名 / `system_config_*` / 移送元の `docId`) で
+CouchDB が重複を拒否するが、**`Patch_DefaultCloudDriveConnectorProfile` は
+`exists("google-drive-default")` を Mango セレクタで訊き、`create` は生成 ID で保存する** —
+索引再構築中は「そんなコネクタは無い」と答え、2 つ目が何にも止められずに出来る。
+gate が存在する理由そのものが、gate の外に居た。
+
+- `AbstractNemakiPatch.apply()`: system 段を**全リポジトリの canary 通過**で gate
+- `Patch_WebAuthnCredentialViews.apply()` (always-run override): **gate を丸ごと飛ばしていた**。
+  view 追加は確かに冪等だが、その後の `isApplied` / `createPathHistory` は
+  view 経由の存在検査と生成 ID の書き込み — bedroom が履歴行を 2 つ持った当の形
+
+### 3. §29「直していない (記録のみ)」3 件
+
+- **`EvidenceLedgerService.append` の分類**: `REFUSED` が
+  「書く前に断った」と「書いて結果が分からない」を兼ねていた。javadoc で
+  区別を説明していたが、**消費者が行動できる区別ではない**。
+  `INDETERMINATE` を分離 (`store.append` が投げた場合のみ)
+- **`AnchorController` の `latestCheckpoint`**: **既に閉じていた** (try の中、
+  「再 seal するな `/retry-unsettled` を使え」の指示付き)。注記が古い
+- **`CouchLineageJournalStore` の残り**: `requireClientForRead` が UNREACHABLE で
+  throw するようになっており、`findAll` / `countNonTerminalByTarget` /
+  `eventKeyExists` は閉じていた。**残っていたのは `getRetryCount`** で、
+  catch → 0 = 「一度も再試行していない」。**運用者が設定した最大再試行が
+  その行にだけ効かなくなる**。throw にし、呼び出し側 (`LineageProjectionLoop`) は
+  **その周だけポリシーを適用しないと明示ログ**して継続する形に
+  (捨てる方向に倒さない)
+
+### 4. §60「別腕・今回対象外」だった 2 件
+
+- **型定義/プロパティ定義の export skip**: 本文と同じ扱いに。
+  型定義が読めない = **importer が復元できないパッケージ**が正常に unzip できる、
+  という同じ嘘。`exportTypeDefinitions` に TypeService を渡す seam を足して測定可能に
+  - **一層上で握り潰していた**: `ImportExportResource` の 3 つの catch が
+    `log.warn` で、拒否がログに落ちてアーカイブは完成していた。**しかも私は
+    片方の呼び出し側だけ直し**、objects-export 側を残していた — コントロール実行で発覚
+- **`SolrUtil` の length**: text 抽出の劣化 (テキスト無しで索引) は
+  「文書ごと索引から消えるより良い」という既存判断なので維持。
+  しかし `lengthFromMetadata` の `0L` は劣化ではなく**間違った値** —
+  索引が「この文書は 0 バイト」と述べ、範囲検索が自信を持って答える。
+  `LENGTH_UNKNOWN` にして**フィールドを書かない**
+
+### 5. §60 で残した rendition の size 腕 — 測ってから閉じた
+
+`getRendition` の「実測失敗 → 記録された length を使う」は他と同じ形だが、
+**rendition の length は fixity 主張ではない**ことを確かめて維持:
+
+1. CMIS の rendition stream は**そもそも length を使っていない** —
+   `ObjectServiceImpl` が `-1` を渡す (CouchDB は圧縮後サイズを報告し、
+   SDK は展開後を返すため、本当の値を書くと応答が切れる)
+2. 残る読み手は表示用の一覧
+3. rendition はこの製品が派生させたプレビューで、その length は
+   **この製品自身の記録**であり第三者の主張ではない
+
+1 が事故で崩れうるので、**そこに錠を掛けた** (`RenditionLengthIsNotAFixityClaimTest`)。
+
+### 6. §44「未対応で残す (P3)」— 近似ではなかった
+
+NavigationServiceImpl の「早期 break 時の decode 行基準の近似」を
+「numItems 系の既存の非厳密と同じ層」と書いていたが、**比較が誤り**:
+numItems は**件数**の近似、こちらは**どのオブジェクトが在るか**の陳述。
+decode できない行がある一覧は、**足りないまま完全な一覧として**返っていた。
+同メソッドは probe が空のときだけ同じ理由で拒否しており、規則は既にあった。
+
+- probe 経路 (小フォルダ) と oversampling ループの**両方**で拒否
+- 最初にループ側だけ直し、テストが小フォルダ経路を通って NPE になったことで
+  片腕修正に気づいた
+
+### 7. 実機で測った (デプロイ済み WAR)
+
+| 対象 | 結果 |
+|---|---|
+| 添付が**本当に無い**文書の content stream | **409 Conflict**。ログは `CouchAttachmentNode is null for: ...` (真の不在の腕)。§60 で「404」と書いたのは誤りで、CMIS 1.1 は「content stream が無い」を `constraint` に写し、Browser binding は 409 を返す |
+| 読めない場合との区別 | 38 巡の export 実機測定が同じ delegate の拒否で **500** を出しており、区別は成立。**両方を同一手順で並べて測ってはいない** (読み取り失敗を実機で起こすには CouchDB を止める必要があり、稼働中スタックでは行わなかった) |
+| bedroom / canopy | 起動・一覧とも 200。新しい拒否ログ 0 件 |
+
+### 8. 残す判断とその理由 (「消化した」の内訳)
+
+- **`attic` / `attic_closet` の空 DB は削除していない**。38 巡の fixture で、
+  `repositories.yml` からは外してあり、中身は provisioning が作った 2 文書だけ
+  (`cache-generation` / `tck:testSecondaryType`)。**データ削除は行わない方針**なので
+  運用者が判断できるようここに残す:
+  `curl -u admin:password -X DELETE http://localhost:5984/attic`(同 `_closet`)
+- **`SolrUtil` のテキスト抽出劣化**は維持 (理由は上の 4 節)
+
+### §61 締め
+
+- フルスイート **6460 / 0** (実機 TCK 群込み)
+- 負のコントロール **新規 12 本** (MR〜NA)。runner 本体には `--self-test` 14 ケース
+- 私の事故: **片腕修正 2 回** (export resource の呼び出し側 / Navigation の分岐)、
+  **測っていない self-test ケース 1 件**、**HarnessBroken の判定が広すぎて
+  自分の錠を殺した 1 件**。いずれもコントロール実行か runner 自身が捕まえた

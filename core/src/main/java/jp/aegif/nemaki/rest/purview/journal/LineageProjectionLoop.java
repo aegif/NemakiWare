@@ -1360,7 +1360,22 @@ public class LineageProjectionLoop {
         // Check retry count limit — auto-discard if exceeded
         int maxRetries = lineageConfig.getBacklogMaxRetryCount();
         if (maxRetries > 0) {
-            int retryCount = journalStore.getRetryCount(record.recordId(), targetName);
+            int retryCount;
+            try {
+                retryCount = journalStore.getRetryCount(record.recordId(), targetName);
+            } catch (RuntimeException e) {
+                // The store refuses rather than answering zero now, and zero was the answer
+                // that made this policy silently not apply. Not applying it for ONE cycle is
+                // the safe side — the alternative is discarding a record on a number nobody
+                // read — but it is said out loud rather than looking like "not yet at the
+                // limit". The cycle continues; the record stays FAILED and is seen again.
+                logger.warn("The retry count of event {} on target '{}' could not be read ({}),"
+                        + " so the max-retry policy is NOT applied to it this cycle",
+                        record.processIdentity(), targetName, e.getMessage());
+                LineageDeadLetterSink.record(v1.event(), "publish-failed:" + targetName + ":"
+                        + errorMessage);
+                return;
+            }
             if (retryCount >= maxRetries) {
                 logger.warn("Retry count {} exceeds max {} for event {} on target '{}' — auto-discarding",
                         retryCount, maxRetries, record.processIdentity(), targetName);

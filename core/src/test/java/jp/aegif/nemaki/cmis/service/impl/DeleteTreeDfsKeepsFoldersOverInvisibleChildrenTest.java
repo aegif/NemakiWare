@@ -16,6 +16,8 @@
  */
 package jp.aegif.nemaki.cmis.service.impl;
 
+import jp.aegif.nemaki.util.test.HarnessBroken;
+
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.cmis.service.ObjectServiceInternal;
@@ -141,7 +143,7 @@ class DeleteTreeDfsKeepsFoldersOverInvisibleChildrenTest {
             dfs.setAccessible(true);
             dfs.invoke(service, null, REPO, node, Boolean.TRUE, Boolean.TRUE, failedIds);
         } catch (NoSuchMethodException e) {
-            throw new AssertionError("deleteTreeDFS was renamed or reshaped — update this test "
+            throw new HarnessBroken("deleteTreeDFS was renamed or reshaped — update this test "
                     + "to keep driving the walk production drives; without it the guard is "
                     + "pinned only by a presence check", e);
         }

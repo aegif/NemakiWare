@@ -62,17 +62,19 @@ public final class JavaSource {
      * literals. String literals are KEPT in the result: some of these assertions are about a
      * query string, so removing them would remove the subject.
      *
-     * @throws AssertionError if the fragment is absent or the braces do not balance — either
-     *     means the test is no longer looking at what it thinks it is, which must be loud.
+     * @throws HarnessBroken if the fragment is absent or the braces do not balance — either
+     *     means the test is no longer looking at what it thinks it is. It is deliberately not
+     *     an AssertionError: the control runner reads an AssertionError as "the lock fired",
+     *     and this is the opposite of that.
      */
     public static String methodBody(String source, String signatureFragment) {
         int start = source.indexOf(signatureFragment);
         if (start < 0) {
-            throw new AssertionError("method not found, so nothing was checked: " + signatureFragment);
+            throw new HarnessBroken("method not found, so nothing was checked: " + signatureFragment);
         }
         int open = source.indexOf('{', start);
         if (open < 0) {
-            throw new AssertionError("no body for: " + signatureFragment);
+            throw new HarnessBroken("no body for: " + signatureFragment);
         }
 
         int depth = 0;
@@ -127,7 +129,7 @@ public final class JavaSource {
                 }
             }
         }
-        throw new AssertionError("unbalanced braces after: " + signatureFragment);
+        throw new HarnessBroken("unbalanced braces after: " + signatureFragment);
     }
 
     /**
