@@ -97,9 +97,20 @@ public class Patch_WebAuthnCredentialViews extends AbstractNemakiPatch {
     @Override
     public boolean apply() {
         log.info("Applying patch: " + getName() + " (always-run, idempotent)");
-        applySystemPatch();
 
+        // The system stage is gated here too. The per-repository half was closed first and
+        // this line was left above it, so §61's claim that "the override's bypass was closed"
+        // covered one of the two halves. This patch's own system stage is a log line, so
+        // nothing changes today — but the override is a template, and the next one to copy
+        // it would inherit the hole.
         boolean allSucceeded = true;
+        if (!systemStageMayRun()) {
+            log.error("[patch=" + getName() + "] the SYSTEM stage was skipped: at least one"
+                    + " repository's views are not answering.");
+            allSucceeded = false;
+        } else {
+            applySystemPatch();
+        }
         for (String repositoryId : patchUtil.getRepositoryInfoMap().keys()) {
             // Skip archive repositories — patches are only for main repositories
             if (patchUtil.getRepositoryInfoMap().isArchiveRepository(repositoryId)) {

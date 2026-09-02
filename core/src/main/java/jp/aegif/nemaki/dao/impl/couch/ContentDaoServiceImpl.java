@@ -1686,27 +1686,33 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			List<String> names = new ArrayList<String>();
 			// CRITICAL FIX (2025-11-02): Check if result is null before calling getRows()
 			// NullPointerException occurs when view query returns null (view doesn't exist or query fails)
-			int unreadableRows = 0;
+			int namelessRows = 0;
 			if (result != null && result.getRows() != null) {
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getValue() == null) {
-						// A row that IS there and carries no name. Dropping it makes the list
-						// SHORT rather than empty, so childrenNamesViewIsAlive — which only
-						// asks whether the view has any rows at all — never fires, and the
-						// CMIS name-uniqueness check concludes "no conflict". A duplicate
-						// sibling name is what nothing repairs.
-						unreadableRows++;
+						// A child with NO NAME, and that is a fact about the child rather
+						// than a read that failed. The view is
+						// `emit(doc.parentId, doc.name)` — the value IS the name, with no
+						// decode step in between — so a null here means the document has
+						// none. Such objects exist in this system and are tolerated
+						// elsewhere (FilesystemExporter skips them by the same rule).
+						//
+						// This was briefly a refusal, on the reasoning that a short list
+						// hides a name from the uniqueness check. That reasoning was wrong
+						// for THIS view: a nameless child cannot collide with a name, so
+						// dropping it does not weaken the check — while refusing would make
+						// every create in a folder that contains one impossible. The
+						// over-correction was caught before it shipped by asking what the
+						// view actually emits.
+						namelessRows++;
 						continue;
 					}
 					names.add(row.getValue().toString());
 				}
 			}
-			if (unreadableRows > 0) {
-				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
-						unreadableRows + " row(s) of the childrenNames view for " + parentId
-								+ " in '" + repositoryId + "' carry no name, so the set of"
-								+ " names in this folder is not known; a uniqueness check"
-								+ " cannot run on a short list");
+			if (namelessRows > 0 && log.isDebugEnabled()) {
+				log.debug(namelessRows + " child row(s) of " + parentId + " in '" + repositoryId
+						+ "' carry no name and are not part of the name set");
 			}
 
 			// An empty list is "this folder has no children" ONLY if the view is working. A view

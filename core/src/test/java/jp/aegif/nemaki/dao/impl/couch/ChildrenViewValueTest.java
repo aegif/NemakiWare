@@ -181,6 +181,7 @@ class ChildrenViewValueTest {
                 }
             }
         }
-        throw new AssertionError("unbalanced braces after " + signature);
+        throw new jp.aegif.nemaki.util.test.HarnessBroken(
+                "unbalanced braces after " + signature);
     }
 }

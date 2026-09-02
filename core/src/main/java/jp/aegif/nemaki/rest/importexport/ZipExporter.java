@@ -73,10 +73,12 @@ public class ZipExporter {
      * CLIENT can tell depends on how far the response has got. While it is still buffered the
      * container turns the exception into a 500 and the body is not an archive at all
      * (measured). Past that point the only signal left is a stream that ends without its
-     * central directory — which is why {@code ImportExportResource} closes the
-     * {@code ZipOutputStream} on the success path only: {@code close()} calls
-     * {@code finish()}, and a {@code finally} would write the directory for a refused export
-     * and hand back an archive that opens with its last entry truncated.
+     * central directory. {@code close()} calls {@code finish()}, so closing in a plain
+     * {@code finally} would write that directory for a refused export and hand back an
+     * archive that opens with its last entry truncated — while NOT closing leaks the native
+     * deflater. {@code ImportExportResource} therefore always closes, into a sink that has
+     * stopped forwarding. This note described the intermediate shape ("closes on the success
+     * path only") for a round after that changed.
      *
      * <p>{@link jp.aegif.nemaki.rest.eark.EarkSipExporter.ExportRefusedException} is the same
      * decision on the SIP side; this is the pair of it for the NemakiWare ZIP format.
@@ -565,9 +567,16 @@ public class ZipExporter {
         try {
             var attachment = cs.getAttachment(repositoryId, attachmentNodeId);
             if (attachment == null) {
-                throw new ExportRefusedException("the attachment " + attachmentNodeId
-                        + " of " + entryPath + " could not be read. This is NOT a statement"
-                        + " that the document has no content.", null);
+                // What null means here, precisely. The delegate now refuses a failed read,
+                // so null is the OTHER thing: the attachment node the document names is not
+                // in the store. The archive still cannot be finished — the document declares
+                // content and there is none to write — but the message used to assert the
+                // opposite of what the value means, which a reviewer caught.
+                throw new ExportRefusedException("the document at " + entryPath + " names"
+                        + " attachment " + attachmentNodeId + ", which is not in the store."
+                        + " Its content cannot be written, and an archive whose metadata"
+                        + " describes bytes it does not carry would be read as complete.",
+                        null);
             }
             zos.putNextEntry(new ZipEntry(entryPath));
             try (InputStream is = attachment.getInputStream()) {

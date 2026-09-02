@@ -800,16 +800,22 @@ public class ImportExportResource extends ResourceBase {
             StreamingOutput streamingOutput = new StreamingOutput() {
                 @Override
                 public void write(OutputStream output) throws IOException {
-                    // NOT try-with-resources. close() calls finish(), which writes the ZIP
-                    // central directory — so on the refusal path the client received a
-                    // 200 and an archive that OPENS, with the last entry silently truncated.
-                    // A review measured it: the "no central directory" this refusal was
-                    // documented to produce only held because the response had not been
-                    // committed yet (a one-document export fits the container buffer). Past
-                    // that point HTTP has no way back, and the only remaining signal is a
-                    // stream that ends without its directory. So the archive is finished on
-                    // the success path only; a refusal propagates with the stream unclosed.
-                    ZipOutputStream zos = new ZipOutputStream(output);
+                    // close() calls finish(), which writes the ZIP central directory — so
+                    // with try-with-resources the client received a 200 and an archive that
+                    // OPENS, with the last entry silently truncated. A review measured it:
+                    // the "no central directory" this refusal was documented to produce only
+                    // held because the response had not been committed yet (a one-document
+                    // export fits the container buffer).
+                    //
+                    // Leaving it unclosed on the refusal path fixed that and leaked the
+                    // deflater — a second review caught THAT. Both properties are wanted, so
+                    // the archive is always closed, and on the refusal path it is closed
+                    // into a stream that has stopped forwarding: the directory is produced
+                    // and discarded, the deflater is freed, and the client's response ends
+                    // where the failure happened.
+                    jp.aegif.nemaki.rest.importexport.ImportExportUtils.DiscardableOutputStream sink =
+                            new jp.aegif.nemaki.rest.importexport.ImportExportUtils.DiscardableOutputStream(output);
+                    ZipOutputStream zos = new ZipOutputStream(sink);
                     try {
                         Set<String> customTypeIds = new HashSet<>();
                         try {
@@ -886,12 +892,13 @@ public class ImportExportResource extends ResourceBase {
                             audit.logOperation(AuditOperation.EXPORT_EXECUTE, repositoryId,
                                     exportUsername, folderId, true, null);
                         }
-                        // The archive is closed HERE, on the success path only. See the note
-                        // at the top of this method: close() writes the central directory, so
-                        // closing it in a finally would hand back an openable archive for a
-                        // refused export.
                         zos.close();
                     } catch (Exception e) {
+                        // Stop forwarding FIRST, then close: the close writes the central
+                        // directory into the discard, so the deflater is freed and the
+                        // client still gets a stream that ends without its directory.
+                        sink.stopForwarding();
+                        closeQuietly(zos);
                         log.error("Export streaming failed: " + e.getMessage(), e);
                         AuditLogger audit = getAuditLogger();
                         if (audit != null) {
@@ -999,16 +1006,22 @@ public class ImportExportResource extends ResourceBase {
             StreamingOutput streamingOutput = new StreamingOutput() {
                 @Override
                 public void write(OutputStream output) throws IOException {
-                    // NOT try-with-resources. close() calls finish(), which writes the ZIP
-                    // central directory — so on the refusal path the client received a
-                    // 200 and an archive that OPENS, with the last entry silently truncated.
-                    // A review measured it: the "no central directory" this refusal was
-                    // documented to produce only held because the response had not been
-                    // committed yet (a one-document export fits the container buffer). Past
-                    // that point HTTP has no way back, and the only remaining signal is a
-                    // stream that ends without its directory. So the archive is finished on
-                    // the success path only; a refusal propagates with the stream unclosed.
-                    ZipOutputStream zos = new ZipOutputStream(output);
+                    // close() calls finish(), which writes the ZIP central directory — so
+                    // with try-with-resources the client received a 200 and an archive that
+                    // OPENS, with the last entry silently truncated. A review measured it:
+                    // the "no central directory" this refusal was documented to produce only
+                    // held because the response had not been committed yet (a one-document
+                    // export fits the container buffer).
+                    //
+                    // Leaving it unclosed on the refusal path fixed that and leaked the
+                    // deflater — a second review caught THAT. Both properties are wanted, so
+                    // the archive is always closed, and on the refusal path it is closed
+                    // into a stream that has stopped forwarding: the directory is produced
+                    // and discarded, the deflater is freed, and the client's response ends
+                    // where the failure happened.
+                    jp.aegif.nemaki.rest.importexport.ImportExportUtils.DiscardableOutputStream sink =
+                            new jp.aegif.nemaki.rest.importexport.ImportExportUtils.DiscardableOutputStream(output);
+                    ZipOutputStream zos = new ZipOutputStream(sink);
                     try {
                         Set<String> customTypeIds = new HashSet<>();
                         try {
@@ -1107,9 +1120,10 @@ public class ImportExportResource extends ResourceBase {
                                         java.time.Instant.now().toString());
                             }, "repo=" + repositoryId + " op=" + lineageOperationId + " type=EXPORT_SELECTED_OBJECTS");
                         }
-                        // Success path only — see the note at the top of this method.
                         zos.close();
                     } catch (Exception e) {
+                        sink.stopForwarding();
+                        closeQuietly(zos);
                         log.error("Export streaming failed: " + e.getMessage(), e);
                         throw new IOException("Export failed: " + e.getMessage(), e);
                     }
@@ -1476,6 +1490,21 @@ public class ImportExportResource extends ResourceBase {
     }
 
     // ========== Utility ==========
+
+    /**
+     * Closes a refused archive without letting the close itself replace the refusal.
+     *
+     * <p>Called only after the sink has stopped forwarding, so what this frees is the native
+     * deflater and what it writes goes nowhere.
+     */
+    private static void closeQuietly(java.io.Closeable closeable) {
+        try {
+            closeable.close();
+        } catch (Exception ignored) {
+            // The refusal is the story; a failure to close the discarded wrapper is not.
+        }
+    }
+
 
     private CallContext createCallContext(HttpServletRequest request, String repositoryId) {
         CallContext filterContext = (CallContext) request.getAttribute("CallContext");

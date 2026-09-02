@@ -113,14 +113,21 @@ class HarnessBreakageIsNotAFiringTest {
                                         || statement.contains("reshaped")
                                         || statement.contains("missing for a source file")
                                         || statement.contains("nothing was checked")
-                                        || statement.contains("no longer exists"))) {
+                                        || statement.contains("no longer exists")
+                                        || statement.contains("unbalanced braces")
+                                        || statement.contains("is gone"))) {
                                     return true;
                                 }
                                 at = text.indexOf(needle, at + 1);
                             }
                             return false;
                         } catch (Exception e) {
-                            return false;
+                            // A file this sweep cannot read is not a file it has cleared.
+                            // Returning false counted it as compliant, which is the same
+                            // "could not ask reported as an answer" the product code is
+                            // being held to.
+                            throw new HarnessBroken("could not read " + p + " while sweeping "
+                                    + "for AssertionError-signalled harness breakage", e);
                         }
                     })
                     .toList();

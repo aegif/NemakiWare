@@ -103,6 +103,22 @@ public class ConnectorDefinitionController {
         def.setConnectorId(connectorId);
         // Preserve real secrets when client sends back the masked placeholder
         ConnectorDefinition existing = connectorDefinitionService.get(connectorId);
+        if (existing == null
+                && ("[configured]".equals(def.getCredentialRef())
+                        || "[configured]".equals(def.getWebhookSecret()))) {
+            // The payload carries the mask this endpoint hands out, and the row it should be
+            // restored from did not come back. Writing it stores the literal string
+            // "[configured]" AS the credential — a connector that silently stops
+            // authenticating, with the real secret gone.
+            //
+            // get() is answered by a Mango selector, so "did not come back" includes an
+            // index that is merely rebuilding. That is precisely when an administrator
+            // round-tripping the GET payload would land here.
+            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE,
+                    "connector " + connectorId + " could not be read back, so the masked"
+                            + " secrets in this request cannot be restored. Nothing was"
+                            + " written. Retry, or send the real values.");
+        }
         if (existing != null) {
             if ("[configured]".equals(def.getCredentialRef())) {
                 def.setCredentialRef(existing.getCredentialRef());
@@ -134,6 +150,11 @@ public class ConnectorDefinitionController {
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
             return errorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
+        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+            // Transient and retryable. This reached the client as a 500 for a round, which
+            // is what the "just adopt the row" fix was reaching for — the fix was wrong and
+            // the status code was the part worth keeping.
+            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
         }
     }
 

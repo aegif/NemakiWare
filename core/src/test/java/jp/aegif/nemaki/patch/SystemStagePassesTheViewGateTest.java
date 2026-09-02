@@ -156,7 +156,17 @@ class SystemStagePassesTheViewGateTest {
         // Counting the writes cannot be fooled that way.
         Repos repos = new Repos("bedroom", "canopy");
         RecordingPatchUtil util = new RecordingPatchUtil(repos, Set.of("bedroom"));
+        // applySystemPatch is counted too. The override gained a system-stage gate after a
+        // review found it calling the stage before its own per-repository gate — and nothing
+        // measured that half, because this patch's real applySystemPatch is a log line. A
+        // later review named the gap; a counting subclass closes it.
+        int[] systemStageRuns = new int[1];
         Patch_WebAuthnCredentialViews patch = new Patch_WebAuthnCredentialViews() {
+            @Override
+            protected void applySystemPatch() {
+                systemStageRuns[0]++;
+            }
+
             @Override
             protected void applyPerRepositoryPatch(String repositoryId) {
                 // The view work itself needs a CouchDB client; this test is about the gate.
@@ -166,6 +176,9 @@ class SystemStagePassesTheViewGateTest {
 
         patch.apply();
 
+        assertEquals(0, systemStageRuns[0],
+                "the always-run override ran its SYSTEM stage while a repository's views "
+                        + "were not answering — the half of its gate that nothing measured");
         assertEquals(List.of("bedroom"), util.historyWrites,
                 "the always-run override wrote patch history for a repository whose views "
                         + "are not answering — isApplied() is a view-based existence check "

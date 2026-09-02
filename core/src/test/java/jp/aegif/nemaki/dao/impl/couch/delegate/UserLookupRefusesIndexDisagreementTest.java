@@ -144,16 +144,34 @@ class UserLookupRefusesIndexDisagreementTest {
     }
 
     @Test
-    @DisplayName("a view that answered with no rows is still 'no such user' — the control")
-    void anAnsweredEmptyViewIsStillAbsence() {
+    @DisplayName("a user who does not exist reads as absent — the shape the real wrapper "
+            + "returns, which the first version of this test got wrong")
+    void anAbsentUserReadsAsAbsent() {
         wire();
-        ViewResult noRows = resultWithValues();
+        // NULL, not an empty-rows ViewResult. The keyed overload of queryView returns
+        // `rows == 0 ? null : result`, so an empty-rows result is a value the production
+        // wrapper NEVER produces. Stubbing it made this test pass while the delegate refused
+        // every lookup of a user that does not exist — a login with an unknown username was
+        // a 500 instead of a 401, and creating any group was impossible, because both go
+        // through this call. A review caught it; the fixture had to match the wrapper.
         when(client.queryView(eq("_repo"), eq("userItemsById"), anyString()))
-                .thenReturn(noRows);
+                .thenReturn(null);
 
         assertNull(delegate.getUserItemById(REPO, "nobody"),
-                "a user that genuinely is not there must still read as absent, or nothing "
-                        + "could ever be created");
+                "a user that genuinely is not there must still read as absent, or no login "
+                        + "can fail cleanly and nothing can ever be created");
+    }
+
+    @Test
+    @DisplayName("a group that does not exist reads as absent too")
+    void anAbsentGroupIsStillAbsence() {
+        wire();
+        when(client.queryView(eq("_repo"), eq("groupItemsById"), anyString(),
+                org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(null);
+
+        assertNull(delegate.getGroupItemById(REPO, "nobody"),
+                "validateNewGroup asks this before creating a group; refusing here makes "
+                        + "creating any group impossible");
     }
 
     @Test

@@ -150,7 +150,7 @@ public abstract class AbstractNemakiPatch {
 	 * repository's views are not answering, the design-document layer as a whole is suspect
 	 * and one startup is the price. That is the same trade the per-repository gate makes.
 	 */
-	private boolean systemStageMayRun() {
+	protected boolean systemStageMayRun() {
 		for (String repositoryId : patchUtil.getRepositoryInfoMap().keys()) {
 			if (patchUtil.getRepositoryInfoMap().isArchiveRepository(repositoryId)) {
 				continue;

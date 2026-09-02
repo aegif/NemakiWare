@@ -199,6 +199,22 @@ class OneRepositoryDoesNotTakeDownTheRegistryTest {
         assertThrows(IllegalStateException.class,
                 () -> tm.findSecondaryTypeByPropertyQueryName("unprovisioned", "nemaki:tag"),
                 "findSecondaryTypeByPropertyQueryName answered from the base-only map");
+        // The comment above names getTypesChildren as one of the two CMIS-visible listings
+        // and the first version of this test then checked only the other one. A review
+        // caught it — four of the nine guards had no assertion at all.
+        assertThrows(IllegalStateException.class,
+                () -> tm.getTypesChildren(null, "unprovisioned", "cmis:document", false,
+                        java.math.BigInteger.TEN, java.math.BigInteger.ZERO),
+                "getTypesChildren — the paged CMIS listing — answered from the base-only map");
+        assertThrows(IllegalStateException.class,
+                () -> tm.getTypeById("unprovisioned", "cmis:document"),
+                "getTypeById answered from the base-only map");
+        assertThrows(IllegalStateException.class,
+                () -> tm.getRootTypes("unprovisioned"),
+                "getRootTypes answered from the base-only map");
+        assertThrows(IllegalStateException.class,
+                () -> tm.getTypeDefinition("unprovisioned", "cmis:document"),
+                "getTypeDefinition answered from the base-only map");
 
         // The healthy repository is unaffected — the isolation is the point.
         assertFalse(tm.getTypeDefinitionList("healthy").isEmpty());
@@ -242,6 +258,94 @@ class OneRepositoryDoesNotTakeDownTheRegistryTest {
         assertFalse(windowDuringRead.get(1),
                 "a later init opened the process-wide provisioning window. Every request "
                         + "being served at that moment then reads a missing view as 'no data'");
+    }
+
+    @Test
+    @DisplayName("a FAILED first init does not spend the bootstrap grace")
+    void aFailedFirstInitDoesNotSpendTheGrace() throws Exception {
+        // The flag was set in the finally at first, so a failed first init consumed the
+        // grace and the ordinary response — retrying in the same JVM — ran strict against a
+        // store whose design documents still did not exist. Moving it to the success path
+        // fixed that, and nothing measured the move: putting it back left the whole suite
+        // green. A review named the gap.
+        //
+        // The failure has to be one that ESCAPES init(). A per-repository read failure does
+        // not: generate() isolates it and init() completes, which is why the first version
+        // of this test failed — the grace was spent because the init really had finished.
+        // An unusable repository map is a failure of the whole registry.
+        final java.util.List<Boolean> windowDuringRead = new java.util.ArrayList<>();
+        TypeService typeService = mock(TypeService.class);
+        when(typeService.getTypeDefinitions(anyString())).thenAnswer(invocation -> {
+            windowDuringRead.add(StartupPhase.isProvisioning());
+            return Collections.singletonList(customType());
+        });
+
+        RepositoryInfoMap map = mock(RepositoryInfoMap.class);
+        when(map.keys()).thenReturn(new LinkedHashSet<>());   // nothing to generate: init throws
+
+        TypeManagerImpl tm = new TypeManagerImpl();
+        tm.setTypeService(typeService);
+        tm.setRepositoryInfoMap(map);
+        tm.setPropertyManager(readableConfiguration());
+
+        assertThrows(RuntimeException.class, tm::init,
+                "this fixture no longer makes the first init fail, so it measures nothing");
+        assertEquals(0, windowDuringRead.size(), "the failed init should not have read");
+
+        // The operator fixes the wiring and retries in the same JVM.
+        RepositoryInfo info = mock(RepositoryInfo.class);
+        when(info.getId()).thenReturn("healthy");
+        when(map.get("healthy")).thenReturn(info);
+        when(map.keys()).thenReturn(new LinkedHashSet<>(List.of("healthy")));
+        setStatic("initialized", false);
+
+        tm.init();
+
+        assertEquals(1, windowDuringRead.size(), "the retry did not read the store");
+        assertTrue(windowDuringRead.get(0),
+                "the RETRY after a failed first init had no bootstrap grace, so it ran "
+                        + "strict against a store whose design documents do not exist yet");
+    }
+
+    @Test
+    @DisplayName("refreshTypes records that a load completed — the invariant the window rests on")
+    void refreshTypesRecordsThatALoadCompleted() throws Exception {
+        // `initialized` implies `everInitialized` is what makes "only the first init opens
+        // the window" true. refreshTypes() completed a load and set only the first, so a
+        // later reset of `initialized` — which refreshTypes itself and the dynamic
+        // repository path both do — re-entered init() believing it was the FIRST and opened
+        // the process-wide window ON A REQUEST THREAD. A review found the invariant broken
+        // while the reachability was still latent, and this test is what makes it not
+        // latent: the flag has to be true after a refresh, whatever came before.
+        TypeService typeService = mock(TypeService.class);
+        when(typeService.getTypeDefinitions(anyString()))
+                .thenReturn(Collections.singletonList(customType()));
+
+        RepositoryInfoMap map = mock(RepositoryInfoMap.class);
+        when(map.keys()).thenReturn(new LinkedHashSet<>(List.of("healthy")));
+        RepositoryInfo info = mock(RepositoryInfo.class);
+        when(info.getId()).thenReturn("healthy");
+        when(map.get("healthy")).thenReturn(info);
+
+        TypeManagerImpl tm = new TypeManagerImpl();
+        tm.setTypeService(typeService);
+        tm.setRepositoryInfoMap(map);
+        tm.setPropertyManager(readableConfiguration());
+
+        // The latent path the review named: the first init never completes, and the first
+        // load that DOES complete is a refresh.
+        setStatic("everInitialized", false);
+        tm.refreshTypes();
+
+        assertTrue(everInitialized(),
+                "refreshTypes completed a load without recording it, so the next init would "
+                        + "open the provisioning window again — on whatever thread asked");
+    }
+
+    private static boolean everInitialized() throws Exception {
+        java.lang.reflect.Field f = TypeManagerImpl.class.getDeclaredField("everInitialized");
+        f.setAccessible(true);
+        return f.getBoolean(null);
     }
 
     @Test

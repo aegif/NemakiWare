@@ -116,16 +116,33 @@ class IdentityAndPolicyLookupsRefuseFailuresTest {
     }
 
     @Test
-    @DisplayName("an unanswered user view refuses — the catch is not the only door")
-    void anUnansweredUserViewRefuses() {
-        // getUserItems already refuses this for the SAME view; the by-id twin let it
-        // through as "no such user", which authentication and the directory sync act on.
+    @DisplayName("a user who is not there reads as absent — this test used to assert the "
+            + "opposite, and that broke login")
+    void anAbsentUserIsNotARefusal() {
+        // WITHDRAWN CONTRACT. This method used to assert that a null view result REFUSES,
+        // on the reading that null meant "the view did not answer". It does not: the keyed
+        // overload of queryView returns `rows == 0 ? null : result`, so null is "no row
+        // carries this userId" — the ordinary answer for a user who does not exist.
+        //
+        // With the refusal in place, a login with an unknown username was a 500 instead of a
+        // 401 (and never reached the throttle), and `validateNewGroup`'s "does this already
+        // exist?" pre-check made creating any group impossible. A review found it; this test
+        // had been holding the defect in place.
+        //
+        // The property it was reaching for is real and still holds — it just lives one layer
+        // down: a design document that is not deployed makes the WRAPPER throw, outside the
+        // startup window (CloudantClientWrapper), so the DAO never sees that case as null.
         CloudantClientWrapper client = mock(CloudantClientWrapper.class);
         when(client.queryView(eq("_repo"), eq("userItemsById"), eq("miyata")))
                 .thenReturn(null);
 
-        assertThrows(IllegalStateException.class,
-                () -> delegateWith(client).getUserItemById(REPO, "miyata"));
+        // assertDoesNotThrow, so that a restored refusal fails on THIS assertion rather
+        // than escaping as an exception the runner scores as harness breakage.
+        var found = org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> delegateWith(client).getUserItemById(REPO, "miyata"),
+                "a user that genuinely is not there was reported as a failed read, so no "
+                        + "login can fail cleanly and no group can be created");
+        org.junit.jupiter.api.Assertions.assertNull(found);
     }
 
     @Test
@@ -148,14 +165,18 @@ class IdentityAndPolicyLookupsRefuseFailuresTest {
     }
 
     @Test
-    @DisplayName("an unanswered group view refuses — the twin")
-    void anUnansweredGroupViewRefuses() {
+    @DisplayName("a group that is not there reads as absent too — the twin of the same "
+            + "withdrawn contract")
+    void anAbsentGroupIsNotARefusal() {
         CloudantClientWrapper client = mock(CloudantClientWrapper.class);
         when(client.queryView(eq("_repo"), eq("groupItemsById"), eq("sec"),
                 org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(null);
 
-        assertThrows(IllegalStateException.class,
-                () -> delegateWith(client).getGroupItemById(REPO, "sec"));
+        var found = org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> delegateWith(client).getGroupItemById(REPO, "sec"),
+                "validateNewGroup asks this before creating a group; refusing here makes "
+                        + "creating any group impossible");
+        org.junit.jupiter.api.Assertions.assertNull(found);
     }
 
     @Test
@@ -187,14 +208,19 @@ class IdentityAndPolicyLookupsRefuseFailuresTest {
     @DisplayName("a view that ANSWERED with no rows is still 'not there' — the control")
     void anEmptyAnswerIsStillAbsence() {
         CloudantClientWrapper client = mock(CloudantClientWrapper.class);
-        com.ibm.cloud.cloudant.v1.model.ViewResult empty =
-                mock(com.ibm.cloud.cloudant.v1.model.ViewResult.class);
-        when(empty.getRows()).thenReturn(java.util.List.of());
+        // NULL, not an empty-rows ViewResult. The keyed overload of queryView returns
+        // `rows == 0 ? null : result` (CloudantClientWrapper), so an empty-rows result is a
+        // value production NEVER produces, and a test that stubs one is measuring a state
+        // that cannot occur. Two sibling tests were rewritten for exactly this after the
+        // shape hid a login-breaking refusal for a round; this third one, in the same
+        // package, was missed by that sweep and found by a later audit of the fixtures.
         when(client.queryView(eq("_repo"), eq("userItemsById"), eq("ghost")))
-                .thenReturn(empty);
+                .thenReturn(null);
 
         assertNull(delegateWith(client).getUserItemById(REPO, "ghost"),
-                "the refusal arms broke the ordinary 'that user is not there' answer");
+                "the refusal arms broke the ordinary 'that user is not there' answer — an "
+                        + "unknown username can then only fail as a 500, and nothing that "
+                        + "asks 'does this already exist?' can create anything");
     }
 
     @Test

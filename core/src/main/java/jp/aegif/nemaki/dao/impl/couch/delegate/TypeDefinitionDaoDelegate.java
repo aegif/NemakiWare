@@ -440,6 +440,12 @@ public class TypeDefinitionDaoDelegate {
 			}
 
 			// Genuine absence: the view answered, and no row carries this propertyId.
+			//
+			// A null LIST used to be able to arrive here too, from an undeployed view, and
+			// this comment asserted the opposite of what that value meant. The wrapper now
+			// refuses an undeployed view outside the provisioning window, so the only null
+			// list left is the one inside that window — where the patches have not run yet
+			// and "not defined" is the right answer for them to create on.
 			return null;
 		} catch (IllegalStateException e) {
 			throw e;

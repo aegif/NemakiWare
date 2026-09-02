@@ -66,14 +66,27 @@ public class UserGroupDaoDelegate {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			ViewResult result = client.queryView("_repo", "userItemsById", userId);
 
-			// The catch below refuses a failed read; these two doors let the SAME failure
-			// through as "no such user". getUserItems already refuses them for this very
-			// view — authentication and the directory sync (which decides whether an account
-			// still exists) read this answer.
-			if (result == null || result.getRows() == null) {
-				throw new IllegalStateException("the userItemsById view did not answer for '"
-						+ userId + "' in '" + repositoryId + "'; that is not the same as the"
-						+ " user not existing");
+			// null is "the view answered, and no row carries this userId" — GENUINE ABSENCE.
+			//
+			// This was briefly a refusal, on the reading that null meant "did not answer".
+			// It does not: the keyed overload of queryView returns `rows == 0 ? null :
+			// result` (CloudantClientWrapper), and the case it used to conflate with — a
+			// design document that is not deployed — now throws there, outside the startup
+			// window. So by the time we are here, null can only be absence.
+			//
+			// The refusal broke ordinary operation and a review caught it before it shipped:
+			// a login with an unknown username became a 500 instead of a 401 (and never
+			// reached the throttle), and the "does this group already exist?" pre-check made
+			// creating any group impossible. The test that was supposed to protect this
+			// stubbed an empty-rows ViewResult — a value the real wrapper never produces.
+			if (result == null) {
+				log.debug("No user with userId " + userId + " in " + repositoryId);
+				return null;
+			}
+			if (result.getRows() == null) {
+				throw new IllegalStateException("the userItemsById view returned a result with"
+						+ " no rows object for '" + userId + "' in '" + repositoryId + "';"
+						+ " the wrapper never produces that, so this is a wiring fault");
 			}
 
 			if (!result.getRows().isEmpty()) {
@@ -366,11 +379,17 @@ public class UserGroupDaoDelegate {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			ViewResult result = client.queryView("_repo", "groupItemsById", groupId, forceUpdate);
 
-			// Same pair of doors as the user twin: the catch refuses, these did not.
-			if (result == null || result.getRows() == null) {
-				throw new IllegalStateException("the groupItemsById view did not answer for '"
-						+ groupId + "' in '" + repositoryId + "'; that is not the same as the"
-						+ " group not existing");
+			// Same correction as the user twin above: null is "no row carries this groupId",
+			// which is what validateNewGroup and the directory sync are entitled to hear.
+			// A missing view throws inside the wrapper now.
+			if (result == null) {
+				log.debug("No group with groupId " + groupId + " in " + repositoryId);
+				return null;
+			}
+			if (result.getRows() == null) {
+				throw new IllegalStateException("the groupItemsById view returned a result with"
+						+ " no rows object for '" + groupId + "' in '" + repositoryId + "';"
+						+ " the wrapper never produces that, so this is a wiring fault");
 			}
 
 			if (!result.getRows().isEmpty()) {

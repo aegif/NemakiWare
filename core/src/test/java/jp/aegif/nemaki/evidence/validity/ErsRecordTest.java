@@ -659,7 +659,7 @@ class ErsRecordTest {
             m.setAccessible(true);
             return (boolean) m.invoke(null, e);
         } catch (ReflectiveOperationException ex) {
-            throw new AssertionError("ErsVerifier.isAboutThisBuild is gone, so the two messages "
+            throw new jp.aegif.nemaki.util.test.HarnessBroken("ErsVerifier.isAboutThisBuild is gone, so the two messages "
                     + "that are about this deployment are being reported as findings about the "
                     + "record again", ex);
         }

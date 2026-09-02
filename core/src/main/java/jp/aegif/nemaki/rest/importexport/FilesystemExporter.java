@@ -148,21 +148,21 @@ public class FilesystemExporter {
                                     + " could not be read. This is NOT a statement that the"
                                     + " document has no content.");
                         }
-                        StandardOpenOption[] options = allowOverwrite
-                            ? new StandardOpenOption[] { StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING }
-                            : new StandardOpenOption[] { StandardOpenOption.CREATE_NEW };
-                        try (InputStream is = attachment.getInputStream();
-                             OutputStream os = Files.newOutputStream(childPath, options)) {
-                            if (is == null) {
-                                throw new IOException("the attachment "
-                                        + doc.getAttachmentNodeId() + " produced no stream");
-                            }
-                            byte[] buffer = new byte[8192];
-                            int len;
-                            while ((len = is.read(buffer)) != -1) {
-                                os.write(buffer, 0, len);
-                            }
+                        // The stream is checked BEFORE the file is opened. try-with-resources
+                        // initialises left to right, so with the check inside the body
+                        // Files.newOutputStream had already CREATED the file — and the catch
+                        // below then left a 0-byte file with no .meta.json beside it. The
+                        // importer reads a sidecar-less content file as a document, so the
+                        // bytes this arm refused to export came back as an empty record: the
+                        // exact substitution the refusal exists to prevent, produced by the
+                        // refusal itself. Found by a review of the fix.
+                        InputStream is = attachment.getInputStream();
+                        if (is == null) {
+                            throw new IOException("the attachment "
+                                    + doc.getAttachmentNodeId() + " produced no stream");
                         }
+                        copyLeavingTheTargetIntactOnFailure(
+                                is, childPath, allowOverwrite, result);
                     } catch (Exception e) {
                         log.warn("Failed to export content for: " + childPath, e);
                         result.errors.add("Failed to export content: " + child.getName()
@@ -256,22 +256,14 @@ public class FilesystemExporter {
                             throw new IOException("the attachment "
                                     + version.getAttachmentNodeId() + " could not be read");
                         }
-                        StandardOpenOption[] options = allowOverwrite
-                            ? new StandardOpenOption[] { StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING }
-                            : new StandardOpenOption[] { StandardOpenOption.CREATE_NEW };
-                        try (InputStream is = attachment.getInputStream();
-                             OutputStream os = Files.newOutputStream(versionPath, options)) {
-                            if (is == null) {
-                                throw new IOException("the attachment "
-                                        + version.getAttachmentNodeId()
-                                        + " produced no stream");
-                            }
-                            byte[] buffer = new byte[8192];
-                            int len;
-                            while ((len = is.read(buffer)) != -1) {
-                                os.write(buffer, 0, len);
-                            }
+                        // Same order as the document body above: check, then open.
+                        InputStream is = attachment.getInputStream();
+                        if (is == null) {
+                            throw new IOException("the attachment "
+                                    + version.getAttachmentNodeId() + " produced no stream");
                         }
+                        copyLeavingTheTargetIntactOnFailure(
+                                is, versionPath, allowOverwrite, result);
                     } catch (Exception e) {
                         log.warn("Failed to export version content: " + versionFileName, e);
                         result.errors.add("Failed to export version content: "
@@ -313,6 +305,170 @@ public class FilesystemExporter {
      * Returns {@code null} if the resolved path would escape the target
      * directory — a defense-in-depth check on top of name sanitization.
      */
+    /**
+     * Copies {@code is} onto {@code destination}, leaving whatever is already there untouched
+     * unless the whole copy succeeds.
+     *
+     * <h2>Why this is one method and not two</h2>
+     *
+     * <p>The document body and the version body are the same copy written twice, and every
+     * round of this batch fixed one of them and left the other: the streamless check, the
+     * mid-copy cleanup, the ownership flag, and the control that measures it — four times, in
+     * this file, each caught by a different reviewer. Two callers of one method cannot drift
+     * apart that way.
+     *
+     * <h2>Why a temporary file</h2>
+     *
+     * <p>Writing straight to {@code destination} destroys data on the path that matters most.
+     * With {@code allowOverwrite} the open uses {@code TRUNCATE_EXISTING}, so a copy that dies
+     * part way has ALREADY emptied the previous, complete export; deleting the remains then
+     * leaves neither the old artefact nor the new one. Two earlier attempts — deleting
+     * unconditionally, then deleting only what this invocation opened — both had that shape.
+     * A staging file cannot: on failure the destination is exactly as it was, and the only
+     * thing left behind is a {@code .part} file with no sidecar.
+     *
+     * <p>"which no importer reads" is what this comment used to add, and it was false —
+     * {@code FilesystemImporter} collects every regular file and skipped only sidecars and
+     * version files, so a staging file left by a failed cleanup, or seen by an import running
+     * at the same time, was ingested as a document. The name is now declared in
+     * {@code ImportExportUtils} and the importer skips it; the two sides share one constant
+     * so they cannot drift.
+     *
+     * <p>The replacement asks for {@code ATOMIC_MOVE} when it is allowed to overwrite. Plain
+     * {@code move} with {@code REPLACE_EXISTING} may be implemented as delete-then-move, and
+     * the guarantee this method is written to make — a failed export leaves the previous one
+     * intact — is exactly what that would break. Where the filesystem cannot do it, the
+     * export refuses rather than falling back to the weaker move, because the fallback is
+     * indistinguishable from the guarantee right up to the moment it is not.
+     */
+    private static void copyLeavingTheTargetIntactOnFailure(InputStream is,
+            java.nio.file.Path destination, boolean allowOverwrite, ExportResult result)
+            throws IOException {
+        java.nio.file.Path staging;
+        try {
+            staging = Files.createTempFile(destination.getParent(),
+                    EXPORT_STAGING_PREFIX, EXPORT_STAGING_SUFFIX);
+            giveTheStagingFileTheModeTheDestinationShouldHave(staging, destination);
+        } catch (IOException | RuntimeException cannotStage) {
+            // The copy below owns the stream once it starts; before that, this does. Without
+            // it a disk-full staging failure leaks the attachment's stream — the case the
+            // whole guard exists for.
+            try {
+                is.close();
+            } catch (Exception ignored) {
+                // the staging failure is the one worth reporting
+            }
+            throw cannotStage;
+        }
+        try {
+            try (InputStream in = is;
+                 OutputStream os = Files.newOutputStream(staging,
+                         StandardOpenOption.TRUNCATE_EXISTING)) {
+                byte[] buffer = new byte[8192];
+                int len;
+                while ((len = in.read(buffer)) != -1) {
+                    os.write(buffer, 0, len);
+                }
+            }
+            if (allowOverwrite) {
+                Files.move(staging, destination,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            } else {
+                // No REPLACE_EXISTING: this is the CREATE_NEW the caller asked for, so a
+                // destination that appeared during the copy still refuses.
+                Files.move(staging, destination);
+            }
+        } catch (IOException | RuntimeException failed) {
+            try {
+                Files.deleteIfExists(staging);
+            } catch (Exception cleanup) {
+                result.errors.add("A partial copy was left at " + staging
+                        + " and could not be removed (" + cleanup.getMessage()
+                        + "); it has no metadata sidecar and is not importable, but it"
+                        + " should be swept up");
+            }
+            throw failed;
+        }
+    }
+
+    /**
+     * Makes the staging file carry the mode the destination should end up with.
+     *
+     * <h2>What staging quietly changed</h2>
+     *
+     * <p>{@code Files.createTempFile} creates owner-only (0600) by design, and {@code
+     * Files.move} replaces the destination's inode — so mode, owner and hard links come from
+     * the staging file, not from whatever was there. Switching from "open the destination"
+     * to "stage and move" therefore turned every exported file from umask-derived 0644 into
+     * 0600, and re-exporting over an earlier export silently stripped group and other read
+     * from a file that had it. An export directory read by a backup agent, a share, or
+     * another service account stops being readable, and nothing in the response says so.
+     *
+     * <p>Neither reviewer of the staging change caught this; an audit of the change measured
+     * it on the actual filesystem. It is the cost of a fix that looked purely additive.
+     *
+     * <p>So: an existing destination lends its own permissions (an export must not downgrade
+     * a file it is replacing), and a new one gets what an ordinary create would have given —
+     * probed once, because the umask is not visible from Java.
+     */
+    private static void giveTheStagingFileTheModeTheDestinationShouldHave(
+            java.nio.file.Path staging, java.nio.file.Path destination) {
+        try {
+            if (!staging.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+                return;
+            }
+            java.util.Set<java.nio.file.attribute.PosixFilePermission> mode =
+                    Files.exists(destination)
+                            ? Files.getPosixFilePermissions(destination)
+                            : defaultCreateMode(staging.getParent());
+            if (mode != null) {
+                Files.setPosixFilePermissions(staging, mode);
+            }
+        } catch (Exception notPosixOrNotPermitted) {
+            // Best effort. A mode that could not be set is not a reason to refuse an export
+            // — the bytes are the record — but it IS a reason to say so.
+            log.warn("Could not give " + staging + " the permissions " + destination
+                    + " should have; the exported file may be owner-only", notPosixOrNotPermitted);
+        }
+    }
+
+    /** What an ordinary {@code newOutputStream(CREATE)} produces here, probed once. */
+    private static volatile java.util.Set<java.nio.file.attribute.PosixFilePermission>
+            defaultCreateMode;
+
+    private static java.util.Set<java.nio.file.attribute.PosixFilePermission> defaultCreateMode(
+            java.nio.file.Path directory) throws IOException {
+        java.util.Set<java.nio.file.attribute.PosixFilePermission> cached = defaultCreateMode;
+        if (cached != null) {
+            return cached;
+        }
+        // The umask is not readable from Java, so it is measured rather than assumed: create
+        // a file the ordinary way and look at what came out.
+        // Named with the STAGING prefix and suffix, not a probe-specific pair. The comment
+        // below used to say a stray probe "is skipped by the importer like any staging
+        // file", and with its own name it would not have been — the importer's rule matches
+        // that prefix AND that suffix. Making the sentence true was cheaper than weakening
+        // the rule, and the sentence was written before it was checked.
+        java.nio.file.Path probe = Files.createTempFile(directory,
+                EXPORT_STAGING_PREFIX + "mode-probe-", EXPORT_STAGING_SUFFIX);
+        try {
+            Files.delete(probe);
+            try (OutputStream probeStream = Files.newOutputStream(probe,
+                    StandardOpenOption.CREATE_NEW)) {
+                probeStream.flush();
+            }
+            cached = Files.getPosixFilePermissions(probe);
+            defaultCreateMode = cached;
+            return cached;
+        } finally {
+            try {
+                Files.deleteIfExists(probe);
+            } catch (Exception ignored) {
+                // a stray probe file is skipped by the importer like any staging file
+            }
+        }
+    }
+
     private static java.nio.file.Path resolveUnderTarget(java.nio.file.Path targetDir, String safeName) {
         java.nio.file.Path base = targetDir.toAbsolutePath().normalize();
         java.nio.file.Path resolved = base.resolve(safeName).normalize();

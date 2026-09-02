@@ -76,7 +76,23 @@ public final class JavaSource {
         if (open < 0) {
             throw new HarnessBroken("no body for: " + signatureFragment);
         }
+        return source.substring(start, matchingClose(source, open));
+    }
 
+    /**
+     * The index just past the '{@code }}' closing the block opened at or after {@code from}.
+     *
+     * <p>Extracted from {@link #methodBody} because a source-level test had hand-rolled a
+     * second brace counter that ignored string literals and comments — so a '{@code {}' inside
+     * a literal added anywhere in the file it reads would have shifted the region it thought
+     * it was checking, silently, rather than tripping {@link HarnessBroken}. One scanner, so
+     * the careful one is the only one.
+     */
+    public static int matchingClose(String source, int from) {
+        int open = source.indexOf('{', from);
+        if (open < 0) {
+            throw new HarnessBroken("no block opens at or after offset " + from);
+        }
         int depth = 0;
         boolean inString = false;
         boolean inChar = false;
@@ -125,11 +141,11 @@ public final class JavaSource {
             } else if (c == '}') {
                 depth--;
                 if (depth == 0) {
-                    return source.substring(start, i + 1);
+                    return i + 1;
                 }
             }
         }
-        throw new HarnessBroken("unbalanced braces after: " + signatureFragment);
+        throw new HarnessBroken("unbalanced braces from offset " + from);
     }
 
     /**

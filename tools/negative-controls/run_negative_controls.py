@@ -35,6 +35,7 @@ Exit code 0 = every control fired and the tree was restored to green.
 """
 
 import subprocess
+import re
 import sys
 import time
 from pathlib import Path
@@ -1203,13 +1204,16 @@ CONTROLS = [
     ),
     dict(
         id="LK",
-        what="user-by-id: an unanswered view is 'no such user' again",
+        # The original LK sabotaged a refusal that turned out to break login: null from the
+        # keyed view means "no row for this userId", not "did not answer". The refusal was
+        # withdrawn, so what must stay true is the opposite — absence keeps its answer.
+        what="user-by-id: an absent user refuses again (the withdrawn contract returns)",
         file="core/src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/UserGroupDaoDelegate.java",
-        find_span=("\t\t\tif (result == null || result.getRows() == null) {\n\t\t\t\tthrow new IllegalStateException(\"the userItemsById view did not answer",
-                   'user not existing");\n\t\t\t}'),
-        replace="\t\t\tif (result == null || result.getRows() == null) {\n\t\t\t\treturn null;\n\t\t\t}",
+        find_span=("\t\t\tif (result == null) {\n\t\t\t\tlog.debug(\"No user with userId \"",
+                   "\t\t\t\treturn null;\n\t\t\t}"),
+        replace="\t\t\tif (result == null) {\n\t\t\t\tthrow new IllegalStateException(\"unreachable\");\n\t\t\t}",
         test="IdentityAndPolicyLookupsRefuseFailuresTest",
-        expect_fail=["anUnansweredUserViewRefuses"],
+        expect_fail=["anAbsentUserIsNotARefusal"],
     ),
     dict(
         id="LL",
@@ -1223,13 +1227,13 @@ CONTROLS = [
     ),
     dict(
         id="LM",
-        what="group-by-id: an unanswered view is 'no such group' again",
+        what="group-by-id: an absent group refuses again (the withdrawn contract returns)",
         file="core/src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/UserGroupDaoDelegate.java",
-        find_span=("\t\t\tif (result == null || result.getRows() == null) {\n\t\t\t\tthrow new IllegalStateException(\"the groupItemsById view did not answer",
-                   'group not existing");\n\t\t\t}'),
-        replace="\t\t\tif (result == null || result.getRows() == null) {\n\t\t\t\treturn null;\n\t\t\t}",
+        find_span=("\t\t\tif (result == null) {\n\t\t\t\tlog.debug(\"No group with groupId \"",
+                   "\t\t\t\treturn null;\n\t\t\t}"),
+        replace="\t\t\tif (result == null) {\n\t\t\t\tthrow new IllegalStateException(\"unreachable\");\n\t\t\t}",
         test="IdentityAndPolicyLookupsRefuseFailuresTest",
-        expect_fail=["anUnansweredGroupViewRefuses"],
+        expect_fail=["anAbsentGroupIsNotARefusal"],
     ),
     dict(
         id="LN",
@@ -1525,7 +1529,12 @@ CONTROLS = [
                    "would be incomplete\", e);\n                        }"),
         replace="                        } catch (Exception e) {\n                            log.warn(\"Failed to collect custom type definitions: \" + e.getMessage(), e);\n                        }",
         test="ExportRefusalReachesTheClientTest",
-        expect_fail=["theOtherTwoRefusalsAreNotSwallowed"],
+        # The lock this named was renamed when it stopped being a spelling check and started
+        # walking the streaming bodies. The control kept the OLD method name, so it sabotaged
+        # correctly and then looked for a failure in a method that no longer exists — the
+        # KC/KD/KE shape again, and the reason the preflight below now refuses a control
+        # whose expect_fail names a method the test class does not declare.
+        expect_fail=["theFolderExportStreamerRefuses"],
     ),
     dict(
         id="MZ",
@@ -1576,21 +1585,31 @@ CONTROLS = [
     ),
     dict(
         id="NE",
-        what="childrenNames drops nameless rows again, so the uniqueness check runs short",
+        # The original NE sabotaged a REFUSAL that turned out to be an over-correction and
+        # was withdrawn (the view emits doc.name directly, so a null value is a child with no
+        # name, not a name that was lost). What has to stay true is the opposite: a nameless
+        # child is skipped rather than counted as a name.
+        what="a nameless child is counted as a name again",
         file="core/src/main/java/jp/aegif/nemaki/dao/impl/couch/ContentDaoServiceImpl.java",
-        find_span=("\t\t\tif (unreadableRows > 0) {\n\t\t\t\tthrow new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(\n\t\t\t\t\t\tunreadableRows + \" row(s) of the childrenNames view",
-                   "cannot run on a short list\");\n\t\t\t}"),
-        replace="",
-        test="ChildrenNamesAreNeverSilentlyShortTest",
-        expect_fail=["aNamelessRowRefusesTheListing"],
+        # Dropping the `continue` alone NPEs on the null value, which the runner rightly
+        # scores as harness breakage. The sabotage has to produce a WRONG ANSWER: the
+        # nameless child enters the name set.
+        find="\t\t\t\t\t\tnamelessRows++;\n\t\t\t\t\t\tcontinue;",
+        replace="\t\t\t\t\t\tnamelessRows++;\n\t\t\t\t\t\tnames.add(\"\");\n\t\t\t\t\t\tcontinue;",
+        test="NamelessChildrenAreSkippedNotRefusedTest",
+        expect_fail=["aNamelessChildIsSkippedNotRefused"],
     ),
     dict(
         id="NF",
         what="the four CMIS-visible type listings answer from a base-only map again",
         file="core/src/main/java/jp/aegif/nemaki/cmis/aspect/type/impl/TypeManagerImpl.java",
-        # getTypeByQueryName, not getTypesDescendants: with this fixture the descendants call
-        # refuses for a second reason even without its guard, so sabotaging it measured
-        # nothing (the runner said DID NOT FIRE). The query-name reader has no other refusal.
+        # getTypeByQueryName. The comment here USED to say getTypesDescendants "refuses for a
+        # second reason even without its guard, so sabotaging it measured nothing" — and that
+        # was checked and found false: on this fixture (includePropertyDefinitions=false)
+        # flattenTypeDefinitionContainer never reaches getTypeDefinition, so there is no
+        # second refusal on the path and a control there DOES fire. It is OB, below. A false
+        # "we checked, it cannot be measured", recorded in the tool whose job is measuring,
+        # is the same substitution this tool exists to end.
         # The span has to REMOVE the guard. The first version inserted a dead `if (false)`
         # call above it and left the real one in place, so the sabotage changed nothing —
         # which the runner reported as DID NOT FIRE, correctly.
@@ -1625,18 +1644,29 @@ CONTROLS = [
     ),
     dict(
         id="NI",
-        what="the export streamers close the archive on the refusal path again",
+        what="the FOLDER streamer builds the archive over the response stream (NQ is objects-only)",
         file="core/src/main/java/jp/aegif/nemaki/rest/ImportExportResource.java",
-        # The sabotage has to restore the DEFECT — try-with-resources — not shuffle the
-        # close() that the fix added. Moving the comment left the close in the same place and
-        # the lock stayed green, which the runner reported as DID NOT FIRE.
-        # Both streamers carry the identical block, so the span is anchored on the ONE line
-        # that differs — the folder streamer's own lineage call is further down, so the
-        # nearest unique text above is the folder-export comment.
-        find="                    ZipOutputStream zos = new ZipOutputStream(output);\n                    try {\n                        Set<String> customTypeIds = new HashSet<>();\n                        try {\n                            collectCustomTypeIds(repositoryId, folder, customTypeIds);",
-        replace="                    try (ZipOutputStream zos = new ZipOutputStream(output)) {\n                        Set<String> customTypeIds = new HashSet<>();\n                        try {\n                            collectCustomTypeIds(repositoryId, folder, customTypeIds);",
+        # What this control actually does, which is not what its comment used to say.
+        #
+        # The old text described restoring try-with-resources — "the sabotage has to restore
+        # the DEFECT" — while the sabotage below swaps the archive's sink for the response
+        # stream. Both make `theRefusalStopsForwardingBeforeClosing` fail, so the run stayed
+        # green and nothing pointed at the disagreement; a review reading the two side by
+        # side did. A control whose description names a different defect than it injects is
+        # the measuring layer's version of a stale comment, and the ledger inherited it.
+        #
+        # NOT covered by any control: the try-with-resources half of that same lock. It is a
+        # SOURCE assertion (`assertFalse(body.contains("try (ZipOutputStream"))`), and a
+        # sabotage that reinstates it has to restructure the whole streaming body to still
+        # compile — which a declarative find/replace cannot do. The lock holds it; the runner
+        # does not, and saying so is the point of this note.
+        #
+        # Both streamers carry an identical block, so the anchor carries the one call that
+        # follows only in the folder one.
+        find="                    ZipOutputStream zos = new ZipOutputStream(sink);\n                    try {\n                        Set<String> customTypeIds = new HashSet<>();\n                        try {\n                            collectCustomTypeIds(repositoryId, folder, customTypeIds);",
+        replace="                    ZipOutputStream zos = new ZipOutputStream(output);\n                    try {\n                        Set<String> customTypeIds = new HashSet<>();\n                        try {\n                            collectCustomTypeIds(repositoryId, folder, customTypeIds);",
         test="ExportRefusalReachesTheClientTest",
-        expect_fail=["theArchiveIsClosedOnlyOnSuccess"],
+        expect_fail=["theRefusalStopsForwardingBeforeClosing"],
     ),
     dict(
         id="NJ",
@@ -1656,6 +1686,307 @@ CONTROLS = [
         replace="                return List.of();",
         test="LedgerAndJournalUnknownsAreNotZeroTest",
         expect_fail=["aDeadDiscoveryViewIsNotAnEmptySetOfRepositories"],
+    ),
+    dict(
+        id="NL",
+        # Rewritten. The document arm and the version arm are now ONE method with two
+        # callers, so the pair of controls that used to sabotage each arm separately would
+        # both be sabotaging the same lines. What replaced them measures the two properties
+        # that method actually carries.
+        what="the copy writes straight to the destination, so a failure destroys the previous export",
+        file="core/src/main/java/jp/aegif/nemaki/rest/importexport/FilesystemExporter.java",
+        find_span=('            staging = Files.createTempFile(destination.getParent(),',
+                   '                         StandardOpenOption.TRUNCATE_EXISTING)) {'),
+        replace='            staging = Files.createDirectories(destination.getParent())\n                    .resolve(destination.getFileName());\n        } catch (IOException | RuntimeException cannotStage) {\n            try {\n                is.close();\n            } catch (Exception ignored) {\n                // the staging failure is the one worth reporting\n            }\n            throw cannotStage;\n        }\n        try {\n            try (InputStream in = is;\n                 OutputStream os = Files.newOutputStream(staging,\n                         StandardOpenOption.CREATE,\n                         StandardOpenOption.TRUNCATE_EXISTING)) {',
+        test="ExportsRefuseMissingBytesTest",
+        expect_fail=["aMidCopyFailureDoesNotDestroyThePreviousExport",
+                     "aMidCopyVersionFailureDoesNotDestroyThePreviousExport"],
+    ),
+    dict(
+        id="NM",
+        what="the staging file is left on disk when the copy fails",
+        file="core/src/main/java/jp/aegif/nemaki/rest/importexport/FilesystemExporter.java",
+        find="            try {\n                Files.deleteIfExists(staging);\n            } catch (Exception cleanup) {",
+        replace="            try {\n                if (false) Files.deleteIfExists(staging);\n            } catch (Exception cleanup) {",
+        test="ExportsRefuseMissingBytesTest",
+        expect_fail=["aMidCopyFailureDoesNotDestroyThePreviousExport",
+                     "aMidCopyVersionFailureDoesNotDestroyThePreviousExport"],
+    ),
+    dict(
+        id="NN",
+        what="the refusal path closes the archive before it stops forwarding",
+        file="core/src/main/java/jp/aegif/nemaki/rest/ImportExportResource.java",
+        find="                        sink.stopForwarding();\n                        closeQuietly(zos);\n                        log.error(\"Export streaming failed: \" + e.getMessage(), e);\n                        AuditLogger audit = getAuditLogger();",
+        replace="                        closeQuietly(zos);\n                        sink.stopForwarding();\n                        log.error(\"Export streaming failed: \" + e.getMessage(), e);\n                        AuditLogger audit = getAuditLogger();",
+        test="ExportRefusalReachesTheClientTest",
+        expect_fail=["theRefusalStopsForwardingBeforeClosing"],
+    ),
+    dict(
+        id="NO",
+        what="the OBJECTS streamer closes before it stops forwarding (NN is folder-only)",
+        file="core/src/main/java/jp/aegif/nemaki/rest/ImportExportResource.java",
+        find="                        sink.stopForwarding();\n                        closeQuietly(zos);\n                        log.error(\"Export streaming failed: \" + e.getMessage(), e);\n                        throw new IOException(\"Export failed: \" + e.getMessage(), e);",
+        replace="                        closeQuietly(zos);\n                        sink.stopForwarding();\n                        log.error(\"Export streaming failed: \" + e.getMessage(), e);\n                        throw new IOException(\"Export failed: \" + e.getMessage(), e);",
+        test="ExportRefusalReachesTheClientTest",
+        expect_fail=["theRefusalStopsForwardingBeforeClosing"],
+    ),
+    dict(
+        id="NP",
+        what="the OBJECTS streamer swallows the custom-type refusal (MY is folder-only)",
+        file="core/src/main/java/jp/aegif/nemaki/rest/ImportExportResource.java",
+        find_span=("                        } catch (Exception e) {\n                            // The objects-export sibling of the folder-export refusal above.",
+                   "would be incomplete\", e);\n                        }"),
+        replace="                        } catch (Exception e) {\n                            log.warn(\"Failed to collect custom type definitions: \" + e.getMessage(), e);\n                        }",
+        test="ExportRefusalReachesTheClientTest",
+        expect_fail=["theObjectsExportStreamerRefuses"],
+    ),
+    dict(
+        id="NQ",
+        what="the OBJECTS streamer builds the archive over the response stream (NI is folder-only)",
+        file="core/src/main/java/jp/aegif/nemaki/rest/ImportExportResource.java",
+        find="                    ZipOutputStream zos = new ZipOutputStream(sink);\n                    try {\n                        Set<String> customTypeIds = new HashSet<>();\n                        try {\n                            for (Content c : contents) {",
+        replace="                    ZipOutputStream zos = new ZipOutputStream(output);\n                    try {\n                        Set<String> customTypeIds = new HashSet<>();\n                        try {\n                            for (Content c : contents) {",
+        test="ExportRefusalReachesTheClientTest",
+        expect_fail=["theRefusalStopsForwardingBeforeClosing"],
+    ),
+    dict(
+        id="NR",
+        what="the TYPED keyed view answers null for an undeployed design document again",
+        file="core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CloudantClientWrapper.java",
+        find_span=("\t\t\t// is a failure, not an absence.\n\t\t\tif (isStartupPhase()) {",
+                   "\t\t\t\t\t\t\t+ databaseName + \"', so it cannot answer for key '\" + key + \"'\", e);"),
+        replace="\t\t\treturn null;",
+        test="CloudantViewFailuresAreNotEmptyAnswersTest",
+        expect_fail=["aTypedKeyedReadRefusesAnUndeployedView"],
+    ),
+    dict(
+        id="NS",
+        what="a successful copy is never moved onto the destination",
+        file="core/src/main/java/jp/aegif/nemaki/rest/importexport/FilesystemExporter.java",
+        # The other direction. Every assertion written for the destructive case is satisfied
+        # by a copy that writes nothing at all, so the safe answer has to be told apart from
+        # a broken one — otherwise "the previous export survives" is met by an exporter that
+        # exports nothing.
+        find='            if (allowOverwrite) {\n                Files.move(staging, destination,\n                        java.nio.file.StandardCopyOption.ATOMIC_MOVE);',
+        replace='            if (allowOverwrite) {\n                Files.deleteIfExists(staging);',
+        test="ExportsRefuseMissingBytesTest",
+        expect_fail=["aSuccessfulOverwriteStillReplacesTheFile"],
+    ),
+    dict(
+        id="NU",
+        what="the stopped sink still forwards single bytes (NV covers the array overload)",
+        file="core/src/main/java/jp/aegif/nemaki/rest/importexport/ImportExportUtils.java",
+        # DiscardableOutputStream has THREE guards after stopForwarding — write(int),
+        # write(byte[],int,int) and flush() — and one control covered one of them. The
+        # one-arm shape again, this time in the measuring layer; an audit of the controls
+        # named it rather than a run.
+        find="        public void write(int b) throws java.io.IOException {\n            if (forwarding) {\n                delegate.write(b);\n            }\n        }",
+        replace="        public void write(int b) throws java.io.IOException {\n            delegate.write(b);\n        }",
+        test="DiscardableOutputStreamTest",
+        expect_fail=["aStoppedSinkDelegatesNothing"],
+    ),
+    dict(
+        id="NV",
+        what="the stopped sink still forwards flushes (the third arm)",
+        file="core/src/main/java/jp/aegif/nemaki/rest/importexport/ImportExportUtils.java",
+        find="        public void flush() throws java.io.IOException {\n            if (forwarding) {\n                delegate.flush();\n            }\n        }",
+        replace="        public void flush() throws java.io.IOException {\n            delegate.flush();\n        }",
+        test="DiscardableOutputStreamTest",
+        expect_fail=["aStoppedSinkDelegatesNothing"],
+    ),
+
+    dict(
+        id="NT",
+        what="refreshTypes completes a load without recording it, so a later init reopens the window",
+        file="core/src/main/java/jp/aegif/nemaki/cmis/aspect/type/impl/TypeManagerImpl.java",
+        find_span=("\t\t\t// The invariant the startup window rests on: `initialized` implies",
+                   "\t\t\teverInitialized = true;"),
+        replace="",
+        test="OneRepositoryDoesNotTakeDownTheRegistryTest",
+        expect_fail=["refreshTypesRecordsThatALoadCompleted"],
+    ),
+    dict(
+        id="NW",
+        what="a FAILED first init spends the bootstrap grace again",
+        file="core/src/main/java/jp/aegif/nemaki/cmis/aspect/type/impl/TypeManagerImpl.java",
+        # The defect is not "the flag is never set" — that breaks a NEIGHBOURING property and
+        # fires the wrong test, which the runner reported. The defect is the flag being set
+        # in the finally, so a FAILED init spends the grace. That is what this restores.
+        find="\t\t\t\tif (firstInitialization) {\n\t\t\t\t\tStartupPhase.end();\n\t\t\t\t}",
+        replace="\t\t\t\tif (firstInitialization) {\n\t\t\t\t\teverInitialized = true;\n\t\t\t\t\tStartupPhase.end();\n\t\t\t\t}",
+        test="OneRepositoryDoesNotTakeDownTheRegistryTest",
+        expect_fail=["aFailedFirstInitDoesNotSpendTheGrace"],
+    ),
+    dict(
+        id="NX",
+        what="the discardable sink forwards writes after it was told to stop",
+        file="core/src/main/java/jp/aegif/nemaki/rest/importexport/ImportExportUtils.java",
+        find="        public void write(byte[] b, int off, int len) throws java.io.IOException {\n            if (forwarding) {\n                delegate.write(b, off, len);\n            }\n        }",
+        replace="        public void write(byte[] b, int off, int len) throws java.io.IOException {\n            delegate.write(b, off, len);\n        }",
+        test="DiscardableOutputStreamTest",
+        expect_fail=["aStoppedSinkDelegatesNothing"],
+    ),
+    dict(
+        id="NY",
+        what="the always-run override runs its SYSTEM stage without the gate again",
+        file="core/src/main/java/jp/aegif/nemaki/patch/Patch_WebAuthnCredentialViews.java",
+        find_span=("        boolean allSucceeded = true;\n        if (!systemStageMayRun()) {",
+                   "        } else {\n            applySystemPatch();\n        }"),
+        replace="        applySystemPatch();\n        boolean allSucceeded = true;",
+        test="SystemStagePassesTheViewGateTest",
+        expect_fail=["theAlwaysRunOverrideIsGated"],
+    ),
+    dict(
+        id="NZ",
+        what="the CMIS paged type listing answers from a base-only map again",
+        file="core/src/main/java/jp/aegif/nemaki/cmis/aspect/type/impl/TypeManagerImpl.java",
+        find_span=("\tpublic TypeDefinitionList getTypesChildren(CallContext context,\n\t\t\tString repositoryId, String typeId,\n\t\t\tboolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount) {",
+                   "\t\tassertRepositoryTypesLoaded(repositoryId);"),
+        replace="\tpublic TypeDefinitionList getTypesChildren(CallContext context,\n\t\t\tString repositoryId, String typeId,\n\t\t\tboolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount) {",
+        test="OneRepositoryDoesNotTakeDownTheRegistryTest",
+        expect_fail=["theCmisVisibleListingsRefuseToo"],
+    ),
+    dict(
+        id="OA",
+        what="creating a connector trusts the Mango index alone again",
+        file="core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java",
+        # Re-anchored. The original anchor was the `} else if (readByDeterministicId(...))`
+        # line, and a follow-up fix IN THE SAME ROUND hoisted that call into a local —
+        # so the anchor stopped matching and the runner raised SystemExit AT this
+        # control, taking OB, MO, MP, MQ and HA down with it. The preflight added below
+        # now refuses every stale anchor before anything runs, instead of dying at one.
+        find='        com.ibm.cloud.cloudant.v1.model.Document deterministic = existing.isEmpty()\n                ? readByDeterministicId(cloudant, dbName, def.getConnectorId())\n                : null;',
+        replace='        com.ibm.cloud.cloudant.v1.model.Document deterministic = null;',
+        test="ConnectorCreationRefusesAnIndexDisagreementTest",
+        expect_fail=["theWriteConsultsTheDeterministicId"],
+    ),
+    dict(
+        id="OB",
+        what="getTypesDescendants answers from a base-only map again — the control NF's comment said could not exist",
+        file="core/src/main/java/jp/aegif/nemaki/cmis/aspect/type/impl/TypeManagerImpl.java",
+        # NF recorded that a control here "measured nothing" because the descendants call
+        # refuses for a second reason. Traced on the actual fixture, it does not: with
+        # includePropertyDefinitions=false, flattenTypeDefinitionContainer never reaches
+        # getTypeDefinition, and nothing else on the path raises. So the guard IS
+        # measurable, and the note saying otherwise was the only thing standing where this
+        # control should have been.
+        find='\t\tassertRepositoryTypesLoaded(repositoryId);\n\t\t\n\t\tif (log.isDebugEnabled()) {\n\t\t\tlog.debug("getTypesDescendants ENTRY:',
+        replace='\t\t\n\t\tif (log.isDebugEnabled()) {\n\t\t\tlog.debug("getTypesDescendants ENTRY:',
+        test="OneRepositoryDoesNotTakeDownTheRegistryTest",
+        expect_fail=["theCmisVisibleListingsRefuseToo"],
+    ),
+    dict(
+        id="OC",
+        what='the DEFAULT export path (overwrite off) never installs the staged copy',
+        file='core/src/main/java/jp/aegif/nemaki/rest/importexport/FilesystemExporter.java',
+        # NS covers the allowOverwrite=true arm only. This is the arm the endpoint
+        # actually takes by default, and replacing it with a delete left all
+        # nineteen tests green while the exporter produced no document files at
+        # all. The one-arm shape, in the arm that runs most often.
+        find='                // No REPLACE_EXISTING: this is the CREATE_NEW the caller asked for, so a\n                // destination that appeared during the copy still refuses.\n                Files.move(staging, destination);',
+        replace='                Files.deleteIfExists(staging);',
+        test='ExportsRefuseMissingBytesTest',
+        expect_fail=['aPlainExportStillWritesTheDocument'],
+    ),
+    dict(
+        id="OD",
+        what='exported files go back to owner-only, and an overwrite downgrades an existing one',
+        file='core/src/main/java/jp/aegif/nemaki/rest/importexport/FilesystemExporter.java',
+        # Files.createTempFile creates 0600 and Files.move replaces the inode, so the
+        # staging fix silently turned every exported file from 0644 into 0600. Two
+        # reviewers read that change without catching it; measuring the actual mode
+        # on disk did.
+        find='            giveTheStagingFileTheModeTheDestinationShouldHave(staging, destination);\n',
+        replace='',
+        test='ExportsRefuseMissingBytesTest',
+        expect_fail=['aStagedExportKeepsTheModeAnOrdinaryCreateWouldGive'],
+    ),
+    dict(
+        id="OE",
+        what='the importer reads a half-written export as a document again',
+        file='core/src/main/java/jp/aegif/nemaki/rest/importexport/FilesystemImporter.java',
+        # The exporter's javadoc asserted that no importer reads a staging file. A
+        # review checked and disproved it: this walk collects every regular file and
+        # skipped only sidecars and version files, so a leftover .part was ingested
+        # as a document holding the truncated bytes of a failed export — the exact
+        # substitution the export refusals exist to prevent, arriving from the other
+        # direction, introduced by the fix for it.
+        find='            if (relativePath.endsWith(META_SUFFIX) || isVersionFile(relativePath)\n                    || isExportStagingFile(relativePath)) {',
+        replace='            if (relativePath.endsWith(META_SUFFIX) || isVersionFile(relativePath)) {',
+        test='StagingFilesAreNotImportableTest',
+        expect_fail=['theImporterConsultsTheRule'],
+    ),
+    dict(
+        id="OF",
+        what='the masked secret is written AS the credential when the row cannot be read back',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionController.java',
+        # GET hands out "[configured]" in place of the real credential and this PUT
+        # restores it from the stored row — through a MANGO SELECTOR. A selector whose
+        # index is rebuilding answers 'no such connector', after which the literal
+        # string was written as the credential and the real one was gone. The window
+        # was only noticed while reviewing a service-layer refusal that had been
+        # relaxed: the refusal downstream had been standing in for this guard.
+        find_span=('        if (existing == null\n                && ("[configured]".equals(def.getCredentialRef())',
+                   '                            + " written. Retry, or send the real values.");\n        }'),
+        replace='',
+        test='ConnectorDefinitionControllerPartialPutTest',
+        expect_fail=['aMaskedSecretIsNotWrittenWhenTheStoredRowCouldNotBeReadBack'],
+    ),
+    dict(
+        id="OG",
+        what='a 2xx carrying no total_rows counts as zero again',
+        file='core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CloudantClientWrapper.java',
+        # Not hypothetical: a REDUCE response omits total_rows, and this read it as 0,
+        # which the patch gate took for 'the views are not answering' and refused 312
+        # times against a healthy database. That was fixed at one CALLER; the method
+        # kept the silent 0 for every other one.
+        find_span=('\t\t\tif (result.getTotalRows() == null) {',
+                   '\t\t\treturn result.getTotalRows();'),
+        replace='\t\t\treturn (result.getTotalRows() != null) ? result.getTotalRows() : 0;',
+        test='CloudantViewFailuresAreNotEmptyAnswersTest',
+        expect_fail=['aCountWithoutTotalRowsThrows'],
+    ),
+    dict(
+        id="OH",
+        what="a deliberate count refusal is re-wrapped by the method's own catch-all as a crash",
+        file='core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CloudantClientWrapper.java',
+        # Both count methods end in a bare catch (Exception) that logs at ERROR and
+        # re-wraps. A refusal raised inside the try came out one layer deeper,
+        # described as an unexpected failure — and the message assertions passed
+        # either way, because the wrapper quotes what it wrapped.
+        find_span=('\t\t} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException refusal) {\n\t\t\t// A refusal raised INSIDE the try above',
+                   '\t\t\tthrow refusal;'),
+        replace='',
+        test='CloudantViewFailuresAreNotEmptyAnswersTest',
+        expect_fail=['aCountWithoutTotalRowsThrows'],
+    ),
+    dict(
+        id="OI",
+        what="the KEYED count refusal is re-wrapped by its own catch-all (OH is unkeyed only)",
+        file="core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CloudantClientWrapper.java",
+        # OH covers queryViewCount. queryViewCountByKey has the identical rethrow arm and
+        # nothing measured it: the keyed lock asserted only that the message names the guard,
+        # which stays true when the catch-all wraps it, because the wrapper quotes the message
+        # it wrapped. Removing the keyed rethrow fired neither OH nor the lock. Found by a
+        # review of the controls, not by a run — the one-arm shape, in the measuring layer,
+        # for the fourth time in this batch.
+        find='\t\t} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException refusal) {\n\t\t\t// The keyed twin of the arm in queryViewCount: a refusal raised inside the try is\n\t\t\t// on its way out, not an unexpected failure to log and re-wrap.\n\t\t\tthrow refusal;\n',
+        replace="",
+        test="CloudantViewFailuresAreNotEmptyAnswersTest",
+        expect_fail=["aKeyedCountSeparatesMalformedFromEmpty"],
+    ),
+    dict(
+        id="OJ",
+        what="stopForwarding stops stopping — the method body, not the three arms that read it",
+        file="core/src/main/java/jp/aegif/nemaki/rest/importexport/ImportExportUtils.java",
+        # NU, NV and NX each disable ONE of the guards that consult `forwarding`. None of them
+        # touches the method that sets it, so a stopForwarding() emptied to a no-op — the
+        # single edit that defeats all three at once — had no control at all. The lock catches
+        # it; the runner did not.
+        find='        public void stopForwarding() {\n            this.forwarding = false;\n        }',
+        replace='        public void stopForwarding() {\n        }',
+        test="DiscardableOutputStreamTest",
+        expect_fail=["aStoppedSinkDelegatesNothing"],
     ),
     dict(
         id="MO",
@@ -1849,9 +2180,18 @@ def failed_as_assertion(report_text: str, method: str) -> bool:
         if method in line and ("<<< FAILURE!" in line or "<<< ERROR!" in line):
             # 6 lines was too narrow: surefire prints the assertion, then the stack, then
             # "Caused by:" — so a HarnessBroken wrapped inside an assertion fell outside the
-            # window and the control counted as fired. 40 lines covers a normal stanza and
-            # stops before the next test's.
-            stanza = "\n".join(lines[i:i + 40])
+            # window and the control counted as fired.
+            #
+            # A fixed 40 was too WIDE, which a second review caught: surefire does not pad a
+            # short stanza, so the window ran into the NEXT test's failure and a real firing
+            # followed by another test's HarnessBroken was scored as harness breakage. The
+            # stanza ends where the next one begins.
+            stanza_lines = []
+            for line in lines[i:]:
+                if stanza_lines and ("<<< FAILURE!" in line or "<<< ERROR!" in line):
+                    break
+                stanza_lines.append(line)
+            stanza = "\n".join(stanza_lines)
             # HARNESS BREAKAGE FIRST, and it wins. JavaSource.methodBody and the reflection
             # helpers that report a renamed method used to throw AssertionError, so the one
             # case this function exists to exclude walked straight through the check below:
@@ -1972,6 +2312,24 @@ SELF_TEST_CASES = [
     ("a well-formed span is still applied by sabotage_text",
      lambda: _self_test_span_applied(), "if (b) {\n\tSOMETHING;\n}\ntail();\n"),
     # A HarnessBroken that appears deeper in a real surefire stack than the first few lines.
+    # A LONG stack: the nested cause sits past any fixed window. The first fix used 40
+    # lines and the second 60, and a review pointed out that both are guesses — the stanza
+    # ends where the next one begins, and nowhere else.
+    ("harness breakage past any fixed window still wins",
+     lambda: failed_as_assertion(
+         "someTest -- Time elapsed: 0.1 s <<< ERROR!\n"
+         "org.opentest4j.AssertionFailedError: the lock could not read the method\n"
+         + "\tat jp.aegif.nemaki.Frame.method(Frame.java:1)\n" * 80
+         + "Caused by: jp.aegif.nemaki.util.test.HarnessBroken: method not found",
+         "someTest"), False),
+    ("a real firing is not stolen by the NEXT test's harness breakage",
+     lambda: failed_as_assertion(
+         "firstTest -- Time elapsed: 0.1 s <<< FAILURE!\n"
+         "org.opentest4j.AssertionFailedError: the guard did not fire\n"
+         "\tat jp.aegif.nemaki.SomeLock.firstTest(SomeLock.java:3)\n"
+         "secondTest -- Time elapsed: 0.1 s <<< ERROR!\n"
+         "jp.aegif.nemaki.util.test.HarnessBroken: method not found",
+         "firstTest"), True),
     ("harness breakage deeper in the stanza still wins",
      lambda: failed_as_assertion(
          "someTest -- Time elapsed: 0.1 s <<< ERROR!\n"
@@ -2022,6 +2380,64 @@ def run_self_test() -> int:
     return failures
 
 
+def expect_fail_methods_exist() -> list:
+    """Controls whose expect_fail names a method its test class does not declare.
+
+    A control that sabotages correctly and then waits for a method that was renamed reports
+    "WRONG TEST FIRED" at best and "protects nothing" at worst — and the sabotage is real, so
+    nothing else notices. MY sat in that state for a round after its lock was rewritten.
+    """
+    problems = []
+    for control in CONTROLS:
+        matches = list((REPO / "core" / "src" / "test").rglob(control["test"] + ".java"))
+        if not matches:
+            problems.append(f"[{control['id']}] no test class named {control['test']}")
+            continue
+        source = matches[0].read_text()
+        for method in control["expect_fail"]:
+            # A DECLARATION, not any occurrence: `" method("` also matches a call or a
+            # mention in a comment (false negative), and misses `method (` or a signature
+            # wrapped before the paren (false positive). JUnit methods are declared with a
+            # return type immediately before the name, so that is what is required.
+            declared = re.search(
+                r"(?:void|boolean|int|long|String|var|[A-Z]\w*)\s+"
+                + re.escape(method) + r"\s*\(", source)
+            if not declared:
+                problems.append(
+                    f"[{control['id']}] expect_fail names {method}(), which "
+                    f"{control['test']} does not declare — the lock was renamed and the "
+                    f"control was not followed")
+    return problems
+
+
+def anchors_still_match() -> list:
+    """Controls whose sabotage no longer applies to the file it names.
+
+    The anchor check used to happen lazily, inside the run, one control at a time — so a
+    control whose anchor had drifted raised SystemExit in the MIDDLE of the sweep and every
+    control after it in CONTROLS never ran at all. OA reached that state when a follow-up fix
+    in the same round hoisted a call into a local variable, and it would have taken five
+    later controls down with it while the run looked like it had simply stopped.
+
+    Worse, the failure is silent about its own scope: the output says one control's anchor is
+    missing, not that the sweep is now partial. Checking every anchor up front turns that into
+    a refusal that names all of them and runs nothing.
+
+    Applied to text held in memory. Nothing is written.
+    """
+    problems = []
+    for control in CONTROLS:
+        target = REPO / control["file"]
+        if not target.exists():
+            problems.append(f"[{control['id']}] {control['file']} does not exist")
+            continue
+        try:
+            sabotage_text(target.read_text(), control)
+        except SystemExit as refused:
+            problems.append(f"[{control['id']}] {refused}")
+    return problems
+
+
 def main() -> None:
     if "--self-test" in sys.argv[1:]:
         raise SystemExit(1 if run_self_test() else 0)
@@ -2031,6 +2447,20 @@ def main() -> None:
     if run_self_test():
         raise SystemExit("the runner's own judgement functions are wrong; fix them before "
                          "trusting any control result")
+
+    stale = expect_fail_methods_exist()
+    if stale:
+        raise SystemExit("controls point at locks that no longer exist:\n  "
+                         + "\n  ".join(stale))
+
+    # And the other half of the same question: the lock exists, but does the SABOTAGE still
+    # apply? Both are asked before anything runs, so a drifted anchor cannot silently cut the
+    # sweep short at the control where it happens to sit.
+    drifted = anchors_still_match()
+    if drifted:
+        raise SystemExit("controls whose sabotage no longer applies — the sweep would stop "
+                         "at the first of these and every control after it would not run:\n  "
+                         + "\n  ".join(drifted))
 
     # Recover from a previous interrupted run FIRST: a leftover .nc-backup means a control
     # died between sabotage and restore, and the production file may still carry the edit.

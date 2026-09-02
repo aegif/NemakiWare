@@ -73,22 +73,18 @@ class ExportRefusalReachesTheClientTest {
                         + checked + " found)");
     }
 
-    /** End index of the block opened by the first '{' at or after {@code from}. */
+    /**
+     * End index of the block opened by the first '{' at or after {@code from}.
+     *
+     * <p>Delegated. This used to be a hand-rolled brace counter with no string-literal or
+     * comment handling — so a single '{@code {}' inside a literal added to either streaming
+     * body would have shifted every region below it silently, instead of tripping
+     * {@link jp.aegif.nemaki.util.test.HarnessBroken}. An audit pointed out that the careful
+     * version was already sitting in {@code JavaSource}, which this method's own comment
+     * claimed to mirror.
+     */
     private static int matchingClose(String text, int from) {
-        int i = text.indexOf('{', from);
-        int depth = 0;
-        for (; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (c == '{') {
-                depth++;
-            } else if (c == '}') {
-                depth--;
-                if (depth == 0) {
-                    return i + 1;
-                }
-            }
-        }
-        return text.length();
+        return JavaSource.matchingClose(text, from);
     }
 
     @Test
@@ -110,13 +106,18 @@ class ExportRefusalReachesTheClientTest {
     }
 
     @Test
-    @DisplayName("the archive is closed on the success path only")
-    void theArchiveIsClosedOnlyOnSuccess() throws Exception {
+    @DisplayName("the refusal path stops forwarding before it closes the archive")
+    void theRefusalStopsForwardingBeforeClosing() throws Exception {
         // close() calls finish(), which writes the ZIP central directory. With
-        // try-with-resources the refusal path therefore handed back an archive that OPENS,
-        // with the last entry truncated — and the ledger claimed the opposite. A reviewer
-        // measured it: the "no central directory" only held while the response was still
-        // uncommitted (a one-document export fits the container buffer).
+        // try-with-resources the refusal path handed back an archive that OPENS, with the
+        // last entry truncated — and the ledger claimed the opposite. Not closing at all
+        // fixed that and leaked the native deflater. Both are wanted, so the archive is
+        // ALWAYS closed and the refusal path closes it into a sink that has stopped
+        // forwarding: the directory is produced and discarded.
+        //
+        // The name of this test used to say "closed on the success path only", which stopped
+        // being true when the refusal path started closing too. A review caught the name and
+        // the implementation disagreeing — the same defect class as a stale comment.
         String source = JavaSource.withoutComments(JavaSource.read(SOURCE));
         for (String marker : new String[] {"publishZipFolderExportLineage(",
                 "publishSelectedObjectsExportLineage("}) {
@@ -124,6 +125,13 @@ class ExportRefusalReachesTheClientTest {
             assertFalse(body.contains("try (ZipOutputStream"),
                     "the streamer at " + marker + " closes the archive in a try-with-resources"
                             + " again, so a refused export is handed back as an openable one");
+            // Over the SINK, not over the response stream. stopForwarding() protects nothing
+            // if the archive writes straight through — a review found the control sabotaging
+            // exactly that while this lock looked only at the close ordering.
+            assertTrue(body.contains("new ZipOutputStream(sink)"),
+                    "the archive at " + marker + " is built over the response stream rather"
+                            + " than the discardable sink, so the central directory reaches"
+                            + " the client on the refusal path");
             int close = body.indexOf("zos.close();");
             // The OUTER catch — the last one in the body — is what a refusal reaches. The
             // first `} catch (` belongs to an inner try around one step of the walk, and
@@ -132,11 +140,19 @@ class ExportRefusalReachesTheClientTest {
             int finallyAt = body.indexOf("} finally {");
             assertTrue(close > 0, "the archive is never closed at " + marker);
             assertTrue(close < outerCatch,
-                    "zos.close() sits in or after the outer catch at " + marker + ", which"
-                            + " writes the central directory for a refused export");
+                    "the success-path close at " + marker + " moved into or after the outer"
+                            + " catch, so an ordinary export no longer finishes its archive");
             assertTrue(finallyAt < 0 || close < finallyAt,
-                    "zos.close() moved into a finally at " + marker + ", which runs on the"
-                            + " refusal path too and finishes the archive");
+                    "zos.close() moved into a finally at " + marker + ", which would write"
+                            + " the central directory to the CLIENT on the refusal path");
+            // And the refusal path: stop forwarding, THEN close. Reversed, the directory
+            // reaches the client and the archive opens; omitted, the deflater leaks.
+            String tail = body.substring(outerCatch);
+            int stop = tail.indexOf("sink.stopForwarding();");
+            int closeQuietly = tail.indexOf("closeQuietly(zos);");
+            assertTrue(stop >= 0 && closeQuietly > stop,
+                    "the refusal path at " + marker + " no longer stops forwarding before it"
+                            + " closes the archive: " + tail);
         }
     }
 

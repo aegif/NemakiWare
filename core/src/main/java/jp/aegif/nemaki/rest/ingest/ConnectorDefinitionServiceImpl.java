@@ -39,7 +39,7 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
         String now = Instant.now().toString();
         def.setCreatedAt(now);
         def.setUpdatedAt(now);
-        upsertDocument(def);
+        upsertDocument(def, true);
         logger.info("Created connector definition: {}", def.getConnectorId());
         return def;
     }
@@ -73,7 +73,7 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
     public ConnectorDefinition update(ConnectorDefinition def) {
         validateRequiredFields(def);
         def.setUpdatedAt(Instant.now().toString());
-        upsertDocument(def);
+        upsertDocument(def, false);
         logger.info("Updated connector definition: {}", def.getConnectorId());
         return def;
     }
@@ -213,7 +213,7 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
     // --- Internal ---
 
     @SuppressWarnings("unchecked")
-    private void upsertDocument(ConnectorDefinition def) {
+    private void upsertDocument(ConnectorDefinition def, boolean creating) {
         CloudantClientWrapper client = getConfClient();
         String dbName = client.getDatabaseName();
         com.ibm.cloud.cloudant.v1.Cloudant cloudant = client.getClient();
@@ -229,9 +229,50 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
         // Find existing document for _id and _rev
         List<com.ibm.cloud.cloudant.v1.model.Document> existing = findRawDocs(cloudant, dbName,
                 Map.of("type", ConnectorDefinition.DOC_TYPE, "connectorId", def.getConnectorId()));
+        com.ibm.cloud.cloudant.v1.model.Document deterministic = existing.isEmpty()
+                ? readByDeterministicId(cloudant, dbName, def.getConnectorId())
+                : null;
         if (!existing.isEmpty()) {
             doc.setId(existing.get(0).getId());
             doc.setRev(existing.get(0).getRev());
+        } else if (deterministic != null) {
+            // The selector said "no such connector" and an ID-ADDRESSED read says otherwise.
+            // A Mango index being rebuilt answers empty, and writing on the strength of it
+            // is what produces a second definition. An id-addressed read needs no index.
+            //
+            // What to do about it depends on what was asked, and the first version of this
+            // refused both the same way. A CREATE must still be refused — the connector is
+            // there, and overwriting it is not what "create" means. An UPDATE must NOT be:
+            // the id-addressed read conclusively found the row the administrator meant and
+            // handed back its _id AND _rev, which is everything a conflict-safe write needs.
+            // Refusing it turned a perfectly ordinary PUT into a 500 whenever the index
+            // happened to be rebuilding — over-throwing on evidence that was conclusive.
+            if (creating) {
+                throw new IllegalStateException("Connector already exists: "
+                        + def.getConnectorId() + " (found by an id-addressed read; the index"
+                        + " did not report it, so the duplicate check before this one passed)");
+            }
+            // An UPDATE is refused here too, and the round that changed this to "adopt the
+            // row, it carries _id and _rev" was wrong in a way worth writing down.
+            //
+            // _id and _rev make the write safe against a CONCURRENT writer. They say nothing
+            // about whether the PAYLOAD is complete — and it is not. The controller rebuilds
+            // the masked secrets and the omitted delegation arrays from
+            // connectorDefinitionService.get(), which is answered by the SAME Mango selector
+            // that just missed. So on exactly this path the request arriving here carries the
+            // literal string "[configured]" where a credential belongs and nulls where the
+            // scope arrays belong. Adopting the row would write that over the real
+            // configuration: the refusal was not over-throwing, it was the only thing
+            // standing between a rebuilding index and a destroyed connector.
+            //
+            // What WAS a real defect is that this reached the client as a 500. It is a
+            // transient, retryable condition and now says so.
+            throw new ConnectorIndexNotReadyException("connector " + def.getConnectorId()
+                    + " exists under its deterministic id but the index did not report it."
+                    + " The update is refused rather than applied because the request was"
+                    + " assembled against that same index — masked secrets and omitted"
+                    + " scope lists could not be restored from it. Retry once the index has"
+                    + " caught up.");
         } else {
             // A DETERMINISTIC id for anything created from here on.
             //
@@ -244,8 +285,15 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
             // that out. Deriving the id from the connectorId closes it where it actually
             // happens: the second write is a 409, not a duplicate.
             //
-            // Documents created before this keep their generated ids and are still found by
-            // the selector above, so nothing needs migrating.
+            // Documents created before this keep their GENERATED ids. They are found by the
+            // selector above when it answers, and the id-addressed check just above cannot
+            // see them — so a legacy document plus a stale selector can still produce a
+            // second definition, once, after which both are deterministic-id protected. A
+            // review pointed out that the first version of this comment said "nothing needs
+            // migrating", which was the stronger claim: what is true is that nothing needs
+            // migrating FOR THE NEW PATH, and a legacy row stays exposed until it is
+            // rewritten (an update through this method rewrites it under its own id, not the
+            // deterministic one — closing that is a migration, and it is not done here).
             doc.setId(ConnectorDefinition.DOC_TYPE + ":" + def.getConnectorId());
         }
 
@@ -254,6 +302,36 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
         DocumentResult result = cloudant.postDocument(options).execute().getResult();
         if (!result.isOk()) {
             throw new IllegalStateException("Failed to save connector " + def.getConnectorId() + ": " + result.getError());
+        }
+    }
+
+    /**
+     * The store holds the connector but the index has not caught up, so the request cannot be
+     * completed SAFELY — not that anything is wrong with it. Separate from
+     * {@link IllegalStateException} so the controller can answer 503 rather than 500: a
+     * caller that retries succeeds, and one that reads 500 opens a ticket.
+     */
+    public static class ConnectorIndexNotReadyException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        public ConnectorIndexNotReadyException(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * An id-addressed read of the deterministic document id. Needs no index, so it answers
+     * while a Mango index is being rebuilt — which is the window this class has to survive.
+     */
+    private com.ibm.cloud.cloudant.v1.model.Document readByDeterministicId(
+            com.ibm.cloud.cloudant.v1.Cloudant cloudant, String dbName, String connectorId) {
+        try {
+            return cloudant.getDocument(new com.ibm.cloud.cloudant.v1.model.GetDocumentOptions
+                    .Builder().db(dbName)
+                    .docId(ConnectorDefinition.DOC_TYPE + ":" + connectorId).build())
+                    .execute().getResult();
+        } catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
+            return null;
         }
     }
 

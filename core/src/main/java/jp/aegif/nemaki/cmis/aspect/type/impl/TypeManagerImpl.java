@@ -162,7 +162,18 @@ public class TypeManagerImpl implements TypeManager {
 	private static volatile boolean initialized = false;
 
 	/**
-	 * Whether init() has run to completion (or failure) once in this process.
+	 * Whether a full type load has COMPLETED once in this process.
+	 *
+	 * <p>Written by two places: init()'s success path, and refreshTypes(), which also
+	 * completes a load. Naming only init() here was accurate until the second writer was
+	 * added in the same round — a field's doc lagging its behaviour is the failure this
+	 * ledger keeps recording.
+	 *
+	 * <p>Completion, not attempt. It was set in the finally at first, which let a FAILED
+	 * first init spend the bootstrap grace — so the ordinary response to a failed startup,
+	 * retrying in the same JVM, ran strict against a store whose design documents still did
+	 * not exist. A review caught it, and this line said "or failure" for a round after the
+	 * behaviour changed.
 	 *
 	 * <p>Separate from {@code initialized}, which is reset deliberately by refreshTypes() and
 	 * the dynamic-repository path to force a rebuild. Only the FIRST run happens before the
@@ -299,6 +310,9 @@ public class TypeManagerImpl implements TypeManager {
 				}
 				
 				initialized = true;
+				// Here, not in the finally: only a completed first initialization spends the
+				// bootstrap grace.
+				everInitialized = true;
 				if (log.isDebugEnabled()) {
 					log.debug("INITIALIZATION MARKED COMPLETE");
 				}
@@ -310,8 +324,15 @@ public class TypeManagerImpl implements TypeManager {
 				// finally, not after the try: a begin() whose end() is skipped by a throw
 				// would leave the grace on for the life of the process, and every request
 				// would then read a missing view as "no data".
+				//
+				// The WINDOW closes either way; the FLAG is set on the success path ABOVE,
+				// beside `initialized = true`. Setting it here consumed the bootstrap grace with a
+				// failed attempt, so a retry in the same JVM — the ordinary thing to do when
+				// the first init failed — was treated as a request-time refresh and ran
+				// strict against a store whose design documents still do not exist. A review
+				// found it; the two facts are "a first init has completed" and "a first init
+				// was attempted", and only the first one may spend the grace.
 				if (firstInitialization) {
-					everInitialized = true;
 					StartupPhase.end();
 				}
 			}
@@ -730,6 +751,14 @@ public class TypeManagerImpl implements TypeManager {
 			}
 			
 			initialized = true;
+			// The invariant the startup window rests on: `initialized` implies
+			// `everInitialized`. refreshTypes() completed a load without recording it, so a
+			// later reset of `initialized` — which this same method and the dynamic
+			// repository path both do — re-entered init() believing it was the FIRST one and
+			// opened the process-wide provisioning window ON A REQUEST THREAD. That is the
+			// defect StartupPhase exists to remove, reached through the door the fix left
+			// open. A review found it while the reachability was still latent.
+			everInitialized = true;
 		}
 	}
 

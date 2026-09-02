@@ -226,6 +226,56 @@ class ConnectorDefinitionControllerPartialPutTest {
     }
 
     // ────────────────────────────────────────────────────────────────────
+    // The mask must never be written AS the secret
+    // ────────────────────────────────────────────────────────────────────
+
+    @Test
+    void aMaskedSecretIsNotWrittenWhenTheStoredRowCouldNotBeReadBack() {
+        // GET hands out "[configured]" in place of the real credential, and an administrator
+        // who edits that payload and PUTs it back relies on this method restoring the real
+        // value from the stored row. The restore reads it through a MANGO SELECTOR, and a
+        // selector whose index is rebuilding answers "no such connector" — after which the
+        // literal string "[configured]" was written AS the credential and the real one was
+        // gone. The connector then stops authenticating with nothing in the response saying
+        // why.
+        //
+        // The window was noticed while reviewing a DIFFERENT change (a service-layer refusal
+        // that had been relaxed to "adopt the row"), which is the only reason it surfaced:
+        // the refusal downstream had been quietly standing in for this guard.
+        when(connectorDefinitionService.get(eq("conn-1"))).thenReturn(null);
+
+        ConnectorDefinition def = payload(true);
+        def.setCredentialRef("[configured]");
+
+        var res = controller.update("conn-1", def);
+
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                res.getStatusCode(),
+                "the write went ahead with an unrestorable mask, or was refused as something "
+                        + "a caller would not retry");
+        verify(connectorDefinitionService, never()).update(any());
+    }
+
+    @Test
+    void aRealSecretIsStillAcceptedWhenTheRowCannotBeReadBack() {
+        // The boundary. Refusing every update whose read-back missed would make a connector
+        // unmanageable while its index rebuilds; what cannot be written is the MASK, because
+        // that is the only value with nothing behind it.
+        when(connectorDefinitionService.get(eq("conn-1"))).thenReturn(null);
+
+        ConnectorDefinition def = payload(true);
+        def.setCredentialRef("a-real-credential-ref");
+
+        var res = controller.update("conn-1", def);
+
+        assertEquals(org.springframework.http.HttpStatus.OK, res.getStatusCode(),
+                "an update carrying real values was refused because the read-back missed, "
+                        + "which locks an administrator out of a connector they can fully "
+                        + "specify");
+        verify(connectorDefinitionService).update(any());
+    }
+
+    // ────────────────────────────────────────────────────────────────────
     // Non-admin must still be refused (regression)
     // ────────────────────────────────────────────────────────────────────
 

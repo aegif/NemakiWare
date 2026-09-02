@@ -5697,9 +5697,13 @@ decode できない行がある一覧は、**足りないまま完全な一覧�
   38 巡の実機で 500 + BadZipFile になったのは**レスポンスが未 commit だった**
   (1 文書の小さい export がコンテナのバッファに収まった) からで、
   **バッファを超える export では 200 + 開けるアーカイブ + 切り詰められた entry** になる。
-  → **実装を主張に合わせた**: 2 つの streamer を try-with-resources から外し、
-  `zos.close()` を**成功経路だけ**で呼ぶ。拒否は stream を閉じずに伝播する。
-  錠 `theArchiveIsClosedOnlyOnSuccess` + コントロール NI。
+  → **実装を主張に合わせた**。ただしこの節は**中間実装のまま残っていた** —
+  最初は「try-with-resources から外し、拒否は閉じずに伝播」としたが、それは
+  **native deflater を漏らす**と第 2 巡で指摘され、最終形は
+  **「転送を止める sink を挟み、拒否経路でも close する」**である
+  (中央ディレクトリは生成されて捨てられ、deflater は解放される)。
+  訂正節が自分自身と矛盾していたのを並行レビューが見つけた。
+  錠 `theRefusalStopsForwardingBeforeClosing` (当初 `theArchiveIsClosedOnlyOnSuccess`。拒否時にも close するようになった時点で名前が実装と乖離したので改名) + コントロール NI / NN / NO / NQ。
   同じ誤りが `ZipExporter` の javadoc とテストのコメントにもあったので両方訂正。
 - **§60「NotFound のみ null → CMIS 1.1 通り 404」は誤り**(§61 で 409 と訂正済みだが
   §60 の本文が残っていた)。null を返す腕は 3 つあり、
@@ -5723,7 +5727,7 @@ decode できない行がある一覧は、**足りないまま完全な一覧�
 - **§61「7 つは安定 ID で作る」は 1 件外れ。** `Patch_SearchIndexReconcileV1Cleanup` は
   **create せず delete のみ**。gate 外での危険は重複ではなく削除漏れ。正しくは 6。
 - **数え違い**: 「14 の patch」→ 13 patch + `PatchService`。
-  「錠 2 本」→ 3 本。「§29」→ **§26**。「新規 12 本 (MR〜NA)」→
+  「錠 2 本」→ **§60 時点では 2 本で正しく、これは誤訂正だった**(現在は 6 本)。「§29」→ **§26**。「新規 12 本 (MR〜NA)」→
   commit 時点では **10 本 (MR〜NA)**、NB/NC は未コミットだった。
 - **§60 表 1「要素が null｜旧: (無し・NPE)」も誤り。** 旧コードには null ガードが在り、
   **黙って skip** していた (NPE ではない)。
@@ -5734,7 +5738,7 @@ decode できない行がある一覧は、**足りないまま完全な一覧�
 |---|---|
 | `getUserItemById` の userId 不一致 | **`getGroupItemById` の groupId 不一致** — 同ファイル 280 行下。null は「そのグループは無い」で、入れ子グループ展開が**その経由の権限を全部落とし**、ディレクトリ同期は重複を作る (ND) |
 | `getChildren` 系 3 経路 | **`getChildByName` の catch → null** — 直下の fallback が `getContent` の新しい throw を受け、そのまま「そんな子は無い」に戻していた |
-| `childrenNames` の空・例外 | **行ごとの `value == null` skip** — 短い名前一覧は空ではないので alive 判定が発火せず、**同名の兄弟**が作れる (NE) |
+| `childrenNames` の空・例外 | **行ごとの `value == null` skip** を一度は拒否にしたが、**これは過剰修正で取り下げた**。view は `emit(doc.parentId, doc.name)` で**値がそのまま名前**であり、decode の段が無い — つまり null は「**その子には名前が無い**」という事実で、読み損ねではない。名前の無い子は名前と衝突しないので一意性検査は弱まらず、逆に拒否すると**その子が居るフォルダでは作成が一切できなくなる**。skip に戻し、**取り下げた側**を錠にした (NE) |
 | `TYPES` 読み手 4 つ | **残り 4 つ** (`getTypeByQueryName` / `getTypesChildren` / `getTypesDescendants` / `findSecondaryTypeByPropertyQueryName`)。うち 2 つは**CMIS が見せる型一覧**そのもの (NF) |
 | `getAttachmentActualSize` (DAO) | **wrapper の `getAttachmentSize`** が失敗時 null。DAO の拒否に**到達しないまま**呼び出し側が記録 length に落ちていた (NH) |
 | `lengthFromMetadata` の catch | **`ref == null` 経路**と `AttachmentContent.NONE` が今も 0 を索引 |
@@ -5776,6 +5780,10 @@ decode できない行がある一覧は、**足りないまま完全な一覧�
   すべて runner の「DID NOT FIRE」が捕まえた
 - 新しい rendition テストが**fixture の NPE で通っていた** (mock の
   `createConfiguredObjectMapper()` が null)。実物の mapper を配線して修正
+- **兄弟掃討の指摘をそのまま実装して過剰修正を 1 件作った** (`childrenNames`)。
+  「短い一覧は完全な一覧に見える」は正しい一般則だが、**この view には decode の段が無い**。
+  view の map 関数を読んでから直す、をやっていなかった。出荷前に自分で気づき取り下げ。
+  第 2 巡のレビュー観点を「過剰修正探し」にしたのはこれが理由
 
 ### Codex の指摘のうち、直したもの・記録に留めたもの
 
@@ -5787,7 +5795,7 @@ decode できない行がある一覧は、**足りないまま完全な一覧�
 | `typeLoadFailures` が**再生成の成功で消えない**。修復経路 (patch が view を配備 → invalidate) が正しく再生成しても、その後も全読みが拒否され続ける。逆に**再生成の失敗は握り潰されていた** | 成功で `remove`、失敗で `put` |
 | `ArchiveServiceDelegate.getAttachmentActualSize` の catch → null。**ContentService が通る公開経路**がこれで、DAO の拒否は**そこに到達しない**。DAO のテストは緑のままサービスは null を返していた | catch を削除 |
 | typed `queryView` の NotFound が**起動窓に関係なく null**。raw 版は窓で分けている。`getPropertyDefinitionCoreByPropertyId` はそれを「未定義」と読むので、閉じたはずの重複 core 経路が残っていた | 窓の外では throw |
-| **system 段の gate が測っている store が違う**。gate は各リポジトリの `_repo` view を見るが、`Patch_DefaultCloudDriveConnectorProfile` の存在検査は別 DB の Mango セレクタ。健全な CMIS view はその索引について何も言わない | gate ではなく**発生箇所**で塞いだ: コネクタ文書の新規作成に `connector:<id>` の**決定的 ID** を与える。2 通目は 409 になる。既存文書は生成 ID のままセレクタで見つかるので移行不要 |
+| **system 段の gate が測っている store が違う**。gate は各リポジトリの `_repo` view を見るが、`Patch_DefaultCloudDriveConnectorProfile` の存在検査は別 DB の Mango セレクタ。健全な CMIS view はその索引について何も言わない | gate ではなく**発生箇所**で塞いだ: コネクタ文書の新規作成に `connector_definition:<id>` の**決定的 ID** を与え、さらに書く前に**ID 直読み**で確認する (索引を使わないので再構築中でも答える)。**「既存文書は移行不要」は第 2 巡で取り下げ**: 生成 ID の旧文書 + セレクタの空振り、という組み合わせでは決定的 ID の新文書が別 ID として書けてしまう。ID 直読みはそこまでは見えない。**旧文書は書き直されるまで 1 回だけ露出が残る** (更新は自分の ID で上書きするため、閉じるには移行が要る。今回はしていない)。**第 4 巡の補強**: この残存露出が当たるのは「生成 ID の旧文書を持つ環境」= **まさに 3.4 へアップグレードする既存環境**であって、新規構築ではない。露出条件は「セレクタが空振りする瞬間に create が走る」ことなので、索引再構築中の初回起動が該当する。**新規構築には無い問題を、アップグレード対象だけが踏む**という向きを、ここで取り違えないこと |
 | runner: `--self-test` が `sabotage_text` を一度も呼んでおらず、**delta 比較を丸ごと消しても 14 件全部緑**。`_harness_broke` の走査窓が 6 行で、実際の surefire スタックでは `Caused by:` が窓の外 | span 検査そのものを走らせる 2 ケースを追加、窓を 40 行に。両方 revert→fail 済み (17/17) |
 
 **記録に留めたもの (2 件、根拠つき)**
@@ -5805,3 +5813,242 @@ decode できない行がある一覧は、**足りないまま完全な一覧�
   修復は patch 実行後の invalidate (これは上で直した)。
   **窓の中でしか起きず、窓は最初の 1 回だけ**なので、露出は
   「起動時に view が無い」に限られる。実装は変えず、ここに書いて持ち越す
+
+### 第 2 巡 (過剰修正探し + 取り下げの監査) — **自分の拒否が通常操作を壊していた**
+
+第 1 巡が「失敗が不在に見える」を狩ったので、第 2 巡は**逆向き**を狩らせた:
+**genuine な「無い」に拒否を置いていないか**。同時に、§62 の**訂正印そのもの**を監査させた。
+
+#### P1 — ログインとグループ作成が 500 になっていた
+
+`queryView(designDoc, view, key)` は**一致行が 0 のとき null を返す** (`rows == 0 ? null : result`)。
+36 巡で `getUserItemById` / `getGroupItemById` に入れた
+「`result == null` → 訊けなかった → throw」は、したがって
+**存在しないユーザーを引くたびに発火**していた:
+
+| 呼び出し元 | 起きること |
+|---|---|
+| `AuthenticationServiceImpl` (ログイン) | 未知のユーザー名で **401 ではなく 500**。`loginThrottle` にも到達しない |
+| `ContentServiceImpl.validateNewGroup` | 「既に在るか」の事前確認なので、**グループが一切作れない** |
+| `CloudDirectorySyncServiceImpl` | 「無ければ作る」同期が**作れない** |
+| `UserGroupServiceDelegate` の入れ子展開 | 宙に浮いた subgroup ID 1 つで権限判定が落ちる |
+
+**錠が緑だったのは、fixture が「空 rows の ViewResult」を返していたから** —
+本物の wrapper が決して返さない値。テストが本番の契約と違う世界を作っていた。
+さらに悪いことに、**別のテスト 2 本 (`anUnansweredUserViewRefuses` /
+`anUnansweredGroupViewRefuses`) がこの欠陥そのものを固定**しており、
+コントロール LK / LM がそれを「保護されている」と報告し続けていた。
+両方とも**取り下げ側**を測る形に書き換え、LK / LM も向きを逆にした
+(絶対に拒否に戻らないこと)。
+
+直し: null は**genuine な不在**として `null` を返す。
+view 未配備の場合は wrapper 側が (起動窓の外で) throw するようになったので、
+ここに到達する null は不在だけ。fixture も wrapper の契約に合わせた。
+
+#### 取り下げの監査 (§62 の訂正印を検証)
+
+7 件中 **6 件は正しい取り下げ**。1 件は**取り下げ自体が誤り**:
+
+- **「錠 2 本 → 3 本」は誤訂正**。§60 の「2 本」は**当時正しかった** (作成時点で `@Test` 2 本)。
+  現在は 4 本。訂正印を取り消す
+- **「4 件、6 か所を移行」は 8 か所**が正しい。さらに**未移行が 3 か所**残っていた
+  (`JavaSource.methodBody` の private 複製 2 つと reflection ガード 1 つ)。移行し、
+  sweep の語彙に `unbalanced braces` / `is gone` を追加。
+  **sweep が読めなかったファイルを clean と数えていた**のも直した (これも同じ substitution)
+- **「self-test に 2 ケース追加」は 3 ケース** (14 → 17)
+- ZIP の訂正は正しいが**射程が足りない**: 拒否経路で中央ディレクトリは書かれないものの、
+  **HTTP としては 200 のまま正常終了する** (Jersey は commit 済みレスポンスの書き込み例外を
+  ログに落として通常完了に合流する)。クライアントは「開けない ZIP」としてしか気づけず、
+  理由はサーバログにしかない。また `zos.finish()` **より後**の失敗 (lineage 発行・監査) では
+  完全なアーカイブが渡るので、保証は finish 以前の拒否に限られる
+- `ZipExporter` の拒否メッセージが「読めなかった。これは content が無いという主張ではない」と
+  書いていたが、delegate の修正後**その腕はまさに genuine な不在**。文言を事実に合わせた
+- `Patch_WebAuthnCredentialViews` の override は**per-repository 側だけ**が gate 済みで、
+  `applySystemPatch()` は gate の外だった (§61 の「塞いだ」は半分)。塞いだ
+
+#### 過剰修正として指摘され、対応したもの
+
+- `getChildrenNames` の null 値拒否 — **出荷前に自分で取り下げ済み** (上記)
+- `typeLoadFailures` が**粘着**していた: 成功した再生成 2 経路が消さず、
+  `refreshTypes` は型作成のたびに走るので、一度の瞬断でそのリポジトリの
+  CMIS 面が全部 500 になり得た。invalidate 経路で消す修正は入れてあるが、
+  **`getTypeById` / `getTypesChildren` の動的初期化リトライより前に guard が居る**点は
+  残っている (リトライに入れない)。**記録して持ち越す**
+- `TypeServiceImpl` の型削除は**破壊的書き込みの後に拒否**する (detail 1〜3 が消えた後で
+  4 番目の解決に失敗すると、型が半分剥がれたまま止まる)。事前解決パスが要る。**持ち越し**
+- `ZipExporter` の `getAllVersions` 拒否は**リポジトリ全体の状態**をアーカイブ全体の失敗に
+  変える (view 再構築中はどのフォルダの export も切れる)。**持ち越し**
+- `FilesystemExporter` は try-with-resources の評価順で、`is == null` を判定する**前に
+  0 バイトのファイルを作る**。sidecar 無しの 0 バイトファイルは importer が
+  「空の記録」として取り込むので、**拒否したはずのバイトが空の記録に化ける** —
+  拒否が、拒否で防ぐはずの置換を自分で作っていた。
+  **第1群 4 の未閉鎖分として直した**: stream の判定を**ファイルを開く前**に出し、
+  本文・版本文の両方で。錠 `aRefusedDocumentLeavesNoFile` + コントロール NL
+  (並行レビューの指摘)
+- `getGroupItemById` は `forceUpdate=false` で引くので、削除直後の stale 行が**正常に起きる**。
+  「view が行を返した = 文書は在る」という前提はそこでは成り立たない。**持ち越し**
+
+> レビュアが「作業ツリーに細工が残っている」と報告したが、これは**私のコントロール実行と
+> 読み取りが並行していた**ためのアーティファクトで、実行後のツリーには残っていない
+> (`.nc-backup` 無し・該当行無しを確認)。**レビューと runner を同時に走らせない**という
+> 手順上の教訓として記録する。
+
+#### 第 2 巡の Codex 指摘 — 自分の直しが作った 4 件
+
+| 指摘 | 直し |
+|---|---|
+| **拒否経路が ZipOutputStream の native deflater を漏らす**。TWR を外したので `close()` が呼ばれない | **両立させた**: 出力を「転送を止められるストリーム」で包み、拒否時は**先に転送を止めてから close** する。中央ディレクトリは生成されて捨てられ、deflater は解放され、クライアントの応答は失敗した場所で終わる |
+| **`everInitialized` を `finally` で立てていた**ので、**失敗した初回**が bootstrap の猶予を食い潰す。同 JVM での再試行は「リクエスト時の refresh」扱いになり、design document がまだ無い store に厳格に当たる | 成功経路でだけ立てる。「初回が完了した」と「初回を試みた」は別の事実 |
+| **runner の 40 行窓が次のテストの stanza に食い込む**。本物の発火の直後に別テストがハーネス破壊を起こすと、前者がハーネス破壊と判定される | stanza を「次の `<<< FAILURE!` / `<<< ERROR!` まで」に区切った。**この境界自体を測る self-test** を追加 (revert→fail 済み、18/18) |
+| **決定的 ID は旧文書の競合を閉じない** (上表参照) | ID 直読みの確認を追加。**旧文書の露出は残る**ことを明記 |
+
+**台帳の事実誤り 2 件** (この節が訂正のための節であるだけに): 
+`connector:<id>` と書いたが実装は `connector_definition:<id>`。
+「self-test に 2 ケース追加」は 3 ケース (14 → 17、その後 18)。
+「移行 4 件・6 か所」は **8 か所**で、しかも**未移行が 3 か所残っていた** (移行済み)。
+
+#### 第 3 巡 (未コミット分のレビュー — テスト実行前に) — **typed overload をまた片方だけ直していた**
+
+依頼により、修正をテストにかける**前に**レビューへ回した。
+
+| 指摘 | 深刻度 | 直し |
+|---|---|---|
+| **typed `queryView` の NotFound が起動窓を見ずに null を返す** | **P1** | ViewResult 版に gate を足したときに**typed 版を直していなかった** (同じ overload 対、三度目)。`getPropertyDefinitionCoreByPropertyId` がそれを「未定義」と読み、閉じたはずの重複 core 経路が開いたまま。gate を追加 |
+| runner の stanza 窓が固定 60 行 | P2 | 40 → 60 と 2 度「広げた」が、どちらも当て推量。**次の stanza が始まるところまで**に。80 行スタックのケースで revert→fail 確認 (19/19) |
+| **NI のアンカーが 2 か所に一致**して runner が停止 | P2 | folder 側にしか無い行を足して一意化。runner の一意性検査が働いた形 |
+| preflight が `" method("` の部分一致 | P3 | 戻り値型を伴う**宣言の形**を要求する正規表現に |
+| `everInitialized` の javadoc が「完了 **または失敗**」のまま / 「下で設定」と書いて実際は上 | P3 | 両方訂正。**振る舞いを変えた後に注記が 1 巡遅れた**、この台帳が繰り返し記録している形 |
+| `anAnsweredEmptyViewIsStillAbsence` が null を渡すのに名前は「答えのある空 view」 | P3 | `anAbsentUserReadsAsAbsent` に改名 |
+
+レビュアが**正しいと確認した点**も記録する: keyed `ViewResult` 版の取り下げは安全
+(未配備 view は窓の外で throw する)、ZIP は両 streamer で「転送停止 → close」の順、
+filesystem は両方ともファイルを開く前に stream を判定し `Files.newOutputStream` が
+失敗しても入力は閉じられる、`everInitialized` は成功時のみ、コネクタの ID 直読みの
+非 NotFound 例外は patch 側が warn に落とすので起動は止まらない、
+`childrenNames` の skip は非 null の名前を隠せない。
+
+**手順の教訓**: 「テストを回す前にレビュー」は、この巡で P1 を 1 件、
+runner を止める stale アンカーを 1 件、先に捕まえた。
+これまでは走らせてから読んでいたので、**細工中のツリーをレビュアが読む**事故も起きていた。
+
+第 3 巡の 2 人目 (過剰修正・片腕・取り下げの監査) がさらに 6 件:
+
+| 指摘 | 直し |
+|---|---|
+| **`FilesystemExporter` の「0 バイトを残さない」は *stream が null の腕* にしか効かない**。コピー**途中**で読みが死ぬと、ファイルは既に開いており部分ファイルが sidecar 無しで残る — これはまさに fail-closed が対象にしている失敗の形 | 両腕の catch で `Files.deleteIfExists`。消せなければ**その事実を errors に載せる** |
+| **`refreshTypes()` が `initialized = true` だけ立てて `everInitialized` を立てない**。`initialized ⇒ everInitialized` が構造的に崩れており、後の reset が「初回だ」と思って**リクエストスレッドでプロセス全体の窓を開ける** | 同じ場所で立てる。到達性は latent だが、修正の正しさの根拠がこの不変条件だった |
+| **NI の細工を錠が測っていない**。細工は archive を sink ではなく response に直結させるが、錠は close の順序しか見ていなかった | 「`new ZipOutputStream(sink)` であること」を追加 |
+| **`ChildrenNamesAreNeverSilentlyShortTest` は、いまや逆を主張している**(3 行の view から 2 要素を返すことを意図的に確認する)。取り下げのときにクラス名を追っていない | `NamelessChildrenAreSkippedNotRefusedTest` に改名 |
+| **4 つ目の private brace matcher が未移行**で、不均衡なとき**ファイルの残り全部を「メソッド本文」として返す** | `HarnessBroken` に |
+| **NN が folder streamer 専用**。objects 側の順序は誰も測っていない | NO を追加 |
+
+コード側のコメントが**台帳より強い主張**をしていた点も直した:
+「クライアントの応答は失敗した場所で終わる」→ 実測は
+**「commit 済みなら 200 のまま正常終了し、body に中央ディレクトリが無い」**。
+保証は「**アーカイブが開けない**」であって「クライアントに伝わる」ではない。
+`zos.finish()` **より後**の失敗では完全なアーカイブが渡ることも併記。
+
+#### 第 3 巡の 2 人目・3 人目 (実行前レビュー) — **測定の穴が本番の穴より先に来ていた**
+
+「大規模実行の前にレビュー」という指示どおり、フルスイートと通しの**前に**回した。
+判定は **not ready** で、実際に走らせていたら数時間を失っていた。
+
+| 指摘 | 深刻度 | 直し |
+|---|---|---|
+| **`deleteIfExists` が無条件**で、open **前**の失敗でも実行される → **以前の正常な export が残したファイルを消す**(`allowOverwrite=true`)。`CREATE_NEW` の競合では他プロセスのファイルを消す | **P1** | 「この呼び出しが open したか」を持ち、所有しているときだけ消す。錠 `aFailureBeforeOpeningKeepsAnExistingFile` (+ 版側)。**注: ここで NV と書いていたが、NV は第 4 巡で別のコントロール (`DiscardableOutputStream`) に振り替わっている。この 2 本の錠自体も staging 化で**表明が落ちなくなった** — 第 5 巡の指摘。今それを測るのは `aMidCopyFailureDoesNotDestroyThePreviousExport` 側 |
+| **NL / NM が死んだコントロール**。細工で判定を戻すと 0 バイトファイルはできるが、**同じ巡で足した `deleteIfExists` がそれを消す**ので錠が緑 | **P1** | 「拒否の**理由**」を測る形に (`produced no stream` か、NPE か)。並び順のガード自身を測れるようになった |
+| `DiscardableOutputStream` に**テストもコントロールも無い**。`stopForwarding()` を no-op にしても全部緑 | P1 | 振る舞いテスト 3 本 + NX |
+| **失敗した初回 init が猶予を食わない**、を測るテストが無い | P1 | 錠 + NW。最初の細工案は**別のテストを落とした**(隣の性質を壊す形) ので、実際の欠陥 (finally で立てる) を復元する細工に変えた |
+| `everInitialized` の成功経路 / WebAuthn の system stage / コネクタの ID 直読み / `assertRepositoryTypesLoaded` 9 か所中 4 か所 — いずれも**外しても緑** | P2 | 錠とコントロール NW / NY / OA / NZ を追加 |
+| **NS のアンカーが stale** (所有フラグを後から足してアンカーを追っていない) | P2 | 張り直し + 版側 NU。**注: NS / NU とも第 4 巡以降に振り替え済み** (NS は move、NU は `DiscardableOutputStream`) |
+| `ZipExporter` javadoc / streamer コメント / `queryViewCount` javadoc / `everInitialized` javadoc が**取り下げた実装のまま** | P3 | 4 か所とも訂正 |
+
+**手順として効いた**: この巡の P1 3 件は、いずれも**走らせても緑**のまま通過したはずのもので、
+テストでは捕まらない。「実行前にレビュー」が無ければ、
+「185/185 発火・フルスイート緑」という**正しく見える報告**を出していた。
+
+#### 第 4 巡 (Codex + サブエージェント) — **所有フラグでは足りず、記録そのものが嘘をついていた**
+
+前巡で入れた「所有フラグ」は **P1 を直しきれていなかった**。それが今巡の主眼。
+
+| 指摘 | 深刻度 | 直し |
+|---|---|---|
+| **`allowOverwrite=true` + 途中死 = 以前の完全な export が消える。** 所有フラグは「この呼び出しが **open した**」を持つが、overwrite の open は `TRUNCATE_EXISTING` — 途中死の時点で**以前の export は既に空**で、cleanup が残骸を消す。**古いものも新しいものも残らない** | **P1** | 隣に staging ファイルを書き、**コピーが終わってから** `Files.move`。錠 `aMidCopyFailureDoesNotDestroyThePreviousExport` (+ 版側)。コントロール NL。**「失敗しても宛先は無傷」と最初に書いたのは過大**で、第 5 巡が指摘した: `Files.move` は既定で置換の原子性を保証せず、delete-then-move で実装されうる。`ATOMIC_MOVE` を明示要求する形に変え、**要求できない FS では落とさずに拒否**する (弱い move に黙って落ちる実装は、落ちる瞬間まで保証と見分けがつかない) |
+| 文書側と版側が**同じコピーの二重写し**で、この一冊のなかで**4 回**「片方だけ直して片方を見落とす」が起きた (streamless / mid-copy / 所有フラグ / コントロール) | **P1 の再発源** | **1 メソッド 2 呼び出し**に畳んだ (`copyLeavingTheTargetIntactOnFailure`)。構造として片腕が起きない |
+| **legacy コネクタ行は依然として重複経路**。selector が空 + deterministic id が 404 のとき、generated-id の既存行は誰にも見えない | **P1** | **未解決。** id 付けのない行を index 抜きで見つける手段が無い。§62 の記述を「アップグレード対象の既存環境がまさにこれ」と読める形に補強 |
+| deterministic id が**見つかったのに更新まで拒否**していた | P2 | **この行の直しは第 5 巡で取り下げた。** 下記「取り下げ」を参照 |
+| `queryViewCount` が **total_rows 欠落で 0**。reduce 応答は total_rows を持たないため実際に起きる — この不一致は**過去に稼働中のスタックで 312 回の誤拒否**を出している | P2 | 欠落は throw。keyed 版も「rows 無し = 答えていない / 空 = 本当に 0 / 非数値 = 読めない」に分離 |
+| **NF のコメントが「ここは測れない」と嘘を記録していた。** 実際の fixture (`includePropertyDefinitions=false`) では第 2 の拒否経路に到達しないので、コントロールは**発火する** | P2 | コントロール **OB** を追加し発火を確認。測定器のなかの「確かめた、測れない」は、この測定器が無くすためにある代用そのもの |
+| `NL`/`NM` は**エラー文字列しか見ていなかった** (ファイルの有無は cleanup が消すので常に緑)。`NX` は 3 本の腕のうち 1 本だけ。`NI` の**コメントと細工が別物** | P2 | NL/NM を staging 用に書き直し、NU/NV で残り 2 腕、NI は `what=` を実際の細工に合わせた |
+| `anAbsentAttachmentAlsoRefuses` が**メッセージを見ておらず**、同メソッドの catch-all が同じ型を投げる → **腕ごと消しても緑** | P2 | メッセージ表明を追加。この巡で書き換えた文言を初めて何かが押さえた |
+| `anEmptyAnswerIsStillAbsence` が**本番が返さない値**を stub。login を壊したのと同じ形の**3 例目**、同じパッケージ内 | P2 | `null` に修正 |
+
+**新しい落とし穴 (細工の側)**: NL の最初の細工は `TRUNCATE_EXISTING` を **`CREATE` 無し**で
+残したため、**文書側のコピーが先に落ちて `continue` し、版側の錠には到達しなかった**。
+「隣のガードが細工を覆う」ではなく「**細工が手前の段を壊して奥を測れなくする**」形。
+`CREATE` を足して両腕に届くようにしてから、両方の錠が**自分の表明で**落ちることを確認した。
+
+**取り下げない主張**: 今の 192 本は、**この文を書いた時点では「アンカーが stale では止まらない」を満たしていなかった** —
+第 5 巡が `OA` の stale を見つけ、しかも runner はそこで `SystemExit` するので **OB / MO / MP / MQ / HA が走らない**、
+つまり**通しが途中で切れることを出力が言わない**状態だった。全アンカーを実行前に検査する preflight を足して直した
+(足した直後に、**自分がこの巡で入れた修正が壊した NL と NS の 2 本**を即座に捕まえた)。なお、
+**`try (ZipOutputStream` を戻す細工は書けていない** (コンパイルを保つには streaming body 全体の
+再構成が要り、宣言的な find/replace では届かない)。その半分は**錠が持っていて runner は持っていない**。
+NI のコメントにも同じ文言で書いた。
+
+#### 第 5 巡 (Codex + サブエージェント) — **前巡の直しが、直した以上のものを壊していた**
+
+前巡の 3 件の直しを重点的に見せた。結果、**そのうち 2 件が新しい欠陥を作っていた**。
+
+##### 取り下げ: 「id 直読みが答えたのだから update は採用してよい」
+
+第 4 巡で「`_id` と `_rev` が揃っているので conflict-safe。拒否は過剰」と書いて採用に変えた。
+**これは誤りで、元に戻した。**
+
+`_id` と `_rev` が保証するのは**同時に書く別の誰かに対する安全**であって、
+**払い出された内容が揃っていること**ではない。そして、この経路ではまさに揃っていない:
+`ConnectorDefinitionController` はマスクされた秘密と省略された委譲配列を
+`connectorDefinitionService.get()` から復元し、**それは今空振りしたのと同じ Mango セレクタ**で
+答えられる。つまりサービス層に届く要求は、資格情報の位置に文字列 `"[configured]"` を、
+スコープ配列の位置に null を載せている。採用すれば**それを本物の設定に上書きする**。
+
+拒否は過剰ではなく、**索引再構築と壊れたコネクタの間に立っていた唯一のもの**だった。
+本当の欠陥は**それが 500 で客に届いていたこと**で、そこは
+`ConnectorIndexNotReadyException` → **503** に直した (再試行すれば通る条件)。
+
+さらに、この窓は**サービス層の拒否が肩代わりしていただけ**なので、
+コントローラ側にも直接の門を置いた: 読み戻せなかったのにマスクが載っている PUT は
+**何も書かずに 503**。実値を載せた PUT は通す (境界も錠にした)。
+
+| 指摘 | 深刻度 | 直し |
+|---|---|---|
+| **staging が export ファイルを 0600 にしていた。** `createTempFile` は所有者のみで作り、`Files.move` は inode ごと差し替えるので、mode・所有者・ハードリンクが staging 側のものになる。**既存の 0644 を上書きすると group/other の読みが黙って消える** | **P1** | 宛先が在れば**その mode を借り**、無ければ**通常 create の mode を実測** (umask は Java から読めないので探査する)。錠 + コントロール OD。**レビュアー 2 人はこれを読み落とし、実測が捕まえた** |
+| **`.part` は importer に読まれる。** exporter の javadoc は「どの importer も読まない」と書いていたが、`FilesystemImporter` は全通常ファイルを集め、除外するのは sidecar と版ファイルだけ | **P1** | 名前を `ImportExportUtils` に一本化し、importer が skip。錠 + コントロール OE。**拒否が防ぐはずの置換を、その拒否の直しが逆向きに作っていた** |
+| **`OA` のアンカーが stale**。しかも runner はそこで `SystemExit` するので、**OB / MO / MP / MQ / HA が走らない** — 出力は「通しが部分的になった」とは言わない | **P1** | 張り直し + **全アンカーを実行前に検査する preflight**。ラン中の遅延検査を前倒しにしただけだが、これで「1 本の drift が sweep を切る」が起きない |
+| **`allowOverwrite=false` の move に錠が無い。** これが既定の export 経路で、`else` 枝を delete に置き換えても **19 本全部が緑**。「文書ファイルを 1 つも作らない exporter」がスイートを通る | **P1** | 錠 `aPlainExportStillWritesTheDocument` + コントロール OC |
+| count の 4 つの拒否が**自分の catch-all に食われて再ラップ**され、意図した拒否が「予期せぬ失敗」として ERROR ログに出ていた。`queryView` の兄弟には rethrow 腕が在る | P2 | rethrow 腕を両方に追加。錠は**二重ラップの不在**を表明する (メッセージ表明だけでは通ってしまう — ラッパが中身を引用するため)。コントロール OH |
+| staging 後も**落ちなくなった表明が 6 つ**: `aMidCopy*LeavesNoPartialFile` の宛先不在、`a*FailureBeforeOpening*` の 4 表明、`aRefused*LeavesNoFile` の宛先不在 | P2 | `leftoverPartFiles` に張り替え、落ちなくなった表明には**その旨を書いた**上で「規則の記述」として残した |
+| `describeForLog` を javadoc と本体の**間に**挿入したため、訂正した契約が `queryViewCount` から外れて別メソッドに付いていた | P3 | 位置を直した |
+| `matchingClose` が**文字列リテラルを見ない**自前の波括弧カウンタ。`JavaSource` に正しい実装が在るのに二重化していた | P3 | `JavaSource.matchingClose` に一本化 |
+
+**この巡で自分が踏んだもの**: `OC` の細工が「**錠の表明ではなく `NoSuchFileException`**」で落ちた
+(ファイルが無い状態で `readString` を呼ぶため)。runner は **FIRED FOR THE WRONG REASON** と言い、
+存在表明を先に置いて直した。同じ形を第 4 巡でも一度踏んでいる。
+
+##### 通し実行 (192 本) と、そのさなかに届いた並行レビュー
+
+**192/192 発火・4 時間 30 分・`.nc-backup` 残留 0 件。** DID NOT FIRE も WRONG REASON も 0。
+
+同時に届いた並行レビューの 1 点目 —「本番が `IY` の細工のままで `RssFeedService.java.nc-backup` が在った」—
+は、**この通しそのもの**である。指摘のとおり通しとレビューは同時に回すべきではなく、今回それが起きた。
+以後、通しの前に `*.nc-backup` が 0 件であることを確認する (preflight とは別に、これは**人間側の**手順)。
+
+残り 2 点は実在の穴で、埋めた:
+
+| 指摘 | 直し |
+|---|---|
+| **`OH` は count の片方だけ。** `queryViewCountByKey` にも同じ rethrow 腕が在るが、keyed の錠は「メッセージに `"no rows array"` が在る」しか見ないので、**catch-all が包んでも緑** (ラッパが中身を引用するため)。keyed の包みを消しても OH も錠も発火しない | 錠に**二重ラップの不在**を追加し、コントロール **OI** を新設 |
+| **`stopForwarding()` 本体を空にするコントロールが無い。** NU / NV / NX は `forwarding` を*読む*3 腕をそれぞれ潰すが、*立てる*メソッドには誰も触れていない。**3 腕を一度に無効化する唯一の編集**が測られていなかった | コントロール **OJ** を新設 |
+
+どちらも「片腕だけ測る」形で、**この一連で 4 度目**。今回は本番コードではなく**測定器の側**で起きた。
+コントロールは **194 本**。
