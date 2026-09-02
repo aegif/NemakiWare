@@ -33,7 +33,6 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.json.simple.JSONObject;
 
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -179,8 +178,30 @@ public class FilesystemExporter {
                 if (Files.exists(metaPath) && !allowOverwrite) {
                     result.errors.add("Metadata file already exists (overwrite not allowed): " + child.getName() + META_SUFFIX);
                 } else {
-                    try (FileWriter writer = new FileWriter(metaPath.toFile(), StandardCharsets.UTF_8)) {
-                        writer.write(metadata.toJSONString());
+                    // Through the SAME staging helper as the content bytes. The round-5 fix
+                    // staged the content and left this FileWriter — with allowOverwrite it
+                    // TRUNCATES the existing sidecar before writing, so a mid-write failure
+                    // (disk full) destroys the old complete metadata while the content next
+                    // to it is protected. The importer then reads the document without its
+                    // type and properties. The same-file one-arm shape, fifth time; a
+                    // sibling sweep caught it.
+                    try {
+                        copyLeavingTheTargetIntactOnFailure(
+                                new java.io.ByteArrayInputStream(
+                                        metadata.toJSONString().getBytes(StandardCharsets.UTF_8)),
+                                metaPath, allowOverwrite, result);
+                    } catch (java.nio.file.FileAlreadyExistsException raced) {
+                        // A sidecar that appeared BETWEEN the exists() check above and the
+                        // move. The move without REPLACE_EXISTING is what makes the race
+                        // visible at all — the old FileWriter silently overwrote the racing
+                        // file, which violated allowOverwrite=false. But the first staged
+                        // version let this exception ESCAPE, which turned the same conflict
+                        // the exists() check reports as one error line into a 500 for the
+                        // whole export. Same outcome as the visible conflict: record, keep
+                        // the document, keep walking.
+                        result.errors.add("Metadata file already exists (overwrite not"
+                                + " allowed): " + child.getName() + META_SUFFIX
+                                + " (it appeared while the export was running)");
                     }
                 }
 
@@ -283,8 +304,20 @@ public class FilesystemExporter {
                 if (Files.exists(versionMetaPath) && !allowOverwrite) {
                     result.errors.add("Version metadata file already exists (overwrite not allowed): " + versionFileName + META_SUFFIX);
                 } else {
-                    try (FileWriter writer = new FileWriter(versionMetaPath.toFile(), StandardCharsets.UTF_8)) {
-                        writer.write(versionMeta.toJSONString());
+                    // Same staging rule as the document sidecar above — one helper, so the
+                    // two arms cannot drift apart again.
+                    try {
+                        copyLeavingTheTargetIntactOnFailure(
+                                new java.io.ByteArrayInputStream(
+                                        versionMeta.toJSONString().getBytes(StandardCharsets.UTF_8)),
+                                versionMetaPath, allowOverwrite, result);
+                    } catch (java.nio.file.FileAlreadyExistsException raced) {
+                        // Same race arm as the document sidecar. Left escaping, this landed
+                        // in the version-history catch and ABANDONED every remaining version
+                        // of the document over one racing sidecar.
+                        result.errors.add("Version metadata file already exists (overwrite"
+                                + " not allowed): " + versionFileName + META_SUFFIX
+                                + " (it appeared while the export was running)");
                     }
                 }
 
@@ -348,7 +381,7 @@ public class FilesystemExporter {
         try {
             staging = Files.createTempFile(destination.getParent(),
                     EXPORT_STAGING_PREFIX, EXPORT_STAGING_SUFFIX);
-            giveTheStagingFileTheModeTheDestinationShouldHave(staging, destination);
+            giveTheStagingFileTheModeTheDestinationShouldHave(staging, destination, result);
         } catch (IOException | RuntimeException cannotStage) {
             // The copy below owns the stream once it starts; before that, this does. Without
             // it a disk-full staging failure leaks the attachment's stream — the case the
@@ -412,7 +445,7 @@ public class FilesystemExporter {
      * probed once, because the umask is not visible from Java.
      */
     private static void giveTheStagingFileTheModeTheDestinationShouldHave(
-            java.nio.file.Path staging, java.nio.file.Path destination) {
+            java.nio.file.Path staging, java.nio.file.Path destination, ExportResult result) {
         try {
             if (!staging.getFileSystem().supportedFileAttributeViews().contains("posix")) {
                 return;
@@ -425,10 +458,17 @@ public class FilesystemExporter {
                 Files.setPosixFilePermissions(staging, mode);
             }
         } catch (Exception notPosixOrNotPermitted) {
-            // Best effort. A mode that could not be set is not a reason to refuse an export
-            // — the bytes are the record — but it IS a reason to say so.
+            // Best effort on the MODE — the bytes are the record, so this is not a reason to
+            // refuse the export. But the first version only logged, and that is fail-open:
+            // the export reported SUCCESS while the file came out 0600, and a backup agent
+            // or group reader simply cannot read it, with nothing in the response saying so.
+            // errors is what turns the status to "partial"; a caller who does not care can
+            // ignore it, one who does can see it. A round-6 review named the silent half.
             log.warn("Could not give " + staging + " the permissions " + destination
                     + " should have; the exported file may be owner-only", notPosixOrNotPermitted);
+            result.errors.add("The exported file " + destination.getFileName()
+                    + " may be owner-only: its permissions could not be set ("
+                    + notPosixOrNotPermitted.getMessage() + "). The bytes are complete.");
         }
     }
 

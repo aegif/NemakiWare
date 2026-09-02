@@ -276,6 +276,124 @@ class ConnectorDefinitionControllerPartialPutTest {
     }
 
     // ────────────────────────────────────────────────────────────────────
+    // The retryable refusal reaches the client as retryable
+    // ────────────────────────────────────────────────────────────────────
+
+    @Test
+    void theRetryableRefusalReachesTheClientAs503() {
+        // BEHAVIOURAL, beside the source lock, because a round-6 audit listed the source
+        // lock's defeat: `update()` names SERVICE_UNAVAILABLE twice (the masked-secret gate
+        // and this catch), so rewording the CATCH to a 500 keeps both `contains()` green
+        // while the retryable condition reaches clients as a 500 again — the exact defect
+        // the lock was written for. Driving a thrown ConnectorIndexNotReadyException through
+        // the controller cannot be fooled by spelling.
+        ConnectorDefinition stored = payload(true);
+        stored.setCredentialRef("real-ref");
+        when(connectorDefinitionService.get(eq("conn-1"))).thenReturn(stored);
+        when(connectorDefinitionService.update(any())).thenThrow(
+                new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                        "the index has not caught up"));
+
+        ConnectorDefinition def = payload(true);
+        def.setCredentialRef("another-real-ref");
+        var res = controller.update("conn-1", def);
+
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                res.getStatusCode(),
+                "a transient, retryable refusal reached the client as something else — a "
+                        + "caller that would have succeeded on retry opens a ticket instead");
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // The mask gate covers BOTH secrets, and the CREATE side
+    // ────────────────────────────────────────────────────────────────────
+
+    @Test
+    void aMaskedWebhookSecretIsNotWrittenEither() {
+        // The webhook twin. The first masked-secret test sent only credentialRef, so the
+        // `|| webhookSecret` half of the gate could be deleted with every test green — the
+        // one-arm shape, inside the guard OF was added for, named by a round-6 audit.
+        when(connectorDefinitionService.get(eq("conn-1"))).thenReturn(null);
+
+        ConnectorDefinition def = payload(true);
+        def.setWebhookSecret("[configured]");
+
+        var res = controller.update("conn-1", def);
+
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                res.getStatusCode(),
+                "a masked webhookSecret with no row to restore it from was written as the "
+                        + "secret — webhook validation then compares against the literal "
+                        + "placeholder");
+        verify(connectorDefinitionService, never()).update(any());
+    }
+
+    @Test
+    void aCreateCarryingTheMaskIsRefused() {
+        // The POST arm. Round 5 gated the PUT; a round-6 sibling sweep found create()
+        // accepting "[configured]" and storing the literal sentinel — a connector that can
+        // never authenticate, created with a 201. On create there is nothing to restore
+        // the mask from, so it is a 400 (the request can never be right), not a 503.
+        ConnectorDefinition def = payload(true);
+        def.setCredentialRef("[configured]");
+        // Unused on the healthy tree — the gate answers before the service is reached. It
+        // is here for the CONTROL (ON): with the gate removed, an unstubbed create() returns
+        // null and the controller NPEs on created.getConnectorId(), so the runner scored the
+        // firing as "broke the harness" rather than the lock's own assertion. Stubbed, the
+        // sabotaged flow completes with a 201 and the assertEquals below is what fails.
+        when(connectorDefinitionService.create(any())).thenReturn(def);
+
+        var res = controller.create(def);
+
+        assertEquals(org.springframework.http.HttpStatus.BAD_REQUEST, res.getStatusCode(),
+                "a create carrying the placeholder was accepted, so the literal string "
+                        + "\"[configured]\" is stored as the credential");
+        verify(connectorDefinitionService, never()).create(any());
+    }
+
+    @Test
+    void aCreateCarryingAMaskedWebhookSecretIsRefusedToo() {
+        // The webhook arm of the CREATE gate. The gate itself was written as an OR from the
+        // start, but the lock above and control ON exercise only the credentialRef clause —
+        // so `|| "[configured]".equals(def.getWebhookSecret())` could be deleted with
+        // everything green. That is the SAME one-arm gap this round closed on the PUT side
+        // as A5 (aMaskedWebhookSecretIsNotWrittenEither + OR), sitting inside a gate the
+        // same round added. A parallel review caught it after the sweep; the sweep could
+        // not have — no control measured the clause.
+        ConnectorDefinition def = payload(true);
+        def.setCredentialRef("a-real-credential-ref");
+        def.setWebhookSecret("[configured]");
+        // Unused on the healthy tree — the gate answers first. Present for the control
+        // (OT): with the webhook clause narrowed away, an unstubbed create() returns null
+        // and the controller NPEs before the assertion, which the runner scores as broken
+        // harness rather than a firing. Same rationale as the stub in the credentialRef
+        // twin above.
+        when(connectorDefinitionService.create(any())).thenReturn(def);
+
+        var res = controller.create(def);
+
+        assertEquals(org.springframework.http.HttpStatus.BAD_REQUEST, res.getStatusCode(),
+                "a create carrying the masked webhook placeholder was accepted, so the "
+                        + "literal string \"[configured]\" is stored as the webhook secret "
+                        + "and every webhook signature check compares against it");
+        verify(connectorDefinitionService, never()).create(any());
+    }
+
+    @Test
+    void aCreateWithRealValuesStillWorks() {
+        // The boundary of the new gate.
+        ConnectorDefinition def = payload(true);
+        def.setCredentialRef("a-real-credential-ref");
+        when(connectorDefinitionService.create(any())).thenReturn(def);
+
+        var res = controller.create(def);
+
+        assertEquals(org.springframework.http.HttpStatus.CREATED, res.getStatusCode(),
+                "an ordinary create was refused by the mask gate: " + res.getBody());
+        verify(connectorDefinitionService).create(any());
+    }
+
+    // ────────────────────────────────────────────────────────────────────
     // Non-admin must still be refused (regression)
     // ────────────────────────────────────────────────────────────────────
 

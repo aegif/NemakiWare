@@ -84,4 +84,21 @@ class StagingFilesAreNotImportableTest {
                 "the importer no longer skips staging files, so a leftover half-written "
                         + "export is ingested as a document");
     }
+
+    @Test
+    @DisplayName("the ZIP importer consults the rule too — the same consumer, one format over")
+    void theZipImporterConsultsTheRuleToo() throws Exception {
+        // Round 5 added the skip to FilesystemImporter and stopped. ZipImporter walks the
+        // same kind of tree (an administrator can zip a filesystem-export directory and
+        // upload it as the custom format) with the same exclusion list — sidecars and
+        // version files — so a .part file inside the archive was imported as a document
+        // carrying the truncated bytes of a failed export. A round-6 sibling sweep found
+        // it; the one-arm shape, across two importers this time.
+        String source = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/rest/importexport/ZipImporter.java"));
+        assertTrue(source.contains("isExportStagingFile(path)"),
+                "the ZIP importer no longer skips staging files, so a leftover half-written "
+                        + "export inside an uploaded archive is ingested as a document");
+    }
 }

@@ -557,7 +557,14 @@ public class ZipImporter {
             importTypeDefinitions(repositoryId, zf, result);
 
             for (String path : entryNames) {
-                if (path.endsWith(META_SUFFIX) || isVersionFile(path)) {
+                if (path.endsWith(META_SUFFIX) || isVersionFile(path)
+                        || isExportStagingFile(path)) {
+                    // The staging residue a failed FILESYSTEM export can leave. An
+                    // administrator who zips such a directory and uploads it as the custom
+                    // format was handing the truncated bytes of the failed copy to this loop,
+                    // which imported them as an ordinary document — the FilesystemImporter
+                    // got this skip in round 5 and this, the same consumer one format over,
+                    // did not. A sibling sweep caught it.
                     continue;
                 }
 

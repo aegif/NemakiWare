@@ -309,9 +309,52 @@ class CloudantViewFailuresAreNotEmptyAnswersTest {
         CloudantClientWrapper wrapper = new CloudantClientWrapper(cloudant, "bedroom",
                 new tools.jackson.databind.ObjectMapper());
 
-        assertThrows(CmisRuntimeException.class,
+        CmisRuntimeException refused = assertThrows(CmisRuntimeException.class,
                 () -> wrapper.queryViewPaged("_repo", "archivesByArchivedAt",
                         jp.aegif.nemaki.model.couch.CouchArchive.class, 0, 10, false));
+        assertTrue(refused.getMessage().contains("carries no document"),
+                "refused by some other guard: " + refused.getMessage());
+        // The refusal must ARRIVE as itself. This method ends in a bare catch (Exception)
+        // that logged the deliberate refusal at ERROR and wrapped it one layer deeper — and
+        // this test stayed green under the wrap, because the wrapper quotes the message it
+        // wrapped. Same trap OH/OI closed for the two count methods; a round-6 sibling
+        // sweep found the paged twins still wrapping.
+        assertFalse(refused.getMessage().contains("CouchDB paged view query failed"),
+                "the refusal was caught by this method's own catch-all and re-wrapped as an "
+                        + "unexpected error: " + refused.getMessage());
+    }
+
+    @Test
+    @DisplayName("a KEYED paged row without its document refuses too — it had no lock at all")
+    @SuppressWarnings("unchecked")
+    void aDocumentlessKeyedPagedRowRefusesToo() {
+        // queryViewPagedWithKey carries the same documentless-row refusal as its unkeyed
+        // twin, and no test reached it: the only keyed paged test drove the TRANSPORT
+        // failure, which legitimately lands in the catch-all. So the keyed rethrow arm —
+        // and the refusal itself — could be deleted with everything green.
+        Cloudant cloudant = mock(Cloudant.class);
+        ServiceCall<ViewResult> call = mock(ServiceCall.class);
+        Response<ViewResult> response = mock(Response.class);
+        com.ibm.cloud.cloudant.v1.model.ViewResultRow row =
+                mock(com.ibm.cloud.cloudant.v1.model.ViewResultRow.class);
+        when(row.getDoc()).thenReturn(null);
+        ViewResult result = mock(ViewResult.class);
+        when(result.getTotalRows()).thenReturn(1L);
+        when(result.getRows()).thenReturn(java.util.List.of(row));
+        when(response.getResult()).thenReturn(result);
+        when(call.execute()).thenReturn(response);
+        when(cloudant.postView(any(PostViewOptions.class))).thenReturn(call);
+        CloudantClientWrapper wrapper = new CloudantClientWrapper(cloudant, "bedroom",
+                new tools.jackson.databind.ObjectMapper());
+
+        CmisRuntimeException refused = assertThrows(CmisRuntimeException.class,
+                () -> wrapper.queryViewPagedWithKey("_repo", "searchableArchives", "document",
+                        jp.aegif.nemaki.model.couch.CouchArchive.class, 0, 10, false));
+        assertTrue(refused.getMessage().contains("carries no document"),
+                "refused by some other guard: " + refused.getMessage());
+        assertFalse(refused.getMessage().contains("CouchDB paged view query failed"),
+                "the keyed refusal was re-wrapped by its own catch-all: "
+                        + refused.getMessage());
     }
 
     @SuppressWarnings("unchecked")

@@ -6052,3 +6052,104 @@ NI のコメントにも同じ文言で書いた。
 
 どちらも「片腕だけ測る」形で、**この一連で 4 度目**。今回は本番コードではなく**測定器の側**で起きた。
 コントロールは **194 本**。
+
+#### 第 6 巡 (Codex 兄弟掃討 + サブエージェント判別力監査) — **第 5 巡の直しの隣に、同じ形が 5 つ**
+
+対象は第 5 巡の直しだけ。観点を分けた 2 人で、**片腕・同ファイルのもう一方・呼び出し側の catch-all** と
+**「外しても緑」** を並行に掘った。
+
+**注: この節の時点で修正は書いただけで、未測定** (発火確認・通し・スイートは、修正への
+レビュー 2 巡が収束してから — 本巡からの手順)。
+
+##### 兄弟掃討 (Codex) の結果 — メソッド × arm
+
+| 第 5 巡の直し | 検査した arm | 判定 |
+|---|---|---|
+| staging + move (content) | overwrite=`ATOMIC_MOVE` / 既定=素 move / fallback 有無 / 直書き残存 | **不合格 — sidecar が直書きのまま**。`FileWriter` は overwrite で既存 `.meta.json` を**先に切り詰める**ので、書きかけで死ぬと**中身は守られ metadata が消える** (P1)。content と同じ helper 経由に変更、呼び出し 4 か所を錠で数える |
+| mode 借用/実測 | 失敗窓 / probe 失敗 / 非 POSIX | **不合格 — fail-open**。mode 設定失敗が log.warn だけで、export は**成功と報告**しながら 0600 のファイルを渡す (P2)。`result.errors` に報告し status を partial に |
+| importer skip | prefix+suffix / ディレクトリ部 / **ZIP 側** | 述語と FilesystemImporter は合格。**ZipImporter が不合格** — 同じ消費者が 1 形式隣で `.part` を文書として取り込む (P2)。同じ述語で skip |
+| コネクタ PUT 503 | 復元経路 / 実値 PUT / webhookSecret 対称性 / **POST** | PUT の腕は合格。**POST (create) が不合格** — `"[configured]"` をそのまま保存し 201 (P2)。create には復元元が無いので **400** で拒否 |
+| count rethrow (OH/OI) | 同クラスの他メソッド | count 2 本は合格。**paged 2 本 (`queryViewPaged`/`WithKey`) が同じ再ラップ** (P3)。rethrow 腕を追加。keyed 側は**拒否そのものに錠が無かった**ので錠も追加 |
+| DiscardableOutputStream | 3 overload / close / bypass | **合格** — bypass 経路なし |
+| preflight | 中断時の scope 沈黙 | **不合格** — mid-run `SystemExit` (コンパイル失敗・restore 不緑) は**どの本数が未実行かを言わずに**切れる (P2)。中断時に未実行 id を列挙。部分実行 (`SUBSET`) も冒頭と末尾で明示 |
+
+##### 判別力監査 (サブエージェント) の結果
+
+| 指摘 | 直し |
+|---|---|
+| **A1** `theRetryableRefusalHasItsOwnType` は `update()` 内に SERVICE_UNAVAILABLE が 2 回あるため、**catch だけ 500 に戻しても緑** | 綴りでは騙せない**挙動錠** (`ConnectorIndexNotReadyException` を投げて 503 を表明) + コントロール OS |
+| **A2** `anUpdateRefusesRetryably` の assertFalse が**綴り 1 つ**を留めており、rev をローカルに逃がすと緑。保護行 (§採用拒否) に**コントロールが 1 本も無い** | assertFalse を `deterministic.getRev` の**存在**に緩め (採用には rev が要る; rev 無しの上書きは CouchDB の標準挙動では 409 になるはず — **本巡では未実測**の外部挙動であり、錠はそこに依存しない)、採用を復元する OQ を追加 |
+| **A5** masked webhookSecret の腕に**テストが無い** — `\|\|` 節を消しても全緑 | 錠 `aMaskedWebhookSecretIsNotWrittenEither` + 絞りを測る OR |
+| **B1** NU の `what=` が「NV が array overload」— 実際は **NX が array、NV は flush** | ラベル訂正 |
+| **C1/C2** 部分実行と中断が scope を言わない | 上の preflight 行と同じ直し |
+| A3 (`theImporterConsultsTheRule` の dead-code 化) / A4 (`existing.isEmpty()`→`false`) | **記録のみ** — どちらも OE / OA のアンカーが drift して preflight が全体を止める (tripwire)。錠単体では防げないことを錠のコメントに書く形は取らず、この台帳に書く |
+| A6 (`aNonNumericReductionThrows` の包み) | **記録のみ** — 包める catch-all は keyed count のものだけで、その rethrow は `aKeyedCountSeparatesMalformedFromEmpty` の assertFalse が押さえている (推移的に閉)。2 つのテストが別メソッドに分かれたら再開 |
+
+**残す記録**: ZIP export (stream 直書き) には staging に相当する mode 問題は無い。
+`ATOMIC_MOVE` を要求できない FS では拒否する設計は**過剰 throw ではなく**、保証が黙って弱い move に
+化けることを防ぐ側 (Codex も同判定)。legacy コネクタ移行には触れていない。
+
+コントロールは **203 本** (OK〜OS の 9 本追加)。
+
+##### 修正へのレビュー 1 巡目 (収束前) が捕まえたもの
+
+- **OD のアンカーが、この巡の OM 対応 (呼び出しの 3 引数化) で死んでいた** — OA と同型の自傷 drift。
+  preflight は fail-closed なので嘘にはならないが、初回実行は**全 203 本拒否**だった。張り直し済み。
+- **ON は gate を外すと NPE で「WRONG REASON」判定**になる (未 stub の create が null を返す)。
+  錠側に control 専用の stub を足して、自前の assertEquals で落ちる形にした。
+- **sidecar の TOCTOU (exists と move の間に出現) が 500 / 版打ち切りに化けていた**。
+  見えている競合と同じ「記録して続行」に統一 (競合の**拒否**自体は正しい — 旧 FileWriter は
+  黙って上書きしており、それは `allowOverwrite=false` 違反だった)。
+- runner: **green-after 前に中断したコントロールが completed に数えられ、未実行列挙から漏れる** /
+  **全 id 明示指定が SUBSET と誤表示** — completed の判定を green-after 後に移し、
+  SUBSET 述語を「本数が少ない」に変えた。
+
+##### 修正へのレビュー 2 巡目 (収束確認)
+
+判定は両者一致で **NOT CONVERGED → 残り 1 点のみ**: **OK のアンカーが、1 巡目で入れた TOCTOU の
+try 包みでまた死んでいた** (OA・OD に続く、同じ巡での自傷 drift の 3 例目)。レビュアーが逐語で
+処方した find/replace (一致 1 回・細工後に錠が自前の assertEquals で落ちるところまで机上検証済み)
+をそのまま適用し、メモリ上 preflight を再実行して **203 本全アンカー一致・全 expect_fail 宣言済み**を
+確認した。他は全項目 clean (OD / ON の閉じ方、レース腕 2 本の継続、`copyLeavingTheTargetIntactOnFailure`
+5 出現、runner ループ差分が completed_ids 1 行のみ、self-test 19/19、台帳整合)。
+
+**ここで収束と判定** — 2 巡目の唯一の指摘は機械的な張り直しで、その修正文自体がレビュー済みのため。
+測定 (個別発火 → 203 本通し → フルスイート) はこの後。
+
+##### 第 6 巡の測定 (収束後)
+
+| 段 | 結果 |
+|---|---|
+| 新錠 5 クラスの健全実行 | 67/0 |
+| 新規/張り直しコントロール 10 本の個別発火 (`OD OK OL OM ON OO OP OQ OR OS`) | 10/10 (SUBSET 表示「193 controls not measured by this run」を実地確認) |
+| **203 本通し** | **203/203 発火**。5 時間 8 分。DID NOT FIRE / WRONG TEST FIRED / FIRED FOR THE WRONG REASON / SWEEP INCOMPLETE いずれも 0 |
+| 通し後チェック | `.nc-backup` 0 件、`RssFeedService` の `limit != null && limit > 0` 両腕健在 |
+| フルスイート (通しの後) | **6518/0** (Failures 0 / Errors 0 / Skipped 0、1058 クラス、live TCK 群込み。6509 + 新錠 9 本) |
+
+**まだ主張できないこと** (この巡の測定が届いていない範囲):
+- sidecar の TOCTOU 腕と mode 失敗報告は**ソース錠 + コントロール**で持っており、
+  途中死・chmod 失敗そのものを注入した挙動測定ではない (fixture から注入できない)。
+- 「rev 無し上書きは CouchDB が 409」は未実測の外部挙動 (錠はそこに依存しない)。
+- A3/A4 の dead-code 化は OE / OA のアンカー drift (preflight 停止) が tripwire で、錠単体では防げない。
+- legacy コネクタ行の重複経路 (§62) は**未解決の P1 のまま**。この増分では着手していない。
+
+手順どおり、通しとレビューは重ねず (レビュー 2 巡収束 → 個別発火 → 通し → スイート)、
+通し中に細工対象ファイルを欠陥として読むこともしていない。コミットは未実施 (依頼待ち)。
+
+##### 通し後の並行レビュー — 第 6 巡の門の中に、同じ巡の A5 がもう一度
+
+**POST 門の webhookSecret 腕が未測定だった。** 門自体は最初から OR で書かれていたが、
+錠 `aCreateCarryingTheMaskIsRefused` と ON は credentialRef 腕しか通らない —
+`|| "[configured]".equals(def.getWebhookSecret())` を消しても両方緑。
+PUT 側では**この同じ巡に** A5 として錠 + OR で閉じた形が、同じ巡が足した CREATE 側で再発した。
+203/203 の通しがこれを見逃したのは正しい動作で、**その節を測るコントロールが存在しなかった**。
+
+閉じ方 (指示どおり最小): 錠 `aCreateCarryingAMaskedWebhookSecretIsRefusedToo` (実 credential +
+マスク webhook の POST → 400、create 不呼び出し) + コントロール **OT** (webhook 節だけを絞る)。
+個別発火 **1/1** (SUBSET 表示「203 controls are NOT measured by this run」も動作)。
+健全木でクラス 15/0。
+
+コントロールは **204 本**。**通し実績 203/203 は OT を含まない** — OT は個別発火のみで、
+204 本通しとフルスイートの再走は依頼があるまで行わない。sidecar の
+`FileAlreadyExistsException` 以外 (ディスク満杯など) が呼び出し側へ抜ける点は、
+「ソース錠どまり」と同じ届かなさとして**開かない** (並行レビューと同判定)。

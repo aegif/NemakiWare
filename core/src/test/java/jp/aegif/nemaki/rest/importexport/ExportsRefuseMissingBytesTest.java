@@ -642,6 +642,90 @@ class ExportsRefuseMissingBytesTest {
                 "a successful export left staging files: " + leftoverPartFiles(targetDir));
     }
 
+    @Test
+    @DisplayName("the metadata sidecars go through the staging helper too — no direct write")
+    void theSidecarsGoThroughTheStagingHelperToo() throws Exception {
+        // Round 5 staged the CONTENT copies and left both sidecar writes on FileWriter,
+        // which with allowOverwrite TRUNCATES the existing sidecar before writing — so a
+        // mid-write failure destroys the old complete metadata while the bytes beside it
+        // are protected. The importer then reads the document without its type and
+        // properties. Same-file one-arm shape, fifth occurrence; a round-6 sibling sweep
+        // caught it. Structural, because a mid-write disk-full cannot be injected through
+        // the fixtures: what is decidable at the source is that every write to the export
+        // tree goes through the one protected method.
+        String source = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/rest/importexport/FilesystemExporter.java"));
+        assertFalse(source.contains("new FileWriter("),
+                "a direct FileWriter write is back in the exporter, so an overwrite "
+                        + "truncates the destination before the new bytes are safe");
+        int calls = countOf(source, "copyLeavingTheTargetIntactOnFailure(") - 1;
+        assertEquals(4, calls,
+                "the staging helper must be called from exactly four sites — document "
+                        + "content, version content, document sidecar, version sidecar — "
+                        + "but " + calls + " call(s) were found; an arm has been detached "
+                        + "from the protection");
+    }
+
+    @Test
+    @DisplayName("a mode that could not be set reaches the RESPONSE, not only the log")
+    void aModeFailureIsReportedNotJustLogged() throws Exception {
+        // The round-5 mode fix caught its own failure and only logged — fail-open: the
+        // export said SUCCESS while the file came out 0600 and a backup agent cannot read
+        // it. A POSIX permission failure cannot be injected through these fixtures either,
+        // so the decidable property is that the catch feeds result.errors (which is what
+        // turns the response status to "partial").
+        String source = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/rest/importexport/FilesystemExporter.java"));
+        String body = jp.aegif.nemaki.util.test.JavaSource.methodBody(source,
+                "private static void giveTheStagingFileTheModeTheDestinationShouldHave(");
+        assertTrue(body.contains("result.errors.add("),
+                "the mode-failure catch no longer reports into result.errors, so an export "
+                        + "whose file came out unreadable reports clean success: " + body);
+    }
+
+    private static int countOf(String haystack, String needle) {
+        int count = 0;
+        int at = haystack.indexOf(needle);
+        while (at >= 0) {
+            count++;
+            at = haystack.indexOf(needle, at + needle.length());
+        }
+        return count;
+    }
+
+    @Test
+    @DisplayName("overwriting an existing SIDECAR still replaces it — the staged positive")
+    void anOverwrittenSidecarIsReplacedToo(@TempDir Path targetDir) throws Exception {
+        // The positive half of routing sidecars through the helper: a helper that refused
+        // or skipped the metadata write would leave stale metadata beside new content,
+        // which is quieter than the truncation it replaced.
+        Folder root = folder("f1", "records");
+        Document doc = documentWithContent("d1", "report.pdf");
+
+        Path metaPath = targetDir.resolve("report.pdf" + ImportExportUtils.META_SUFFIX);
+        Files.writeString(metaPath, "{\"stale\": true}");
+
+        ContentService cs = mock(ContentService.class);
+        when(cs.getChildren(eq(REPO), eq("f1"))).thenReturn(Arrays.<Content>asList(doc));
+        when(cs.lastUnreadableChildCount()).thenReturn(0);
+        when(cs.getAttachment(eq(REPO), eq("att-d1")))
+                .thenReturn(readableAttachment("att-d1", "bytes".getBytes()));
+
+        ExportResult result = new FilesystemExporter().exportToFilesystemDirectory(
+                REPO, root, targetDir, mock(CallContext.class), true, cs);
+
+        assertTrue(result.errors.isEmpty(), "the overwrite failed: " + result.errors);
+        String written = Files.readString(metaPath);
+        assertFalse(written.contains("stale"),
+                "the sidecar still holds the OLD metadata beside newly exported content");
+        assertTrue(written.contains("report.pdf"),
+                "the replaced sidecar does not describe the document: " + written);
+        assertTrue(leftoverPartFiles(targetDir).isEmpty(),
+                "the sidecar write left staging files: " + leftoverPartFiles(targetDir));
+    }
+
     /** Staging files the copy should have cleaned up or moved. */
     private static List<String> leftoverPartFiles(Path dir) throws Exception {
         try (var entries = Files.list(dir)) {

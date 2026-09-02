@@ -58,6 +58,20 @@ public class ConnectorDefinitionController {
     public ResponseEntity<Map<String, Object>> create(@RequestBody ConnectorDefinition def) {
         ResponseEntity<Map<String, Object>> forbidden = requireDefaultRepositoryAdmin();
         if (forbidden != null) return forbidden;
+        if ("[configured]".equals(def.getCredentialRef())
+                || "[configured]".equals(def.getWebhookSecret())) {
+            // "[configured]" is the mask GET hands out in place of a stored secret. On an
+            // UPDATE it can be legitimate — it means "keep what is stored" and is restored
+            // from the row. On a CREATE there is no row to restore from, so the literal
+            // string would be saved AS the credential and the connector could never
+            // authenticate. The PUT side gained this gate in round 5; a sibling sweep found
+            // the POST arm open. 400, not 503: nothing transient is happening — the request
+            // itself carries a value that cannot ever be right here.
+            return errorResponse(HttpStatus.BAD_REQUEST,
+                    "\"[configured]\" is the placeholder this API returns in place of a"
+                            + " stored secret, not a value. A new connector has no stored"
+                            + " secret to keep; send the real credentialRef/webhookSecret.");
+        }
         try {
             ConnectorDefinition created = connectorDefinitionService.create(def);
             Map<String, Object> response = new LinkedHashMap<>();

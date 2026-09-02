@@ -97,9 +97,18 @@ class ConnectorCreationRefusesAnIndexDisagreementTest {
         assertTrue(afterTheCreateArm.contains("throw new ConnectorIndexNotReadyException"),
                 "the update path no longer refuses, so a request assembled against a "
                         + "selector that missed is written over the real connector: " + body);
-        assertFalse(afterTheCreateArm.contains("doc.setRev(deterministic.getRev())"),
-                "the update path adopts the deterministic row again — the fix that "
-                        + "destroyed configuration: " + body);
+        // Pins the ADOPTION, not one spelling of it. The first version matched the exact
+        // call `doc.setRev(deterministic.getRev())`, and a round-6 audit listed the defeat:
+        // hoist the rev into a local (`String r = deterministic.getRev(); doc.setRev(r);`)
+        // — the very move that broke OA's anchor in this same round — and the lock stays
+        // green. Any adoption needs the deterministic row's revision from somewhere, so its
+        // presence is what is pinned; an "adoption" WITHOUT the rev writes against a
+        // missing _rev and CouchDB answers 409, which is still a refusal, not the silent
+        // overwrite.
+        assertFalse(afterTheCreateArm.contains("deterministic.getRev"),
+                "the update path reads the deterministic row's revision after the create "
+                        + "arm — the only reason to do that is to adopt the row, which is "
+                        + "the withdrawn fix that destroyed configuration: " + body);
     }
 
     @Test

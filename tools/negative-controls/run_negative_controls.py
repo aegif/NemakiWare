@@ -1774,7 +1774,7 @@ CONTROLS = [
     ),
     dict(
         id="NU",
-        what="the stopped sink still forwards single bytes (NV covers the array overload)",
+        what="the stopped sink still forwards single bytes (NX covers the array overload, NV the flush)",
         file="core/src/main/java/jp/aegif/nemaki/rest/importexport/ImportExportUtils.java",
         # DiscardableOutputStream has THREE guards after stopForwarding — write(int),
         # write(byte[],int,int) and flush() — and one control covered one of them. The
@@ -1896,7 +1896,11 @@ CONTROLS = [
         # staging fix silently turned every exported file from 0644 into 0600. Two
         # reviewers read that change without catching it; measuring the actual mode
         # on disk did.
-        find='            giveTheStagingFileTheModeTheDestinationShouldHave(staging, destination);\n',
+        # Re-anchored in round 6: the OM fix gave the call a third argument (result), which
+        # killed this anchor — the same self-inflicted drift OA suffered a round earlier.
+        # The fix-review preflight caught it at review time, before any run: without it the
+        # first contact would have refused all 203 controls.
+        find='            giveTheStagingFileTheModeTheDestinationShouldHave(staging, destination, result);\n',
         replace='',
         test='ExportsRefuseMissingBytesTest',
         expect_fail=['aStagedExportKeepsTheModeAnOrdinaryCreateWouldGive'],
@@ -1987,6 +1991,146 @@ CONTROLS = [
         replace='        public void stopForwarding() {\n        }',
         test="DiscardableOutputStreamTest",
         expect_fail=["aStoppedSinkDelegatesNothing"],
+    ),
+    dict(
+        id="OK",
+        what='the DOCUMENT sidecar is a direct truncating write again (round-5 staged only the content)',
+        file='core/src/main/java/jp/aegif/nemaki/rest/importexport/FilesystemExporter.java',
+        # Files.write truncates in place, exactly what the FileWriter did: with
+        # allowOverwrite a mid-write failure destroys the old complete metadata while
+        # the content beside it is staged. The lock counts the helper's call sites, so
+        # detaching one arm cannot pass as a refactor.
+        # Re-anchored a SECOND time in round 6: the TOCTOU fix wrapped this call in a
+        # try block, which moved it one indent level deeper and killed the anchor —
+        # the third self-inflicted drift of the round (OA, OD, now OK). Caught by the
+        # convergence review's in-memory preflight, before any run.
+        find='                        copyLeavingTheTargetIntactOnFailure(\n                                new java.io.ByteArrayInputStream(\n                                        metadata.toJSONString().getBytes(StandardCharsets.UTF_8)),\n                                metaPath, allowOverwrite, result);',
+        replace='                        java.nio.file.Files.write(metaPath,\n                                metadata.toJSONString().getBytes(StandardCharsets.UTF_8));',
+        test='ExportsRefuseMissingBytesTest',
+        expect_fail=['theSidecarsGoThroughTheStagingHelperToo'],
+    ),
+    dict(
+        id="OL",
+        what='the ZIP importer reads a half-written filesystem export as a document again',
+        file='core/src/main/java/jp/aegif/nemaki/rest/importexport/ZipImporter.java',
+        # FilesystemImporter got this skip in round 5; ZipImporter — the same consumer
+        # one format over — did not, and an admin who zips an export directory with a
+        # .part leftover was importing the truncated bytes of a failed copy. A round-6
+        # sibling sweep found it.
+        find='                if (path.endsWith(META_SUFFIX) || isVersionFile(path)\n                        || isExportStagingFile(path)) {',
+        replace='                if (path.endsWith(META_SUFFIX) || isVersionFile(path)) {',
+        test='StagingFilesAreNotImportableTest',
+        expect_fail=['theZipImporterConsultsTheRuleToo'],
+    ),
+    dict(
+        id="OM",
+        what='a mode that could not be set is only logged again — the export reports clean success',
+        file='core/src/main/java/jp/aegif/nemaki/rest/importexport/FilesystemExporter.java',
+        # The round-5 mode fix caught its own failure and log.warn'd it: fail-open. The
+        # export said SUCCESS while the file came out 0600 and a backup agent cannot
+        # read it. The report into result.errors is what turns the status to partial.
+        find='            result.errors.add("The exported file " + destination.getFileName()\n                    + " may be owner-only: its permissions could not be set ("\n                    + notPosixOrNotPermitted.getMessage() + "). The bytes are complete.");',
+        replace='',
+        test='ExportsRefuseMissingBytesTest',
+        expect_fail=['aModeFailureIsReportedNotJustLogged'],
+    ),
+    dict(
+        id="ON",
+        what='a connector CREATE stores the literal "[configured]" as the credential again',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionController.java',
+        # Round 5 gated the PUT; the POST arm stayed open and stored the mask sentinel
+        # as the real credential — a connector that can never authenticate, created
+        # with a 201. A round-6 sibling sweep found it.
+        find_span=('        if ("[configured]".equals(def.getCredentialRef())\n                || "[configured]".equals(def.getWebhookSecret())) {',
+                   '+ " secret to keep; send the real credentialRef/webhookSecret.");\n        }'),
+        replace='',
+        test='ConnectorDefinitionControllerPartialPutTest',
+        expect_fail=['aCreateCarryingTheMaskIsRefused'],
+    ),
+    dict(
+        id="OO",
+        what='the unkeyed paged refusal is re-wrapped by its own catch-all as a crash',
+        file='core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CloudantClientWrapper.java',
+        # Same shape OH closed for queryViewCount: the documentless-row refusal raised
+        # inside the try was logged at ERROR as unexpected and wrapped one layer deeper.
+        # The lock's message assertion alone passed under the wrap (the wrapper quotes
+        # what it wrapped); the anti-wrap assertFalse is what this fires.
+        find_span=('\t\t} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException refusal) {\n\t\t\t// A deliberate refusal (documentless row, unreadable properties) on its way out.',
+                   '\t\t\t// twins still wrapping.\n\t\t\tthrow refusal;'),
+        replace='',
+        test='CloudantViewFailuresAreNotEmptyAnswersTest',
+        expect_fail=['aDocumentlessPagedRowRefusesThePage'],
+    ),
+    dict(
+        id="OP",
+        what='the KEYED paged refusal is re-wrapped — its lock did not exist before round 6',
+        file='core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CloudantClientWrapper.java',
+        # The keyed twin had NO test reaching its documentless-row refusal at all (the
+        # only keyed paged test drove the transport failure), so this arm and the
+        # refusal behind it were deletable with everything green.
+        find='\t\t} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException refusal) {\n\t\t\t// Same rethrow rule as the unkeyed twin above.\n\t\t\tthrow refusal;',
+        replace='',
+        test='CloudantViewFailuresAreNotEmptyAnswersTest',
+        expect_fail=['aDocumentlessKeyedPagedRowRefusesToo'],
+    ),
+    dict(
+        id="OQ",
+        what='an UPDATE adopts the deterministic row again — the withdrawn fix that destroyed configuration',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        # Restores the withdrawn round-4 fix: adopt the row because _id and _rev are in
+        # hand. On this path the request was assembled against the SAME selector that
+        # just missed, so it carries "[configured]" where the credential belongs —
+        # adoption writes that over the real configuration. No control anchored this
+        # block before; a round-6 audit listed the cheap defeats of the source lock and
+        # this anchor is the tripwire half of the answer (the loosened assertFalse on
+        # deterministic.getRev is the other half).
+        find_span=('            throw new ConnectorIndexNotReadyException("connector " + def.getConnectorId()',
+                   'caught up.");'),
+        replace='            doc.setId(deterministic.getId());\n            doc.setRev(deterministic.getRev());',
+        test='ConnectorCreationRefusesAnIndexDisagreementTest',
+        expect_fail=['anUpdateRefusesRetryably'],
+    ),
+    dict(
+        id="OR",
+        what='the PUT mask gate narrows to credentialRef only — the webhook arm reopens',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionController.java',
+        # OF removes the whole gate, so a NARROWING — deleting just the webhookSecret
+        # clause — kept OF firing and every test green: no test PUT a masked webhook
+        # secret with the read-back missing. The one-arm shape inside the guard OF was
+        # added for, named by a round-6 audit.
+        find='        if (existing == null\n                && ("[configured]".equals(def.getCredentialRef())\n                        || "[configured]".equals(def.getWebhookSecret()))) {',
+        replace='        if (existing == null\n                && "[configured]".equals(def.getCredentialRef())) {',
+        test='ConnectorDefinitionControllerPartialPutTest',
+        expect_fail=['aMaskedWebhookSecretIsNotWrittenEither'],
+    ),
+    dict(
+        id="OS",
+        what='the retryable refusal reaches the client as a 500 again',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionController.java',
+        # The source lock's defeat, listed by a round-6 audit: update() names
+        # SERVICE_UNAVAILABLE twice, so rewording only the CATCH to a 500 keeps both
+        # contains() green. The behavioural lock drives a thrown
+        # ConnectorIndexNotReadyException through the controller and cannot be fooled
+        # by spelling; this control measures that lock.
+        find_span=('        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {',
+                   '            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());'),
+        replace='        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {\n            return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage());',
+        test='ConnectorDefinitionControllerPartialPutTest',
+        expect_fail=['theRetryableRefusalReachesTheClientAs503'],
+    ),
+    dict(
+        id="OT",
+        what="the CREATE mask gate narrows to credentialRef only — the webhook arm reopens",
+        file="core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionController.java",
+        # The CREATE twin of OR. ON removes the WHOLE gate, so a narrowing — deleting just
+        # the webhookSecret clause — kept ON firing and every test green: no test POSTed a
+        # masked webhook secret. The same one-arm gap this round closed on the PUT side
+        # (A5), reproduced inside the gate this round added. A parallel review caught it
+        # AFTER the 203-sweep, which could not have: no control measured the clause.
+        find='        if ("[configured]".equals(def.getCredentialRef())\n                || "[configured]".equals(def.getWebhookSecret())) {',
+        replace='        if ("[configured]".equals(def.getCredentialRef())) {',
+        test="ConnectorDefinitionControllerPartialPutTest",
+        expect_fail=["aCreateCarryingAMaskedWebhookSecretIsRefusedToo"],
     ),
     dict(
         id="MO",
@@ -2503,71 +2647,104 @@ def main() -> None:
         # that already miscounted its own controls twice would miscount them a third time.
         raise SystemExit(f"unknown control id(s): {sorted(unknown)}; known: {sorted(known)}")
     controls = [c for c in CONTROLS if not wanted or c["id"] in wanted]
+    is_subset = len(controls) < len(CONTROLS)
+    if is_subset:
+        # "2/2 controls fired" from a subset run reads exactly like a complete sweep, and
+        # the 192-vs-194 bookkeeping this output forced had to be reconstructed by hand in
+        # the ledger. A partial measurement must say its own scope. The predicate is the
+        # COUNT, not "ids were named": naming all of them is a full run and must read as
+        # one.
+        print(f"running {len(controls)} of {len(CONTROLS)} controls — a SUBSET; "
+              f"{len(CONTROLS) - len(controls)} controls are NOT measured by this run")
     results = []
-    for control in controls:
-        path = REPO / control["file"]
-        backup = path.with_suffix(path.suffix + ".nc-backup")
-        original = path.read_text()
-        # The backup hits disk BEFORE the production file is touched, so a Ctrl-C anywhere
-        # in the mutation window leaves a recoverable copy; startup (below, in main) restores
-        # any leftover backup from a previous interrupted run before doing anything else.
-        backup.write_text(original)
-        print(f"[{control['id']}] {control['what']}")
-        sabotaged = sabotage_text(original, control)
-        try:
-            path.write_text(sabotaged)
-            green, failed, report_text = run_test(control["test"])
-            if green:
-                # The finally below still restores, and the green-after re-verification after
-                # it still runs — the first version `continue`d past both, leaving the restore
-                # contract untested exactly where a finding was being reported.
-                results.append((control["id"], False,
-                                "the lock stayed GREEN under the sabotage — it protects "
-                                "nothing"))
-                print(f"[{control['id']}] DID NOT FIRE")
-            else:
-                missing = [m for m in control["expect_fail"] if m not in failed]
-                not_assertions = [m for m in control["expect_fail"]
-                                  if m not in missing
-                                  and not failed_as_assertion(report_text, m)]
-                if missing:
+    # Completion means the control's WHOLE cycle finished: sabotage, judgement, restore,
+    # and the green-after re-verification. `results` gains its entry before the restore
+    # half, so an abort in restore or green-after left the current id counted as
+    # "completed" and MISSING from the not-run list — the enumeration lied by one.
+    completed_ids = set()
+    sweep_completed = False
+    try:
+        for control in controls:
+            path = REPO / control["file"]
+            backup = path.with_suffix(path.suffix + ".nc-backup")
+            original = path.read_text()
+            # The backup hits disk BEFORE the production file is touched, so a Ctrl-C anywhere
+            # in the mutation window leaves a recoverable copy; startup (below, in main) restores
+            # any leftover backup from a previous interrupted run before doing anything else.
+            backup.write_text(original)
+            print(f"[{control['id']}] {control['what']}")
+            sabotaged = sabotage_text(original, control)
+            try:
+                path.write_text(sabotaged)
+                green, failed, report_text = run_test(control["test"])
+                if green:
+                    # The finally below still restores, and the green-after re-verification after
+                    # it still runs — the first version `continue`d past both, leaving the restore
+                    # contract untested exactly where a finding was being reported.
                     results.append((control["id"], False,
-                                    f"something failed, but not the expected lock(s) "
-                                    f"{missing}; actual:\n{failed}"))
-                    print(f"[{control['id']}] WRONG TEST FIRED")
-                elif not_assertions:
-                    results.append((control["id"], False,
-                                    f"{not_assertions} failed, but not on the lock's own "
-                                    f"assertion — the sabotage broke the harness, which "
-                                    f"proves nothing about the protection"))
-                    print(f"[{control['id']}] FIRED FOR THE WRONG REASON")
+                                    "the lock stayed GREEN under the sabotage — it protects "
+                                    "nothing"))
+                    print(f"[{control['id']}] DID NOT FIRE")
                 else:
-                    results.append((control["id"], True, failed.splitlines()[0]))
-                    print(f"[{control['id']}] fired: {control['expect_fail']}")
-        finally:
-            # Refuse to restore over a CONCURRENT edit: if the file no longer holds the
-            # sabotage this runner wrote, someone else changed it mid-control, and blindly
-            # writing `original` would silently roll their work back. (Observed for real: a
-            # reviewer watched this tree change under them mid-run.) The backup stays on disk
-            # for hand recovery in that case.
-            current = path.read_text()
-            if current != sabotaged:
+                    missing = [m for m in control["expect_fail"] if m not in failed]
+                    not_assertions = [m for m in control["expect_fail"]
+                                      if m not in missing
+                                      and not failed_as_assertion(report_text, m)]
+                    if missing:
+                        results.append((control["id"], False,
+                                        f"something failed, but not the expected lock(s) "
+                                        f"{missing}; actual:\n{failed}"))
+                        print(f"[{control['id']}] WRONG TEST FIRED")
+                    elif not_assertions:
+                        results.append((control["id"], False,
+                                        f"{not_assertions} failed, but not on the lock's own "
+                                        f"assertion — the sabotage broke the harness, which "
+                                        f"proves nothing about the protection"))
+                        print(f"[{control['id']}] FIRED FOR THE WRONG REASON")
+                    else:
+                        results.append((control["id"], True, failed.splitlines()[0]))
+                        print(f"[{control['id']}] fired: {control['expect_fail']}")
+            finally:
+                # Refuse to restore over a CONCURRENT edit: if the file no longer holds the
+                # sabotage this runner wrote, someone else changed it mid-control, and blindly
+                # writing `original` would silently roll their work back. (Observed for real: a
+                # reviewer watched this tree change under them mid-run.) The backup stays on disk
+                # for hand recovery in that case.
+                current = path.read_text()
+                if current != sabotaged:
+                    raise SystemExit(
+                        f"[{control['id']}] {control['file']} changed while the control ran — "
+                        f"NOT restoring over the concurrent edit; the pre-sabotage copy is at "
+                        f"{backup}")
+                path.write_text(original)
+                backup.unlink(missing_ok=True)
+            green_after, failed_after, _ = run_test(control["test"])
+            if not green_after:
                 raise SystemExit(
-                    f"[{control['id']}] {control['file']} changed while the control ran — "
-                    f"NOT restoring over the concurrent edit; the pre-sabotage copy is at "
-                    f"{backup}")
-            path.write_text(original)
-            backup.unlink(missing_ok=True)
-        green_after, failed_after, _ = run_test(control["test"])
-        if not green_after:
-            raise SystemExit(
-                f"[{control['id']}] the tree is NOT green after restore — stop and look:\n"
-                + failed_after)
+                    f"[{control['id']}] the tree is NOT green after restore — stop and look:\n"
+                    + failed_after)
+            completed_ids.add(control["id"])
+        sweep_completed = True
+    finally:
+        # The anchors preflight stops STALE controls from cutting the sweep short, but a
+        # mid-run SystemExit (a test class that does not compile, a restore that is not
+        # green) still truncates it — and the output said which control died, never that
+        # the sweep was PARTIAL or which controls were left unmeasured. Scope-silence is
+        # the same defect the subset line above closes, on the abort path.
+        if not sweep_completed:
+            not_run = [c["id"] for c in controls if c["id"] not in completed_ids]
+            print(f"\nSWEEP INCOMPLETE: {len(completed_ids)} of {len(controls)} controls "
+                  f"completed; NOT fully measured (including any that died mid-run): "
+                  f"{not_run}")
     print("\n== summary ==")
     fired = sum(1 for _, ok, _ in results if ok)
     for cid, ok, note in results:
         print(f"  {cid}: {'FIRED' if ok else 'DID NOT FIRE — ' + note}")
-    print(f"{fired}/{len(results)} controls fired")
+    if is_subset:
+        print(f"{fired}/{len(results)} controls fired (SUBSET — "
+              f"{len(CONTROLS) - len(results)} controls not measured by this run)")
+    else:
+        print(f"{fired}/{len(results)} controls fired")
     if fired != len(results):
         sys.exit(1)
 

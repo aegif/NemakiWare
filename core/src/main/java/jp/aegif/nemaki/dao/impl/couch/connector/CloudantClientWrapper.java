@@ -1745,6 +1745,13 @@ public class CloudantClientWrapper {
 			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
 					"View " + designDoc + "/" + viewName + " is not deployed in database '"
 							+ databaseName + "', so it cannot answer", e);
+		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException refusal) {
+			// A deliberate refusal (documentless row, unreadable properties) on its way out.
+			// Without this arm the catch-all below logged it at ERROR as an unexpected
+			// failure and wrapped it one layer deeper — same shape the two count methods
+			// were given rethrow arms for in round 5; a sibling sweep found these two paged
+			// twins still wrapping.
+			throw refusal;
 		} catch (Exception e) {
 			// An empty page + totalRows 0 presented a FAILED read as an empty trash, and the
 			// fail-closed listing one layer up never saw it. (This catch also wraps the
@@ -1874,6 +1881,9 @@ public class CloudantClientWrapper {
 			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
 					"View " + designDoc + "/" + viewName + " is not deployed in database '"
 							+ databaseName + "', so it cannot answer", e);
+		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException refusal) {
+			// Same rethrow rule as the unkeyed twin above.
+			throw refusal;
 		} catch (Exception e) {
 			// Same as the unkeyed twin above.
 			log.error("Error in queryViewPagedWithKey " + designDoc + "/" + viewName + ": " + e.getMessage(), e);
