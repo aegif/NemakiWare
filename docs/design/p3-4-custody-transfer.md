@@ -6321,3 +6321,34 @@ create 側には錠 `aCreateRefusesWhenTheScanCannotRead` があり、**update �
 測定の現在値 (再掲・確定): 通し **203/203 (第 6 巡の木)**、OT〜PG の 14 本は個別発火のみ、
 **217 本通しは未実施**。フルスイートは**最終木で実施済み — 6545/0** (PF/PG まで入れた後、
 コミット前。以後 Java 変更なし)。
+
+##### チップ 2 件の消化 (指示による順: チップ → 全量通し → push → 常設デモ)
+
+**1. scan 分類不能時の UPDATE を 503 に** (「直すなら」の実施)。型分けは throw 箇所で:
+create は既存契約 (IllegalStateException → 400、錠あり) のまま、update だけ
+`ConnectorIndexNotReadyException` に包み直す — コントローラの既存 503 写像 (挙動錠あり) が
+運ぶ。錠 `anUpdateWhoseScanCannotReadRefusesRetryablyToo` + コントロール **PH** (型分けを
+外すと update が 500 に戻る)。PA / PG は分割後の形に張り直し。
+
+**2. deleteType の足場の残骸を撤去** (「消すか死体と明記するか」の前者)。
+`DeleteTypeFilter.java` (341 行、登録は web.xml でコメントアウト済み・doFilter も無条件素通し)
+と `NemakiBrowserBindingServlet.handleDeleteTypeDirectly` (呼び出しゼロ) を削除、web.xml の
+コメント化された登録ブロックも除去、servlet 内の「is bypassed」旧注記 2 か所を「removed」に。
+どちらも `TypeService.deleteTypeDefinition` を**直呼び**しており、蘇生すると
+`findChildTypes` を通らない型削除が戻る — 錠 `DeleteTypeBypassStaysRemovedTest` 3 本
+(filter の不在 / servlet に直呼びなし / web.xml に足場なし) が再来を見張る。
+生きている迂回 (REST `TypeResource`、非 CMIS 契約) は対象外のまま。
+
+コントロールは **218 本** (PH 追加)。この節の時点で両修正とも**未測定** (レビュー収束後に測る)。
+
+##### チップ 2 件のレビュー収束と測定
+
+レビュー 1 巡目: Codex は CONVERGED、サブエージェントが **2 件 + nit** —
+(F1) **web.xml の撤去が `<filter>` 半分だけで、コメント化された `<filter-mapping>`
+(小文字 `deleteTypeFilter`) が残存**。錠は大文字綴りしか見ておらず、**禁じた状態の上で緑**
+だった (綴り違いの 2 半分、という網の狭さ)。mapping ブロックを削除し、錠を
+case-insensitive 化。(F2) 新錠に PA/PG 下の NPE ロンダリング対策 stub が無い →
+兄弟と同形で追加。(nit) PH コメントの尻切れ → 完結。適用後 preflight 218 本全一致で**収束**。
+
+測定: 影響 4 クラス健全 **49/0** → PH / 張り直し PA / PG の個別発火 **3/3**
+(PH は「型違いこそ錠の主張」なので assertThrows の型不一致で落ちるのが正しい形)。

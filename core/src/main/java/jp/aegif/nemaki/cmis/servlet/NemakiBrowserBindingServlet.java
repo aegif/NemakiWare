@@ -492,7 +492,8 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 log.debug("deleteType request detected - delegating to standard CMIS pipeline");
             }
             
-            // QUERY HANDLING: Let parent CmisBrowserBindingServlet handle queries now that DeleteTypeFilter is bypassed
+            // QUERY HANDLING: the parent CmisBrowserBindingServlet handles queries (the
+            // DeleteTypeFilter that once intercepted them is removed)
             if ("query".equals(cmisaction)) {
                 // No direct handling - let the parent class handle query processing completely
             }
@@ -1900,118 +1901,15 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         }
     }
     
-    /**
-     * Handle deleteType requests directly since OpenCMIS 1.2.0-SNAPSHOT bypasses the configured service factory.
-     * This is a critical workaround for the service factory routing issue.
-     */
-    private void handleDeleteTypeDirectly(HttpServletRequest request, HttpServletResponse response, String pathInfo) throws Exception {
-        log.debug("=== DIRECT DELETE TYPE HANDLER START ===");
+    // The direct deleteType handler that lived here (a workaround for the abandoned
+    // OpenCMIS 1.2.0-SNAPSHOT's service-factory routing bug) was DEAD CODE with zero
+    // callers, removed together with the equally dead DeleteTypeFilter. Reviving either
+    // would reintroduce a type deletion that does not pass TypeManager.deleteTypeDefinition
+    // and therefore skips findChildTypes — the dependency check the standard pipeline
+    // guarantees. Browser Binding deleteType goes through the standard CMIS pipeline; the
+    // only sanctioned bypass is the REST admin API (TypeResource), which owns its own,
+    // explicitly non-CMIS contract.
 
-        // SECURITY FIX: Verify the requesting user is an admin.
-        // deleteType is a repository-level administrative operation per CMIS spec.
-        org.apache.chemistry.opencmis.commons.server.CallContext deleteTypeCallContext =
-            (org.apache.chemistry.opencmis.commons.server.CallContext) request.getAttribute("CallContext");
-        if (deleteTypeCallContext == null) {
-            throw new org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException("Authentication required for deleteType operation");
-        }
-        Boolean isAdmin = (Boolean) deleteTypeCallContext.get("is_admin");
-        if (isAdmin == null || !isAdmin) {
-            throw new org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException("Admin privilege required for deleteType operation");
-        }
-
-        // Extract repository ID from path
-        String[] pathParts = pathInfo != null ? pathInfo.split("/") : new String[0];
-        if (pathParts.length < 2) {
-            throw new IllegalArgumentException("Invalid path for deleteType operation: " + pathInfo);
-        }
-        String repositoryId = pathParts[1]; // pathParts[0] is empty, pathParts[1] is repository ID
-        
-        // Extract type ID from parameters (handle multipart parsing)
-        String typeId = null;
-        String contentType = request.getContentType();
-        
-        // JAKARTA EE 10 FIX: Simplify parameter extraction - let OpenCMIS handle multipart
-        // DO NOT call getParts() here as it consumes the InputStream
-        typeId = request.getParameter("typeId");
-
-        if (typeId == null && contentType != null && contentType.startsWith("multipart/form-data")) {
-            // For multipart, try using HttpUtils but without consuming the stream
-            try {
-                typeId = org.apache.chemistry.opencmis.server.shared.HttpUtils.getStringParameter(request, "typeId");
-            } catch (Exception e) {
-                log.debug("Could not extract typeId from multipart - will be handled by OpenCMIS");
-            }
-        }
-        
-        if (typeId == null || typeId.isEmpty()) {
-            throw new IllegalArgumentException("typeId parameter is required for deleteType operation");
-        }
-        
-        
-        
-        try {
-            // Get the TypeService from Spring context to perform the deletion
-            org.springframework.context.ApplicationContext applicationContext = 
-                jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext();
-            
-            if (applicationContext == null) {
-                throw new RuntimeException("Spring ApplicationContext is not available");
-            }
-            
-            // Get TypeService bean
-            jp.aegif.nemaki.businesslogic.TypeService typeService = 
-                (jp.aegif.nemaki.businesslogic.TypeService) applicationContext.getBean("TypeService");
-            
-            if (typeService == null) {
-                throw new RuntimeException("TypeService bean is not available");
-            }
-            
-            
-            
-            // Call the actual deletion method
-            typeService.deleteTypeDefinition(repositoryId, typeId);
-            
-            
-            
-            // CRITICAL FIX: Get TypeManager and refresh cache (matching REST implementation logic)
-            jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager = 
-                (jp.aegif.nemaki.cmis.aspect.type.TypeManager) applicationContext.getBean("TypeManager");
-            
-            if (typeManager != null) {
-                
-                typeManager.refreshTypes();
-                
-            } else {
-                
-            }
-            
-            // Return empty success response (HTTP 200 with empty body, matching OpenCMIS behavior)
-            response.setStatus(HttpServletResponse.SC_OK);
-            response.setContentType("application/json");
-            response.setCharacterEncoding("UTF-8");
-            
-            try (java.io.PrintWriter writer = response.getWriter()) {
-                // Empty JSON response - this matches what OpenCMIS returns for successful deleteType
-                writer.write("");
-            }
-            
-            
-            
-        } catch (Exception e) {
-            
-            e.printStackTrace();
-            throw e; // Re-throw to be handled by the calling method
-        }
-        
-        
-    }
-    
-    /**
-     * REMOVED: handleQueryDirectly method - queries now delegated to parent CmisBrowserBindingServlet
-     * since DeleteTypeFilter is bypassed and parent class can handle queries properly.
-     */
-    // REMOVED: handleQueryDirectly method - queries now delegated to parent CmisBrowserBindingServlet
-    // since DeleteTypeFilter is bypassed and parent class can handle queries properly.
     
     /**
      * CRITICAL FIX: Override doPost to force interception of POST requests.

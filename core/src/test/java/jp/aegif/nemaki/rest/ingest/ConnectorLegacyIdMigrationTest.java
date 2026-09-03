@@ -740,6 +740,36 @@ class ConnectorLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("an UPDATE whose scan cannot READ a row refuses retryably too — not a 500")
+    void anUpdateWhoseScanCannotReadRefusesRetryablyToo() {
+        // The closure-time record: the scan's unprovable-uniqueness refusal is an
+        // IllegalStateException, which the create controller maps to 400 (locked) and the
+        // update controller does not catch — so an update during that moment answered 500.
+        // No twin was written, but the condition is as transient as every other
+        // rebuilding-index refusal, and 500 is what opens tickets. The service now
+        // re-types it for updates; the controller's existing 503 mapping (already locked
+        // behaviourally) carries it out.
+        wire();
+        selectorAnswersNothing();
+        deterministicReadAnswers("murky", null);
+        listingAnswers(List.of(row(null, null, null)));
+        // Unused on the healthy tree — the scan refuses first. Here for PA/PG: under those
+        // sabotages the flow completes to a write, and an unstubbed postDocument would NPE
+        // inside assertThrows and be laundered into a passable failure — the shape this
+        // file's own PA/PE comments forbid. Same one-liner as the three siblings above.
+        writesSucceed();
+
+        ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused =
+                assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                        () -> service.update(validDefinition("murky")),
+                        "an update whose uniqueness scan could not read a row escaped as "
+                                + "some other type — the controller answers 500 for it");
+        assertTrue(refused.getMessage().contains("cannot be established"),
+                "re-typed by some other arm: " + refused.getMessage());
+        verify(cloudant, never()).postDocument(any(PostDocumentOptions.class));
+    }
+
+    @Test
     @DisplayName("an UPDATE with a clean scan still writes — the upsert semantics survive")
     void anUpdateWithACleanScanStillWrites() {
         wire();

@@ -2224,7 +2224,9 @@ CONTROLS = [
         # to prevent — exactly what a review showed the failed-migration path doing.
         # Re-anchored: the scan gained its UPDATE arm in the same review round, so the
         # block now carries both refusals and removing it opens both at once.
-        find_span=('            if (aConnectorRowExistsIndexFree(cloudant, dbName, def.getConnectorId())) {\n                if (creating) {',
+        # Re-anchored: the scan call gained the unprovable-row type-split (503 for
+        # updates), so the block now begins at the local declaration.
+        find_span=('            boolean someRowDefinesThisConnector;\n            try {',
                    'caught up.");\n            }\n'),
         replace='',
         test='ConnectorLegacyIdMigrationTest',
@@ -2298,10 +2300,25 @@ CONTROLS = [
         # PA removes the whole block; a NARROWING keeps PA's create half firing and
         # every update green while a real-value PUT writes the divergent twin with a
         # 200. The one-arm shape, measured directly.
-        find='            if (aConnectorRowExistsIndexFree(cloudant, dbName, def.getConnectorId())) {\n',
-        replace='            if (creating && aConnectorRowExistsIndexFree(cloudant, dbName, def.getConnectorId())) {\n',
+        # Re-anchored to the split shape: the narrowing now short-circuits the scan
+        # inside the try, which also keeps the unprovable arm reachable for create.
+        find='            boolean someRowDefinesThisConnector;\n            try {\n                someRowDefinesThisConnector =\n                        aConnectorRowExistsIndexFree(cloudant, dbName, def.getConnectorId());',
+        replace='            boolean someRowDefinesThisConnector;\n            try {\n                someRowDefinesThisConnector = creating\n                        && aConnectorRowExistsIndexFree(cloudant, dbName, def.getConnectorId());',
         test='ConnectorLegacyIdMigrationTest',
         expect_fail=['anUpdateOverAnInvisibleLegacyRowRefusesRetryably'],
+    ),
+    dict(
+        id="PH",
+        what="an update whose scan cannot read a row escapes as a 500 again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        # The closure-time record made real: unwrap the type-split and the unprovable
+        # refusal reaches the update controller untyped — a 500 that opens tickets and
+        # carries no retry hint, for a condition as transient as an index rebuild.
+
+        find='            } catch (IllegalStateException unprovable) {\n                // The scan could not CLASSIFY a row, so uniqueness is unprovable right now.\n                // For a CREATE that stays the existing contract (IllegalStateException →\n                // 400, with its own lock). For an UPDATE it used to escape as a 500 —\n                // recorded at closure time as "twin-free but unlocked" — while the\n                // condition is exactly as transient as the rebuilding-index refusals this\n                // exception exists for. A retry reads the row and proceeds.\n                if (creating) {\n                    throw unprovable;\n                }\n                throw new ConnectorIndexNotReadyException(unprovable.getMessage());\n            }',
+        replace='            } catch (IllegalStateException unprovable) {\n                throw unprovable;\n            }',
+        test="ConnectorLegacyIdMigrationTest",
+        expect_fail=["anUpdateWhoseScanCannotReadRefusesRetryablyToo"],
     ),
     dict(
         id="MO",

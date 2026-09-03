@@ -308,7 +308,23 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
             // ordering closed the window only when the pass completes cleanly, and a
             // review showed the failed-pass path recreating the exact divergent twin the
             // migration exists to prevent. _all_docs cannot under-report.
-            if (aConnectorRowExistsIndexFree(cloudant, dbName, def.getConnectorId())) {
+            boolean someRowDefinesThisConnector;
+            try {
+                someRowDefinesThisConnector =
+                        aConnectorRowExistsIndexFree(cloudant, dbName, def.getConnectorId());
+            } catch (IllegalStateException unprovable) {
+                // The scan could not CLASSIFY a row, so uniqueness is unprovable right now.
+                // For a CREATE that stays the existing contract (IllegalStateException →
+                // 400, with its own lock). For an UPDATE it used to escape as a 500 —
+                // recorded at closure time as "twin-free but unlocked" — while the
+                // condition is exactly as transient as the rebuilding-index refusals this
+                // exception exists for. A retry reads the row and proceeds.
+                if (creating) {
+                    throw unprovable;
+                }
+                throw new ConnectorIndexNotReadyException(unprovable.getMessage());
+            }
+            if (someRowDefinesThisConnector) {
                 if (creating) {
                     throw new IllegalStateException("Connector already exists: "
                             + def.getConnectorId() + " (found by an index-free scan; neither"
