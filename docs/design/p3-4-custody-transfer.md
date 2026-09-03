@@ -6352,3 +6352,15 @@ case-insensitive 化。(F2) 新錠に PA/PG 下の NPE ロンダリング対策 
 
 測定: 影響 4 クラス健全 **49/0** → PH / 張り直し PA / PG の個別発火 **3/3**
 (PH は「型違いこそ錠の主張」なので assertThrows の型不一致で落ちるのが正しい形)。
+
+##### 全量通しとフルスイート (指示順の 2 段目)
+
+| 段 | 結果 |
+|---|---|
+| **218 本全量通し** | **218/218 発火**。5 時間 32 分。DID NOT FIRE / WRONG TEST FIRED / FIRED FOR THE WRONG REASON / SWEEP INCOMPLETE 全て 0。`.nc-backup` 残留 0 |
+| 通し後チェック | `RssFeedService` の `limit != null && limit > 0` 両腕健在、tree clean |
+| **フルスイート (通しの後)** | **6549/0** (Failures/Errors/Skipped 全て 0、live TCK 込み。6545 + チップ 2 件の新錠 4 本) |
+
+これで OT〜PH を含む**全コントロールが通しで測定済み**になった (それまでは第 6 巡の
+203/203 + 個別発火のみ、という状態を台帳が区別して持っていた)。この後は指示順どおり
+push → 常設デモ (avenue) 反映。
