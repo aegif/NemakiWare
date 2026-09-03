@@ -6305,3 +6305,19 @@ runner の分類器まで読んだ机上トレースが捕まえた)。処方ど
 **このデプロイで §62 の P1 は「未解決」から「閉鎖」に移る。** 残るのは記録済みの最狭残余
 (UPDATE + 未移行 legacy + 再構築中 → 503 で拒否 — divergent を作る経路は create / update とも
 scan が塞ぎ、移行が起動ごとに掃除する)。
+
+##### 閉鎖後の点検 (並行レビュー) — 記録 1 件
+
+閉鎖 4 点 (contentOnly の除外・スキャン両腕・RELEASE_NOTES の整合・OQ の 2 行アンカー) は
+現物一致の確認を受けた。残る記録:
+
+**スキャンが行を分類できないときの UPDATE 側は 500。** 投げるのは `IllegalStateException` で、
+create のコントローラは 400 に写すが、update の catch は `IllegalArgumentException` と
+`ConnectorIndexNotReadyException` だけなので素通りする。**twin は書かない** (throw は書込みの前)
+ので静かな喪失ではなく、症状は「分類できない行が conf DB にある間、update が 500」。
+create 側には錠 `aCreateRefusesWhenTheScanCannotRead` があり、**update 側には錠が無い**。
+データ損失ではないため、レビューの判定どおり**今は記録で足りる** (直すなら 503 化 + 錠 1 本)。
+
+測定の現在値 (再掲・確定): 通し **203/203 (第 6 巡の木)**、OT〜PG の 14 本は個別発火のみ、
+**217 本通しは未実施**。フルスイートは**最終木で実施済み — 6545/0** (PF/PG まで入れた後、
+コミット前。以後 Java 変更なし)。
