@@ -150,6 +150,14 @@ public class NemakiPatchInitializationListener implements ServletContextListener
         "patch_RetentionSecondaryTypes",
         "patch_RetentionExpirationView",
         "patch_RetentionLastModificationView",
+        // §62: the connector-id migration must run before
+        // patch_DefaultCloudDriveConnectorProfile, whose existence check is a Mango
+        // selector. Alphabetical remainder ordering happens to do this today ("C" < "D"),
+        // but the dependency is real — pin it, per this list's own advice above. The
+        // migration was ALSO missing from this path entirely at first (registered only as
+        // an anonymous inline bean, which getBeansOfType cannot see) — the exact RC4 (R1)
+        // trap this class documents; a review caught it before first contact.
+        "patch_ConnectorDefinitionDeterministicIds",
     };
 
     private void applyPatchesFromSpringContext(WebApplicationContext springContext) {

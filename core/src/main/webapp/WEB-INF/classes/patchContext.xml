@@ -265,6 +265,19 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- §62: legacy generated-id connector rows are rewritten under their
+				     deterministic ids. MUST come before
+				     Patch_DefaultCloudDriveConnectorProfile: that patch's existence check is
+				     a Mango selector, and with the legacy row migrated first, even a selector
+				     whose index is rebuilding cannot lead to a duplicate — the id-addressed
+				     check inside create() sees the deterministic row. Always-run, historyless
+				     and ungated (reads only _all_docs and id-addressed gets); the class
+				     javadoc carries the full argument. -->
+				<bean class="jp.aegif.nemaki.patch.Patch_ConnectorDefinitionDeterministicIds">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 				<!-- Default cloud drive connector/profile definitions -->
 				<bean class="jp.aegif.nemaki.patch.Patch_DefaultCloudDriveConnectorProfile">
 					<property name="patchUtil">
@@ -575,6 +588,11 @@
 		</property>
 	</bean>
 	<bean id="patch_ChatContextMetadataSecondaryType" class="jp.aegif.nemaki.patch.Patch_ChatContextMetadataSecondaryType">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+	<bean id="patch_ConnectorDefinitionDeterministicIds" class="jp.aegif.nemaki.patch.Patch_ConnectorDefinitionDeterministicIds">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

@@ -6153,3 +6153,155 @@ PUT 側では**この同じ巡に** A5 として錠 + OR で閉じた形が、�
 204 本通しとフルスイートの再走は依頼があるまで行わない。sidecar の
 `FileAlreadyExistsException` 以外 (ディスク満杯など) が呼び出し側へ抜ける点は、
 「ソース錠どまり」と同じ届かなさとして**開かない** (並行レビューと同判定)。
+
+##### 意図的残置の再点検 (並行レビュー) — 1 件だけ理由が古かった
+
+残置 6 件 (RSS cursor / ZIP commit 済み 200 / maxItems 4 通り / StartupPhase 窓 /
+SolrUtil の null テキスト / legacy コネクタの別段扱い) は**理由が現物と一致**。
+
+**訂正 — 「CMIS `deleteType` が `findChildTypes` を通らない」は今は成り立たない。**
+現物で確認した現在の経路:
+
+- `DeleteTypeFilter.doFilter` は先頭で無条件に `chain.doFilter` して return しており
+  (「BYPASSED」)、フィルタ内の直接削除呼び出しは**到達不能な死体**。
+- `NemakiBrowserBindingServlet.handleDeleteTypeDirectly` は**宣言だけで呼び出しゼロ**。
+  Browser Binding の `deleteType` は標準パイプライン →
+  `RepositoryServiceImpl` → `TypeManager.deleteTypeDefinition` → **`findChildTypes` を通る**。
+- 生きている迂回は **REST `/type/delete` (`TypeResource`) だけ**。独自の subtype /
+  relationship 検査を持ち、インスタンス検査は**意図的に無い** — 応答の warning 自身が
+  「NemakiWare 固有・CMIS 非準拠・既存文書は base type に落ちる」と述べる、
+  **別契約の管理 API** であって CMIS 経路の穴ではない。
+- `TypeServiceImpl.deleteTypeDefinition` の**非原子** (detail を先に消し、後段失敗で
+  戻さない) は両経路共通で、これは残置として正しいまま。
+
+つまり「CMIS クライアントが子型付きの型を消せる」と読める旧記述は誤り。残るのは
+(a) REST 管理 API の別契約と (b) 非原子、の 2 点。**filter / servlet の死んだ直呼びは
+残置ではなく足場の残骸** — 再有効化すると `findChildTypes` を通らない削除が戻るので、
+消すか死体と明記するかの対象 (今回は記録のみ)。
+
+
+#### §62 の閉鎖 — legacy コネクタ行の確定的 ID 移行 (実装。**この節の時点では未測定**)
+
+残っていた唯一の未解決 P1。生成 ID の旧行は id 直読みの重複検査から見えず、
+「セレクタが索引再構築中に空を答える」瞬間に 2 つ目の定義が書けた —
+アップグレード環境だけが、行ごとに 1 回。
+
+##### 設計 — always-run・履歴なし・ゲート外、の 3 点は全部意図
+
+- **ゲート外**: CMIS view ゲートが守るのは「view を読む存在検査」。この移行は
+  **`_all_docs` と id 直読みしか読まない** (primary index — under-report できない) ので、
+  守る対象が無い。それどころか、§62 の窓が開くのは**索引が再構築中の起動そのもの**なので、
+  健全性でゲートすると**必要なときに走らない**。
+- **履歴なし**: `isApplied()` は view 読み、`createPathHistory()` は生成 ID 書き —
+  WebAuthn の always-run にゲートが要った理由の 2 つ。どちらも使わないことが
+  ゲート外を健全にする条件で、そのことは錠 `theMigrationConsultsNoIndex` が
+  ソースで押さえる (この錠はコントロール無しの tripwire 級 — 宣言的細工で
+  postFind への置換は書けない。A3/A4 と同分類)。
+- **冪等・毎起動**: 移行済み DB では小さな config DB を 1 往復して no-op。
+  失敗行は次の起動が拾う。
+
+##### 移行の 1 行あたりの手順と、選ばないという選択
+
+copy → **copy の存在を確認してから** → **読んだ revision 条件付きで** retire。
+条件付き delete が 409 になったら放置 (並行編集の勝ち)。次の巡で両行が食い違って
+見え、**divergent として毎起動 ERROR 報告**される — 自動でどちらかを選ぶことは、
+この移行が防ごうとしている「設定の静かな喪失」そのものなので、しない。
+
+`Patch_DefaultCloudDriveConnectorProfile` より**前**に登録 (XML 錠 + 並び細工 OY)。
+同一起動内でも: 移行 → default patch のセレクタが空振りしても → create の id 直読みが
+確定的行を見る → 拒否。窓は最初の起動から閉じる。
+
+##### 錠 10 本 + コントロール 6 本 (OU〜OZ、計 210)
+
+| 錠 | 測るもの |
+|---|---|
+| `aLegacyRowIsRewrittenUnderItsDeterministicId` | copy の宛先 id・内容、retire の id・**revision 条件** |
+| `anIdenticalLeftoverTwinIsRetired` | 中断残骸の掃除は書き直さない |
+| `aDivergentTwinIsUntouchedAndReported` | 食い違いは**触らない** (OU: return を消して delete まで落とす) |
+| `aConflictedRetirementIsReportedNotSwallowed` | 409 は failures に載る (OW: 握り潰し) |
+| `anUnansweredListingRefuses` | 列挙不能は throw (OV: quiet break 化) |
+| `anUnclassifiableRowIsALoudFailure` | body 無し行は loud failure |
+| `everythingElseIsLeftAlone` | 確定的行・config・_design は無傷 |
+| `theWalkPagesPastTheFirstPage` | 2 ページ目に届く + startKey 継続 (OZ: 1 ページで打ち切り) |
+| `theMigrationConsultsNoIndex` | postFind / queryView 不使用 (ゲート外の前提) |
+| `theMigrationRunsBeforeTheDefaultConnectorPatch` | XML 登録 (OX: 削除) と並び (OY: 入れ替え) |
+
+意図的残置レビューの指摘 (deleteType の記述が古い) は同じ作業版で訂正済み。
+
+##### 移行へのレビュー 1 巡目 — P1×3 を含む 8 件、全部反映
+
+| 指摘 | 直し |
+|---|---|
+| **P1: 移行が失敗して false を返しても patch 鎖は続行**し、default patch が確定的行を作って**移行が防ぐはずの divergent twin を作る** | 発生箇所で閉じた: **create 経路自体に `_all_docs` の索引不要スキャン**。セレクタ・確定的 ID・移行の 3 つ全部をすり抜ける行があっても、作成側が見つけて拒否する。移行と順序はクリーンアップとして残る (防御は多層) |
+| **P1: ページ境界で行を落とす。** 続きの startKey が「この巡で消した行」だと、CouchDB は次の実在キーから始め、`skip(1)` が**生きた行を捨てる** | `skip(1)` 廃止 → クライアント側で「続きキー自身の再提示」だけを id 比較で落とす。full page なのにカーソルが進まない場合は throw (無限ループも静かな打ち切りもしない) |
+| **P1: divergent の解決指示が実行不可能。** `delete()` はセレクタ一致を**全部**消すので、指示に従うと両方消える | **1 行だけ消す操作を実装**: `DELETE .../connectors/{id}?docId=<行ID>`。行が本当にその connector の定義であることを確認してから消す。ERROR メッセージと RELEASE_NOTES をこの実在する操作に書き換え |
+| P2: 添付を持つ行は `getProperties()` 複製で**添付が消える** | 移行拒否 (報告して残す)。不完全な複製より安全側 |
+| **P2 (両者一致): XML 並び錠が健全木で赤。** 自分の説明コメントが先に class 名を含み、`indexOf` がそれを拾う — **コメントが、コメントの主張を検査する錠を壊した** | bean タグでアンカー。OY はこれで初めて判別可能になる |
+| **C1: fallback patch 経路に移行が不在** (inline bean は `getBeansOfType` に見えない)。fallback が動くのは**まさに劣化した起動** = §62 の窓が開く起動 | top-level bean 追加 + `ORDERED_SEED_PATCHES` に明示 pin (listener 自身の RC4 助言どおり)。錠 `theMigrationIsOnTheFallbackPathToo` |
+| C1b: divergent が立ちっぱなしだと `apply()`=false が**毎起動 fallback の全再適用**を呼ぶ | 戻り値の意味を「pass が走ったか」に変更。divergent は管理者タスクで、再試行で直る条件ではない。ERROR の loudness は維持 |
+| P3: 生成 ID null 行の沈黙 / tombstone 409 の永久再試行 / RELEASE_NOTES のルート誤り・PUT 記述過大 | null-id は loud failure。tombstone は `purgeTombstone` → 1 回だけ再試行 (false なら通常の failure へ)。記述訂正 |
+
+コントロール **215 本** (OU 張り直し + PA〜PE 追加)。preflight (メモリ上) 全一致。**依然未測定**。
+
+##### 移行へのレビュー 2 巡目 (収束確認)
+
+Codex は CONVERGED。サブエージェントは **NOT CONVERGED → 残り 2 件、どちらもテスト側 1 行**:
+PA / PE の細工下で、未 stub の書込みが **assertThrows の中で NPE になり、JUnit が
+AssertionFailedError に包み直すため、runner が「ハーネスの NPE」を発火と誤採点する**
+(ON の教訓の 3 例目 — ただし今回は assertThrows がロンダリングする分だけ発見が難しく、
+runner の分類器まで読んだ机上トレースが捕まえた)。処方どおり `writesSucceed()` を
+2 + 1 (対称) 箇所に追加し、preflight 再実行で 215 本全一致 → **収束と判定**。
+
+**記録 (意図的残置の候補、両レビュアーと同判定)**: UPDATE 側の残余 — 未移行 legacy 行 +
+索引再構築中 + 実値 PUT が同時に成立すると、update は scan を通らず確定的 ID の行を
+新規に書き、divergent twin を作る。ただし帰結は「毎起動 ERROR + one-row delete で解決
+可能」な**うるさい分岐**で、静かな喪失ではない。作成側と移行が閉じた後に残る、
+最も狭い残余として記録する。
+
+測定 (この後): 健全実行 → 新規/張り直し 11 本の個別発火 → **215 本通し** → フルスイート → 実機 1 回。
+
+##### 通し後の並行レビュー (第 3 の目) — 比較の非対称と、scan の UPDATE 片腕
+
+指摘 3 件、全部反映:
+
+| 指摘 | 直し |
+|---|---|
+| **移行の同一判定と copy が `_id`/`_rev` を残す。** 同じクラスの `findBySelector` は mapping 前に剥がしている — その経験則を移行が持たず、内容が同じ 2 行が**永久 divergent** (毎起動の偽 ERROR、しかも処方される解決が「一致している行を消せ」になる)。錠の fixture がそのキーを含まなかったため緑のまま | `contentOnly()` で `_id`/`_rev`/`_attachments` を比較からも copy からも除外。**キーを含む fixture の錠 2 本** + コントロール PF (両錠が落ちることを細工で確認済み) |
+| **scan の UPDATE 片腕。** 実値 PUT + 索引再構築中 + legacy 行のみ、で update が確定的 ID の行を**新規に書き 200** — divergent twin を成功の顔で作る。RELEASE_NOTES は 503 と主張済みでコードが違った | scan を update にも通し、legacy が見えたら `ConnectorIndexNotReadyException` (503・再試行で通る)。錠 + 絞りを測る PG。upsert 意味論の control 錠も追加 |
+| RELEASE_NOTES の「実値 PUT も 503」の理由づけが不正確 | 「見えていない行の上書き・分裂を避けるため。索引が追いつけば同じ PUT が通る」に訂正 (コードが主張に追いついた) |
+
+**手順の記録**: この指摘は 215 本通しの開始**後**に届いた。通しは細工対象ファイルを
+これから直す状態になったため **~30 本時点で停止し、`.nc-backup` 1 件を手動復旧**
+(git diff で意図した 5 ファイル差分のみを確認)。指示どおり**既存 215 のやり直しはせず**、
+新規/変更分 (OQ 曖昧化解消・PA 張り直し・PF/PG) の個別発火 **4/4** のみ。
+なお preflight は OQ の曖昧化を**書いた直後に**捕まえた — scan 腕の throw が
+既存の refusal と同じ書き出しで始まったため。2 行アンカーで解消。
+
+通し実績の現在値: **203/203 (第 6 巡の木)**。その後の追加 14 本 (OT〜PG) は個別発火のみで、
+**215/217 本の通しは未実施** (指示による)。フルスイートはこの後。
+
+##### §62 移行の測定 (収束後) と実機
+
+| 段 | 結果 |
+|---|---|
+| 健全実行 (影響 5 クラス → 最終 3 クラス) | 88/0 → 45/0 |
+| 新規/張り直しコントロール個別発火 | OU〜PE 11/11 → PA/PF/PG/OQ 4/4 (計 **15/15**、全部自前の表明で発火) |
+| フルスイート | **6545/0** (Failures/Errors/Skipped 全て 0、live TCK 込み) |
+| 217 本通し | **未実施** (並行レビューの指示「既存をやり直すな」による。通し実績は第 6 巡の 203/203 のまま。preflight は 217 本全一致をメモリ上で毎回確認) |
+
+**実機 1 回 (docker スタック、実データ)**:
+
+- デプロイ時、実在していた**生成 ID の legacy 行 2 つ** (google-drive-default / onedrive-default) を
+  移行が書き直した: `migrated=2, sweptDuplicates=0, divergent=[], failures=[]`。旧 ID は 404、
+  新 ID で 200。**再起動 (同一 WAR) では no-op** — 追加の移行行もエラーも無し。
+- `POST .../admin/connectors` に `"[configured]"` → **400** (メッセージも実測)。実値 → **201**、
+  保存先は `connector_definition:live-check` (確定的 ID)。索引不要スキャンは通常 create を壊さない。
+- filesystem export: 新規は **640** (umask 由来 — 0600 回帰の不在を実機で確認)、
+  chmod 664 に広げた既存ファイルは **overwrite 後も 664** (mode 借用の実測)。sidecar 併存、
+  `.part` 残留 0。
+- テスト痕跡は全て除去 (root の子 2 件 deleteTree、コネクタ DELETE、コンテナ内 export dir 削除)。
+  実機で唯一出た fail-closed ERROR は、私自身の folderId 空リクエストへの正しい拒否 1 回。
+
+**このデプロイで §62 の P1 は「未解決」から「閉鎖」に移る。** 残るのは記録済みの最狭残余
+(UPDATE + 未移行 legacy + 再構築中 → 503 で拒否 — divergent を作る経路は create / update とも
+scan が塞ぎ、移行が起動ごとに掃除する)。

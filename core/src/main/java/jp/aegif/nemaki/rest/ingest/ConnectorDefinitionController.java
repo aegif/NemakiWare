@@ -173,10 +173,24 @@ public class ConnectorDefinitionController {
     }
 
     @DeleteMapping("/{connectorId}")
-    public ResponseEntity<Map<String, Object>> delete(@PathVariable String connectorId) {
+    public ResponseEntity<Map<String, Object>> delete(@PathVariable String connectorId,
+            @org.springframework.web.bind.annotation.RequestParam(value = "docId",
+                    required = false) String docId) {
         ResponseEntity<Map<String, Object>> forbidden = requireDefaultRepositoryAdmin();
         if (forbidden != null) return forbidden;
-        connectorDefinitionService.delete(connectorId);
+        try {
+            if (docId != null && !docId.isBlank()) {
+                // The divergent-twin resolver. Plain delete removes EVERY selector match,
+                // so "delete the one you do not want" was an instruction with no API that
+                // could follow it — an ERROR message prescribing the impossible, which a
+                // review caught before this ever ran.
+                connectorDefinitionService.delete(connectorId, docId);
+            } else {
+                connectorDefinitionService.delete(connectorId);
+            }
+        } catch (IllegalArgumentException e) {
+            return errorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", "success");
         return ResponseEntity.ok(response);

@@ -2084,7 +2084,10 @@ CONTROLS = [
         # block before; a round-6 audit listed the cheap defeats of the source lock and
         # this anchor is the tripwire half of the answer (the loosened assertFalse on
         # deterministic.getRev is the other half).
-        find_span=('            throw new ConnectorIndexNotReadyException("connector " + def.getConnectorId()',
+        # Span start extended to TWO lines: the update-side scan refusal added in the
+        # same review round begins with the identical first line, and the preflight
+        # refused the ambiguity the moment it appeared.
+        find_span=('            throw new ConnectorIndexNotReadyException("connector " + def.getConnectorId()\n                    + " exists under its deterministic id but the index did not report it."',
                    'caught up.");'),
         replace='            doc.setId(deterministic.getId());\n            doc.setRev(deterministic.getRev());',
         test='ConnectorCreationRefusesAnIndexDisagreementTest',
@@ -2131,6 +2134,174 @@ CONTROLS = [
         replace='        if ("[configured]".equals(def.getCredentialRef())) {',
         test="ConnectorDefinitionControllerPartialPutTest",
         expect_fail=["aCreateCarryingAMaskedWebhookSecretIsRefusedToo"],
+    ),
+    dict(
+        id="OU",
+        what='the divergent-twin arm retires the legacy row anyway — a silent winner is chosen',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        # Removes the early return, so the divergent arm falls through to the
+        # conditional delete: the legacy row's configuration is destroyed on the very
+        # disagreement the migration refuses to resolve. The lock verifies the delete
+        # NEVER happens on divergence.
+        # Re-anchored in the migration fix round: the divergent ERROR message was
+        # rewritten to prescribe the one-row delete (the old text prescribed an
+        # operation that deleted BOTH rows).
+        find='                result.divergent.add(connectorId + " (legacy " + legacyId + " vs "\n                        + deterministicId + ")");\n                logger.error("Connector {} exists as BOTH {} and {} with DIFFERENT content."\n                        + " Neither row was touched. Resolve by deleting the row you do NOT"\n                        + " want: DELETE .../admin/connectors/{}?docId=<one of the two ids"\n                        + " above>", connectorId, legacyId, deterministicId, connectorId);\n                return;',
+        replace='                result.divergent.add(connectorId + " (legacy " + legacyId + " vs "\n                        + deterministicId + ")");',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aDivergentTwinIsUntouchedAndReported'],
+    ),
+    dict(
+        id="OV",
+        what="an unanswered _all_docs listing reads as 'nothing to migrate'",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        # The enumeration failing must throw: a migration that answers 'complete' on a
+        # listing it never received is the failure-as-absence shape one layer up. The
+        # sabotage turns the refusal into a quiet break.
+        find_span=('            if (listing == null || listing.getRows() == null) {',
+                   'startup");\n            }'),
+        replace='            if (listing == null || listing.getRows() == null) {\n                break;\n            }',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['anUnansweredListingRefuses'],
+    ),
+    dict(
+        id="OW",
+        what='a conflicted retirement is logged and swallowed — the pass reports itself clean',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        # Drops the failures entry and keeps only the log line. A concurrent edit that
+        # defeats the conditional delete then leaves both rows behind with the summary
+        # claiming a clean pass — the next startup's divergent report becomes the only
+        # trace, and the patch returned true.
+        find='            result.failures.add(connectorId + " (" + e.getMessage() + ")");\n',
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aConflictedRetirementIsReportedNotSwallowed'],
+    ),
+    dict(
+        id="OX",
+        what='the migration patch is not registered at all',
+        file='core/src/main/webapp/WEB-INF/classes/patchContext.xml',
+        # Deleting the chain entry: the class exists, every unit test of the service
+        # passes, and no startup ever migrates anything — §62 stays open on every
+        # upgraded installation with all Java-side locks green. Only the XML lock sees
+        # registration.
+        find='\t\t\t\t<!-- §62: legacy generated-id connector rows are rewritten under their\n\t\t\t\t     deterministic ids. MUST come before\n\t\t\t\t     Patch_DefaultCloudDriveConnectorProfile: that patch\'s existence check is\n\t\t\t\t     a Mango selector, and with the legacy row migrated first, even a selector\n\t\t\t\t     whose index is rebuilding cannot lead to a duplicate — the id-addressed\n\t\t\t\t     check inside create() sees the deterministic row. Always-run, historyless\n\t\t\t\t     and ungated (reads only _all_docs and id-addressed gets); the class\n\t\t\t\t     javadoc carries the full argument. -->\n\t\t\t\t<bean class="jp.aegif.nemaki.patch.Patch_ConnectorDefinitionDeterministicIds">\n\t\t\t\t\t<property name="patchUtil">\n\t\t\t\t\t\t<ref bean="patchUtil" />\n\t\t\t\t\t</property>\n\t\t\t\t</bean>\n',
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theMigrationRunsBeforeTheDefaultConnectorPatch'],
+    ),
+    dict(
+        id="OY",
+        what='the migration patch runs AFTER the default-connector patch',
+        file='core/src/main/webapp/WEB-INF/classes/patchContext.xml',
+        # The swap: both patches present, order reversed. The one startup that creates
+        # default connectors then runs against the unmigrated state — the exact window
+        # the ordering comment in the XML is about.
+        find='\t\t\t\t<!-- §62: legacy generated-id connector rows are rewritten under their\n\t\t\t\t     deterministic ids. MUST come before\n\t\t\t\t     Patch_DefaultCloudDriveConnectorProfile: that patch\'s existence check is\n\t\t\t\t     a Mango selector, and with the legacy row migrated first, even a selector\n\t\t\t\t     whose index is rebuilding cannot lead to a duplicate — the id-addressed\n\t\t\t\t     check inside create() sees the deterministic row. Always-run, historyless\n\t\t\t\t     and ungated (reads only _all_docs and id-addressed gets); the class\n\t\t\t\t     javadoc carries the full argument. -->\n\t\t\t\t<bean class="jp.aegif.nemaki.patch.Patch_ConnectorDefinitionDeterministicIds">\n\t\t\t\t\t<property name="patchUtil">\n\t\t\t\t\t\t<ref bean="patchUtil" />\n\t\t\t\t\t</property>\n\t\t\t\t</bean>\n\t\t\t\t<!-- Default cloud drive connector/profile definitions -->\n\t\t\t\t<bean class="jp.aegif.nemaki.patch.Patch_DefaultCloudDriveConnectorProfile">\n\t\t\t\t\t<property name="patchUtil">\n\t\t\t\t\t\t<ref bean="patchUtil" />\n\t\t\t\t\t</property>\n\t\t\t\t</bean>\n',
+        replace='\t\t\t\t<!-- Default cloud drive connector/profile definitions -->\n\t\t\t\t<bean class="jp.aegif.nemaki.patch.Patch_DefaultCloudDriveConnectorProfile">\n\t\t\t\t\t<property name="patchUtil">\n\t\t\t\t\t\t<ref bean="patchUtil" />\n\t\t\t\t\t</property>\n\t\t\t\t</bean>\n\t\t\t\t<!-- §62: legacy generated-id connector rows are rewritten under their\n\t\t\t\t     deterministic ids. MUST come before\n\t\t\t\t     Patch_DefaultCloudDriveConnectorProfile: that patch\'s existence check is\n\t\t\t\t     a Mango selector, and with the legacy row migrated first, even a selector\n\t\t\t\t     whose index is rebuilding cannot lead to a duplicate — the id-addressed\n\t\t\t\t     check inside create() sees the deterministic row. Always-run, historyless\n\t\t\t\t     and ungated (reads only _all_docs and id-addressed gets); the class\n\t\t\t\t     javadoc carries the full argument. -->\n\t\t\t\t<bean class="jp.aegif.nemaki.patch.Patch_ConnectorDefinitionDeterministicIds">\n\t\t\t\t\t<property name="patchUtil">\n\t\t\t\t\t\t<ref bean="patchUtil" />\n\t\t\t\t\t</property>\n\t\t\t\t</bean>\n',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theMigrationRunsBeforeTheDefaultConnectorPatch'],
+    ),
+    dict(
+        id="OZ",
+        what='the _all_docs walk stops after its first page',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        # A database with more than one page of config rows silently keeps its legacy
+        # rows: the walk claims completion after page one. The lock builds a full first
+        # page and puts the legacy row on page two.
+        find='            if (listing.getRows().size() < MIGRATION_PAGE) {\n                break;\n            }',
+        replace='            break;',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theWalkPagesPastTheFirstPage'],
+    ),
+    dict(
+        id="PA",
+        what='a CREATE trusts the selector and the deterministic id alone again — the scan is gone',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        # The residual §62 window from the CREATE side: with the index-free scan
+        # removed, a legacy row invisible to a rebuilding selector AND to the
+        # deterministic id lets create() write the divergent twin the migration exists
+        # to prevent — exactly what a review showed the failed-migration path doing.
+        # Re-anchored: the scan gained its UPDATE arm in the same review round, so the
+        # block now carries both refusals and removing it opens both at once.
+        find_span=('            if (aConnectorRowExistsIndexFree(cloudant, dbName, def.getConnectorId())) {\n                if (creating) {',
+                   'caught up.");\n            }\n'),
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aCreateRefusesWhenTheScanFindsALegacyRow',
+                     'anUpdateOverAnInvisibleLegacyRowRefusesRetryably'],
+    ),
+    dict(
+        id="PB",
+        what='the walk processes a re-served continuation row twice',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        # Without the client-side id dedup, the continuation key that still exists is
+        # re-served as the first row of the next page and migrated AGAIN — a second
+        # copy attempt against an id that now exists, and double counting.
+        find='                    if (id.equals(resumeAfterId)) {\n                        // the continuation key itself, re-served because it still exists\n                        continue;\n                    }\n',
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aBoundaryRowIsHandledExactlyOnce'],
+    ),
+    dict(
+        id="PC",
+        what='an attachment-bearing legacy row is migrated without its attachments',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        # getProperties() does not carry attachments; with the guard gone the copy
+        # silently drops them and the retirement destroys the only holder.
+        find_span=('            if (legacy.getAttachments() != null && !legacy.getAttachments().isEmpty()) {',
+                   'drop the attachments first", legacyId);\n                return;\n            }'),
+        replace='            if (legacy.getAttachments() != null && !legacy.getAttachments().isEmpty()) {\n            }',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['anAttachmentBearingRowIsRefused'],
+    ),
+    dict(
+        id="PD",
+        what='a tombstone-blocked copy retries for ever with a cause nothing names',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        # Removes the purge-and-retry arm: the 409 from a tombstoned deterministic id
+        # goes straight to the failure entry, and the row re-fails identically on
+        # every startup.
+        find_span=('                } catch (Exception firstAttempt) {',
+                   '                    } else {\n                        throw firstAttempt;\n                    }\n                }'),
+        replace='                } catch (Exception firstAttempt) {\n                    throw firstAttempt;\n                }',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aTombstoneBlockedCopyIsPurgedAndRetried'],
+    ),
+    dict(
+        id="PE",
+        what='the one-row delete removes rows of OTHER connectors',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        # Narrows the verification to null-props only: an id-addressed delete then
+        # removes any row whatsoever — worse than the divergence it resolves.
+        find='        if (props == null\n                || !ConnectorDefinition.DOC_TYPE.equals(props.get("type"))\n                || !connectorId.equals(props.get("connectorId"))) {',
+        replace='        if (props == null) {',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theOneRowDeleteRefusesAMismatchedRow'],
+    ),
+    dict(
+        id="PF",
+        what='the migration compares and copies storage fields again — identical twins read divergent',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        # findBySelector strips _id/_rev before mapping; the migration's raw-map
+        # comparison did not. Two rows identical in content then stand as DIVERGENT
+        # for ever (a false ERROR each startup), and the copy carries the legacy _rev.
+        find='        Map<String, Object> content = new HashMap<>(props);\n        content.remove("_id");\n        content.remove("_rev");\n        content.remove("_attachments");\n        return content;',
+        replace='        return new HashMap<>(props);',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aTwinDifferingOnlyInStorageFieldsIsIdentical', 'aCopyNeverCarriesStorageFields'],
+    ),
+    dict(
+        id="PG",
+        what='the index-free scan narrows back to CREATE only — the update arm reopens',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        # PA removes the whole block; a NARROWING keeps PA's create half firing and
+        # every update green while a real-value PUT writes the divergent twin with a
+        # 200. The one-arm shape, measured directly.
+        find='            if (aConnectorRowExistsIndexFree(cloudant, dbName, def.getConnectorId())) {\n',
+        replace='            if (creating && aConnectorRowExistsIndexFree(cloudant, dbName, def.getConnectorId())) {\n',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['anUpdateOverAnInvisibleLegacyRowRefusesRetryably'],
     ),
     dict(
         id="MO",
