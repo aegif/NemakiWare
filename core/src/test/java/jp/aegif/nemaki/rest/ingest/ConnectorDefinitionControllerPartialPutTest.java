@@ -304,6 +304,109 @@ class ConnectorDefinitionControllerPartialPutTest {
                         + "caller that would have succeeded on retry opens a ticket instead");
     }
 
+    @Test
+    void aRetryableRefusalOnCreateIsA503() {
+        // The disagreement arm throws on the CREATE path too, and POST mapped only
+        // IllegalArgument/IllegalState — so the same condition answered 500 on POST and 503
+        // on PUT. The profile controller had mapped both since it was written; a review
+        // found the connector arm open.
+        when(connectorDefinitionService.create(any())).thenThrow(
+                new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                        "the two reads disagree"));
+
+        var res = org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> controller.create(payload(true)),
+                "the retryable refusal escaped the POST unmapped — a 500");
+
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
+                "a transient refusal on create reached the client as something else");
+    }
+
+    @Test
+    void aHiddenConnectorIsA503OnGet() {
+        // GET answered 404 for a connector the rebuilding selector could not show.
+        when(connectorDefinitionService.get(eq("conn-1"))).thenReturn(null);
+        when(connectorDefinitionService.existsIndexFree(eq("conn-1"))).thenReturn(true);
+
+        var res = controller.get("conn-1");
+
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
+                "a connector that exists but is invisible to the index read as absent");
+    }
+
+    @Test
+    void anAbsentConnectorIsStill404OnGet() {
+        when(connectorDefinitionService.get(eq("conn-1"))).thenReturn(null);
+        when(connectorDefinitionService.existsIndexFree(eq("conn-1"))).thenReturn(false);
+
+        assertEquals(org.springframework.http.HttpStatus.NOT_FOUND,
+                controller.get("conn-1").getStatusCode(), "every 404 became a 503");
+    }
+
+    @Test
+    void aPartlyFailedDeleteIsRetryable() {
+        // Rows are deleted one at a time with no transaction: a failure part-way leaves some
+        // already gone, and a 500 reads as "nothing happened".
+        org.mockito.Mockito.doThrow(
+                new ConnectorDefinitionServiceImpl.ConnectorPartiallyDeletedException(
+                        "connector conn-1 is PARTLY deleted: 1 of 2 definition row(s) were"
+                                + " removed before the store refused (conflict). Retry to"
+                                + " remove the rest.", new RuntimeException("conflict")))
+                .when(connectorDefinitionService).delete(eq("conn-1"));
+
+        var res = org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> controller.delete("conn-1", null),
+                "the partial failure escaped the controller — a 500");
+
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
+                "a partly deleted connector answered something other than retry");
+        assertTrue(String.valueOf(res.getBody()).contains("PARTLY deleted"),
+                "the 503 came from some other arm than the partial-delete one: " + res.getBody());
+    }
+
+    @Test
+    void aRowDeleteReportsAnUnknownOrLostSurvivorCount() {
+        // 0 means the other twin went concurrently — the connector is GONE, not "a duplicate
+        // tidied". -1 means the count could not answer. Both used to read as an ordinary
+        // success; a review found the caller told the wrong thing in each case.
+        when(connectorDefinitionService.get(eq("conn-1"))).thenReturn(payload(true));
+        when(connectorDefinitionService.delete(eq("conn-1"), eq("legacy-row-9"))).thenReturn(0);
+
+        var gone = controller.delete("conn-1", "legacy-row-9");
+        assertEquals(org.springframework.http.HttpStatus.OK, gone.getStatusCode());
+        assertTrue(String.valueOf(gone.getBody()).contains("the connector is deleted"),
+                "the caller is not told the connector is gone: " + gone.getBody());
+
+        when(connectorDefinitionService.delete(eq("conn-1"), eq("legacy-row-9"))).thenReturn(-1);
+        var unknown = controller.delete("conn-1", "legacy-row-9");
+        assertEquals(org.springframework.http.HttpStatus.OK, unknown.getStatusCode());
+        assertTrue(String.valueOf(unknown.getBody()).contains("could not be established"),
+                "an unknown survivor count was reported as an ordinary success: "
+                        + unknown.getBody());
+    }
+
+    @Test
+    void aStandingTwinPairIsA409OnPut() {
+        // Two rows define the connector and both answer: not transient, not a bad request.
+        // The controller must carry the service's refusal as 409, naming the resolver.
+        ConnectorDefinition stored = payload(true);
+        stored.setCredentialRef("real-ref");
+        when(connectorDefinitionService.get(eq("conn-1"))).thenReturn(stored);
+        when(connectorDefinitionService.update(any())).thenThrow(
+                new ConnectorDefinitionServiceImpl.ConnectorHasTwinRowsException(
+                        "connector conn-1 has 2 definition rows (DELETE ...?docId=...)"));
+
+        ConnectorDefinition def = payload(true);
+        def.setCredentialRef("another-real-ref");
+        var res = org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> controller.update("conn-1", def),
+                "the standing-twin refusal escaped the controller unmapped — a 500");
+
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, res.getStatusCode(),
+                "a standing twin pair answered something other than 409 — a retry that "
+                        + "cannot succeed, or a bad request that was not one");
+    }
+
     // ────────────────────────────────────────────────────────────────────
     // The mask gate covers BOTH secrets, and the CREATE side
     // ────────────────────────────────────────────────────────────────────
@@ -391,6 +494,34 @@ class ConnectorDefinitionControllerPartialPutTest {
         assertEquals(org.springframework.http.HttpStatus.CREATED, res.getStatusCode(),
                 "an ordinary create was refused by the mask gate: " + res.getBody());
         verify(connectorDefinitionService).create(any());
+    }
+
+    @Test
+    void aDeleteThatCannotReadEveryRowIsA503NotASuccess() {
+        // The plain delete is index-free now (a twin the rebuilding index hid used to
+        // survive a "successful" delete). When a row cannot be read the service refuses
+        // retryably; the controller must carry that as 503, not let it escape as 500.
+        org.mockito.Mockito.doThrow(
+                new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                        "connector conn-1 cannot be deleted completely: a row could not be read"))
+                .when(connectorDefinitionService).delete(eq("conn-1"));
+
+        // assertDoesNotThrow, so that a removed mapping fails THIS assertion rather than
+        // erroring out of the test (which the runner scores as the wrong reason).
+        var res = org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> controller.delete("conn-1", null),
+                "the retryable refusal escaped the controller unmapped — a 500");
+
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
+                "a delete that could not read every row answered something other than "
+                        + "retry — either a false success or a 500");
+        // The body, not only the code: this controller answers 503 for two different
+        // conditions (a row that could not be READ, and a delete that removed some rows and
+        // then failed). Without this, either catch satisfies the other's lock — a review
+        // found exactly that after the partial-delete arm was added.
+        assertTrue(String.valueOf(res.getBody()).contains("cannot be deleted completely"),
+                "the 503 came from some other arm than the unreadable-row refusal: "
+                        + res.getBody());
     }
 
     // ────────────────────────────────────────────────────────────────────

@@ -144,7 +144,22 @@ public class FolderConnectorController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
         }
 
-        ImportProfileDefinition profile = importProfileDefinitionService.get(profileId);
+        // The caller's repository decides which row: get() selects on profileId alone, so a
+        // shared profileId (or a profile that only has a legacy generated-id row) answered a
+        // false "no runnable profile". The admin API resolves this way; a review found these
+        // two paths still on the selector. (Run path.)
+        ImportProfileDefinition profile;
+        try {
+            profile = importProfileDefinitionService.getForRepository(profileId, repositoryId);
+        } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException pair) {
+            body.put("status", "error");
+            body.put("message", pair.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+            body.put("status", "error");
+            body.put("message", "import profile " + profileId + " could not be read; retry shortly");
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+        }
         if (!profileBelongsToFolder(profile, repositoryId, folderId)) {
             body.put("status", "error");
             body.put("message", "No runnable profile for this folder: " + profileId);
@@ -230,7 +245,22 @@ public class FolderConnectorController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
         }
 
-        ImportProfileDefinition profile = importProfileDefinitionService.get(profileId);
+        // The caller's repository decides which row: get() selects on profileId alone, so a
+        // shared profileId (or a profile that only has a legacy generated-id row) answered a
+        // false "no runnable profile". The admin API resolves this way; a review found these
+        // two paths still on the selector. (Credential path.)
+        ImportProfileDefinition profile;
+        try {
+            profile = importProfileDefinitionService.getForRepository(profileId, repositoryId);
+        } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException pair) {
+            body.put("status", "error");
+            body.put("message", pair.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+            body.put("status", "error");
+            body.put("message", "import profile " + profileId + " could not be read; retry shortly");
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+        }
         if (!profileBelongsToFolder(profile, repositoryId, folderId)) {
             body.put("status", "error");
             body.put("message", "No runnable profile for this folder: " + profileId);

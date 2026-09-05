@@ -164,6 +164,7 @@ class ExternalIngestControllerGateTest {
         ImportProfileDefinition p = delegatedProfile();
         p.setAllowedConnectorIds(List.of()); // simulate corrupted record
         when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
 
         ResponseEntity<ExternalIngestResult> res = ingest(baseRequest());
         assertEquals(HttpStatus.FORBIDDEN, res.getStatusCode());
@@ -178,6 +179,7 @@ class ExternalIngestControllerGateTest {
         ImportProfileDefinition p = delegatedProfile();
         p.setAllowedConnectorIds(null); // simulate corrupted record
         when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
 
         ResponseEntity<ExternalIngestResult> res = ingest(baseRequest());
         assertEquals(HttpStatus.FORBIDDEN, res.getStatusCode());
@@ -193,6 +195,7 @@ class ExternalIngestControllerGateTest {
         CallContext ctx = nonAdminContext();
         ImportProfileDefinition p = delegatedProfile();
         when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
 
         // cmis:all on folder — passes
         when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
@@ -214,6 +217,7 @@ class ExternalIngestControllerGateTest {
         CallContext ctx = nonAdminContext();
         ImportProfileDefinition p = delegatedProfile();
         when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
 
         // No explicit connectorId on the request → fall back to profile default
         ExternalIngestRequest req = baseRequest();
@@ -242,6 +246,7 @@ class ExternalIngestControllerGateTest {
         CallContext ctx = nonAdminContext();
         ImportProfileDefinition p = delegatedProfile();
         when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
 
         ExternalIngestRequest req = baseRequest();
         req.setConnectorId(null);   // ← the omission case
@@ -277,6 +282,7 @@ class ExternalIngestControllerGateTest {
         p.setDefaultConnectorId("rogue-conn");                 // not in allowed list
         p.setAllowedConnectorIds(java.util.List.of(CONN));     // canonical list
         when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
 
         ExternalIngestRequest req = baseRequest();
         req.setConnectorId(null);
@@ -302,6 +308,7 @@ class ExternalIngestControllerGateTest {
         ImportProfileDefinition p = delegatedProfile();
         p.setDefaultConnectorId(null);
         when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
 
         ExternalIngestRequest req = baseRequest();
         req.setConnectorId(null);
@@ -319,10 +326,32 @@ class ExternalIngestControllerGateTest {
     // ──────────────────────────────────────────────────────────────────
 
     @Test
+    void twoRowsOfOneProfileInThisRepository_isRefusedBeforeAnyImport() {
+        // The gate authorises a folder and a connector from the row it reads; the import
+        // service reads the profile AGAIN. With two rows of one profileId in one repository
+        // the selector can hand each side a different row, so the folder that was authorised
+        // and the folder that receives the content need not be the same. The gate resolves
+        // index-free and refuses the pair, so no second read can differ. A review showed the
+        // authorisation boundary was wider than the DELETE verb.
+        nonAdminContext();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(delegatedProfile());
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenThrow(
+                new ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException(
+                        "import profile " + PROF + " has more than one definition row"));
+
+        ResponseEntity<ExternalIngestResult> res = ingest(baseRequest());
+
+        assertEquals(HttpStatus.CONFLICT, res.getStatusCode(),
+                "a profile with two rows in this repository was authorised from one of them");
+        verifyNoInteractions(canonicalImportService);
+    }
+
+    @Test
     void allGatesPass_dispatchesToCanonicalImportService() {
         CallContext ctx = nonAdminContext();
         ImportProfileDefinition p = delegatedProfile();
         when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
 
         when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
         when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER)).thenReturn(true);

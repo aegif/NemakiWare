@@ -41,7 +41,9 @@ import java.util.List;
  *       covers {@code listByArchetype}.</li>
  *   <li>{@code idx_type_sourceSystem_archetype_enabled} →
  *       {@code (type, sourceSystem, sourceArchetype, enabled)} —
- *       covers {@code findBySystemAndArchetype}.</li>
+ *       covered {@code findBySystemAndArchetype} until that resolution moved to an
+ *       index-free walk (the selector could not answer while its own index rebuilt). Kept
+ *       for ad-hoc queries and for the admin listings, which are still selector-backed.</li>
  *   <li>{@code idx_type_profileId} → {@code (type, profileId)} —
  *       covers {@code ImportProfileDefinitionServiceImpl#get} and
  *       {@code upsertDocument}'s _id/_rev probe.</li>

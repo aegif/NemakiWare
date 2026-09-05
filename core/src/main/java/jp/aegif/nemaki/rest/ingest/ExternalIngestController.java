@@ -286,11 +286,45 @@ public class ExternalIngestController {
     }
 
     /**
-     * Carries a refusal across the gate boundary. The {@link DenialReason}
-     * is recorded in the audit details map so SOC tooling can search by
-     * code rather than by free-form English. The wire body still uses the
-     * existing {@link ExternalIngestResult#error} factory so external
-     * clients see no schema change.
+     * A retryable refusal when an index-free read says the definition exists (or cannot say),
+     * and null when it really is absent. "Not found" is a claim about the database; every
+     * read that can answer it here is index-backed, so it has to be checked without the index
+     * before it is made.
+     */
+    private Denial profileHiddenOrAbsent(String profileId, String repositoryId) {
+        try {
+            if (importProfileDefinitionService.existsIndexFree(profileId, repositoryId)) {
+                return new Denial(HttpStatus.SERVICE_UNAVAILABLE, DenialReason.SERVICES_UNAVAILABLE,
+                        "unknown", "import profile " + profileId + " exists but could not be"
+                                + " read; retry shortly");
+            }
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+            return new Denial(HttpStatus.SERVICE_UNAVAILABLE, DenialReason.SERVICES_UNAVAILABLE,
+                    "unknown", "whether import profile " + profileId + " exists could not be"
+                            + " established; retry shortly");
+        }
+        return null;
+    }
+
+    /** The connector twin of {@link #profileHiddenOrAbsent}. */
+    private Denial connectorHiddenOrAbsent(String connectorId) {
+        try {
+            if (connectorDefinitionService.existsIndexFree(connectorId)) {
+                return new Denial(HttpStatus.SERVICE_UNAVAILABLE, DenialReason.SERVICES_UNAVAILABLE,
+                        connectorId, "connector " + connectorId + " exists but could not be"
+                                + " read; retry shortly");
+            }
+        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+            return new Denial(HttpStatus.SERVICE_UNAVAILABLE, DenialReason.SERVICES_UNAVAILABLE,
+                    connectorId, "whether connector " + connectorId + " exists could not be"
+                            + " established; retry shortly");
+        }
+        return null;
+    }
+
+    /**
+     * Carries a refusal across the gate boundary. The {@link DenialReason} is the stable tag
+     * the audit trail and the UI key on; the message is for a human.
      */
     private record Denial(HttpStatus status, DenialReason reason, String requestId, String message) {
         ResponseEntity<ExternalIngestResult> toResponse() {
@@ -329,8 +363,43 @@ public class ExternalIngestController {
             return new Denial(HttpStatus.FORBIDDEN, DenialReason.PROFILE_ID_REQUIRED,
                     "unknown", "profileId is required for non-admin ingestion");
         }
-        ImportProfileDefinition profile = importProfileDefinitionService.get(profileId);
+        // The row this gate AUTHORISES has to be the row the import then uses. Both sides
+        // resolve the profile independently, and the selector answers on profileId alone —
+        // so with two rows of one profileId in ONE repository the gate could authorise the
+        // folder and connector of row A while the import ran with row B's target. The walk
+        // is authoritative here and refuses that pair outright; the selector is left to do
+        // nothing but LABEL an absence (elsewhere → 403, nowhere → 404/503 below). A review
+        // showed that "only DELETE crosses an authorisation boundary" was too narrow.
+        ImportProfileDefinition profile;
+        try {
+            profile = importProfileDefinitionService.getForRepository(profileId, repositoryId);
+        } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException pair) {
+            return new Denial(HttpStatus.CONFLICT, DenialReason.SERVICES_UNAVAILABLE,
+                    "unknown", pair.getMessage());
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+            return new Denial(HttpStatus.SERVICE_UNAVAILABLE, DenialReason.SERVICES_UNAVAILABLE,
+                    "unknown", "import profile " + profileId + " could not be resolved for"
+                            + " this repository; retry shortly");
+        }
         if (profile == null) {
+            ImportProfileDefinition selected = importProfileDefinitionService.get(profileId);
+            if (selected != null && repositoryId.equals(selected.getRepositoryId())) {
+                // The walk says this repository has no such row and the selector says it
+                // does. Authorising the selector's row would undo the paragraph above, so
+                // the disagreement is reported as one.
+                return new Denial(HttpStatus.SERVICE_UNAVAILABLE, DenialReason.SERVICES_UNAVAILABLE,
+                        "unknown", "import profile " + profileId + " is reported by the index"
+                                + " but not by the stored rows of this repository; retry shortly");
+            }
+            profile = selected;
+        }
+        if (profile == null) {
+            // This gate runs BEFORE the import service, so its 404 is the answer the caller
+            // gets — the split inside the service never reaches them. A rebuilding index
+            // makes "not found" a claim about the index, not the database. A review found
+            // this entry point still reporting failure as absence.
+            Denial hidden = profileHiddenOrAbsent(profileId, repositoryId);
+            if (hidden != null) return hidden;
             return new Denial(HttpStatus.NOT_FOUND, DenialReason.PROFILE_NOT_FOUND,
                     "unknown", "Profile not found");
         }
@@ -384,6 +453,8 @@ public class ExternalIngestController {
             }
             ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
             if (connector == null) {
+                Denial hidden = connectorHiddenOrAbsent(connectorId);
+                if (hidden != null) return hidden;
                 return new Denial(HttpStatus.NOT_FOUND, DenialReason.UNKNOWN_CONNECTOR,
                         connectorId, "Connector not found");
             }
@@ -417,6 +488,8 @@ public class ExternalIngestController {
             }
             ConnectorDefinition connector = connectorDefinitionService.get(def);
             if (connector == null) {
+                Denial hidden = connectorHiddenOrAbsent(def);
+                if (hidden != null) return hidden;
                 return new Denial(HttpStatus.NOT_FOUND, DenialReason.UNKNOWN_CONNECTOR,
                         def, "Profile's default connector not found");
             }

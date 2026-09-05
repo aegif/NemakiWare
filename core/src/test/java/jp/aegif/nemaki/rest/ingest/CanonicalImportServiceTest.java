@@ -166,7 +166,15 @@ class CanonicalImportServiceTest {
 
         ExternalIngestResult result = service.execute(testContext(), req);
         assertFalse(result.isSuccess());
-        assertTrue(result.errors().get(0).contains("scoped to repository"));
+        // The answer is now "not found", not "scoped to repository 'canopy'". The import
+        // resolves the profile for the REQUESTED repository (the same id can exist in two,
+        // and the selector returns an arbitrary one), so a repository with no row of its own
+        // is told the profile is not there — instead of being told which other repository
+        // holds it. The old wording disclosed another repository's row, which the confinement
+        // rule elsewhere in this batch deliberately avoids.
+        assertTrue(result.errors().get(0).contains("not found"),
+                "a repository with no row of this profile was told about another repository's: "
+                        + result.errors().get(0));
     }
 
     @Test
@@ -522,7 +530,8 @@ class CanonicalImportServiceTest {
         googleConn.setEnabled(true);
         googleConn.setSourceArchetype(SourceArchetype.FILE_SHARE);
         googleConn.setSourceSystem("google");
-        when(connectorService.findBySystemAndArchetype("google", SourceArchetype.FILE_SHARE)).thenReturn(googleConn);
+        when(connectorService.findBySystemsAndArchetype(List.of("google", "google_drive"),
+                SourceArchetype.FILE_SHARE)).thenReturn(googleConn);
         when(connectorService.get("google-drive-default")).thenReturn(googleConn);
 
         // Set up profile that can be found by repository + archetype + connectorId
@@ -570,8 +579,11 @@ class CanonicalImportServiceTest {
         googleDriveConn.setEnabled(true);
         googleDriveConn.setSourceArchetype(SourceArchetype.FILE_SHARE);
         googleDriveConn.setSourceSystem("google_drive");
-        when(connectorService.findBySystemAndArchetype("google", SourceArchetype.FILE_SHARE)).thenReturn(null);
-        when(connectorService.findBySystemAndArchetype("google_drive", SourceArchetype.FILE_SHARE)).thenReturn(googleDriveConn);
+        // ONE call with the ordered alias list: the resolver walks once and applies the
+        // caller's key preference itself (a review found per-key resolution both costing a
+        // walk per key and hiding a pair that matched two different keys).
+        when(connectorService.findBySystemsAndArchetype(List.of("google", "google_drive"),
+                SourceArchetype.FILE_SHARE)).thenReturn(googleDriveConn);
         when(connectorService.get("gd-conn")).thenReturn(googleDriveConn);
 
         ImportProfileDefinition profile = new ImportProfileDefinition();
@@ -600,7 +612,8 @@ class CanonicalImportServiceTest {
         ExternalIngestResult result = service.executeWithAutoResolve(
                 testContext(), req, "google", SourceArchetype.FILE_SHARE);
         assertTrue(result.isSuccess(), () -> String.valueOf(result.errors()));
-        verify(connectorService).findBySystemAndArchetype("google_drive", SourceArchetype.FILE_SHARE);
+        verify(connectorService).findBySystemsAndArchetype(List.of("google", "google_drive"),
+                SourceArchetype.FILE_SHARE);
     }
 
     /**
@@ -613,8 +626,8 @@ class CanonicalImportServiceTest {
         odConn.setEnabled(true);
         odConn.setSourceArchetype(SourceArchetype.FILE_SHARE);
         odConn.setSourceSystem("onedrive");
-        when(connectorService.findBySystemAndArchetype("microsoft", SourceArchetype.FILE_SHARE)).thenReturn(null);
-        when(connectorService.findBySystemAndArchetype("onedrive", SourceArchetype.FILE_SHARE)).thenReturn(odConn);
+        when(connectorService.findBySystemsAndArchetype(List.of("microsoft", "onedrive"),
+                SourceArchetype.FILE_SHARE)).thenReturn(odConn);
         when(connectorService.get("od-conn")).thenReturn(odConn);
 
         ImportProfileDefinition profile = new ImportProfileDefinition();
@@ -643,7 +656,8 @@ class CanonicalImportServiceTest {
         ExternalIngestResult result = service.executeWithAutoResolve(
                 testContext(), req, "microsoft", SourceArchetype.FILE_SHARE);
         assertTrue(result.isSuccess(), () -> String.valueOf(result.errors()));
-        verify(connectorService).findBySystemAndArchetype("onedrive", SourceArchetype.FILE_SHARE);
+        verify(connectorService).findBySystemsAndArchetype(List.of("microsoft", "onedrive"),
+                SourceArchetype.FILE_SHARE);
     }
 
     // ── ExternalIngestResult contract tests ──────────────────────

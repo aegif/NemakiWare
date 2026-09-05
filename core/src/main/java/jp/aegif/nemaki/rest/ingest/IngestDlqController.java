@@ -204,6 +204,20 @@ public class IngestDlqController {
         }
         ConnectorDefinition connector = connectorDefinitionService.get(request.getConnectorId());
         if (connector == null) {
+            // A retry that answers "not found" for a connector the rebuilding index cannot
+            // show would move the entry out of the queue for the wrong reason. Ask
+            // index-free before saying it; a review found this path reporting absence.
+            try {
+                if (connectorDefinitionService.existsIndexFree(request.getConnectorId())) {
+                    return ExternalIngestResult.error(request.getRequestId(), "connector '"
+                            + request.getConnectorId() + "' exists but could not be read;"
+                            + " retry shortly");
+                }
+            } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+                return ExternalIngestResult.error(request.getRequestId(), "whether connector '"
+                        + request.getConnectorId() + "' exists could not be established;"
+                        + " retry shortly: " + e.getMessage());
+            }
             return ExternalIngestResult.error(request.getRequestId(),
                     "Connector '" + request.getConnectorId() + "' not found — cannot determine import flow for retry");
         }

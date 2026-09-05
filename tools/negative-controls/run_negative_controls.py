@@ -2115,9 +2115,11 @@ CONTROLS = [
         # contains() green. The behavioural lock drives a thrown
         # ConnectorIndexNotReadyException through the controller and cannot be fooled
         # by spelling; this control measures that lock.
-        find_span=('        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {',
+        # Span start extended to the catch's own first comment line: the DELETE gained
+        # an identical catch in round 2 and the one-line start became ambiguous.
+        find_span=('        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {\n            // Transient and retryable. This reached the client as a 500 for a round, which',
                    '            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());'),
-        replace='        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {\n            return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage());',
+        replace='        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {\n            // Transient and retryable. This reached the client as a 500 for a round, which\n            return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage());',
         test='ConnectorDefinitionControllerPartialPutTest',
         expect_fail=['theRetryableRefusalReachesTheClientAs503'],
     ),
@@ -2154,7 +2156,9 @@ CONTROLS = [
     dict(
         id="OV",
         what="an unanswered _all_docs listing reads as 'nothing to migrate'",
-        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/NemakiConfAllDocs.java',
+        # Re-pointed: the walk was extracted to a shared class for the import-profile
+        # service; the sabotage text is unchanged, so only the file moved.
         # The enumeration failing must throw: a migration that answers 'complete' on a
         # listing it never received is the failure-as-absence shape one layer up. The
         # sabotage turns the refusal into a quiet break.
@@ -2205,7 +2209,9 @@ CONTROLS = [
     dict(
         id="OZ",
         what='the _all_docs walk stops after its first page',
-        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/NemakiConfAllDocs.java',
+        # Re-pointed: the walk was extracted to a shared class for the import-profile
+        # service; the sabotage text is unchanged, so only the file moved.
         # A database with more than one page of config rows silently keeps its legacy
         # rows: the walk claims completion after page one. The lock builds a full first
         # page and puts the legacy row on page two.
@@ -2226,24 +2232,26 @@ CONTROLS = [
         # block now carries both refusals and removing it opens both at once.
         # Re-anchored: the scan call gained the unprovable-row type-split (503 for
         # updates), so the block now begins at the local declaration.
-        find_span=('            boolean someRowDefinesThisConnector;\n            try {',
-                   'caught up.");\n            }\n'),
+        # Re-anchored in round 2: the index-free count now runs before every write.
+        find_span=('        int rowsDefiningThisConnector;',
+                   '                    + " create never overwrites one)");\n        }'),
         replace='',
         test='ConnectorLegacyIdMigrationTest',
-        expect_fail=['aCreateRefusesWhenTheScanFindsALegacyRow',
-                     'anUpdateOverAnInvisibleLegacyRowRefusesRetryably'],
+        expect_fail=['aCreateRefusesWhenTheScanFindsALegacyRow', 'anUpdateOverAnInvisibleLegacyRowRefusesRetryably', 'anUpdateWithTwoVisibleTwinsDoesNotWrite', 'anUpdateWithAHiddenTwinIsAStandingPairNotARetry', 'aCreateNeverAdoptsARowTheScanFound', 'theSelectorMustNotOutReportTheWalk'],
     ),
     dict(
         id="PB",
-        what='the walk processes a re-served continuation row twice',
-        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        what='the walk serves a re-served continuation row twice — one row counted as a standing twin',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/NemakiConfAllDocs.java',
+        # Re-pointed: the walk was extracted to a shared class for the import-profile
+        # service; the sabotage text is unchanged, so only the file moved.
         # Without the client-side id dedup, the continuation key that still exists is
         # re-served as the first row of the next page and migrated AGAIN — a second
         # copy attempt against an id that now exists, and double counting.
         find='                    if (id.equals(resumeAfterId)) {\n                        // the continuation key itself, re-served because it still exists\n                        continue;\n                    }\n',
         replace='',
         test='ConnectorLegacyIdMigrationTest',
-        expect_fail=['aBoundaryRowIsHandledExactlyOnce'],
+        expect_fail=['aBoundaryRowIsCountedExactlyOnce'],
     ),
     dict(
         id="PC",
@@ -2302,8 +2310,9 @@ CONTROLS = [
         # 200. The one-arm shape, measured directly.
         # Re-anchored to the split shape: the narrowing now short-circuits the scan
         # inside the try, which also keeps the unprovable arm reachable for create.
-        find='            boolean someRowDefinesThisConnector;\n            try {\n                someRowDefinesThisConnector =\n                        aConnectorRowExistsIndexFree(cloudant, dbName, def.getConnectorId());',
-        replace='            boolean someRowDefinesThisConnector;\n            try {\n                someRowDefinesThisConnector = creating\n                        && aConnectorRowExistsIndexFree(cloudant, dbName, def.getConnectorId());',
+        # Re-anchored in round 2: the index-free count now runs before every write.
+        find='            rowsDefiningThisConnector = countConnectorRowsIndexFree(cloudant, dbName,\n                    def.getConnectorId());',
+        replace='            rowsDefiningThisConnector = creating\n                    ? countConnectorRowsIndexFree(cloudant, dbName, def.getConnectorId()) : 0;',
         test='ConnectorLegacyIdMigrationTest',
         expect_fail=['anUpdateOverAnInvisibleLegacyRowRefusesRetryably'],
     ),
@@ -2315,10 +2324,964 @@ CONTROLS = [
         # refusal reaches the update controller untyped — a 500 that opens tickets and
         # carries no retry hint, for a condition as transient as an index rebuild.
 
-        find='            } catch (IllegalStateException unprovable) {\n                // The scan could not CLASSIFY a row, so uniqueness is unprovable right now.\n                // For a CREATE that stays the existing contract (IllegalStateException →\n                // 400, with its own lock). For an UPDATE it used to escape as a 500 —\n                // recorded at closure time as "twin-free but unlocked" — while the\n                // condition is exactly as transient as the rebuilding-index refusals this\n                // exception exists for. A retry reads the row and proceeds.\n                if (creating) {\n                    throw unprovable;\n                }\n                throw new ConnectorIndexNotReadyException(unprovable.getMessage());\n            }',
-        replace='            } catch (IllegalStateException unprovable) {\n                throw unprovable;\n            }',
+        # Re-anchored in round 2: the index-free count now runs before every write.
+        find='        } catch (IllegalStateException unprovable) {\n            // The scan could not CLASSIFY a row, so uniqueness is unprovable right now.\n            // For a CREATE that stays the existing contract (IllegalStateException →\n            // 400, with its own lock). For an UPDATE it used to escape as a 500 —\n            // recorded at closure time as "twin-free but unlocked" — while the\n            // condition is exactly as transient as the rebuilding-index refusals this\n            // exception exists for. A retry reads the row and proceeds.\n            if (creating) {\n                throw unprovable;\n            }\n            throw new ConnectorIndexNotReadyException(unprovable.getMessage());\n        }',
+        replace='        } catch (IllegalStateException unprovable) {\n            throw unprovable;\n        }',
         test="ConnectorLegacyIdMigrationTest",
         expect_fail=["anUpdateWhoseScanCannotReadRefusesRetryablyToo"],
+    ),
+    dict(
+        id="PI",
+        what='the profile CREATE/UPDATE trusts the selector and the deterministic id alone — the scan is gone',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # The import-profile twin of PA: with the index-free scan removed, the startup
+        # patch's per-repository create writes a second cloud-import-<repo> beside a legacy
+        # row the rebuilding selector cannot show.
+        # Re-anchored in round 2: the index-free count now runs before every write.
+        find_span=('        int rowsDefiningThisProfile;',
+                   '                    + " create never overwrites one)");\n        }'),
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aCreateRefusesWhenTheScanFindsALegacyRow', 'anUpdateOverAnInvisibleLegacyRowRefusesRetryably', 'anUpdateWithTwoVisibleTwinsDoesNotWrite', 'anUpdateWithAHiddenTwinIsAStandingPairNotARetry', 'aCreateNeverAdoptsARowTheScanFound', 'theSelectorMustNotOutReportTheWalk'],
+    ),
+    dict(
+        id="PJ",
+        what='the profile scan narrows back to CREATE only — the update arm reopens',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # Twin of PG.
+        # Re-anchored in round 2: the index-free count now runs before every write.
+        find='            rowsDefiningThisProfile = countProfileRowsIndexFree(cloudant, dbName,\n                    def.getProfileId(), null);',
+        replace='            rowsDefiningThisProfile = creating\n                    ? countProfileRowsIndexFree(cloudant, dbName, def.getProfileId(), null) : 0;',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['anUpdateOverAnInvisibleLegacyRowRefusesRetryably'],
+    ),
+    dict(
+        id="PK",
+        what='a profile update whose scan cannot read a row escapes as a 500 again',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # Twin of PH.
+        # Re-anchored in round 2: the index-free count now runs before every write.
+        find='        } catch (IllegalStateException unprovable) {\n            // The scan could not CLASSIFY a row, so uniqueness is unprovable right now. A\n            // create keeps the existing contract (IllegalStateException → 400, locked); an\n            // update is refused retryably (503) — the condition is as transient as an index\n            // rebuild.\n            if (creating) {\n                throw unprovable;\n            }\n            throw new ProfileIndexNotReadyException(unprovable.getMessage());\n        }',
+        replace='        } catch (IllegalStateException unprovable) {\n            throw unprovable;\n        }',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['anUpdateWhoseScanCannotReadRefusesRetryablyToo'],
+    ),
+    dict(
+        id="PL",
+        what='a profile UPDATE adopts the hidden deterministic row — the withdrawn connector fix, on profiles',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # Twin of OQ: adopt the row because _id and _rev are in hand. The connector side
+        # withdrew exactly this after a review showed the payload assembled against the
+        # same selector that just missed.
+        # Re-anchored in round 2: the arm now sits inside the else block, after the
+        # index-free count.
+        find_span=('                throw new ProfileIndexNotReadyException("import profile " + def.getProfileId()\n                        + " exists under its deterministic id but the index did not report"',
+                   '                        + " it. Retry once the index has caught up.");'),
+        replace='                doc.setId(deterministic.getId());\n                doc.setRev(deterministic.getRev());',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['anUpdateRefusesRetryablyWhenTheDeterministicRowIsHidden'],
+    ),
+    dict(
+        id="PM",
+        what='a new profile is saved under a GENERATED id again — the pre-closure shape',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # The original defect itself: no setId on a selector miss, CouchDB picks the id,
+        # and the id-addressed duplicate check can never see the row.
+        find='            doc.setId(ImportProfileDefinition.DOC_TYPE + ":" + def.getProfileId());\n',
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aCreateStillWorksWhenTheScanFindsNothing'],
+    ),
+    dict(
+        id="PN",
+        what='the profile migration compares and copies storage fields again',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # Twin of PF.
+        find='        Map<String, Object> content = new HashMap<>(props);\n        content.remove("_id");\n        content.remove("_rev");\n        content.remove("_attachments");\n        return content;',
+        replace='        return new HashMap<>(props);',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aTwinDifferingOnlyInStorageFieldsIsIdentical', 'aCopyNeverCarriesStorageFields'],
+    ),
+    dict(
+        id="PO",
+        what='the profile divergent-twin arm retires the legacy row anyway',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # Twin of OU.
+        find='                logger.error("Import profile {} exists as BOTH {} and {} with DIFFERENT"\n                        + " content. Neither row was touched. Resolve by deleting the row"\n                        + " you do NOT want: DELETE .../admin/import-profiles/{}?docId=<one"\n                        + " of the two ids above>", profileId, legacyId, deterministicId,\n                        profileId);\n                return;',
+        replace='                logger.error("Import profile {} exists as BOTH {} and {} with DIFFERENT"\n                        + " content. Neither row was touched. Resolve by deleting the row"\n                        + " you do NOT want: DELETE .../admin/import-profiles/{}?docId=<one"\n                        + " of the two ids above>", profileId, legacyId, deterministicId,\n                        profileId);',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aDivergentTwinIsUntouchedAndReported'],
+    ),
+    dict(
+        id="PP",
+        what='a conflicted profile retirement is logged and swallowed',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # Twin of OW.
+        find='            result.failures.add(profileId + " (" + e.getMessage() + ")");\n',
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aConflictedRetirementIsReportedNotSwallowed'],
+    ),
+    dict(
+        id="PQ",
+        what='an attachment-bearing legacy profile row is migrated without its attachments',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # Twin of PC.
+        find_span=('            if (legacy.getAttachments() != null && !legacy.getAttachments().isEmpty()) {',
+                   '                logger.error("Import profile row {} carries attachments and was NOT migrated",\n                        legacyId);\n                return;\n            }'),
+        replace='            if (legacy.getAttachments() != null && !legacy.getAttachments().isEmpty()) {\n            }',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['anAttachmentBearingRowIsRefused'],
+    ),
+    dict(
+        id="PR",
+        what='a tombstone-blocked profile copy retries for ever',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # Twin of PD.
+        find_span=('                } catch (Exception firstAttempt) {',
+                   '                    } else {\n                        throw firstAttempt;\n                    }\n                }'),
+        replace='                } catch (Exception firstAttempt) {\n                    throw firstAttempt;\n                }',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aTombstoneBlockedCopyIsPurgedAndRetried'],
+    ),
+    dict(
+        id="PS",
+        what='the profile one-row delete removes rows of OTHER profiles',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # Twin of PE.
+        # Re-anchored after the repository clause joined the check (review round 1).
+        find='        if (props == null\n                || !ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))\n                || !profileId.equals(props.get("profileId"))\n                || repositoryId == null\n                || !(unowned || repositoryId.equals(props.get("repositoryId")))) {',
+        replace='        if (props == null) {',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theOneRowDeleteRefusesAMismatchedRow'],
+    ),
+    dict(
+        id="PT",
+        what='the startup patch drops the import-profile half of the migration',
+        file='core/src/main/java/jp/aegif/nemaki/patch/Patch_ConnectorDefinitionDeterministicIds.java',
+        # The patch runs both halves in one pass. Removing the profile call leaves every
+        # profile-service test green while no startup ever migrates a cloud-import row —
+        # only the source lock on the patch notices.
+        # Re-anchored after the halves were isolated: the profile call is now a runHalf
+        # with a method reference, and the sabotage keeps `profilesRan` defined.
+        find='            boolean profilesRan = runHalf("import profiles",\n                    () -> ctx.getBean(ImportProfileDefinitionService.class).migrateLegacyGeneratedIds(),\n                    "DELETE .../admin/import-profiles/{id}?docId=...");',
+        replace='            boolean profilesRan = true;',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['thePatchAndControllerCarryTheProfileHalf'],
+    ),
+    dict(
+        id="PU",
+        what="a profile CREATE over a hidden deterministic row is refused only retryably — the 'already exists' arm is gone",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # The profile twin of OA's arm: with the create-side refusal removed, a create over
+        # a hidden deterministic row escapes as the retryable type — a 503 for something
+        # that is a plain duplicate — and the lock fails on the exception type.
+        # Re-anchored in round 2: the index-free count now runs before every write.
+        find='                if (creating) {\n                    throw new IllegalStateException("Import profile already exists: "\n                            + def.getProfileId() + " (found by an id-addressed read; the"\n                            + " index did not report it)");\n                }\n',
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aCreateRefusesWhenTheDeterministicRowIsHidden'],
+    ),
+    dict(
+        id="PV",
+        what="the profile one-row delete stops checking the row's repository",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # The P1 from the profile closure's first review: the controller authorises
+        # against whichever twin the selector returned, so only a check on the ADDRESSED
+        # row stops a caller of repository A deleting repository B's twin.
+        find='                || !profileId.equals(props.get("profileId"))\n                || repositoryId == null\n                || !(unowned || repositoryId.equals(props.get("repositoryId")))) {',
+        replace='                || !profileId.equals(props.get("profileId"))) {',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theOneRowDeleteRefusesAnotherRepositorysRow'],
+    ),
+    dict(
+        id="PW",
+        what='the uniqueness validation reads the selector again — a hidden default lets a second one through',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # listByRepository is answered by the rebuilding index; the walk is not.
+        # Re-anchored in round 3 (the listing gained a range flag).
+        find='        List<ImportProfileDefinition> existing = listByRepositoryIndexFree(repoId, creating);',
+        replace='        List<ImportProfileDefinition> existing = listByRepository(repoId);',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aHiddenDefaultProfileStillBlocksASecondDefault'],
+    ),
+    dict(
+        id="PX",
+        what='the resolution stops refusing — a row it could not read reads as absent, so every verb answers 404',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        # hiddenOrAbsent emptied: a profile the selector cannot show is NOT FOUND again,
+        # one layer above the retryable refusal that was written for exactly this. The
+        # span's end marker is the method's own unique message — the 503 return line
+        # alone appears in three catches of this controller.
+        # Re-anchored in round 2: the gate takes the call context (repository confinement).
+        find_span=('    private ResponseEntity<Map<String, Object>> resolveMine(CallContext ctx, String profileId,\n            ImportProfileDefinition selected, java.util.function.Consumer<ImportProfileDefinition> sink) {',
+                   '        return null;\n    }'),
+        replace='    private ResponseEntity<Map<String, Object>> resolveMine(CallContext ctx, String profileId,\n            ImportProfileDefinition selected, java.util.function.Consumer<ImportProfileDefinition> sink) {\n        try {\n            sink.accept(mineInstead(ctx, selected, profileId));\n        } catch (RuntimeException ignored) {\n            sink.accept(null);\n        }\n        return null;\n    }',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['aHiddenProfileIsA503OnPut', 'aHiddenProfileIsA503OnDelete'],
+    ),
+    dict(
+        id="PY",
+        what="a pair with one twin hidden is answered 'retry' although the count already established the pair",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        # The count is compared only when the selector was EMPTY: a partial selector
+        # (one twin visible, one hidden) writes onto the visible twin and the pair
+        # diverges with a 200. Found on the profile side in round 2; mirrored here.
+        # The twin arm gated on full visibility: the hidden pair falls through to the
+        # hidden arm and is told to retry — a retry that can only end in 409.
+        find='        if (rowsDefiningThisConnector > 1) {',
+        replace='        if (rowsDefiningThisConnector > 1 && rowsDefiningThisConnector == existing.size()) {',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['anUpdateWithAHiddenTwinIsAStandingPairNotARetry'],
+    ),
+    dict(
+        id="QA",
+        what='the connector plain delete skips legacy rows — a hidden twin survives',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        # The index-free delete narrowed to deterministic ids only: the legacy twin the
+        # selector hid survives a delete that reports success.
+        find='                if (ConnectorDefinition.DOC_TYPE.equals(props.get("type"))\n                        && connectorId.equals(props.get("connectorId"))) {\n                    targets.add(doc);',
+        replace='                if (ConnectorDefinition.DOC_TYPE.equals(props.get("type"))\n                        && connectorId.equals(props.get("connectorId"))\n                        && id.startsWith(ConnectorDefinition.DOC_TYPE + ":")) {\n                    targets.add(doc);',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['thePlainDeleteRemovesHiddenTwinsToo'],
+    ),
+    dict(
+        id="QG",
+        what='the connector DELETE lets the retryable refusal escape as a 500',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionController.java',
+        # The catch removed: an index-free delete that could not read every row errors
+        # out of the controller instead of answering retry.
+        find='        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {\n            // "Deleted" must mean deleted: the index-free delete refuses when a row could\n            // not be read, and that is a retry, not a success with a survivor.\n            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());\n        }',
+        replace='        }',
+        test='ConnectorDefinitionControllerPartialPutTest',
+        expect_fail=['aDeleteThatCannotReadEveryRowIsA503NotASuccess'],
+    ),
+    dict(
+        id="PZ",
+        what='the profile twin of PY',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # Twin of PY — the finding's origin.
+        find='        if (rowsDefiningThisProfile > 1) {',
+        replace='        if (rowsDefiningThisProfile > 1 && rowsDefiningThisProfile == existing.size()) {',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['anUpdateWithAHiddenTwinIsAStandingPairNotARetry'],
+    ),
+    dict(
+        id="QB",
+        what='the profile plain delete skips legacy rows — a hidden twin survives',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # Twin of QA.
+        find='                if (ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))\n                        && profileId.equals(props.get("profileId"))\n                        && repositoryId != null && repositoryId.equals(props.get("repositoryId"))) {\n                    targets.add(doc);',
+        replace='                if (ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))\n                        && profileId.equals(props.get("profileId"))\n                        && repositoryId != null && repositoryId.equals(props.get("repositoryId"))\n                        && id.startsWith(ImportProfileDefinition.DOC_TYPE + ":")) {\n                    targets.add(doc);',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['thePlainDeleteRemovesHiddenTwinsToo'],
+    ),
+    dict(
+        id="QC",
+        what='runtime auto-resolution reads the selector again — a hidden default is not found',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # findDefaultForRepository decides WHERE ingested content lands; back on the
+        # selector, a hidden default resolves to whatever fallback is visible.
+        # Re-anchored in round 3 (the listing gained a range flag).
+        # Re-anchored in round 3 (the additive index read wraps the walk).
+        # Re-anchored (the additive index read was withdrawn: it could not establish
+        # the absence of legacy rows, which is the whole point).
+        find='        List<ImportProfileDefinition> candidates = listByRepositoryIndexFree(repositoryId, false);',
+        replace='        List<ImportProfileDefinition> candidates = listByRepository(repositoryId);',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theAutoResolverSeesAHiddenDefault', 'theAutoResolverRefusesAnUnreadableRow'],
+    ),
+    dict(
+        id="QD",
+        what="existsIndexFree ignores the repository — a hidden row in B turns A's 404 into 503",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # The gate's repository confinement dropped: an existence disclosure across
+        # repositories, through the status code.
+        find='            return countProfileRowsIndexFree(client.getClient(), client.getDatabaseName(),\n                    profileId, repositoryId) > 0;',
+        replace='            return countProfileRowsIndexFree(client.getClient(), client.getDatabaseName(),\n                    profileId, null) > 0;',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['existsIndexFreeSeesHiddenRowsAndRefusesUnreadableOnes'],
+    ),
+    dict(
+        id="QE",
+        what='the docId resolver admits delegated callers again',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        # The admin gate removed: the delegated checks ran on the selector's twin, so a
+        # delegated user managing twin A deletes an admin-managed twin B.
+        find_span=('            if (!admin) {\n                // Audited like every other denial on this controller.',
+                   '                return errorResponse(HttpStatus.FORBIDDEN,\n                        "resolving divergent definition rows is an administrator operation");\n            }'),
+        replace='',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['theResolverIsAdminOnly'],
+    ),
+    dict(
+        id="QF",
+        what='a profile row with no profileId reaches the uniqueness comparison again — a 500',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # The identity guard removed: the deserialised row has a null profileId and the
+        # comparison dereferences it.
+        find='                Object pid = props.get("profileId");\n                if (!(pid instanceof String) || ((String) pid).isBlank()) {\n                    // Deserialisable, but with no identity: the uniqueness comparison\n                    // dereferenced it and answered 500. A profile row without a profileId\n                    // is a row this rule cannot reason about.\n                    throw new IllegalStateException("the profiles of repository \'"\n                            + repositoryId + "\' cannot be listed: row " + id\n                            + " has no usable profileId");\n                }\n',
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aRowWithoutAProfileIdRefusesTheListing'],
+    ),
+    dict(
+        id="QH",
+        what='the profile plain DELETE lets the retryable refusal escape as a 500',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        # Twin of QG.
+        find_span=('        int elsewhere;\n        try {\n            elsewhere = importProfileDefinitionService.delete(profileId, authRepository(ctx));',
+                   '            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, partly.getMessage());\n        }'),
+        replace='        int elsewhere = importProfileDefinitionService.delete(profileId, authRepository(ctx));',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['thePlainDeleteCarriesTheRepositoryAndRefusesRetryably'],
+    ),
+    dict(
+        id="QI",
+        what="the uniqueness listing's unreadable-row refusal loses its create/update typing",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # An update whose uniqueness listing could not read a row escapes as
+        # IllegalStateException — a 500 — instead of the retryable type.
+        find='        } catch (IllegalStateException unprovable) {\n            if (creating) {\n                throw unprovable;\n            }\n            throw new ProfileIndexNotReadyException(unprovable.getMessage());\n        }\n        return results;',
+        replace='        } catch (IllegalStateException unprovable) {\n            throw unprovable;\n        }\n        return results;',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['anUnreadableRowRefusesTheUniquenessListing'],
+    ),
+    dict(
+        id="QK",
+        what='the ingest entry point lets the retryable profile refusal escape unmapped',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        # The catch removed: an unreadable profile row during auto-resolution surfaces as
+        # an unexplained failure one layer up instead of a retryable refusal.
+        find_span=('            } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {\n                // A profile row could not be read while resolving WHERE this import lands.',
+                   '                        + " temporarily unavailable, retry shortly: " + e.getMessage());\n            } catch (IllegalStateException e) {'),
+        replace='            } catch (IllegalStateException e) {',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theIngestEntryPointMapsTheRetryableRefusal'],
+    ),
+    dict(
+        id="QL",
+        what='IMAP IDLE is stopped BEFORE a delete that can still refuse',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        # The ordering restored to the defect: a refused (503) delete leaves live mail
+        # capture stopped for a profile that still exists.
+        find_span=('        int elsewhere;\n        try {\n            elsewhere = importProfileDefinitionService.delete(profileId, authRepository(ctx));\n        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {',
+                   '            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());'),
+        replace='        if (ingestSchedulerService != null) ingestSchedulerService.stopIdle(profileId);\n        int elsewhere;\n        try {\n            elsewhere = importProfileDefinitionService.delete(profileId, authRepository(ctx));\n        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {\n            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['aRefusedDeleteLeavesImapIdleRunning'],
+    ),
+    dict(
+        id="QP",
+        what='an update over a VISIBLE twin pair writes to the first row — a winner chosen silently',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # The twin arm compares against what the selector showed again, so a pair the
+        # healthy index shows in full is not a pair.
+        find='        if (rowsDefiningThisProfile > 1) {',
+        replace='        if (rowsDefiningThisProfile > existing.size()) {',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['anUpdateWithTwoVisibleTwinsDoesNotWrite'],
+    ),
+    dict(
+        id="QQ",
+        what='the connector twin of QP',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='        if (rowsDefiningThisConnector > 1) {',
+        replace='        if (rowsDefiningThisConnector > existing.size()) {',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['anUpdateWithTwoVisibleTwinsDoesNotWrite'],
+    ),
+    dict(
+        id="QR",
+        what='the standing-twin refusal escapes the profile PUT unmapped — a 500, not a 409',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find='        } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException e) {\n            // Standing, not transient: two rows define this profile and an update would\n            // choose between them. 409 — a retry does not resolve it, an administrator does.\n            audit(AuditOperation.EXTERNAL_PROFILE_UPDATED, ctx, def, false, e.getMessage());\n            return errorResponse(HttpStatus.CONFLICT, e.getMessage());\n        }',
+        replace='        }',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['aStandingTwinPairIsA409OnPut'],
+    ),
+    dict(
+        id="QS",
+        what='the connector twin of QR',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionController.java',
+        find='        } catch (ConnectorDefinitionServiceImpl.ConnectorHasTwinRowsException e) {\n            // Standing, not transient: two rows define this connector and an update would\n            // choose between them. 409 — a retry does not resolve it, an administrator does.\n            return errorResponse(HttpStatus.CONFLICT, e.getMessage());\n        }',
+        replace='        }',
+        test='ConnectorDefinitionControllerPartialPutTest',
+        expect_fail=['aStandingTwinPairIsA409OnPut'],
+    ),
+    dict(
+        id="QT",
+        what='the default-profile patch trusts the selector alone: a WARN on every rebuilding startup for a profile that exists',
+        file='core/src/main/java/jp/aegif/nemaki/patch/Patch_DefaultCloudDriveConnectorProfile.java',
+        find='            if (!profileService.exists(profileId)\n                    && !profileService.existsIndexFree(profileId, repositoryId)) {',
+        replace='            if (!profileService.exists(profileId)) {',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theDefaultProfilePatchDoesNotTrustTheSelectorAlone'],
+    ),
+    dict(
+        id="QU",
+        what='a CREATE adopts a row the index-free scan found — two concurrent creates, one configuration overwritten (profile)',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find_span=('        if (creating && rowsDefiningThisProfile > 0) {',
+                   '                    + " create never overwrites one)");\n        }'),
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aCreateNeverAdoptsARowTheScanFound'],
+    ),
+    dict(
+        id="QV",
+        what='a CREATE adopts a row the index-free scan found — two concurrent creates, one configuration overwritten (connector)',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find_span=('        if (creating && rowsDefiningThisConnector > 0) {',
+                   '                    + " create never overwrites one)");\n        }'),
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aCreateNeverAdoptsARowTheScanFound'],
+    ),
+    dict(
+        id="QW",
+        what='the write lands on a row the index-free scan says is not there (profile)',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find_span=('        if (rowsDefiningThisProfile < existing.size()) {',
+                   '                    + " which row to write to is not established. Retry shortly.");\n        }'),
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theSelectorMustNotOutReportTheWalk', 'aCreateWhoseSelectorOutReportsTheWalkRefuses'],
+    ),
+    dict(
+        id="QX",
+        what='the write lands on a row the index-free scan says is not there (connector)',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find_span=('        if (rowsDefiningThisConnector < existing.size()) {',
+                   '                    + " which row to write to is not established. Retry shortly.");\n        }'),
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theSelectorMustNotOutReportTheWalk', 'aCreateWhoseSelectorOutReportsTheWalkRefuses'],
+    ),
+    dict(
+        id="QY",
+        what='a failing IDLE shutdown escapes AFTER the profile was deleted — the audit is lost and the caller reads 500',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find_span=('        stopSchedulerIfThisRepositoryLosesIt(profileId, authRepository(ctx), elsewhere);\n        audit(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, existing, true, null);',
+                   '        audit(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, existing, true, null);'),
+        replace='        if (ingestSchedulerService != null) ingestSchedulerService.stopIdle(profileId);\n        audit(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, existing, true, null);',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['aFailingStopIdleDoesNotLoseTheAudit'],
+    ),
+    dict(
+        id="RC",
+        what='get() answers absence when the selector misses a row that is under its deterministic id (profile)',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='        if (!results.isEmpty()) {\n            return results.get(0);\n        }',
+        replace='        if (true) return results.isEmpty() ? null : results.get(0);',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aDeterministicRowTheIndexCannotShowIsStillFoundByGet'],
+    ),
+    dict(
+        id="RD",
+        what='the connector twin of RC',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='        if (!results.isEmpty()) {\n            return results.get(0);\n        }',
+        replace='        if (true) return results.isEmpty() ? null : results.get(0);',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aDeterministicRowTheIndexCannotShowIsStillFoundByGet'],
+    ),
+    dict(
+        id="RE",
+        what="execute() calls a profile the index cannot show 'not found' — the index-free split is gone",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find_span=('            try {\n                if (importProfileDefinitionService.existsIndexFree(request.getProfileId(),',
+                   '                        + " shortly: " + e.getMessage());\n            }'),
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theIngestPathDoesNotReportAResolvedProfileAsMissing'],
+    ),
+    dict(
+        id="RF",
+        what='a pair of legacy rows is migrated after all — enumeration order picks which configuration becomes canonical (profile)',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='            if (rows.size() > 1) {',
+        replace='            if (rows.size() > 2) {',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['twoLegacyRowsForOneIdAreBothLeftStanding'],
+    ),
+    dict(
+        id="RG",
+        what='the connector twin of RF',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='            if (rows.size() > 1) {',
+        replace='            if (rows.size() > 2) {',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['twoLegacyRowsForOneIdAreBothLeftStanding'],
+    ),
+    dict(
+        id="RH",
+        what='a delete that failed part-way escapes the profile controller — a 500 with no audit of what was already removed',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find_span=('        } catch (ImportProfileDefinitionServiceImpl.ProfilePartiallyDeletedException partly) {\n            // Rows ARE gone and at least one is not',
+                   '            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, partly.getMessage());\n        }'),
+        replace='        }',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['aPartlyFailedDeleteIsAuditedAndRetryable'],
+    ),
+    dict(
+        id="RI",
+        what='the connector twin of RH',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionController.java',
+        find_span=('        } catch (ConnectorDefinitionServiceImpl.ConnectorPartiallyDeletedException partly) {',
+                   '            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, partly.getMessage());\n        }'),
+        replace='        }',
+        test='ConnectorDefinitionControllerPartialPutTest',
+        expect_fail=['aPartlyFailedDeleteIsRetryable'],
+    ),
+    dict(
+        id="RJ",
+        what='the connector POST leaves the retryable refusal unmapped — 500 on create where PUT answers 503',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionController.java',
+        find_span=('        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {\n            // The CREATE arm of the same refusal the PUT maps.',
+                   '            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());\n        } catch (IllegalArgumentException | IllegalStateException e) {'),
+        replace='        } catch (IllegalArgumentException | IllegalStateException e) {',
+        test='ConnectorDefinitionControllerPartialPutTest',
+        expect_fail=['aRetryableRefusalOnCreateIsA503'],
+    ),
+    dict(
+        id="RK",
+        what='connector GET answers 404 for a connector the rebuilding index cannot show',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionController.java',
+        find_span=('        if (def == null) {\n            // get() is the Mango selector.',
+                   '            return ResponseEntity.notFound().build();\n        }'),
+        replace='        if (def == null) return ResponseEntity.notFound().build();',
+        test='ConnectorDefinitionControllerPartialPutTest',
+        expect_fail=['aHiddenConnectorIsA503OnGet'],
+    ),
+    dict(
+        id="RL",
+        what='profile GET answers 404 for a profile only an index-free read can find',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find='        ImportProfileDefinition[] mine = new ImportProfileDefinition[1];\n        ResponseEntity<Map<String, Object>> refused = resolveMine(ctx, profileId, def, r -> mine[0] = r);\n        if (refused != null) return refused;\n        def = mine[0];',
+        replace='',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['aHiddenProfileIsA503OnGet'],
+    ),
+    dict(
+        id="RM",
+        what="the connector existsIndexFree drops its refusal type — the controller's 503 branch becomes dead code and an unreadable row is a 500",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find_span=("            // The interface promises this type, and the controller's 503 branch is written",
+                   '            throw new ConnectorIndexNotReadyException(unprovable.getMessage());\n        }'),
+        replace='            return false;\n        }',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['existsIndexFreeSeesHiddenRowsAndRefusesUnreadableOnes'],
+    ),
+    dict(
+        id="RN",
+        what='a delete that removed some rows and then failed is reported as an ordinary failure (profile)',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find_span=('        int removed = 0;\n        for (com.ibm.cloud.cloudant.v1.model.Document doc : targets) {\n            try {',
+                   '                        rowFailed.getMessage()), rowFailed);\n            }\n        }'),
+        replace='        for (com.ibm.cloud.cloudant.v1.model.Document doc : targets) {\n            cloudant.deleteDocument(new com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions.Builder()\n                    .db(dbName).docId(doc.getId()).rev(doc.getRev()).build()).execute();\n        }',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aPartlyFailedDeleteSaysHowMuchWasRemoved'],
+    ),
+    dict(
+        id="RO",
+        what='a delete that removed some rows and then failed is reported as an ordinary failure (connector)',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find_span=('        int removed = 0;\n        for (com.ibm.cloud.cloudant.v1.model.Document doc : targets) {\n            try {',
+                   '                        rowFailed);\n            }\n        }'),
+        replace='        for (com.ibm.cloud.cloudant.v1.model.Document doc : targets) {\n            cloudant.deleteDocument(new com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions.Builder()\n                    .db(dbName).docId(doc.getId()).rev(doc.getRev()).build()).execute();\n        }',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aPartlyFailedDeleteSaysHowMuchWasRemoved'],
+    ),
+    dict(
+        id="RP",
+        what='a delete the store refused OUTRIGHT is reported as partly deleted — the caller retries an operation that can never succeed',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find_span=('                if (removed == 0) {',
+                   '                    throw rowFailed;\n                }'),
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aDeleteThatRemovedNothingIsNotPartial'],
+    ),
+    dict(
+        id="RQ",
+        what='a delete the store refused OUTRIGHT is reported as partly deleted — the caller retries an operation that can never succeed',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find_span=('                if (removed == 0) {',
+                   '                    throw rowFailed;\n                }'),
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aDeleteThatRemovedNothingIsNotPartial'],
+    ),
+    dict(
+        id="RR",
+        what="connector auto-resolution reads the selector again — a connector the rebuilding index hides is 'no enabled connector found'",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find_span=('        List<ConnectorDefinition> all = listIndexFree(sourceSystems, archetype);',
+                   '        for (String system : sourceSystems) {'),
+        replace='        List<ConnectorDefinition> all = new ArrayList<>();\n        for (String s : sourceSystems) {\n            all.addAll(findBySelector(Map.of("type", ConnectorDefinition.DOC_TYPE,\n                    "sourceSystem", s, "sourceArchetype", archetype.name(), "enabled", true)));\n        }\n        for (String system : sourceSystems) {',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theConnectorResolverSeesAHiddenConnector'],
+    ),
+    dict(
+        id="RS",
+        what='several matching connectors are resolved to whichever row came first — storage order picks the target',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find_span=('            if (matches.size() > 1) {\n                throw new IllegalStateException("Ambiguous auto-resolve: " + matches.size()',
+                   '                        + ") — name the connector in the request, or disable all but one");\n            }'),
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theConnectorResolverRefusesAnAmbiguousMatch'],
+    ),
+    dict(
+        id="RT",
+        what="the connector walk's refusal type is dropped — an unreadable row answers 'no such connector'",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find_span=('        } catch (IllegalStateException unprovable) {\n            throw new ConnectorIndexNotReadyException(unprovable.getMessage());\n        }\n        return results;',
+                   '        return results;'),
+        replace='        } catch (IllegalStateException unprovable) {\n            throw unprovable;\n        }\n        return results;',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theConnectorResolverRefusesAnUnreadableRow'],
+    ),
+    dict(
+        id="RW",
+        what='the ingest entry point lets the connector refusals escape unmapped',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find_span=('            try {\n                // ONE index-free walk for every alias key',
+                   '                return ExternalIngestResult.error(requestId, e.getMessage());\n            }'),
+        replace='            autoConnector = connectorDefinitionService.findBySystemsAndArchetype(\n                    keysTried, archetype);',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theIngestEntryPointMapsTheConnectorRefusals'],
+    ),
+    dict(
+        id="RX",
+        what="execute() calls a connector the index cannot show 'not found'",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find_span=('            try {\n                if (connectorDefinitionService.existsIndexFree(request.getConnectorId())) {',
+                   '                        + " shortly: " + e.getMessage());\n            }'),
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theIngestEntryPointMapsTheConnectorRefusals'],
+    ),
+    dict(
+        id="RY",
+        what='the alias keys are resolved one walk per key again — a full walk of the config database for every alias',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='                autoConnector = connectorDefinitionService.findBySystemsAndArchetype(\n                        keysTried, archetype);',
+        replace='                for (String key : keysTried) {\n                    autoConnector = connectorDefinitionService.findBySystemAndArchetype(key, archetype);\n                    if (autoConnector != null) {\n                        break;\n                    }\n                }',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theIngestEntryPointMapsTheConnectorRefusals'],
+    ),
+    dict(
+        id="RZ",
+        what="the non-admin ingest gate answers 'profile not found' from the index alone again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find_span=('            Denial hidden = profileHiddenOrAbsent(profileId, repositoryId);',
+                   '            if (hidden != null) return hidden;'),
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['everyIngestEntryPointAsksIndexFreeBeforeSayingNotFound'],
+    ),
+    dict(
+        id="SA",
+        what="the DLQ retry answers 'connector not found' from the index alone again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find_span=('            try {\n                if (connectorDefinitionService.existsIndexFree(request.getConnectorId())) {',
+                   '                        + " retry shortly: " + e.getMessage());\n            }'),
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['everyIngestEntryPointAsksIndexFreeBeforeSayingNotFound'],
+    ),
+    dict(
+        id="SB",
+        what='the row-addressed delete stops recording which row it destroyed',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find_span=('            auditRow(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, profileId,\n                    authRepository(ctx), true, "one row of a divergent pair was removed",',
+                   '                    null, docId);'),
+        replace='',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['theRowAddressedDeleteIsAudited'],
+    ),
+    dict(
+        id="SC",
+        what='the row-addressed resolver removes the ONLY definition row — the definition is deleted through a path that skips the scheduler stop and the deletion event',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find_span=('        int rows;\n        try {',
+                   '                    + " remove the profile.");\n        }'),
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theRowResolverRefusesTheOnlyRow'],
+    ),
+    dict(
+        id="SD",
+        what='the row-addressed resolver removes the ONLY definition row — the definition is deleted through a path that skips the scheduler stop and the deletion event',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find_span=('        int rows;\n        try {',
+                   '                    + " pair. Use DELETE without docId to remove the connector.");\n        }'),
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theRowResolverRefusesTheOnlyRow'],
+    ),
+    dict(
+        id="SE",
+        what='a row delete that removed the LAST row is reported as an ordinary pair resolution — the profile is gone with its scheduler still running and no deletion record',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find_span=('            if (remaining == 0) {',
+                   '                return ResponseEntity.ok(raced);\n            }'),
+        replace='',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['aRowDeleteThatLostTheRaceStopsTheSchedulerAndRecordsTheDeletion'],
+    ),
+    dict(
+        id="SF",
+        what="the row-addressed path lets the count's refusal escape as an unclassified 500 with no audit",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find_span=('            } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {\n                // The count that decides "is this a pair?"',
+                   '                return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());'),
+        replace='',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['aRowDeleteWhoseCountCannotReadIsA503'],
+    ),
+    dict(
+        id="SG",
+        what='the row delete stops reporting how many rows remain — a lost race is silent again',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find_span=('        try {\n            // ACROSS ALL REPOSITORIES, not just this one.',
+                   '            return -1;\n        }'),
+        replace='        return 1;',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theRowDeleteReportsTheSurvivors'],
+    ),
+    dict(
+        id="SH",
+        what='the connector row delete stops reporting how many rows remain — a lost race is silent again',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find_span=('        try {\n            return countConnectorRowsIndexFree(cloudant, dbName, connectorId);',
+                   '            return -1;\n        }'),
+        replace='        return 1;',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theRowDeleteReportsTheSurvivors'],
+    ),
+    dict(
+        id="SI",
+        what="a shared profileId locks a repository out of its own rows on DELETE — the selector's arbitrary twin decides",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find_span=('        ImportProfileDefinition[] mineDel = new ImportProfileDefinition[1];',
+                   '        if (existing == null) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");'),
+        replace='        ImportProfileDefinition existing = importProfileDefinitionService.get(profileId);\n        if (existing == null || !belongsToAuthRepository(ctx, existing)) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['aSharedProfileIdDoesNotLockThisRepositoryOut'],
+    ),
+    dict(
+        id="SJ",
+        what='every connector row is deserialised before filtering — one unrelated row a newer node wrote stops all auto-resolution',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find_span=('            if (onlySystems != null) {\n                Object system = props.get("sourceSystem");',
+                   '            if (onlyArchetype != null && !onlyArchetype.name().equals(props.get("sourceArchetype"))) {\n                return;\n            }'),
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['anUnrelatedUnreadableConnectorDoesNotStopTheResolution'],
+    ),
+    dict(
+        id="SK",
+        what='an unknown survivor count is reported as an ordinary success (profile) — and the scheduler decision is made on a guess',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find_span=('            if (remaining < 0) {',
+                   '                return ResponseEntity.ok(unknown);\n            }'),
+        replace='',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['aRowDeleteWithAnUnknownSurvivorCountSaysSo'],
+    ),
+    dict(
+        id="SL",
+        what="the connector caller is told 'a duplicate was tidied' when the connector is gone, or when the count could not answer",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionController.java',
+        find_span=('                if (remaining == 0) {',
+                   '                    return ResponseEntity.ok(unknown);\n                }'),
+        replace='',
+        test='ConnectorDefinitionControllerPartialPutTest',
+        expect_fail=['aRowDeleteReportsAnUnknownOrLostSurvivorCount'],
+    ),
+    dict(
+        id="SM",
+        what='a DISABLED row is deserialised before it is filtered out — one unreadable disabled row refuses every import',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find_span=('            Object enabledRaw = props.get("enabled");',
+                   '                // skipped: an absent value is not a "no".\n                return;\n            }'),
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['anUnrelatedUnreadableConnectorDoesNotStopTheResolution'],
+    ),
+    dict(
+        id="SN",
+        what='the pre-filter compares against a List.of(...) with a possibly-null value — one row without a sourceSystem takes the resolution down with an NPE',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find_span=('            if (onlySystems != null) {\n                Object system = props.get("sourceSystem");',
+                   '                if (system == null || !onlySystems.contains(system)) {\n                    return;\n                }\n            }'),
+        replace='            if (onlySystems != null && !onlySystems.contains(props.get("sourceSystem"))) {\n                return;\n            }',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['anUnrelatedUnreadableConnectorDoesNotStopTheResolution'],
+    ),
+    dict(
+        id="SO",
+        what="the scheduler is stopped after a repository-confined delete — another repository's live capture is cut",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find='            if (leftAnywhere == 0) {',
+        replace='            if (leftAnywhere >= 0 || leftAnywhere < 0) {',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['aConfinedDeleteLeavesAnotherRepositorysSchedulerAlone',
+                     'aSessionServingAnotherRepositoryIsLeftAlone'],
+    ),
+    dict(
+        id="SP",
+        what='the plain delete stops reporting whether any repository still has the profile',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find_span=('        try {\n            return countProfileRowsIndexFree(cloudant, dbName, profileId, null);',
+                   '            return -1;\n        }\n    }'),
+        replace='        return 0;\n    }',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['thePlainDeleteReportsTheRowsLeftAnywhere'],
+    ),
+    dict(
+        id="SQ",
+        what="a scan that counted ZERO rows answers 'this is the only definition row' — a claim neither read supports",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find_span=('        if (rows == 0) {',
+                   '        if (rows == 1 && !unowned) {'),
+        replace='        if (rows <= 1 && !unowned) {',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aCountOfZeroIsADisagreementNotTheOnlyRow'],
+    ),
+    dict(
+        id="SR",
+        what="a scan that counted ZERO rows answers 'this is the only definition row' — a claim neither read supports",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find_span=('        if (rows == 0) {',
+                   '        if (rows == 1) {'),
+        replace='        if (rows <= 1) {',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aCountOfZeroIsADisagreementNotTheOnlyRow'],
+    ),
+    dict(
+        id="SS",
+        what="the row-addressed delete counts survivors in the caller's repository only — the globally keyed scheduler is stopped on a confined count",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find_span=('            return countProfileRowsIndexFree(cloudant, dbName, profileId, null);\n        } catch (RuntimeException unreadable) {\n            logger.warn("row {}',
+                   '            return -1;'),
+        replace='            return countProfileRowsIndexFree(cloudant, dbName, profileId, repositoryId);\n        } catch (RuntimeException unreadable) {\n            logger.warn("row {} of profile {} was deleted, but how many rows remain could not be"\n                    + " established: {}", docId, profileId, unreadable.getMessage());\n            return -1;',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theRowDeleteReportsTheSurvivors'],
+    ),
+    dict(
+        id="ST",
+        what='the plain delete answers the same body whether the survivors were counted or could not be',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find_span=('        if (elsewhere < 0) {\n            // A failed read is not an answered one',
+                   '                    + " has this profile could not be established");\n        }'),
+        replace='',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['aPlainDeleteWithAnUnknownCountSaysSo'],
+    ),
+    dict(
+        id="SU",
+        what='the plain delete discards the survivor count — a concurrent delete elsewhere leaves an orphaned scheduler running',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find='        stopSchedulerIfThisRepositoryLosesIt(profileId, authRepository(ctx), elsewhere);',
+        replace='',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['aSharedProfileIdBranchStopsTheSchedulerWhenNothingRemains'],
+    ),
+    dict(
+        id="SV",
+        what="a shared profileId hides this repository's own row from GET and PUT — the selector's arbitrary twin decides",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find_span=('    private ImportProfileDefinition mineInstead(CallContext ctx, ImportProfileDefinition selected,\n            String profileId) {',
+                   '        return importProfileDefinitionService.getForRepository(profileId, authRepository(ctx));\n    }'),
+        replace='    private ImportProfileDefinition mineInstead(CallContext ctx, ImportProfileDefinition selected,\n            String profileId) {\n        return selected != null && belongsToAuthRepository(ctx, selected) ? selected : null;\n    }',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['theReadVerbsReachThisRepositorysRow'],
+    ),
+    dict(
+        id="SW",
+        what="getForRepository reads the selector instead of walking — the caller's own row stays unreachable behind a shared profileId",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find_span=('        try {\n            NemakiConfAllDocs.forEachRow(client.getClient(), dbName, perRow);\n        } catch (IllegalStateException unprovable) {\n            throw new ProfileIndexNotReadyException(unprovable.getMessage());\n        }\n        return found[0];',
+                   '        return found[0];'),
+        replace='        for (ImportProfileDefinition candidate : listByRepository(repositoryId)) {\n            if (profileId.equals(candidate.getProfileId())) {\n                return candidate;\n            }\n        }\n        return null;',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['getForRepositoryAnswersWithoutTheIndex'],
+    ),
+    dict(
+        id="SX",
+        what='getForRepository deserialises every profile of the repository — one unrelated broken row refuses every read',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find_span=('            if (!ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))\n                    || !repositoryId.equals(props.get("repositoryId"))\n                    || !profileId.equals(props.get("profileId"))) {',
+                   '                return;\n            }'),
+        replace='            if (!ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))\n                    || !repositoryId.equals(props.get("repositoryId"))) {\n                return;\n            }',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['getForRepositoryAnswersWithoutTheIndex'],
+    ),
+    dict(
+        id="SY",
+        what='a post-delete count that could not answer is reported as a survivor count (connector)',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find_span=('        } catch (RuntimeException unreadable) {\n            logger.warn("row {} of connector {} was deleted, but how many rows remain could not be',
+                   '            return -1;\n        }'),
+        replace='        } catch (RuntimeException unreadable) {\n            return 1;\n        }',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aPostDeleteCountThatCannotAnswerReportsMinusOne'],
+    ),
+    dict(
+        id="SZ",
+        what='getForRepository picks one of two rows instead of refusing — and the delete that follows authorises from the one it picked',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find_span=('            if (found[0] != null) {',
+                   '                        + profileId + "?docId=...)");\n            }'),
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['getForRepositoryRefusesAPair'],
+    ),
+    dict(
+        id="TA",
+        what='an absence established index-free is walked again — double cost, and a settled absence can turn into a 503',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find_span=('        if (def == null) {\n            // Absence established index-free by the walk above — no second walk.\n            return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");\n        }',
+                   '        }'),
+        replace='        if (def == null) {\n            try {\n                if (importProfileDefinitionService.existsIndexFree(profileId, authRepository(ctx))) {\n                    return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, "retry shortly");\n                }\n            } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {\n                return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());\n            }\n            return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");\n        }',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['anAbsenceIsNotRewalked'],
+    ),
+    dict(
+        id="TB",
+        what='a post-delete count that could not answer is reported as a survivor count (profile row delete)',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find_span=('            logger.warn("row {} of profile {} was deleted, but how many rows remain could not be',
+                   '            return -1;'),
+        replace='            return 1;',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aProfilePostDeleteCountThatCannotAnswerReportsMinusOne'],
+    ),
+    dict(
+        id="TC",
+        what='the resolution is skipped when the selector already returned a row of this repository — a PAIR is then never seen, and a delete authorised from one twin removes both',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find='        ImportProfileDefinition[] mineDel = new ImportProfileDefinition[1];\n        ResponseEntity<Map<String, Object>> refusedDel =\n                resolveMine(ctx, profileId, null, r -> mineDel[0] = r);',
+        # The sabotage used to pass `existing`, a variable the dead selector read above it
+        # supplied. That read is gone, so the sabotage stopped COMPILING while its anchor
+        # still matched — the pre-flight passed and the sweep died here, 11 controls short.
+        replace='        ImportProfileDefinition selectedDel = importProfileDefinitionService.get(profileId);\n        ImportProfileDefinition[] mineDel = new ImportProfileDefinition[1];\n        ResponseEntity<Map<String, Object>> refusedDel =\n                resolveMine(ctx, profileId, selectedDel, r -> mineDel[0] = r);',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['aPairInThisRepositoryIsA409NotAChoice'],
+    ),
+    dict(
+        id="TD",
+        what="the folder run/credential paths answer 'no runnable profile' from the selector alone — a shared profileId or a legacy-only row is a false 404",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/FolderConnectorController.java',
+        find_span=('        // two paths still on the selector. (Run path.)\n        ImportProfileDefinition profile;',
+                   '            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);\n        }'),
+        replace='        ImportProfileDefinition profile = importProfileDefinitionService.get(profileId);',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['everyIngestEntryPointAsksIndexFreeBeforeSayingNotFound'],
     ),
     dict(
         id="MO",
@@ -2349,6 +3312,59 @@ CONTROLS = [
         replace="\tpublic Collection<TypeDefinitionContainer> getTypeDefinitionList(String repositoryId) {\n\t\tensureInitialized();",
         test="OneRepositoryDoesNotTakeDownTheRegistryTest",
         expect_fail=["aBrokenRepositoryIsIsolated"],
+    ),
+    dict(
+        id="TE",
+        what="a deletion stops the IDLE session only when the profileId is gone everywhere — "
+             "a session serving THIS repository keeps importing into the deleted profile",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find_span=('            boolean running = ingestSchedulerService.getIdleProfiles().contains(profileId);',
+                   '                        servedRepository);\n            }'),
+        replace='            logger.info("import profile {} still has {} definition row(s) somewhere;"\n'
+                '                    + " leaving its scheduler alone", profileId,\n'
+                '                    leftAnywhere < 0 ? "an unknown number of" : String.valueOf(leftAnywhere));',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['aSessionServingThisRepositoryIsStopped', 'anUnattributableSessionIsStopped'],
+    ),
+    dict(
+        id="TF",
+        what="an unattributable IDLE session is treated as another repository's and left running",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find='            if (servedRepository == null || servedRepository.equals(repositoryId)) {',
+        replace='            if (servedRepository != null && servedRepository.equals(repositoryId)) {',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['anUnattributableSessionIsStopped'],
+    ),
+    dict(
+        id="TG",
+        what="the delegated ingest gate resolves index-free only on a repository mismatch — the "
+             "row it authorises and the row the import uses can be different twins",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find_span=('        ImportProfileDefinition profile;\n        try {\n            profile = importProfileDefinitionService.getForRepository(profileId, repositoryId);',
+                   '            profile = selected;\n        }'),
+        replace='        ImportProfileDefinition profile = importProfileDefinitionService.get(profileId);',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['twoRowsOfOneProfileInThisRepository_isRefusedBeforeAnyImport'],
+    ),
+    dict(
+        id="TH",
+        what="a row that belongs to no repository is refused by the row-addressed delete again — "
+             "unreachable, while it makes that profileId's PUT a standing 409",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='        boolean unowned = props != null && props.get("repositoryId") == null;',
+        replace='        boolean unowned = false;',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['anUnownedRowIsReachable'],
+    ),
+    dict(
+        id="TI",
+        what="the unowned-row exemption is widened to any repository — the confinement that "
+             "stops a caller of one repository deleting another's row is gone",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                || !(unowned || repositoryId.equals(props.get("repositoryId")))) {',
+        replace='                || !(true || repositoryId.equals(props.get("repositoryId")))) {',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['anotherRepositorysRowIsStillRefused'],
     ),
     dict(
         id="HA",

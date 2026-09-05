@@ -124,9 +124,44 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     }
 
     /**
+     * "Not found" is a claim about the DATABASE, and {@code get} is answered by a Mango
+     * selector plus one id-addressed fallback — both of which can miss a row that is there.
+     * Returns a retryable refusal when an index-free read says the row exists (or cannot say),
+     * and null when it really is absent. Shared by every entry point that reports absence.
+     */
+    private ExternalIngestResult profileHiddenOrAbsent(String requestId, String profileId,
+            String repositoryId) {
+        try {
+            if (importProfileDefinitionService.existsIndexFree(profileId, repositoryId)) {
+                return ExternalIngestResult.error(requestId, "import profile " + profileId
+                        + " exists but could not be read for this import; retry shortly");
+            }
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+            return ExternalIngestResult.error(requestId, "whether import profile " + profileId
+                    + " exists could not be established; retry shortly: " + e.getMessage());
+        }
+        return null;
+    }
+
+    /** The connector twin of {@link #profileHiddenOrAbsent}. */
+    private ExternalIngestResult connectorHiddenOrAbsent(String requestId, String connectorId) {
+        try {
+            if (connectorDefinitionService.existsIndexFree(connectorId)) {
+                return ExternalIngestResult.error(requestId, "connector " + connectorId
+                        + " exists but could not be read for this import; retry shortly");
+            }
+        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+            return ExternalIngestResult.error(requestId, "whether connector " + connectorId
+                    + " exists could not be established; retry shortly: " + e.getMessage());
+        }
+        return null;
+    }
+
+    /**
      * Cloud Drive UI and REST use short provider ids ({@code google}, {@code microsoft}) while
      * scheduler docs and some deployments register FILE_SHARE connectors as {@code google_drive} /
-     * {@code onedrive}. Try aliases so canonical cloud import auto-resolves either way.
+     * {@code onedrive}. Try aliases so canonical cloud import auto-resolves either way. The
+     * ORDER is the preference: the spelling the request used first.
      */
     static List<String> connectorLookupKeysForAutoResolve(String sourceSystem, SourceArchetype archetype) {
         if (sourceSystem == null || sourceSystem.isBlank()) {
@@ -153,11 +188,21 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (request.getConnectorId() == null || request.getConnectorId().isBlank()) {
             ConnectorDefinition autoConnector = null;
             List<String> keysTried = connectorLookupKeysForAutoResolve(sourceSystem, archetype);
-            for (String key : keysTried) {
-                autoConnector = connectorDefinitionService.findBySystemAndArchetype(key, archetype);
-                if (autoConnector != null) {
-                    break;
-                }
+            try {
+                // ONE index-free walk for every alias key, not one per key: each key that
+                // missed used to pay for its own walk of the whole config database. The key
+                // ORDER still decides — the resolver applies the preference itself.
+                autoConnector = connectorDefinitionService.findBySystemsAndArchetype(
+                        keysTried, archetype);
+            } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+                // The connector twin of the profile arm below: a row that could not be read
+                // while deciding WHICH connector this import uses is a retryable refusal, not
+                // an unexplained failure at CloudDriveResource. A review found it unmapped.
+                return ExternalIngestResult.error(requestId, "connector resolution is"
+                        + " temporarily unavailable, retry shortly: " + e.getMessage());
+            } catch (IllegalStateException e) {
+                // Several connectors match — refuse rather than let storage order choose.
+                return ExternalIngestResult.error(requestId, e.getMessage());
             }
             if (autoConnector == null) {
                 String hint = keysTried.size() > 1
@@ -176,6 +221,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             try {
                 autoProfile = importProfileDefinitionService
                         .findDefaultForRepository(request.getRepositoryId(), archetype, request.getConnectorId());
+            } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+                // A profile row could not be read while resolving WHERE this import lands.
+                // Refuse the import as retryable — the same request succeeds once the row
+                // reads — rather than let the exception surface as an unexplained failure
+                // one layer up (a round-3 review found it unmapped there).
+                return ExternalIngestResult.error(requestId, "import profile resolution is"
+                        + " temporarily unavailable, retry shortly: " + e.getMessage());
             } catch (IllegalStateException e) {
                 // Ambiguous: multiple profiles match — fail closed, do NOT fall through
                 return ExternalIngestResult.error(requestId, e.getMessage());
@@ -213,7 +265,30 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // Early validation: check profile AND connector BEFORE expensive EML parsing
         if (request.getProfileId() != null && importProfileDefinitionService != null) {
             ImportProfileDefinition profile = importProfileDefinitionService.get(request.getProfileId());
+            if (profile != null && profile.getRepositoryId() != null
+                    && !profile.getRepositoryId().equals(request.getRepositoryId())) {
+                // The selector answers on profileId alone: this early validation ended in
+                // "Profile repository mismatch" for an import whose OWN repository has the
+                // profile, and never reached execute() where the resolution lives. A review
+                // found the mail entry point left out.
+                try {
+                    profile = importProfileDefinitionService.getForRepository(
+                            request.getProfileId(), request.getRepositoryId());
+                } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException pair) {
+                    return ExternalIngestResult.error(requestId, pair.getMessage());
+                } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+                    return ExternalIngestResult.error(requestId, "import profile "
+                            + request.getProfileId() + " could not be resolved for this"
+                            + " repository; retry shortly: " + e.getMessage());
+                }
+            }
             if (profile == null) {
+                // The same split execute() got: this early validation runs BEFORE it, so
+                // without the split a hidden legacy row was still reported as absence on the
+                // mail entry point. A review found the remaining door.
+                ExternalIngestResult hidden = profileHiddenOrAbsent(requestId,
+                        request.getProfileId(), request.getRepositoryId());
+                if (hidden != null) return hidden;
                 return ExternalIngestResult.error(requestId, "Import profile not found: " + request.getProfileId());
             }
             if (!profile.isEnabled()) {
@@ -226,6 +301,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (request.getConnectorId() != null && connectorDefinitionService != null) {
                 ConnectorDefinition conn = connectorDefinitionService.get(request.getConnectorId());
                 if (conn == null) {
+                    ExternalIngestResult hidden = connectorHiddenOrAbsent(requestId,
+                            request.getConnectorId());
+                    if (hidden != null) return hidden;
                     return ExternalIngestResult.error(requestId, "Connector not found: " + request.getConnectorId());
                 }
                 if (!conn.isEnabled()) {
@@ -2477,13 +2555,52 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
         // 1. Resolve profile
         ImportProfileDefinition profile = importProfileDefinitionService.get(request.getProfileId());
+        if (profile != null && profile.getRepositoryId() != null
+                && !profile.getRepositoryId().equals(request.getRepositoryId())) {
+            // The selector answers on profileId alone: with the same id in two repositories
+            // it hands back an arbitrary twin, and this import was then refused as a
+            // repository mismatch although the requested repository has its own row. A
+            // review found the runtime half of a defect the admin API had already closed.
+            try {
+                profile = importProfileDefinitionService.getForRepository(
+                        request.getProfileId(), request.getRepositoryId());
+            } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException pair) {
+                return ExternalIngestResult.error(requestId, pair.getMessage());
+            } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+                return ExternalIngestResult.error(requestId, "import profile "
+                        + request.getProfileId() + " could not be resolved for this"
+                        + " repository; retry shortly: " + e.getMessage());
+            }
+        }
         if (profile == null) {
+            // "Not found" is a claim about the DATABASE, and this read is answered by a Mango
+            // selector plus one id-addressed fallback — both of which can miss a row that is
+            // there while an index rebuilds. Ask index-free before saying it. The first fix
+            // for this was a pre-check in executeWithAutoResolve; a review pointed out the
+            // window simply moved here, where every caller of execute() passes.
+            try {
+                if (importProfileDefinitionService.existsIndexFree(request.getProfileId(),
+                        request.getRepositoryId())) {
+                    return ExternalIngestResult.error(requestId, "import profile "
+                            + request.getProfileId() + " exists but could not be read for this"
+                            + " import; retry shortly");
+                }
+            } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+                return ExternalIngestResult.error(requestId, "whether import profile "
+                        + request.getProfileId() + " exists could not be established; retry"
+                        + " shortly: " + e.getMessage());
+            }
             return ExternalIngestResult.error(requestId, "Import profile not found: " + request.getProfileId());
         }
         if (!profile.isEnabled()) {
             return ExternalIngestResult.error(requestId, "Import profile is disabled: " + request.getProfileId());
         }
-        // Enforce repository scope: profile must match the request's repository
+        // Enforce repository scope: profile must match the request's repository.
+        //
+        // Defence in depth — unreachable by construction since the resolution above: a row of
+        // ANOTHER repository is replaced by this repository's own row, and when there is none
+        // the null arm answers first. It stays because the enforcement must not live in one
+        // place only, but it can no longer be reached from a test, so nothing measures it.
         String repositoryId = request.getRepositoryId();
         if (profile.getRepositoryId() != null && !profile.getRepositoryId().equals(repositoryId)) {
             return ExternalIngestResult.error(requestId,
@@ -2494,6 +2611,21 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // 2. Resolve connector
         ConnectorDefinition connector = connectorDefinitionService.get(request.getConnectorId());
         if (connector == null) {
+            // The connector half of the same split as the profile above: "not found" is a
+            // claim about the DATABASE, and this read is a Mango selector plus one
+            // id-addressed fallback. A review found this branch left behind when the profile
+            // one was fixed — the adjacent line, the identical defect.
+            try {
+                if (connectorDefinitionService.existsIndexFree(request.getConnectorId())) {
+                    return ExternalIngestResult.error(requestId, "connector "
+                            + request.getConnectorId() + " exists but could not be read for"
+                            + " this import; retry shortly");
+                }
+            } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+                return ExternalIngestResult.error(requestId, "whether connector "
+                        + request.getConnectorId() + " exists could not be established; retry"
+                        + " shortly: " + e.getMessage());
+            }
             return ExternalIngestResult.error(requestId, "Connector not found: " + request.getConnectorId());
         }
         if (!connector.isEnabled()) {

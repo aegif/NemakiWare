@@ -53,10 +53,14 @@ class ConnectorCreationRefusesAnIndexDisagreementTest {
         String source = JavaSource.withoutComments(JavaSource.read(SOURCE));
         String body = JavaSource.methodBody(source, "private void upsertDocument(ConnectorDefinition def, boolean creating)");
 
-        int idRead = body.indexOf("readByDeterministicId(");
+        // The DECLARATION, not the first call: the hidden arm's create message now reads
+        // the deterministic id too (to say whether the hidden row is legacy or deterministic),
+        // and searching for the call found that one — the whole gate could be deleted with
+        // this lock still green. A review caught it before it was measured.
+        int idRead = body.indexOf("Document deterministic = existing.isEmpty()");
         int post = body.indexOf("postDocument(");
         assertTrue(idRead > 0,
-                "the id-addressed read is gone, so a rebuilding Mango index can answer 'no "
+                "the id-addressed gate is gone, so a rebuilding Mango index can answer 'no "
                         + "such connector' and a second definition is written: " + body);
         assertTrue(post > idRead,
                 "the document is written before the id is consulted, which is the order the "
@@ -64,7 +68,11 @@ class ConnectorCreationRefusesAnIndexDisagreementTest {
         // Not just "an IllegalStateException is thrown somewhere in this method" — the
         // failed-write check at the bottom throws one too, so that assertion held with the
         // whole gate deleted. What has to be true is that the CREATE arm refuses.
-        int creating = body.indexOf("if (creating)");
+        // Searched FROM the id read: the index-free count that now runs before every
+        // write has its own `if (creating)` refusal earlier in the body, and the first
+        // occurrence stopped being the arm this assertion is about (a review-round-2
+        // restructure).
+        int creating = body.indexOf("if (creating)", idRead);
         assertTrue(creating > idRead && creating < post,
                 "the create arm no longer refuses between the id read and the write, so a "
                         + "rebuilding index lets a second definition through: " + body);
@@ -92,7 +100,14 @@ class ConnectorCreationRefusesAnIndexDisagreementTest {
         String body = JavaSource.methodBody(source,
                 "private void upsertDocument(ConnectorDefinition def, boolean creating)");
 
-        int creating = body.indexOf("if (creating)");
+        // FROM the id-addressed gate, like the sibling test above. The first "if (creating)"
+        // in this method is the index-free count's own refusal, so a window opened there
+        // covers almost the whole body and four other throws of this type — the arm this
+        // assertion is about could be deleted with the lock still green. A review found the
+        // same drift here one round after it was fixed next door.
+        int idRead = body.indexOf("Document deterministic = existing.isEmpty()");
+        assertTrue(idRead > 0, "the id-addressed gate is gone: " + body);
+        int creating = body.indexOf("if (creating)", idRead);
         String afterTheCreateArm = body.substring(creating);
         assertTrue(afterTheCreateArm.contains("throw new ConnectorIndexNotReadyException"),
                 "the update path no longer refuses, so a request assembled against a "

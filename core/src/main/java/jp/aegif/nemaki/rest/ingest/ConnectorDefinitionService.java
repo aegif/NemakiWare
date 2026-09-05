@@ -15,21 +15,41 @@ public interface ConnectorDefinitionService {
     boolean exists(String connectorId);
 
     /**
-     * Deletes ONE definition row of {@code connectorId}, addressed by its raw document id.
-     *
-     * <p>This exists for divergent twins: the migration refuses to choose between a legacy
-     * row and a deterministic row that disagree, and {@link #delete(String)} removes every
-     * selector match — so "delete the one you do not want" had no API that could do it. The
-     * row is verified to actually define {@code connectorId} before it is removed; anything
-     * else refuses.
+     * Whether ANY row defines {@code connectorId}, read without the Mango index — the twin
+     * of {@link ImportProfileDefinitionService#existsIndexFree}. Lets a caller tell "the
+     * index cannot show it" (503) from "there is no such connector" (404). Throws
+     * {@code ConnectorIndexNotReadyException} when a row could not be classified: that is
+     * "could not ask", which must not be answered as "no".
      */
-    void delete(String connectorId, String docId);
+    boolean existsIndexFree(String connectorId);
 
     /**
-     * Finds the first enabled connector matching the given sourceSystem and archetype.
+     * The one enabled connector whose {@code sourceSystem} is any of {@code sourceSystems}
+     * and whose archetype matches. The list is an ORDERED preference (the spelling the
+     * request used, then its aliases); a tie WITHIN one key is refused, because there the
+     * old code returned whichever row the index handed back. One index-free walk serves the
+     * whole list — walking per key multiplied the cost by the number of aliases.
+     */
+    ConnectorDefinition findBySystemsAndArchetype(java.util.List<String> sourceSystems,
+            SourceArchetype archetype);
+
+    /**
+     * Removes the row addressed by {@code docId} and returns how many rows of this connector
+     * remain. 0 means another caller removed the other twin concurrently, so the connector is
+     * gone through a path that assumes a survivor; -1 means the count could not answer, which
+     * is "unknown", never "a row survives".
+     */
+    int delete(String connectorId, String docId);
+
+
+
+    /**
+     * Finds the one enabled connector matching the given sourceSystem and archetype.
      * Used for auto-resolution when the caller does not explicitly specify a connectorId.
      *
      * @return matching connector, or null if none found
+     * @throws IllegalStateException when several enabled connectors match one key — the
+     *         choice is refused rather than made by storage order.
      */
     ConnectorDefinition findBySystemAndArchetype(String sourceSystem, SourceArchetype archetype);
 

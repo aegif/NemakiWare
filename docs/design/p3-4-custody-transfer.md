@@ -6364,3 +6364,637 @@ case-insensitive 化。(F2) 新錠に PA/PG 下の NPE ロンダリング対策 
 これで OT〜PH を含む**全コントロールが通しで測定済み**になった (それまでは第 6 巡の
 203/203 + 個別発火のみ、という状態を台帳が区別して持っていた)。この後は指示順どおり
 push → 常設デモ (avenue) 反映。
+
+#### §62 の後半 — import profile に同じ 3 点 (実装。**この節の時点では未測定**)
+
+並行レビュー (avenue 反映の直前) の指摘: `Patch_DefaultCloudDriveConnectorProfile` はコネクタの
+**後**にリポジトリごとの `cloud-import-{repo}` profile を `exists() → create()` で作るが、
+profile 側の service は**コネクタが閉じる前の形そのもの** — selector ベースの exists、空振り時は
+setId せず生成 ID、id 直読み無し、scan 無し、移行無し。同じ nemaki_conf・同じ再構築中の索引・
+同じ起動時の入口。ローカル実機の conf DB でも `cloud-import-bedroom` / `cloud-import-canopy` が
+**生成 ID で実在**していた (コネクタ移行は profile を書き直さない)。「コネクタだけ閉じた」と
+いう台帳の記録は正確だったが、「このパッチが再構築中に二重定義を書かない」には未達だった。
+
+##### 移植したもの (コネクタと同形、arm ごとに錠)
+
+| 門 | profile 側の実装 |
+|---|---|
+| 確定的 ID | `import_profile_definition:{profileId}`。selector 空振り時に生成 ID で書く枝を廃止 (PM) |
+| id 直読み | `readByDeterministicId`。見つかったら create は already-exists、update は `ProfileIndexNotReadyException` → 503 (PL は採用への戻し) |
+| 索引不要 scan | `aProfileRowExistsIndexFree` を create/update 両方に (PI 全撤去 / PJ 絞り)。分類不能は create 400・update 503 (PK) |
+| 起動時移行 | 同じパッチ `Patch_ConnectorDefinitionDeterministicIds` が**両半分を 1 pass** で走らせる (PT は profile 半分の脱落)。copy→検証→rev 条件付き retire、`contentOnly` (PN)、divergent 不触 (PO)、conflict 報告 (PP)、添付拒否 (PQ)、tombstone purge (PR) |
+| 解決手段 | `DELETE .../admin/import-profiles/{id}?docId=` の 1 行削除 (PS は帰属検査の絞り)。ERROR メッセージはこの実在する操作を指す |
+
+**walk は共有化した**: `NemakiConfAllDocs.forEachRow` に切り出し、両 service が呼ぶ (両側の
+no-index 錠が「共有 walk を使うこと」を表明)。ページングの罠 (skip-after-delete・前進なし) は
+一か所にしか無い。OV / OZ / PB は細工テキスト不変のまま file だけ共有クラスへ。
+per-row の移行方針は service ごとの写しで、**両側それぞれに完全な錠 + コントロール**を持つ
+(「コネクタを直して profile を忘れる」を 2 つの錠ファイルが見張る形)。
+
+コントロールは **230 本** (PI〜PT 12 本追加)。**未測定**: レビュー 3 巡の安定後に測る。
+
+##### profile 閉鎖へのレビュー 1 巡目 (3 巡中) — P1×1 / P2×2 / P3×1 + 測定の穴 4
+
+| 指摘 | 直し |
+|---|---|
+| **P1: `?docId=` 削除がリポジトリ境界を越える。** controller の所有権検査は get() が**先に返した twin** に対して走り、service は type と profileId しか見ないので、divergent twin が repositoryId で食い違うと **A の管理者が B の行を消せる** | 削除対象の**行そのもの**で repositoryId を検査 (`delete(profileId, docId, repositoryId)`)。controller は呼び出し元のリポジトリを渡し、不一致は他の越境拒否と同じ **404** (存在を漏らさない)。錠 + コントロール PV |
+| **P2: uniqueness 検査が再構築中 fail-open。** 「リポジトリごとに既定 1 つ」は `listByRepository` (selector) で検査しており、再構築中は空 → 2 つ目の既定が通り、索引回復後に auto-resolve が ambiguity で落ちる。profileId の scan はこの項目を見ない | `listByRepositoryIndexFree` (共有 walk) で検査。読めない行は create 400 / update 503 の型分け (scan と同じ)。錠 3 本 (hidden default を止める / 読めない行 / 通常の既定は通る) + PW |
+| **P2: PUT/DELETE が先に偽 404。** controller の get()-404 門が service の 503 より手前にあり、見えているだけの profile を "not found" と答える | `hiddenOrAbsent`: get() が null のとき `existsIndexFree` (新 API) を訊き、**見えない = 503、無い = 404**。POST と transferOwnership にも 503 写像 |
+| P3: コネクタ半分の例外が profile 半分を飢えさせる | `runHalf` で半分ごとに try/catch・報告。両方走って初めて true |
+| 錠 parity 欠け (purge-false / NotFound-only 錠) | 追加 |
+| profile の create 側 deterministic 拒否にコントロール無し | PU |
+| docId 削除が scheduler 停止と削除の記録を出す (profile は生きている) | docId 経路では両方しない (応答に `deletedRow` を載せる) |
+| RELEASE_NOTES が profile 側の変更を書いていない | 追記 |
+
+(数: テストは 26 でなく **24 本だった** — 台帳には書いていなかったので訂正対象なし。)
+
+##### profile 閉鎖へのレビュー 2 巡目 (3 巡中) — Codex: P1×3 / P2×3 / P3×1。サブエージェントは利用制限で未報告 (再実行する)
+
+| 指摘 | 直し |
+|---|---|
+| **P1: `?docId=` 削除の委任者検査が selector の twin に対して走る。** delegated フラグと対象フォルダの cmis:all は get() が返した twin で検査され、消すのは docId の行 — 同一リポジトリ内で委任ユーザーが admin 管理の twin を消せる | resolver は**管理者専用** (委任者は 403)。twin の解決は移行の後始末であってセルフサービスではない |
+| **P1: selector が「空」ではなく「部分」のとき (twin の片方だけ見える) PUT/DELETE が危険。** update は見える twin を採用し、隠れた方と静かに divergent に。plain DELETE は見える分だけ消して「完全削除」を監査 | scan を**毎回**走らせ**行数**で比べる: 隠れた行があれば create は already-exists、update は 503。plain DELETE は walk で**呼び出し元リポジトリの全行**を消し、読めない行があれば 503 (「消した」は消したの意味)。コネクタ側も同形に (arm parity — 台帳の「消したつもりが残る」記録はここで閉じた) |
+| **P1: 実行時の auto-resolve (`findDefaultForRepository`) が selector 読み。** 意図した既定が隠れて fallback が見えると、取込内容が**別のプロファイル配下に着地**する (成功の顔で) | walk 経由の一覧に。読めない行は 503 相当で拒否 (見えたものに解決しない) |
+| P2: `hiddenOrAbsent` がリポジトリ非依存 — B に隠れた行が A の 404 を 503 に変え、越境の存在開示 | `existsIndexFree(profileId, repositoryId)` に |
+| P2: transferOwnership に偽 404 門が残存 | 同じ `hiddenOrAbsent` 門 |
+| P2: profileId 無しでも deserialize できる行が uniqueness 比較で NPE → 500 | 一覧側で拒否 (identity の無い行はこの規則の対象外) |
+| P3: テストが境界を踏んでいない (admin のみ・selector 空のみ・patch は source-presence) | 委任者 403 / 部分 selector の update・delete / 越境 existsIndexFree / auto-resolve hidden default / null profileId — 各挙動錠を追加。patch の source-presence は tripwire として据え置き (Spring 無しでは挙動化できない) |
+
+**fixture の教訓**: profile の create/update は walk を **2 回** (uniqueness 一覧 + count scan) 回すため、
+コネクタ流の「ページ queue」fixture だと 2 回目が null を受けて偽の「did not answer」になる。
+sticky page (全 walk が同じ DB を見る) に変えた。この点は自分で疑い、2 巡目のプロンプトに書いていた。
+
+##### 2 巡目 (再実行) と 3 巡目 — 直しが直しを壊していた 4 件と、実行時コスト
+
+サブエージェント 2 巡目の再実行は「**健全な木で 7 本が赤・1 本が誤った理由で緑になるはず**」と読解した (実行はしていない)。全部、
+2 巡目の直しが**改名・改文したものを錠が追っていなかった**: source lock のメソッド名
+(`aXRowExistsIndexFree` → `countXRowsIndexFree`)、update 腕のメッセージ (`legacy row` →
+`rebuilding index shows 0`)、sticky fixture 化の取りこぼし 2 本 (page 未設定で最初の walk が
+「did not answer」)、count scan の catch を測るはずのテストが**その手前の uniqueness 一覧の catch**
+で止まる (無効化した profile で迂回)。走らせていれば通しの初手 (green-after) で止まっていた。
+
+Codex 3 巡目:
+
+| 指摘 | 直し |
+|---|---|
+| **P1: 削除が 503 で拒否されても IMAP IDLE は止まっている** (`stopIdle` が削除の前) — 生きている profile のメール取込が黙って止まる | `stopIdle` を削除成功の**後**に。挙動錠 (拒否時は呼ばない / 成功時は呼ぶ) + QL |
+| **P2: 実行時 auto-resolve が取込 1 件ごとに nemaki_conf を全走査**。同 DB は ingest job 記録も溜める (1 万行級の履歴あり) → 1 ファイルあたり 50 リクエスト級 | 実行時経路だけ **確定的 ID の範囲 walk** (`import_profile_definition:` 〜 `￰`) — 件数はプロファイル数で有界。書き込み側の uniqueness/count と移行は全走査のまま (管理操作・起動時)。錠は範囲キーを表明、QJ |
+| **⚠ この行の直しは後に取り下げ** (「Codex 5 巡目」節)。索引は legacy 行の**不在を確立できない** — 再構築中の索引は在る行に「無い」と答える — ので「索引の取りこぼしは何も失わない」は**誤り**。現在は移行の clean 判定を根拠にしている。以下は当時の記録。<br>(上の直しが開けた穴、自己指摘) 範囲 walk は legacy 行を見ない。移行が書き直せなかった legacy の default (毎起動 ERROR 報告) は、それでも当該リポジトリの定義で、落とすと**別の確定的行へ黙って着地**する。twin が食い違っていれば旧コードは「default が 2 つ」で拒否していたのに、確定的行が黙って勝つ | 索引を**加算的に**併読 (`withLegacyRowsTheIndexStillShows`): 確定的行は索引無しで既に全部読めているので、索引の取りこぼしは何も失わない。profileId が重なる twin は内容比較 — 同一なら同じ行を二度見ただけ、**食い違えば「Ambiguous auto-resolve」で拒否** (docId 削除 API を名指し)。索引が答えなければ WARN して確定的行だけで解決 (過剰拒否は双子の欠陥)。錠 4 本 + QM / QN / QO |
+| **P2: 再試行例外が呼び出し元で未写像** — `CanonicalImportServiceImpl` は IllegalStateException だけ catch し、`CloudDriveResource` の汎用 catch で「予期しない失敗」に | `ProfileIndexNotReadyException` を catch し「retry shortly」の結果に。台帳 2 巡目の「503 相当」は**過大だった** (この行で訂正)。source 錠 + QK |
+| P3: repositoryId 無しの行を移行すると、限定削除も docId 解決も届かない行になる | **移行しない** (malformed として報告)。RELEASE_NOTES に明記 |
+| P3: `listByRepositoryIndexFree` の型分け catch にコントロール無し / 死んだ単引数 overload / null repo の no-op 契約 | QI / 削除 / javadoc |
+
+コントロールは **251 本**。**依然未測定**。
+
+##### 並行レビュー (利用制限中に受領) — 両 upsert が「隠れた twin」しか見ていなかった
+
+`rowsDefiningThisX > existing.size()` は、索引が twin を**隠している**ときだけ拒否する。索引が
+戻って 2 行とも見せると `existing.get(0)` に書いて 200 — standing twin は再構築ではなく、同じ
+PUT を再試行しても直らず、片方が上書きされる。移行は「勝者を選ばない」と言いながら、通常更新が
+選んでいた。profile とコネクタの両方。
+
+直し: 件数そのものを見る。`rows > 1` → 書かない。create は従来どおり already-exists (400)、
+update は **409** (`ProfileHasTwinRowsException` / `ConnectorHasTwinRowsException`、
+`?docId=` の削除 API を名指し)。**503 にしない** — 503 は「待てば通る」で、ここでは嘘になる。
+`rows == 1` で selector が 0 (隠れている・一時的) は従来どおり create=already-exists /
+update=503。`rows == 1` で selector も 1 はその行に書く。`rows == 0` は確定的 ID で新規。
+
+錠は「selector が 2 件とも返す」fixture で update が書かないこと (service 2 本) と、
+controller が 409 を返すこと (2 本)。コントロールは `> 1` を `> existing.size()` に戻す細工
+(QP / QQ) と、409 の catch を外す細工 (QR / QS)。**255 本**。**依然未測定**。
+
+##### サブエージェント 3 巡目 (再実行) — 測定が始まらない 4 件と、表とコードの順序
+
+**P1 (測定基盤)**: (1) `ConnectorLegacyIdMigrationTest.theMigrationConsultsNoIndex` が健全な木で赤 —
+範囲 walk 追加で `forEachRow` が `walk()` への 1 行委譲になり、`postAllDocs(` を読む錠が空を見て
+いた。第 2 巡と同型 (直しが動かしたものを錠が追っていない)。(2) QC の anchor が現ソースに無く、
+pre-flight が全 255 本の実行を拒否する状態だった。**こちらの手順の欠陥**: pre-flight の
+`anchors_still_match()` は問題の一覧を**返す**関数で、呼ぶだけでは検査にならない。戻り値を
+印字せずに「事前検査は全緑」と報告していた。以後は戻り値が空であることを表明する。(3) PA / PI の
+細工が `rows > 1` ブロックの参照する宣言ごと消してコンパイル不能。(4) QO の細工が `throw` の
+後に文を残し unreachable でコンパイル不能。
+
+**P2**: 台帳の判定表は「件数だけで 409/503 を分ける」と書き、コードは隠れ腕を先に評価していた —
+rows=2 / selector∈{0,1} の update は 503 「待てば通る」だが、件数は `_all_docs` で確定済みで、
+追いついた再試行は必ず 409 になる。書き込みは起きないが、確定した答えを別の値で報告している。
+**直し: twin 腕を先に**。rows > 1 は索引の状態に関わらず 409 (create は 400)。隠れ腕は
+rows == 1 / selector 0 だけになり、「索引が追いつけば同じ PUT が通る」が真になる。錠
+`anUpdateWithAHiddenTwinIsAStandingPairNotARetry` (旧 …RefusesRetryably) は 409 型を要求。
+PY / PZ は「twin 腕を全可視のときだけに絞る」細工に張り替え (隠れた対が『retry』と言われる)。
+PA / PI は span が twin 腕も含むので、件数に依る錠 4 本すべてを expect に列挙。
+
+**P3**: create 腕の文言が「legacy 行」と決め打ち (id 直読みより前に走るので、確定的行が隠れて
+いるだけでもそう言う) → id を読んで言い分ける。既定プロファイル patch の `exists()` は selector
+なので再構築中は毎起動 WARN → `existsIndexFree` を併用 (錠 + QT)。interface javadoc の死んだ
+`{@link #delete(String)}`。RELEASE_NOTES「docId 無しの DELETE は全行」はプロファイルでは
+呼び出し元リポジトリの行だけ — 別リポジトリの同 profileId 行はそのリポジトリの管理者しか消せず、
+それまで 409 が続く旨を追記。記録のみ: `IngestSchedulerService` の auto-disable は twin が
+立っている間 tick ごとに WARN (catch Exception) で auto-disable されない。
+
+コントロールは **256 本**。**依然未測定**。
+
+##### Codex 5 巡目 — 加算的索引読みの撤回と、create が行を奪う競合
+
+**P1-1: create が既存行を上書きする。** `create()` は selector で存在検査をし、`upsertDocument` が
+もう一度 selector を引く — **別々のリクエストで、スナップショットではない**。同時 create が 2 本とも
+検査を通り、遅い方が速い方の `_id`/`_rev` を adopt して設定を上書きし、**201 を返していた**。
+直し: **create は行を adopt しない**。索引不要の件数が 1 以上なら 400 (already exists)。
+索引再構築中でも成立する検査。錠 `aCreateNeverAdoptsARowTheScanFound` + QU / QV。
+
+**P1-2: 加算的索引読みは「訊けなかった」を「無い」と同値化していた** (前節の自己発見の直しが、
+このバッチ自身の欠陥を一段上で再現していた)。範囲 walk は legacy 行を見られず、それを補うはずの
+索引読みは、**例外時に握り潰す**だけでなく、**成功しても空を返しうる** (再構築中の索引 = §62 の窓
+そのもの)。つまり索引では legacy 行の**不在を確立できない**。前節の「索引の取りこぼしは何も失わない」
+は**誤り。ここで取り下げる**。
+
+直し: 索引を読むのをやめ、**移行の判定を根拠にする**。`migrateLegacyGeneratedIds()` が failures も
+divergent も無く終わったときだけ `everyProfileRowIsUnderItsDeterministicId = true` になる。true の
+ときだけ範囲 walk (有界)、それ以外は全走査 (権威的・legacy 行も見える)。閉鎖後の書き込みは必ず
+確定的 ID なので、clean な一巡は「全行が範囲内」を本当に確立する。既定は false — 移行が走って
+いない JVM は全走査を払う。**残留 (紙で覆わない)**: ローリング更新中、旧レプリカがこのレプリカの
+clean 判定の後に生成 ID 行を書きうる。錠 3 本 (`aLegacyRowTheMigrationCouldNotRewriteIsStillTheDefault`
+/ `theAutoResolverBoundsTheWalkOnlyAfterACleanMigration` / `aBrokenIndexDoesNotRefuseTheAutoResolver`)
+と QM / QN / QO。撤回に伴い divergence 比較と `asComparable` は削除、QN/QO は張り替え。
+
+**P1-3: 索引が返した legacy 行のうち、逆直列化に失敗した行を `findBySelector` が黙って捨てる** —
+P1-2 の撤回で消滅 (auto-resolve は索引を読まない)。
+
+**P3: 削除成功後の `stopIdle` 例外が監査記録を落として 500 を返す。** プロファイルは既に消えて
+いるのに「消えていない」と読める応答になり、セキュリティ証跡にも残らない。順序を直した回が開けた
+窓。guard して WARN、監査と 200 は必ず出す。錠 `aFailingStopIdleDoesNotLoseTheAudit` + QY。
+
+**自己指摘 (Codex の判定表から)**: `rows < existing.size()` — selector が walk より多く報告する状態
+— は不一致であって「1 行に書けばよい」ではない。両腕とも 503 で拒否。錠
+`theSelectorMustNotOutReportTheWalk` + QW / QX。
+
+コントロールは **261 本**。**依然未測定**。
+
+##### サブエージェント 4 巡目 + Codex 6 巡目 — 錠が門を測っていない 2 件と、片腕 4 件
+
+**測定基盤 (サブエージェント P1)**: (1) コントロール OA が鳴らない — 隠れ腕の create 文言が
+`readByDeterministicId(` を呼ぶようになり、source 錠の `indexOf` がそちらを拾って**門を丸ごと
+消しても緑**だった。錠を宣言 (`Document deterministic = existing.isEmpty()`) に張り替え。
+(2) QM / QN が鳴らない — profile fixture の `postAllDocs` スタブが `startKey`/`endKey` を
+**一切見ず**、範囲外の行まで返していた。CouchDB と同じく範囲で絞るように修正。
+
+**Codex P1**: (3) 範囲の上限が `￰` センチネルで、U+FFF0 より上の文字で始まる ID が
+**完全と称する walk から静かに落ちる**。接頭辞の最終文字を +1 した排他上限 (`inclusiveEnd(false)`)
+に変更。(4) 移行の判定フラグが**成功時にしか代入されず**、後の巡が途中で落ちると前の `true` が
+残る。パスの**先頭で false に落とす**。(5) `get()` 自体が selector なので、**索引不要で解決した
+profile を execute() が見失う**往復が残っていた。`get()` に確定的 ID のフォールバックを足し
+(miss 時のみ・日和見的)、取込入口では解決後に到達性を確認して**再試行可能な拒否**にする。
+(6) 行削除は 1 行ずつでトランザクションが無く、途中で落ちると**部分削除のまま 500・監査記録なし**。
+監査して 503 (再試行で残りが消える)。
+
+**Codex P2**: (7) 同じ ID の legacy 行が 2 行あり確定的行が無い場合、**walk 中に移行していたため
+先に出会った方が canonical になっていた** — RELEASE_NOTES は「どちらも触らない」と約束している。
+**収集してから処理する**形に変更し、2 行以上ある ID は 1 行も触らず divergent として報告。
+walk 中に書かなくなったので、**移行にとっては**継続キーの扱いが効かなくなった (行 ID を鍵に
+まとめるため、再供給されても 1 件)。**walk の dedup 自体は依然 load-bearing**: count scan・
+uniqueness listing・delete は ID でまとめないので、境界行が二重供給されると存在しない twin で
+409、偽の重複で 400、同じ行の二重削除になる。そのため境界の錠は移行ではなく count 側に
+張り替えた (`aBoundaryRowIsCountedExactlyOnce`、PB)。
+
+**片腕 (サブエージェント P2)**: (8) コネクタの POST が `ConnectorIndexNotReadyException` を
+写像せず 500 (PUT は 503)。(9) **GET が「見えない = 404」のまま** — 運用者が最初に叩く動詞。
+profile は `hiddenOrAbsent`、コネクタは新設の `existsIndexFree(connectorId)` で 503/404 を分ける。
+
+**Codex P3**: (10) id 直読みが**失敗**したときに「legacy 行」と断定していた文言を三値に。
+(11) QW/QX が update しか測っていない → create 側の錠を追加。(12) 重複 create を 409 でなく 400 に
+している件は**意図的に据え置き** — 既存 API の契約 (POST の重複は 400) を変えると利用者側の分岐が
+変わるため。
+
+**残留 (取り下げず記録)**: 移行の walk はスナップショットではない。ローリング更新中に旧レプリカが
+**パスの最中**に (カーソルより手前の ID で) legacy 行を書くと、その巡は clean と報告しうる。
+前節では「clean 判定の後」だけを書いていたが、**最中**も同じ窓である。もう一つ: 移行が clean で
+ない限り**取込 1 件ごとの全走査が恒久化しうる** (添付付き行や divergent は管理者が直すまで立つ)。
+また `aBrokenIndexDoesNotRefuseTheAutoResolver` は現在の実装では踏まれない経路の**トリップワイヤ**
+であり、何かを測っているわけではない。
+
+コントロールは **273 本**。**依然未測定**。
+
+##### Codex 7 巡目 + サブエージェント 5 巡目 — 何も測っていない錠が 2 本、過大な約束が 4 つ
+
+**P1 (測定基盤)**: (1) **PB が鳴らなくなっていた** — 収集後処理化で移行が行 ID を鍵にまとめる
+ようになり、walk の再供給 dedup を消しても移行の結果は変わらない。dedup は count / uniqueness /
+delete にとっては効いたままなので、錠を count 側に張り替え。(2) **QG が鳴らなくなっていた** —
+前巡で足した `catch (RuntimeException)` が `ConnectorIndexNotReadyException` を吸収していた。
+catch を部分削除専用の型に絞り、さらに 2 つの 503 が互いの錠を満たさないよう本文で区別。
+(3) 前巡の PU 到達不能 (`get()` フォールバックで `exists()` が先に refuse) は 2 段 stub で解消済み。
+
+**P1 (本体)**: (4) 取込入口の事前確認は**窓を動かしただけ**だった — `execute()` が profile を
+読み直し、そこを通る呼び出し元は auto-resolve だけではない。分岐を `execute()` に移し、
+`existsIndexFree` で「無い」と「読めない」を分けた。事前確認は撤去。
+
+**P2**: (5) コネクタの `existsIndexFree` が `IllegalStateException` を包まず、interface の約束と
+controller の 503 分岐が**死んでいた** (profile 側は最初から包んでいた片腕)。錠 + RM。
+(6) 部分削除の catch が広すぎ、**1 行も消せなかった恒久的失敗まで「再試行せよ」**にしていた。
+サービス側で「1 行以上消えた」場合だけ専用の型を投げ、それ以外は素通し。錠は本文で区別、RN / RO。
+(7) RELEASE_NOTES の 4 つの過大: 「2 行以上なら触らない」(同一内容の残骸は回収する)、
+「再試行で残りが消える」(恒久失敗には当てはまらない)、「見えない = 503」(確定的行は索引無しで
+読めるので多くは 200)、「読み落としは起きない」(walk はスナップショットではない) をすべて訂正。
+
+**P3 (記録のみ・今回スコープ外)**: `list` / `listByArchetype` / `listByRepository` と
+**コネクタの auto-resolve は依然 selector のみ**で、再構築中の空応答を「無い」と報告しうる。
+`findBySelector` は逆直列化に失敗した行を黙って落とす。`get() == null` を absence として使い
+下流に索引不要の拒否が無い呼び出し元 (`validateSchedulerParams` の connector 存在検査、webhook /
+scheduler 経路) も残っている。今回閉じたのは取込の解決経路と単体読みの 503/404 分割まで。
+
+コントロールは **278 本** (当時の値)。**依然未測定**。
+
+##### Codex 8 巡目 + サブエージェント 6 巡目 — モックを細工していた 2 本と、片腕の連鎖
+
+**P1 (測定基盤・両者一致)**: **RN / RO が production の削除ループを細工しながら、その実装を
+Mockito モックに差し替えた controller テストを走らせていた** — 例外はテスト自身が投げるので、
+細工しても緑。しかも service 側の腕にはどこにも錠が無かった。service レベルの錠 2 本
+(`aPartlyFailedDeleteSaysHowMuchWasRemoved` / `aDeleteThatRemovedNothingIsNotPartial`) を新設し、
+RN/RO は前者だけを、新設 RP/RQ が「1 行も消せなかった失敗を部分削除と呼ぶ」細工で後者を測る。
+
+**P1 (本体)**: `execute()` の **コネクタ半分**が `get() == null` を「Connector not found」に
+直結したままだった (profile 側だけ直した片腕)。同じ索引不要の分割を入れた。
+さらに **コネクタの auto-resolve が selector のみ**で、再構築中に「該当コネクタ無し」と答えていた。
+「今回スコープ外」という線引きは、取込の解決経路を閉じたと言う以上**正直ではない**という指摘を
+受け入れ、profile と同じ形 (移行の clean 判定 + 範囲/全走査) にした。
+
+**P2**: (1) `existsIndexFree` が「profile が無い」たびに**全走査**する (profileId は取込
+リクエストの入力なので増幅面になる)。**この巡で「範囲 walk にした」と書いたのは誤りで、
+コードには入っていなかった** (次巡の Codex が発見)。次節の結論: **不在は常に全走査で確立する**
+ので、`existsIndexFree` は全走査のままが正しい。コストは残留として記録する。(2) `?docId=` の
+1 行削除に**監査記録が無かった** — 行は実際に壊れ、生き残った側が実効設定になるのに証跡が残らない。
+削除の記録と scheduler 停止を出さないのは意図どおりだが、監査は別。(3) RELEASE_NOTES の
+「読みが欠けない構造」「重複が生まれ得た唯一の窓」は**台帳の残留記録と矛盾**していた (走査は
+スナップショットではない / create 競合は索引と無関係)。訂正。
+
+**P3**: 委譲 PUT だけ `hiddenOrAbsent` を通っていなかった、`MIGRATION_PAGE` の javadoc が
+「設定行は数十件」を根拠にしていた (ingest job 記録が積もる DB では成り立たない)、
+`ConnectorIndexNotReadyException` の javadoc が helper に取り残されていた、削除段落の係り受け。
+**残留 (記録のみ)**: 分類不能な行の拒否は型を問わないので、無関係な job 記録が 1 行壊れると
+auto-resolve が恒久的に「retry shortly」になる (移行側は failures に積んで続行する非対称)。
+`exclusiveUpperBound` の性質は `_all_docs` のキー順が codepoint 順である前提で、**実機では未確認**。
+
+コントロールは **278 本** (当時の値)。**依然未測定**。
+
+##### Codex 10 巡目 + サブエージェント 8 巡目 — 有界走査そのものを撤回
+
+**両者が同じ P1 で一致**: 有界走査は「見つかった」ときにも**不完全**なので、
+「default が 2 つなら拒否」「コネクタが 2 つ一致したら拒否」という**完全性を必要とする規則が
+黙って効かなくなる**。不在だけ無界に直しても足りない。
+
+**結論: 有界走査を撤回した。** 判定フラグ 2 つ、`forEachRowWithIdPrefix`、`exclusiveUpperBound`、
+それらの錠 5 本とコントロール 8 本 (QJ/QM/QN/QO/RA/RB/RU/RV) をまとめて削除。3 巡にわたって
+コスト対策として積み上げたものが、**3 通りの別々の穴**を生んだ: legacy 行が見えない / 判定が
+ローリング更新で陳腐化する / 見つかっても不完全。**完全性がこれらの規則の材料そのもの**だった。
+
+**コストは隠さず記録する**: 自動解決 1 回あたり `nemaki_conf` 全体を 1 回ページ走査する。
+同 DB には ingest job / DLQ 記録も溜まるので、1 万行なら 200 行/頁 (継続キーは包含なので
+2 頁目以降は正味 199 行) で **1 走査あたり約 51 リクエスト**。**両方を自動解決する要求
+(connectorId も profileId も無い) はコネクタとプロファイルで 1 回ずつ走査するので、
+合わせて約 102 リクエスト**になる。
+**弱めずに安くする道は「job 記録を設定 DB に置くのをやめる」**であり、それは別増分。
+なお別名キー (`google` / `google_drive`) は**1 回の走査でまとめて**解決するようにしたので、
+キーの数だけ走査が増えることはなくなった。**別名を跨ぐ組は拒否しない**: キーの順序は
+「リクエストが使った綴りを優先し、次に別名」という宣言された優先順位で、`google` の行 1 件と
+`google_drive` の行 1 件を持つ設定は正当なもの。拒否するのは**同じキーの中の同点**だけで、
+そこが従来「索引が先に返した方が勝つ」だった箇所。
+
+**ほかに閉じたもの**: (1) メール取込の早期検証が `execute()` より前に「見つからない」と
+断定していた → 同じ分割を共有ヘルパーで通す。(2) 行指定削除の監査が `delegated=false` を
+事実のように載せ、行 ID を成功時に捨てられる errorMessage に入れていた → 行操作専用の監査に。
+(3) その 403 / 404 が監査に残っていなかった → 記録する。(4) 細工がコンパイルできない
+コントロール 2 本 (RT: catch が消える / RW: 隣の catch まで巻き込む) を作り直した。
+
+コントロールは **283 本**。**依然未測定**。
+
+##### Codex 11・12 巡目 + サブエージェント 9 巡目 — 取込の残り 4 経路と、別名拒否の行き過ぎ
+
+**P1 (取込経路の片腕)**: サービス側の「無い」と「読めない」の分割は、**その手前で答える経路**を
+閉じていなかった。非管理者の取込ゲート 3 箇所 (`ExternalIngestController`) と DLQ 再試行
+(`IngestDlqController`) が索引まかせの 404 / エラーを返していた。共有ヘルパーで索引不要の
+存在確認を通す。source 錠 `everyIngestEntryPointAsksIndexFreeBeforeSayingNotFound` + RZ / SA。
+
+**P1 (自己指摘・過剰拒否)**: 別名キーを畳んで「2 つの別名に 1 件ずつ一致したら曖昧」としたのは
+**正当な設定を壊す**。キーの順序は「リクエストが使った綴りを優先、次に別名」という宣言された
+優先順位で、`google` と `google_drive` に 1 件ずつ持つ構成は正常。拒否するのは**同じキー内の
+同点**だけに戻し、食い違っていた記述 7 箇所 (RELEASE_NOTES・台帳・interface javadoc・実装
+コメント・呼び出し側コメント・錠のメッセージ・コントロール RY の what) をすべて合わせた。
+
+**P1 (測定基盤・サブエージェント)**: `anUpdateRefusesRetryably` の窓が索引不要カウント自身の
+`if (creating)` から始まっており、**測ると称した拒否を丸ごと消しても緑**だった。隣のメソッドを
+同じ理由で直した巡の 1 つ下に残っていた同型。id 直読みの位置から探すよう修正。
+
+**P2**: (1) 行指定削除が**最後の 1 行も消せた** — この経路はプロファイル/コネクタが残る前提で
+スケジューラ停止も削除の記録も省くので、最後の 1 行を消すと両方無しで定義ごと消える。拒否する
+(錠 `theRowResolverRefusesTheOnlyRow` + SC / SD)。**自己指摘**: 最初その拒否を
+`IllegalArgumentException` にしたため controller が「行が無い」(404/400) と報告していた — 行は
+在るので嘘。専用型にして **409** に。(2) `auditRow` と新しい取込ゲートに錠が無かった → 追加
+(`theRowAddressedDeleteIsAudited` + SB)。(3) `CanonicalImportServiceTest` が撤去した呼び出し
+形を stub/verify していた (3 本が赤になる) → 単一呼び出しに追随。
+
+**P3**: 撤回した有界走査の残骸コメント・DisplayName、RELEASE_NOTES の見出し「3 か所」(項目は 7 個)、
+台帳のコスト記録 (走査 2 回 = 約 102 リクエスト)、そして台帳が**実行していないのに観測の声**で
+書いていた箇所 (「5 本赤・201 本目で停止」→「ソース読解ではそうなるはず」) を訂正。
+
+コントロールは **283 本**。**依然未測定**。
+
+##### Codex 9 巡目 + サブエージェント 7 巡目 — fixture が本番の 1 行を stub しておらず、削除の錠 5 本が赤
+
+**P1 (測定基盤・サブエージェント)**: 両 fixture の `row(...)` が `Document.getId()` を stub して
+おらず、索引不要の削除が `doc.getId()` で行を指すため、Cloudant の builder が空の docId を拒否する。
+**ソース読解では、健全な木で 5 本が赤・2 本が真空で緑になり、通しは 201 本目で止まるはず**
+(実行はしていない)。`row()` が本体にも id を持たせるよう修正。なお赤になる錠は**本バッチで
+新設したもの**で、`ConnectorLegacyIdMigrationTest` 自体は HEAD の 218 本通しに入っていた
+(当時は単引数 delete を叩く錠が無く `getId()` を必要としなかった)。
+
+**P1 (測定基盤・サブエージェント)**: `theMigrationConsultsNoIndex` の `countProfileRowsIndexFree(`
+アンカーが、前巡で足した 4 引数**委譲**の 1 行本体を掴んでいた (第 3 巡と同型の再発)。有界版は
+どこからも呼ばれておらず、台帳の「範囲 walk にした」も**入っていなかった** (Codex も同じ指摘) ので、
+**有界オーバーロードごと撤回**。不在の判定は常に全走査。
+
+**P1 (Codex)**: (1) コネクタ auto-resolve が**最初の一致を黙って返す**。旧 Mango には宣言された
+並び順が無く、walk は id 順 — 更新で**別のコネクタが選ばれうる**のに誰も選んでいない。
+profile と同じく**曖昧なら拒否**。(2) 移行の判定フラグはローリング更新で陳腐化しうるので、
+**不在は常に無界の walk で確立する** (肯定的な答えだけ有界で安く済ませる) 規則にした。両者に適用。
+
+**P2 (Codex)**: (3) コネクタ auto-resolve の再試行可能な拒否が呼び出し元で未写像。
+(4) `?docId=` の 1 行削除が、selector が返した**別リポジトリの twin** で認可判定していたため、
+自分のリポジトリの行を消せない場合があった → docId 経路を独立させ、サービス側の行検証に委ねる。
+(5) その監査記録が `existing` (生き残った側かもしれない twin) の構造化フィールドを載せていた →
+この呼び出しが確立した事実 (profileId・呼び出し元リポジトリ・行 ID) だけを記録する。
+(6) コネクタ側の索引不要化に錠もコントロールも無かった → 挙動錠 5 本 + RR〜RX。
+
+**残留 (新規・記録のみ / 後に一部撤回)**: 索引不要のリストは**逆直列化に失敗した行があると
+走査ごと拒否**する。**この判断は後の巡で部分的に変えました** — 要求と一致しない行・明示的に
+無効な行は、読んでも結果を変えられないので逆直列化する前に飛ばします (末尾の現在地を参照)。
+一致して読めない行は従来どおり拒否します。以下は当時の記録。
+`FAIL_ON_UNKNOWN_PROPERTIES` は無効だが未知の enum 値は拒否されるので、ローリング更新で新版が
+新しい `SourceArchetype` を書くと、旧版ノードの自動解決が全件 503 になりうる。従来の
+`findBySelector` は WARN して読み飛ばしていたので**可用性の性質が変わっている**。読み飛ばしは
+「読めなかった行を無いことにする」ものなので戻さない。
+
+**P3**: 委譲 PUT のコメントが「同じ門を通る」と書いていたのに実際は素の 404 だった (門を実装)。
+コネクタ fixture も範囲キーを見ていなかった (profile と同型) ので修正。
+
+**自己指摘 (レビュー待ちの間に検算)**: 上の (2) に付けた RU / RV は**細工しても鳴らない**もの
+だった。expect に挙げた錠はどちらも判定フラグが false の状況を作るので、無界フォールバックを
+消しても最初の walk が無界のままで通ってしまう。フォールバックを本当に測る錠
+(`theConnectorResolverFallsBackToTheFullWalkForAbsence` /
+`theProfileResolverFallsBackToTheFullWalkForAbsence` — clean 判定の後に範囲外の legacy 行が
+現れる形) を新設して張り替えた。**同じ型を自分で 1 つ見つけたことになる。**
+
+コントロールは **278 本**。**依然未測定**。
+
+##### この節がファイル末尾です — 現在地 (レビュー 12 巡目 / サブエージェント 10 巡目 時点)
+
+上の節はレビューの巡ごとに書き足したもので、**ファイル内の順序は時系列ではありません**。
+末尾に着地した読者のために、いま有効な設計を 1 段落で:
+
+- 定義行 (コネクタ / 取込プロファイル) は**確定的 ID** で書かれ、重複検査は**索引を使わない
+  `_all_docs` 走査**で行う。起動時移行が旧 ID の行を書き直し、書き直せない行は毎起動 ERROR。
+- **有界 (範囲) 走査は撤回済み**。「Codex 10 巡目 + サブエージェント 8 巡目」の節を参照。
+  判定フラグ・`forEachRowWithIdPrefix`・`exclusiveUpperBound`・それらの錠とコントロールは
+  **存在しない**。「Codex 9 巡目」以前の節にそれらが現行として書かれているのは当時の記録。
+- **これらの**取込経路は「見つからない」と答える前に索引不要の存在確認を通す:
+  `CanonicalImportServiceImpl.execute` / メール取込の早期検証 / 非管理者ゲート
+  (`ExternalIngestController`) / DLQ 再試行。**まだ通っていない経路がある**:
+  `IngestWebhookController` と `ImapIdleMonitor` の起動時解決は、いまも selector の空振りを
+  そのまま「無い」として扱う。次の増分。
+- 行指定削除は**食い違う 2 行**を片付ける操作で、最後の 1 行は 409 で拒否する。
+  数えてから消すまでの間に**別の管理者がもう片方を消す競合**は防げない (CouchDB に文書を
+  またぐトランザクションが無い) ので、削除後に残り行数を返し、0 なら controller が
+  「この経路が省いていた仕事」— スケジューラ停止と削除の記録 — を代わりに行う。
+
+- 削除後の数え上げが**答えられなかった場合 (-1)** は「生存行あり」と同じ扱いにしない。
+  スケジューラは止めず (まだ在るかもしれない profile の取込を黙って止める方が悪い)、
+  「数えられなかった」と応答・監査・ERROR ログに残す。
+- 監査の「何が起きたか」は `details` に載せる。メッセージ欄は成功時に logger が捨てるので、
+  そこに載せた事実は残らない (この罠は 2 度踏んだ)。
+- 同じ profileId が 2 つのリポジトリにある間、`GET` と `DELETE` は**呼び出し元リポジトリの行**
+  に対して働く (selector がどちらの twin を返すかに依存しない)。認可規則は通常と同じ。
+  **`PUT` と所有権移転は 409 のまま** — 書き込み側のカウントは `type` + `profileId` で
+  リポジトリを跨いで数えるので 2 行を見る (確定的 ID を数えているのではない)。どちらかのリポジトリが手放すまでこの状態が続く。
+- 同じ**リポジトリ内**に 2 行ある場合は 409 で、先に `?docId=` で片付ける。索引不要の解決は
+  DELETE では**無条件**に行う (この動詞は解決した行で認可し、そのリポジトリの全行を消すので、
+  selector が 1 行と 2 行を区別できないことが認可境界の穴になる)。読みと書きは、書き込み側の
+  全域カウントが対を拒否するので selector の行で足りる。
+
+**この節より上の節は巡ごとの記録で、時系列順ではありません。** 途中の節が現行として書いて
+いる機構のうち、有界走査まわりは撤回済みです。本数も節ごとの当時の値なので、現在の数は
+この節のものを見てください。
+
+- 索引不要のコネクタ一覧は、**要求と一致しない行・明示的に無効な行を逆直列化する前に飛ばす**。
+  読んでも結果を変えられない行のために、新しいノードが書いた 1 行で全取込が止まっていた。
+  一致して読めない行は従来どおり拒否する。
+
+- 素の `DELETE` はリポジトリ限定だが `stopIdle` は profileId だけが鍵なので、**どのリポジトリにも
+  行が残っていないときだけ**スケジューラを止める (残り行数を返す。-1 = 数えられなかった場合も
+  止めない — 推測で他リポジトリの取込を切らない)。
+- 行指定削除で「行を id で読めたのに走査が 0 を数えた」場合は**両者の食い違い**として 503。
+  「唯一の行」と断定するのは走査が 1 を数えたときだけ。
+
+- 行指定削除の削除後カウントも**全リポジトリ**で数える (スケジューラが profileId だけを鍵に
+  するのに、片方の経路だけリポジトリ限定で数えていた)。共有 profileId の修復経路も同じ判断を
+  使い、-1 は応答で「数えられなかった」と言う。
+- 生の値での事前絞り込みは `"false"` (文字列) も無効として扱い、`sourceSystem` が無い行で
+  NPE を投げない。
+
+**測定基盤の再発 (3 度目)**: SP / SS が本番の実装を細工しながら、その実装をモックに差し替えた
+controller テストを走らせていた。しかも同じ形を警告するコメントの真下に増えていた。素の削除の
+戻り値 (全リポジトリの残り) を service で測る錠を新設して張り替えた。**次の巡で SS は再度
+張り替え**: SS が細工するのは行指定削除の方なので、行指定側の錠に向け、その fixture に別
+リポジトリの行を置いて「全体で数える」ことを測れるようにした。
+
+**自己指摘 (レビュー待ちの間)**: 新設した錠が健全な木で赤だった — 両 fixture は削除した行を
+その後の読みにも返し続けるので、削除後の数え上げが「消したはずの行」を見ていた。fixture を
+「削除は後続の読みに反映される」形に直し、両側の期待値を実際の database の答えに合わせた。
+
+**Codex 17 巡目 (P1 なし)**: (1) 共有 profileId の DELETE を「管理者限定の別分岐」にしていたのは、
+**どちらの行が索引から先に返るかで委譲規則が変わる**という別の欠陥だった → 分岐を畳み、呼び出し元
+リポジトリの行を取り直して**通常経路 1 本**にした (RELEASE_NOTES も訂正)。(2) 委譲 PUT が
+その後もう一度リポジトリ非依存の `get` を引き、他リポジトリの行で認可判定していた。自動無効化
+マーカーの読み直しも同様 → 解決済みの行を使う。(3) 移行の食い違い報告のうち、**legacy 行 1 つと
+確定的行が別リポジトリ**の場合が `?docId=` を指示したままだった → こちらも plain DELETE を案内。
+(4) patch の 2 つの半分が、実は両方の bean を先に取っていたので分離していなかった。
+(5) SV の主張過大 (所有権移転と索引不要の実装を測っていない) → 錠を広げ、service 側に SW を新設。
+
+**サブエージェント 14 巡目**: (1) **SH が細工しても鳴らない** — fixture が削除を反映するように
+なった巡でコネクタ側の期待値が 2→1 に下がり、細工の定数 `return 1;` と一致してしまった。
+3 行の fixture にして健全値を 2 に戻した。**定数を返す細工 61 本を機械的に洗い、健全値と一致する
+ものが他に無いことも確認**。(2) 共有 profileId の修復は DELETE だけ直っており、GET / PUT /
+所有権移転は素の 404 のままだった → 同じ索引不要の取り直しを通す (錠 2 本 + SV)。
+(3) 移行の divergent 報告が別リポジトリの行同士を「食い違う 2 行」として束ね、効かない
+`?docId=` を指示していた → リポジトリを跨ぐ場合は「確定的 ID は 1 つしか無いので、どちらかの
+リポジトリが docId 無しの DELETE で手放す」と正しく言う。
+
+**サブエージェント 15 巡目**: (1) **前項 (1) の畳み込みが、その分岐を測っていたテスト 2 本を
+赤にした** — 本番は `existsIndexFree` でなく `getForRepository` を引くようになったのに、fixture が
+前者しか stub していない。**「fixture が本番の新しい読みに追随しない」で 4 度目**。(2)
+`getForRepository` を uniqueness listing の使い回しで書いたため、**そのリポジトリの読めない行 1 つで
+全プロファイルの読みが 503** になった — コネクタ側で 1 巡前に直したばかりの過剰拒否の再導入。
+自分が問い合わせた行だけを逆直列化する形に書き直し (錠 + SX)。(3) 削除後カウントの `-1` 腕に
+assert が 1 つも無かった (SY)。(4) legacy 行しか無いプロファイルで、所有権移転だけ通り GET/PUT は
+503 という分岐が残っていた → GET/PUT も先に自分の行を取り直す。(5) コネクタ interface の
+浮いたコメントと `@throws` 欠落、PUT 錠の過大な失敗メッセージ。
+
+**Codex 18 巡目**: (1) **`getForRepository` が 2 行あるうちの 1 つを黙って返していた** — その行で
+委譲 DELETE を認可し、削除はそのリポジトリの**全行**を消すので、片方の行で認可された利用者が
+もう片方 (管理者所有かもしれない) を消せた。**同一リポジトリに 2 行あれば 409 で拒否**する。
+(2) PT が壊れていた: 細工が宣言ごと消してコンパイル不能、しかも錠が lambda 化前の文字列を
+要求していた。(3) 取込の実行経路と委譲ゲートが、共有 profileId をリポジトリ限定で解決して
+いなかった (selector が返した他リポジトリの行で「リポジトリ不一致」と拒否していた)。
+(4) 取り漏らしの際に**全走査を 2 回**していた (索引不要の解決で不在は確定しているのに、
+さらに `hiddenOrAbsent` を引いていた) — コストが倍で、2 回目だけ失敗すると確定した不在が
+503 に化けた。1 回に統一。
+
+**自己指摘 (レビュー待ちの間)**: 上の (4) を GET と PUT にだけ適用したため、**同じ判断が動詞ごとに
+違う形**になり、`hiddenOrAbsent` を残した DELETE / 所有権移転 / 委譲ゲートは全走査 2 回のまま、
+GET / PUT の錠 4 本は「もう呼ばれない読み」を stub していて健全な木で赤だった。全動詞を
+「自分のリポジトリの行を 1 回だけ解決する」形に統一し、`hiddenOrAbsent` を撤去、錠は解決自身の
+拒否 (503) を測る形に書き直した。**同じ直しを一部にだけ当てた結果**という点で、このバッチが
+繰り返している片腕そのもの。
+
+**サブエージェント 16 巡目**: (1) **SZ が本番を細工しながらモックを走らせていた** — 「4 度目」。
+しかも守っているのは認可境界 (片方の twin で認可された委譲利用者がもう片方を消せる) なので、
+それが完全に無測定だった。実装を叩く錠を新設して張り替え。(2) profile 側の削除後カウント `-1`
+腕にアサーションが 1 つも無かった (コネクタ側だけ入っていた片腕)。sticky fixture に「1 回だけ
+答える」形を足して測る (TB)。(3) 非管理者 PUT が索引不要走査を 2 回していた (`update` と
+委譲ゲートがそれぞれ解決) → 解決済みの行を渡す。(4) コネクタ interface の重複 javadoc。
+
+**手順の指摘 (受け入れ)**: レビュー中にツリーが 10 分で 6 回変わり、指摘の一部は報告前に別経路で
+直っていた。**次巡からは、レビューを投げたらその間ツリーを凍結する**。
+
+**Codex 19 巡目**: (1) **pair 拒否が動詞に届いていなかった** — `mineInstead` は selector が
+自分のリポジトリの行を返すとそれを即採用しており、selector は 1 行と 2 行を区別できないので、
+同一リポジトリに 2 行ある通常のケースで拒否が一度も走らなかった。GET は片方を返し、委譲
+DELETE はその片方で認可してから全行を消す。**近道を撤去**し、管理 API は常に索引不要で解決する
+(錠を selector が返す側で駆動、TC)。(2) 測定を止める 3 件: 一括置換で 2 本のテストに throw する
+stub が入り、その後の再 stub が setup 中に発火 / PT の錠が撤去済みの呼び出しを要求 / TA の細工が
+撤去済みメソッドを呼んでコンパイル不能。(3) メール取込の早期検証と `FolderConnectorController` の
+run / credential 経路が、共有 profileId をリポジトリ限定で解決していなかった (TD)。
+
+**サブエージェント 17 巡目**: 前項 (1) の「常に索引不要で解決する」は**約 30 本を赤にする** (ソース読解での追跡であり、走らせていない) —
+fixture は selector に答えるので、本バッチ外のコミット済みクラス 2 つまで巻き込んだ。近道を
+戻し、**認可が破壊につながる DELETE だけ無条件**にした (錠と TC もそちらへ)。手順の指摘
+(凍結が守られていない) も事実で、この巡でも 8 回書き換えていた。
+
+**Codex 20 巡目 / サブエージェント 18 巡目** (**凍結を守った初めての巡** — 両者が独立に
+「作業中にファイルは変化していない」と報告):
+
+1. **P1 — 健全な木で赤いテストが 2 本**。`aRefusedDeleteLeavesImapIdleRunning` は後半の対照で
+   `reset()` してから `get` だけ張り直しており、素の DELETE が必ず引く索引不要解決が null に
+   なって 404。`aSharedProfileIdBranchStopsTheSchedulerWhenNothingRemains` は行指定削除だけが
+   書く文字列を要求していた (兄弟テストからの写し)。この 2 本のせいで通しは **230 本目で停止**
+   し、両者を期待する QL / SU は「細工の有無に関わらず鳴る」= 何も測っていなかった。両方直した。
+2. **P1 — IDLE セッションは profileId だけを鍵にし、起動時に 1 行分の repositoryId を捕まえる**。
+   「どこかに残っていれば止めない」判断は、A の行を消して B が id を持ち続ける場合に *A に届き
+   続けるセッション* を生かしたままにする。**削除が、自分が認可した capture を止めない**。
+   セッションの向き先を記録し (`ImapIdleMonitor#getIdleRepository`)、**このリポジトリ宛なら止める・
+   属性が分からないセッションも止める** (capture の喪失は再開できるが、消したプロファイルへの
+   取込は戻せない)・**他リポジトリ宛は残す** に変えた。錠 3 本 + コントロール TE / TF。
+3. **P1 — 委譲取込のゲートと実行が別々にプロファイルを読む**。ゲートは読んだ行のフォルダと
+   コネクタを認可し、`CanonicalImportServiceImpl.execute` は**もう一度**読む。同一リポジトリに
+   食い違う 2 行があると、A で認可して B の宛先に入れられる。**「認可境界を跨ぐのは DELETE
+   だけ」という前巡の理屈は誤り**だった。ゲートを索引不要の解決に変え、対はそこで 409。
+   selector は不在の**ラベル付け**にだけ使う (他所にある→403 / どこにも無い→404・503)。
+   索引が「ある」と言い走査が「無い」と言う矛盾は 503。錠 1 本 + コントロール TG。
+4. **P2 — 素の DELETE に、代入して読まずに上書きされる selector 読みが残っていた**。`get()` は
+   Mango 呼び出しを包まないので、索引不要にしたはずの動詞の手前で 500 になり得た。撤去。
+5. **P2 — 409 のメッセージが実行できない操作を指示していた** (同型 3 度目)。上げるカウントは
+   全域、`?docId=` はリポジトリ限定。**どこに行があるかから文面を導く**ようにし、さらに
+   **どのリポジトリにも属さない行を `?docId=` で消せる**ようにした — この行は全域カウントに
+   数えられるのに両方の DELETE から到達不能で、その profileId の `PUT` を恒久的に 409 に
+   していた。錠 2 本 (到達できること・**他リポジトリの行は依然拒む**こと) + TH / TI。
+6. **P2 — 実行していないのに観測の声**で「約 30 本が赤になった」と本番ソースと台帳に書いて
+   いた。台帳が一度訂正した型の再発。両方を「ソース読解での追跡」に直した。
+7. **P3 — interface の契約漏れ** (`existsIndexFree` はリポジトリ限定、`getForRepository` は
+   対でも投げる) と **RELEASE_NOTES の機構のずれ** (数えているのは確定的 ID ではなく
+   `type` + `profileId`)、および **同一リポジトリに 2 行あるとき `GET` は 200 を返す**
+   (409 は書ける動詞と DELETE だけ) を明記。
+
+**この巡で直さないと決めたもの** (根拠つき):
+
+- **壊れた行が transient な 503 になる** (P3)。`listByRepositoryIndexFree` / `getForRepository` は
+  profileId の無い行や逆直列化できない行を `IllegalStateException` にし、翻訳側が
+  index-not-ready (503「索引が追いつけば通る」) にする。**再試行では治らない**ので 409 が正しい。
+  ただし専用の型を投げると、走査の `IllegalStateException` を翻訳している腕すべて
+  (create は 400 に落とす契約を含む) を通ることになり、**走らせずに直せる範囲を超える**。
+  次バッチに送る。
+- **スケジューラの列挙が Mango セレクタ** (`IngestSchedulerService#getScheduledProfiles` →
+  `listByRepository`)。索引再構築中は「対象なし」と黙って読める — 本バッチの主題そのもの。
+  webhook / `ImapIdleMonitor` と同じ「まだ通っていない経路」として**台帳に載せる**
+  (以前は列挙されていなかった)。tick ごとに設定 DB を全走査する変更は、走らせずに入れる
+  変更として大きすぎる。
+
+**管理動詞のコスト** (走査 1 回 = `nemaki_conf` 全ページング):
+
+| 動詞 | selector | 全走査 |
+|---|---|---|
+| 素の `DELETE` | 0 | 3 (解決 / 対象収集 / 削除後の全域カウント) |
+| 有効プロファイルの `PUT` | 1 | 2 (自動解決の一意性 / 書き込み前カウント) |
+| 委譲取込 (ゲート) | 0〜1 | 1 |
+| 自動解決の取込 | — | 1 (両方自動解決なら 2) |
+
+### 初めて走らせた — 19 巡の読解が見つけなかったもの
+
+レビュー 2 本を消化したあと、**このバッチで初めてテストを実行した** (取込まわり 10 クラス、
+281 本)。
+
+**`ImportProfileLegacyIdMigrationTest` (61 本) と `ConnectorLegacyIdMigrationTest` (51 本) は
+丸ごと落ちていた。** 原因は本番コードではなく、両クラス自身の fixture の Mockito 誤用:
+`when(x).thenReturn(f(...))` の **引数 `f(...)` の中で別の mock を呼ぶ・stub する**と、
+外側の stubbing が未完了のまま `UnfinishedStubbingException` でクラスごと落ちる。3 か所:
+
+- `within(options, ...)` を `thenReturn(...)` の中で呼んでいた (両クラス、walk の fixture)
+- `findCallFor(rows)` を `thenReturn(...)` の中で呼んでいた (profile、selector の fixture)
+- `when(d.getId()).thenReturn(r.getId())` — `r` も mock (両クラス)
+
+**この 112 本と、両クラスを `test=` に指す全コントロールは、何も測っていなかった。**
+19 巡のレビューはすべてソース読解で、テスト本体もコントロールも「筋が通っている」と
+判定し続けた — 読解では、そのクラスが**そもそも起動するか**が分からない。値を測る前に
+装置が壊れていた、という本バッチの主題そのものの形を、こちらの手順で踏んでいた。
+
+直したあと **281/281 緑**。
+
+このとき本番の挙動も 1 つ変わっていた: `CanonicalImportServiceImpl.execute` は、要求された
+リポジトリに行が無い場合に「プロファイル `p1` はリポジトリ `canopy` のものだ」ではなく
+**「見つからない」**と答える (§62 の解決を入れた副作用)。他リポジトリの行の存在を漏らさない
+方が、このバッチが他所で守っている閉じ込め規則と整合するので、**コミット済みのテストの方を
+新しい答えに張り替えた**。その結果、下流のスコープ検査は**構造上到達不能**になったので、
+defence in depth として残しつつ「測れない」と明記した。
+
+**手順の記録**: 通しを起動直後に落としたところ、`CouchAnchorReceiptStore.java` に細工が
+残った (`.nc-backup` から復元済み)。**通しは途中で殺さない**。`core/target` 配下に 9/1 の
+`.nc-backup` が 2 つ残っており、事前検査の「0 件」は `core/src` に限って数える。
+
+### 通し 314/314 — このバッチで初めての revert→fail 測定
+
+**314 本すべてが FIRED。** 7 時間 40 分。ただし一発では終わっておらず、2 つ引っかかった。
+
+1. **TC の細工がコンパイルできなくなっていた。** 置換文が `existing` を参照しており、その変数を
+   供給していた「読まずに上書きされる selector 読み」を同じ巡で撤去したため。**アンカーは
+   一致したままなので事前検査は素通りし**、通しは 304 本目で死んで 11 本 (TC・TD・MO・MP・MQ・
+   TE〜TI・HA) が未測定になった。**「細工が当たる」と「細工がコンパイルする」は別の検査**で、
+   前者しか事前検査に無い。直して 11 本を別走で測定。
+2. **TH は「間違った理由で鳴って」いた。** 細工が上げる `IllegalArgumentException` を錠が
+   そのまま浴びるので、失敗が assertion ではなく ERROR になり、ランナーは
+   「細工が装置を壊した — 保護については何も分からない」と正しく判定した。錠を
+   `assertDoesNotThrow` に包み直して再測定 → FIRED。
+
+**この 2 つは、コントロールを足した直後に該当分だけ走らせていれば即座に出た。** 314 本を
+7 時間かけてから見つけている。次バッチでは、新しいコントロールは追加時に単体で回す。
+
+### フルスイート 6653 本・失敗 0
+
+`mvn -o test` を 2 度。1 度目で実質の回帰は 1 クラスだけ出た — **`FolderConnectorControllerTest`
+の 13 本**。この controller は run 経路と credential 経路の両方で索引不要の解決を使うのに、
+fixture が selector にしか答えておらず 404 になっていた。**同じ形をこの 1 日で 3 度**
+(移行テスト 2 クラス、素の DELETE の 7 本、ここ) 踏んでいる。11 か所に stub を足して 23/23 緑。
+
+2 度目: **6653 本・Failures 0**。残る 38 件はすべて `CmisConnectionException` /
+`Connection refused` で、`localhost:8080` にサーバが起動していないための TCK・結合テスト
+(`BasicsTestGroup` / `CrudTestGroup1,2` / `QueryTestGroup` / `TypesTestGroup` /
+`VersioningTestGroup` / `ControlTestGroup` / `MultiThreadTest` / `InheritedFlagTest`)。
+**TCK はこのバッチでは走らせていない** — 本バッチは CMIS バインディングに触れていないが、
+「触れていないから通る」は測定ではないので、そう書く。
+
+**このバッチの測定はここまで**: 負のコントロール 314/314 FIRED、単体スイート 6653 本 Failures 0、
+TCK 未実施 (サーバ未起動)。

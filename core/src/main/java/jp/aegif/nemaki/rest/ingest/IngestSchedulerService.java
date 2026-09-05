@@ -190,6 +190,17 @@ public class IngestSchedulerService {
         return imapIdleMonitor != null ? imapIdleMonitor.getIdleProfiles() : List.of();
     }
 
+    /**
+     * The repository a live IMAP IDLE session for {@code profileId} imports into, or
+     * {@code null} when there is no session, the session's row carried no repositoryId, or
+     * the monitor is not wired. Callers deciding whether a deletion must stop the session
+     * pair this with {@link #getIdleProfiles()}: "no session" and "a session we cannot
+     * attribute" need opposite answers.
+     */
+    public String getIdleRepository(String profileId) {
+        return imapIdleMonitor != null ? imapIdleMonitor.getIdleRepository(profileId) : null;
+    }
+
     // ──────────────────────────────────────────────────────────────────
     // RC5 (v2 §12.1) — Scheduled delegated profile helpers
     // ──────────────────────────────────────────────────────────────────

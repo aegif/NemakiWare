@@ -16,6 +16,9 @@ import java.util.Map;
 @RequestMapping("/v1/admin/connectors")
 public class ConnectorDefinitionController {
 
+    private static final org.slf4j.Logger logger =
+            org.slf4j.LoggerFactory.getLogger(ConnectorDefinitionController.class);
+
     @Autowired
     private ConnectorDefinitionService connectorDefinitionService;
 
@@ -78,6 +81,12 @@ public class ConnectorDefinitionController {
             response.put("status", "success");
             response.put("connectorId", created.getConnectorId());
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+            // The CREATE arm of the same refusal the PUT maps. The disagreement arm (the
+            // selector listing rows the index-free scan did not find) throws it on both
+            // paths, so leaving POST out made it a 500 while PUT answered 503 — the profile
+            // controller had mapped both since it was written. A review caught the one arm.
+            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
         } catch (IllegalArgumentException | IllegalStateException e) {
             return errorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
         }
@@ -105,7 +114,21 @@ public class ConnectorDefinitionController {
     public ResponseEntity<ConnectorDefinition> get(@PathVariable String connectorId) {
         if (!isAdmin() || !isDefaultRepository()) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         ConnectorDefinition def = connectorDefinitionService.get(connectorId);
-        if (def == null) return ResponseEntity.notFound().build();
+        if (def == null) {
+            // get() is the Mango selector. While its index rebuilds it answers "no such
+            // connector" for one that is there, and a 404 says the connector does not
+            // exist — the failure-as-absence this batch is about, on the verb an operator
+            // reaches for first. PUT and DELETE gained the split earlier; a review found
+            // GET still answering 404. An unreadable row is a 503 too.
+            try {
+                if (connectorDefinitionService.existsIndexFree(connectorId)) {
+                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+                }
+            } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+            }
+            return ResponseEntity.notFound().build();
+        }
         return ResponseEntity.ok(maskSecrets(def));
     }
 
@@ -169,6 +192,10 @@ public class ConnectorDefinitionController {
             // is what the "just adopt the row" fix was reaching for — the fix was wrong and
             // the status code was the part worth keeping.
             return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
+        } catch (ConnectorDefinitionServiceImpl.ConnectorHasTwinRowsException e) {
+            // Standing, not transient: two rows define this connector and an update would
+            // choose between them. 409 — a retry does not resolve it, an administrator does.
+            return errorResponse(HttpStatus.CONFLICT, e.getMessage());
         }
     }
 
@@ -184,15 +211,57 @@ public class ConnectorDefinitionController {
                 // so "delete the one you do not want" was an instruction with no API that
                 // could follow it — an ERROR message prescribing the impossible, which a
                 // review caught before this ever ran.
-                connectorDefinitionService.delete(connectorId, docId);
+                int remaining = connectorDefinitionService.delete(connectorId, docId);
+                if (remaining == 0) {
+                    // Another administrator removed the other twin concurrently: the
+                    // connector is GONE, not "one row of a pair resolved". The caller has to
+                    // be told — a review found this logging it and answering an ordinary
+                    // success, so the operator read "I tidied a duplicate".
+                    logger.warn("connector {} lost its last definition row to a concurrent"
+                            + " row-addressed delete", connectorId);
+                    Map<String, Object> raced = new LinkedHashMap<>();
+                    raced.put("status", "success");
+                    raced.put("deletedRow", docId);
+                    raced.put("warning", "no definition row remains; the connector is deleted");
+                    return ResponseEntity.ok(raced);
+                }
+                if (remaining < 0) {
+                    logger.error("row {} of connector {} was deleted, but whether any"
+                            + " definition row remains could not be established", docId, connectorId);
+                    Map<String, Object> unknown = new LinkedHashMap<>();
+                    unknown.put("status", "success");
+                    unknown.put("deletedRow", docId);
+                    unknown.put("warning", "the row was deleted, but whether the connector"
+                            + " still has a definition row could not be established");
+                    return ResponseEntity.ok(unknown);
+                }
             } else {
                 connectorDefinitionService.delete(connectorId);
             }
+        } catch (ConnectorDefinitionServiceImpl.ConnectorHasNoTwinException e) {
+            // The row is there and the address is right; there is no pair to resolve. 409,
+            // not the 400 below — that would read as a malformed request.
+            return errorResponse(HttpStatus.CONFLICT, e.getMessage());
         } catch (IllegalArgumentException e) {
             return errorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
+        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+            // "Deleted" must mean deleted: the index-free delete refuses when a row could
+            // not be read, and that is a retry, not a success with a survivor.
+            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
+        } catch (ConnectorDefinitionServiceImpl.ConnectorPartiallyDeletedException partly) {
+            // Rows ARE gone and at least one is not; a 500 reads as "nothing happened".
+            // Retryable — a retry removes what remains. Narrow on purpose: catching every
+            // RuntimeException told a store that had refused the whole operation to retry
+            // for ever. A review caught the over-broad arm.
+            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, partly.getMessage());
         }
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", "success");
+        if (docId != null && !docId.isBlank()) {
+            // The twin operation on the profile side says which row went; a caller resolving
+            // a divergent pair needs that in the response, not only in a log.
+            response.put("deletedRow", docId);
+        }
         return ResponseEntity.ok(response);
     }
 

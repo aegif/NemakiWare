@@ -21,6 +21,17 @@ public class ImapIdleMonitor {
 
     private final Map<String, ImapConnectorAdapter> idleAdapters = new java.util.concurrent.ConcurrentHashMap<>();
 
+    /**
+     * The repository each live session is importing INTO. A session captures its profile
+     * once, at {@link #startIdle}, and every message it later imports carries THAT row's
+     * repositoryId — but the map above is keyed by profileId alone. With the same profileId
+     * in two repositories a caller could delete their own row and keep receiving mail into
+     * it, because the deleting side could only see "some repository still has this id" and
+     * left the session alone. Recording where a session sends its mail is what makes that
+     * decision answerable; a session with no entry here is one we cannot attribute.
+     */
+    private final Map<String, String> idleRepositories = new java.util.concurrent.ConcurrentHashMap<>();
+
     private ImportProfileDefinitionService profileService;
     private ConnectorDefinitionService connectorService;
     private FetchSupport fetchSupport;
@@ -76,6 +87,9 @@ public class ImapIdleMonitor {
 
         ImapConnectorAdapter imap = new ImapConnectorAdapter(connector, password);
         idleAdapters.put(profileId, imap);
+        if (profile.getRepositoryId() != null) {
+            idleRepositories.put(profileId, profile.getRepositoryId());
+        }
 
         Thread idle = Thread.ofVirtual().name("imap-idle-" + profileId).start(() -> {
             try {
@@ -129,6 +143,7 @@ public class ImapIdleMonitor {
             } finally {
                 imap.disconnect();
                 idleAdapters.remove(profileId);
+                idleRepositories.remove(profileId);
             }
         });
 
@@ -140,11 +155,23 @@ public class ImapIdleMonitor {
     /** Stop IDLE monitoring for a specific profile. */
     public String stopIdle(String profileId) {
         ImapConnectorAdapter imap = idleAdapters.remove(profileId);
+        idleRepositories.remove(profileId);
         if (imap == null) return "No IDLE session running for profile: " + profileId;
         imap.stopIdle();
         imap.disconnect();
         logger.info("IMAP IDLE monitoring stopped for profile {}", profileId);
         return null;
+    }
+
+    /**
+     * The repository a live IDLE session imports into, or {@code null} when this profileId
+     * has no session — which is NOT the same as "a session whose repository is unknown".
+     * A running session always has an entry unless its captured row carried no repositoryId,
+     * so callers that act on the answer must treat {@code null} together with
+     * {@link #getIdleProfiles()} rather than on its own.
+     */
+    public String getIdleRepository(String profileId) {
+        return idleRepositories.get(profileId);
     }
 
     /** Get the list of profiles currently running IMAP IDLE. */

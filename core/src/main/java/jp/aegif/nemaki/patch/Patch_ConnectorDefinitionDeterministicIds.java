@@ -17,13 +17,22 @@
 package jp.aegif.nemaki.patch;
 
 import jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService;
+import jp.aegif.nemaki.rest.ingest.ImportProfileDefinitionService;
 import jp.aegif.nemaki.util.spring.SpringContext;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 /**
- * Moves legacy generated-id connector rows to their deterministic ids (the §62 migration).
+ * Moves legacy generated-id connector rows AND import-profile rows to their deterministic
+ * ids (the §62 migration, both halves).
+ *
+ * <p>The import-profile half was added after a review found the default cloud-import
+ * profile created per repository by {@code Patch_DefaultCloudDriveConnectorProfile} with the
+ * exact shape the connectors had just been cured of: a selector-based existence check, a
+ * generated id on miss, no id-addressed check, no migration. Same database, same rebuilding
+ * index, same startup entrance. Both migrations run in this one pass so there is exactly one
+ * ordering concern in the patch chain.
  *
  * <h2>Why this patch is always-run, historyless, and ungated — all three deliberately</h2>
  *
@@ -74,46 +83,68 @@ public class Patch_ConnectorDefinitionDeterministicIds extends AbstractNemakiPat
                         + " legacy connector rows stay unmigrated until the next startup");
                 return false;
             }
-            ConnectorDefinitionService service;
-            try {
-                service = ctx.getBean(ConnectorDefinitionService.class);
-            } catch (Exception e) {
-                log.error("[patch=" + getName() + "] ConnectorDefinitionService not"
-                        + " available; the legacy connector rows stay unmigrated until the"
-                        + " next startup", e);
-                return false;
-            }
+            // Each half looks up its OWN bean, inside its own half. Fetching both first
+            // meant a missing profile bean skipped the connector migration and vice versa —
+            // the isolation this class documents, undone one line above where it is claimed.
+            // A review found the contradiction.
 
-            ConnectorDefinitionService.LegacyIdMigrationResult result =
-                    service.migrateLegacyGeneratedIds();
-            if (result.clean()) {
-                if (result.migrated == 0 && result.sweptDuplicates == 0) {
-                    log.debug("[patch=" + getName() + "] no legacy connector rows");
-                } else {
-                    log.info("[patch=" + getName() + "] " + result);
-                }
-            } else {
-                // Loud on EVERY startup until a human resolves the divergent rows or the
-                // failed steps stop failing. A single WARN at upgrade time is how §62 sat
-                // unnoticed in the first place.
-                log.error("[patch=" + getName() + "] the migration did not complete cleanly: "
-                        + result + ". Failed rows retry on the next startup; divergent rows"
-                        + " need an administrator to delete the unwanted row"
-                        + " (DELETE .../admin/connectors/{id}?docId=...).");
-            }
-            // TRUE means "the pass ran" — which, for an always-run migration, it did. A
-            // standing divergence is an administrator task, not a retryable startup
-            // condition: returning false for it marked phase 2 failed on every startup for
-            // ever, which re-triggered the fallback listener's full re-apply each time —
-            // noise that buries the one ERROR above that matters. Failed rows do not need
-            // the false either: the next startup retries them because the patch always
-            // runs. False is reserved for "the pass could not run at all".
-            return true;
+            // Each half is attempted on its own. The first version evaluated the connector
+            // pass as an argument, so an unanswered connector walk (one exception) skipped
+            // the profile pass for that startup — a review named it: sharing a database
+            // does not make one enumeration's failure the other's.
+            boolean connectorsRan = runHalf("connectors",
+                    () -> ctx.getBean(ConnectorDefinitionService.class).migrateLegacyGeneratedIds(),
+                    "DELETE .../admin/connectors/{id}?docId=...");
+            boolean profilesRan = runHalf("import profiles",
+                    () -> ctx.getBean(ImportProfileDefinitionService.class).migrateLegacyGeneratedIds(),
+                    "DELETE .../admin/import-profiles/{id}?docId=...");
+            return connectorsRan && profilesRan;
         } catch (Exception e) {
             log.error("[patch=" + getName() + "] the migration pass itself failed; it will"
                     + " retry on the next startup", e);
             return false;
         }
+    }
+
+    /**
+     * Runs one half and reports it. TRUE means "the pass ran" — which, for an always-run
+     * migration, it did. A standing divergence is an administrator task, not a retryable
+     * startup condition: returning false for it marked phase 2 failed on every startup for
+     * ever, which re-triggered the fallback listener's full re-apply each time — noise that
+     * buries the one ERROR that matters. Failed rows do not need the false either: the next
+     * startup retries them because the patch always runs. False is reserved for "the pass
+     * could not run at all".
+     */
+    private boolean runHalf(String what,
+            java.util.function.Supplier<ConnectorDefinitionService.LegacyIdMigrationResult> pass,
+            String resolver) {
+        try {
+            reportPass(what, pass.get(), resolver);
+            return true;
+        } catch (Exception e) {
+            log.error("[patch=" + getName() + "] the " + what + " migration pass itself"
+                    + " failed; it will retry on the next startup", e);
+            return false;
+        }
+    }
+
+    private void reportPass(String what,
+            ConnectorDefinitionService.LegacyIdMigrationResult result, String resolver) {
+        if (result.clean()) {
+            if (result.migrated == 0 && result.sweptDuplicates == 0) {
+                log.debug("[patch=" + getName() + "] no legacy " + what + " rows");
+            } else {
+                log.info("[patch=" + getName() + "] " + what + ": " + result);
+            }
+            return;
+        }
+        // Loud on EVERY startup until a human resolves the divergent rows or the failed
+        // steps stop failing. A single WARN at upgrade time is how §62 sat unnoticed in
+        // the first place.
+        log.error("[patch=" + getName() + "] the " + what + " migration did not complete"
+                + " cleanly: " + result + ". Failed rows retry on the next startup;"
+                + " divergent rows need an administrator to delete the unwanted row ("
+                + resolver + ").");
     }
 
     @Override

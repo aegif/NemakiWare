@@ -74,9 +74,16 @@ class ConnectorLegacyIdMigrationTest {
     private CloudantClientWrapper wrapper;
     private ConnectorDefinitionServiceImpl service;
     private final List<AllDocsResult> pages = new ArrayList<>();
+    /** Ids this test's own delete removed: a later read must not be served them. */
+    private final java.util.Set<String> deletedIds = new java.util.HashSet<>();
 
     @SuppressWarnings("unchecked")
     private void wire() {
+        // A second wire() in one test starts from an empty queue: a page left over from the
+        // first half would be served to the second half's walk and the test would measure
+        // the wrong rows.
+        pages.clear();
+        deletedIds.clear();
         CloudantClientPool pool = mock(CloudantClientPool.class);
         wrapper = mock(CloudantClientWrapper.class);
         cloudant = mock(Cloudant.class);
@@ -86,14 +93,61 @@ class ConnectorLegacyIdMigrationTest {
         service = new ConnectorDefinitionServiceImpl();
         service.setConnectorPool(pool);
 
-        ServiceCall<AllDocsResult> allDocsCall = mock(ServiceCall.class);
-        when(cloudant.postAllDocs(any(PostAllDocsOptions.class))).thenReturn(allDocsCall);
-        when(allDocsCall.execute()).thenAnswer(inv -> {
-            Response<AllDocsResult> response = mock(Response.class);
-            AllDocsResult next = pages.isEmpty() ? null : pages.remove(0);
-            when(response.getResult()).thenReturn(next);
-            return response;
+        // Nothing exists under any deterministic id unless a test says so. get() now falls
+        // back to an id-addressed read when the selector misses, and an UNSTUBBED
+        // getDocument returns null → NPE inside the service — a fixture failure the runner
+        // scores as "fired for the wrong reason".
+        when(cloudant.getDocument(any(GetDocumentOptions.class))).thenAnswer(inv -> {
+            ServiceCall<Document> call = mock(ServiceCall.class);
+            when(call.execute()).thenThrow(
+                    mock(com.ibm.cloud.sdk.core.service.exception.NotFoundException.class));
+            return call;
         });
+
+        // The stub honours startKey/endKey, like the profile fixture: without it a ranged
+        // walk was served rows outside its range and the locks that check the range measured
+        // nothing. A review found that shape on the profile side one round earlier.
+        when(cloudant.postAllDocs(any(PostAllDocsOptions.class))).thenAnswer(call -> {
+            PostAllDocsOptions options = call.getArgument(0);
+            ServiceCall<AllDocsResult> ranged = mock(ServiceCall.class);
+            when(ranged.execute()).thenAnswer(exec -> {
+                AllDocsResult next = pages.isEmpty() ? null : pages.remove(0);
+                // within(...) reads and stubs mocks. Called INSIDE thenReturn(...) it runs
+                // while the stubbing of response.getResult() is still open, and Mockito
+                // aborts the whole class with UnfinishedStubbingException — every test that
+                // walked the database was failing on that instead of on its own claim.
+                AllDocsResult served = within(options, next);
+                Response<AllDocsResult> response = mock(Response.class);
+                when(response.getResult()).thenReturn(served);
+                return response;
+            });
+            return ranged;
+        });
+    }
+
+    /** The rows of {@code page} that a walk with these options would be served. */
+    private AllDocsResult within(PostAllDocsOptions options, AllDocsResult page) {
+        if (page == null || page.getRows() == null) {
+            return page;
+        }
+        String from = options.startKey();
+        String to = options.endKey();
+        if (from == null && to == null && deletedIds.isEmpty()) {
+            return page;
+        }
+        List<DocsResultRow> inRange = new ArrayList<>();
+        for (DocsResultRow r : page.getRows()) {
+            String id = r.getId();
+            if (id == null) continue;
+            if (deletedIds.contains(id)) continue;
+            if (from != null && id.compareTo(from) < 0) continue;
+            if (to != null && (Boolean.FALSE.equals(options.inclusiveEnd())
+                    ? id.compareTo(to) >= 0 : id.compareTo(to) > 0)) continue;
+            inRange.add(r);
+        }
+        AllDocsResult filtered = mock(AllDocsResult.class);
+        when(filtered.getRows()).thenReturn(inRange);
+        return filtered;
     }
 
     private void listingAnswers(List<DocsResultRow> rows) {
@@ -109,6 +163,12 @@ class ConnectorLegacyIdMigrationTest {
             Document doc = mock(Document.class);
             when(doc.getProperties()).thenReturn(props);
             when(doc.getRev()).thenReturn(rev);
+            // The BODY carries the id too, as a real _all_docs row does. The index-free
+            // delete addresses rows by doc.getId(); with it unstubbed the Cloudant builder
+            // refused an empty docId and every delete test failed on that instead of on its
+            // own claim — five locks red on a healthy tree, two green for the wrong reason.
+            // A review traced it.
+            when(doc.getId()).thenReturn(id);
             when(row.getDoc()).thenReturn(doc);
         }
         return row;
@@ -152,11 +212,17 @@ class ConnectorLegacyIdMigrationTest {
         when(postCall.execute()).thenReturn(postResponse);
         when(cloudant.postDocument(any(PostDocumentOptions.class))).thenReturn(postCall);
 
-        ServiceCall<DocumentResult> deleteCall = mock(ServiceCall.class);
-        Response<DocumentResult> deleteResponse = mock(Response.class);
-        when(deleteResponse.getResult()).thenReturn(ok);
-        when(deleteCall.execute()).thenReturn(deleteResponse);
-        when(cloudant.deleteDocument(any(DeleteDocumentOptions.class))).thenReturn(deleteCall);
+        // A delete is visible to the reads that follow it, as a database's is: the post-delete
+        // count was being served the row it had just removed.
+        when(cloudant.deleteDocument(any(DeleteDocumentOptions.class))).thenAnswer(inv -> {
+            DeleteDocumentOptions deleteOptions = inv.getArgument(0);
+            deletedIds.add(deleteOptions.docId());
+            ServiceCall<DocumentResult> deleteCall = mock(ServiceCall.class);
+            Response<DocumentResult> deleteResponse = mock(Response.class);
+            when(deleteResponse.getResult()).thenReturn(ok);
+            when(deleteCall.execute()).thenReturn(deleteResponse);
+            return deleteCall;
+        });
     }
 
     @Test
@@ -371,18 +437,30 @@ class ConnectorLegacyIdMigrationTest {
         String source = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
                 jp.aegif.nemaki.util.test.JavaSource.read(
                         "src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java"));
-        String pager = jp.aegif.nemaki.util.test.JavaSource.methodBody(source,
-                "private void forEachAllDocsRow(");
+        // The walk was extracted to NemakiConfAllDocs when the import-profile service
+        // needed it; the pager assertion follows it there.
+        String confSource = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/rest/ingest/NemakiConfAllDocs.java"));
+        // The public walk delegates to one private loop (a ranged variant shared it for two
+        // rounds and was then withdrawn; this lock was red on a healthy tree until a review
+        // noticed it still read forEachRow's one-line body).
+        String pager = jp.aegif.nemaki.util.test.JavaSource.methodBody(confSource,
+                "private static void walk(");
+        assertTrue(jp.aegif.nemaki.util.test.JavaSource.methodBody(confSource,
+                        "static void forEachRow(").contains("walk("),
+                "the public walk no longer runs through the one shared loop");
         String walk = jp.aegif.nemaki.util.test.JavaSource.methodBody(source,
                 "public LegacyIdMigrationResult migrateLegacyGeneratedIds()");
         String perRow = jp.aegif.nemaki.util.test.JavaSource.methodBody(source,
                 "private void migrateOneLegacyRow(");
         String scan = jp.aegif.nemaki.util.test.JavaSource.methodBody(source,
-                "private boolean aConnectorRowExistsIndexFree(");
+                "private int countConnectorRowsIndexFree(");
         assertTrue(pager.contains("postAllDocs("),
                 "the shared walk no longer reads _all_docs — whatever replaced it, the "
                         + "burden is on it to answer while indexes rebuild: " + pager);
-        assertTrue(walk.contains("forEachAllDocsRow(") && scan.contains("forEachAllDocsRow("),
+        assertTrue(walk.contains("NemakiConfAllDocs.forEachRow(")
+                        && scan.contains("NemakiConfAllDocs.forEachRow("),
                 "the migration and the create-scan no longer share the fail-closed walk — "
                         + "split copies are how the one-arm defects of this batch happened");
         for (String body : new String[] {pager, walk, perRow, scan}) {
@@ -438,6 +516,267 @@ class ConnectorLegacyIdMigrationTest {
         assertEquals(1, result.migrated,
                 "the boundary row was processed twice or not at all: " + result);
         assertTrue(result.clean());
+    }
+
+    @Test
+    @DisplayName("the ingest entry point maps BOTH connector refusals — retryable and "
+            + "ambiguous")
+    void theIngestEntryPointMapsTheConnectorRefusals() throws Exception {
+        // findBySystemAndArchetype decides WHICH connector an import uses and can now refuse
+        // two ways; its caller caught neither, so both surfaced as unexplained failures. The
+        // profile arm beside it had been mapped a round earlier — the same one-arm shape.
+        String source = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java"));
+        String resolve = jp.aegif.nemaki.util.test.JavaSource.methodBody(source,
+                "public ExternalIngestResult executeWithAutoResolve(");
+        assertTrue(resolve.contains("catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException"),
+                "the retryable connector refusal escapes the ingest entry point: " + resolve);
+        assertTrue(resolve.contains("findBySystemsAndArchetype("),
+                "the alias keys are resolved one walk per key again — a full walk of the "
+                        + "config database per key: " + resolve);
+        assertTrue(resolve.contains("connector resolution is"),
+                "the refusal does not say what happened: " + resolve);
+        String execute = jp.aegif.nemaki.util.test.JavaSource.methodBody(source,
+                "CaptureScope captureScope, BeforeEmitHook beforeEmitHook)");
+        assertTrue(execute.contains("connectorDefinitionService.existsIndexFree("),
+                "\"Connector not found\" is answered from a selector read alone, so a "
+                        + "rebuilding index reports a connector that IS there as absent");
+    }
+
+    @Test
+    @DisplayName("every ingest entry point that says 'not found' asks index-free first")
+    void everyIngestEntryPointAsksIndexFreeBeforeSayingNotFound() throws Exception {
+        // The import service's split is not the whole story: the non-admin ingest gate and
+        // the DLQ retry answer BEFORE it, and both used to report a rebuilding index as
+        // absence. A review found them still open after the service was closed. Asserted on
+        // the source because these are controllers with no unit fixture of their own; what
+        // has to hold is that no "not found" is answered from an index-backed read alone.
+        String gate = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java"));
+        assertTrue(gate.contains("existsIndexFree(profileId, repositoryId)")
+                        && gate.contains("connectorHiddenOrAbsent("),
+                "the non-admin ingest gate answers 'not found' from the index alone again");
+        int applied = gate.split("HiddenOrAbsent\\(", -1).length - 1;
+        assertTrue(applied >= 5,
+                "one of the gate's three not-found branches stopped asking index-free "
+                        + "(helpers + call sites seen: " + applied + ")");
+        String dlq = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java"));
+        assertTrue(dlq.contains("connectorDefinitionService.existsIndexFree("),
+                "the DLQ retry answers 'connector not found' from the index alone again");
+        String canonical = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java"));
+        String mail = jp.aegif.nemaki.util.test.JavaSource.methodBody(canonical,
+                "private ExternalIngestResult executeMailImportInternal(");
+        assertTrue(mail.contains("profileHiddenOrAbsent(") && mail.contains("connectorHiddenOrAbsent("),
+                "the mail entry point's early validation reports absence again: " + mail);
+        assertTrue(mail.contains("getForRepository("),
+                "the mail entry point decides the profile from whichever row the selector "
+                        + "returned, so a shared profileId ends in a repository mismatch for "
+                        + "an import whose own repository has the profile: " + mail);
+        String folder = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/rest/ingest/FolderConnectorController.java"));
+        assertTrue(!folder.contains("importProfileDefinitionService.get(profileId)"),
+                "the folder run/credential paths answer 'no runnable profile' from the "
+                        + "selector alone again");
+    }
+
+    @Test
+    @DisplayName("auto-resolution finds a connector the selector cannot show")
+    void theConnectorResolverSeesAHiddenConnector() {
+        // WHICH connector an auto-resolved import uses was decided by a Mango selector: while
+        // its index rebuilt it answered "no enabled connector found" for a connector that is
+        // there, and the import was refused. The profile half was closed first; a review
+        // refused "out of scope" for this one.
+        wire();
+        selectorAnswersNothing();
+        Map<String, Object> props = connectorProps("box-1", "Box");
+        props.put("enabled", true);
+        props.put("sourceArchetype", SourceArchetype.FILE_SHARE.name());
+        listingAnswers(List.of(row("generated-box", props, "1-a")));
+
+        ConnectorDefinition found = service.findBySystemAndArchetype("google",
+                SourceArchetype.FILE_SHARE);
+
+        assertTrue(found != null && "box-1".equals(found.getConnectorId()),
+                "the connector the selector could not show was not resolved: " + found);
+    }
+
+    @Test
+    @DisplayName("auto-resolution refuses when several connectors match — nobody picks by "
+            + "storage order")
+    void theConnectorResolverRefusesAnAmbiguousMatch() {
+        wire();
+        selectorAnswersNothing();
+        Map<String, Object> a = connectorProps("box-1", "Box A");
+        a.put("enabled", true); a.put("sourceArchetype", SourceArchetype.FILE_SHARE.name());
+        Map<String, Object> b = connectorProps("box-2", "Box B");
+        b.put("enabled", true); b.put("sourceArchetype", SourceArchetype.FILE_SHARE.name());
+        listingAnswers(List.of(row("connector_definition:box-1", a, "1-a"),
+                row("connector_definition:box-2", b, "1-b")));
+
+        IllegalStateException refused = assertThrows(IllegalStateException.class,
+                () -> service.findBySystemAndArchetype("google", SourceArchetype.FILE_SHARE),
+                "one of two matching connectors was chosen by nothing but row order");
+        assertTrue(refused.getMessage().contains("Ambiguous auto-resolve"), refused.getMessage());
+
+        // But NOT across alias keys: the key order is a preference the caller declares (the
+        // spelling the request used, then its alias), and an installation may legitimately
+        // hold one connector saved as "google" and another as "google_drive". Refusing that
+        // pair would break a working configuration — the over-throw twin of this rule.
+        Map<String, Object> alias = connectorProps("drive-1", "Drive");
+        alias.put("enabled", true);
+        alias.put("sourceArchetype", SourceArchetype.FILE_SHARE.name());
+        alias.put("sourceSystem", "google_drive");
+        Map<String, Object> exact = connectorProps("box-1", "Box");
+        exact.put("enabled", true);
+        exact.put("sourceArchetype", SourceArchetype.FILE_SHARE.name());
+        wire();
+        selectorAnswersNothing();
+        listingAnswers(List.of(row("connector_definition:box-1", exact, "1-a"),
+                row("connector_definition:drive-1", alias, "1-c")));
+        ConnectorDefinition preferred = org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> service.findBySystemsAndArchetype(List.of("google", "google_drive"),
+                        SourceArchetype.FILE_SHARE),
+                "a legitimate pair (one per alias spelling) was refused as ambiguous");
+        assertTrue(preferred != null && "box-1".equals(preferred.getConnectorId()),
+                "the caller's first key no longer wins: " + preferred);
+    }
+
+    @Test
+    @DisplayName("an UNRELATED connector that cannot be read does not stop the resolution")
+    void anUnrelatedUnreadableConnectorDoesNotStopTheResolution() {
+        // Over-throwing: a newer node writing a newer sourceArchetype makes that row
+        // undeserialisable on an older one. Refusing the whole resolution because of a
+        // connector that could not have been the answer takes the whole ingest path down
+        // during a rolling upgrade. A review named it.
+        wire();
+        selectorAnswersNothing();
+        Map<String, Object> wanted = connectorProps("box-1", "Box");
+        wanted.put("enabled", true);
+        wanted.put("sourceArchetype", SourceArchetype.FILE_SHARE.name());
+        Map<String, Object> unrelated = connectorProps("future-1", "From a newer node");
+        unrelated.put("enabled", true);
+        unrelated.put("sourceSystem", "some_new_system");
+        unrelated.put("sourceArchetype", "A_VALUE_THIS_VERSION_DOES_NOT_KNOW");
+        // A DISABLED row that DOES match the request and cannot be read: it can be neither
+        // the answer nor half of an ambiguity, so reading it cannot change the outcome —
+        // and reading it was refusing every import. The other arm (a matching ENABLED
+        // unreadable row) still refuses; that is the test below.
+        // A row with NO sourceSystem at all: the filter compares against a List.of(...), and
+        // List.of(...).contains(null) THROWS — so this row took the whole resolution down
+        // with an NPE that nothing on the way out converts. A review caught the regression
+        // the filter itself introduced.
+        Map<String, Object> noSystem = connectorProps("headless-1", "No system");
+        noSystem.remove("sourceSystem");
+        noSystem.put("enabled", true);
+        // The STRING "false", as a hand-written or legacy row carries it: Jackson reads it as
+        // disabled, so skipping only the Boolean left this row able to refuse the whole
+        // resolution by failing to deserialise. A review found the arm unmeasured.
+        Map<String, Object> disabled = connectorProps("retired-1", "Retired");
+        disabled.put("enabled", "false");
+        disabled.put("sourceArchetype", SourceArchetype.FILE_SHARE.name());
+        disabled.put("allowedPrincipalIds", Map.of("not", "a list"));
+        listingAnswers(List.of(row("connector_definition:box-1", wanted, "1-a"),
+                row("connector_definition:future-1", unrelated, "1-b"),
+                row("connector_definition:retired-1", disabled, "1-c"),
+                row("connector_definition:headless-1", noSystem, "1-d")));
+
+        ConnectorDefinition found = org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> service.findBySystemAndArchetype("google", SourceArchetype.FILE_SHARE),
+                "an unrelated row this version cannot read stopped the resolution");
+        assertTrue(found != null && "box-1".equals(found.getConnectorId()),
+                "resolved to: " + found);
+    }
+
+    @Test
+    @DisplayName("a MATCHING connector that cannot be read still refuses")
+    void aMatchingUnreadableConnectorStillRefuses() {
+        // The other arm: a row whose system and archetype match could be the answer, so it
+        // is not skippable. Fail-closed stays where it belongs.
+        wire();
+        selectorAnswersNothing();
+        Map<String, Object> broken = connectorProps("box-1", "Box");
+        broken.put("enabled", true);
+        broken.put("sourceArchetype", SourceArchetype.FILE_SHARE.name());
+        // A REAL field with a value that cannot be coerced. The first version used a field
+        // name the class does not have, and @JsonIgnoreProperties(ignoreUnknown = true) made
+        // it deserialise cleanly — the lock would have been red on a healthy tree because
+        // nothing was thrown. Caught by tracing the fixture against the class.
+        broken.put("allowedPrincipalIds", Map.of("not", "a list"));
+        listingAnswers(List.of(row("connector_definition:box-1", broken, "1-a")));
+
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> service.findBySystemAndArchetype("google", SourceArchetype.FILE_SHARE),
+                "a row that matches the request and cannot be read was skipped");
+    }
+
+    @Test
+    @DisplayName("auto-resolution refuses retryably on a row it cannot read")
+    void theConnectorResolverRefusesAnUnreadableRow() {
+        wire();
+        selectorAnswersNothing();
+        listingAnswers(List.of(row("no-body", null, null)));
+
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> service.findBySystemAndArchetype("google", SourceArchetype.FILE_SHARE),
+                "a row that could not be read was answered as 'no such connector'");
+    }
+
+    @Test
+    @DisplayName("existsIndexFree sees a hidden row and REFUSES an unreadable one")
+    void existsIndexFreeSeesHiddenRowsAndRefusesUnreadableOnes() {
+        // The profile twin of this lock existed from the start; the connector one did not,
+        // and the implementation let the raw IllegalStateException through — so the
+        // controller's 503 branch was dead code and an unreadable row answered 500.
+        wire();
+        listingAnswers(List.of(row("generated-1", connectorProps("hidden-one", "Hidden"), "1-a")));
+        assertTrue(service.existsIndexFree("hidden-one"),
+                "a row the selector cannot show was reported as absent");
+
+        wire();
+        listingAnswers(List.of(row("no-body", null, null)));
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> service.existsIndexFree("hidden-one"),
+                "a row that could not be classified was answered as 'no such connector'");
+    }
+
+    @Test
+    @DisplayName("a re-served boundary row is COUNTED once — no phantom twin")
+    void aBoundaryRowIsCountedExactlyOnce() {
+        // The migration stopped measuring the walk's dedup when it moved to collect-then-act
+        // (its map is keyed by row id, so a row served twice lands once whatever the walk
+        // does). The dedup is still load-bearing for every OTHER consumer of the walk: the
+        // count scan would see ONE row as two and refuse the write as a standing twin (409),
+        // the uniqueness listing would report a false duplicate, and the delete would try to
+        // remove the same row twice. A review found the lock measuring nothing.
+        wire();
+        List<DocsResultRow> firstPage = new ArrayList<>();
+        Map<String, Object> config = new HashMap<>();
+        config.put("type", "configuration");
+        for (int i = 0; i < ConnectorDefinitionServiceImpl.MIGRATION_PAGE - 1; i++) {
+            firstPage.add(row(String.format("config-%04d", i), config, "1-a"));
+        }
+        firstPage.add(row("connector_definition:edge", connectorProps("edge", "Edge"), "4-r"));
+        listingAnswers(firstPage);
+        listingAnswers(List.of(
+                row("connector_definition:edge", connectorProps("edge", "Edge"), "4-r"),
+                row("zz-config", config, "1-a")));
+        selectorShows(row("connector_definition:edge", connectorProps("edge", "Edge"), "4-r"));
+        writesSucceed();
+
+        // One row defines "edge". Counted twice it becomes a standing pair and the update is
+        // refused with 409 for a twin that does not exist.
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> service.update(validDefinition("edge")),
+                "the re-served boundary row was counted twice — a twin that does not exist");
+        verify(cloudant, org.mockito.Mockito.times(1))
+                .postDocument(any(PostDocumentOptions.class));
     }
 
     @Test
@@ -713,6 +1052,116 @@ class ConnectorLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("a deterministic row the index cannot show is still found by get()")
+    void aDeterministicRowTheIndexCannotShowIsStillFoundByGet() {
+        wire();
+        selectorAnswersNothing();
+        Document stored = mock(Document.class);
+        when(stored.getProperties()).thenReturn(connectorProps("c-hidden-det", "Hidden"));
+        deterministicReadAnswers("c-hidden-det", stored);
+
+        ConnectorDefinition found = service.get("c-hidden-det");
+
+        assertTrue(found != null && "c-hidden-det".equals(found.getConnectorId()),
+                "a row under its deterministic id read as absent: " + found);
+    }
+
+    @Test
+    @DisplayName("two legacy rows for one connectorId are BOTH left standing")
+    void twoLegacyRowsForOneIdAreBothLeftStanding() {
+        wire();
+        selectorAnswersNothing();
+        listingAnswers(List.of(row("generated-a", connectorProps("c-dup", "A"), "1-a"),
+                row("generated-b", connectorProps("c-dup", "B"), "1-b")));
+        writesSucceed();
+
+        var result = service.migrateLegacyGeneratedIds();
+
+        assertEquals(0, result.migrated, "one of two legacy rows was made canonical by "
+                + "nothing but enumeration order");
+        verify(cloudant, never()).postDocument(any(PostDocumentOptions.class));
+        assertTrue(result.divergent.stream().anyMatch(d -> d.contains("c-dup")),
+                "the pair was not reported: " + result.divergent);
+        assertTrue(!result.clean(), "a pass that left two rows standing reported clean");
+    }
+
+    @Test
+    @DisplayName("a CREATE whose selector out-reports the scan refuses too — not only UPDATE")
+    void aCreateWhoseSelectorOutReportsTheWalkRefuses() {
+        wire();
+        selectorAnswersNothingThenShows(row("connector_definition:c-ghost2",
+                connectorProps("c-ghost2", "Ghost"), "1-a"));
+        listingAnswers(List.of());
+        writesSucceed();
+
+        ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused =
+                assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                        () -> service.create(validDefinition("c-ghost2")),
+                        "the create wrote to a row the index-free scan says is not there");
+        assertTrue(refused.getMessage().contains("disagree"), refused.getMessage());
+        verify(cloudant, never()).postDocument(any(PostDocumentOptions.class));
+    }
+
+    @Test
+    @DisplayName("a CREATE never adopts a row the scan found — the concurrent-create race")
+    void aCreateNeverAdoptsARowTheScanFound() {
+        // The profile twin of this lock, mirrored: create() checks existence through the
+        // selector, then upsertDocument looks again — two requests, not one snapshot. Two
+        // concurrent creates both passed the check and the slower one overwrote the other's
+        // configuration with a 201.
+        wire();
+        DocsResultRow theirs = row("connector_definition:c-race",
+                connectorProps("c-race", "Theirs"), "1-a");
+        selectorAnswersNothingThenShows(theirs);
+        listingAnswers(List.of(theirs));
+        writesSucceed();
+
+        IllegalStateException refused = assertThrows(IllegalStateException.class,
+                () -> service.create(validDefinition("c-race")),
+                "the create overwrote a row that already defined this connector");
+        assertTrue(refused.getMessage().contains("already exists"), refused.getMessage());
+        verify(cloudant, never()).postDocument(any(PostDocumentOptions.class));
+    }
+
+    @Test
+    @DisplayName("the selector must not out-report the index-free scan — the write refuses")
+    void theSelectorMustNotOutReportTheWalk() {
+        wire();
+        selectorShows(row("connector_definition:c-ghost",
+                connectorProps("c-ghost", "Ghost"), "1-a"));
+        listingAnswers(List.of());
+        writesSucceed();
+
+        ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused =
+                assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                        () -> service.update(validDefinition("c-ghost")),
+                        "the update wrote to a row the index-free scan says is not there");
+        assertTrue(refused.getMessage().contains("disagree"), refused.getMessage());
+        verify(cloudant, never()).postDocument(any(PostDocumentOptions.class));
+    }
+
+    @Test
+    @DisplayName("an UPDATE over a VISIBLE twin pair does not write — nobody chose a winner")
+    void anUpdateWithTwoVisibleTwinsDoesNotWrite() {
+        // The connector twin of the profile lock: 2 rows, the selector shows both, and the
+        // count-versus-selector arm is satisfied — the write went to existing.get(0).
+        wire();
+        DocsResultRow twinA = row("generated-a", connectorProps("twin", "A"), "1-a");
+        DocsResultRow twinB = row("generated-b", connectorProps("twin", "B"), "1-b");
+        selectorShows(twinA, twinB);
+        listingAnswers(List.of(twinA, twinB));
+        writesSucceed();
+
+        ConnectorDefinitionServiceImpl.ConnectorHasTwinRowsException refused =
+                assertThrows(ConnectorDefinitionServiceImpl.ConnectorHasTwinRowsException.class,
+                        () -> service.update(validDefinition("twin")),
+                        "the update wrote to one of two visible twins");
+        assertTrue(refused.getMessage().contains("?docId="),
+                "the refusal does not name the resolver: " + refused.getMessage());
+        verify(cloudant, never()).postDocument(any(PostDocumentOptions.class));
+    }
+
+    @Test
     @DisplayName("an UPDATE over an invisible legacy row refuses retryably — the scan's "
             + "other arm")
     void anUpdateOverAnInvisibleLegacyRowRefusesRetryably() {
@@ -734,7 +1183,10 @@ class ConnectorLegacyIdMigrationTest {
                         () -> service.update(validDefinition("veteran")),
                         "the update wrote a second definition beside a legacy row the "
                                 + "index cannot show");
-        assertTrue(refused.getMessage().contains("legacy row"),
+        // "rebuilding index shows 0": the selector saw nothing and the walk saw the legacy
+        // row. Distinct from the hidden-twin arm ("shows 1"), so the two locks cannot be
+        // satisfied by each other's refusal.
+        assertTrue(refused.getMessage().contains("rebuilding index shows 0"),
                 "refused by some other guard: " + refused.getMessage());
         verify(cloudant, never()).postDocument(any(PostDocumentOptions.class));
     }
@@ -790,6 +1242,305 @@ class ConnectorLegacyIdMigrationTest {
                 "the update-side scan broke the ordinary upsert");
     }
 
+    /** The selector (postFind) shows exactly these raw rows — a PARTIAL view of the DB. */
+    @SuppressWarnings("unchecked")
+    private void selectorShows(DocsResultRow... visibleRows) {
+        List<Document> docs = new ArrayList<>();
+        for (DocsResultRow r : visibleRows) {
+            // Read r BEFORE the stubbing starts. r is a mock too, and a call on it between
+            // when(...) and thenReturn(...) leaves Mockito's stubbing unfinished: the class
+            // then dies with UnfinishedStubbingException instead of failing on its own claim.
+            // Every test here that shows the selector anything was failing on this.
+            String rowId = r.getId();
+            String rowRev = r.getDoc().getRev();
+            java.util.Map<String, Object> rowProps = r.getDoc().getProperties();
+            Document d = mock(Document.class);
+            when(d.getId()).thenReturn(rowId);
+            when(d.getRev()).thenReturn(rowRev);
+            when(d.getProperties()).thenReturn(rowProps);
+            docs.add(d);
+        }
+        ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> findCall =
+                mock(ServiceCall.class);
+        Response<com.ibm.cloud.cloudant.v1.model.FindResult> findResponse =
+                mock(Response.class);
+        com.ibm.cloud.cloudant.v1.model.FindResult found =
+                mock(com.ibm.cloud.cloudant.v1.model.FindResult.class);
+        when(found.getDocs()).thenReturn(docs);
+        when(findResponse.getResult()).thenReturn(found);
+        when(findCall.execute()).thenReturn(findResponse);
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenReturn(findCall);
+    }
+
+    /**
+     * The selector answers NOTHING first and shows {@code laterRows} from the second call on
+     * — two concurrent requests: the existence check misses, the write's own look-up finds.
+     */
+    @SuppressWarnings("unchecked")
+    private void selectorAnswersNothingThenShows(DocsResultRow... laterRows) {
+        ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> empty = mock(ServiceCall.class);
+        Response<com.ibm.cloud.cloudant.v1.model.FindResult> emptyResponse = mock(Response.class);
+        com.ibm.cloud.cloudant.v1.model.FindResult none =
+                mock(com.ibm.cloud.cloudant.v1.model.FindResult.class);
+        when(none.getDocs()).thenReturn(List.of());
+        when(emptyResponse.getResult()).thenReturn(none);
+        when(empty.execute()).thenReturn(emptyResponse);
+
+        List<Document> docs = new ArrayList<>();
+        for (DocsResultRow r : laterRows) {
+            // Read r BEFORE the stubbing starts. r is a mock too, and a call on it between
+            // when(...) and thenReturn(...) leaves Mockito's stubbing unfinished: the class
+            // then dies with UnfinishedStubbingException instead of failing on its own claim.
+            // Every test here that shows the selector anything was failing on this.
+            String rowId = r.getId();
+            String rowRev = r.getDoc().getRev();
+            java.util.Map<String, Object> rowProps = r.getDoc().getProperties();
+            Document d = mock(Document.class);
+            when(d.getId()).thenReturn(rowId);
+            when(d.getRev()).thenReturn(rowRev);
+            when(d.getProperties()).thenReturn(rowProps);
+            docs.add(d);
+        }
+        ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> shown = mock(ServiceCall.class);
+        Response<com.ibm.cloud.cloudant.v1.model.FindResult> shownResponse = mock(Response.class);
+        com.ibm.cloud.cloudant.v1.model.FindResult found =
+                mock(com.ibm.cloud.cloudant.v1.model.FindResult.class);
+        when(found.getDocs()).thenReturn(docs);
+        when(shownResponse.getResult()).thenReturn(found);
+        when(shown.execute()).thenReturn(shownResponse);
+
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenReturn(empty).thenReturn(shown);
+    }
+
+    @Test
+    @DisplayName("an UPDATE while a second twin is hidden refuses retryably — the connector "
+            + "twin of the profile finding")
+    void anUpdateWithAHiddenTwinIsAStandingPairNotARetry() {
+        // Found on the profile side in review round 2 and mirrored here: consulting the walk
+        // only when the selector returned NOTHING let an update adopt the visible twin
+        // while another stayed hidden, and the pair diverged with a 200. Round 3: the count
+        // has established a PAIR whatever the selector shows, so the answer is the standing-
+        // twin refusal (409), not "retry" — a retry could only end in that same 409.
+        wire();
+        DocsResultRow visible = row("connector_definition:c-pair",
+                connectorProps("c-pair", "Pair"), "4-r");
+        DocsResultRow hidden = row("legacy-pair", connectorProps("c-pair", "Pair (old)"), "2-r");
+        selectorShows(visible);
+        listingAnswers(List.of(visible, hidden));
+        writesSucceed();
+
+        ConnectorDefinitionServiceImpl.ConnectorHasTwinRowsException refused =
+                assertThrows(ConnectorDefinitionServiceImpl.ConnectorHasTwinRowsException.class,
+                        () -> service.update(validDefinition("c-pair")),
+                        "a pair with one twin hidden was written to, or answered 'retry' — "
+                                + "the count had already established the pair");
+        assertTrue(refused.getMessage().contains("2 definition row"),
+                "refused by some other guard: " + refused.getMessage());
+        verify(cloudant, never()).postDocument(any(PostDocumentOptions.class));
+    }
+
+    @Test
+    @DisplayName("the plain delete removes the twin the selector hid")
+    void thePlainDeleteRemovesHiddenTwinsToo() {
+        // "消したつもりが残る" — recorded at closure time as a sibling, closed here: the
+        // selector-based delete removed only what the rebuilding index showed and then
+        // reported success.
+        wire();
+        DocsResultRow visible = row("connector_definition:c-gone",
+                connectorProps("c-gone", "Gone"), "4-r");
+        DocsResultRow hidden = row("legacy-gone", connectorProps("c-gone", "Gone (old)"), "2-r");
+        listingAnswers(List.of(visible, hidden));
+        writesSucceed();
+
+        service.delete("c-gone");
+
+        ArgumentCaptor<DeleteDocumentOptions> deleted =
+                ArgumentCaptor.forClass(DeleteDocumentOptions.class);
+        verify(cloudant, org.mockito.Mockito.times(2)).deleteDocument(deleted.capture());
+        assertTrue(deleted.getAllValues().stream().map(DeleteDocumentOptions::docId)
+                        .toList().contains("legacy-gone"),
+                "the twin the selector could not show survived a 'successful' delete");
+    }
+
+    @Test
+    @DisplayName("the row-addressed delete reports how many rows REMAIN")
+    void theRowDeleteReportsTheSurvivors() {
+        // The controller decides whether to finish the work this path skips (the scheduler
+        // stop, the deletion record) from this number. A control that sabotages it can only
+        // be measured HERE: the controller tests mock this service away, so a control aimed
+        // at the count fired against a stub. A review found exactly that.
+        wire();
+        Document legacyRow = mock(Document.class);
+        when(legacyRow.getProperties()).thenReturn(connectorProps("twin", "Twin"));
+        when(legacyRow.getRev()).thenReturn("7-r");
+        stubGetDocument("legacy-abc", legacyRow);
+        // TWO pages: this fixture's queue is consumptive, and the delete counts BEFORE and
+        // AFTER — the second count would have received null and answered -1, so the lock was
+        // red on a healthy tree. (The profile fixture is sticky and needs only one.)
+        // THREE rows, so the healthy answer after one delete is 2. With two rows the healthy
+        // answer was 1 — the same constant the control substitutes, so the control could not
+        // tell a healthy tree from its own sabotage. A review caught the collision after the
+        // fixture started reflecting deletions.
+        List<DocsResultRow> page = List.of(row("legacy-abc", connectorProps("twin", "Twin"), "7-r"),
+                row("connector_definition:twin", connectorProps("twin", "Twin"), "1-d"),
+                row("legacy-def", connectorProps("twin", "Twin"), "2-d"));
+        listingAnswers(page);
+        listingAnswers(page);
+        writesSucceed();
+
+        int remaining = service.delete("twin", "legacy-abc");
+
+        assertEquals(2, remaining,
+                "the delete does not report the surviving rows, so a concurrent delete of "
+                        + "the other twin leaves the definition gone and unreported");
+        // Connectors are global, so there is no confined-versus-global distinction to make
+        // here; what this measures is that the count runs AFTER the delete.
+    }
+
+    @Test
+    @DisplayName("a row read by id that the scan counts as ZERO is a disagreement, not "
+            + "'the only row'")
+    void aCountOfZeroIsADisagreementNotTheOnlyRow() {
+        // The row was READ by id and the scan counted none. "This is the only definition
+        // row" is a claim neither read supports; the write path refuses exactly this
+        // disagreement retryably, and answering a definitive 409 here would say more than
+        // the reads establish. A review found the two states sharing one answer.
+        wire();
+        Document only = mock(Document.class);
+        when(only.getProperties()).thenReturn(connectorProps("c-solo-row", "Solo"));
+        when(only.getRev()).thenReturn("1-a");
+        stubGetDocument("only-row", only);
+        listingAnswers(List.of());
+        writesSucceed();
+
+        ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused = assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class, () -> service.delete("c-solo-row", "only-row"),
+                "a scan that counted no rows answered 'this is the only row'");
+        assertTrue(refused.getMessage().contains("disagree"), refused.getMessage());
+        verify(cloudant, never()).deleteDocument(any(DeleteDocumentOptions.class));
+    }
+
+    @Test
+    @DisplayName("a post-delete count that cannot answer reports -1, not a survivor")
+    void aPostDeleteCountThatCannotAnswerReportsMinusOne() {
+        // The row IS deleted; what is unknown is what remains. Reporting a survivor there
+        // would let the caller skip the work a zero demands, and reporting zero would stop a
+        // scheduler on a guess. No test asserted this arm — a review found the gap.
+        wire();
+        Document legacyRow = mock(Document.class);
+        when(legacyRow.getProperties()).thenReturn(connectorProps("twin", "Twin"));
+        when(legacyRow.getRev()).thenReturn("7-r");
+        stubGetDocument("legacy-abc", legacyRow);
+        // ONE page: the pre-delete count consumes it, and the post-delete walk finds the
+        // queue empty — the listing does not answer.
+        listingAnswers(List.of(row("legacy-abc", connectorProps("twin", "Twin"), "7-r"),
+                row("connector_definition:twin", connectorProps("twin", "Twin"), "1-d")));
+        writesSucceed();
+
+        int remaining = service.delete("twin", "legacy-abc");
+
+        assertEquals(-1, remaining,
+                "a count that could not answer was reported as a survivor count");
+    }
+
+    @Test
+    @DisplayName("the row-addressed delete refuses to remove the ONLY definition row")
+    void theRowResolverRefusesTheOnlyRow() {
+        // This operation resolves a divergent PAIR: it skips the scheduler stop and the
+        // deletion record because it assumes the definition survives. Removing the last row
+        // through it deletes the definition outright with neither. A review found the
+        // assumption unchecked.
+        wire();
+        Document only = mock(Document.class);
+        when(only.getProperties()).thenReturn(connectorProps("c-solo-row", "Solo"));
+        when(only.getRev()).thenReturn("1-a");
+        stubGetDocument("only-row", only);
+        listingAnswers(List.of(row("only-row", connectorProps("c-solo-row", "Solo"), "1-a")));
+        writesSucceed();
+
+        ConnectorDefinitionServiceImpl.ConnectorHasNoTwinException refused = assertThrows(ConnectorDefinitionServiceImpl.ConnectorHasNoTwinException.class,
+                () -> service.delete("c-solo-row", "only-row"),
+                "the last definition row was removed through the divergent-pair resolver");
+        assertTrue(refused.getMessage().contains("only definition row"), refused.getMessage());
+        verify(cloudant, never()).deleteDocument(any(DeleteDocumentOptions.class));
+    }
+
+    @Test
+    @DisplayName("a delete that removed SOME rows and then failed says so — and one that "
+            + "removed none does not")
+    void aPartlyFailedDeleteSaysHowMuchWasRemoved() {
+        // Rows are deleted one at a time and CouchDB has no transaction across documents.
+        // Two outcomes must not be confused: some rows gone (retry removes the rest) and
+        // nothing gone (the store refused the operation — a retry does the same). The
+        // controller-level locks mock this service away, so THIS is where the counting is
+        // measured; a review found the controls pointing at those mocks.
+        wire();
+        DocsResultRow first = row("connector_definition:c-half",
+                connectorProps("c-half", "Half"), "4-r");
+        DocsResultRow second = row("legacy-half", connectorProps("c-half", "Half (old)"), "2-r");
+        listingAnswers(List.of(first, second));
+        writesSucceed();
+        // the first delete succeeds, the second fails
+        java.util.concurrent.atomic.AtomicInteger deletes = new java.util.concurrent.atomic.AtomicInteger();
+        when(cloudant.deleteDocument(any(DeleteDocumentOptions.class))).thenAnswer(inv -> {
+            ServiceCall<DocumentResult> call = mock(ServiceCall.class);
+            if (deletes.incrementAndGet() > 1) {
+                when(call.execute()).thenThrow(new RuntimeException("conflict"));
+            } else {
+                Response<DocumentResult> ok = mock(Response.class);
+                DocumentResult result = mock(DocumentResult.class);
+                when(result.isOk()).thenReturn(true);
+                when(ok.getResult()).thenReturn(result);
+                when(call.execute()).thenReturn(ok);
+            }
+            return call;
+        });
+
+        ConnectorDefinitionServiceImpl.ConnectorPartiallyDeletedException partly = assertThrows(ConnectorDefinitionServiceImpl.ConnectorPartiallyDeletedException.class, () -> service.delete("c-half"),
+                "a delete that had already removed a row reported an ordinary failure — "
+                        + "the caller reads it as 'nothing happened'");
+        assertTrue(partly.getMessage().contains("1 of 2"),
+                "the refusal does not say what was removed: " + partly.getMessage());
+    }
+
+    @Test
+    @DisplayName("a delete that removed NOTHING is not reported as a partial deletion")
+    void aDeleteThatRemovedNothingIsNotPartial() {
+        // Over-throwing's twin: telling a caller to retry an operation the store refused
+        // outright is a retry loop that can never succeed.
+        wire();
+        DocsResultRow first = row("connector_definition:c-half",
+                connectorProps("c-half", "Half"), "4-r");
+        DocsResultRow second = row("legacy-half", connectorProps("c-half", "Half (old)"), "2-r");
+        listingAnswers(List.of(first, second));
+        writesSucceed();
+        when(cloudant.deleteDocument(any(DeleteDocumentOptions.class))).thenAnswer(inv -> {
+            ServiceCall<DocumentResult> call = mock(ServiceCall.class);
+            when(call.execute()).thenThrow(new RuntimeException("forbidden"));
+            return call;
+        });
+
+        RuntimeException refused = assertThrows(RuntimeException.class, () -> service.delete("c-half"));
+        assertTrue(!(refused instanceof ConnectorDefinitionServiceImpl.ConnectorPartiallyDeletedException),
+                "a delete that removed nothing was reported as partly deleted, so the caller "
+                        + "is told to retry an operation the store refused: " + refused);
+    }
+
+    @Test
+    @DisplayName("the plain delete refuses when a row cannot be read")
+    void thePlainDeleteRefusesAnUnreadableRow() {
+        wire();
+        listingAnswers(List.of(row(null, null, null),
+                row("connector_definition:c-x", connectorProps("c-x", "X"), "1-r")));
+        writesSucceed();
+
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> service.delete("c-x"),
+                "a delete that could not read every row reported success");
+        verify(cloudant, never()).deleteDocument(any(DeleteDocumentOptions.class));
+    }
+
     // ────────────────────────────────────────────────────────────────────
     // The divergent-twin resolver: delete ONE row by document id
     // ────────────────────────────────────────────────────────────────────
@@ -806,6 +1557,13 @@ class ConnectorLegacyIdMigrationTest {
         when(legacyRow.getProperties()).thenReturn(connectorProps("twin", "Twin"));
         when(legacyRow.getRev()).thenReturn("7-r");
         stubGetDocument("legacy-abc", legacyRow);
+        // The resolver now counts the rows first: it refuses to remove the LAST one, because
+        // that would delete the connector through a path that assumes it survives. Two rows,
+        // so this really is a divergent pair.
+        listingAnswers(List.of(row("legacy-abc", connectorProps("twin", "Twin"), "7-r"),
+                row("connector_definition:twin", connectorProps("twin", "Twin"), "1-d")));
+        // the post-delete count consumes a second page from this queue
+        listingAnswers(List.of(row("connector_definition:twin", connectorProps("twin", "Twin"), "1-d")));
         writesSucceed();
 
         service.delete("twin", "legacy-abc");
@@ -828,6 +1586,11 @@ class ConnectorLegacyIdMigrationTest {
         // For the control (PE), same reason as the PA stub above: with the verification
         // narrowed, the flow reaches an unstubbed deleteDocument and the NPE would be
         // laundered through assertThrows into a passable failure.
+        // The narrowing controls make the flow reach the COUNT and then the delete, so the
+        // count needs rows to see — otherwise the control fires on an unanswered listing
+        // instead of on the claim. A review caught the new walk changing why they fire.
+        listingAnswers(List.of(row("row-a", connectorProps("twin", "Twin"), "7-r"),
+                row("row-b", connectorProps("twin", "Twin"), "1-d")));
         writesSucceed();
 
         assertThrows(IllegalArgumentException.class,

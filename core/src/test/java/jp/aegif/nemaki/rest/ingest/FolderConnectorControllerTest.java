@@ -151,6 +151,11 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
         when(schedulerService.executeFetch(any(), any(), any(), any()))
                 .thenReturn(new FetchResult(5, 3, 1, List.of()));
@@ -167,6 +172,11 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
         when(schedulerService.executeFetch(any(), any(), any(), any()))
                 .thenReturn(new FetchResult(0, 0, List.of("No token for Slack connector")));
@@ -183,6 +193,11 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
         when(schedulerService.executeFetch(any(), any(), any(), any()))
                 .thenReturn(new FetchResult(2, 1, List.of("channel not found")));
@@ -195,6 +210,11 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
         when(schedulerService.executeFetch(any(), any(), any(), any()))
                 .thenReturn(new FetchResult(1, 0, List.of(errorMessage)));
@@ -261,6 +281,11 @@ class FolderConnectorControllerTest {
         when(authService.isAdmin(ctx)).thenReturn(false);
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
         when(authService.canUseConnectorForDelegatedProfile(any(), any(), any(), any()))
                 .thenReturn(false);
@@ -275,6 +300,11 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
         when(schedulerService.executeFetch(any(), any(), any(), any()))
                 .thenReturn(new FetchResult(0, 0, List.of("No token for Slack connector")));
@@ -303,6 +333,11 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         ConnectorDefinition c = connector();
         c.setCredentialRef("INGEST_SLACK_TOKEN");
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(c);
@@ -318,6 +353,11 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         // connector() leaves credentialRef null
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
 
@@ -332,6 +372,11 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         ConnectorDefinition c = connector();
         // Documented credentialRef convention: ingest.* namespace.
         c.setCredentialRef("ingest.slack.sales.token");
@@ -349,6 +394,11 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         ConnectorDefinition c = connector();
         // Allowlist: only ingest.* keys may be written. A non-ingest key (here
         // a core infra key) must be refused so the endpoint can't be
@@ -367,6 +417,11 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         ConnectorDefinition c = connector();
         // Not infra, but still outside the ingest.* namespace → rejected
         // (allowlist, not denylist).
