@@ -172,6 +172,59 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     }
 
     /**
+     * Re-asks the delegated authorisation against the folder this write lands in AND the
+     * connector it goes through.
+     *
+     * <p>The manual gate's stamps only reach requests it built; the scheduler, the webhook and
+     * IDLE authorise a profile and then construct their own requests in a dozen orchestrators,
+     * so anything that moved between their check and this write was never re-examined.
+     *
+     * <p>An ADMINISTRATOR is exempt, as at the REST gate, which bypasses delegated
+     * authorisation for administrators on purpose. The first version of this check did not:
+     * {@code canUseConnectorForDelegatedProfile} has no administrator shortcut and applies
+     * {@code allowedPrincipalIds} to them, so admin-only paths — the folder Run endpoint, DLQ
+     * replay — started refusing. A review measured the over-throw.
+     *
+     * <p>A null context is refused rather than exempted: it cannot be shown to be an
+     * administrator, and there is nothing to authorise a delegated write against.
+     *
+     * <p>This is called twice — here and again immediately before the first write — because it
+     * is a check at a point in time, not a lock. Between them the content stream is read,
+     * which for a large attachment is the long part; a revoke that lands during it is caught
+     * by the second call. The window that remains is the one between the second call and the
+     * write itself, and it cannot be closed without a transaction the store does not offer.
+     */
+    private ExternalIngestResult refuseIfDelegationNoLongerAuthorizes(String requestId,
+            ImportProfileDefinition profile, ConnectorDefinition connector,
+            CallContext callContext, String repositoryId, String targetFolderId) {
+        if (profile == null || !profile.isDelegated()) {
+            return null;
+        }
+        if (ingestAuthorizationService == null || callContext == null) {
+            return ExternalIngestResult.error(requestId, "delegated import cannot be"
+                    + " authorised: " + (callContext == null
+                            ? "this import has no caller to authorise"
+                            : "the authorization service is not available"));
+        }
+        if (ingestAuthorizationService.isAdmin(callContext)) {
+            return null;
+        }
+        if (!ingestAuthorizationService.canManageProfileForFolder(
+                callContext, repositoryId, targetFolderId)) {
+            return ExternalIngestResult.error(requestId, "cmis:all on the target folder of"
+                    + " import profile " + profile.getProfileId() + " is required and was"
+                    + " not held when this import ran");
+        }
+        if (connector != null && !ingestAuthorizationService.canUseConnectorForDelegatedProfile(
+                callContext, repositoryId, connector, targetFolderId)) {
+            return ExternalIngestResult.error(requestId, "connector "
+                    + connector.getConnectorId() + " is no longer delegated for this"
+                    + " caller and target folder");
+        }
+        return null;
+    }
+
+    /**
      * A stable fingerprint of everything the delegated gate authorises FROM a profile row:
      * where the content lands and which connectors may put it there. Two rows with the same
      * fingerprint are interchangeable as far as that authorisation goes; anything else is a
@@ -2898,30 +2951,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // delegated, with no context, and went straight through. A second review found the
         // hole in the fix. There is nothing to authorise a delegated write against without a
         // context, so it is refused.
-        if (profile.isDelegated()) {
-            if (ingestAuthorizationService == null || callContext == null) {
-                return ExternalIngestResult.error(requestId, "delegated import cannot be"
-                        + " authorised: " + (callContext == null
-                                ? "this import has no caller to authorise"
-                                : "the authorization service is not available"));
-            }
-            if (!ingestAuthorizationService.canManageProfileForFolder(
-                    callContext, repositoryId, targetFolderId)) {
-                return ExternalIngestResult.error(requestId, "cmis:all on the target folder of"
-                        + " import profile " + request.getProfileId() + " is required and was"
-                        + " not held when this import ran");
-            }
-            // The connector too. The automatic paths check connector delegation BEFORE the
-            // fetch; revoking it during a fetch left the subsequent write unexamined, because
-            // this point re-read the connector but only for existence, enabled state,
-            // allow-listing and archetype. The same review named the gap.
-            if (!ingestAuthorizationService.canUseConnectorForDelegatedProfile(
-                    callContext, repositoryId, connector, targetFolderId)) {
-                return ExternalIngestResult.error(requestId, "connector "
-                        + connector.getConnectorId() + " is no longer delegated for this"
-                        + " caller and target folder");
-            }
-        }
+        ExternalIngestResult noLongerAuthorized = refuseIfDelegationNoLongerAuthorizes(
+                requestId, profile, connector, callContext, repositoryId, targetFolderId);
+        if (noLongerAuthorized != null) return noLongerAuthorized;
 
         // Everything the row must carry is known by now, and nothing has been written yet.
         // Resolved ONCE; the same instance reaches the intent row here and the lineage emit
@@ -2973,6 +3005,16 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     contentBytes = readBounded(rawIn, MAX_CONTENT_SIZE, "Content");
                 }
                 bufferedContent = contentBytes; // retain for DLQ if this import fails
+
+                // Ask again. Reading the stream is the long part of this method, and the
+                // check above happened before it: a revoke that landed while a large
+                // attachment downloaded was authorised by a decision taken minutes earlier.
+                // A review pointed out that one check before the read is a snapshot, not a
+                // write-point check. This does not make it atomic — the gap between here and
+                // the write itself stays, and the store has no transaction to close it with.
+                ExternalIngestResult revoked = refuseIfDelegationNoLongerAuthorizes(
+                        requestId, profile, connector, callContext, repositoryId, targetFolderId);
+                if (revoked != null) return revoked;
 
                 // Skip empty attachments. A 0-byte download — e.g. a macOS
                 // .textClipping placeholder uploaded to Notion, or an

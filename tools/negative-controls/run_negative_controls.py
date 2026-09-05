@@ -3823,9 +3823,8 @@ CONTROLS = [
         what="a delegated import stops re-asking cmis:all at the write — the scheduler, webhook "
              "and IDLE authorise a profile and their orchestrators build unstamped requests",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
-        find_span=('        if (profile.isDelegated()) {',
-                   '                        + " not held when this import ran");\n            }'),
-        replace='        if (false) {',
+        find='        if (profile == null || !profile.isDelegated()) {',
+        replace='        if (true) {',
         test='CanonicalImportServiceTest',
         expect_fail=['testDelegatedImportReAsksTheAuthorizationAtTheWrite',
                      'testDelegatedImportRefusesWhenTheAuthorizationIsNotWired'],
@@ -3840,10 +3839,11 @@ CONTROLS = [
         # Skipping only the FOLDER check left the connector check calling a null service, so
         # the sabotage crashed instead of permitting. Skip the whole delegated block: that is
         # what "missing wiring permits" actually looks like.
-        find_span=('        if (profile.isDelegated()) {\n            if (ingestAuthorizationService == null || callContext == null) {',
-                   '                                : "the authorization service is not available"));\n            }'),
-        replace='        if (profile.isDelegated() && ingestAuthorizationService != null\n'
-                '                && callContext != null) {',
+        # Permitting is the defect; refusing to run the rest avoids the NPE a null service
+        # would otherwise cause, which the runner scores as harness breakage.
+        find_span=('        if (ingestAuthorizationService == null || callContext == null) {',
+                   '                            : "the authorization service is not available"));\n        }'),
+        replace='        if (ingestAuthorizationService == null || callContext == null) {\n            return null;\n        }',
         test='CanonicalImportServiceTest',
         expect_fail=['testDelegatedImportRefusesWhenTheAuthorizationIsNotWired'],
     ),
@@ -3894,8 +3894,8 @@ CONTROLS = [
         what="a delegated write with no caller skips the authorisation again — an admin profile "
              "that turned delegated mid-fetch arrives here unexamined",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
-        find='        if (profile.isDelegated()) {\n            if (ingestAuthorizationService == null || callContext == null) {',
-        replace='        if (profile.isDelegated() && callContext != null) {\n            if (ingestAuthorizationService == null) {',
+        find='        if (ingestAuthorizationService == null || callContext == null) {',
+        replace='        if (ingestAuthorizationService == null) {',
         test='CanonicalImportServiceTest',
         expect_fail=['testDelegatedImportWithNoCallerIsRefused'],
     ),
@@ -3904,11 +3904,33 @@ CONTROLS = [
         what="the write point stops re-asking connector delegation — a revoke during a fetch "
              "leaves the write it authorised unexamined",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
-        find_span=('            if (!ingestAuthorizationService.canUseConnectorForDelegatedProfile(',
-                   '                        + " caller and target folder");\n            }'),
+        find_span=('        if (connector != null && !ingestAuthorizationService.canUseConnectorForDelegatedProfile(',
+                   '                    + " caller and target folder");\n        }'),
         replace='',
         test='CanonicalImportServiceTest',
         expect_fail=['testDelegatedImportReAsksTheConnectorDelegation'],
+    ),
+    dict(
+        id="VN",
+        what="the delegated re-check stops exempting administrators — the folder Run endpoint "
+             "and DLQ replay, which admit admins on purpose, start refusing",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find_span=('        if (ingestAuthorizationService.isAdmin(callContext)) {',
+                   '            return null;\n        }'),
+        replace='',
+        test='CanonicalImportServiceTest',
+        expect_fail=['testAnAdministratorIsNotSubjectToTheDelegatedRecheck'],
+    ),
+    dict(
+        id="VO",
+        what="the delegation is asked once, before the content stream is read — a revoke that "
+             "lands while a large attachment downloads is authorised by a stale decision",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find_span=('                ExternalIngestResult revoked = refuseIfDelegationNoLongerAuthorizes(',
+                   '                if (revoked != null) return revoked;'),
+        replace='',
+        test='CanonicalImportServiceTest',
+        expect_fail=['testTheDelegationIsReAskedAfterTheContentIsRead'],
     ),
     dict(
         id="HA",

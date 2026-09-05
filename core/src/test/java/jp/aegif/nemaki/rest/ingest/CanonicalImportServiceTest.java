@@ -203,6 +203,90 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void testAnAdministratorIsNotSubjectToTheDelegatedRecheck() {
+        // The REST gate bypasses delegated authorisation for administrators on purpose, and
+        // canUseConnectorForDelegatedProfile has no administrator shortcut — it applies
+        // allowedPrincipalIds to them. Sending every delegated profile through it refused
+        // admin-only paths: the folder Run endpoint and DLQ replay. A review measured the
+        // over-throw my own fix had introduced.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAdmin(any())).thenReturn(true);
+        // Both would refuse a non-admin. The administrator must not reach them at all.
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(false);
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(false);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(String.valueOf(result.errors()).contains("no longer delegated"),
+                "an administrator was refused by the delegated re-check: " + result.errors());
+        assertFalse(String.valueOf(result.errors()).contains("cmis:all"),
+                "an administrator was refused by the delegated re-check: " + result.errors());
+    }
+
+    @Test
+    void testTheDelegationIsReAskedAfterTheContentIsRead() {
+        // One check before the stream is read is a snapshot, not a write-point check: reading
+        // a large attachment is the long part of this method, and a revoke that lands during
+        // it was authorised by a decision taken minutes earlier. A review said so. This does
+        // not make it atomic — the gap between the second check and the write remains.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString()))
+                .thenReturn(true).thenReturn(false);   // revoked while the stream was read
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+        req.setFileName("a.txt");
+        req.setMimeType("text/plain");
+        req.setContentStream(new java.io.ByteArrayInputStream("hello".getBytes()));
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(),
+                "a revoke that landed while the content was read did not stop the write");
+        assertTrue(String.valueOf(result.errors()).contains("cmis:all"),
+                "the refusal does not name the authorisation: " + result.errors());
+        verify(contentService, never()).update(any(), any(), any());
+    }
+
+    @Test
     void testDelegatedImportWithNoCallerIsRefused() {
         // The first version of the write-point check was guarded on callContext != null, so an
         // admin profile that a long automatic fetch had started under — and that became
