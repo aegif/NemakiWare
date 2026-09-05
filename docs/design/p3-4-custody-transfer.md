@@ -7276,6 +7276,13 @@ RELEASE_NOTES の絶対表現も落とした — **「取り消し後に書き�
 `--compile-check` 2 本、新規・再アンカー 3 本を測定して **3/3 FIRED** (VN / VO / VP)。
 **残る 366 本はこの木では未測定** — 通しは別途。
 
+**この巡の測定**: 取込テスト 975 本 Failures 0、単体スイート **6719 本 Failures 0**
+(残る 38 件は同じ `CmisConnectionException` — **TCK 未実施**)、事前検査 369/369 通過、
+`--compile-check` 2 本、VO を測定して FIRED。**残る 368 本はこの木では未測定** — 通しは別途。
+
+RELEASE_NOTES の一括表現 **「All tests pass on every RC3 commit」も落とした** — 具体値
+(6,719 本・失敗 0・エラー 38 はサーバ未起動、TCK 未実施) に置き換えた。
+
 コントロールは **369 本**。
 
 **21 巡目の測定**: 取込テスト 955 本 Failures 0、単体スイート **6699 本 Failures 0**

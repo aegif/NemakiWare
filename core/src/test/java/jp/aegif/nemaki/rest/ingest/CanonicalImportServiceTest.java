@@ -245,12 +245,68 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void testARevokeDuringTheDedupeReadStillStopsTheWrite() {
+        // Placement, not presence. The check was moved out of the content-stream branch but
+        // still ran BEFORE the dedupe listing and the idempotency record were read, so a
+        // revoke landing during those reads was not seen by the deletions and writes that
+        // follow them. A review named the interval. The revoke here is triggered by the
+        // dedupe read itself, so the test fails if the check moves back above it.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+
+        java.util.concurrent.atomic.AtomicBoolean revoked =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        // The revoke lands WHILE the dedupe listing is read.
+        jp.aegif.nemaki.dao.ContentDaoService dao =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        service.setContentDaoService(dao);
+        when(dao.getChildren(anyString(), anyString())).thenAnswer(inv -> {
+            revoked.set(true);
+            return java.util.List.of();
+        });
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString()))
+                .thenAnswer(inv -> !revoked.get());
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+        req.setFileName("a.txt");
+        req.setMimeType("text/plain");
+        req.setContentStream(new java.io.ByteArrayInputStream("hello".getBytes()));
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(),
+                "a revoke that landed during the dedupe read did not stop the write");
+        assertTrue(String.valueOf(result.errors()).contains("cmis:all"),
+                "the refusal does not name the authorisation: " + result.errors());
+        verify(contentService, never()).update(any(), any(), any());
+    }
+
+    @Test
     void testAnImportWithNoContentStreamIsAlsoReChecked() {
         // The second call sat inside the content-stream branch, so an import with no stream
         // got only the first check — and the mutations after it (idempotency-record deletion,
         // document deletion, checkout, creation) ran on that one decision. A review named the
-        // branch. The check now runs after everything this method reads and before anything it
-        // writes, stream or no stream.
+        // branch. The check now runs after every read this import makes and before every
+        // write, stream or no stream.
         ImportProfileDefinition delegated = new ImportProfileDefinition();
         delegated.setProfileId("p1");
         delegated.setEnabled(true);

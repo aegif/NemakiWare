@@ -3931,7 +3931,8 @@ CONTROLS = [
         replace='',
         test='CanonicalImportServiceTest',
         expect_fail=['testTheDelegationIsReAskedAfterTheContentIsRead',
-                     'testAnImportWithNoContentStreamIsAlsoReChecked'],
+                     'testAnImportWithNoContentStreamIsAlsoReChecked',
+                     'testARevokeDuringTheDedupeReadStillStopsTheWrite'],
     ),
     dict(
         id="VP",
@@ -3944,7 +3945,7 @@ CONTROLS = [
         test='CanonicalImportServiceTest',
         expect_fail=['testAnAdministratorOfAnotherRepositoryIsStillRefused'],
     ),
-    dict(
+        dict(
         id="HA",
         what="a retained folder is erased from the search index again",
         file="core/src/main/java/jp/aegif/nemaki/cmis/service/impl/ObjectServiceImpl.java",

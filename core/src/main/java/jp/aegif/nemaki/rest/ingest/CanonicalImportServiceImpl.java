@@ -3060,21 +3060,6 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         mimeType, new ByteArrayInputStream(contentBytes));
             }
 
-            // Ask the delegated authorisation again, here — after everything this method
-            // READS and before anything it WRITES. The first call happens before the content
-            // stream is drained, which for a large attachment is the long part; the first
-            // version of this second call sat inside the stream branch, so an import with no
-            // content stream got only one check and the later mutations (idempotency-record
-            // deletion, document deletion, checkout, creation) ran on it. A review found the
-            // branch and the mutations it left behind.
-            //
-            // This is still not atomic: a revoke landing between here and the write below is
-            // not caught, and no number of checks makes it so — that needs fencing shared with
-            // the revoke path, or a transaction the store does not offer.
-            ExternalIngestResult revoked = refuseIfDelegationNoLongerAuthorizes(
-                    requestId, profile, connector, callContext, repositoryId, targetFolderId);
-            if (revoked != null) return revoked;
-
             // 5a. Dedupe: check for existing document by source identity (or filename)
             String dedupePolicy = profile.getDedupePolicy() != null ? profile.getDedupePolicy() : "skip_if_same_version";
             String dedupeMatchBy = profile.getDedupeMatchBy() != null ? profile.getDedupeMatchBy() : "source_id";
@@ -3082,53 +3067,78 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     connector.getSourceSystem(), request.getSourceObjectId(), request.getSourceObjectType(),
                     dedupeMatchBy);
 
-            // 5b. Idempotency check: skip if same key already succeeded
+            // 5b. Idempotency: READ the record and decide, without acting on it yet. The
+            // decision (skip / expired / proceed) is formed here; the authorisation is asked
+            // after it, and only then is anything deleted or returned. Reading and acting used
+            // to be one block, so the record could be deleted on a decision taken before this
+            // read. A review named the interval.
+            String idempKey = null;
+            String idempExistingObjectId = null;
+            boolean idempSkip = false;
+            boolean idempExpired = false;
             if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
-                // Check persisted idempotency record (works for all dedupe modes).
                 // Value format: "objectId|epochMillis" — TTL is 7 days.
                 // Namespace by repository + profile to prevent cross-scope collisions
-                String idempKey = "ingest.idempotency." + repositoryId + "." + profile.getProfileId()
+                idempKey = "ingest.idempotency." + repositoryId + "." + profile.getProfileId()
                         + "." + request.getIdempotencyKey();
                 try {
                     if (integrationSettingsService != null) {
                         String existing = integrationSettingsService.readSetting(idempKey);
                         if (existing != null && !existing.isBlank()) {
-                            String existingObjectId = existing;
-                            // Parse TTL: if value contains "|", extract objectId and timestamp
+                            idempExistingObjectId = existing;
                             int sep = existing.indexOf('|');
                             if (sep > 0) {
-                                existingObjectId = existing.substring(0, sep);
+                                idempExistingObjectId = existing.substring(0, sep);
                                 try {
                                     long savedAt = Long.parseLong(existing.substring(sep + 1));
                                     long ageMs = System.currentTimeMillis() - savedAt;
                                     if (ageMs > IDEMPOTENCY_TTL_MS) {
                                         logger.info("Idempotency key expired after {}h, allowing re-import: {}",
                                                 ageMs / 3_600_000, request.getIdempotencyKey());
-                                        // NOT on a dry run. This block runs BEFORE the dry-run
-                                        // gate below, so a preview used to durably delete the
-                                        // idempotency record (external review).
-                                        if (!request.isDryRun()) {
-                                            integrationSettingsService.deleteSettings(java.util.Set.of(idempKey));
-                                        }
-                                        // Fall through to normal import
+                                        idempExpired = true;
                                     } else {
-                                        return ExternalIngestResult.skipped(requestId, existingObjectId,
-                                                "Idempotent: request '" + request.getIdempotencyKey() + "' already completed");
+                                        idempSkip = true;
                                     }
                                 } catch (NumberFormatException nfe) {
-                                    // Legacy value without timestamp — honour it
-                                    return ExternalIngestResult.skipped(requestId, existingObjectId,
-                                            "Idempotent: request '" + request.getIdempotencyKey() + "' already completed");
+                                    idempSkip = true;   // legacy value without timestamp — honour it
                                 }
                             } else {
-                                // Legacy value without "|" separator
-                                return ExternalIngestResult.skipped(requestId, existingObjectId,
-                                        "Idempotent: request '" + request.getIdempotencyKey() + "' already completed");
+                                idempSkip = true;       // legacy value without "|" separator
                             }
                         }
                     }
                 } catch (Exception e) {
                     logger.debug("Idempotency check failed: {}", e.getMessage());
+                }
+            }
+
+            // Ask the delegated authorisation again, here — after every read this import makes
+            // and before every write it makes. The first call happens before the content
+            // stream is drained (the long part for a large attachment). Two earlier versions
+            // of this second call were both too early: one sat inside the stream branch, so a
+            // content-less import got a single check; the next ran before the dedupe listing
+            // and the idempotency record were read, so a revoke landing during THOSE reads was
+            // not seen by the deletions and writes that follow. Reviews found each in turn.
+            //
+            // Still not atomic: a revoke landing between here and the write is not caught, and
+            // no number of checks makes it so — that needs fencing shared with the revoke
+            // path, or a transaction the store does not offer.
+            ExternalIngestResult revoked = refuseIfDelegationNoLongerAuthorizes(
+                    requestId, profile, connector, callContext, repositoryId, targetFolderId);
+            if (revoked != null) return revoked;
+
+            // Now act on what was decided above.
+            if (idempSkip) {
+                return ExternalIngestResult.skipped(requestId, idempExistingObjectId,
+                        "Idempotent: request '" + request.getIdempotencyKey() + "' already completed");
+            }
+            if (idempExpired && !request.isDryRun() && integrationSettingsService != null) {
+                // NOT on a dry run: this runs BEFORE the dry-run gate below, so a preview used
+                // to durably delete the idempotency record (external review).
+                try {
+                    integrationSettingsService.deleteSettings(java.util.Set.of(idempKey));
+                } catch (Exception e) {
+                    logger.debug("Idempotency record removal failed: {}", e.getMessage());
                 }
             }
 
