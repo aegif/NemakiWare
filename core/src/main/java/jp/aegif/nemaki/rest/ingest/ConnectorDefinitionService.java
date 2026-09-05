@@ -24,6 +24,14 @@ public interface ConnectorDefinitionService {
     boolean existsIndexFree(String connectorId);
 
     /**
+     * How many rows define {@code connectorId}, answered from {@code _all_docs}.
+     * {@link #get} returns the selector's first row when several exist; the runtime
+     * must refuse a pair rather than run with whichever credential the index listed
+     * first. Unreadable rows throw {@code ConnectorIndexNotReadyException}.
+     */
+    int countIndexFree(String connectorId);
+
+    /**
      * The one enabled connector whose {@code sourceSystem} is any of {@code sourceSystems}
      * and whose archetype matches. The list is an ORDERED preference (the spelling the
      * request used, then its aliases); a tie WITHIN one key is refused, because there the

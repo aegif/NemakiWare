@@ -96,6 +96,7 @@ class IngestEntryPointFailurePathTest {
         profile.setTargetFolderId("folder-1");
         profile.setRepositoryId("bedroom");
         when(profileService.get("p1")).thenReturn(profile);
+        when(profileService.getForRepository("p1", "bedroom")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();
         connector.setConnectorId("c1");
@@ -103,6 +104,7 @@ class IngestEntryPointFailurePathTest {
         connector.setSourceArchetype(archetype);
         connector.setSourceSystem("acme");
         when(connectorService.get("c1")).thenReturn(connector);
+        when(connectorService.countIndexFree("c1")).thenReturn(1);
         when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
                 any(), any(), isNull(), isNull(), isNull(), isNull()))
                 .thenReturn("new-obj-id");
@@ -274,6 +276,7 @@ class IngestEntryPointFailurePathTest {
         profile.setRepositoryId("bedroom");
         profile.setDedupePolicy("replace");
         when(profileServiceRef.get("p1")).thenReturn(profile);
+        when(profileServiceRef.getForRepository("p1", "bedroom")).thenReturn(profile);
         org.mockito.Mockito.doThrow(new IllegalStateException("object is locked"))
                 .when(objectServiceRef).deleteObject(any(), org.mockito.ArgumentMatchers.anyString(),
                         eq("old-obj"), any(), any());

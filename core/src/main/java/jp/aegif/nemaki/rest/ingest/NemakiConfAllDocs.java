@@ -67,8 +67,19 @@ final class NemakiConfAllDocs {
             if (resumeAfterId != null) {
                 page.startKey(resumeAfterId);
             }
-            com.ibm.cloud.cloudant.v1.model.AllDocsResult listing =
-                    cloudant.postAllDocs(page.build()).execute().getResult();
+            com.ibm.cloud.cloudant.v1.model.AllDocsResult listing;
+            try {
+                listing = cloudant.postAllDocs(page.build()).execute().getResult();
+            } catch (RuntimeException transport) {
+                // The walk used to let a transport failure out as-is. Callers wrap
+                // IllegalStateException into a typed 503 and let everything else become
+                // a 500. A reset mid-page is "could not ask", the same as a listing
+                // that did not answer.
+                throw new IllegalStateException("the _all_docs listing of '" + dbName
+                        + "' could not be read, so whether the rows are there cannot be"
+                        + " established; retry shortly: " + transport.getMessage(),
+                        transport);
+            }
             if (listing == null || listing.getRows() == null) {
                 // The ENUMERATION did not answer. Returning what has been seen so far would
                 // read as "migration complete" to the caller — the same failure-as-absence

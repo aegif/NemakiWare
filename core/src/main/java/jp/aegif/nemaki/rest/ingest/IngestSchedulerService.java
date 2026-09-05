@@ -428,7 +428,27 @@ public class IngestSchedulerService {
             });
 
             List<ImportProfileDefinition> profiles = getScheduledProfiles();
-            if (profiles.isEmpty()) return;
+            if (profiles.isEmpty()) {
+                // "Nothing scheduled" and "the index could not tell us what is scheduled" are
+                // the same value here: getScheduledProfiles reads a Mango selector, which
+                // answers empty while it rebuilds. That is the defect this batch is about,
+                // and replacing the enumeration with a full scan on every tick is a change
+                // this batch did not take. What it must NOT be is silent — there was no log
+                // at all on this path, so an operator had no way to notice capture had
+                // stopped. A review named the blind spot.
+                long quiet = consecutiveEmptyPolls.incrementAndGet();
+                if (quiet == 1) {
+                    logger.info("No scheduled import profiles this poll. If capture was"
+                            + " expected, note that this list comes from an index that answers"
+                            + " empty while it rebuilds");
+                } else if (quiet == 10 || quiet % 60 == 0) {
+                    logger.warn("No scheduled import profiles for {} consecutive polls; if"
+                            + " scheduled capture is configured, check the ingest index",
+                            quiet);
+                }
+                return;
+            }
+            consecutiveEmptyPolls.set(0);
             logger.debug("Polling {} scheduled profiles", profiles.size());
 
             for (ImportProfileDefinition profile : profiles) {
@@ -805,6 +825,10 @@ public class IngestSchedulerService {
     public void setOrchestratorRegistry(FetchOrchestratorRegistry orchestratorRegistry) {
         this.orchestratorRegistry = orchestratorRegistry;
     }
+
+    /** How many consecutive polls found nothing to run — see the empty branch in the tick. */
+    private final java.util.concurrent.atomic.AtomicLong consecutiveEmptyPolls =
+            new java.util.concurrent.atomic.AtomicLong();
 
     /**
      * Scans all repositories for profiles with schedulerEnabled=true and

@@ -143,6 +143,31 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         return null;
     }
 
+    /**
+     * The caller's own unique row. Always walks: a selector hit on a same-repository
+     * row used to skip {@code getForRepository}, so a standing pair in that repository
+     * was resolved by index order. Twin / unreadable / missing-client refusals propagate
+     * so execute and mail validation can fail closed; optional decoration catches them.
+     */
+    private ImportProfileDefinition resolveProfileForRepository(String profileId, String repositoryId)
+            throws ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException,
+            ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException {
+        if (profileId == null || importProfileDefinitionService == null) {
+            return null;
+        }
+        return importProfileDefinitionService.getForRepository(profileId, repositoryId);
+    }
+
+    private ImportProfileDefinition confinedProfile(ExternalIngestRequest request) {
+        try {
+            return resolveProfileForRepository(request.getProfileId(), request.getRepositoryId());
+        } catch (RuntimeException e) {
+            logger.debug("could not resolve import profile {} for {}: {}",
+                    request.getProfileId(), request.getRepositoryId(), e.getMessage());
+            return null;
+        }
+    }
+
     /** The connector twin of {@link #profileHiddenOrAbsent}. */
     private ExternalIngestResult connectorHiddenOrAbsent(String requestId, String connectorId) {
         try {
@@ -264,23 +289,16 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
         // Early validation: check profile AND connector BEFORE expensive EML parsing
         if (request.getProfileId() != null && importProfileDefinitionService != null) {
-            ImportProfileDefinition profile = importProfileDefinitionService.get(request.getProfileId());
-            if (profile != null && profile.getRepositoryId() != null
-                    && !profile.getRepositoryId().equals(request.getRepositoryId())) {
-                // The selector answers on profileId alone: this early validation ended in
-                // "Profile repository mismatch" for an import whose OWN repository has the
-                // profile, and never reached execute() where the resolution lives. A review
-                // found the mail entry point left out.
-                try {
-                    profile = importProfileDefinitionService.getForRepository(
-                            request.getProfileId(), request.getRepositoryId());
-                } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException pair) {
-                    return ExternalIngestResult.error(requestId, pair.getMessage());
-                } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
-                    return ExternalIngestResult.error(requestId, "import profile "
-                            + request.getProfileId() + " could not be resolved for this"
-                            + " repository; retry shortly: " + e.getMessage());
-                }
+            ImportProfileDefinition profile;
+            try {
+                profile = resolveProfileForRepository(
+                        request.getProfileId(), request.getRepositoryId());
+            } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException pair) {
+                return ExternalIngestResult.error(requestId, pair.getMessage());
+            } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+                return ExternalIngestResult.error(requestId, "import profile "
+                        + request.getProfileId() + " could not be resolved for this"
+                        + " repository; retry shortly: " + e.getMessage());
             }
             if (profile == null) {
                 // The same split execute() got: this early validation runs BEFORE it, so
@@ -295,11 +313,56 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 return ExternalIngestResult.error(requestId, "Import profile is disabled: " + request.getProfileId());
             }
             String repositoryId = request.getRepositoryId();
-            if (profile.getRepositoryId() != null && !profile.getRepositoryId().equals(repositoryId)) {
-                return ExternalIngestResult.error(requestId, "Profile repository mismatch");
+            // A row that names NO repository is not a wildcard. The guard used to pass it
+            // through (null fails the != null test), so a corrupt or half-migrated row acted
+            // as a profile for EVERY repository — invisible to the admin API, which is
+            // repository-confined, while the runtime happily used it as configuration. The
+            // service that lets an administrator delete such a row says plainly that it
+            // "belongs to none"; this is the other half of that sentence. A review found the
+            // two disagreeing.
+            if (profile.getRepositoryId() == null
+                    || !profile.getRepositoryId().equals(repositoryId)) {
+                // Same wording as execute(): the status mapper matches "scoped to repository"
+                // and "repository mismatch" to 403. The short "Profile repository mismatch"
+                // used to fall through to 500 on the mail door. A review measured the split.
+                return ExternalIngestResult.error(requestId,
+                        "Profile '" + profile.getProfileId() + "' is scoped to repository '"
+                        + profile.getRepositoryId() + "', not '" + repositoryId + "'");
             }
             if (request.getConnectorId() != null && connectorDefinitionService != null) {
-                ConnectorDefinition conn = connectorDefinitionService.get(request.getConnectorId());
+                ConnectorDefinition conn;
+                try {
+                    conn = connectorDefinitionService.get(request.getConnectorId());
+                } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+                    return ExternalIngestResult.error(requestId, "connector "
+                            + request.getConnectorId()
+                            + " exists but could not be read for this import; retry shortly: "
+                            + e.getMessage());
+                }
+                if (conn != null && !request.getConnectorId().equals(conn.getConnectorId())) {
+                    return ExternalIngestResult.error(requestId, "connector "
+                            + request.getConnectorId()
+                            + " exists but could not be read as that connector; retry shortly");
+                }
+                if (conn != null) {
+                    try {
+                        int seen = connectorDefinitionService.countIndexFree(request.getConnectorId());
+                        if (seen > 1) {
+                            return ExternalIngestResult.error(requestId, "connector "
+                                    + request.getConnectorId()
+                                    + " has more than one definition row");
+                        }
+                        if (seen < 1) {
+                            return ExternalIngestResult.error(requestId, "connector "
+                                    + request.getConnectorId()
+                                    + " exists but could not be read for this import; retry shortly");
+                        }
+                    } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+                        return ExternalIngestResult.error(requestId, "whether connector "
+                                + request.getConnectorId() + " is unique could not be established;"
+                                + " retry shortly: " + e.getMessage());
+                    }
+                }
                 if (conn == null) {
                     ExternalIngestResult hidden = connectorHiddenOrAbsent(requestId,
                             request.getConnectorId());
@@ -434,8 +497,16 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (metaError != null) warnings.add(metaError);
 
             // 4b. Preserve raw .eml as a separate document if profile requests it
-            ImportProfileDefinition mailProfile = request.getProfileId() != null
-                    ? importProfileDefinitionService.get(request.getProfileId()) : null;
+            ImportProfileDefinition mailProfile;
+            try {
+                mailProfile = resolveProfileForRepository(
+                        request.getProfileId(), request.getRepositoryId());
+            } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException
+                    | ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+                warnings.add("Raw .eml preservation could not be decided; retry shortly: "
+                        + e.getMessage());
+                mailProfile = null;
+            }
             if (mailProfile != null && mailProfile.isPreserveOriginalEml() && rawEmlBytes.length > 0) {
                 try {
                     ExternalIngestRequest emlReq = new ExternalIngestRequest();
@@ -1303,8 +1374,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (filled.isEmpty() && refused.isEmpty()) return;
         try {
             ConnectorDefinition connector = connectorDefinitionService.get(request.getConnectorId());
-            ImportProfileDefinition profile = request.getProfileId() == null ? null
-                    : importProfileDefinitionService.get(request.getProfileId());
+            ImportProfileDefinition profile = confinedProfile(request);
             if (connector == null) return;
             String repositoryId = request.getRepositoryId();
             // The same resolution execute() uses, not profile.getTargetFolderId(): a profile
@@ -2553,24 +2623,19 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             }
         }
 
-        // 1. Resolve profile
-        ImportProfileDefinition profile = importProfileDefinitionService.get(request.getProfileId());
-        if (profile != null && profile.getRepositoryId() != null
-                && !profile.getRepositoryId().equals(request.getRepositoryId())) {
-            // The selector answers on profileId alone: with the same id in two repositories
-            // it hands back an arbitrary twin, and this import was then refused as a
-            // repository mismatch although the requested repository has its own row. A
-            // review found the runtime half of a defect the admin API had already closed.
-            try {
-                profile = importProfileDefinitionService.getForRepository(
-                        request.getProfileId(), request.getRepositoryId());
-            } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException pair) {
-                return ExternalIngestResult.error(requestId, pair.getMessage());
-            } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
-                return ExternalIngestResult.error(requestId, "import profile "
-                        + request.getProfileId() + " could not be resolved for this"
-                        + " repository; retry shortly: " + e.getMessage());
-            }
+        // 1. Resolve profile — always walk. A selector hit on a same-repository row
+        // skipped getForRepository, so a standing pair in that repository was chosen
+        // by index order. The non-admin gate already refused the pair; this door did not.
+        ImportProfileDefinition profile;
+        try {
+            profile = resolveProfileForRepository(
+                    request.getProfileId(), request.getRepositoryId());
+        } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException pair) {
+            return ExternalIngestResult.error(requestId, pair.getMessage());
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+            return ExternalIngestResult.error(requestId, "import profile "
+                    + request.getProfileId() + " could not be resolved for this"
+                    + " repository; retry shortly: " + e.getMessage());
         }
         if (profile == null) {
             // "Not found" is a claim about the DATABASE, and this read is answered by a Mango
@@ -2597,19 +2662,65 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
         // Enforce repository scope: profile must match the request's repository.
         //
-        // Defence in depth — unreachable by construction since the resolution above: a row of
-        // ANOTHER repository is replaced by this repository's own row, and when there is none
-        // the null arm answers first. It stays because the enforcement must not live in one
-        // place only, but it can no longer be reached from a test, so nothing measures it.
+        // Defence in depth, unreachable by construction: the resolution above is a
+        // repository-confined index-free read, so what reaches here either belongs to this
+        // repository or is null — including a row that names NO repository, which the walk
+        // does not return for anyone. Nothing can drive this branch, so nothing measures it.
+        // (It has been mis-described twice: once as reachable for foreign rows, once as
+        // reachable for unowned ones. Both were written against an earlier resolution.)
         String repositoryId = request.getRepositoryId();
-        if (profile.getRepositoryId() != null && !profile.getRepositoryId().equals(repositoryId)) {
+        // A row that names NO repository is not a wildcard. The guard used to pass it
+        // through (null fails the != null test), so a corrupt or half-migrated row acted
+        // as a profile for EVERY repository — invisible to the admin API, which is
+        // repository-confined, while the runtime happily used it as configuration. The
+        // service that lets an administrator delete such a row says plainly that it
+        // "belongs to none"; this is the other half of that sentence. A review found the
+        // two disagreeing.
+        if (profile.getRepositoryId() == null
+                || !profile.getRepositoryId().equals(repositoryId)) {
             return ExternalIngestResult.error(requestId,
                     "Profile '" + profile.getProfileId() + "' is scoped to repository '"
                     + profile.getRepositoryId() + "', not '" + repositoryId + "'");
         }
 
         // 2. Resolve connector
-        ConnectorDefinition connector = connectorDefinitionService.get(request.getConnectorId());
+        ConnectorDefinition connector;
+        try {
+            connector = connectorDefinitionService.get(request.getConnectorId());
+        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+            return ExternalIngestResult.error(requestId, "connector "
+                    + request.getConnectorId()
+                    + " exists but could not be read for this import; retry shortly: "
+                    + e.getMessage());
+        }
+        if (connector != null && request.getConnectorId() != null
+                && !request.getConnectorId().equals(connector.getConnectorId())) {
+            return ExternalIngestResult.error(requestId, "connector "
+                    + request.getConnectorId()
+                    + " exists but could not be read as that connector; retry shortly");
+        }
+        if (connector != null) {
+            // get() returns the selector's first row. A pair was run by index order; a
+            // walk miss (count 0) was still imported from that leftover. The profile
+            // door already refuses the same disagreement.
+            try {
+                int seen = connectorDefinitionService.countIndexFree(request.getConnectorId());
+                if (seen > 1) {
+                    return ExternalIngestResult.error(requestId, "connector "
+                            + request.getConnectorId()
+                            + " has more than one definition row");
+                }
+                if (seen < 1) {
+                    return ExternalIngestResult.error(requestId, "connector "
+                            + request.getConnectorId()
+                            + " exists but could not be read for this import; retry shortly");
+                }
+            } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+                return ExternalIngestResult.error(requestId, "whether connector "
+                        + request.getConnectorId() + " is unique could not be established;"
+                        + " retry shortly: " + e.getMessage());
+            }
+        }
         if (connector == null) {
             // The connector half of the same split as the profile above: "not found" is a
             // claim about the DATABASE, and this read is a Mango selector plus one

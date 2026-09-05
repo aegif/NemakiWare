@@ -73,6 +73,15 @@ public interface ImportProfileDefinitionService {
     ImportProfileDefinition getForRepository(String profileId, String repositoryId);
 
     /**
+     * The unique owned row of {@code profileId}, read without the Mango index. IMAP IDLE is
+     * keyed by profileId alone and has no repository on the start verb, so a selector miss
+     * used to answer "not found" and never reached {@link #getForRepository}. Unowned rows
+     * are ignored (they are not a wildcard). More than one owned row refuses; an unreadable
+     * row refuses rather than answering.
+     */
+    ImportProfileDefinition getOwnedRowIndexFree(String profileId);
+
+    /**
      * Rewrites every legacy import-profile row saved under a CouchDB-generated id to its
      * deterministic id ({@code import_profile_definition:<profileId>}) — the import-profile
      * half of the §62 closure. Same window, same database, same startup patch entrance as

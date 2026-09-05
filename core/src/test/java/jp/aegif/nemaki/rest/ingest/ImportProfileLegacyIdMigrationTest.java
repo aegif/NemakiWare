@@ -17,6 +17,7 @@
 package jp.aegif.nemaki.rest.ingest;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -73,6 +74,7 @@ class ImportProfileLegacyIdMigrationTest {
 
     private Cloudant cloudant;
     private CloudantClientWrapper wrapper;
+    private CloudantClientPool pool;
     private ImportProfileDefinitionServiceImpl service;
     /** The database as every walk sees it. null = the listing does not answer. */
     private AllDocsResult currentPage;
@@ -83,7 +85,7 @@ class ImportProfileLegacyIdMigrationTest {
 
     @SuppressWarnings("unchecked")
     private void wire() {
-        CloudantClientPool pool = mock(CloudantClientPool.class);
+        pool = mock(CloudantClientPool.class);
         wrapper = mock(CloudantClientWrapper.class);
         cloudant = mock(Cloudant.class);
         when(pool.getClient(SystemConst.NEMAKI_CONF_DB)).thenReturn(wrapper);
@@ -1085,6 +1087,117 @@ class ImportProfileLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("a selector that THROWS falls through to the deterministic id, it does not "
+            + "escape as a 500")
+    void aFailingSelectorDoesNotEscape() {
+        // get() left its Mango call unwrapped, so a read that threw escaped as a raw
+        // RuntimeException — a 500 in front of GET, PUT and ownership transfer, the verbs this
+        // batch made index-free. (The plain DELETE was fixed by deleting its selector read;
+        // a review found the other three still exposed.) A failed selector is not an answer.
+        wire();
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenThrow(new RuntimeException("500 internal server error from the index"));
+        Document row = mock(Document.class);
+        when(row.getProperties()).thenReturn(profileProps("p-wrapped", "Wrapped"));
+        when(row.getRev()).thenReturn("1-a");
+        deterministicReadAnswers("p-wrapped", row);
+
+        ImportProfileDefinition found = assertDoesNotThrow(() -> service.get("p-wrapped"),
+                "a failed selector escaped instead of falling through to the id-addressed read");
+
+        assertEquals("p-wrapped", found == null ? null : found.getProfileId(),
+                "the deterministic id did not answer after the selector failed");
+    }
+
+    @Test
+    @DisplayName("a missing conf client on the id fallback does not escape as a 500")
+    void aMissingConfClientOnTheIdFallbackDoesNotEscape() {
+        // The selector wrap caught findBySelector, but getConfClient() sat outside the
+        // fallback try. A pool that answered the first read and then vanished leaked
+        // IllegalStateException to GET/PUT. A review found the leak.
+        wire();
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenThrow(new RuntimeException("500 internal server error from the index"));
+        when(pool.getClient(SystemConst.NEMAKI_CONF_DB)).thenReturn(wrapper).thenReturn(null);
+
+        ImportProfileDefinition found = assertDoesNotThrow(() -> service.get("p-no-client"),
+                "a missing conf client on the id fallback escaped");
+        assertEquals(null, found, "a failed fallback must not invent a row");
+    }
+
+    @Test
+    @DisplayName("a transport failure on the _all_docs walk is typed not-ready, not a 500")
+    void aTransportFailureOnTheWalkIsTypedNotReady() {
+        // postAllDocs().execute() throwing a plain RuntimeException left the walk, and
+        // callers only wrap IllegalStateException. A review named the leak.
+        wire();
+        when(cloudant.postAllDocs(any(PostAllDocsOptions.class))).thenAnswer(call -> {
+            ServiceCall<AllDocsResult> failed = mock(ServiceCall.class);
+            when(failed.execute()).thenThrow(new RuntimeException("connection reset by peer"));
+            return failed;
+        });
+
+        assertThrows(ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+                () -> service.existsIndexFree("p-reset", "bedroom"),
+                "a transport failure escaped as a raw runtime exception");
+        assertThrows(ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+                () -> service.getForRepository("p-reset", "bedroom"),
+                "getForRepository leaked a transport failure");
+        assertThrows(ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+                () -> service.getOwnedRowIndexFree("p-reset"),
+                "getOwnedRowIndexFree leaked a transport failure");
+    }
+
+    @Test
+    @DisplayName("an unowned legacy row names the reachable DELETE, not a database repair")
+    void anUnownedRowNamesTheReachableDelete() {
+        // RELEASE_NOTES says any administrator can DELETE ?docId= on a row that belongs
+        // to no repository. The migration ERROR still told the operator to repair the
+        // database directly. A review found the two disagreeing.
+        wire();
+        Map<String, Object> unowned = profileProps("p-unowned", "Broken");
+        unowned.remove("repositoryId");
+        listingAnswers(List.of(row("generated-unowned", unowned, "1-a")));
+
+        ConnectorDefinitionService.LegacyIdMigrationResult result = service.migrateLegacyGeneratedIds();
+
+        assertTrue(result.failures.stream().anyMatch(f -> f.contains("?docId=")),
+                "the operator is told to edit the database: " + result.failures);
+    }
+
+    @Test
+    @DisplayName("the twin-row 409 names a repair the caller can actually perform")
+    void theTwinRefusalNamesAReachableRepair() {
+        // The count that raises this 409 is GLOBAL and ?docId= is confined to the caller's
+        // repository, so naming it unconditionally told the caller to run something that would
+        // be refused — in the two commonest shapes of this state. A review found the same
+        // mismatch a third time; nothing measured the message until now.
+        wire();
+        Map<String, Object> mine = profileProps("p-shared-advice", "Mine");
+        Map<String, Object> theirs = profileProps("p-shared-advice", "Theirs");
+        theirs.put("repositoryId", "canopy");
+        listingAnswers(List.of(row("import_profile_definition:p-shared-advice", mine, "1-a"),
+                row("legacy-elsewhere", theirs, "1-b")));
+        selectorShows(row("import_profile_definition:p-shared-advice", mine, "1-a"));
+        writesSucceed();
+
+        ImportProfileDefinition update = new ImportProfileDefinition();
+        update.setProfileId("p-shared-advice");
+        update.setRepositoryId("bedroom");
+        update.setDisplayName("Mine");
+        update.setTargetFolderId("folder-1");
+        ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException refused = assertThrows(
+                ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException.class,
+                () -> service.update(update));
+
+        assertFalse(refused.getMessage().contains("?docId="),
+                "the caller is told to run a repository-confined delete for a row in another"
+                        + " repository: " + refused.getMessage());
+        assertTrue(refused.getMessage().contains("not in this repository"),
+                "the caller is not told where the other row is: " + refused.getMessage());
+    }
+
+    @Test
     @DisplayName("a row read by id that the scan counts as ZERO is a disagreement, not "
             + "'the only row'")
     void aCountOfZeroIsADisagreementNotTheOnlyRow() {
@@ -1717,6 +1830,23 @@ class ImportProfileLegacyIdMigrationTest {
         assertThrows(ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
                 () -> service.existsIndexFree("murky", "bedroom"),
                 "an unreadable row answered 'absent' or 'present' instead of 'retry'");
+    }
+
+    @Test
+    @DisplayName("getOwnedRowIndexFree sees a hidden owned row and ignores an unowned leftover")
+    void getOwnedRowIndexFreeSeesAHiddenOwnedRow() {
+        wire();
+        listingAnswers(List.of(row("legacy-owned", profileProps("p-idle", "Hidden"), "1-r")));
+        ImportProfileDefinition found = service.getOwnedRowIndexFree("p-idle");
+        assertEquals("p-idle", found == null ? null : found.getProfileId(),
+                "a hidden owned row the selector cannot show was invisible to IDLE");
+        assertEquals("bedroom", found == null ? null : found.getRepositoryId());
+
+        Map<String, Object> unowned = profileProps("p-idle-none", "None");
+        unowned.remove("repositoryId");
+        listingAnswers(List.of(row("generated-unowned", unowned, "1-a")));
+        assertEquals(null, service.getOwnedRowIndexFree("p-idle-none"),
+                "an unowned leftover was treated as a startable profile");
     }
 
     // ────────────────────────────────────────────────────────────────────

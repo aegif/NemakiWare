@@ -205,8 +205,10 @@ public class IngestDlqController {
         ConnectorDefinition connector = connectorDefinitionService.get(request.getConnectorId());
         if (connector == null) {
             // A retry that answers "not found" for a connector the rebuilding index cannot
-            // show would move the entry out of the queue for the wrong reason. Ask
-            // index-free before saying it; a review found this path reporting absence.
+            // show records a wrong reason against the entry — it stays in the queue (only a
+            // skip or a success takes it out), but the operator reads "no such connector" for
+            // one that is there. Ask index-free before saying it. (The first version of this
+            // comment said the entry would be moved out; a review checked and it is not.)
             try {
                 if (connectorDefinitionService.existsIndexFree(request.getConnectorId())) {
                     return ExternalIngestResult.error(request.getRequestId(), "connector '"

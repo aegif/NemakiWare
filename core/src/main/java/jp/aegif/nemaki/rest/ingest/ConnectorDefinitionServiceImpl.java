@@ -51,20 +51,43 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
         // trace, while a WRONG id answered a clean 404. Callers already treat null as
         // not-found. findBySystemAndArchetype below has guarded this way all along.
         if (connectorId == null) return null;
-        List<ConnectorDefinition> results = findBySelector(Map.of(
-                "type", ConnectorDefinition.DOC_TYPE,
-                "connectorId", connectorId));
+        // WRAPPED, like the profile twin: an unwrapped Mango read that threw escaped as a raw
+        // RuntimeException and became a 500 in front of verbs this batch made index-free. A
+        // failed selector is not an answer — fall through to the id-addressed read.
+        List<ConnectorDefinition> results;
+        try {
+            results = findBySelector(Map.of(
+                    "type", ConnectorDefinition.DOC_TYPE,
+                    "connectorId", connectorId));
+        } catch (RuntimeException selectorFailed) {
+            logger.debug("selector read for connector {} failed; falling back to the"
+                    + " deterministic id: {}", connectorId, selectorFailed.getMessage());
+            results = List.of();
+        }
         if (!results.isEmpty()) {
-            return results.get(0);
+            ConnectorDefinition first = results.get(0);
+            if (connectorId.equals(first.getConnectorId())) {
+                return first;
+            }
         }
         // The profile twin of this fallback, mirrored: a selector that answers nothing while
         // its index rebuilds answers the same as one that has no such row, and every caller
         // reads null as absence. One id-addressed read, on the miss path only.
-        CloudantClientWrapper client = getConfClient();
         try {
+            CloudantClientWrapper client = getConfClient();
             com.ibm.cloud.cloudant.v1.model.Document row = readByDeterministicId(
                     client.getClient(), client.getDatabaseName(), connectorId);
-            return row == null ? null : fromRawDoc(row);
+            if (row == null) {
+                return null;
+            }
+            ConnectorDefinition fromId = fromRawDoc(row);
+            if (fromId == null || !connectorId.equals(fromId.getConnectorId())) {
+                throw new ConnectorIndexNotReadyException("connector " + connectorId
+                        + " exists but could not be read as that connector");
+            }
+            return fromId;
+        } catch (ConnectorIndexNotReadyException mismatch) {
+            throw mismatch;
         } catch (RuntimeException idReadFailed) {
             // Opportunistic only: it can improve the selector's answer, never worsen it.
             // "Could not ask" is kept apart from "no" by existsIndexFree, which refuses.
@@ -244,7 +267,12 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
         if (connectorId == null) {
             return false;
         }
-        CloudantClientWrapper client = getConfClient();
+        CloudantClientWrapper client;
+        try {
+            client = getConfClient();
+        } catch (RuntimeException couldNotAsk) {
+            throw new ConnectorIndexNotReadyException(couldNotAsk.getMessage());
+        }
         try {
             return countConnectorRowsIndexFree(client.getClient(), client.getDatabaseName(),
                     connectorId) > 0;
@@ -253,6 +281,25 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
             // for it: an unclassifiable row means "could not ask", which must not leave here
             // as a 500. The profile twin wrapped it from the start; a review found this arm
             // passing the raw IllegalStateException through, so the branch was dead code.
+            throw new ConnectorIndexNotReadyException(unprovable.getMessage());
+        }
+    }
+
+    @Override
+    public int countIndexFree(String connectorId) {
+        if (connectorId == null) {
+            return 0;
+        }
+        CloudantClientWrapper client;
+        try {
+            client = getConfClient();
+        } catch (RuntimeException couldNotAsk) {
+            throw new ConnectorIndexNotReadyException(couldNotAsk.getMessage());
+        }
+        try {
+            return countConnectorRowsIndexFree(client.getClient(), client.getDatabaseName(),
+                    connectorId);
+        } catch (IllegalStateException unprovable) {
             throw new ConnectorIndexNotReadyException(unprovable.getMessage());
         }
     }

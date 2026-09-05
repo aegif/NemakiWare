@@ -2781,7 +2781,7 @@ CONTROLS = [
         id="RD",
         what='the connector twin of RC',
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
-        find='        if (!results.isEmpty()) {\n            return results.get(0);\n        }',
+        find='        if (!results.isEmpty()) {\n            ConnectorDefinition first = results.get(0);\n            if (connectorId.equals(first.getConnectorId())) {\n                return first;\n            }\n        }',
         replace='        if (true) return results.isEmpty() ? null : results.get(0);',
         test='ConnectorLegacyIdMigrationTest',
         expect_fail=['aDeterministicRowTheIndexCannotShowIsStillFoundByGet'],
@@ -3205,9 +3205,9 @@ CONTROLS = [
         id="SW",
         what="getForRepository reads the selector instead of walking — the caller's own row stays unreachable behind a shared profileId",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
-        find_span=('        try {\n            NemakiConfAllDocs.forEachRow(client.getClient(), dbName, perRow);\n        } catch (IllegalStateException unprovable) {\n            throw new ProfileIndexNotReadyException(unprovable.getMessage());\n        }\n        return found[0];',
-                   '        return found[0];'),
-        replace='        for (ImportProfileDefinition candidate : listByRepository(repositoryId)) {\n            if (profileId.equals(candidate.getProfileId())) {\n                return candidate;\n            }\n        }\n        return null;',
+        find_span=('        try {\n            NemakiConfAllDocs.forEachRow(client.getClient(), dbName, perRow);\n        } catch (IllegalStateException unprovable) {\n            throw new ProfileIndexNotReadyException(unprovable.getMessage());\n        }\n        return found[0];\n    }\n\n    @Override\n    public ImportProfileDefinition getOwnedRowIndexFree(String profileId) {',
+                   '        return found[0];\n    }\n\n    @Override\n    public ImportProfileDefinition getOwnedRowIndexFree(String profileId) {'),
+        replace='        for (ImportProfileDefinition candidate : listByRepository(repositoryId)) {\n            if (profileId.equals(candidate.getProfileId())) {\n                return candidate;\n            }\n        }\n        return null;\n    }\n\n    @Override\n    public ImportProfileDefinition getOwnedRowIndexFree(String profileId) {',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['getForRepositoryAnswersWithoutTheIndex'],
     ),
@@ -3235,7 +3235,7 @@ CONTROLS = [
         id="SZ",
         what='getForRepository picks one of two rows instead of refusing — and the delete that follows authorises from the one it picked',
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
-        find_span=('            if (found[0] != null) {',
+        find_span=('            if (found[0] != null) {\n                // TWO rows of this profile in this repository.',
                    '                        + profileId + "?docId=...)");\n            }'),
         replace='',
         test='ImportProfileLegacyIdMigrationTest',
@@ -3365,6 +3365,366 @@ CONTROLS = [
         replace='                || !(true || repositoryId.equals(props.get("repositoryId")))) {',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['anotherRepositorysRowIsStillRefused'],
+    ),
+    dict(
+        id="TJ",
+        what="a terminating IDLE thread retires the profileId by key — it erases the session "
+             "that replaced it, which then runs invisible and unstoppable",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='        idleSessions.remove(profileId, session);\n    }',
+        replace='        idleSessions.remove(profileId);\n    }',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['retirementIsByIdentityNotByKey'],
+    ),
+    dict(
+        id="TK",
+        what="registration overwrites instead of refusing — two starts both pass and the live "
+             "adapter of the first can no longer be reached",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='        return idleSessions.putIfAbsent(profileId, session) == null;',
+        replace='        return idleSessions.put(profileId, session) == null;',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['registrationIsAtomic'],
+    ),
+    dict(
+        id="TL",
+        what="startIdle stops re-asking whether the profile still exists after it registers — "
+             "a delete that finished first leaves a session importing into a removed row",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find_span=('        String home = profile.getRepositoryId();',
+                   '                    + home + "; IDLE not started";\n        }'),
+        replace='',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['aStartLosesToADeleteThatFinishedFirst', 'aStartWhoseCheckCannotAnswerIsRefused'],
+    ),
+    dict(
+        id="TM",
+        what="a profile bound to NO repository is accepted as every repository's again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='        if (profile.getRepositoryId() == null\n                || !profile.getRepositoryId().equals(repositoryId)) {',
+        replace='        if (profile.getRepositoryId() != null\n                && !profile.getRepositoryId().equals(repositoryId)) {',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['aProfileBoundToNoRepository_isRefused'],
+    ),
+    dict(
+        id="TN",
+        what="a retryable import refusal falls through to 500 again — the status that opens a "
+             "ticket for a condition a retry resolves",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find_span=('        if (firstError.contains("retry shortly") || firstError.contains("temporarily unavailable")) {',
+                   '            return HttpStatus.SERVICE_UNAVAILABLE;\n        }'),
+        replace='',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['aRetryableImportRefusal_is503NotAServerError'],
+    ),
+    dict(
+        id="TO",
+        what="a standing twin pair reached through the import answers 500 while the same state "
+             "through the gate answers 409",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find_span=('        if (firstError.contains("definition rows")\n                || firstError.contains("more than one definition row")\n                || firstError.contains("more than one owned definition row")) {',
+                   '            return HttpStatus.CONFLICT;\n        }'),
+        replace='',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['aStandingTwinPairFromTheImport_is409NotAServerError'],
+    ),
+    dict(
+        id="TP",
+        what="the profile selector read is unwrapped again — a Mango read that throws becomes a "
+             "500 in front of the verbs made index-free",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find_span=('        List<ImportProfileDefinition> results;\n        try {',
+                   '            results = List.of();\n        }'),
+        replace='        List<ImportProfileDefinition> results = findBySelector(Map.of(\n                "type", ImportProfileDefinition.DOC_TYPE,\n                "profileId", profileId));',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aFailingSelectorDoesNotEscape'],
+    ),
+    dict(
+        id="TQ",
+        what="the twin-row 409 names ?docId= unconditionally again — the repair it prescribes "
+             "is refused in the two commonest shapes of that state",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='        int here;',
+        replace='        if (true) {\n            return "Delete the unwanted row first (DELETE .../admin/import-profiles/"\n                    + profileId + "?docId=...).";\n        }\n        int here;',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theTwinRefusalNamesAReachableRepair'],
+    ),
+    dict(
+        id="TU",
+        what="startIdle publishes the thread after DELETE has already taken the session — "
+             "the adapter reconnects invisible and unstoppable",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='        if (idleSessions.get(profileId) != session) {\n            // DELETE already removed us. Starting the thread would reconnect an adapter\n            // that stopIdle has already disarmed, and the session would be absent from\n            // getIdleProfiles() — the unstoppable capture a review traced.\n            return "import profile " + profileId + " was stopped before IDLE started";\n        }\n        idle.start();',
+        replace='        idle.start();',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['aDeleteDuringExistenceCheckDoesNotPublishAnInvisibleSession'],
+    ),
+    dict(
+        id="TV",
+        what="startIdle re-arms idleRunning after stopIdle — a DELETE that won the race "
+             "leaves a live connection",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapConnectorAdapter.java',
+        find_span=('    boolean armIdle() {',
+                   '        return true;\n    }'),
+        replace='    boolean armIdle() {\n        idleRunning = true;\n        return true;\n    }',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['aStopBeforeStartDoesNotRearmIdle'],
+    ),
+    dict(
+        id="TW",
+        what="a mail-path repository mismatch falls through to 500 again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='        if (firstError.contains("not allowed") || firstError.contains("scoped to repository")\n                || firstError.contains("repository mismatch")) return HttpStatus.FORBIDDEN;',
+        replace='        if (firstError.contains("not allowed") || firstError.contains("scoped to repository")) return HttpStatus.FORBIDDEN;',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['aMailRepositoryMismatch_is403NotAServerError'],
+    ),
+    dict(
+        id="TX",
+        what="the connector selector read is unwrapped again — a Mango read that throws "
+             "becomes a 500",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find_span=('        List<ConnectorDefinition> results;\n        try {',
+                   '            results = List.of();\n        }'),
+        replace='        List<ConnectorDefinition> results = findBySelector(Map.of(\n                "type", ConnectorDefinition.DOC_TYPE,\n                "connectorId", connectorId));',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aFailingSelectorDoesNotEscape'],
+    ),
+    dict(
+        id="TY",
+        what="an unowned legacy row tells the operator to repair the database instead of "
+             "the reachable DELETE",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                        + " usable repositoryId is malformed and is not migrated; delete it"\n'
+             '                        + " with DELETE .../admin/import-profiles/" + profileId + "?docId="\n'
+             '                        + id + ")");',
+        replace='                        + " usable repositoryId is malformed and is not migrated)");',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['anUnownedRowNamesTheReachableDelete'],
+    ),
+    dict(
+        id="TZ",
+        what="startIdle admits from get() again — a selector-visible owned twin is "
+             "started and a hidden owned row is reported absent",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='            current = profileService.getOwnedRowIndexFree(profileId);',
+        replace='            current = profileService.get(profileId);',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['aHiddenOwnedRowReachesTheConfinedRecheck',
+                     'anOwnedSelectorHitStillRefusesATwinPair'],
+    ),
+    dict(
+        id="UD",
+        what="execute skips getForRepository when get() already returned a same-repository "
+             "row — a standing pair is chosen by selector order",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='        // 1. Resolve profile — always walk. A selector hit on a same-repository row\n        // skipped getForRepository, so a standing pair in that repository was chosen\n        // by index order. The non-admin gate already refused the pair; this door did not.\n        ImportProfileDefinition profile;\n        try {\n            profile = resolveProfileForRepository(\n                    request.getProfileId(), request.getRepositoryId());',
+        replace='        // 1. Resolve profile — selector first (the wiring this lock removes).\n        ImportProfileDefinition profile;\n        try {\n            ImportProfileDefinition selector = importProfileDefinitionService.get(request.getProfileId());\n            if (selector != null && request.getRepositoryId() != null\n                    && request.getRepositoryId().equals(selector.getRepositoryId())) {\n                profile = selector;\n            } else {\n                profile = resolveProfileForRepository(\n                        request.getProfileId(), request.getRepositoryId());\n            }',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aSameRepositoryTwinPair_isRefusedNotChosenBySelectorOrder',
+                     'aWalkMissDoesNotResurrectASelectorRow'],
+    ),
+    dict(
+        id="UE",
+        what="the import status mapper matches only 'definition rows' again — the "
+             "getForRepository wording answers 500",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='        if (firstError.contains("definition rows")\n                || firstError.contains("more than one definition row")\n                || firstError.contains("more than one owned definition row")) {',
+        replace='        if (firstError.contains("definition rows")) {',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['aGetForRepositoryTwinMessage_is409NotAServerError'],
+    ),
+    dict(
+        id="UF",
+        what="IDLE treats a hidden connector as absence again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find_span=('            String connId = current.getDefaultConnectorId();',
+                   '            return new LiveLoad(null, null, "No connector for profile: " + profileId);'),
+        replace='            return new LiveLoad(null, null, "No connector for profile: " + profileId);',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['aHiddenConnectorIsNotReportedAsAbsence'],
+    ),
+    dict(
+        id="UG",
+        what="per-message IDLE admission reuses the start-time repository — a later "
+             "move still authorises",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='        if (startedRepositoryId != null\n                && !startedRepositoryId.equals(current.getRepositoryId())) {\n            return new LiveLoad(null, null, "import profile " + profileId\n                    + " now belongs to a different repository; IDLE stopping");\n        }',
+        replace='        if (false) {\n            return new LiveLoad(null, null, "import profile " + profileId\n                    + " now belongs to a different repository; IDLE stopping");\n        }',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['aLaterRepositoryChangeStopsLiveAdmission'],
+    ),
+    dict(
+        id="UH",
+        what="execute ignores connector twin count and runs the selector's first row",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='            // get() returns the selector\'s first row. A pair was run by index order; a\n            // walk miss (count 0) was still imported from that leftover. The profile\n            // door already refuses the same disagreement.\n            try {\n                int seen = connectorDefinitionService.countIndexFree(request.getConnectorId());\n                if (seen > 1) {',
+        replace='            // get() returns the selector\'s first row. A pair was run by index order; a\n            // walk miss (count 0) was still imported from that leftover. The profile\n            // door already refuses the same disagreement.\n            try {\n                int seen = connectorDefinitionService.countIndexFree(request.getConnectorId());\n                if (false) {',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aConnectorTwinPair_isRefusedNotChosenBySelectorOrder'],
+    ),
+    dict(
+        id="UI",
+        what="per-message IDLE admission ignores a later delegation revoke and keeps "
+             "ingesting under the admin path",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='        if (Boolean.TRUE.equals(startedDelegated) && !current.isDelegated()) {\n            return new LiveLoad(null, null, "import profile " + profileId\n                    + " is no longer delegated; IDLE stopping");\n        }',
+        replace='        if (false) {\n            return new LiveLoad(null, null, "import profile " + profileId\n                    + " is no longer delegated; IDLE stopping");\n        }',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['aLaterDelegationRevokeStopsLiveAdmission'],
+    ),
+    dict(
+        id="UJ",
+        what="per-message IDLE admission ignores a later endpoint or secret change and "
+             "keeps fetching through the start-time socket",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='            String livePassword = fetchSupport.resolvePassword(conn);\n            if (!startedConnectionIdentity.equals(connectionIdentity(conn, livePassword))) {\n                return new LiveLoad(null, null, "import profile " + profileId\n                        + " connector connection changed; IDLE stopping");\n            }',
+        replace='            String livePassword = fetchSupport.resolvePassword(conn);\n            if (false) {\n                return new LiveLoad(null, null, "import profile " + profileId\n                        + " connector connection changed; IDLE stopping");\n            }',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['aLaterConnectorEndpointChangeStopsLiveAdmission'],
+    ),
+    dict(
+        id="UK",
+        what="execute imports a selector leftover when the walk counts zero rows",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='            // get() returns the selector\'s first row. A pair was run by index order; a\n            // walk miss (count 0) was still imported from that leftover. The profile\n            // door already refuses the same disagreement.\n            try {\n                int seen = connectorDefinitionService.countIndexFree(request.getConnectorId());\n                if (seen > 1) {\n                    return ExternalIngestResult.error(requestId, "connector "\n                            + request.getConnectorId()\n                            + " has more than one definition row");\n                }\n                if (seen < 1) {',
+        replace='            // get() returns the selector\'s first row. A pair was run by index order; a\n            // walk miss (count 0) was still imported from that leftover. The profile\n            // door already refuses the same disagreement.\n            try {\n                int seen = connectorDefinitionService.countIndexFree(request.getConnectorId());\n                if (seen > 1) {\n                    return ExternalIngestResult.error(requestId, "connector "\n                            + request.getConnectorId()\n                            + " has more than one definition row");\n                }\n                if (false) {',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aConnectorSelectorHitWithWalkMiss_isRetryNotTheSelectorRow'],
+    ),
+    dict(
+        id="UL",
+        what="startIdle admits a disabled profile again — disable is checked only after start",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='        if (!current.isEnabled()) {\n            return new LiveLoad(null, null, "Import profile is disabled: " + profileId);\n        }',
+        replace='        if (startedRepositoryId != null && !current.isEnabled()) {\n            return new LiveLoad(null, null, "Import profile is disabled: " + profileId);\n        }',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['aDisabledProfileIsRefusedAtIdleStart'],
+    ),
+    dict(
+        id="UM",
+        what="IDLE never looks at connector.isEnabled — a later disable keeps fetching",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='        if (!conn.isEnabled()) {\n            return new LiveLoad(null, null, "Connector is disabled: " + conn.getConnectorId());\n        }',
+        replace='        if (false) {\n            return new LiveLoad(null, null, "Connector is disabled: " + conn.getConnectorId());\n        }',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['aLaterConnectorDisableStopsLiveAdmission'],
+    ),
+    dict(
+        id="UN",
+        what="IDLE starts a selector leftover connector when the walk counts zero rows",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='                if (seen < 1) {\n                    return new LiveLoad(null, null, "connector " + countedId\n                            + " exists but could not be read; retry shortly");\n                }',
+        replace='                if (false) {\n                    return new LiveLoad(null, null, "connector " + countedId\n                            + " exists but could not be read; retry shortly");\n                }',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['aConnectorSelectorHitWithWalkMissIsRetry'],
+    ),
+    dict(
+        id="UO",
+        what="the _all_docs walk lets a transport RuntimeException escape — callers "
+             "wrap only IllegalStateException, so the import answers 500",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/NemakiConfAllDocs.java',
+        find='            com.ibm.cloud.cloudant.v1.model.AllDocsResult listing;\n            try {\n                listing = cloudant.postAllDocs(page.build()).execute().getResult();\n            } catch (RuntimeException transport) {\n                // The walk used to let a transport failure out as-is. Callers wrap\n                // IllegalStateException into a typed 503 and let everything else become\n                // a 500. A reset mid-page is "could not ask", the same as a listing\n                // that did not answer.\n                throw new IllegalStateException("the _all_docs listing of \'" + dbName\n                        + "\' could not be read, so whether the rows are there cannot be"\n                        + " established; retry shortly: " + transport.getMessage(),\n                        transport);\n            }',
+        replace='            com.ibm.cloud.cloudant.v1.model.AllDocsResult listing =\n                    cloudant.postAllDocs(page.build()).execute().getResult();',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aTransportFailureOnTheWalkIsTypedNotReady'],
+    ),
+    dict(
+        id="UP",
+        what="the connector walk lets the same transport RuntimeException escape",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/NemakiConfAllDocs.java',
+        find='            com.ibm.cloud.cloudant.v1.model.AllDocsResult listing;\n            try {\n                listing = cloudant.postAllDocs(page.build()).execute().getResult();\n            } catch (RuntimeException transport) {\n                // The walk used to let a transport failure out as-is. Callers wrap\n                // IllegalStateException into a typed 503 and let everything else become\n                // a 500. A reset mid-page is "could not ask", the same as a listing\n                // that did not answer.\n                throw new IllegalStateException("the _all_docs listing of \'" + dbName\n                        + "\' could not be read, so whether the rows are there cannot be"\n                        + " established; retry shortly: " + transport.getMessage(),\n                        transport);\n            }',
+        replace='            com.ibm.cloud.cloudant.v1.model.AllDocsResult listing =\n                    cloudant.postAllDocs(page.build()).execute().getResult();',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aTransportFailureOnTheWalkIsTypedNotReady'],
+    ),
+    dict(
+        id="UQ",
+        what="connectionIdentity joins the five fields with newlines, so a tenantId/authType "
+             "crossing pair is treated as the same IMAP socket",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='        return new ConnectionIdentity(\n                connector == null ? null : connector.getEndpoint(),\n                connector == null ? null : connector.getTenantId(),\n                connector == null ? null : connector.getAuthType(),\n                connector == null ? null : connector.getCredentialRef(),\n                password);',
+        replace='        return new ConnectionIdentity(String.join("\\n",\n                connector == null || connector.getEndpoint() == null ? "" : connector.getEndpoint(),\n                connector == null || connector.getTenantId() == null ? "" : connector.getTenantId(),\n                connector == null || connector.getAuthType() == null ? "" : connector.getAuthType(),\n                connector == null || connector.getCredentialRef() == null ? "" : connector.getCredentialRef(),\n                password == null ? "" : password), "", "", "", "");',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['aNewlineCrossingTenantAndAuthTypeIsNotTheSameConnection',
+                     'aNewlineCrossingIdentityChangeStopsLiveAdmission'],
+    ),
+    dict(
+        id="UR",
+        what="connectionIdentity treats null and blank as the same field",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='        return new ConnectionIdentity(\n                connector == null ? null : connector.getEndpoint(),\n                connector == null ? null : connector.getTenantId(),\n                connector == null ? null : connector.getAuthType(),\n                connector == null ? null : connector.getCredentialRef(),\n                password);',
+        replace='        return new ConnectionIdentity(\n                connector == null || connector.getEndpoint() == null ? "" : connector.getEndpoint(),\n                connector == null || connector.getTenantId() == null ? "" : connector.getTenantId(),\n                connector == null || connector.getAuthType() == null ? "" : connector.getAuthType(),\n                connector == null || connector.getCredentialRef() == null ? "" : connector.getCredentialRef(),\n                password == null ? "" : password);',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['aNullAndBlankTenantIdAreNotTheSameConnection'],
+    ),
+    dict(
+        id="US",
+        what="get() returns a deterministic row whose body names another connectorId",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='        if (!results.isEmpty()) {\n            ConnectorDefinition first = results.get(0);\n            if (connectorId.equals(first.getConnectorId())) {\n                return first;\n            }\n        }\n        // The profile twin of this fallback, mirrored: a selector that answers nothing while\n        // its index rebuilds answers the same as one that has no such row, and every caller\n        // reads null as absence. One id-addressed read, on the miss path only.\n        try {\n            CloudantClientWrapper client = getConfClient();\n            com.ibm.cloud.cloudant.v1.model.Document row = readByDeterministicId(\n                    client.getClient(), client.getDatabaseName(), connectorId);\n            if (row == null) {\n                return null;\n            }\n            ConnectorDefinition fromId = fromRawDoc(row);\n            if (fromId == null || !connectorId.equals(fromId.getConnectorId())) {\n                throw new ConnectorIndexNotReadyException("connector " + connectorId\n                        + " exists but could not be read as that connector");\n            }\n            return fromId;\n        } catch (ConnectorIndexNotReadyException mismatch) {\n            throw mismatch;\n        } catch (RuntimeException idReadFailed) {',
+        replace='        if (!results.isEmpty()) {\n            return results.get(0);\n        }\n        // The profile twin of this fallback, mirrored: a selector that answers nothing while\n        // its index rebuilds answers the same as one that has no such row, and every caller\n        // reads null as absence. One id-addressed read, on the miss path only.\n        try {\n            CloudantClientWrapper client = getConfClient();\n            com.ibm.cloud.cloudant.v1.model.Document row = readByDeterministicId(\n                    client.getClient(), client.getDatabaseName(), connectorId);\n            return row == null ? null : fromRawDoc(row);\n        } catch (RuntimeException idReadFailed) {',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aDeterministicRowThatNamesAnotherConnectorIsNotReturned'],
+    ),
+    dict(
+        id="UT",
+        what="raw .eml preservation swallows a later unreadable profile as absence",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='            ImportProfileDefinition mailProfile;\n            try {\n                mailProfile = resolveProfileForRepository(\n                        request.getProfileId(), request.getRepositoryId());\n            } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException\n                    | ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {\n                warnings.add("Raw .eml preservation could not be decided; retry shortly: "\n                        + e.getMessage());\n                mailProfile = null;\n            }',
+        replace='            ImportProfileDefinition mailProfile = confinedProfile(request);',
+        test='IngestCreatedObjectPropagationTest',
+        expect_fail=['aLaterUnreadableProfileDoesNotSilentlySkipRawEml'],
+    ),
+    dict(
+        id="UV",
+        what="IDLE admits a get() hit whose body names a different connectorId",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='        String askedConnectorId = current.getDefaultConnectorId();\n        if (conn != null && askedConnectorId != null\n                && !askedConnectorId.equals(conn.getConnectorId())) {\n            return new LiveLoad(null, null, "connector " + askedConnectorId\n                    + " exists but could not be read as that connector; retry shortly");\n        }',
+        replace='        String askedConnectorId = current.getDefaultConnectorId();',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['aConnectorBodyThatNamesAnotherIdIsNotAdmitted'],
+    ),
+    dict(
+        id="UA",
+        what="mail post-processing reads get(profileId) again and honours an unowned "
+             "row's preserveOriginalEml",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='            ImportProfileDefinition mailProfile;\n            try {\n                mailProfile = resolveProfileForRepository(\n                        request.getProfileId(), request.getRepositoryId());\n            } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException\n                    | ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {\n                warnings.add("Raw .eml preservation could not be decided; retry shortly: "\n                        + e.getMessage());\n                mailProfile = null;\n            }',
+        replace='            ImportProfileDefinition mailProfile = request.getProfileId() != null\n                    ? importProfileDefinitionService.get(request.getProfileId()) : null;',
+        test='IngestCreatedObjectPropagationTest',
+        expect_fail=['anUnownedPreserveFlagDoesNotCreateARawEmlChild'],
+    ),
+    dict(
+        id="UB",
+        what="connector get() leaves getConfClient() outside the fallback try — a "
+             "missing client becomes a 500",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='        try {\n            CloudantClientWrapper client = getConfClient();\n            com.ibm.cloud.cloudant.v1.model.Document row = readByDeterministicId(\n                    client.getClient(), client.getDatabaseName(), connectorId);',
+        replace='        CloudantClientWrapper client = getConfClient();\n        try {\n            com.ibm.cloud.cloudant.v1.model.Document row = readByDeterministicId(\n                    client.getClient(), client.getDatabaseName(), connectorId);',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aMissingConfClientOnTheIdFallbackDoesNotEscape'],
+    ),
+    dict(
+        id="UC",
+        what="profile get() leaves getConfClient() outside the fallback try — a "
+             "missing client becomes a 500",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='        try {\n            CloudantClientWrapper client = getConfClient();\n            com.ibm.cloud.cloudant.v1.model.Document row = readByDeterministicId(\n                    client.getClient(), client.getDatabaseName(), profileId);',
+        replace='        CloudantClientWrapper client = getConfClient();\n        try {\n            com.ibm.cloud.cloudant.v1.model.Document row = readByDeterministicId(\n                    client.getClient(), client.getDatabaseName(), profileId);',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aMissingConfClientOnTheIdFallbackDoesNotEscape'],
+    ),
+    dict(
+        id="UW",
+        what="the import resolution falls back to the selector when the walk finds nothing — an "
+             "unowned row becomes a profile for every repository again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='        return importProfileDefinitionService.getForRepository(profileId, repositoryId);',
+        replace='        ImportProfileDefinition walked =\n                importProfileDefinitionService.getForRepository(profileId, repositoryId);\n'
+                '        return walked != null ? walked : importProfileDefinitionService.get(profileId);',
+        test='CanonicalImportServiceTest',
+        expect_fail=['testExecuteRefusesAProfileBoundToNoRepository'],
     ),
     dict(
         id="HA",
@@ -3786,9 +4146,59 @@ def anchors_still_match() -> list:
     return problems
 
 
+def compile_check(ids: list) -> list:
+    """Which sabotages no longer COMPILE.
+
+    The pre-flight asks whether a sabotage still APPLIES (its anchor matches) and whether the
+    span it replaces is delimiter-balanced. Neither question is "does the result build". A
+    control whose replacement referenced a variable a fix had deleted passed the pre-flight
+    and killed a seven-hour sweep at the control where it sat, leaving eleven unmeasured — and
+    100 controls are pure deletions, the same shape waiting to happen. This is slow (one
+    compile per control), so it is a separate mode, run over the controls whose target file
+    has changed.
+
+    Returns a list of problem strings; empty means every checked sabotage builds.
+    """
+    problems = []
+    for cid in ids:
+        control = next((c for c in CONTROLS if c["id"] == cid), None)
+        if control is None:
+            problems.append(f"[{cid}] no such control")
+            continue
+        path = REPO / control["file"]
+        original = path.read_text()
+        try:
+            path.write_text(sabotage_text(original, control))
+            result = subprocess.run(
+                ["mvn", "-o", "-q", "-pl", "core", "test-compile", "-DskipTests"],
+                cwd=REPO, capture_output=True, text=True)
+            if result.returncode != 0:
+                errors = [line for line in (result.stdout + result.stderr).splitlines()
+                          if "ERROR" in line or "error:" in line][:4]
+                problems.append(f"[{cid}] the sabotage does not compile:\n    "
+                                + "\n    ".join(errors))
+            else:
+                print(f"  {cid}: compiles")
+        finally:
+            path.write_text(original)
+    return problems
+
+
 def main() -> None:
     if "--self-test" in sys.argv[1:]:
         raise SystemExit(1 if run_self_test() else 0)
+
+    if "--compile-check" in sys.argv[1:]:
+        wanted = [a for a in sys.argv[1:] if a != "--compile-check"]
+        ids = wanted or [c["id"] for c in CONTROLS]
+        print(f"compile-checking {len(ids)} of {len(CONTROLS)} sabotages")
+        found = compile_check(ids)
+        if found:
+            raise SystemExit("sabotages that no longer compile — the sweep would die at the "
+                             "first of these and every control after it would not run:\n  "
+                             + "\n  ".join(found))
+        print("every checked sabotage compiles")
+        raise SystemExit(0)
 
     # The judgement functions decide every result below, so they are checked before any
     # control runs. A runner whose verdicts are wrong reports confidently either way.

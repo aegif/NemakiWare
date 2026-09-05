@@ -19,18 +19,38 @@ public class ImapIdleMonitor {
 
     private static final Logger logger = LoggerFactory.getLogger(ImapIdleMonitor.class);
 
-    private final Map<String, ImapConnectorAdapter> idleAdapters = new java.util.concurrent.ConcurrentHashMap<>();
-
     /**
-     * The repository each live session is importing INTO. A session captures its profile
-     * once, at {@link #startIdle}, and every message it later imports carries THAT row's
-     * repositoryId — but the map above is keyed by profileId alone. With the same profileId
-     * in two repositories a caller could delete their own row and keep receiving mail into
-     * it, because the deleting side could only see "some repository still has this id" and
-     * left the session alone. Recording where a session sends its mail is what makes that
-     * decision answerable; a session with no entry here is one we cannot attribute.
+     * One live IDLE session: the adapter and the repository it imports INTO. A session
+     * captures its profile once, at {@link #startIdle}, and every message it later imports
+     * carries THAT row's repositoryId — while the map is keyed by profileId alone. With the
+     * same profileId in two repositories a caller could delete their own row and keep
+     * receiving mail into it, because the deleting side could only see "some repository still
+     * has this id".
+     *
+     * <p>Adapter and repository are ONE value on purpose. They were two maps, and a review
+     * showed the pair coming apart: a terminating thread removed both entries by key, so a
+     * session started after a slow stop had its registration erased by the old thread's
+     * cleanup — after which {@code stopIdle} answered "no session running" for ever and the
+     * live session was invisible to {@link #getIdleProfiles()} and unreachable through
+     * {@link #stopIdle}. Identity, not key, decides removal.
+     *
+     * <p>What that costs is a connection nobody can close, not a stream of imports into a
+     * removed row: the message loop reloads the profile on every message and refuses when it
+     * is gone. An earlier version of this note said the session kept importing; a review
+     * checked the loop and it does not.
      */
-    private final Map<String, String> idleRepositories = new java.util.concurrent.ConcurrentHashMap<>();
+    record IdleSession(ImapConnectorAdapter adapter, String repositoryId,
+            boolean startedDelegated, ConnectionIdentity connectionIdentity) {
+        IdleSession(ImapConnectorAdapter adapter, String repositoryId) {
+            this(adapter, repositoryId, false, null);
+        }
+        IdleSession(ImapConnectorAdapter adapter, String repositoryId,
+                boolean startedDelegated) {
+            this(adapter, repositoryId, startedDelegated, null);
+        }
+    }
+
+    private final Map<String, IdleSession> idleSessions = new java.util.concurrent.ConcurrentHashMap<>();
 
     private ImportProfileDefinitionService profileService;
     private ConnectorDefinitionService connectorService;
@@ -49,18 +69,19 @@ public class ImapIdleMonitor {
      * @return error message, or null on success
      */
     public String startIdle(String profileId) {
-        if (idleAdapters.containsKey(profileId)) {
+        // The real admission test is the putIfAbsent below. This is only a cheap early exit:
+        // containsKey-then-put let two callers both pass and the second overwrite the first,
+        // leaving a live adapter nobody could reach.
+        if (idleSessions.containsKey(profileId)) {
             return "IDLE already running for profile: " + profileId;
         }
 
-        ImportProfileDefinition profile = profileService != null ? profileService.get(profileId) : null;
-        if (profile == null) return "Profile not found: " + profileId;
-
-        ConnectorDefinition connector = resolveConnector(profile);
-        if (connector == null) return "No connector for profile: " + profileId;
-        if (!"imap".equals(connector.getSourceSystem())) {
-            return "IDLE is only supported for IMAP connectors (system=" + connector.getSourceSystem() + ")";
+        LiveLoad load = loadLiveConfig(profileId, null, null, null);
+        if (!load.ok()) {
+            return load.refusal();
         }
+        final ImportProfileDefinition profile = load.profile();
+        ConnectorDefinition connector = load.connector();
 
         // SECURITY: a delegated profile must pass the same delegation re-authorization
         // the scheduler/webhook paths apply (creator active + cmis:all on target folder
@@ -86,28 +107,70 @@ public class ImapIdleMonitor {
                 ? profile.getSchedulerParams().getOrDefault("mailbox", "INBOX") : "INBOX";
 
         ImapConnectorAdapter imap = new ImapConnectorAdapter(connector, password);
-        idleAdapters.put(profileId, imap);
-        if (profile.getRepositoryId() != null) {
-            idleRepositories.put(profileId, profile.getRepositoryId());
+        IdleSession session = new IdleSession(imap, profile.getRepositoryId(),
+                profile.isDelegated(), connectionIdentity(connector, password));
+        if (!registerSession(profileId, session)) {
+            return "IDLE already running for profile: " + profileId;
         }
 
-        Thread idle = Thread.ofVirtual().name("imap-idle-" + profileId).start(() -> {
+        // REGISTERED FIRST, then asked whether the profile is still there. Everything above
+        // reads a profile that a concurrent DELETE can remove while this method prepares the
+        // connection: that delete looked for a running session, found none, and returned —
+        // and this session then held a connection nobody could close. Registering first
+        // closes THAT window. It does not close the next one: the delete can still arrive
+        // after this read returns true and before the thread is published, take the session
+        // out of the map, and leave startIdle() to re-arm the adapter. The thread is created
+        // unstarted so stopIdle can join it; the start is refused if we are no longer the
+        // registrant; the adapter refuses to arm if stopIdle already ran.
+        String home = profile.getRepositoryId();
+        boolean stillThere;
+        try {
+            stillThere = home != null && profileService != null
+                    && profileService.getForRepository(profileId, home) != null;
+        } catch (RuntimeException couldNotAsk) {
+            retireSession(profileId, session);
+            return "whether import profile " + profileId + " still exists could not be"
+                    + " established; IDLE not started: " + couldNotAsk.getMessage();
+        }
+        if (!stillThere) {
+            retireSession(profileId, session);
+            return "import profile " + profileId + " no longer has a row in repository "
+                    + home + "; IDLE not started";
+        }
+
+        Thread idle = Thread.ofVirtual().name("imap-idle-" + profileId).unstarted(() -> {
             try {
+                if (idleSessions.get(profileId) != session) {
+                    return;
+                }
                 imap.connect();
+                if (idleSessions.get(profileId) != session) {
+                    return;
+                }
                 imap.startIdle(mailbox, msg -> {
                     try {
-                        // Re-authorize on every message: IDLE is a long-lived session and the
-                        // delegation can be revoked while it runs. Admin profiles return
-                        // allowed + null context (legacy admin behaviour preserved).
+                        // Re-read AND re-authorize on every message. The start-time
+                        // snapshot used to be reused: a later folder change or
+                        // delegation revoke still passed, while executeMailImport
+                        // resolved the live row. A review named the split.
+                        LiveLoad now = loadLiveConfig(profileId,
+                                session.repositoryId(), connector.getConnectorId(), mailbox,
+                                session.startedDelegated(), session.connectionIdentity());
+                        if (!now.ok()) {
+                            logger.warn("IDLE: stopping profile {}: {}", profileId, now.refusal());
+                            imap.stopIdle();
+                            return;
+                        }
                         CallContext idleCtx = null;
-                        if (profile.isDelegated()) {
+                        if (now.profile().isDelegated()) {
                             if (schedulerService == null) {
                                 logger.error("IDLE: delegated profile {} but scheduler not wired; stopping", profileId);
                                 imap.stopIdle();
                                 return;
                             }
                             IngestSchedulerService.DelegatedAuthorization auth =
-                                    schedulerService.authorizeDelegatedFetch(profile, connector);
+                                    schedulerService.authorizeDelegatedFetch(
+                                            now.profile(), now.connector());
                             if (!auth.isAllowed()) {
                                 logger.warn("IDLE: delegated authorization revoked for profile {} ({}); stopping session",
                                         profileId, auth.getDenialReason());
@@ -119,8 +182,8 @@ public class ImapIdleMonitor {
                         java.io.InputStream eml = imap.fetchMessage(mailbox, msg.uid());
                         ExternalIngestRequest req = new ExternalIngestRequest();
                         req.setProfileId(profileId);
-                        req.setConnectorId(connector.getConnectorId());
-                        req.setRepositoryId(profile.getRepositoryId());
+                        req.setConnectorId(now.connector().getConnectorId());
+                        req.setRepositoryId(now.profile().getRepositoryId());
                         req.setSourceObjectId(msg.stableKey());
                         req.setSourceObjectType("message");
                         req.setFileName(FetchSupport.sanitizeSubject(msg.subject()) + ".eml");
@@ -142,21 +205,51 @@ public class ImapIdleMonitor {
                 logger.error("IDLE monitoring failed for {}: {}", profileId, e.getMessage());
             } finally {
                 imap.disconnect();
-                idleAdapters.remove(profileId);
-                idleRepositories.remove(profileId);
+                // remove(key, value), not remove(key): a stop can time out waiting for this
+                // thread (the adapter gives up after 10s while an IDLE loop may still be in a
+                // backoff sleep) and a replacement session can already be registered. Removing
+                // by key alone erased that replacement — it stayed live, invisible to
+                // getIdleProfiles(), and unstoppable through stopIdle().
+                retireSession(profileId, session);
             }
         });
 
         imap.setIdleThread(idle);
+        if (idleSessions.get(profileId) != session) {
+            // DELETE already removed us. Starting the thread would reconnect an adapter
+            // that stopIdle has already disarmed, and the session would be absent from
+            // getIdleProfiles() — the unstoppable capture a review traced.
+            return "import profile " + profileId + " was stopped before IDLE started";
+        }
+        idle.start();
         logger.info("IMAP IDLE monitoring started for profile {}", profileId);
         return null;
     }
 
+    /**
+     * Claim {@code profileId} for {@code session}. False when another session already holds
+     * it — the ONLY admission test, because a containsKey-then-put pair lets two callers both
+     * pass and the second overwrite a live adapter nobody can then reach.
+     */
+    boolean registerSession(String profileId, IdleSession session) {
+        return idleSessions.putIfAbsent(profileId, session) == null;
+    }
+
+    /**
+     * Give up {@code profileId}, but only if {@code session} is still the one registered.
+     * A stop can time out waiting for a thread that is mid-backoff and a replacement session
+     * can already hold the key; removing by key alone erased that replacement, leaving it
+     * live, absent from {@link #getIdleProfiles()} and unreachable by {@link #stopIdle}.
+     */
+    void retireSession(String profileId, IdleSession session) {
+        idleSessions.remove(profileId, session);
+    }
+
     /** Stop IDLE monitoring for a specific profile. */
     public String stopIdle(String profileId) {
-        ImapConnectorAdapter imap = idleAdapters.remove(profileId);
-        idleRepositories.remove(profileId);
-        if (imap == null) return "No IDLE session running for profile: " + profileId;
+        IdleSession session = idleSessions.remove(profileId);
+        if (session == null) return "No IDLE session running for profile: " + profileId;
+        ImapConnectorAdapter imap = session.adapter();
         imap.stopIdle();
         imap.disconnect();
         logger.info("IMAP IDLE monitoring stopped for profile {}", profileId);
@@ -165,18 +258,185 @@ public class ImapIdleMonitor {
 
     /**
      * The repository a live IDLE session imports into, or {@code null} when this profileId
-     * has no session — which is NOT the same as "a session whose repository is unknown".
-     * A running session always has an entry unless its captured row carried no repositoryId,
-     * so callers that act on the answer must treat {@code null} together with
-     * {@link #getIdleProfiles()} rather than on its own.
+     * has no session OR the session's captured row named no repository. The two are not the
+     * same thing, and this method cannot tell them apart — pair it with
+     * {@link #getIdleProfiles()}, which answers the first question on its own.
      */
     public String getIdleRepository(String profileId) {
-        return idleRepositories.get(profileId);
+        IdleSession session = idleSessions.get(profileId);
+        return session == null ? null : session.repositoryId();
     }
 
     /** Get the list of profiles currently running IMAP IDLE. */
     public List<String> getIdleProfiles() {
-        return List.copyOf(idleAdapters.keySet());
+        return List.copyOf(idleSessions.keySet());
+    }
+
+    /**
+     * The current unique owned profile and its IMAP connector. A refusal means
+     * IDLE must not start — or, once running, must stop. The start-time snapshot
+     * is not an authorisation to keep ingesting after a later edit.
+     */
+    record LiveLoad(ImportProfileDefinition profile, ConnectorDefinition connector, String refusal) {
+        boolean ok() {
+            return refusal == null && profile != null && connector != null;
+        }
+    }
+
+    /**
+     * Package-visible so the registry tests can lock the per-message re-read
+     * without a real IMAP session.
+     */
+    LiveLoad loadLiveConfig(String profileId, String startedRepositoryId,
+            String startedConnectorId, String startedMailbox) {
+        return loadLiveConfig(profileId, startedRepositoryId, startedConnectorId,
+                startedMailbox, null);
+    }
+
+    LiveLoad loadLiveConfig(String profileId, String startedRepositoryId,
+            String startedConnectorId, String startedMailbox, Boolean startedDelegated) {
+        return loadLiveConfig(profileId, startedRepositoryId, startedConnectorId,
+                startedMailbox, startedDelegated, null);
+    }
+
+    LiveLoad loadLiveConfig(String profileId, String startedRepositoryId,
+            String startedConnectorId, String startedMailbox, Boolean startedDelegated,
+            ConnectionIdentity startedConnectionIdentity) {
+        if (profileService == null) {
+            return new LiveLoad(null, null, "Profile not found: " + profileId);
+        }
+        ImportProfileDefinition current;
+        try {
+            current = profileService.getOwnedRowIndexFree(profileId);
+        } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException pair) {
+            return new LiveLoad(null, null, pair.getMessage());
+        } catch (RuntimeException couldNotAsk) {
+            return new LiveLoad(null, null, "whether import profile " + profileId
+                    + " exists could not be established; IDLE not started: "
+                    + couldNotAsk.getMessage());
+        }
+        if (current == null) {
+            return new LiveLoad(null, null, "Profile not found: " + profileId);
+        }
+        if (!current.isEnabled()) {
+            return new LiveLoad(null, null, "Import profile is disabled: " + profileId);
+        }
+        if (Boolean.TRUE.equals(startedDelegated) && !current.isDelegated()) {
+            return new LiveLoad(null, null, "import profile " + profileId
+                    + " is no longer delegated; IDLE stopping");
+        }
+        if (startedRepositoryId != null
+                && !startedRepositoryId.equals(current.getRepositoryId())) {
+            return new LiveLoad(null, null, "import profile " + profileId
+                    + " now belongs to a different repository; IDLE stopping");
+        }
+        String mailbox = current.getSchedulerParams() != null
+                ? current.getSchedulerParams().getOrDefault("mailbox", "INBOX") : "INBOX";
+        if (startedMailbox != null && !startedMailbox.equals(mailbox)) {
+            return new LiveLoad(null, null, "import profile " + profileId
+                    + " mailbox changed; IDLE stopping");
+        }
+        ConnectorDefinition conn;
+        try {
+            conn = resolveConnector(current);
+        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+            return new LiveLoad(null, null, "connector " + current.getDefaultConnectorId()
+                    + " exists but could not be read; retry shortly");
+        }
+        String askedConnectorId = current.getDefaultConnectorId();
+        if (conn != null && askedConnectorId != null
+                && !askedConnectorId.equals(conn.getConnectorId())) {
+            return new LiveLoad(null, null, "connector " + askedConnectorId
+                    + " exists but could not be read as that connector; retry shortly");
+        }
+        if (conn == null) {
+            String connId = current.getDefaultConnectorId();
+            if (connId != null && connectorService != null) {
+                try {
+                    if (connectorService.existsIndexFree(connId)) {
+                        return new LiveLoad(null, null, "connector " + connId
+                                + " exists but could not be read; retry shortly");
+                    }
+                } catch (RuntimeException couldNotAsk) {
+                    return new LiveLoad(null, null, "whether connector " + connId
+                            + " exists could not be established; IDLE not started: "
+                            + couldNotAsk.getMessage());
+                }
+            }
+            return new LiveLoad(null, null, "No connector for profile: " + profileId);
+        }
+        if (startedConnectorId != null && !startedConnectorId.equals(conn.getConnectorId())) {
+            return new LiveLoad(null, null, "import profile " + profileId
+                    + " now uses a different connector; IDLE stopping");
+        }
+        if (startedConnectionIdentity != null) {
+            // Same connectorId can still point at a different host, tenant, or secret.
+            // Auth then used the live row while fetchMessage kept the start-time socket.
+            if (fetchSupport == null) {
+                return new LiveLoad(null, null, "import profile " + profileId
+                        + " connector connection could not be re-checked; IDLE stopping");
+            }
+            String livePassword = fetchSupport.resolvePassword(conn);
+            if (!startedConnectionIdentity.equals(connectionIdentity(conn, livePassword))) {
+                return new LiveLoad(null, null, "import profile " + profileId
+                        + " connector connection changed; IDLE stopping");
+            }
+        }
+        if (connectorService != null) {
+            try {
+                String countedId = askedConnectorId != null ? askedConnectorId : conn.getConnectorId();
+                int seen = connectorService.countIndexFree(countedId);
+                if (seen > 1) {
+                    return new LiveLoad(null, null, "connector " + countedId
+                            + " has more than one definition row");
+                }
+                if (seen < 1) {
+                    return new LiveLoad(null, null, "connector " + countedId
+                            + " exists but could not be read; retry shortly");
+                }
+            } catch (RuntimeException couldNotAsk) {
+                return new LiveLoad(null, null, "whether connector "
+                        + (askedConnectorId != null ? askedConnectorId : conn.getConnectorId())
+                        + " is unique could not be established; IDLE not started: "
+                        + couldNotAsk.getMessage());
+            }
+        }
+        if (!conn.isEnabled()) {
+            return new LiveLoad(null, null, "Connector is disabled: " + conn.getConnectorId());
+        }
+        if (!current.isConnectorAllowed(conn.getConnectorId())) {
+            return new LiveLoad(null, null, "Connector '" + conn.getConnectorId()
+                    + "' is not allowed by profile '" + profileId + "'");
+        }
+        if (!current.isArchetypeAllowed(conn.getSourceArchetype())) {
+            return new LiveLoad(null, null, "Archetype " + conn.getSourceArchetype()
+                    + " is not allowed by profile '" + profileId + "'");
+        }
+        if (!"imap".equals(conn.getSourceSystem())) {
+            return new LiveLoad(null, null,
+                    "IDLE is only supported for IMAP connectors (system="
+                            + conn.getSourceSystem() + ")");
+        }
+        return new LiveLoad(current, conn, null);
+    }
+
+    /**
+     * The IMAP socket's inputs, field by field. A newline join of the five
+     * values is not an identity: tenantId {@code a} plus authType {@code b\\nc}
+     * and tenantId {@code a\\nb} plus authType {@code c} produce the same
+     * string, so a later edit would keep the start-time socket.
+     */
+    record ConnectionIdentity(String endpoint, String tenantId, String authType,
+            String credentialRef, String password) {
+    }
+
+    static ConnectionIdentity connectionIdentity(ConnectorDefinition connector, String password) {
+        return new ConnectionIdentity(
+                connector == null ? null : connector.getEndpoint(),
+                connector == null ? null : connector.getTenantId(),
+                connector == null ? null : connector.getAuthType(),
+                connector == null ? null : connector.getCredentialRef(),
+                password);
     }
 
     /** Resolve the connector for a profile. */

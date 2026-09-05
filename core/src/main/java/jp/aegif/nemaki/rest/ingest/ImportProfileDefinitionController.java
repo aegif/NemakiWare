@@ -906,8 +906,9 @@ public class ImportProfileDefinitionController {
      * "was the live session sending mail HERE".
      *
      * <p>A session we cannot attribute (running, but no repository recorded) is stopped:
-     * losing capture is recoverable by restarting IDLE, importing into a deleted profile
-     * is not. A count of {@code -1} still cannot stop a session that belongs to someone
+     * losing capture is recoverable by restarting IDLE, a live connection to a mailbox that
+     * no repository still authorises is not (the imports themselves are refused by the
+     * message loop, which reloads the profile every time). A count of {@code -1} still cannot stop a session that belongs to someone
      * else — that would act on a guess — but it no longer protects an unattributable one.
      */
     private void stopSchedulerIfThisRepositoryLosesIt(String profileId, String repositoryId,
@@ -1046,10 +1047,13 @@ public class ImportProfileDefinitionController {
                     logger.warn("stopping the IMAP IDLE thread of {} failed: {}", profileId,
                             idleShutdownFailed.getMessage());
                 }
+                // Not necessarily a race: a row that belongs to NO repository is exempt
+                // from the "this is the only row" refusal (nothing else reaches it), so an
+                // ordinary cleanup lands here too. The wording said "lost a race" for both.
                 auditRow(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, profileId,
-                        authRepository(ctx), true, "the last definition row was removed"
-                                + " concurrently; the profile is deleted", null, docId,
-                        "profile deleted: the last definition row lost a race");
+                        authRepository(ctx), true, "no definition row remains after removing"
+                                + " this one; the profile is deleted", null, docId,
+                        "profile deleted: no definition row remains");
                 Map<String, Object> raced = new LinkedHashMap<>();
                 raced.put("status", "success");
                 raced.put("deletedRow", docId);
@@ -1079,8 +1083,8 @@ public class ImportProfileDefinitionController {
         // Making this unconditional was tried and withdrawn: it puts a full walk of the config
         // database on every administrator request, and a review traced some thirty tests —
         // including two classes outside this batch — to a red result, because their fixtures
-        // answer the selector and not the walk. (That count is source reading, not a run:
-        // nothing in this batch has been executed.) What it was reaching for is real but narrow: the selector cannot
+        // answer the selector and not the walk. (That count came from reading, not from
+        // running the variant; the batch itself has since been measured.) What it was reaching for is real but narrow: the selector cannot
         // tell ONE row from a PAIR, and a delegated DELETE authorised from one twin removes
         // every row of the repository, including the other. That path resolves index-free
         // unconditionally (see delete); the reads and the writes are covered by the write

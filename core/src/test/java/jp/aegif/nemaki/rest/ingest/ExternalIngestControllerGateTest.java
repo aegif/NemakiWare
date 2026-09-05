@@ -347,6 +347,127 @@ class ExternalIngestControllerGateTest {
     }
 
     @Test
+    void aProfileBoundToNoRepository_isRefused() {
+        // A row with repositoryId == null is not a wildcard. The confinement check read
+        // "repositoryId != null && !equals(caller)", so null slipped through and a corrupt or
+        // half-migrated row acted as a profile for EVERY repository — invisible to the admin
+        // API, which is repository-confined, while the runtime used it as configuration. The
+        // service that lets an administrator delete such a row calls it "belonging to none".
+        nonAdminContext();
+        ImportProfileDefinition unowned = delegatedProfile();
+        unowned.setRepositoryId(null);
+        when(importProfileDefinitionService.get(PROF)).thenReturn(unowned);
+
+        ResponseEntity<ExternalIngestResult> res = ingest(baseRequest());
+
+        assertEquals(HttpStatus.FORBIDDEN, res.getStatusCode(),
+                "a profile bound to no repository was accepted as this repository's");
+        verifyNoInteractions(canonicalImportService);
+    }
+
+    @Test
+    void aRetryableImportRefusal_is503NotAServerError() {
+        // Every refusal this batch added to the import path ends in "retry shortly", and the
+        // status mapper matched none of its substrings — so a rebuilding index answered 500,
+        // the status the admin controller's own comment calls "what opens tickets for a
+        // condition a retry resolves". A review measured the split: the same twin state was
+        // 409 through this gate and 500 through the import.
+        CallContext ctx = nonAdminContext();
+        ImportProfileDefinition p = delegatedProfile();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER)).thenReturn(true);
+        ConnectorDefinition c = delegatedConnector();
+        when(connectorDefinitionService.get(CONN)).thenReturn(c);
+        when(ingestAuthorizationService.canUseConnectorForDelegatedProfile(ctx, REPO, c, FOLDER))
+                .thenReturn(true);
+        when(canonicalImportService.execute(eq(ctx), any(ExternalIngestRequest.class)))
+                .thenReturn(ExternalIngestResult.error("src-1", "import profile " + PROF
+                        + " exists but could not be read for this import; retry shortly"));
+
+        ResponseEntity<ExternalIngestResult> res = ingest(baseRequest());
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
+                "a read that could not be answered was reported as a server fault");
+    }
+
+    @Test
+    void aStandingTwinPairFromTheImport_is409NotAServerError() {
+        // The admin import path reaches the same state the gate refuses with 409. It answered
+        // 500 — one condition, two statuses, depending on which door the caller used.
+        CallContext ctx = nonAdminContext();
+        ImportProfileDefinition p = delegatedProfile();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER)).thenReturn(true);
+        ConnectorDefinition c = delegatedConnector();
+        when(connectorDefinitionService.get(CONN)).thenReturn(c);
+        when(ingestAuthorizationService.canUseConnectorForDelegatedProfile(ctx, REPO, c, FOLDER))
+                .thenReturn(true);
+        when(canonicalImportService.execute(eq(ctx), any(ExternalIngestRequest.class)))
+                .thenReturn(ExternalIngestResult.error("src-1", "import profile " + PROF
+                        + " has 2 definition rows; an update would write to one of them"));
+
+        ResponseEntity<ExternalIngestResult> res = ingest(baseRequest());
+
+        assertEquals(HttpStatus.CONFLICT, res.getStatusCode(),
+                "a standing pair an administrator must resolve was reported as a server fault");
+    }
+
+    @Test
+    void aGetForRepositoryTwinMessage_is409NotAServerError() {
+        // The production getForRepository wording is "more than one definition row"
+        // (singular). Matching only "definition rows" left this door at 500. A review
+        // measured the split.
+        CallContext ctx = nonAdminContext();
+        ImportProfileDefinition p = delegatedProfile();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER)).thenReturn(true);
+        ConnectorDefinition c = delegatedConnector();
+        when(connectorDefinitionService.get(CONN)).thenReturn(c);
+        when(ingestAuthorizationService.canUseConnectorForDelegatedProfile(ctx, REPO, c, FOLDER))
+                .thenReturn(true);
+        when(canonicalImportService.execute(eq(ctx), any(ExternalIngestRequest.class)))
+                .thenReturn(ExternalIngestResult.error("src-1",
+                        "import profile " + PROF
+                                + " has more than one definition row in repository '"
+                                + REPO + "'; resolve the pair first"));
+
+        ResponseEntity<ExternalIngestResult> res = ingest(baseRequest());
+
+        assertEquals(HttpStatus.CONFLICT, res.getStatusCode(),
+                "the import-path twin wording was reported as a server fault");
+    }
+
+    @Test
+    void aMailRepositoryMismatch_is403NotAServerError() {
+        // Mail early validation used to answer "Profile repository mismatch", which the
+        // status mapper did not match — 500 on the mail door, 403 through execute(). A
+        // review measured the split. The short wording is still recognised so a leftover
+        // message cannot reopen the ticket.
+        CallContext ctx = mock(CallContext.class);
+        when(ctx.getUsername()).thenReturn("admin");
+        when(httpRequest.getAttribute("CallContext")).thenReturn(ctx);
+        when(ingestAuthorizationService.isAdmin(ctx)).thenReturn(true);
+
+        ExternalIngestRequest req = baseRequest();
+        req.setSourceObjectType("message");
+        req.setFileName("note.eml");
+        req.setConnectorId(null);
+        when(canonicalImportService.executeMailImport(eq(ctx), any(ExternalIngestRequest.class)))
+                .thenReturn(ExternalIngestResult.error("src-1", "Profile repository mismatch"));
+
+        ResponseEntity<ExternalIngestResult> res = ingest(req);
+
+        assertEquals(HttpStatus.FORBIDDEN, res.getStatusCode(),
+                "a mail-path repository mismatch was reported as a server fault");
+    }
+
+    @Test
     void allGatesPass_dispatchesToCanonicalImportService() {
         CallContext ctx = nonAdminContext();
         ImportProfileDefinition p = delegatedProfile();

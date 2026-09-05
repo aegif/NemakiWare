@@ -72,6 +72,7 @@ class ConnectorLegacyIdMigrationTest {
 
     private Cloudant cloudant;
     private CloudantClientWrapper wrapper;
+    private CloudantClientPool pool;
     private ConnectorDefinitionServiceImpl service;
     private final List<AllDocsResult> pages = new ArrayList<>();
     /** Ids this test's own delete removed: a later read must not be served them. */
@@ -84,7 +85,7 @@ class ConnectorLegacyIdMigrationTest {
         // the wrong rows.
         pages.clear();
         deletedIds.clear();
-        CloudantClientPool pool = mock(CloudantClientPool.class);
+        pool = mock(CloudantClientPool.class);
         wrapper = mock(CloudantClientWrapper.class);
         cloudant = mock(Cloudant.class);
         when(pool.getClient(SystemConst.NEMAKI_CONF_DB)).thenReturn(wrapper);
@@ -574,10 +575,15 @@ class ConnectorLegacyIdMigrationTest {
                 "private ExternalIngestResult executeMailImportInternal(");
         assertTrue(mail.contains("profileHiddenOrAbsent(") && mail.contains("connectorHiddenOrAbsent("),
                 "the mail entry point's early validation reports absence again: " + mail);
-        assertTrue(mail.contains("getForRepository("),
+        assertTrue(mail.contains("resolveProfileForRepository("),
                 "the mail entry point decides the profile from whichever row the selector "
                         + "returned, so a shared profileId ends in a repository mismatch for "
                         + "an import whose own repository has the profile: " + mail);
+        String resolve = jp.aegif.nemaki.util.test.JavaSource.methodBody(canonical,
+                "private ImportProfileDefinition resolveProfileForRepository(");
+        assertTrue(resolve.contains("getForRepository("),
+                "the shared resolver skipped the index-free walk, so a same-repository "
+                        + "twin pair is chosen by selector order again: " + resolve);
         String folder = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
                 jp.aegif.nemaki.util.test.JavaSource.read(
                         "src/main/java/jp/aegif/nemaki/rest/ingest/FolderConnectorController.java"));
@@ -1064,6 +1070,77 @@ class ConnectorLegacyIdMigrationTest {
 
         assertTrue(found != null && "c-hidden-det".equals(found.getConnectorId()),
                 "a row under its deterministic id read as absent: " + found);
+    }
+
+    @Test
+    @DisplayName("a selector that THROWS falls through to the deterministic id, it does not "
+            + "escape as a 500")
+    void aFailingSelectorDoesNotEscape() {
+        // The profile twin of this wrap was locked last round; the connector get() got the
+        // same try/catch and nothing measured it. A review counted that as the sixth
+        // one-armed fix.
+        wire();
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenThrow(new RuntimeException("500 internal server error from the index"));
+        Document row = mock(Document.class);
+        when(row.getProperties()).thenReturn(connectorProps("c-wrapped", "Wrapped"));
+        when(row.getRev()).thenReturn("1-a");
+        deterministicReadAnswers("c-wrapped", row);
+
+        ConnectorDefinition found = org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> service.get("c-wrapped"),
+                "a failed selector escaped instead of falling through to the id-addressed read");
+
+        assertEquals("c-wrapped", found == null ? null : found.getConnectorId(),
+                "the deterministic id did not answer after the selector failed");
+    }
+
+    @Test
+    @DisplayName("a deterministic row whose body names another connector is not returned as that id")
+    void aDeterministicRowThatNamesAnotherConnectorIsNotReturned() {
+        wire();
+        selectorAnswersNothing();
+        Document stored = mock(Document.class);
+        when(stored.getProperties()).thenReturn(connectorProps("c-other", "Other"));
+        deterministicReadAnswers("c-asked", stored);
+
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> service.get("c-asked"),
+                "a row of c-asked whose body named c-other was returned as c-asked");
+    }
+
+    @Test
+    @DisplayName("a missing conf client on the id fallback does not escape as a 500")
+    void aMissingConfClientOnTheIdFallbackDoesNotEscape() {
+        // The profile twin of this wrap was locked last round; getConfClient() still sat
+        // outside the fallback try. A review counted the leak.
+        wire();
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenThrow(new RuntimeException("500 internal server error from the index"));
+        when(pool.getClient(SystemConst.NEMAKI_CONF_DB)).thenReturn(wrapper).thenReturn(null);
+
+        ConnectorDefinition found = org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> service.get("c-no-client"),
+                "a missing conf client on the id fallback escaped");
+        assertEquals(null, found, "a failed fallback must not invent a row");
+    }
+
+    @Test
+    @DisplayName("a transport failure on the _all_docs walk is typed not-ready, not a 500")
+    void aTransportFailureOnTheWalkIsTypedNotReady() {
+        wire();
+        when(cloudant.postAllDocs(any(PostAllDocsOptions.class))).thenAnswer(call -> {
+            ServiceCall<AllDocsResult> failed = mock(ServiceCall.class);
+            when(failed.execute()).thenThrow(new RuntimeException("connection reset by peer"));
+            return failed;
+        });
+
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> service.existsIndexFree("c-reset"),
+                "a transport failure escaped as a raw runtime exception");
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> service.countIndexFree("c-reset"),
+                "countIndexFree leaked a transport failure");
     }
 
     @Test

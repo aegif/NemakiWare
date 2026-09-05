@@ -51,6 +51,7 @@ class DlqReplayArchetypeGateTest {
         connector.setConnectorId("c1");
         connector.setSourceArchetype(archetype);
         when(connectorService.get("c1")).thenReturn(connector);
+        when(connectorService.countIndexFree("c1")).thenReturn(1);
 
         for (String[] wire : new String[][]{
                 {"connectorDefinitionService"}, {"canonicalImportService"}}) {

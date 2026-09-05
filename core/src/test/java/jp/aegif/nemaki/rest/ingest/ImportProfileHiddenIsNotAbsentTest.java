@@ -436,7 +436,8 @@ class ImportProfileHiddenIsNotAbsentTest {
     void anUnattributableSessionIsStopped() {
         // "Which repository does this session serve" is answerable only while the session
         // recorded it. No answer is not "another repository's" — losing capture is undone by
-        // restarting IDLE, importing into a deleted profile is not.
+        // restarting IDLE, a live connection nobody can close is not. (The imports
+        // themselves are refused by the message loop, which reloads the profile.)
         adminCtx();
         when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(profile());
         when(importProfileDefinitionService.delete(eq(PROF), eq(REPO))).thenReturn(1);

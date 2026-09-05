@@ -45,6 +45,15 @@ class CanonicalImportServiceTest {
         service.setContentService(contentService);
         service.setVersioningService(versioningService);
         service.setIngestMetadataService(ingestMetadataService);
+        lenient().when(connectorService.countIndexFree(anyString())).thenReturn(1);
+        lenient().doAnswer(inv -> {
+            ImportProfileDefinition row = profileService.get(inv.getArgument(0));
+            String repo = inv.getArgument(1);
+            if (row != null && repo != null && repo.equals(row.getRepositoryId())) {
+                return row;
+            }
+            return null;
+        }).when(profileService).getForRepository(anyString(), anyString());
     }
 
     @Test
@@ -66,6 +75,7 @@ class CanonicalImportServiceTest {
         ImportProfileDefinition profile = new ImportProfileDefinition();
         profile.setProfileId("p1");
         profile.setEnabled(false);
+        profile.setRepositoryId("bedroom");
         when(profileService.get("p1")).thenReturn(profile);
 
         ExternalIngestRequest req = new ExternalIngestRequest();
@@ -84,6 +94,10 @@ class CanonicalImportServiceTest {
         ImportProfileDefinition profile = new ImportProfileDefinition();
         profile.setProfileId("p1");
         profile.setEnabled(true);
+        // A profile bound to no repository is no longer usable from one: the confinement
+        // check read "repositoryId != null && !equals(caller)", so a row with none acted as a
+        // wildcard for every repository. These fixtures were relying on that.
+        profile.setRepositoryId("bedroom");
         when(profileService.get("p1")).thenReturn(profile);
         when(connectorService.get("no-conn")).thenReturn(null);
 
@@ -151,6 +165,38 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void testExecuteRefusesAProfileBoundToNoRepository() {
+        // The non-admin gate locks this; execute() is the door an ADMIN import comes through,
+        // and it had the same hole with no lock of its own. A row with repositoryId == null is
+        // not a wildcard: the confinement check read "repositoryId != null && !equals(caller)",
+        // so it passed and served as configuration for every repository while staying
+        // invisible to the repository-confined admin API.
+        //
+        // The answer is "not found", not "scoped to repository": this door now resolves
+        // through the repository-confined index-free walk, which does not hand back an
+        // unowned row at all. What matters to the lock is that the import does not run.
+        ImportProfileDefinition unowned = new ImportProfileDefinition();
+        unowned.setProfileId("p1");
+        unowned.setEnabled(true);
+        unowned.setTargetFolderId("folder-1");
+        unowned.setRepositoryId(null);
+        when(profileService.get("p1")).thenReturn(unowned);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(), "a profile bound to no repository was used by one");
+        assertTrue(result.errors().get(0).contains("not found"),
+                "the unowned row was resolved as this repository's: " + result.errors().get(0));
+        verify(contentService, never()).update(any(), any(), any());
+    }
+
+    @Test
     void testExecuteProfileRepositoryMismatch() {
         ImportProfileDefinition profile = new ImportProfileDefinition();
         profile.setProfileId("p1");
@@ -174,6 +220,141 @@ class CanonicalImportServiceTest {
         // rule elsewhere in this batch deliberately avoids.
         assertTrue(result.errors().get(0).contains("not found"),
                 "a repository with no row of this profile was told about another repository's: "
+                        + result.errors().get(0));
+    }
+
+    @Test
+    void anUnownedProfile_isReResolvedForTheCallerRepository() {
+        // get() can hand back a row with no repositoryId (the leftover migration leaves).
+        // Treating that as "already resolved" skipped getForRepository, so a valid row in
+        // the caller's repository was never used. A review named the shadow.
+        ImportProfileDefinition unowned = new ImportProfileDefinition();
+        unowned.setProfileId("p1");
+        unowned.setEnabled(true);
+        unowned.setRepositoryId(null);
+        ImportProfileDefinition mine = new ImportProfileDefinition();
+        mine.setProfileId("p1");
+        mine.setEnabled(true);
+        mine.setRepositoryId("bedroom");
+        when(profileService.get("p1")).thenReturn(unowned);
+        doReturn(mine).when(profileService).getForRepository("p1", "bedroom");
+        when(connectorService.get("no-conn")).thenReturn(null);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("no-conn");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+        assertFalse(result.isSuccess());
+        assertTrue(result.errors().get(0).contains("not found"),
+                "the caller's own row was not used after get() returned an unowned leftover: "
+                        + result.errors().get(0));
+        verify(profileService).getForRepository("p1", "bedroom");
+    }
+
+    @Test
+    void aSameRepositoryTwinPair_isRefusedNotChosenBySelectorOrder() {
+        // get() returning the caller's own repository skipped getForRepository, so a
+        // standing pair in that repository was resolved by index order. A review named it.
+        ImportProfileDefinition one = new ImportProfileDefinition();
+        one.setProfileId("p1");
+        one.setEnabled(true);
+        one.setRepositoryId("bedroom");
+        when(profileService.get("p1")).thenReturn(one);
+        doThrow(new ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException(
+                "import profile p1 has more than one definition row in repository"
+                        + " 'bedroom'; resolve the pair first"))
+                .when(profileService).getForRepository("p1", "bedroom");
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+        assertFalse(result.isSuccess());
+        assertTrue(result.errors().get(0).contains("more than one definition row"),
+                "a same-repository pair was chosen by selector order: " + result.errors().get(0));
+    }
+
+    @Test
+    void aWalkMissDoesNotResurrectASelectorRow() {
+        // resolveProfileForRepository used to return the selector row when the walk
+        // answered null. The gate treats that disagreement as retry; execute imported
+        // with a deleted or stale definition. A review named the fallback.
+        ImportProfileDefinition stale = new ImportProfileDefinition();
+        stale.setProfileId("p1");
+        stale.setEnabled(true);
+        stale.setRepositoryId("bedroom");
+        when(profileService.get("p1")).thenReturn(stale);
+        doReturn(null).when(profileService).getForRepository("p1", "bedroom");
+        when(profileService.existsIndexFree("p1", "bedroom")).thenReturn(true);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+        assertFalse(result.isSuccess());
+        assertTrue(result.errors().get(0).contains("retry shortly"),
+                "a walk miss resurrected the selector row: " + result.errors().get(0));
+    }
+
+    @Test
+    void aConnectorTwinPair_isRefusedNotChosenBySelectorOrder() {
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setRepositoryId("bedroom");
+        profile.setTargetFolderId("folder-1");
+        when(profileService.get("p1")).thenReturn(profile);
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        when(connectorService.get("c1")).thenReturn(connector);
+        when(connectorService.countIndexFree("c1")).thenReturn(2);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+        assertFalse(result.isSuccess());
+        assertTrue(result.errors().get(0).contains("more than one definition row"),
+                "a connector pair was chosen by selector order: " + result.errors().get(0));
+    }
+
+    @Test
+    void aConnectorSelectorHitWithWalkMiss_isRetryNotTheSelectorRow() {
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setRepositoryId("bedroom");
+        profile.setTargetFolderId("folder-1");
+        when(profileService.get("p1")).thenReturn(profile);
+        ConnectorDefinition leftover = new ConnectorDefinition();
+        leftover.setConnectorId("c1");
+        leftover.setEnabled(true);
+        when(connectorService.get("c1")).thenReturn(leftover);
+        when(connectorService.countIndexFree("c1")).thenReturn(0);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+        assertFalse(result.isSuccess());
+        assertTrue(result.errors().get(0).contains("retry shortly"),
+                "a selector leftover was imported after the walk said none: "
                         + result.errors().get(0));
     }
 
@@ -215,6 +396,8 @@ class CanonicalImportServiceTest {
         profile.setProfileId("p1");
         profile.setEnabled(true);
         profile.setTargetFolderId(null);
+        // See the note above: a profile bound to no repository is no longer a wildcard.
+        profile.setRepositoryId("bedroom");
         when(profileService.get("p1")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();

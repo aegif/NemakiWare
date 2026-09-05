@@ -357,6 +357,7 @@ class IngestEvidenceSnapshotTest {
         profile.setDelegated(true);
         profile.setCreatedByUserId("otsuka");
         org.mockito.Mockito.when(profileService.get("p1")).thenReturn(profile);
+        org.mockito.Mockito.when(profileService.getForRepository("p1", "bedroom")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();
         connector.setConnectorId("c1");
@@ -364,6 +365,7 @@ class IngestEvidenceSnapshotTest {
         connector.setSourceArchetype(jp.aegif.nemaki.rest.ingest.SourceArchetype.FILE_SHARE);
         connector.setSourceSystem("google_drive");
         org.mockito.Mockito.when(connectorService.get("c1")).thenReturn(connector);
+        org.mockito.Mockito.when(connectorService.countIndexFree("c1")).thenReturn(1);
         org.mockito.Mockito.when(objectService.createDocument(
                         org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.eq("bedroom"),
@@ -496,6 +498,7 @@ class IngestEvidenceSnapshotTest {
         profile.setDedupePolicy("create_new_version");
         profile.setUpdatePolicy(updatePolicy);
         org.mockito.Mockito.when(profileService.get("p1")).thenReturn(profile);
+        org.mockito.Mockito.when(profileService.getForRepository("p1", "bedroom")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();
         connector.setConnectorId("c1");
@@ -503,6 +506,7 @@ class IngestEvidenceSnapshotTest {
         connector.setSourceArchetype(jp.aegif.nemaki.rest.ingest.SourceArchetype.FILE_SHARE);
         connector.setSourceSystem("google_drive");
         org.mockito.Mockito.when(connectorService.get("c1")).thenReturn(connector);
+        org.mockito.Mockito.when(connectorService.countIndexFree("c1")).thenReturn(1);
 
         // An already-imported document whose recorded hash MATCHES the incoming bytes.
         Aspect integration = new Aspect();
@@ -834,6 +838,7 @@ class IngestEvidenceSnapshotTest {
         profile.setTargetFolderId("folder-1");
         profile.setRepositoryId("bedroom");
         org.mockito.Mockito.when(profileService.get("p1")).thenReturn(profile);
+        org.mockito.Mockito.when(profileService.getForRepository("p1", "bedroom")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();
         connector.setConnectorId("c1");
@@ -842,6 +847,7 @@ class IngestEvidenceSnapshotTest {
                 jp.aegif.nemaki.rest.ingest.SourceArchetype.COMPOUND_NOTE);
         connector.setSourceSystem("notion");
         org.mockito.Mockito.when(connectorService.get("c1")).thenReturn(connector);
+        org.mockito.Mockito.when(connectorService.countIndexFree("c1")).thenReturn(1);
         // Every argument matched loosely: an attachment request differs from the page one in
         // content stream and mime type, and a strict stub silently returns null (the document
         // "is not found after creation" and the hook never runs).
@@ -943,6 +949,7 @@ class IngestEvidenceSnapshotTest {
         profile.setTargetFolderId("folder-1");
         profile.setRepositoryId("bedroom");
         org.mockito.Mockito.when(profileService.get("p1")).thenReturn(profile);
+        org.mockito.Mockito.when(profileService.getForRepository("p1", "bedroom")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();
         connector.setConnectorId("c1");
@@ -951,6 +958,7 @@ class IngestEvidenceSnapshotTest {
                 jp.aegif.nemaki.rest.ingest.SourceArchetype.BUSINESS_RECORD);
         connector.setSourceSystem("salesforce");
         org.mockito.Mockito.when(connectorService.get("c1")).thenReturn(connector);
+        org.mockito.Mockito.when(connectorService.countIndexFree("c1")).thenReturn(1);
         org.mockito.Mockito.when(objectService.createDocument(
                         org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.eq("bedroom"),
@@ -1080,6 +1088,7 @@ class IngestEvidenceSnapshotTest {
         profile.setTargetFolderId("folder-1");
         profile.setRepositoryId("bedroom");
         org.mockito.Mockito.when(profileService.get("p1")).thenReturn(profile);
+        org.mockito.Mockito.when(profileService.getForRepository("p1", "bedroom")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();
         connector.setConnectorId("c1");
@@ -1087,6 +1096,7 @@ class IngestEvidenceSnapshotTest {
         connector.setSourceArchetype(jp.aegif.nemaki.rest.ingest.SourceArchetype.CHAT_CONTEXT);
         connector.setSourceSystem("slack");
         org.mockito.Mockito.when(connectorService.get("c1")).thenReturn(connector);
+        org.mockito.Mockito.when(connectorService.countIndexFree("c1")).thenReturn(1);
         org.mockito.Mockito.when(objectService.createDocument(
                         org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.eq("bedroom"),

@@ -122,6 +122,7 @@ class IngestCaptureBoundaryTest {
         profile.setTargetFolderId("folder-1");
         profile.setRepositoryId("bedroom");
         when(profileService.get("p1")).thenReturn(profile);
+        when(profileService.getForRepository("p1", "bedroom")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();
         connector.setConnectorId("c1");
@@ -129,6 +130,7 @@ class IngestCaptureBoundaryTest {
         connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
         connector.setSourceSystem("acme");
         when(connectorService.get("c1")).thenReturn(connector);
+        when(connectorService.countIndexFree("c1")).thenReturn(1);
         when(contentDaoService.getChildren("bedroom", "folder-1")).thenReturn(children);
 
         // createDocument records its own position in the same sequence as the intent write.
@@ -484,6 +486,7 @@ class IngestCaptureBoundaryTest {
         versionUp.setDedupePolicy("update_existing");
         versionUp.setUpdatePolicy("always_version_up");
         when(profileService.get("p1")).thenReturn(versionUp);
+        when(profileService.getForRepository("p1", "bedroom")).thenReturn(versionUp);
 
         org.mockito.Mockito.doAnswer(inv -> {
             store.events.add("checkOut");
@@ -514,6 +517,7 @@ class IngestCaptureBoundaryTest {
         versionUp.setDedupePolicy("update_existing");
         versionUp.setUpdatePolicy("always_version_up");
         when(profileService.get("p1")).thenReturn(versionUp);
+        when(profileService.getForRepository("p1", "bedroom")).thenReturn(versionUp);
         store.openSucceeds = false;
 
         ExternalIngestResult result = service.execute(ctx(), request("src-1"));
@@ -540,6 +544,7 @@ class IngestCaptureBoundaryTest {
         replacing.setRepositoryId("bedroom");
         replacing.setDedupePolicy("replace");
         when(profileService.get("p1")).thenReturn(replacing);
+        when(profileService.getForRepository("p1", "bedroom")).thenReturn(replacing);
         store.openSucceeds = false;
 
         ExternalIngestResult result = service.execute(ctx(), request("src-1"));
@@ -568,6 +573,7 @@ class IngestCaptureBoundaryTest {
         metadataOnly.setDedupePolicy("update_existing");
         metadataOnly.setUpdatePolicy("update_metadata_only");
         when(profileService.get("p1")).thenReturn(metadataOnly);
+        when(profileService.getForRepository("p1", "bedroom")).thenReturn(metadataOnly);
         store.openSucceeds = false;
 
         ExternalIngestResult result = service.execute(ctx(), request("src-1"));
@@ -590,6 +596,7 @@ class IngestCaptureBoundaryTest {
         replacing.setRepositoryId("bedroom");
         replacing.setDedupePolicy("replace");
         when(profileService.get("p1")).thenReturn(replacing);
+        when(profileService.getForRepository("p1", "bedroom")).thenReturn(replacing);
 
         ExternalIngestResult result = service.execute(ctx(), request("src-1"));
 

@@ -195,8 +195,13 @@ public class ImapConnectorAdapter {
         if (store == null || !store.isConnected()) {
             throw new MessagingException("Not connected — call connect() first");
         }
-
-        idleRunning = true;
+        // stopIdle can run after the session was registered and before this loop is
+        // entered. Writing idleRunning=true here used to re-arm a stopped adapter, so a
+        // DELETE that had already taken the session out of the registry left a live
+        // connection nobody could stop. A review named the window.
+        if (!armIdle()) {
+            throw new MessagingException("IDLE was stopped before start");
+        }
         Folder folder = store.getFolder(folderName);
         folder.open(Folder.READ_ONLY);
         idleFolder = folder;
@@ -267,6 +272,7 @@ public class ImapConnectorAdapter {
 
     /** Stop the IDLE loop and wait for the thread to exit. */
     public void stopIdle() {
+        stopRequested.set(true);
         idleRunning = false;
         if (idleFolder != null && idleFolder.isOpen()) {
             try { idleFolder.close(false); } catch (Exception e) { /* triggers FolderClosedException in idle loop */ }
@@ -282,8 +288,30 @@ public class ImapConnectorAdapter {
     }
 
     private volatile boolean idleRunning;
+    private final java.util.concurrent.atomic.AtomicBoolean stopRequested =
+            new java.util.concurrent.atomic.AtomicBoolean();
     private volatile Thread idleThread;
     private volatile Folder idleFolder;
+
+    /**
+     * Claim the loop. False when {@link #stopIdle()} has already run — the only thing
+     * that keeps a late {@link #startIdle} from writing {@code idleRunning} back to true.
+     */
+    boolean armIdle() {
+        if (stopRequested.get()) {
+            return false;
+        }
+        idleRunning = true;
+        if (stopRequested.get()) {
+            idleRunning = false;
+            return false;
+        }
+        return true;
+    }
+
+    boolean isIdleRunning() {
+        return idleRunning;
+    }
 
     /** Set the thread running the IDLE loop (called by scheduler after thread start). */
     public void setIdleThread(Thread thread) { this.idleThread = thread; }

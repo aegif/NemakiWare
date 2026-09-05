@@ -53,9 +53,22 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
     public ImportProfileDefinition get(String profileId) {
         // Null means "no such profile", not a crash — see ConnectorDefinitionServiceImpl.get.
         if (profileId == null) return null;
-        List<ImportProfileDefinition> results = findBySelector(Map.of(
-                "type", ImportProfileDefinition.DOC_TYPE,
-                "profileId", profileId));
+        // The selector call is WRAPPED. It was not, so a Mango read that threw left this
+        // method as a raw RuntimeException — a 500 in front of GET, PUT and ownership
+        // transfer, the very verbs this batch made index-free. (The plain DELETE was fixed by
+        // deleting its selector read; a review found the other three still exposed.) A failed
+        // selector is not an answer: fall through to the id-addressed read, which needs no
+        // index, and let it decide.
+        List<ImportProfileDefinition> results;
+        try {
+            results = findBySelector(Map.of(
+                    "type", ImportProfileDefinition.DOC_TYPE,
+                    "profileId", profileId));
+        } catch (RuntimeException selectorFailed) {
+            logger.debug("selector read for profile {} failed; falling back to the"
+                    + " deterministic id: {}", profileId, selectorFailed.getMessage());
+            results = List.of();
+        }
         if (!results.isEmpty()) {
             return results.get(0);
         }
@@ -64,8 +77,8 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         // including the import path, which resolves the profile through an index-free walk
         // and then looked it up again HERE and lost it. One id-addressed read, on the miss
         // path only. A review found the round trip.
-        CloudantClientWrapper client = getConfClient();
         try {
+            CloudantClientWrapper client = getConfClient();
             com.ibm.cloud.cloudant.v1.model.Document row = readByDeterministicId(
                     client.getClient(), client.getDatabaseName(), profileId);
             return row == null ? null : fromRawDoc(row);
@@ -201,8 +214,12 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         // A row that names NO repository belongs to none: the migration leaves it deliberately,
         // every repository-confined read skips it, and yet it counts towards the global row
         // count that refuses writes — so it made PUT answer 409 for ever while both delete
-        // verbs refused to touch it. Any administrator may remove it; there is no repository
-        // whose profile could disappear underneath them. A review found the row unreachable.
+        // verbs refused to touch it. Any administrator may remove it: no repository can be
+        // using it, because the ingest paths now refuse a profile bound to no repository.
+        // (They did not: the confinement check read "repositoryId != null && !equals(caller)",
+        // so such a row acted as a wildcard profile for every repository — a second review
+        // found this sentence claiming something the runtime contradicted, and both were
+        // fixed in the same round.)
         boolean unowned = props != null && props.get("repositoryId") == null;
         if (props == null
                 || !ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))
@@ -374,14 +391,17 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
             if (!(rid instanceof String) || ((String) rid).isBlank()) {
                 // Every supported writer has required repositoryId since the profile
                 // service's first commit, so this is a malformed row. Rewriting it under a
-                // deterministic id would produce a row that the repository-confined delete
-                // and the ?docId= resolver can never reach — an unrepairable state through
-                // the API. Left in place and reported until repaired directly; a round-3
-                // review named the gap.
+                // deterministic id would hide it from the repository-confined delete. Left
+                // in place and reported; any administrator can remove it with ?docId=. A
+                // review found the ERROR still saying "repair the database" after the
+                // delete path had been opened.
                 result.failures.add(id + " (an import_profile_definition row without a"
-                        + " usable repositoryId is malformed and is not migrated)");
+                        + " usable repositoryId is malformed and is not migrated; delete it"
+                        + " with DELETE .../admin/import-profiles/" + profileId + "?docId="
+                        + id + ")");
                 logger.error("Import profile row {} has no usable repositoryId; it is left in"
-                        + " place and must be repaired in the database", id);
+                        + " place. Any administrator can remove it with DELETE"
+                        + " .../admin/import-profiles/{}?docId={}", id, profileId, id);
                 return;
             }
             String deterministicId = ImportProfileDefinition.DOC_TYPE + ":" + profileId;
@@ -630,7 +650,12 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         if (profileId == null || repositoryId == null) {
             return null;
         }
-        CloudantClientWrapper client = getConfClient();
+        CloudantClientWrapper client;
+        try {
+            client = getConfClient();
+        } catch (RuntimeException couldNotAsk) {
+            throw new ProfileIndexNotReadyException(couldNotAsk.getMessage());
+        }
         String dbName = client.getDatabaseName();
         ImportProfileDefinition[] found = new ImportProfileDefinition[1];
         java.util.function.Consumer<com.ibm.cloud.cloudant.v1.model.DocsResultRow> perRow = row -> {
@@ -690,11 +715,72 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
     }
 
     @Override
+    public ImportProfileDefinition getOwnedRowIndexFree(String profileId) {
+        if (profileId == null) {
+            return null;
+        }
+        CloudantClientWrapper client;
+        try {
+            client = getConfClient();
+        } catch (RuntimeException couldNotAsk) {
+            throw new ProfileIndexNotReadyException(couldNotAsk.getMessage());
+        }
+        String dbName = client.getDatabaseName();
+        ImportProfileDefinition[] found = new ImportProfileDefinition[1];
+        java.util.function.Consumer<com.ibm.cloud.cloudant.v1.model.DocsResultRow> perRow = row -> {
+            String id = row.getId();
+            if (row.getError() != null || id == null) {
+                throw new IllegalStateException("import profile " + profileId
+                        + " cannot be looked up: a row of '" + dbName
+                        + "' could not be read");
+            }
+            if (id.startsWith("_design/")) {
+                return;
+            }
+            Map<String, Object> props = row.getDoc() != null ? row.getDoc().getProperties() : null;
+            if (props == null) {
+                throw new IllegalStateException("import profile " + profileId
+                        + " cannot be looked up: row " + id + " came back without a body");
+            }
+            if (!ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))
+                    || !profileId.equals(props.get("profileId"))
+                    || props.get("repositoryId") == null) {
+                return;
+            }
+            Map<String, Object> content = contentOnly(props);
+            content.remove("type");
+            if (found[0] != null) {
+                throw new ProfileHasTwinRowsException("import profile " + profileId
+                        + " has more than one owned definition row; resolve the pair before"
+                        + " starting a capture that is keyed by profileId alone");
+            }
+            try {
+                found[0] = MAPPER.convertValue(content, ImportProfileDefinition.class);
+            } catch (Exception e) {
+                throw new IllegalStateException("import profile " + profileId
+                        + " cannot be looked up: row " + id
+                        + " could not be read as a profile (" + e.getMessage() + ")");
+            }
+        };
+        try {
+            NemakiConfAllDocs.forEachRow(client.getClient(), dbName, perRow);
+        } catch (IllegalStateException unprovable) {
+            throw new ProfileIndexNotReadyException(unprovable.getMessage());
+        }
+        return found[0];
+    }
+
+    @Override
     public boolean existsIndexFree(String profileId, String repositoryId) {
         if (profileId == null || repositoryId == null) {
             return false;
         }
-        CloudantClientWrapper client = getConfClient();
+        CloudantClientWrapper client;
+        try {
+            client = getConfClient();
+        } catch (RuntimeException couldNotAsk) {
+            throw new ProfileIndexNotReadyException(couldNotAsk.getMessage());
+        }
         try {
             // Confined to the caller's repository: a row hidden in repository B must not
             // turn repository A's 404 into a 503 — that discloses B's row exists, which
@@ -1171,10 +1257,10 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
             return "Delete the unwanted row first (DELETE .../admin/import-profiles/"
                     + profileId + "?docId=...).";
         }
-        if (here == rowsAnywhere) {
-            // Every row is here yet no more than one is: the two counts disagree.
-            return "The rows could not be located; retry shortly.";
-        }
+        // There was a third arm here for "here == rowsAnywhere". It cannot happen: this
+        // method is called only when rowsAnywhere > 1, and here > 1 has already returned, so
+        // here <= 1 < rowsAnywhere always. A review found the dead arm; an unreachable branch
+        // is a claim nothing can measure.
         return "The other " + (rowsAnywhere - here) + " row(s) are not in this repository:"
                 + " another repository's administrator must delete theirs (DELETE without"
                 + " docId), and a row that belongs to no repository is removed by its docId.";

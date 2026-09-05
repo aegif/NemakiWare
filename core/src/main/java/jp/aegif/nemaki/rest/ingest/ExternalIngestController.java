@@ -258,8 +258,28 @@ public class ExternalIngestController {
         String firstError = result.errors().get(0);
         if (firstError == null) return HttpStatus.INTERNAL_SERVER_ERROR;
         firstError = firstError.toLowerCase();
+        // The retryable arms come FIRST, and before "not found": these messages name a read
+        // that could not be answered, and one of them ends in "...could not be read ...;
+        // retry shortly" — which contains "not found" nowhere but did land on the 500
+        // fallback. Every refusal this batch added to the import path was answering 500, the
+        // status the admin controller's own comment calls "what opens tickets for a condition
+        // a retry resolves". The same twin pair was 409 through the non-admin gate and 500
+        // here. A review measured the split.
+        if (firstError.contains("retry shortly") || firstError.contains("temporarily unavailable")) {
+            return HttpStatus.SERVICE_UNAVAILABLE;
+        }
+        if (firstError.contains("definition rows")
+                || firstError.contains("more than one definition row")
+                || firstError.contains("more than one owned definition row")) {
+            // A standing pair an administrator has to resolve — not a retry, not a 500.
+            // getForRepository says "more than one definition row" (singular); the update
+            // path says "definition rows". Matching only the plural left the import door
+            // at 500. A review measured the split.
+            return HttpStatus.CONFLICT;
+        }
         if (firstError.contains("not found")) return HttpStatus.NOT_FOUND;
-        if (firstError.contains("not allowed") || firstError.contains("scoped to repository")) return HttpStatus.FORBIDDEN;
+        if (firstError.contains("not allowed") || firstError.contains("scoped to repository")
+                || firstError.contains("repository mismatch")) return HttpStatus.FORBIDDEN;
         if (firstError.contains("disabled") || firstError.contains("is required")
                 || firstError.contains("no resolvable")) return HttpStatus.BAD_REQUEST;
         return HttpStatus.INTERNAL_SERVER_ERROR;
@@ -408,7 +428,15 @@ public class ExternalIngestController {
                     "unknown", "Admin-managed profile");
         }
         // Repo must match — non-admins cannot route a profile across repos.
-        if (profile.getRepositoryId() != null && !profile.getRepositoryId().equals(repositoryId)) {
+        // A row that names NO repository is not a wildcard. The guard used to pass it
+        // through (null fails the != null test), so a corrupt or half-migrated row acted
+        // as a profile for EVERY repository — invisible to the admin API, which is
+        // repository-confined, while the runtime happily used it as configuration. The
+        // service that lets an administrator delete such a row says plainly that it
+        // "belongs to none"; this is the other half of that sentence. A review found the
+        // two disagreeing.
+        if (profile.getRepositoryId() == null
+                || !profile.getRepositoryId().equals(repositoryId)) {
             return new Denial(HttpStatus.FORBIDDEN, DenialReason.PROFILE_REPO_MISMATCH,
                     "unknown", "Profile is not bound to this repository");
         }
