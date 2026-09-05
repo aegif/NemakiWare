@@ -862,6 +862,16 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                         + " profile and is not being scheduled ({})", id, e.getMessage());
                 return;
             }
+            if (def.getProfileId() == null || def.getProfileId().isBlank()) {
+                // Deserialisable but with no identity. The per-row skip above only caught
+                // rows that FAILED to deserialise; this one entered the schedule, and the
+                // delegated tick then put a null id into a ConcurrentHashMap key set — an NPE
+                // that escaped to the poll's outer catch and stopped every profile after it.
+                // A review traced the second shape of "one broken row".
+                logger.error("scheduled-profile enumeration: row {} has no profileId and is"
+                        + " not being scheduled", id);
+                return;
+            }
             if (def.isEnabled() && def.isSchedulerEnabled()) {
                 scheduled.add(def);
             }

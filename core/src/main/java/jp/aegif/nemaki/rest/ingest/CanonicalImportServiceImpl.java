@@ -115,6 +115,19 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         this.integrationSettingsService = service;
     }
 
+    private IngestAuthorizationService ingestAuthorizationService;
+
+    /**
+     * Optional wiring for the delegated re-check below. The manual gate, the scheduler, the
+     * webhook and IDLE each authorise a delegated profile and then hand this service a request
+     * that it resolves independently — so the authorisation has to be re-asked HERE, against
+     * the folder the write actually lands in, or it is only as good as the path that built the
+     * request. The stamps carry the manual gate's decision; this carries every other path's.
+     */
+    public void setIngestAuthorizationService(IngestAuthorizationService ingestAuthorizationService) {
+        this.ingestAuthorizationService = ingestAuthorizationService;
+    }
+
     public void setIngestMetadataService(IngestMetadataService ingestMetadataService) {
         this.ingestMetadataService = ingestMetadataService;
     }
@@ -187,9 +200,12 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * authorises this caller for the new folder. A review showed the reasoning that had this
      * deferred ("the update itself required cmis:all") was answering about the wrong person.
      *
-     * <p>Null fingerprint means no gate ran (an administrator's own import) and is left
-     * alone: this check narrows a delegated caller to what was authorised, it is not a second
-     * authorisation of its own.
+     * <p>A null fingerprint means no stamp reached this request. That is NOT the same as "an
+     * administrator's own import", which is what this note used to claim: the scheduler,
+     * webhook and IDLE paths authorise a delegated profile and then build their own requests,
+     * and until they stamped them too, every automatic delegated capture skipped this check. A
+     * review found the claim and the paths. Null is still left alone — a check that refused
+     * unstamped requests would refuse admin imports, which no gate ever authorises.
      */
     private ExternalIngestResult refuseIfNotTheAuthorizedRow(ExternalIngestRequest request,
             ImportProfileDefinition resolved, String requestId) {
@@ -570,6 +586,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (mailProfile != null && mailProfile.isPreserveOriginalEml() && rawEmlBytes.length > 0) {
                 try {
                     ExternalIngestRequest emlReq = new ExternalIngestRequest();
+                    // A derived write lands in the same folder as the object it came from and
+                    // inherits the same authorisation. Dropping the stamps made every child an
+                    // ungated import — and note's files_only default writes ONLY children, so
+                    // for that archetype nothing was checked at all. A review found it.
+                    request.copyAuthorizationStampsTo(emlReq);
                     emlReq.setProfileId(request.getProfileId());
                     emlReq.setConnectorId(request.getConnectorId());
                     emlReq.setRepositoryId(request.getRepositoryId());
@@ -618,6 +639,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             for (ParsedAttachment att : parsed.attachments()) {
                 try {
                     ExternalIngestRequest attReq = new ExternalIngestRequest();
+                    request.copyAuthorizationStampsTo(attReq);
                     attReq.setProfileId(request.getProfileId());
                     attReq.setConnectorId(request.getConnectorId());
                     attReq.setRepositoryId(request.getRepositoryId());
@@ -829,6 +851,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 if (!(attObj instanceof Map<?, ?> attMap)) continue;
                 try {
                     ExternalIngestRequest attReq = new ExternalIngestRequest();
+                    request.copyAuthorizationStampsTo(attReq);
                     attReq.setProfileId(request.getProfileId());
                     attReq.setConnectorId(request.getConnectorId());
                     attReq.setRepositoryId(request.getRepositoryId());
@@ -2848,6 +2871,37 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (targetFolderId == null || targetFolderId.isBlank()) {
             return ExternalIngestResult.error(requestId,
                     "Profile has no resolvable target folder (neither targetFolderId nor targetFolderPath)");
+        }
+
+        // The folder cmis:all was checked on must be the folder this writes into. The
+        // fingerprint above compares the ROW, and a row can name a path instead of an id: the
+        // path re-resolves here, so moving the authorised folder away and putting another at
+        // the same path leaves the row — and its fingerprint — identical. A review found the
+        // gap. Absent stamp means no gate ran and this check does not apply.
+        String authorizedFolder = request.getAuthorizedTargetFolderId();
+        if (authorizedFolder != null && !authorizedFolder.equals(targetFolderId)) {
+            return ExternalIngestResult.error(requestId, "import profile "
+                    + request.getProfileId() + " now resolves to a different target folder than"
+                    + " the one this import was authorised against. Retry shortly.");
+        }
+
+        // And for a DELEGATED profile, ask the authorisation itself — against the folder this
+        // write lands in, not the one some earlier step read. The stamps above only reach
+        // requests the manual gate built; the scheduler, the webhook and IDLE authorise a
+        // profile and then construct their own requests in a dozen orchestrators, so a target
+        // that moved between their check and this write was never re-examined. A review
+        // enumerated those paths. Missing wiring refuses rather than permits.
+        if (profile.isDelegated() && callContext != null) {
+            if (ingestAuthorizationService == null) {
+                return ExternalIngestResult.error(requestId, "delegated import cannot be"
+                        + " authorised: the authorization service is not available");
+            }
+            if (!ingestAuthorizationService.canManageProfileForFolder(
+                    callContext, repositoryId, targetFolderId)) {
+                return ExternalIngestResult.error(requestId, "cmis:all on the target folder of"
+                        + " import profile " + request.getProfileId() + " is required and was"
+                        + " not held when this import ran");
+            }
         }
 
         // Everything the row must carry is known by now, and nothing has been written yet.

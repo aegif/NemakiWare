@@ -1242,6 +1242,31 @@ class ImportProfileLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("a schedulable row with no profileId is skipped, not scheduled")
+    void anIdentitylessRowIsNotScheduled() {
+        // The per-row skip caught rows that FAILED to deserialise. A row that deserialises but
+        // has no profileId went into the schedule, and the delegated tick then put a null id
+        // into a key set — an NPE that escaped to the poll's outer catch and stopped every
+        // profile after it. One broken row, a second shape. A review traced it.
+        wire();
+        Map<String, Object> nameless = profileProps("p-fine", "Fine");
+        nameless.remove("profileId");
+        nameless.put("enabled", true);
+        nameless.put("schedulerEnabled", true);
+        Map<String, Object> good = profileProps("p-fine", "Fine");
+        good.put("enabled", true);
+        good.put("schedulerEnabled", true);
+        listingAnswers(List.of(row("nameless-row", nameless, "1-a"),
+                row("import_profile_definition:p-fine", good, "1-b")));
+
+        List<ImportProfileDefinition> scheduled = service.listScheduledIndexFree();
+
+        assertEquals(1, scheduled.size(),
+                "a row with no profileId was scheduled: " + scheduled);
+        assertEquals("p-fine", scheduled.get(0).getProfileId());
+    }
+
+    @Test
     @DisplayName("a row whose repositoryId is BLANK is removable by its docId too")
     void aBlankRepositoryRowIsReachable() {
         // The migration classifies null and blank alike as malformed and tells the operator to

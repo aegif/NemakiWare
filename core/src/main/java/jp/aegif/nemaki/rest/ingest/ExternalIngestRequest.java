@@ -59,8 +59,35 @@ public class ExternalIngestRequest {
     @JsonIgnore
     private String authorizedProfileFingerprint;
 
+    /**
+     * The concrete folder id the delegated gate checked {@code cmis:all} on.
+     *
+     * <p>The fingerprint above carries the profile's {@code targetFolderPath} as text, and a
+     * path is not a folder: an administrator may save a delegated profile with a path only,
+     * and the import re-resolves it. Move the authorised folder away and put another one at
+     * the same path and the row — and its fingerprint — never change. What was authorised was
+     * an object, so that is what is carried. {@link JsonIgnore} for the same reason as above.
+     */
+    @JsonIgnore
+    private String authorizedTargetFolderId;
+
     public ExternalIngestRequest() {
         this.requestId = UUID.randomUUID().toString();
+    }
+
+    @JsonIgnore
+    public String getAuthorizedTargetFolderId() { return authorizedTargetFolderId; }
+
+    @JsonIgnore
+    public void setAuthorizedTargetFolderId(String authorizedTargetFolderId) {
+        this.authorizedTargetFolderId = authorizedTargetFolderId;
+    }
+
+    /** Copies both authorisation stamps onto a request derived from this one. */
+    public void copyAuthorizationStampsTo(ExternalIngestRequest derived) {
+        if (derived == null) return;
+        derived.setAuthorizedProfileFingerprint(this.authorizedProfileFingerprint);
+        derived.setAuthorizedTargetFolderId(this.authorizedTargetFolderId);
     }
 
     @JsonIgnore

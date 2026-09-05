@@ -445,13 +445,14 @@ public class IngestSchedulerService {
                 // noticing.
                 long quiet = consecutiveEmptyPolls.incrementAndGet();
                 if (quiet == 1) {
-                    logger.info("No scheduled import profiles this poll. If capture was"
-                            + " expected, note that this list comes from an index that answers"
-                            + " empty while it rebuilds");
+                    logger.info("No scheduled import profiles this poll. The list is read"
+                            + " without an index, so this means none is configured and"
+                            + " enabled — a read that could not be answered is reported"
+                            + " separately");
                 } else if (quiet == 10 || quiet % 60 == 0) {
                     logger.warn("No scheduled import profiles for {} consecutive polls; if"
-                            + " scheduled capture is configured, check the ingest index",
-                            quiet);
+                            + " scheduled capture is expected, check that the profiles are"
+                            + " enabled and scheduler-enabled", quiet);
                 }
                 return;
             }

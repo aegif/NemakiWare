@@ -171,6 +171,10 @@ class IngestEvidenceSnapshotTest {
         // the code that CHOOSES, which is where every previous version of this logic was wrong
         // (external review): metadata-only and no-change updates retain their attachment.
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // A delegated import re-asks cmis:all against the folder it actually writes into, so
+        // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
+        // authorise earlier; the check that binds it to the write lives in the service.)
+        service.setIngestAuthorizationService(alwaysAuthorized());
         jp.aegif.nemaki.businesslogic.ContentService contentService =
                 org.mockito.Mockito.mock(jp.aegif.nemaki.businesslogic.ContentService.class);
         java.lang.reflect.Field f = CanonicalImportServiceImpl.class
@@ -286,6 +290,10 @@ class IngestEvidenceSnapshotTest {
     @DisplayName("a blank or unresolvable attachment reference is not 'stored'")
     void attachmentReferenceIsResolved() throws Exception {
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // A delegated import re-asks cmis:all against the folder it actually writes into, so
+        // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
+        // authorise earlier; the check that binds it to the write lives in the service.)
+        service.setIngestAuthorizationService(alwaysAuthorized());
         jp.aegif.nemaki.businesslogic.ContentService contentService =
                 org.mockito.Mockito.mock(jp.aegif.nemaki.businesslogic.ContentService.class);
         java.lang.reflect.Field f = CanonicalImportServiceImpl.class
@@ -331,6 +339,10 @@ class IngestEvidenceSnapshotTest {
         // getUsername() would leave them all green (external review). So this drives the real
         // import and reads what the emitter was actually handed.
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // A delegated import re-asks cmis:all against the folder it actually writes into, so
+        // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
+        // authorise earlier; the check that binds it to the write lives in the service.)
+        service.setIngestAuthorizationService(alwaysAuthorized());
         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService connectorService =
                 org.mockito.Mockito.mock(
                         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService.class);
@@ -472,6 +484,10 @@ class IngestEvidenceSnapshotTest {
     /** Drives a real re-import of an already-imported document whose recorded hash matches. */
     private static RecordingEmitter runReimport(String updatePolicy) {
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // A delegated import re-asks cmis:all against the folder it actually writes into, so
+        // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
+        // authorise earlier; the check that binds it to the write lives in the service.)
+        service.setIngestAuthorizationService(alwaysAuthorized());
         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService connectorService =
                 org.mockito.Mockito.mock(
                         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService.class);
@@ -804,6 +820,10 @@ class IngestEvidenceSnapshotTest {
     private static ExternalIngestResult runNoteFilesOnlyImport(NoteAttachmentStore store,
             RecordingEmitter emitter) {
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // A delegated import re-asks cmis:all against the folder it actually writes into, so
+        // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
+        // authorise earlier; the check that binds it to the write lives in the service.)
+        service.setIngestAuthorizationService(alwaysAuthorized());
         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService connectorService =
                 org.mockito.Mockito.mock(
                         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService.class);
@@ -912,6 +932,10 @@ class IngestEvidenceSnapshotTest {
     private static ExternalIngestResult runBusinessRecordImport(ArchetypeStore store,
             RecordingEmitter emitter) {
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // A delegated import re-asks cmis:all against the folder it actually writes into, so
+        // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
+        // authorise earlier; the check that binds it to the write lives in the service.)
+        service.setIngestAuthorizationService(alwaysAuthorized());
         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService connectorService =
                 org.mockito.Mockito.mock(
                         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService.class);
@@ -1065,6 +1089,10 @@ class IngestEvidenceSnapshotTest {
     private static ExternalIngestResult runChatImport(ChatStore store, boolean objectIsNew,
             RecordingEmitter emitter, IngestMetadataService metadataService) {
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // A delegated import re-asks cmis:all against the folder it actually writes into, so
+        // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
+        // authorise earlier; the check that binds it to the write lives in the service.)
+        service.setIngestAuthorizationService(alwaysAuthorized());
         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService connectorService =
                 org.mockito.Mockito.mock(
                         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService.class);
@@ -1291,4 +1319,14 @@ class IngestEvidenceSnapshotTest {
         return ctx;
     }
 
+
+    /** A wired authorization service that grants cmis:all — the delegated re-check needs one. */
+    private static IngestAuthorizationService alwaysAuthorized() {
+        IngestAuthorizationService auth = org.mockito.Mockito.mock(IngestAuthorizationService.class);
+        org.mockito.Mockito.when(auth.canManageProfileForFolder(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
+        return auth;
+    }
 }

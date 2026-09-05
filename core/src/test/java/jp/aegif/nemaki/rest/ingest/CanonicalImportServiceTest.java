@@ -165,6 +165,109 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void testDelegatedImportReAsksTheAuthorizationAtTheWrite() {
+        // The stamps only reach requests the manual gate built. The scheduler, the webhook and
+        // IDLE authorise a delegated profile and then construct their own requests in a dozen
+        // orchestrators, so a target that moved between their check and this write was never
+        // re-examined. A review enumerated those paths; the authorisation is re-asked here,
+        // against the folder the write actually lands in.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(false);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(),
+                "a delegated import wrote into a folder the caller no longer holds cmis:all on");
+        assertTrue(result.errors().get(0).contains("cmis:all"),
+                "the refusal does not name the authorisation: " + result.errors().get(0));
+        verify(contentService, never()).update(any(), any(), any());
+    }
+
+    @Test
+    void testDelegatedImportRefusesWhenTheAuthorizationIsNotWired() {
+        // Missing wiring refuses rather than permits: a context that stripped the service
+        // would otherwise turn every delegated import into an unchecked one.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+        service.setIngestAuthorizationService(null);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(), "an unwired authorisation let a delegated import run");
+        assertTrue(result.errors().get(0).contains("not available"),
+                "the refusal does not say the service is missing: " + result.errors().get(0));
+    }
+
+    @Test
+    void testExecuteRefusesWhenTheAuthorizedFolderIsNotTheOneResolved() {
+        // The fingerprint compares the ROW, and a row may name a PATH instead of an id: the
+        // path re-resolves at import time, so moving the authorised folder away and putting
+        // another at the same path leaves the row identical. cmis:all was checked on an
+        // object, so the object is what is carried. A review found the gap.
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setRepositoryId("bedroom");
+        profile.setTargetFolderId("folder-now");
+        doReturn(profile).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+        req.setAuthorizedProfileFingerprint(
+                CanonicalImportServiceImpl.authorizationFingerprint(profile));
+        req.setAuthorizedTargetFolderId("folder-that-was-authorized");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(), "the write landed in a folder that was never authorised");
+        assertTrue(result.errors().get(0).contains("different target folder"),
+                "the refusal does not name the folder change: " + result.errors().get(0));
+    }
+
+    @Test
     void testExecuteRefusesARowThatIsNotTheOneAuthorized() {
         // The delegated gate checks cmis:all on the target folder of the row IT read; this
         // service resolves the profile again and used whatever it found. A PUT landing

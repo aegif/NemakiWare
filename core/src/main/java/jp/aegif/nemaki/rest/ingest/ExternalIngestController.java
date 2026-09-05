@@ -473,6 +473,10 @@ public class ExternalIngestController {
         // import refuses when the row it resolves is not this one.
         request.setAuthorizedProfileFingerprint(
                 CanonicalImportServiceImpl.authorizationFingerprint(profile));
+        // And the folder itself, not just the row: cmis:all was checked on THIS object. A
+        // path-only profile re-resolves at import time, so moving the authorised folder away
+        // and putting another at the same path changes nothing the row can see.
+        request.setAuthorizedTargetFolderId(folderId);
 
         // (4) connectorId, if provided, must be in the profile's saved
         // allowedConnectorIds — and that connector must still be delegated

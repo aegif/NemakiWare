@@ -226,6 +226,10 @@ class IngestCaptureBoundaryTest {
         // pin nothing (the first draft of this test did exactly that).
         ImportProfileDefinition delegated = profileService.get("p1");
         delegated.setDelegated(true);
+        // A delegated import re-asks cmis:all against the folder it actually writes into —
+        // the authorisation that the gate, the scheduler, the webhook and IDLE each perform
+        // earlier is re-checked HERE, so a fixture that leaves it unstubbed refuses.
+        service.setIngestAuthorizationService(alwaysAuthorized());
         delegated.setCreatedByUserId("otsuka");
         delegated.setScheduleConfiguredByUserId("ishii");
         CallContext synthetic =
@@ -710,5 +714,15 @@ class IngestCaptureBoundaryTest {
         assertTrue(result.isSuccess(), "errors=" + result.errors());
         assertTrue(result.warnings() == null || result.warnings().isEmpty(),
                 "an unconfigured ledger produced a warning: " + result.warnings());
+    }
+
+    /** A wired authorization service that grants cmis:all — the delegated re-check needs one. */
+    private static IngestAuthorizationService alwaysAuthorized() {
+        IngestAuthorizationService auth = org.mockito.Mockito.mock(IngestAuthorizationService.class);
+        org.mockito.Mockito.when(auth.canManageProfileForFolder(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
+        return auth;
     }
 }

@@ -3819,6 +3819,74 @@ CONTROLS = [
         expect_fail=['anUnreadableScheduleIsNotAnEmptyOne'],
     ),
     dict(
+        id="VF",
+        what="a delegated import stops re-asking cmis:all at the write — the scheduler, webhook "
+             "and IDLE authorise a profile and their orchestrators build unstamped requests",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find_span=('        if (profile.isDelegated() && callContext != null) {',
+                   '                        + " not held when this import ran");\n            }\n        }'),
+        replace='',
+        test='CanonicalImportServiceTest',
+        expect_fail=['testDelegatedImportReAsksTheAuthorizationAtTheWrite',
+                     'testDelegatedImportRefusesWhenTheAuthorizationIsNotWired'],
+    ),
+    dict(
+        id="VG",
+        what="a missing authorization service lets a delegated import through instead of "
+             "refusing it",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        # `if (false)` left the field null and the next line NPE'd, so the runner scored it
+        # "the sabotage broke the harness". Permitting is the defect; make it permit.
+        find_span=('            if (ingestAuthorizationService == null) {',
+                   '            if (!ingestAuthorizationService.canManageProfileForFolder('),
+        replace='            if (ingestAuthorizationService != null\n'
+                '                    && !ingestAuthorizationService.canManageProfileForFolder(',
+        test='CanonicalImportServiceTest',
+        expect_fail=['testDelegatedImportRefusesWhenTheAuthorizationIsNotWired'],
+    ),
+    dict(
+        id="VH",
+        what="the folder cmis:all was checked on is no longer compared with the folder written "
+             "into — a path-only profile re-resolves to whatever now sits at that path",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find_span=('        String authorizedFolder = request.getAuthorizedTargetFolderId();',
+                   '                    + " the one this import was authorised against. Retry shortly.");\n        }'),
+        replace='',
+        test='CanonicalImportServiceTest',
+        expect_fail=['testExecuteRefusesWhenTheAuthorizedFolderIsNotTheOneResolved'],
+    ),
+    dict(
+        id="VI",
+        what="a schedulable row with no profileId enters the schedule again — the delegated "
+             "tick NPEs on a null key and every profile after it is skipped",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find_span=('            if (def.getProfileId() == null || def.getProfileId().isBlank()) {',
+                   '                return;\n            }'),
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['anIdentitylessRowIsNotScheduled'],
+    ),
+    dict(
+        id="VJ",
+        what="a derived write (raw .eml, mail attachment, note attachment) loses the "
+             "authorisation stamps — note's files_only default writes ONLY children",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestRequest.java',
+        find_span=('    public void copyAuthorizationStampsTo(ExternalIngestRequest derived) {',
+                   '        derived.setAuthorizedTargetFolderId(this.authorizedTargetFolderId);\n    }'),
+        replace='    public void copyAuthorizationStampsTo(ExternalIngestRequest derived) {\n    }',
+        test='AuthorizationStampsTravelWithDerivedWritesTest',
+        expect_fail=['bothStampsAreCopied'],
+    ),
+    dict(
+        id="VK",
+        what="one of the three derived writes is built without the stamps again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='                    request.copyAuthorizationStampsTo(emlReq);',
+        replace='',
+        test='AuthorizationStampsTravelWithDerivedWritesTest',
+        expect_fail=['everyDerivedRequestIsStamped'],
+    ),
+    dict(
         id="HA",
         what="a retained folder is erased from the search index again",
         file="core/src/main/java/jp/aegif/nemaki/cmis/service/impl/ObjectServiceImpl.java",
