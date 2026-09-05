@@ -467,6 +467,12 @@ public class ExternalIngestController {
             return new Denial(HttpStatus.FORBIDDEN, DenialReason.CMIS_ALL_REQUIRED,
                     "unknown", "cmis:all on target folder required");
         }
+        // Stamp the row this gate is authorising. The import resolves the profile again, and
+        // a PUT landing in between moves the target folder — by someone who need not be this
+        // caller, so nothing about that update authorises this caller for the new folder. The
+        // import refuses when the row it resolves is not this one.
+        request.setAuthorizedProfileFingerprint(
+                CanonicalImportServiceImpl.authorizationFingerprint(profile));
 
         // (4) connectorId, if provided, must be in the profile's saved
         // allowedConnectorIds — and that connector must still be delegated

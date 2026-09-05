@@ -81,7 +81,23 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
             CloudantClientWrapper client = getConfClient();
             com.ibm.cloud.cloudant.v1.model.Document row = readByDeterministicId(
                     client.getClient(), client.getDatabaseName(), profileId);
-            return row == null ? null : fromRawDoc(row);
+            if (row == null) {
+                return null;
+            }
+            // Confirm the row IS this profile. The id is deterministic, not reserved: any
+            // document occupying that id was deserialised and returned, so GET /{id} could
+            // answer with a different row. The connector twin has always checked this; a
+            // review found the profile half missing it.
+            Map<String, Object> props = row.getProperties();
+            if (props == null
+                    || !ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))
+                    || !profileId.equals(props.get("profileId"))) {
+                logger.warn("document {} occupies the deterministic id of import profile {}"
+                        + " but does not define it; ignoring",
+                        ImportProfileDefinition.DOC_TYPE + ":" + profileId, profileId);
+                return null;
+            }
+            return fromRawDoc(row);
         } catch (RuntimeException idReadFailed) {
             // Opportunistic only: this read can improve the selector's answer, never worsen
             // it. Whether a hidden row exists is decided by existsIndexFree, which refuses
@@ -220,7 +236,12 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         // so such a row acted as a wildcard profile for every repository — a second review
         // found this sentence claiming something the runtime contradicted, and both were
         // fixed in the same round.)
-        boolean unowned = props != null && props.get("repositoryId") == null;
+        // Blank counts as unowned, not just null. The migration classifies both as malformed
+        // and tells the operator to remove them with ?docId=, while this path recognised only
+        // literal null — so a blank row was undeletable through the very API the message
+        // prescribes, and went on blocking every write of that profileId. A review found the
+        // two halves disagreeing.
+        boolean unowned = props != null && isBlank(props.get("repositoryId"));
         if (props == null
                 || !ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))
                 || !profileId.equals(props.get("profileId"))
@@ -744,7 +765,10 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
             }
             if (!ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))
                     || !profileId.equals(props.get("profileId"))
-                    || props.get("repositoryId") == null) {
+                    || isBlank(props.get("repositoryId"))) {
+                // Blank, not only null: a blank row belongs to no repository either, and
+                // treating it as owned would start a capture on a row no repository can
+                // manage.
                 return;
             }
             Map<String, Object> content = contentOnly(props);
@@ -793,6 +817,68 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
             // is the second, never the first.
             throw new ProfileIndexNotReadyException(unprovable.getMessage());
         }
+    }
+
+    @Override
+    public List<ImportProfileDefinition> listScheduledIndexFree() {
+        CloudantClientWrapper client;
+        try {
+            client = getConfClient();
+        } catch (RuntimeException couldNotAsk) {
+            throw new ProfileIndexNotReadyException(couldNotAsk.getMessage());
+        }
+        String dbName = client.getDatabaseName();
+        List<ImportProfileDefinition> scheduled = new ArrayList<>();
+        java.util.function.Consumer<com.ibm.cloud.cloudant.v1.model.DocsResultRow> perRow = row -> {
+            String id = row.getId();
+            if (row.getError() != null || id == null) {
+                throw new IllegalStateException("the scheduled profiles cannot be listed: a row"
+                        + " of '" + dbName + "' could not be read ("
+                        + (row.getError() != null ? row.getError() : "no id") + ")");
+            }
+            if (id.startsWith("_design/")) {
+                return;
+            }
+            Map<String, Object> props = row.getDoc() != null
+                    ? row.getDoc().getProperties() : null;
+            if (props == null) {
+                throw new IllegalStateException("the scheduled profiles cannot be listed: row "
+                        + id + " came back without a body");
+            }
+            if (!ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))
+                    || isBlank(props.get("repositoryId"))) {
+                return;
+            }
+            Map<String, Object> content = contentOnly(props);
+            content.remove("type");
+            ImportProfileDefinition def;
+            try {
+                def = MAPPER.convertValue(content, ImportProfileDefinition.class);
+            } catch (Exception e) {
+                // Standing, not transient: no poll repairs this row, and refusing the whole
+                // enumeration would let one broken row stop every scheduled capture. Named so
+                // an operator can find it.
+                logger.error("scheduled-profile enumeration: row {} could not be read as a"
+                        + " profile and is not being scheduled ({})", id, e.getMessage());
+                return;
+            }
+            if (def.isEnabled() && def.isSchedulerEnabled()) {
+                scheduled.add(def);
+            }
+        };
+        try {
+            NemakiConfAllDocs.forEachRow(client.getClient(), dbName, perRow);
+        } catch (IllegalStateException unprovable) {
+            throw new ProfileIndexNotReadyException(unprovable.getMessage());
+        } catch (RuntimeException transportFailed) {
+            throw new ProfileIndexNotReadyException(transportFailed.getMessage());
+        }
+        return scheduled;
+    }
+
+    /** Null, or a value whose text is empty — a row that names no repository either way. */
+    private static boolean isBlank(Object value) {
+        return value == null || (value instanceof String && ((String) value).isBlank());
     }
 
     /** An id-addressed read of the deterministic document id; needs no index. */

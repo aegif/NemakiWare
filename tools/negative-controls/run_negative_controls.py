@@ -3351,7 +3351,7 @@ CONTROLS = [
         what="a row that belongs to no repository is refused by the row-addressed delete again — "
              "unreachable, while it makes that profileId's PUT a standing 409",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
-        find='        boolean unowned = props != null && props.get("repositoryId") == null;',
+        find='        boolean unowned = props != null && isBlank(props.get("repositoryId"));',
         replace='        boolean unowned = false;',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['anUnownedRowIsReachable'],
@@ -3725,6 +3725,98 @@ CONTROLS = [
                 '        return walked != null ? walked : importProfileDefinitionService.get(profileId);',
         test='CanonicalImportServiceTest',
         expect_fail=['testExecuteRefusesAProfileBoundToNoRepository'],
+    ),
+    dict(
+        id="UX",
+        what="the delegated gate stops saying which row it authorised — the import's staleness "
+             "check has nothing to compare against and a moved target folder is used",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find_span=('        request.setAuthorizedProfileFingerprint(',
+                   '                CanonicalImportServiceImpl.authorizationFingerprint(profile));'),
+        replace='',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['theGateStampsTheRowItAuthorized'],
+    ),
+    dict(
+        id="UY",
+        what="the import adopts whatever row it resolves — a PUT between authorisation and "
+             "execution moves the target folder and the caller was never authorised for it",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='        if (authorized.equals(authorizationFingerprint(resolved))) {\n            return null;\n        }',
+        replace='        if (true) {\n            return null;\n        }',
+        test='CanonicalImportServiceTest',
+        expect_fail=['testExecuteRefusesARowThatIsNotTheOneAuthorized'],
+    ),
+    dict(
+        id="UZ",
+        what="the staleness check refuses every gated import, including the ones whose row did "
+             "not change",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        # The first version removed the null short-circuit instead, which NPEs on every
+        # ungated import: 36 tests errored and the named lock still passed, so the runner
+        # scored it "something failed, but not the expected lock". Sabotage the comparison.
+        find='        if (authorized.equals(authorizationFingerprint(resolved))) {',
+        replace='        if (false) {',
+        test='CanonicalImportServiceTest',
+        expect_fail=['testExecuteRunsWhenTheRowIsStillTheAuthorizedOne'],
+    ),
+    dict(
+        id="VA",
+        what="a blank repositoryId stops counting as unowned — the row the migration tells the "
+             "operator to delete by docId is refused by that very API",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='        boolean unowned = props != null && isBlank(props.get("repositoryId"));',
+        replace='        boolean unowned = props != null && props.get("repositoryId") == null;',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aBlankRepositoryRowIsReachable'],
+    ),
+    dict(
+        id="VB",
+        what="the IDLE resolution treats a blank repositoryId as owned again — a capture starts "
+             "on a row no repository can manage",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                    || isBlank(props.get("repositoryId"))) {\n                // Blank, not only null:',
+        replace='                    || props.get("repositoryId") == null) {\n                // Blank, not only null:',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aBlankRepositoryRowIsNotOwned'],
+    ),
+    dict(
+        id="VC",
+        what="the deterministic-id fallback returns whatever document occupies the id — GET of "
+             "one profile answers with another row",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find_span=('            Map<String, Object> props = row.getProperties();\n            if (props == null\n                    || !ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))',
+                   '                return null;\n            }'),
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theDeterministicIdIsNotReserved'],
+    ),
+    dict(
+        id="VD",
+        what="the scheduler enumerates through the Mango selector again — a rebuilding index "
+             "reads as 'nothing scheduled' and every scheduled capture is skipped in silence",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerService.java',
+        find_span=('        java.util.Set<String> known = new java.util.HashSet<>(repositoryInfoMap.keys());',
+                   '                .toList();'),
+        replace='        return repositoryInfoMap.keys().stream()\n'
+                '                .flatMap(repoId -> profileService.listByRepository(repoId).stream())\n'
+                '                .filter(ImportProfileDefinition::isEnabled)\n'
+                '                .filter(ImportProfileDefinition::isSchedulerEnabled)\n'
+                '                .toList();',
+        test='IngestSchedulerDelegatedRunTest',
+        expect_fail=['anUnreadableScheduleIsNotAnEmptyOne'],
+    ),
+    dict(
+        id="VE",
+        what="a schedule that could not be read is reported as an empty one — the poll skips "
+             "every capture and says nothing is configured",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerService.java',
+        find_span=('            } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException couldNotAsk) {',
+                   '                return;\n            }'),
+        replace='            } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException couldNotAsk) {\n'
+                '                profiles = java.util.List.of();\n            }',
+        test='IngestSchedulerDelegatedRunTest',
+        expect_fail=['anUnreadableScheduleIsNotAnEmptyOne'],
     ),
     dict(
         id="HA",

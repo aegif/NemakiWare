@@ -205,6 +205,17 @@ public class ImapConnectorAdapter {
         Folder folder = store.getFolder(folderName);
         folder.open(Folder.READ_ONLY);
         idleFolder = folder;
+        // Arming and publishing the folder are two steps, and a stop can land between them:
+        // it then has no folder to close, waits ten seconds for a thread that has not started
+        // its loop, and gives up — after which this method would go on to install the
+        // listener and import messages the caller was told had been stopped. Re-checking
+        // after publication closes that window; the folder is now visible to stopIdle either
+        // way. A review measured the ordering.
+        if (!idleRunning) {
+            try { folder.close(false); } catch (Exception ignored) { /* already stopped */ }
+            idleFolder = null;
+            throw new MessagingException("IDLE was stopped while the mailbox was opening");
+        }
 
         long uidValidity = folder instanceof UIDFolder uf ? uf.getUIDValidity() : 0;
         final long uidV = uidValidity;
@@ -213,6 +224,13 @@ public class ImapConnectorAdapter {
             @Override
             public void messagesAdded(MessageCountEvent e) {
                 for (Message msg : e.getMessages()) {
+                    if (!idleRunning) {
+                        // A stop that arrived while this batch was in flight. Delivering the
+                        // rest would import mail after stopIdle() returned to its caller.
+                        logger.info("IDLE: stopped; dropping {} remaining notification(s)",
+                                e.getMessages().length);
+                        return;
+                    }
                     try {
                         String messageId = msg instanceof MimeMessage mm ? mm.getMessageID() : null;
                         String from = msg.getFrom() != null && msg.getFrom().length > 0

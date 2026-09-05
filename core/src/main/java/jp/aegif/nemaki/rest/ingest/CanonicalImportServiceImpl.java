@@ -158,6 +158,53 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         return importProfileDefinitionService.getForRepository(profileId, repositoryId);
     }
 
+    /**
+     * A stable fingerprint of everything the delegated gate authorises FROM a profile row:
+     * where the content lands and which connectors may put it there. Two rows with the same
+     * fingerprint are interchangeable as far as that authorisation goes; anything else is a
+     * different decision and must be refused rather than silently adopted.
+     */
+    static String authorizationFingerprint(ImportProfileDefinition profile) {
+        if (profile == null) return null;
+        java.util.List<String> connectors = profile.getAllowedConnectorIds() == null
+                ? java.util.List.of()
+                : profile.getAllowedConnectorIds().stream().sorted().toList();
+        return String.join("\u001f",
+                String.valueOf(profile.getRepositoryId()),
+                String.valueOf(profile.getTargetFolderId()),
+                String.valueOf(profile.getTargetFolderPath()),
+                String.valueOf(profile.isDelegated()),
+                String.valueOf(profile.getDefaultConnectorId()),
+                String.join(",", connectors));
+    }
+
+    /**
+     * Refuses when the row this import resolved is not the row the gate authorised.
+     *
+     * <p>The gate checks {@code cmis:all} on the target folder of the row IT read, and this
+     * service resolves the profile again. A {@code PUT} landing in between moves the target
+     * folder — and the updater need not be this caller, so nothing about that update
+     * authorises this caller for the new folder. A review showed the reasoning that had this
+     * deferred ("the update itself required cmis:all") was answering about the wrong person.
+     *
+     * <p>Null fingerprint means no gate ran (an administrator's own import) and is left
+     * alone: this check narrows a delegated caller to what was authorised, it is not a second
+     * authorisation of its own.
+     */
+    private ExternalIngestResult refuseIfNotTheAuthorizedRow(ExternalIngestRequest request,
+            ImportProfileDefinition resolved, String requestId) {
+        String authorized = request.getAuthorizedProfileFingerprint();
+        if (authorized == null || resolved == null) {
+            return null;
+        }
+        if (authorized.equals(authorizationFingerprint(resolved))) {
+            return null;
+        }
+        return ExternalIngestResult.error(requestId, "import profile "
+                + request.getProfileId() + " changed between authorisation and execution;"
+                + " this import was authorised against a different target. Retry shortly.");
+    }
+
     private ImportProfileDefinition confinedProfile(ExternalIngestRequest request) {
         try {
             return resolveProfileForRepository(request.getProfileId(), request.getRepositoryId());
@@ -300,6 +347,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         + request.getProfileId() + " could not be resolved for this"
                         + " repository; retry shortly: " + e.getMessage());
             }
+            // The row the gate authorised must be the row this import uses.
+            ExternalIngestResult stale = refuseIfNotTheAuthorizedRow(request, profile, requestId);
+            if (stale != null) return stale;
             if (profile == null) {
                 // The same split execute() got: this early validation runs BEFORE it, so
                 // without the split a hidden legacy row was still reported as absence on the
@@ -505,6 +555,16 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     | ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
                 warnings.add("Raw .eml preservation could not be decided; retry shortly: "
                         + e.getMessage());
+                mailProfile = null;
+            }
+            if (mailProfile != null
+                    && refuseIfNotTheAuthorizedRow(request, mailProfile, requestId) != null) {
+                // The raw .eml child lands in the same folder as the message it came from, so
+                // it inherits the same question. A row that changed under the authorisation
+                // does not decide preservation: say so and skip, rather than write a second
+                // object on a decision nobody authorised.
+                warnings.add("Raw .eml preservation was not decided: the profile changed"
+                        + " between authorisation and execution");
                 mailProfile = null;
             }
             if (mailProfile != null && mailProfile.isPreserveOriginalEml() && rawEmlBytes.length > 0) {
@@ -2637,6 +2697,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     + request.getProfileId() + " could not be resolved for this"
                     + " repository; retry shortly: " + e.getMessage());
         }
+        // The row the gate authorised must be the row this import uses.
+        ExternalIngestResult stale = refuseIfNotTheAuthorizedRow(request, profile, requestId);
+        if (stale != null) return stale;
         if (profile == null) {
             // "Not found" is a claim about the DATABASE, and this read is answered by a Mango
             // selector plus one id-addressed fallback — both of which can miss a row that is

@@ -165,6 +165,71 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void testExecuteRefusesARowThatIsNotTheOneAuthorized() {
+        // The delegated gate checks cmis:all on the target folder of the row IT read; this
+        // service resolves the profile again and used whatever it found. A PUT landing
+        // between the two moves the target folder, and the updater need not be this caller —
+        // so nothing about that update authorises this caller for the new folder. The batch
+        // had deferred this on the reasoning that "the update itself required cmis:all",
+        // which answers about the wrong person; a review said so and it is closed here.
+        ImportProfileDefinition authorized = new ImportProfileDefinition();
+        authorized.setProfileId("p1");
+        authorized.setEnabled(true);
+        authorized.setRepositoryId("bedroom");
+        authorized.setTargetFolderId("folder-authorized");
+        ImportProfileDefinition moved = new ImportProfileDefinition();
+        moved.setProfileId("p1");
+        moved.setEnabled(true);
+        moved.setRepositoryId("bedroom");
+        moved.setTargetFolderId("folder-somewhere-else");
+        doReturn(moved).when(profileService).getForRepository("p1", "bedroom");
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+        req.setAuthorizedProfileFingerprint(
+                CanonicalImportServiceImpl.authorizationFingerprint(authorized));
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(),
+                "the import ran against a row the caller was never authorised for");
+        assertTrue(result.errors().get(0).contains("between authorisation and execution"),
+                "the refusal does not name the change: " + result.errors().get(0));
+        verify(contentService, never()).update(any(), any(), any());
+    }
+
+    @Test
+    void testExecuteRunsWhenTheRowIsStillTheAuthorizedOne() {
+        // The counterpart: with the fingerprint matching, the check must not refuse. Without
+        // this the fix could be "always refuse when a fingerprint is present" and the lock
+        // above would still pass.
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setRepositoryId("bedroom");
+        profile.setTargetFolderId("folder-1");
+        doReturn(profile).when(profileService).getForRepository("p1", "bedroom");
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("no-such-connector");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+        req.setAuthorizedProfileFingerprint(
+                CanonicalImportServiceImpl.authorizationFingerprint(profile));
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        // It gets past the fingerprint and fails later, on the connector — which is the point.
+        assertFalse(result.isSuccess());
+        assertFalse(result.errors().get(0).contains("between authorisation and execution"),
+                "a row that had not changed was refused as changed: " + result.errors().get(0));
+    }
+
+    @Test
     void testExecuteRefusesAProfileBoundToNoRepository() {
         // The non-admin gate locks this; execute() is the door an ADMIN import comes through,
         // and it had the same hole with no lock of its own. A row with repositoryId == null is

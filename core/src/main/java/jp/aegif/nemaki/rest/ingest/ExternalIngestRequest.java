@@ -43,8 +43,32 @@ public class ExternalIngestRequest {
     @JsonIgnore
     private InputStream contentStream;
 
+    /**
+     * A fingerprint of the profile row the delegated gate AUTHORISED, when this request came
+     * through that gate.
+     *
+     * <p>The gate checks {@code cmis:all} on the target folder of the row it read; the import
+     * then resolves the profile again and uses whatever it finds. A {@code PUT} landing
+     * between the two moves the target folder, and the updater need not be this caller — so
+     * the caller could execute against a folder it was never authorised for. Carrying what
+     * was authorised lets the import refuse when the row is no longer that one.
+     *
+     * <p>{@link JsonIgnore} on purpose: a client must not be able to set this. Null means "no
+     * gate ran" (an administrator's own import), which is not the same as "the row matched".
+     */
+    @JsonIgnore
+    private String authorizedProfileFingerprint;
+
     public ExternalIngestRequest() {
         this.requestId = UUID.randomUUID().toString();
+    }
+
+    @JsonIgnore
+    public String getAuthorizedProfileFingerprint() { return authorizedProfileFingerprint; }
+
+    @JsonIgnore
+    public void setAuthorizedProfileFingerprint(String authorizedProfileFingerprint) {
+        this.authorizedProfileFingerprint = authorizedProfileFingerprint;
     }
 
     // --- Getters / Setters ---

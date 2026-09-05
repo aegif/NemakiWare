@@ -468,6 +468,34 @@ class ExternalIngestControllerGateTest {
     }
 
     @Test
+    void theGateStampsTheRowItAuthorized() {
+        // The import resolves the profile again and refuses when the row is not the one that
+        // was authorised — which measures nothing unless the gate actually says which row
+        // that was. This is the other half of that pair.
+        CallContext ctx = nonAdminContext();
+        ImportProfileDefinition p = delegatedProfile();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER)).thenReturn(true);
+        ConnectorDefinition c = delegatedConnector();
+        when(connectorDefinitionService.get(CONN)).thenReturn(c);
+        when(ingestAuthorizationService.canUseConnectorForDelegatedProfile(ctx, REPO, c, FOLDER))
+                .thenReturn(true);
+        when(canonicalImportService.execute(eq(ctx), any(ExternalIngestRequest.class)))
+                .thenReturn(ExternalIngestResult.success("src-1", "obj-1", "1.0", false, null));
+
+        ingest(baseRequest());
+
+        org.mockito.ArgumentCaptor<ExternalIngestRequest> sent =
+                org.mockito.ArgumentCaptor.forClass(ExternalIngestRequest.class);
+        verify(canonicalImportService).execute(eq(ctx), sent.capture());
+        assertEquals(CanonicalImportServiceImpl.authorizationFingerprint(p),
+                sent.getValue().getAuthorizedProfileFingerprint(),
+                "the import was dispatched without saying which row had been authorised");
+    }
+
+    @Test
     void allGatesPass_dispatchesToCanonicalImportService() {
         CallContext ctx = nonAdminContext();
         ImportProfileDefinition p = delegatedProfile();

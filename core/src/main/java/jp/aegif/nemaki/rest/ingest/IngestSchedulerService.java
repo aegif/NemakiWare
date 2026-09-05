@@ -427,15 +427,22 @@ public class IngestSchedulerService {
                 }
             });
 
-            List<ImportProfileDefinition> profiles = getScheduledProfiles();
+            List<ImportProfileDefinition> profiles;
+            try {
+                profiles = getScheduledProfiles();
+            } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException couldNotAsk) {
+                // "Could not read the schedule" is not "nothing is scheduled". The poll does
+                // the same thing either way — nothing runs — but only one of them is a fault,
+                // and the operator has to be able to tell them apart.
+                logger.error("the scheduled import profiles could not be read; no scheduled"
+                        + " capture ran this poll: {}", couldNotAsk.getMessage());
+                return;
+            }
             if (profiles.isEmpty()) {
-                // "Nothing scheduled" and "the index could not tell us what is scheduled" are
-                // the same value here: getScheduledProfiles reads a Mango selector, which
-                // answers empty while it rebuilds. That is the defect this batch is about,
-                // and replacing the enumeration with a full scan on every tick is a change
-                // this batch did not take. What it must NOT be is silent — there was no log
-                // at all on this path, so an operator had no way to notice capture had
-                // stopped. A review named the blind spot.
+                // Now genuinely empty: the enumeration is index-free and a read that could
+                // not be answered throws above rather than returning nothing. The log stays
+                // because a schedule that silently stops being configured is still worth
+                // noticing.
                 long quiet = consecutiveEmptyPolls.incrementAndGet();
                 if (quiet == 1) {
                     logger.info("No scheduled import profiles this poll. If capture was"
@@ -841,10 +848,14 @@ public class IngestSchedulerService {
         if (repositoryInfoMap == null || profileService == null) {
             return List.of();
         }
-        return repositoryInfoMap.keys().stream()
-                .flatMap(repoId -> profileService.listByRepository(repoId).stream())
-                .filter(ImportProfileDefinition::isEnabled)
-                .filter(ImportProfileDefinition::isSchedulerEnabled)
+        // ONE index-free walk, not a Mango selector per repository. The selector answers
+        // empty while it rebuilds, and this method's empty list is indistinguishable from a
+        // genuinely empty schedule — the poll then skipped every scheduled capture and said
+        // nothing. Logging the ambiguity did not fix it: the read has to be one that cannot
+        // report failure as absence. A review refused the deferral, and it was right to.
+        java.util.Set<String> known = new java.util.HashSet<>(repositoryInfoMap.keys());
+        return profileService.listScheduledIndexFree().stream()
+                .filter(profile -> known.contains(profile.getRepositoryId()))
                 .toList();
     }
 

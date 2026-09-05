@@ -82,6 +82,21 @@ public interface ImportProfileDefinitionService {
     ImportProfileDefinition getOwnedRowIndexFree(String profileId);
 
     /**
+     * Every enabled, scheduler-enabled profile of every repository, read from
+     * {@code _all_docs} — one walk, no Mango index.
+     *
+     * <p>The scheduler used to enumerate through a selector, so while that index rebuilt the
+     * poll saw an empty list and skipped every scheduled capture, indistinguishable from a
+     * genuinely empty schedule. Nothing recorded that it had happened.
+     *
+     * <p>Throws {@code ProfileIndexNotReadyException} when the walk cannot be completed: the
+     * caller must not read that as "nothing is scheduled". A row that exists but cannot be
+     * interpreted is logged and skipped — no retry repairs it, and refusing the whole poll
+     * would let one broken row stop every capture.
+     */
+    List<ImportProfileDefinition> listScheduledIndexFree();
+
+    /**
      * Rewrites every legacy import-profile row saved under a CouchDB-generated id to its
      * deterministic id ({@code import_profile_definition:<profileId>}) — the import-profile
      * half of the §62 closure. Same window, same database, same startup patch entrance as

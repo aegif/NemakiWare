@@ -1242,6 +1242,62 @@ class ImportProfileLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("a row whose repositoryId is BLANK is removable by its docId too")
+    void aBlankRepositoryRowIsReachable() {
+        // The migration classifies null and blank alike as malformed and tells the operator to
+        // remove them with ?docId=. The delete path recognised only literal null, so a blank
+        // row was undeletable through the very API the message prescribes — and went on
+        // blocking every write of that profileId. A review found the two halves disagreeing.
+        wire();
+        Map<String, Object> blank = profileProps("p-blank", "Blank");
+        blank.put("repositoryId", "   ");
+        Document orphan = mock(Document.class);
+        when(orphan.getProperties()).thenReturn(blank);
+        when(orphan.getRev()).thenReturn("1-a");
+        stubGetDocument("blank-row", orphan);
+        listingAnswers(List.of(row("blank-row", blank, "1-a")));
+        writesSucceed();
+
+        assertDoesNotThrow(() -> service.delete("p-blank", "blank-row", "bedroom"),
+                "a row whose repositoryId is blank is refused by the API that is supposed to"
+                        + " remove it");
+        assertTrue(deletedIds.contains("blank-row"),
+                "the blank row is still unreachable: " + deletedIds);
+    }
+
+    @Test
+    @DisplayName("a blank repositoryId is not an owned row for IDLE either")
+    void aBlankRepositoryRowIsNotOwned() {
+        // getOwnedRowIndexFree rejected only null, so a blank row counted as owned and IDLE
+        // would start a capture on a row no repository can manage.
+        wire();
+        Map<String, Object> blank = profileProps("p-blank", "Blank");
+        blank.put("repositoryId", "");
+        listingAnswers(List.of(row("blank-row", blank, "1-a")));
+
+        assertEquals(null, service.getOwnedRowIndexFree("p-blank"),
+                "a row that names no repository was handed back as an owned one");
+    }
+
+    @Test
+    @DisplayName("a foreign document sitting on the deterministic id is not the profile")
+    void theDeterministicIdIsNotReserved() {
+        // The id is deterministic, not reserved: any document occupying it was deserialised
+        // and returned, so GET /{id} could answer with a different row entirely. The connector
+        // twin has always checked type and id; a review found the profile half missing it.
+        wire();
+        Map<String, Object> impostor = profileProps("someone-else", "Impostor");
+        Document row = mock(Document.class);
+        when(row.getProperties()).thenReturn(impostor);
+        when(row.getRev()).thenReturn("1-a");
+        deterministicReadAnswers("p-target", row);
+        selectorShows();
+
+        assertEquals(null, service.get("p-target"),
+                "a document occupying the deterministic id was returned as the profile");
+    }
+
+    @Test
     @DisplayName("a row that belongs to NO repository is removable by its docId")
     void anUnownedRowIsReachable() {
         // The migration leaves such rows deliberately. Every repository-confined read skips
