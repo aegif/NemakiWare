@@ -1327,6 +1327,13 @@ class IngestEvidenceSnapshotTest {
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
+        // The write point re-asks the CONNECTOR delegation too: revoking it during a fetch
+        // used to leave the subsequent write unexamined.
+        org.mockito.Mockito.when(auth.canUseConnectorForDelegatedProfile(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
         return auth;
     }
 }

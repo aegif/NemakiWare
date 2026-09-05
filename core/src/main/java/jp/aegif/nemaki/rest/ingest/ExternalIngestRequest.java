@@ -53,8 +53,12 @@ public class ExternalIngestRequest {
      * the caller could execute against a folder it was never authorised for. Carrying what
      * was authorised lets the import refuse when the row is no longer that one.
      *
-     * <p>{@link JsonIgnore} on purpose: a client must not be able to set this. Null means "no
-     * gate ran" (an administrator's own import), which is not the same as "the row matched".
+     * <p>{@link JsonIgnore} on purpose: a client must not be able to set this. Null means no
+     * stamp reached this request — which is NOT the same as "an administrator's own import".
+     * The scheduler, the webhook and IDLE build their own requests, so they are unstamped too;
+     * what protects them is the authorisation re-asked at the write, not this field. (This
+     * note claimed the admin reading, and a review found the copy on the service corrected
+     * while this one was left.)
      */
     @JsonIgnore
     private String authorizedProfileFingerprint;

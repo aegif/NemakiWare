@@ -6296,8 +6296,10 @@ upgrade-time round-trip analysis. After deploying RC3:
 - TOCTOU defence: profile PUT re-checks `cmis:all` and connector scope
   on BOTH the existing and the new target folder so an attacker can't
   retarget a delegated profile they don't own.
-- Runtime ingest re-evaluates the gate on every call — revoking a
-  connector's delegation immediately stops in-flight profiles from
+- Runtime ingest re-evaluates the gate on every call. Note (3.4): "in-flight"
+  means the next write, not a fetch already in progress — a fetch that has
+  begun runs to completion, and the write it produces is what gets refused.
+  Revoking a connector's delegation stops in-flight profiles from
   using it.
 - Scheduler defensively skips any record whose `delegated=true` even
   if `schedulerEnabled=true` slipped in via direct CouchDB write

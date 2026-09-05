@@ -3823,9 +3823,9 @@ CONTROLS = [
         what="a delegated import stops re-asking cmis:all at the write — the scheduler, webhook "
              "and IDLE authorise a profile and their orchestrators build unstamped requests",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
-        find_span=('        if (profile.isDelegated() && callContext != null) {',
-                   '                        + " not held when this import ran");\n            }\n        }'),
-        replace='',
+        find_span=('        if (profile.isDelegated()) {',
+                   '                        + " not held when this import ran");\n            }'),
+        replace='        if (false) {',
         test='CanonicalImportServiceTest',
         expect_fail=['testDelegatedImportReAsksTheAuthorizationAtTheWrite',
                      'testDelegatedImportRefusesWhenTheAuthorizationIsNotWired'],
@@ -3837,10 +3837,13 @@ CONTROLS = [
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
         # `if (false)` left the field null and the next line NPE'd, so the runner scored it
         # "the sabotage broke the harness". Permitting is the defect; make it permit.
-        find_span=('            if (ingestAuthorizationService == null) {',
-                   '            if (!ingestAuthorizationService.canManageProfileForFolder('),
-        replace='            if (ingestAuthorizationService != null\n'
-                '                    && !ingestAuthorizationService.canManageProfileForFolder(',
+        # Skipping only the FOLDER check left the connector check calling a null service, so
+        # the sabotage crashed instead of permitting. Skip the whole delegated block: that is
+        # what "missing wiring permits" actually looks like.
+        find_span=('        if (profile.isDelegated()) {\n            if (ingestAuthorizationService == null || callContext == null) {',
+                   '                                : "the authorization service is not available"));\n            }'),
+        replace='        if (profile.isDelegated() && ingestAuthorizationService != null\n'
+                '                && callContext != null) {',
         test='CanonicalImportServiceTest',
         expect_fail=['testDelegatedImportRefusesWhenTheAuthorizationIsNotWired'],
     ),
@@ -3885,6 +3888,27 @@ CONTROLS = [
         replace='',
         test='AuthorizationStampsTravelWithDerivedWritesTest',
         expect_fail=['everyDerivedRequestIsStamped'],
+    ),
+    dict(
+        id="VL",
+        what="a delegated write with no caller skips the authorisation again — an admin profile "
+             "that turned delegated mid-fetch arrives here unexamined",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='        if (profile.isDelegated()) {\n            if (ingestAuthorizationService == null || callContext == null) {',
+        replace='        if (profile.isDelegated() && callContext != null) {\n            if (ingestAuthorizationService == null) {',
+        test='CanonicalImportServiceTest',
+        expect_fail=['testDelegatedImportWithNoCallerIsRefused'],
+    ),
+    dict(
+        id="VM",
+        what="the write point stops re-asking connector delegation — a revoke during a fetch "
+             "leaves the write it authorised unexamined",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find_span=('            if (!ingestAuthorizationService.canUseConnectorForDelegatedProfile(',
+                   '                        + " caller and target folder");\n            }'),
+        replace='',
+        test='CanonicalImportServiceTest',
+        expect_fail=['testDelegatedImportReAsksTheConnectorDelegation'],
     ),
     dict(
         id="HA",

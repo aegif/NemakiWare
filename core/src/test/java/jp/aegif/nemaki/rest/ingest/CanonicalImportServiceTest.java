@@ -203,6 +203,83 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void testDelegatedImportWithNoCallerIsRefused() {
+        // The first version of the write-point check was guarded on callContext != null, so an
+        // admin profile that a long automatic fetch had started under — and that became
+        // delegated while that fetch ran — arrived here delegated, with no caller, and went
+        // straight through. A verification round found the hole in the fix. There is nothing
+        // to authorise a delegated write against without a caller.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(true);
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(null, req);
+
+        assertFalse(result.isSuccess(),
+                "a delegated write ran with no caller to authorise it");
+        assertTrue(result.errors().get(0).contains("no caller"),
+                "the refusal does not say why: " + result.errors().get(0));
+    }
+
+    @Test
+    void testDelegatedImportReAsksTheConnectorDelegation() {
+        // The automatic paths check connector delegation BEFORE the fetch. Revoking it during
+        // the fetch left the subsequent write unexamined: this point re-read the connector but
+        // only for existence, enabled state, allow-listing and archetype.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(true);
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(false);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(),
+                "a write went through a connector whose delegation had been revoked");
+        assertTrue(result.errors().get(0).contains("no longer delegated"),
+                "the refusal does not name the connector: " + result.errors().get(0));
+        verify(contentService, never()).update(any(), any(), any());
+    }
+
+    @Test
     void testDelegatedImportRefusesWhenTheAuthorizationIsNotWired() {
         // Missing wiring refuses rather than permits: a context that stripped the service
         // would otherwise turn every delegated import into an unchecked one.

@@ -2886,21 +2886,40 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
 
         // And for a DELEGATED profile, ask the authorisation itself — against the folder this
-        // write lands in, not the one some earlier step read. The stamps above only reach
-        // requests the manual gate built; the scheduler, the webhook and IDLE authorise a
-        // profile and then construct their own requests in a dozen orchestrators, so a target
-        // that moved between their check and this write was never re-examined. A review
-        // enumerated those paths. Missing wiring refuses rather than permits.
-        if (profile.isDelegated() && callContext != null) {
-            if (ingestAuthorizationService == null) {
+        // write lands in AND the connector it goes through, not the ones some earlier step
+        // read. The stamps above only reach requests the manual gate built; the scheduler, the
+        // webhook and IDLE authorise a profile and then construct their own requests in a
+        // dozen orchestrators, so anything that moved between their check and this write was
+        // never re-examined. A review enumerated those paths.
+        //
+        // A null context does NOT skip this. The first version guarded on
+        // `callContext != null`, which meant an admin profile that a long automatic fetch had
+        // started under — and that became delegated while that fetch ran — arrived here
+        // delegated, with no context, and went straight through. A second review found the
+        // hole in the fix. There is nothing to authorise a delegated write against without a
+        // context, so it is refused.
+        if (profile.isDelegated()) {
+            if (ingestAuthorizationService == null || callContext == null) {
                 return ExternalIngestResult.error(requestId, "delegated import cannot be"
-                        + " authorised: the authorization service is not available");
+                        + " authorised: " + (callContext == null
+                                ? "this import has no caller to authorise"
+                                : "the authorization service is not available"));
             }
             if (!ingestAuthorizationService.canManageProfileForFolder(
                     callContext, repositoryId, targetFolderId)) {
                 return ExternalIngestResult.error(requestId, "cmis:all on the target folder of"
                         + " import profile " + request.getProfileId() + " is required and was"
                         + " not held when this import ran");
+            }
+            // The connector too. The automatic paths check connector delegation BEFORE the
+            // fetch; revoking it during a fetch left the subsequent write unexamined, because
+            // this point re-read the connector but only for existence, enabled state,
+            // allow-listing and archetype. The same review named the gap.
+            if (!ingestAuthorizationService.canUseConnectorForDelegatedProfile(
+                    callContext, repositoryId, connector, targetFolderId)) {
+                return ExternalIngestResult.error(requestId, "connector "
+                        + connector.getConnectorId() + " is no longer delegated for this"
+                        + " caller and target folder");
             }
         }
 
