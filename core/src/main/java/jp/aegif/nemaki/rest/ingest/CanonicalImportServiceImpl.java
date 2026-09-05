@@ -188,11 +188,12 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * <p>A null context is refused rather than exempted: it cannot be shown to be an
      * administrator, and there is nothing to authorise a delegated write against.
      *
-     * <p>This is called twice — here and again immediately before the first write — because it
-     * is a check at a point in time, not a lock. Between them the content stream is read,
-     * which for a large attachment is the long part; a revoke that lands during it is caught
-     * by the second call. The window that remains is the one between the second call and the
-     * write itself, and it cannot be closed without a transaction the store does not offer.
+     * <p>Called twice: once when the profile is resolved, and once after everything this
+     * import READS and before anything it WRITES. Between them the content stream is drained,
+     * which for a large attachment is the long part, so a revoke landing during it is caught.
+     * It is a check at a point in time, not a lock: a revoke landing between the second call
+     * and the write is NOT caught, and no number of checks changes that — it needs fencing
+     * shared with the revoke path, or a transaction the store does not offer.
      */
     private ExternalIngestResult refuseIfDelegationNoLongerAuthorizes(String requestId,
             ImportProfileDefinition profile, ConnectorDefinition connector,
@@ -205,6 +206,15 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     + " authorised: " + (callContext == null
                             ? "this import has no caller to authorise"
                             : "the authorization service is not available"));
+        }
+        // Repository confinement FIRST. canManageProfileForFolder checks it before its own
+        // administrator short-circuit, and returning early here skipped it: an administrator
+        // authenticated in one repository passed for a delegated profile requested in another.
+        // A review found the exemption wider than the one it was copied from.
+        if (!ingestAuthorizationService.isAuthenticatedRepository(callContext, repositoryId)) {
+            return ExternalIngestResult.error(requestId, "this import is for repository "
+                    + repositoryId + ", which is not the repository this caller authenticated"
+                    + " against");
         }
         if (ingestAuthorizationService.isAdmin(callContext)) {
             return null;
@@ -3012,9 +3022,6 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 // A review pointed out that one check before the read is a snapshot, not a
                 // write-point check. This does not make it atomic — the gap between here and
                 // the write itself stays, and the store has no transaction to close it with.
-                ExternalIngestResult revoked = refuseIfDelegationNoLongerAuthorizes(
-                        requestId, profile, connector, callContext, repositoryId, targetFolderId);
-                if (revoked != null) return revoked;
 
                 // Skip empty attachments. A 0-byte download — e.g. a macOS
                 // .textClipping placeholder uploaded to Notion, or an
@@ -3052,6 +3059,21 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 contentStream = new ContentStreamImpl(fileName, BigInteger.valueOf(contentBytes.length),
                         mimeType, new ByteArrayInputStream(contentBytes));
             }
+
+            // Ask the delegated authorisation again, here — after everything this method
+            // READS and before anything it WRITES. The first call happens before the content
+            // stream is drained, which for a large attachment is the long part; the first
+            // version of this second call sat inside the stream branch, so an import with no
+            // content stream got only one check and the later mutations (idempotency-record
+            // deletion, document deletion, checkout, creation) ran on it. A review found the
+            // branch and the mutations it left behind.
+            //
+            // This is still not atomic: a revoke landing between here and the write below is
+            // not caught, and no number of checks makes it so — that needs fencing shared with
+            // the revoke path, or a transaction the store does not offer.
+            ExternalIngestResult revoked = refuseIfDelegationNoLongerAuthorizes(
+                    requestId, profile, connector, callContext, repositoryId, targetFolderId);
+            if (revoked != null) return revoked;
 
             // 5a. Dedupe: check for existing document by source identity (or filename)
             String dedupePolicy = profile.getDedupePolicy() != null ? profile.getDedupePolicy() : "skip_if_same_version";

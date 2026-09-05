@@ -1323,6 +1323,9 @@ class IngestEvidenceSnapshotTest {
     /** A wired authorization service that grants cmis:all — the delegated re-check needs one. */
     private static IngestAuthorizationService alwaysAuthorized() {
         IngestAuthorizationService auth = org.mockito.Mockito.mock(IngestAuthorizationService.class);
+        org.mockito.Mockito.when(auth.isAuthenticatedRepository(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
         org.mockito.Mockito.when(auth.canManageProfileForFolder(
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.anyString(),

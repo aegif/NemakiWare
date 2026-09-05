@@ -6299,11 +6299,13 @@ upgrade-time round-trip analysis. After deploying RC3:
 - Runtime ingest re-evaluates the gate on every call. Note (3.4): "in-flight"
   means the next write, not a fetch already in progress — a fetch that has
   begun runs to completion, and the write it produces is what gets refused.
-  The delegated authorisation is re-asked twice inside an import (before and
-  after the content is read), so a revoke that lands while a large attachment
-  downloads is caught; the gap between the second check and the write itself
-  remains and cannot be closed without a transaction the store does not offer.
-  Revoking a connector's delegation stops in-flight profiles from
+  The delegated authorisation is re-asked twice inside an import — when the
+  profile is resolved, and again after everything the import reads and before
+  anything it writes — so a revoke that lands while a large attachment
+  downloads is caught. It is **not** a guarantee that no write follows a
+  revoke: the gap between the second check and the write remains, and closing
+  it would need fencing shared with the revoke path or a transaction the store
+  does not offer. Revoking a connector's delegation stops later writes from
   using it.
 - Scheduler defensively skips any record whose `delegated=true` even
   if `schedulerEnabled=true` slipped in via direct CouchDB write

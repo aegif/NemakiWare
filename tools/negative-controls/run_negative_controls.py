@@ -3926,11 +3926,23 @@ CONTROLS = [
         what="the delegation is asked once, before the content stream is read — a revoke that "
              "lands while a large attachment downloads is authorised by a stale decision",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
-        find_span=('                ExternalIngestResult revoked = refuseIfDelegationNoLongerAuthorizes(',
-                   '                if (revoked != null) return revoked;'),
+        find_span=('            ExternalIngestResult revoked = refuseIfDelegationNoLongerAuthorizes(',
+                   '            if (revoked != null) return revoked;'),
         replace='',
         test='CanonicalImportServiceTest',
-        expect_fail=['testTheDelegationIsReAskedAfterTheContentIsRead'],
+        expect_fail=['testTheDelegationIsReAskedAfterTheContentIsRead',
+                     'testAnImportWithNoContentStreamIsAlsoReChecked'],
+    ),
+    dict(
+        id="VP",
+        what="the administrator exemption skips repository confinement — an admin of one "
+             "repository imports into another",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find_span=('        if (!ingestAuthorizationService.isAuthenticatedRepository(callContext, repositoryId)) {',
+                   '                    + " against");\n        }'),
+        replace='',
+        test='CanonicalImportServiceTest',
+        expect_fail=['testAnAdministratorOfAnotherRepositoryIsStillRefused'],
     ),
     dict(
         id="HA",

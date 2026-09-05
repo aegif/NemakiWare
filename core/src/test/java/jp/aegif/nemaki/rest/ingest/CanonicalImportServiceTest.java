@@ -184,6 +184,7 @@ class CanonicalImportServiceTest {
         connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
         when(connectorService.get("c1")).thenReturn(connector);
         IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
         when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(false);
         service.setIngestAuthorizationService(auth);
 
@@ -199,6 +200,89 @@ class CanonicalImportServiceTest {
                 "a delegated import wrote into a folder the caller no longer holds cmis:all on");
         assertTrue(result.errors().get(0).contains("cmis:all"),
                 "the refusal does not name the authorisation: " + result.errors().get(0));
+        verify(contentService, never()).update(any(), any(), any());
+    }
+
+    @Test
+    void testAnAdministratorOfAnotherRepositoryIsStillRefused() {
+        // The administrator exemption was wider than the one it was copied from:
+        // canManageProfileForFolder checks repository confinement BEFORE its own admin
+        // short-circuit, and returning early skipped it — so an administrator authenticated in
+        // one repository passed for a delegated profile requested in another. A review found
+        // the difference.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAdmin(any())).thenReturn(true);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(false);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(true);
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(),
+                "an administrator of another repository imported into this one");
+        assertTrue(result.errors().get(0).contains("not the repository this caller"),
+                "the refusal does not name the confinement: " + result.errors().get(0));
+    }
+
+    @Test
+    void testAnImportWithNoContentStreamIsAlsoReChecked() {
+        // The second call sat inside the content-stream branch, so an import with no stream
+        // got only the first check — and the mutations after it (idempotency-record deletion,
+        // document deletion, checkout, creation) ran on that one decision. A review named the
+        // branch. The check now runs after everything this method reads and before anything it
+        // writes, stream or no stream.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString()))
+                .thenReturn(true).thenReturn(false);   // revoked after the reads
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");   // no content stream
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(),
+                "a content-less import was written on a decision taken before the reads");
+        assertTrue(String.valueOf(result.errors()).contains("cmis:all"),
+                "the refusal does not name the authorisation: " + result.errors());
         verify(contentService, never()).update(any(), any(), any());
     }
 
@@ -222,6 +306,7 @@ class CanonicalImportServiceTest {
         connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
         when(connectorService.get("c1")).thenReturn(connector);
         IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
         when(auth.isAdmin(any())).thenReturn(true);
         // Both would refuse a non-admin. The administrator must not reach them at all.
         when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(false);
@@ -262,6 +347,7 @@ class CanonicalImportServiceTest {
         connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
         when(connectorService.get("c1")).thenReturn(connector);
         IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
         when(auth.canManageProfileForFolder(any(), anyString(), anyString()))
                 .thenReturn(true).thenReturn(false);   // revoked while the stream was read
         when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
@@ -306,6 +392,7 @@ class CanonicalImportServiceTest {
         connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
         when(connectorService.get("c1")).thenReturn(connector);
         IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
         when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(true);
         when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
                 .thenReturn(true);
@@ -343,6 +430,7 @@ class CanonicalImportServiceTest {
         connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
         when(connectorService.get("c1")).thenReturn(connector);
         IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
         when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(true);
         when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
                 .thenReturn(false);
