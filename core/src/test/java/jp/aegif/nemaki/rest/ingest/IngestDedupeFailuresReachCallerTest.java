@@ -33,6 +33,8 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -144,6 +146,66 @@ class IngestDedupeFailuresReachCallerTest {
         assertTrue(result.warnings().stream().anyMatch(w -> w.contains("could not be deleted")),
                 "the old document survives next to the new one and the caller was told nothing. "
                         + "Got: " + result.warnings());
+    }
+
+    @Test
+    @Timeout(30)
+    @DisplayName("an empty page that still claims more is an incomplete listing, not an end")
+    void anEmptyPageClaimingMoreIsIncomplete() {
+        // The plan is formed by a read now, and the read used to stop on an empty page without
+        // looking at hasMoreItems — returning the ids collected so far as a COMPLETE plan. The
+        // deletion would then remove part of the edges and report success, leaving the rest
+        // with no warning at all. Same silent-truncation shape as the size cap; a review found
+        // it surviving the cap fix.
+        wire("replace_relationships_on_resync");
+
+        org.apache.chemistry.opencmis.commons.data.ObjectList empty =
+                mock(org.apache.chemistry.opencmis.commons.data.ObjectList.class);
+        when(empty.getObjects()).thenReturn(new ArrayList<>());
+        when(empty.hasMoreItems()).thenReturn(Boolean.TRUE);
+        when(relationshipService.getObjectRelationships(any(), anyString(), anyString(), any(),
+                any(), any(), any(), any(), any(), any(), any())).thenReturn(empty);
+
+        ExternalIngestResult result = run();
+
+        assertTrue(result.warnings().stream().anyMatch(w -> w.contains("did not remove")),
+                "an incomplete listing was treated as a complete plan and nothing was said. "
+                        + "Got: " + result.warnings());
+        assertTrue(result.warnings().stream().anyMatch(w -> w.contains("not established")),
+                "the warning asserts what remains instead of saying it could not be checked. "
+                        + "Got: " + result.warnings());
+        verify(objectService, never()).deleteObject(any(), anyString(), anyString(), any(), any());
+    }
+
+    @Test
+    @Timeout(30)
+    @DisplayName("a listing beyond the cap refuses instead of deleting part of the edges")
+    void aListingBeyondTheCapRefuses() {
+        // The cap used to return what it had collected, so the resync deleted 10,000 edges,
+        // reported success, and left the rest without either warning.
+        wire("replace_relationships_on_resync");
+
+        java.util.List<org.apache.chemistry.opencmis.commons.data.ObjectData> many =
+                new ArrayList<>();
+        for (int i = 0; i < 600; i++) {
+            org.apache.chemistry.opencmis.commons.data.ObjectData rel =
+                    mock(org.apache.chemistry.opencmis.commons.data.ObjectData.class);
+            when(rel.getId()).thenReturn("rel-" + i);
+            many.add(rel);
+        }
+        org.apache.chemistry.opencmis.commons.data.ObjectList page =
+                mock(org.apache.chemistry.opencmis.commons.data.ObjectList.class);
+        when(page.getObjects()).thenReturn(many);
+        when(page.hasMoreItems()).thenReturn(Boolean.TRUE);   // never ends
+        when(relationshipService.getObjectRelationships(any(), anyString(), anyString(), any(),
+                any(), any(), any(), any(), any(), any(), any())).thenReturn(page);
+
+        ExternalIngestResult result = run();
+
+        assertTrue(result.warnings().stream().anyMatch(w -> w.contains("did not remove")),
+                "a listing too large to replace was treated as a complete plan. Got: "
+                        + result.warnings());
+        verify(objectService, never()).deleteObject(any(), anyString(), anyString(), any(), any());
     }
 
     @Test

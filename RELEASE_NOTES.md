@@ -6300,10 +6300,12 @@ upgrade-time round-trip analysis. After deploying RC3:
   means the next write, not a fetch already in progress — a fetch that has
   begun runs to completion, and the write it produces is what gets refused.
   The delegated authorisation is re-asked twice inside an import — when the
-  profile is resolved, and again after the reads that decide what to write
-  (content, de-duplication listing, idempotency record) and before the writes
-  themselves — so a revoke that lands while a large attachment downloads, or
-  while those reads happen, is caught. It is **not** a guarantee that no write follows a
+  profile is resolved, and again after the content buffer, the de-duplication
+  listing, the idempotency record and the relationship-resync plan have been
+  read, before the writes those decide — so a revoke that lands while a large
+  attachment downloads, or while those reads happen, is caught. It does **not**
+  cover every later read: the relationship-existence check that decides whether
+  to create a link is not followed by a re-check, and that gap is open. It is **not** a guarantee that no write follows a
   revoke: the gap between the second check and the write remains, and closing
   it would need fencing shared with the revoke path or a transaction the store
   does not offer. Revoking a connector's delegation stops later writes from

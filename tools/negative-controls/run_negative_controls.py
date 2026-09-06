@@ -3961,6 +3961,48 @@ CONTROLS = [
         expect_fail=['testARevokeDuringTheRelationshipListingStillStopsTheWrite'],
     ),
     dict(
+        id="VR",
+        what="an empty relationship page that still claims more ends the listing — a partial "
+             "plan is deleted and reported as a complete resync",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find_span=('                if (rels != null && Boolean.TRUE.equals(rels.hasMoreItems())) {',
+                   '                            + " reports more to come");\n                }'),
+        replace='',
+        test='IngestDedupeFailuresReachCallerTest',
+        expect_fail=['anEmptyPageClaimingMoreIsIncomplete'],
+    ),
+    dict(
+        id="VS",
+        what="the relationship cap returns what it collected instead of refusing — part of the "
+             "edges are deleted and the resync reports success",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find_span=('            if (ids.size() > MAX_RESYNC_RELATIONSHIPS) {',
+                   '                        + " exist, which is beyond what this policy will replace");\n            }'),
+        replace='            if (ids.size() > MAX_RESYNC_RELATIONSHIPS) {\n                break;\n            }',
+        test='IngestDedupeFailuresReachCallerTest',
+        expect_fail=['aListingBeyondTheCapRefuses'],
+    ),
+    dict(
+        id="VT",
+        what="the relationship creation stops re-asking the delegated authorisation — the "
+             "existence read is a database read placed after the last authorisation",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find_span=('            if (authorizingProfile != null && authorizingProfile.isDelegated()) {',
+                   '                    return "the relationship was not created: " + revokedHere.errors().get(0);\n                }\n            }'),
+        replace='',
+        test='CanonicalImportServiceTest',
+        expect_fail=['testARevokedDelegationStopsTheRelationshipCreation'],
+    ),
+    dict(
+        id="VU",
+        what="the archetype wrappers create their links without an authorising profile again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='            return importProfileDefinitionService.getForRepository(\n                    request.getProfileId(), request.getRepositoryId());',
+        replace='            return null;',
+        test='CanonicalImportServiceTest',
+        expect_fail=['testARevokedDelegationStopsTheRelationshipCreation'],
+    ),
+    dict(
         id="HA",
         what="a retained folder is erased from the search index again",
         file="core/src/main/java/jp/aegif/nemaki/cmis/service/impl/ObjectServiceImpl.java",

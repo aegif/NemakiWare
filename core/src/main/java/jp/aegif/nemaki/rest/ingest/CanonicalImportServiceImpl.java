@@ -680,7 +680,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     if (emlResult.isSuccess()) {
                         String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
                                 messageObjectId, emlResult.objectId(), "nemaki:hasAttachment",
-                                emlScope);
+                                emlScope,
+                                relationshipAuthorizingProfile(request));
                         if (relErr != null) warnings.add(relErr);
                     } else if (!emlResult.skipped()) {
                         warnings.add("Raw .eml preservation failed: " + String.join(", ", emlResult.errors()));
@@ -743,7 +744,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                             // Rule 5: the link is part of THIS attachment's work.
                             String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
                                     messageObjectId, existingId, "nemaki:hasAttachment",
-                                    attScope);
+                                    attScope,
+                                    relationshipAuthorizingProfile(request));
                             if (relErr != null) warnings.add(relErr);
                         }
                     } else {
@@ -990,7 +992,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                                 // Rule 5: the link is part of THIS attachment's work.
                                 String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
                                         pageObjectId, attObjectId, "nemaki:hasAttachment",
-                                        attScope);
+                                        attScope,
+                                        relationshipAuthorizingProfile(request));
                                 if (relErr != null) warnings.add(relErr);
                             }
                         }
@@ -1228,7 +1231,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (parentRecordId != null) {
                 String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
                         parentRecordId, result.objectId(), "nemaki:attachedToRecord",
-                        captureScope);
+                        captureScope,
+                        relationshipAuthorizingProfile(request));
                 if (relErr != null) warnings.add(relErr);
             }
         }
@@ -1390,7 +1394,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (parentContextId != null) {
                 String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
                         parentContextId, result.objectId(), "nemaki:derivedFromContext",
-                        captureScope);
+                        captureScope,
+                        relationshipAuthorizingProfile(request));
                 if (relErr != null) warnings.add(relErr);
             }
         }
@@ -2039,6 +2044,23 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     String createDirectRelationship(CallContext callContext, String repositoryId,
                                             String sourceId, String targetId,
                                             String relationshipTypeId, CaptureScope captureScope) {
+        return createDirectRelationship(callContext, repositoryId, sourceId, targetId,
+                relationshipTypeId, captureScope, null);
+    }
+
+    /**
+     * As above, with the profile whose import this link belongs to.
+     *
+     * <p>{@code authorizingProfile} is what lets the existence check below be followed by a
+     * re-authorisation: the check is a read and the creation is a write, and every other
+     * read/write pair in this import re-asks in between. Null means the caller has no profile
+     * to authorise against — the public four-argument entry point used by fetch orchestrators
+     * — and then no re-check happens, which is recorded rather than hidden.
+     */
+    String createDirectRelationship(CallContext callContext, String repositoryId,
+                                            String sourceId, String targetId,
+                                            String relationshipTypeId, CaptureScope captureScope,
+                                            ImportProfileDefinition authorizingProfile) {
         try {
             // Idempotent: if this source→target link already exists, do not
             // create a duplicate. Relationship creation is otherwise re-run on
@@ -2048,13 +2070,24 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     && relationshipExists(repositoryId, sourceId, targetId)) {
                 return null;
             }
-            // NOT re-authorised here, and that is a known gap. This existence check is a read
-            // and the creation below is a write, so by the rule the rest of this import
-            // follows the authorisation should be re-asked between them. It is not:
-            // createDirectRelationship has ten call sites across two classes and none of them
-            // carries the profile, connector and target folder the check needs. Threading that
-            // context through is the closure; a review named the pair and it is recorded as
-            // open rather than half-done.
+            // The existence check above is a read and the creation below is a write, so the
+            // authorisation is re-asked between them — the rule every other read/write pair in
+            // this import follows. A review called the missing re-check a release blocker and
+            // was right: this is not the irreducible instant before a write, it is an
+            // avoidable database read placed after the last authorisation.
+            if (authorizingProfile != null && authorizingProfile.isDelegated()) {
+                String folderNow = resolveTargetFolderId(authorizingProfile, repositoryId, callContext);
+                ConnectorDefinition connectorNow = authorizingProfile.getDefaultConnectorId() != null
+                        && connectorDefinitionService != null
+                                ? connectorDefinitionService.get(authorizingProfile.getDefaultConnectorId())
+                                : null;
+                ExternalIngestResult revokedHere = refuseIfDelegationNoLongerAuthorizes(
+                        "relationship", authorizingProfile, connectorNow, callContext,
+                        repositoryId, folderNow);
+                if (revokedHere != null) {
+                    return "the relationship was not created: " + revokedHere.errors().get(0);
+                }
+            }
             PropertiesImpl relProps = new PropertiesImpl();
             relProps.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, relationshipTypeId));
             relProps.addProperty(new PropertyIdImpl(PropertyIds.SOURCE_ID, sourceId));
@@ -2076,7 +2109,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (!"cmis:relationship".equals(relationshipTypeId)) {
                 logger.debug("Custom relationship type {} failed, falling back to cmis:relationship", relationshipTypeId);
                 return createDirectRelationship(callContext, repositoryId, sourceId, targetId,
-                        "cmis:relationship", captureScope);
+                        "cmis:relationship", captureScope, authorizingProfile);
             }
             logger.warn("Relationship {} → {} failed: {}", sourceId, targetId, e.getMessage());
             // INDETERMINATE: the throw may have come from before createRelationship or from the
@@ -2316,6 +2349,35 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         return false;
     }
 
+    /**
+     * The profile a relationship created during this import must be authorised against.
+     *
+     * <p>The archetype wrappers create their links AFTER the import that produced the objects
+     * has returned, so they have no resolved profile in hand. Resolving it here keeps the
+     * authorisation bound to the row that is current at the moment of the link — which is the
+     * point of re-asking at all. A resolution that cannot answer returns null and the link is
+     * created without a re-check: that is the pre-existing behaviour, not a new hole, and it
+     * is the only branch of this that is not fail-closed.
+     */
+    ImportProfileDefinition relationshipAuthorizingProfileForTest(ExternalIngestRequest request) {
+        return relationshipAuthorizingProfile(request);
+    }
+
+    private ImportProfileDefinition relationshipAuthorizingProfile(ExternalIngestRequest request) {
+        if (request == null || request.getProfileId() == null
+                || importProfileDefinitionService == null) {
+            return null;
+        }
+        try {
+            return importProfileDefinitionService.getForRepository(
+                    request.getProfileId(), request.getRepositoryId());
+        } catch (RuntimeException couldNotAsk) {
+            logger.debug("relationship authorisation: profile {} could not be resolved: {}",
+                    request.getProfileId(), couldNotAsk.getMessage());
+            return null;
+        }
+    }
+
     /** Beyond this the resync refuses rather than replacing part of the edges. */
     private static final int MAX_RESYNC_RELATIONSHIPS = 10_000;
 
@@ -2342,7 +2404,18 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                             callContext, repositoryId, objectId, true,
                             org.apache.chemistry.opencmis.commons.enums.RelationshipDirection.SOURCE,
                             null, null, false, batchSize, skipCount, null);
-            if (rels == null || rels.getObjects() == null || rels.getObjects().isEmpty()) break;
+            if (rels == null || rels.getObjects() == null || rels.getObjects().isEmpty()) {
+                // An EMPTY page that still says there is more is an incomplete listing, not
+                // the end of one. Breaking here returned the ids collected so far as a
+                // complete plan — the same silent-truncation shape as the cap below, and a
+                // review found it surviving the cap fix.
+                if (rels != null && Boolean.TRUE.equals(rels.hasMoreItems())) {
+                    throw new IllegalStateException("the relationships of " + objectId
+                            + " could not be listed: a page came back empty while the listing"
+                            + " reports more to come");
+                }
+                break;
+            }
             for (var relData : rels.getObjects()) {
                 if (relData.getId() != null) ids.add(relData.getId());
             }
@@ -2350,9 +2423,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             java.math.BigInteger advanced =
                     skipCount.add(java.math.BigInteger.valueOf(rels.getObjects().size()));
             if (advanced.equals(skipCount)) {
-                // A page that does not advance would repeat for ever. The combined version
-                // detected this as "a pass that removed nothing cannot make progress"; the
-                // split has no deletions to count, so it detects the non-advance directly.
+                // Unreachable while a page carries at least one object (the empty case is
+                // handled above), and kept as a guard rather than removed: a store that
+                // reported a non-empty page of size zero would otherwise loop for ever. The
+                // ledger said "a non-advancing page throws" as though this were the arm that
+                // catches a repeating listing — it is not; the empty-page arm above is.
                 throw new IllegalStateException("the relationships of " + objectId
                         + " could not be listed: the listing does not advance");
             }
@@ -3112,9 +3187,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     // listing that could not be completed means it did not remove the ones
                     // that are there. The combined version reported this through the deletion
                     // counter; the split has to say it here.
+                    // Not "stale edges remain": the listing failed, so whether any remain is
+                    // exactly what could not be established. Saying they do would be the same
+                    // substitution this batch is about, in the other direction. A review
+                    // caught the wording asserting an unknown.
                     resyncPlanError = "Resync did not remove the existing relationship(s) of "
-                            + existingDoc.getId() + ": they could not be listed, so stale edges"
-                            + " remain alongside the re-imported ones (" + e.getMessage() + ")";
+                            + existingDoc.getId() + ": they could not be listed, so whether any"
+                            + " stale edges remain alongside the re-imported ones was not"
+                            + " established (" + e.getMessage() + ")";
                 }
             }
 

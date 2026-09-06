@@ -245,6 +245,40 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void testARevokedDelegationStopsTheRelationshipCreation() {
+        // The existence check inside createDirectRelationship is a read and the creation is a
+        // write, and nothing re-asked in between — a review called that a release blocker,
+        // because it is not the irreducible instant before a write but an avoidable database
+        // read placed after the last authorisation. The link now authorises against the row
+        // that is current at the moment it is created.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(false);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setRepositoryId("bedroom");
+
+        String error = service.createDirectRelationship(testContext(), "bedroom",
+                "src-1", "tgt-1", "cmis:relationship",
+                jp.aegif.nemaki.rest.ingest.capture.CaptureScope.inactive(),
+                service.relationshipAuthorizingProfileForTest(req));
+
+        assertTrue(error != null && error.contains("cmis:all"),
+                "a link was created for a delegation that had been revoked: " + error);
+        verify(objectService, never()).createRelationship(any(), anyString(), any(), any(),
+                any(), any(), any());
+    }
+
+    @Test
     void testARevokeDuringTheRelationshipListingStillStopsTheWrite() {
         // The last read inside the write phase: replace_relationships_on_resync enumerated a
         // page and deleted from it in the same loop, so a revoke landing during the listing
