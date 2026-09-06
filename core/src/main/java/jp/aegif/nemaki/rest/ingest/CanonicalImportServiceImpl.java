@@ -2069,9 +2069,23 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // create a duplicate. Relationship creation is otherwise re-run on
             // every poll for already-imported objects (e.g. dedupe-skipped
             // chat attachments), which would accumulate duplicate edges.
-            if (sourceId != null && targetId != null
-                    && relationshipExists(repositoryId, sourceId, targetId)) {
-                return null;
+            String unansweredCheck = null;
+            if (sourceId != null && targetId != null) {
+                EdgeLookup edge = lookUpRelationship(repositoryId, sourceId, targetId);
+                if (edge.answered() && edge.exists()) {
+                    return null;
+                }
+                if (!edge.answered()) {
+                    // Created anyway (below) and SAID SO. The check used to fail open to
+                    // "no such edge" in silence: the link was created, a duplicate may have
+                    // been, and nothing reaching the caller told it apart from an answered
+                    // check. Refusing instead would let a transient read stop a legitimate
+                    // first link, so the choice stays; what changes is that it is reported.
+                    unansweredCheck = "relationship " + sourceId + " → " + targetId
+                            + " was created without its duplicate check: the existing"
+                            + " relationships could not be read (" + edge.failure()
+                            + "), so a duplicate edge may now exist";
+                }
             }
             // The existence check above is a read and the creation below is a write, so the
             // authorisation is re-asked between them — the rule every other read/write pair in
@@ -2098,8 +2112,15 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // changes nothing, and an intent for it could never be completed.
             captureScope.ensureIntentOpened();
             objectService.createRelationship(callContext, repositoryId, relProps, null, null, null, null);
-            captureScope.record("createRelationship", MutationOutcome.SUCCEEDED);
-            return null;
+            if (unansweredCheck != null) {
+                // The capture record carries the same fact: "succeeded" alone would read as
+                // the ordinary case to anyone reading the evidence later.
+                captureScope.record("createRelationship", MutationOutcome.SUCCEEDED,
+                        unansweredCheck);
+            } else {
+                captureScope.record("createRelationship", MutationOutcome.SUCCEEDED);
+            }
+            return unansweredCheck;
         } catch (CaptureScope.CaptureIntentFailedException failClosed) {
             // Never swallowed. This is the fail-closed point: it means the intent could 
             // not be written, so nothing may be changed. Caught by the surrounding catch
@@ -2123,8 +2144,27 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     }
 
     /**
-     * True if a relationship with the given source already targets {@code targetId}.
-     * Used to keep {@link #createDirectRelationship} idempotent.
+     * What the relationship read said — or that it said nothing. {@code exists} is
+     * meaningful only when {@code answered}; {@code failure} only when not.
+     */
+    private record EdgeLookup(boolean answered, boolean exists, String failure) {
+        static EdgeLookup present() {
+            return new EdgeLookup(true, true, null);
+        }
+
+        static EdgeLookup absent() {
+            return new EdgeLookup(true, false, null);
+        }
+
+        static EdgeLookup unanswered(String failure) {
+            return new EdgeLookup(false, false, failure);
+        }
+    }
+
+    /**
+     * Whether a relationship with the given source already targets {@code targetId} — or
+     * that this could not be established. Used to keep {@link #createDirectRelationship}
+     * idempotent.
      *
      * <p>The match is intentionally <b>type-agnostic</b> (source→target only).
      * Each ingest flow links a given source/target pair with exactly one
@@ -2133,24 +2173,35 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * Type-agnostic matching also means a custom-type retry won't duplicate an
      * edge that a previous call had to create as the cmis:relationship fallback.
      *
-     * <p>Fails open to {@code false} (allows creation) on query error, so a
-     * transient lookup failure never blocks a legitimate first link.
+     * <p>A read that fails is returned as UNANSWERED, not as "no such edge". The DAO
+     * underneath throws precisely so that "could not ask" is not read as "none", and this
+     * was the one layer that turned it back into {@code false} — with a javadoc that called
+     * it failing open. The caller still creates the link (a transient read must not block a
+     * legitimate first link) but reports that the check did not happen.
      */
-    private boolean relationshipExists(String repositoryId, String sourceId, String targetId) {
-        if (contentService == null) return false;
+    private EdgeLookup lookUpRelationship(String repositoryId, String sourceId, String targetId) {
+        if (contentService == null) {
+            // Wiring, not a read: the service is a required dependency, and null only in a
+            // fixture that never creates links. Not reported as an unanswered check.
+            return EdgeLookup.absent();
+        }
         try {
             List<jp.aegif.nemaki.model.Relationship> rels = contentService.getRelationsipsOfObject(
                     repositoryId, sourceId,
                     org.apache.chemistry.opencmis.commons.enums.RelationshipDirection.SOURCE);
             if (rels != null) {
                 for (jp.aegif.nemaki.model.Relationship r : rels) {
-                    if (r != null && targetId.equals(r.getTargetId())) return true;
+                    if (r != null && targetId.equals(r.getTargetId())) {
+                        return EdgeLookup.present();
+                    }
                 }
             }
+            return EdgeLookup.absent();
         } catch (Exception e) {
-            logger.debug("Relationship existence check failed for {} -> {}: {}", sourceId, targetId, e.getMessage());
+            logger.warn("Relationship existence check for {} -> {} did not answer: {}", sourceId,
+                    targetId, e.getMessage());
+            return EdgeLookup.unanswered(e.getMessage());
         }
-        return false;
     }
 
     /**

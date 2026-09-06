@@ -2222,13 +2222,15 @@ class CanonicalImportServiceTest {
     }
 
     @Test
-    void createDirectRelationship_failsOpen_whenExistenceCheckThrows() {
+    void createDirectRelationship_createsAndSaysSo_whenExistenceCheckThrows() {
         noteProfile("files_and_body");
         when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
                 any(), any(), isNull(), isNull(), isNull(), isNull()))
                 .thenReturn("page-obj-id", "att-obj-id");
-        // Existence check fails — must fail open (still create the link), not
-        // block the first legitimate relationship.
+        // The existence check does not answer. The link is still created — a transient read
+        // must not block the first legitimate relationship — but the caller is TOLD. The
+        // check used to fail open to "no such edge" in silence: a duplicate edge could exist
+        // with nothing in the result saying the check had not happened.
         when(contentService.getRelationsipsOfObject(eq("bedroom"), eq("page-obj-id"), any()))
                 .thenThrow(new RuntimeException("view unavailable"));
 
@@ -2237,6 +2239,32 @@ class CanonicalImportServiceTest {
 
         assertTrue(result.isSuccess(), "errors: " + result.errors());
         verify(objectService, times(1)).createRelationship(any(), any(), any(), any(), any(), any(), any());
+        assertTrue(result.warnings() != null && result.warnings().stream()
+                        .anyMatch(w -> w.contains("without its duplicate check")),
+                "the duplicate check did not answer and the result does not say so — the "
+                        + "same value as an answered check: " + result.warnings());
+    }
+
+    @Test
+    void createDirectRelationship_saysNothing_whenExistenceCheckAnswersNoEdge() {
+        // The control for the warning above: an ANSWERED "no such edge" is the ordinary
+        // first link. Reporting it as an unanswered check would make every first link look
+        // suspect — the over-report is the twin defect.
+        noteProfile("files_and_body");
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                any(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenReturn("page-obj-id", "att-obj-id");
+        when(contentService.getRelationsipsOfObject(eq("bedroom"), eq("page-obj-id"), any()))
+                .thenReturn(List.of());
+
+        ExternalIngestResult result = service.executeNoteImport(
+                testContext(), notePageReq("files_and_body", true));
+
+        assertTrue(result.isSuccess(), "errors: " + result.errors());
+        verify(objectService, times(1)).createRelationship(any(), any(), any(), any(), any(), any(), any());
+        assertTrue(result.warnings() == null || result.warnings().stream()
+                        .noneMatch(w -> w.contains("duplicate check")),
+                "an answered check was reported as unanswered: " + result.warnings());
     }
     private static CallContext testContext() {
         CallContext ctx = mock(CallContext.class);

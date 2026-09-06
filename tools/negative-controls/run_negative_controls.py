@@ -4102,6 +4102,39 @@ CONTROLS = [
         expect_fail=['theSelectorListingPagesPastTheFirstPage'],
     ),
     dict(
+        id="WD",
+        what="the relationship existence check fails open to 'no such edge' in silence again — "
+             "the link is created and nothing tells the caller the check did not happen",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='            return EdgeLookup.unanswered(e.getMessage());',
+        replace='            return EdgeLookup.absent();',
+        test='CanonicalImportServiceTest',
+        expect_fail=['createDirectRelationship_createsAndSaysSo_whenExistenceCheckThrows'],
+    ),
+    dict(
+        id="WE",
+        what="every first link is reported as an unanswered duplicate check — the over-report "
+             "twin of WD",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='                if (!edge.answered()) {',
+        replace='                if (true) {',
+        test='CanonicalImportServiceTest',
+        expect_fail=['createDirectRelationship_saysNothing_whenExistenceCheckAnswersNoEdge'],
+    ),
+    dict(
+        id="WF",
+        what="an unanswered duplicate check REFUSES the link — the over-throw: a transient read "
+             "stops a legitimate first relationship",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find_span=('                if (!edge.answered()) {',
+                   '                            + "), so a duplicate edge may now exist";\n                }'),
+        replace='                if (!edge.answered()) {\n'
+                '                    return "the relationship was not created: " + edge.failure();\n'
+                '                }',
+        test='CanonicalImportServiceTest',
+        expect_fail=['createDirectRelationship_createsAndSaysSo_whenExistenceCheckThrows'],
+    ),
+    dict(
         id="HA",
         what="a retained folder is erased from the search index again",
         file="core/src/main/java/jp/aegif/nemaki/cmis/service/impl/ObjectServiceImpl.java",
