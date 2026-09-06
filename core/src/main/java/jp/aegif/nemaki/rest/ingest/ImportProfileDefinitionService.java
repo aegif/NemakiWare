@@ -97,6 +97,24 @@ public interface ImportProfileDefinitionService {
     List<ImportProfileDefinition> listScheduledIndexFree();
 
     /**
+     * Every OWNED profile row of every repository — enabled or not — read from
+     * {@code _all_docs}: the same walk and the same per-row policy as
+     * {@link #listScheduledIndexFree()}, without the scheduler filter.
+     *
+     * <p>Written for the webhook receiver, which used to pick its recipients out of
+     * {@link #list()} — a selector. While that index rebuilt the receiver saw no profiles,
+     * answered {@code no_profile} with a 200, and the event was gone; the selector's page cap
+     * dropped the same way past its first page. Neither is what "no profile" means.
+     *
+     * <p>Rows that name no repository are not returned: they are not a wildcard, and the
+     * runtime gate refuses them for every repository. A row that cannot be interpreted is
+     * logged and skipped, as in the scheduled listing. Throws
+     * {@code ProfileIndexNotReadyException} when the walk cannot be completed — the caller
+     * must not read that as an empty list.
+     */
+    List<ImportProfileDefinition> listOwnedIndexFree();
+
+    /**
      * Rewrites every legacy import-profile row saved under a CouchDB-generated id to its
      * deterministic id ({@code import_profile_definition:<profileId>}) — the import-profile
      * half of the §62 closure. Same window, same database, same startup patch entrance as

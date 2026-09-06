@@ -4026,6 +4026,81 @@ CONTROLS = [
         test='CanonicalImportServiceTest',
         expect_fail=['testAProfileGoneDuringTheImportIsAWarningNotA500'],
     ),
+    # ── fail-closed reads, second batch: the webhook receiver and the selector's page cap ──
+    dict(
+        id="VX",
+        what="the webhook receiver picks its recipients out of the Mango selector again — a "
+             "rebuilding index reads as 'no profile', 200, and the sender's event is gone",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='        return profileService.listOwnedIndexFree().stream()',
+        replace='        return profileService.list().stream()',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['theRecipientsAreReadFromTheWalkNotTheSelector'],
+    ),
+    dict(
+        id="VY",
+        what="a recipient listing that could not be completed falls to the generic 500 again — "
+             "the sender reads it as our bug, not as an answer to retry",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        # The whole 503 catch clause goes; the closing brace of the try is supplied by the
+        # generic catch that follows it.
+        find_span=('        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException couldNotList) {',
+                   '                    .body(Map.of("error", "Import profiles could not be read; retry shortly"));'),
+        replace='',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['aListingThatCannotBeCompletedIsA503NotNoProfile'],
+    ),
+    dict(
+        id="VZ",
+        what="the shared owned-row walk lists rows that name no repository — an unowned row "
+             "becomes a webhook recipient the delegated gate then refuses",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # The three-line form is what makes this anchor unique: getOwnedRowIndexFree has the
+        # same condition, followed by a comment instead of the return.
+        find='                    || isBlank(props.get("repositoryId"))) {\n                return;\n            }',
+        replace='                    || false) {\n                return;\n            }',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theOwnedListingSeesEveryOwnedRowAndSkipsTheRest'],
+    ),
+    dict(
+        id="WA",
+        what="the shared owned-row walk skips a row it could not read and answers with the "
+             "rest — at the receiver, 'these are all the profiles'",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find_span=('                throw new IllegalStateException(what + " cannot be listed: a row"',
+                   '                        + (row.getError() != null ? row.getError() : "no id") + ")");'),
+        replace='                return;',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theOwnedListingRefusesAnUnreadableRow'],
+    ),
+    dict(
+        id="WB",
+        what="the profile selector listing returns its first page as the whole answer again — "
+             "the 201st profile is never listed, and nothing says so",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='        return NemakiConfFind.allMatching(cloudant, dbName, selector);',
+        replace='        PostFindOptions findOptions = new PostFindOptions.Builder()\n'
+                '                .db(dbName).selector(selector).limit(200).build();\n'
+                '        FindResult findResult = cloudant.postFind(findOptions).execute().getResult();\n'
+                '        List<com.ibm.cloud.cloudant.v1.model.Document> docs = findResult.getDocs();\n'
+                '        return docs != null ? docs : List.of();',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theSelectorListingPagesPastTheFirstPage'],
+    ),
+    dict(
+        id="WC",
+        what="the connector selector listing returns its first page as the whole answer again — "
+             "the profile fix's one-arm twin",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='        return NemakiConfFind.allMatching(cloudant, dbName, selector);',
+        replace='        PostFindOptions findOptions = new PostFindOptions.Builder()\n'
+                '                .db(dbName).selector(selector).limit(200).build();\n'
+                '        FindResult findResult = cloudant.postFind(findOptions).execute().getResult();\n'
+                '        List<com.ibm.cloud.cloudant.v1.model.Document> docs = findResult.getDocs();\n'
+                '        return docs != null ? docs : List.of();',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theSelectorListingPagesPastTheFirstPage'],
+    ),
     dict(
         id="HA",
         what="a retained folder is erased from the search index again",

@@ -821,6 +821,28 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
 
     @Override
     public List<ImportProfileDefinition> listScheduledIndexFree() {
+        return listOwnedRowsIndexFree("the scheduled profiles", "scheduled-profile enumeration",
+                "is not being scheduled", def -> def.isEnabled() && def.isSchedulerEnabled());
+    }
+
+    @Override
+    public List<ImportProfileDefinition> listOwnedIndexFree() {
+        return listOwnedRowsIndexFree("the profiles", "profile enumeration",
+                "is not being listed", def -> true);
+    }
+
+    /**
+     * The one walk behind {@link #listScheduledIndexFree()} and {@link #listOwnedIndexFree()}.
+     * Two copies of the per-row policy is how the webhook side would have kept a skip the
+     * scheduler side had fixed — so the policy lives once and each caller names only its
+     * filter and the words its messages use.
+     *
+     * @param what      the noun the refusal names ("the scheduled profiles cannot be listed")
+     * @param context   the log prefix that lets an operator find a skipped row
+     * @param consequence what the skip means for the row ("is not being scheduled")
+     */
+    private List<ImportProfileDefinition> listOwnedRowsIndexFree(String what, String context,
+            String consequence, java.util.function.Predicate<ImportProfileDefinition> wanted) {
         CloudantClientWrapper client;
         try {
             client = getConfClient();
@@ -828,11 +850,11 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
             throw new ProfileIndexNotReadyException(couldNotAsk.getMessage());
         }
         String dbName = client.getDatabaseName();
-        List<ImportProfileDefinition> scheduled = new ArrayList<>();
+        List<ImportProfileDefinition> listed = new ArrayList<>();
         java.util.function.Consumer<com.ibm.cloud.cloudant.v1.model.DocsResultRow> perRow = row -> {
             String id = row.getId();
             if (row.getError() != null || id == null) {
-                throw new IllegalStateException("the scheduled profiles cannot be listed: a row"
+                throw new IllegalStateException(what + " cannot be listed: a row"
                         + " of '" + dbName + "' could not be read ("
                         + (row.getError() != null ? row.getError() : "no id") + ")");
             }
@@ -842,7 +864,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
             Map<String, Object> props = row.getDoc() != null
                     ? row.getDoc().getProperties() : null;
             if (props == null) {
-                throw new IllegalStateException("the scheduled profiles cannot be listed: row "
+                throw new IllegalStateException(what + " cannot be listed: row "
                         + id + " came back without a body");
             }
             if (!ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))
@@ -858,8 +880,8 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                 // Standing, not transient: no poll repairs this row, and refusing the whole
                 // enumeration would let one broken row stop every scheduled capture. Named so
                 // an operator can find it.
-                logger.error("scheduled-profile enumeration: row {} could not be read as a"
-                        + " profile and is not being scheduled ({})", id, e.getMessage());
+                logger.error("{}: row {} could not be read as a profile and {} ({})",
+                        context, id, consequence, e.getMessage());
                 return;
             }
             if (def.getProfileId() == null || def.getProfileId().isBlank()) {
@@ -868,12 +890,11 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                 // delegated tick then put a null id into a ConcurrentHashMap key set — an NPE
                 // that escaped to the poll's outer catch and stopped every profile after it.
                 // A review traced the second shape of "one broken row".
-                logger.error("scheduled-profile enumeration: row {} has no profileId and is"
-                        + " not being scheduled", id);
+                logger.error("{}: row {} has no profileId and {}", context, id, consequence);
                 return;
             }
-            if (def.isEnabled() && def.isSchedulerEnabled()) {
-                scheduled.add(def);
+            if (wanted.test(def)) {
+                listed.add(def);
             }
         };
         try {
@@ -883,7 +904,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         } catch (RuntimeException transportFailed) {
             throw new ProfileIndexNotReadyException(transportFailed.getMessage());
         }
-        return scheduled;
+        return listed;
     }
 
     /** Null, or a value whose text is empty — a row that names no repository either way. */
@@ -1384,13 +1405,13 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         return results;
     }
 
+    /**
+     * Every row the selector shows — all of its pages, not the first one. The single page
+     * this used to return capped every selector listing at 200 rows without saying so.
+     */
     private List<com.ibm.cloud.cloudant.v1.model.Document> findRawDocs(
             com.ibm.cloud.cloudant.v1.Cloudant cloudant, String dbName, Map<String, Object> selector) {
-        PostFindOptions findOptions = new PostFindOptions.Builder()
-                .db(dbName).selector(selector).limit(200).build();
-        FindResult findResult = cloudant.postFind(findOptions).execute().getResult();
-        List<com.ibm.cloud.cloudant.v1.model.Document> docs = findResult.getDocs();
-        return docs != null ? docs : List.of();
+        return NemakiConfFind.allMatching(cloudant, dbName, selector);
     }
 
     private CloudantClientWrapper getConfClient() {

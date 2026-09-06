@@ -802,13 +802,13 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
         return results;
     }
 
+    /**
+     * Every row the selector shows — all of its pages, not the first one. The single page
+     * this used to return capped every selector listing at 200 rows without saying so.
+     */
     private List<com.ibm.cloud.cloudant.v1.model.Document> findRawDocs(
             com.ibm.cloud.cloudant.v1.Cloudant cloudant, String dbName, Map<String, Object> selector) {
-        PostFindOptions findOptions = new PostFindOptions.Builder()
-                .db(dbName).selector(selector).limit(200).build();
-        FindResult findResult = cloudant.postFind(findOptions).execute().getResult();
-        List<com.ibm.cloud.cloudant.v1.model.Document> docs = findResult.getDocs();
-        return docs != null ? docs : List.of();
+        return NemakiConfFind.allMatching(cloudant, dbName, selector);
     }
 
     /** The shared walk's page size, re-exported so the paging test can build a full page. */

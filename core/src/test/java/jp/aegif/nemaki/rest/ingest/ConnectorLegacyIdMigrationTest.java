@@ -427,6 +427,61 @@ class ConnectorLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("the selector listing pages past a full first page — a connector on page two "
+            + "is listed")
+    void theSelectorListingPagesPastTheFirstPage() {
+        // list() asked the selector for one page of 200 and returned it as the whole answer:
+        // the 201st connector was never listed. The profile service's twin; locked on both
+        // sides because "fixed one service, forgot the other" is the shape this batch keeps
+        // producing.
+        wire();
+        List<Document> firstPage = new ArrayList<>();
+        for (int i = 0; i < NemakiConfFind.PAGE; i++) {
+            firstPage.add(selectorDoc(connectorProps(String.format("c-%04d", i), "Early")));
+        }
+        ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> first =
+                findCallOf(firstPage, "page-2");
+        ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> second =
+                findCallOf(List.of(selectorDoc(connectorProps("c-late", "Late"))), "page-3");
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenAnswer(call -> {
+                    com.ibm.cloud.cloudant.v1.model.PostFindOptions options = call.getArgument(0);
+                    return "page-2".equals(options.bookmark()) ? second : first;
+                });
+
+        List<ConnectorDefinition> all = service.list();
+
+        assertEquals(NemakiConfFind.PAGE + 1, all.size(),
+                "the listing stopped at its first page — a connector past it is not listed");
+        assertTrue(all.stream().anyMatch(c -> "c-late".equals(c.getConnectorId())),
+                "the connector on page two is missing: " + all.size() + " listed");
+    }
+
+    /** One raw document as the selector serves it. */
+    private static Document selectorDoc(Map<String, Object> props) {
+        Document doc = mock(Document.class);
+        when(doc.getId()).thenReturn(ConnectorDefinition.DOC_TYPE + ":" + props.get("connectorId"));
+        when(doc.getRev()).thenReturn("1-a");
+        when(doc.getProperties()).thenReturn(props);
+        return doc;
+    }
+
+    /** A selector page: these documents, and this bookmark to continue from. */
+    @SuppressWarnings("unchecked")
+    private static ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> findCallOf(
+            List<Document> docs, String bookmark) {
+        com.ibm.cloud.cloudant.v1.model.FindResult found =
+                mock(com.ibm.cloud.cloudant.v1.model.FindResult.class);
+        when(found.getDocs()).thenReturn(docs);
+        when(found.getBookmark()).thenReturn(bookmark);
+        Response<com.ibm.cloud.cloudant.v1.model.FindResult> response = mock(Response.class);
+        when(response.getResult()).thenReturn(found);
+        ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> call = mock(ServiceCall.class);
+        when(call.execute()).thenReturn(response);
+        return call;
+    }
+
+    @Test
     @DisplayName("the migration reads no view and no Mango selector — the property that "
             + "makes running it UNGATED sound")
     void theMigrationConsultsNoIndex() throws Exception {

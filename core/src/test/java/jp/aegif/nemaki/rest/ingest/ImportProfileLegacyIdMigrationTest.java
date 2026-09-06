@@ -1266,6 +1266,117 @@ class ImportProfileLegacyIdMigrationTest {
         assertEquals("p-fine", scheduled.get(0).getProfileId());
     }
 
+    // ────────────────────────────────────────────────────────────────────
+    // listOwnedIndexFree — the webhook receiver's recipients, read without the index
+    // ────────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("the owned listing returns every owned row the walk can read — legacy id or "
+            + "deterministic, enabled or not — and neither an unowned row nor one it cannot interpret")
+    void theOwnedListingSeesEveryOwnedRowAndSkipsTheRest() {
+        // The webhook receiver picked its recipients out of list() — a selector. While its
+        // index rebuilt it saw no profiles and answered no_profile with a 200: the sender's
+        // event consumed, nothing captured. The walk does not consult the index, so the
+        // selector is left unstubbed here and asserted never asked.
+        wire();
+        Map<String, Object> legacy = profileProps("p-legacy", "Legacy");
+        Map<String, Object> disabled = profileProps("p-off", "Off");
+        disabled.put("enabled", false);
+        Map<String, Object> unowned = profileProps("p-nobody", "Nobody");
+        unowned.put("repositoryId", "  ");
+        Map<String, Object> broken = profileProps("p-broken", "Broken");
+        broken.put("retentionDays", "not-a-number");
+        listingAnswers(List.of(
+                row("a1b2c3-generated", legacy, "1-a"),
+                row("import_profile_definition:p-off", disabled, "1-b"),
+                row("import_profile_definition:p-nobody", unowned, "1-c"),
+                row("import_profile_definition:p-broken", broken, "1-d")));
+
+        List<String> listed = service.listOwnedIndexFree().stream()
+                .map(ImportProfileDefinition::getProfileId).sorted().toList();
+
+        assertEquals(List.of("p-legacy", "p-off"), listed,
+                "not the owned rows the walk could read — an unowned row is not a recipient, "
+                        + "a disabled one is listed (the receiver filters enabled itself), and "
+                        + "a row that cannot be interpreted is skipped: " + listed);
+        verify(cloudant, never()).postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class));
+    }
+
+    @Test
+    @DisplayName("the owned listing refuses a row it cannot read rather than answering short")
+    void theOwnedListingRefusesAnUnreadableRow() {
+        // Dropping the row and answering with the rest reads, at the receiver, as "these are
+        // all the profiles" — and when the dropped row was the recipient, as no_profile.
+        wire();
+        listingAnswers(List.of(
+                row("import_profile_definition:p-fine", profileProps("p-fine", "Fine"), "1-a"),
+                row(null, null, null)));
+
+        assertThrows(ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+                () -> service.listOwnedIndexFree(),
+                "a row the walk could not read was dropped and the listing answered as if "
+                        + "it were complete");
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // The selector listing follows its bookmark — one page was never the whole answer
+    // ────────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("the selector listing pages past a full first page — a profile on page two "
+            + "is listed")
+    void theSelectorListingPagesPastTheFirstPage() {
+        // list() and listByRepository() asked the selector for one page of 200 and returned
+        // it as the whole answer: the 201st profile was never listed, by the admin API or by
+        // anything that filtered list(). Unlike the rebuilding index, that answered short
+        // EVERY time it ran.
+        wire();
+        List<Document> firstPage = new ArrayList<>();
+        for (int i = 0; i < NemakiConfFind.PAGE; i++) {
+            firstPage.add(selectorDoc(profileProps(String.format("p-%04d", i), "Early")));
+        }
+        ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> first =
+                findCallOf(firstPage, "page-2");
+        ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> second =
+                findCallOf(List.of(selectorDoc(profileProps("p-late", "Late"))), "page-3");
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenAnswer(call -> {
+                    com.ibm.cloud.cloudant.v1.model.PostFindOptions options = call.getArgument(0);
+                    return "page-2".equals(options.bookmark()) ? second : first;
+                });
+
+        List<ImportProfileDefinition> all = service.list();
+
+        assertEquals(NemakiConfFind.PAGE + 1, all.size(),
+                "the listing stopped at its first page — a profile past it is not listed");
+        assertTrue(all.stream().anyMatch(p -> "p-late".equals(p.getProfileId())),
+                "the profile on page two is missing: " + all.size() + " listed");
+    }
+
+    /** One raw document as the selector serves it. */
+    private static Document selectorDoc(Map<String, Object> props) {
+        Document doc = mock(Document.class);
+        when(doc.getId()).thenReturn(ImportProfileDefinition.DOC_TYPE + ":" + props.get("profileId"));
+        when(doc.getRev()).thenReturn("1-a");
+        when(doc.getProperties()).thenReturn(props);
+        return doc;
+    }
+
+    /** A selector page: these documents, and this bookmark to continue from. */
+    @SuppressWarnings("unchecked")
+    private static ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> findCallOf(
+            List<Document> docs, String bookmark) {
+        com.ibm.cloud.cloudant.v1.model.FindResult found =
+                mock(com.ibm.cloud.cloudant.v1.model.FindResult.class);
+        when(found.getDocs()).thenReturn(docs);
+        when(found.getBookmark()).thenReturn(bookmark);
+        Response<com.ibm.cloud.cloudant.v1.model.FindResult> response = mock(Response.class);
+        when(response.getResult()).thenReturn(found);
+        ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> call = mock(ServiceCall.class);
+        when(call.execute()).thenReturn(response);
+        return call;
+    }
+
     @Test
     @DisplayName("a row whose repositoryId is BLANK is removable by its docId too")
     void aBlankRepositoryRowIsReachable() {

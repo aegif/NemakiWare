@@ -178,6 +178,14 @@ public class IngestWebhookController {
                 default -> handleGenericWebhook(connector, payload);
             };
 
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException couldNotList) {
+            // The recipients could not be enumerated. Not "no profile" (200 tells the sender
+            // the event was delivered) and not the 500 below (our bug, nothing to wait for):
+            // 503 is the one answer a sender is entitled to retry.
+            logger.error("Webhook for {} not dispatched: the import profiles could not be"
+                    + " listed ({})", connectorId, couldNotList.getMessage());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("error", "Import profiles could not be read; retry shortly"));
         } catch (Exception e) {
             logger.error("Webhook processing failed for {}: {}", connectorId, e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -474,11 +482,19 @@ public class IngestWebhookController {
      * semantics of {@link ImportProfileDefinition#isConnectorAllowed(String)}
      * is intentionally NOT used here to prevent unrelated profiles from
      * receiving webhook events.
+     *
+     * <p>Read through the {@code _all_docs} walk, not the selector. The selector answered
+     * an empty list while its index rebuilt (and past its page cap), and the receiver then
+     * said {@code no_profile} with a 200 — the sender's event was consumed and nothing
+     * captured it. A listing that cannot be completed now throws, and
+     * {@link #receiveWebhook} answers 503 so the sender retries. Rows that name no
+     * repository are not recipients: the delegated gate refuses them for every repository,
+     * so dispatching to one was a fetch that could only fail.
      */
     private List<ImportProfileDefinition> findAllProfilesForConnector(ConnectorDefinition connector) {
         if (profileService == null) return List.of();
         String connId = connector.getConnectorId();
-        return profileService.list().stream()
+        return profileService.listOwnedIndexFree().stream()
                 .filter(ImportProfileDefinition::isEnabled)
                 .filter(p -> connId.equals(p.getDefaultConnectorId())
                         || (p.getAllowedConnectorIds() != null

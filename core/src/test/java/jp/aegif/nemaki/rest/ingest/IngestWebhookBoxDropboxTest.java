@@ -25,6 +25,7 @@ import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -79,7 +80,10 @@ class IngestWebhookBoxDropboxTest {
         p.setEnabled(true);
         p.setDefaultConnectorId(connId);
         p.setSchedulerParams(schedulerParams);
-        when(profileService.list()).thenReturn(List.of(p));
+        // The receiver reads its recipients from the _all_docs walk; list() — the selector —
+        // is deliberately left unstubbed (an empty answer), so a receiver that went back to
+        // it would find no profile here.
+        when(profileService.listOwnedIndexFree()).thenReturn(List.of(p));
         return p;
     }
 
@@ -153,6 +157,52 @@ class IngestWebhookBoxDropboxTest {
                 .andExpect(content().string(containsString("\"status\":\"accepted\"")));
 
         verify(schedulerService).authorizeDelegatedFetch(any(), any());
+    }
+
+    // ── Recipients are read without the index ──
+
+    @Test
+    void theRecipientsAreReadFromTheWalkNotTheSelector() throws Exception {
+        // list() is a Mango selector. While its index rebuilt it answered an empty list, the
+        // receiver said no_profile with a 200, and the sender's event was consumed with
+        // nothing captured. Here the selector shows NOTHING and only the walk knows the
+        // profile: a receiver that still asks the selector answers no_profile.
+        String secret = "dbxsecret";
+        connector("c-dbx", "dropbox", secret);
+        ImportProfileDefinition p = profileFor("c-dbx", Map.of("folderPath", "/Documents"));
+        when(profileService.list()).thenReturn(List.of());
+        when(profileService.listOwnedIndexFree()).thenReturn(List.of(p));
+        String body = "{\"list_folder\":{\"accounts\":[\"dbid:AAA\"]},\"delta\":{\"users\":[1]}}";
+        when(httpRequest.getHeader("X-Dropbox-Signature")).thenReturn(hmacHex(secret, body));
+
+        mockMvc.perform(post("/v1/ingest-webhook/c-dbx")
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("\"status\":\"accepted\"")));
+
+        verify(profileService, never()).list();
+        verify(schedulerService).authorizeDelegatedFetch(any(), any());
+    }
+
+    @Test
+    void aListingThatCannotBeCompletedIsA503NotNoProfile() throws Exception {
+        // The walk refused: a row could not be read. That is neither "no profile" (200, the
+        // sender takes the event as delivered) nor the generic 500 (our bug, nothing to wait
+        // for) — it is the one answer the sender is entitled to retry.
+        String secret = "dbxsecret";
+        connector("c-dbx", "dropbox", secret);
+        when(profileService.listOwnedIndexFree()).thenThrow(
+                new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(
+                        "the profiles cannot be listed: a row of 'nemaki_conf' could not be read"));
+        String body = "{\"list_folder\":{\"accounts\":[\"dbid:AAA\"]},\"delta\":{\"users\":[1]}}";
+        when(httpRequest.getHeader("X-Dropbox-Signature")).thenReturn(hmacHex(secret, body));
+
+        mockMvc.perform(post("/v1/ingest-webhook/c-dbx")
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(content().string(containsString("retry")));
+
+        verify(schedulerService, never()).authorizeDelegatedFetch(any(), any());
     }
 
     @Test
