@@ -188,9 +188,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * <p>A null context is refused rather than exempted: it cannot be shown to be an
      * administrator, and there is nothing to authorise a delegated write against.
      *
-     * <p>Called twice: once when the profile is resolved, and once after the reads that decide
-     * what to write (content, de-duplication listing, idempotency record, resync plan) and
-     * before the writes themselves. Between them the content stream is drained,
+     * <p>Called twice: once when the profile is resolved, and once after the content buffer,
+     * the de-duplication listing, the idempotency record and the resync plan have been read
+     * and before the writes those decide. It does NOT cover every later read — the
+     * relationship-existence check inside {@code createDirectRelationship} still decides a
+     * write on the earlier answer; that is recorded as open. Between them the content stream is drained,
      * which for a large attachment is the long part, so a revoke landing during it is caught.
      * It is a check at a point in time, not a lock: a revoke landing between the second call
      * and the write is NOT caught, and no number of checks changes that — it needs fencing
@@ -2046,6 +2048,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     && relationshipExists(repositoryId, sourceId, targetId)) {
                 return null;
             }
+            // NOT re-authorised here, and that is a known gap. This existence check is a read
+            // and the creation below is a write, so by the rule the rest of this import
+            // follows the authorisation should be re-asked between them. It is not:
+            // createDirectRelationship has ten call sites across two classes and none of them
+            // carries the profile, connector and target folder the check needs. Threading that
+            // context through is the closure; a review named the pair and it is recorded as
+            // open rather than half-done.
             PropertiesImpl relProps = new PropertiesImpl();
             relProps.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, relationshipTypeId));
             relProps.addProperty(new PropertyIdImpl(PropertyIds.SOURCE_ID, sourceId));
@@ -2307,6 +2316,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         return false;
     }
 
+    /** Beyond this the resync refuses rather than replacing part of the edges. */
+    private static final int MAX_RESYNC_RELATIONSHIPS = 10_000;
+
     /**
      * The ids this resync would delete — a read, and only a read.
      *
@@ -2335,8 +2347,25 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 if (relData.getId() != null) ids.add(relData.getId());
             }
             if (!Boolean.TRUE.equals(rels.hasMoreItems())) break;
-            skipCount = skipCount.add(java.math.BigInteger.valueOf(rels.getObjects().size()));
-            if (ids.size() > 10_000) break;   // a plan this large is a data problem, not a resync
+            java.math.BigInteger advanced =
+                    skipCount.add(java.math.BigInteger.valueOf(rels.getObjects().size()));
+            if (advanced.equals(skipCount)) {
+                // A page that does not advance would repeat for ever. The combined version
+                // detected this as "a pass that removed nothing cannot make progress"; the
+                // split has no deletions to count, so it detects the non-advance directly.
+                throw new IllegalStateException("the relationships of " + objectId
+                        + " could not be listed: the listing does not advance");
+            }
+            skipCount = advanced;
+            if (ids.size() > MAX_RESYNC_RELATIONSHIPS) {
+                // NOT a silent truncation. Returning what was collected would delete part of
+                // the edges and report success, leaving the rest without either warning — the
+                // policy promises the object keeps ONLY the incoming relationships. A review
+                // found the cap returning a partial plan as a complete one.
+                throw new IllegalStateException("the relationships of " + objectId
+                        + " could not be listed: more than " + MAX_RESYNC_RELATIONSHIPS
+                        + " exist, which is beyond what this policy will replace");
+            }
         }
         return ids;
     }
@@ -2358,6 +2387,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             } catch (CaptureScope.CaptureIntentFailedException failClosed) {
                 throw failClosed;
             } catch (Exception e) {
+                // Recorded, not only logged: the capture evidence has to carry the failed
+                // mutation. The split dropped this line and a review caught the loss.
+                captureScope.record("removeRelationship", MutationOutcome.FAILED, e.getMessage());
                 logger.warn("Resync: failed to remove relationship {} from {}: {}",
                         relId, objectId, e.getMessage());
                 totalFailed++;
@@ -3075,9 +3107,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 } catch (Exception e) {
                     logger.warn("Failed to query relationships for {}: {}",
                             existingDoc.getId(), e.getMessage());
-                    resyncPlanError = "Existing relationships of " + existingDoc.getId()
-                            + " could not be listed, so the resync policy could not be applied: "
-                            + e.getMessage();
+                    // Named as a surviving-edge failure, because that is what it is: the
+                    // policy promises the object keeps ONLY the incoming relationships, and a
+                    // listing that could not be completed means it did not remove the ones
+                    // that are there. The combined version reported this through the deletion
+                    // counter; the split has to say it here.
+                    resyncPlanError = "Resync did not remove the existing relationship(s) of "
+                            + existingDoc.getId() + ": they could not be listed, so stale edges"
+                            + " remain alongside the re-imported ones (" + e.getMessage() + ")";
                 }
             }
 
@@ -3126,9 +3163,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 }
             }
 
-            // Ask the delegated authorisation again, here — after the reads that decide what
-            // to write (content, dedupe listing, idempotency record, resync plan) and before
-            // the writes themselves. The first call happens before the content
+            // Ask the delegated authorisation again, here — after the content buffer, the
+            // dedupe listing, the idempotency record and the resync plan, and before the
+            // writes those decide. The relationship-existence check further down is not
+            // covered; that pair is recorded as open. The first call happens before the content
             // stream is drained (the long part for a large attachment). Two earlier versions
             // of this second call were both too early: one sat inside the stream branch, so a
             // content-less import got a single check; the next ran before the dedupe listing

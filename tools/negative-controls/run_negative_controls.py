@@ -3948,8 +3948,8 @@ CONTROLS = [
         dict(
         id="VQ",
         what="the resync deletion plan is no longer formed before the authorisation is "
-             "re-asked — the listing moves back into the write phase, where a revoke during "
-             "it is not seen by the deletions that follow",
+             "re-asked (the early enumeration is removed), so a revoke landing during the "
+             "listing is not seen by the deletions that follow",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
         # The first version restored the combined helper but LEFT the read-phase enumeration,
         # so the revoke still landed before the check and the lock stayed green. Remove the

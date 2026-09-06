@@ -373,8 +373,9 @@ class CanonicalImportServiceTest {
         // The second call sat inside the content-stream branch, so an import with no stream
         // got only the first check — and the mutations after it (idempotency-record deletion,
         // document deletion, checkout, creation) ran on that one decision. A review named the
-        // branch. The check now runs after the reads that decide what to write and before the
-        // writes themselves, stream or no stream.
+        // branch. The check now runs after the content buffer, the dedupe listing, the
+        // idempotency record and the resync plan, and before the writes those decide —
+        // stream or no stream.
         ImportProfileDefinition delegated = new ImportProfileDefinition();
         delegated.setProfileId("p1");
         delegated.setEnabled(true);

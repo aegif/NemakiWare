@@ -6366,11 +6366,12 @@ upgrade-time round-trip analysis. After deploying RC3:
   gates, runtime gates, scheduler defence, and cap-property handling.
 - 21 API E2E tests against a live deployment cover admin / delegated
   user / non-delegated user × CRUD + execute + TOCTOU scenarios.
-- RC3 hardening rounds: the unit suite passes. As of 3.4 the precise figure is
-  6,719 tests with 0 failures and 38 errors, all of them `CmisConnectionException`
-  from integration and TCK classes that need a running server — **the TCK was not
-  run**, and the negative-control sweep is recorded per batch in the design ledger
-  rather than claimed here.
+- RC3 hardening rounds: `mvn test` reports 0 failures. The figure moves as tests
+  are added, so it is not restated here as a fixed number — the exact count, the
+  errors and what they mean are recorded per batch in the design ledger. The
+  errors are `CmisConnectionException` from integration and TCK classes that need
+  a running server: **the TCK is not run by this suite**. The negative-control
+  sweep is likewise recorded per batch, not claimed here.
 
 ### Known pre-existing follow-ups (closed in RC4)
 
