@@ -2357,9 +2357,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * <p>The archetype wrappers create their links AFTER the import that produced the objects
      * has returned, so they have no resolved profile in hand. Resolving it here keeps the
      * authorisation bound to the row that is current at the moment of the link — which is the
-     * point of re-asking at all. A resolution that cannot answer returns null and the link is
-     * created without a re-check: that is the pre-existing behaviour, not a new hole, and it
-     * is the only branch of this that is not fail-closed.
+     * point of re-asking at all. A resolution that cannot answer does NOT return null — an
+     * unreadable read propagates and a row that has gone throws — and
+     * {@code createDirectRelationshipAuthorized} turns either into the relationship warning
+     * its callers already expect. (This note used to say the opposite, describing an earlier
+     * version in which both became null and the link was created unchecked.)
      */
     ImportProfileDefinition relationshipAuthorizingProfileForTest(ExternalIngestRequest request) {
         return relationshipAuthorizingProfile(request);

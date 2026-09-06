@@ -6308,8 +6308,10 @@ upgrade-time round-trip analysis. After deploying RC3:
   by its own re-check, against the profile and connector that import used. Links
   created by fetch orchestrators through the public entry point, after their
   import has returned, carry no profile and are not re-checked. Inside an import,
-  a link whose profile or connector cannot be resolved is refused and reported as
-  a relationship warning rather than created unchecked. It is **not** a guarantee that no write follows a
+  a link whose profile cannot be resolved is refused and reported as a relationship
+  warning rather than created unchecked; for a **delegated** profile a named
+  connector that cannot be resolved is refused the same way. A non-delegated
+  profile has no connector delegation to check and is unaffected. It is **not** a guarantee that no write follows a
   revoke: the gap between the second check and the write remains, and closing
   it would need fencing shared with the revoke path or a transaction the store
   does not offer. Revoking a connector's delegation stops later writes from
