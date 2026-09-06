@@ -3946,6 +3946,21 @@ CONTROLS = [
         expect_fail=['testAnAdministratorOfAnotherRepositoryIsStillRefused'],
     ),
         dict(
+        id="VQ",
+        what="the resync deletion plan is no longer formed before the authorisation is "
+             "re-asked — the listing moves back into the write phase, where a revoke during "
+             "it is not seen by the deletions that follow",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        # The first version restored the combined helper but LEFT the read-phase enumeration,
+        # so the revoke still landed before the check and the lock stayed green. Remove the
+        # early read: that is what "formed before the check" means.
+        find_span=('                    resyncPlan = collectExistingRelationshipIds(',
+                   '                            callContext, repositoryId, existingDoc.getId());'),
+        replace='                    resyncPlan = java.util.List.of();',
+        test='CanonicalImportServiceTest',
+        expect_fail=['testARevokeDuringTheRelationshipListingStillStopsTheWrite'],
+    ),
+    dict(
         id="HA",
         what="a retained folder is erased from the search index again",
         file="core/src/main/java/jp/aegif/nemaki/cmis/service/impl/ObjectServiceImpl.java",

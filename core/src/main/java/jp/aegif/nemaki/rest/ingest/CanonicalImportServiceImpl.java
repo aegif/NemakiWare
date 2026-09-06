@@ -188,8 +188,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * <p>A null context is refused rather than exempted: it cannot be shown to be an
      * administrator, and there is nothing to authorise a delegated write against.
      *
-     * <p>Called twice: once when the profile is resolved, and once after everything this
-     * import READS and before anything it WRITES. Between them the content stream is drained,
+     * <p>Called twice: once when the profile is resolved, and once after the reads that decide
+     * what to write (content, de-duplication listing, idempotency record, resync plan) and
+     * before the writes themselves. Between them the content stream is drained,
      * which for a large attachment is the long part, so a revoke landing during it is caught.
      * It is a check at a point in time, not a lock: a revoke landing between the second call
      * and the write is NOT caught, and no number of checks changes that — it needs fencing
@@ -2307,78 +2308,73 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     }
 
     /**
-     * Remove all existing CMIS relationships where the given object is the source.
-     * Used by replace_relationships_on_resync policy.
+     * The ids this resync would delete — a read, and only a read.
+     *
+     * <p>Enumeration and deletion used to be one paginated loop, so a revoke landing while a
+     * page was fetched was not seen by the deletions that followed it. The plan is now formed
+     * before the authorisation is re-asked, and the deletion works from that snapshot. A
+     * review found the last read left inside the write phase.
+     *
+     * <p>Throws whatever the listing throws; the caller turns it into the same warning the
+     * combined version produced.
      */
-    private String removeExistingRelationships(CaptureScope captureScope,
+    private java.util.List<String> collectExistingRelationshipIds(
             CallContext callContext, String repositoryId, String objectId) {
-        if (relationshipService == null) return null;
-        try {
-            int totalRemoved = 0;
-            int totalFailed = 0;
-            java.math.BigInteger batchSize = java.math.BigInteger.valueOf(100);
-            java.math.BigInteger skipCount = java.math.BigInteger.ZERO;
-            // Paginate to handle documents with many relationships
-            while (true) {
-                org.apache.chemistry.opencmis.commons.data.ObjectList rels = relationshipService.getObjectRelationships(
-                        callContext, repositoryId, objectId, true,
-                        org.apache.chemistry.opencmis.commons.enums.RelationshipDirection.SOURCE,
-                        null, null, false, batchSize, skipCount, null);
-                if (rels == null || rels.getObjects() == null || rels.getObjects().isEmpty()) break;
-
-                int removedThisPass = 0;
-                for (var relData : rels.getObjects()) {
-                    try {
-                        captureScope.ensureIntentOpened();
-                        objectService.deleteObject(callContext, repositoryId,
-                                relData.getId(), true, null);
-                        captureScope.record("removeRelationship", MutationOutcome.SUCCEEDED);
-                        totalRemoved++;
-                        removedThisPass++;
-                    } catch (CaptureScope.CaptureIntentFailedException failClosed) {
-                        // Never swallowed. This is the fail-closed point: it means the intent could 
-                        // not be written, so nothing may be changed. Caught by the surrounding catch
-                        //  it became a warning, and on the replace path the code then fell through a
-                        // nd created the replacement anyway (external review).
-                        throw failClosed;
-                    } catch (Exception e) {
-                        totalFailed++;
-                        captureScope.record("removeRelationship", MutationOutcome.FAILED,
-                                e.getMessage());
-                        logger.warn("Failed to remove relationship {}: {}", relData.getId(), e.getMessage());
-                    }
-                }
-                // After deleting, re-fetch from start (indices shift after deletion) — which is
-                // why skipCount stays at zero. That makes progress depend entirely on deletions
-                // succeeding: with every delete failing, the same page came back for ever and
-                // hasMoreItems() stayed true, so this looped without end while holding up the
-                // import (external review). A pass that removed nothing cannot make progress.
-                if (removedThisPass == 0) {
-                    break;
-                }
-                if (!Boolean.TRUE.equals(rels.hasMoreItems())) break;
+        java.util.List<String> ids = new ArrayList<>();
+        if (relationshipService == null) return ids;
+        java.math.BigInteger batchSize = java.math.BigInteger.valueOf(100);
+        java.math.BigInteger skipCount = java.math.BigInteger.ZERO;
+        while (true) {
+            org.apache.chemistry.opencmis.commons.data.ObjectList rels =
+                    relationshipService.getObjectRelationships(
+                            callContext, repositoryId, objectId, true,
+                            org.apache.chemistry.opencmis.commons.enums.RelationshipDirection.SOURCE,
+                            null, null, false, batchSize, skipCount, null);
+            if (rels == null || rels.getObjects() == null || rels.getObjects().isEmpty()) break;
+            for (var relData : rels.getObjects()) {
+                if (relData.getId() != null) ids.add(relData.getId());
             }
-            if (totalRemoved > 0) {
-                logger.info("Resync: removed {} relationships from {}", totalRemoved, objectId);
-            }
-            if (totalFailed > 0) {
-                // Returned, not only logged: replace_relationships_on_resync exists to leave the
-                // object with ONLY the incoming relationships. Surviving edges mean the object
-                // is not in the state the policy promises.
-                return "Resync did not remove " + totalFailed + " existing relationship(s) from "
-                        + objectId + "; stale edges remain alongside the re-imported ones";
-            }
-            return null;
-        } catch (CaptureScope.CaptureIntentFailedException failClosed) {
-            // The per-item guard rethrows into THIS catch, which turned it straight back into a
-            // warning — so the guard was inoperative (external review).
-            throw failClosed;
-        } catch (Exception e) {
-            logger.warn("Failed to query relationships for {}: {}", objectId, e.getMessage());
-            return "Existing relationships of " + objectId + " could not be listed, so the resync "
-                    + "policy could not be applied: " + e.getMessage();
+            if (!Boolean.TRUE.equals(rels.hasMoreItems())) break;
+            skipCount = skipCount.add(java.math.BigInteger.valueOf(rels.getObjects().size()));
+            if (ids.size() > 10_000) break;   // a plan this large is a data problem, not a resync
         }
+        return ids;
     }
+
+    /** Deletes the ids the enumeration above produced. No listing happens here. */
+    private String removeRelationshipsById(CaptureScope captureScope, CallContext callContext,
+            String repositoryId, String objectId, java.util.List<String> relationshipIds) {
+        if (relationshipService == null || relationshipIds == null || relationshipIds.isEmpty()) {
+            return null;
+        }
+        int totalRemoved = 0;
+        int totalFailed = 0;
+        for (String relId : relationshipIds) {
+            try {
+                captureScope.ensureIntentOpened();
+                objectService.deleteObject(callContext, repositoryId, relId, true, null);
+                captureScope.record("removeRelationship", MutationOutcome.SUCCEEDED);
+                totalRemoved++;
+            } catch (CaptureScope.CaptureIntentFailedException failClosed) {
+                throw failClosed;
+            } catch (Exception e) {
+                logger.warn("Resync: failed to remove relationship {} from {}: {}",
+                        relId, objectId, e.getMessage());
+                totalFailed++;
+            }
+        }
+        if (totalRemoved > 0) {
+            logger.info("Resync: removed {} relationships from {}", totalRemoved, objectId);
+        }
+        if (totalFailed > 0) {
+            // replace_relationships_on_resync exists to leave the object with ONLY the incoming
+            // relationships. Surviving edges mean it is not in the state the policy promises.
+            return "Resync did not remove " + totalFailed + " existing relationship(s) from "
+                    + objectId + "; stale edges remain alongside the re-imported ones";
+        }
+        return null;
+    }
+
 
     private String sanitizeFilename(String name) {
         if (name == null) return "untitled";
@@ -3067,6 +3063,24 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     connector.getSourceSystem(), request.getSourceObjectId(), request.getSourceObjectType(),
                     dedupeMatchBy);
 
+            // 5a-bis. The resync deletion PLAN, formed here as a read. Enumeration used to
+            // happen inside the deletion loop, after the authorisation had been re-asked — the
+            // last read left in the write phase. A review found it.
+            java.util.List<String> resyncPlan = null;
+            String resyncPlanError = null;
+            if ("replace_relationships_on_resync".equals(dedupePolicy) && existingDoc != null) {
+                try {
+                    resyncPlan = collectExistingRelationshipIds(
+                            callContext, repositoryId, existingDoc.getId());
+                } catch (Exception e) {
+                    logger.warn("Failed to query relationships for {}: {}",
+                            existingDoc.getId(), e.getMessage());
+                    resyncPlanError = "Existing relationships of " + existingDoc.getId()
+                            + " could not be listed, so the resync policy could not be applied: "
+                            + e.getMessage();
+                }
+            }
+
             // 5b. Idempotency: READ the record and decide, without acting on it yet. The
             // decision (skip / expired / proceed) is formed here; the authorisation is asked
             // after it, and only then is anything deleted or returned. Reading and acting used
@@ -3112,8 +3126,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 }
             }
 
-            // Ask the delegated authorisation again, here — after every read this import makes
-            // and before every write it makes. The first call happens before the content
+            // Ask the delegated authorisation again, here — after the reads that decide what
+            // to write (content, dedupe listing, idempotency record, resync plan) and before
+            // the writes themselves. The first call happens before the content
             // stream is drained (the long part for a large attachment). Two earlier versions
             // of this second call were both too early: one sat inside the stream branch, so a
             // content-less import got a single check; the next ran before the dedupe listing
@@ -3202,11 +3217,16 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         existingDoc = null; // Fall through to create new
                     }
                 } else if ("replace_relationships_on_resync".equals(dedupePolicy) && existingDoc != null) {
-                    // Delete existing relationships before re-import
-                    String relRemovalError = removeExistingRelationships(captureScope, callContext, repositoryId,
-                            existingDoc.getId());
-                    if (relRemovalError != null) {
-                        dedupeWarnings.add(relRemovalError);
+                    // Delete the plan formed BEFORE the authorisation was re-asked. Nothing is
+                    // listed here; a revoke during the listing was caught by that check.
+                    if (resyncPlanError != null) {
+                        dedupeWarnings.add(resyncPlanError);
+                    } else {
+                        String relRemovalError = removeRelationshipsById(captureScope, callContext,
+                                repositoryId, existingDoc.getId(), resyncPlan);
+                        if (relRemovalError != null) {
+                            dedupeWarnings.add(relRemovalError);
+                        }
                     }
                 }
 

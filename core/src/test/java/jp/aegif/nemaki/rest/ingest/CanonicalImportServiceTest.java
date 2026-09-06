@@ -245,6 +245,74 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void testARevokeDuringTheRelationshipListingStillStopsTheWrite() {
+        // The last read inside the write phase: replace_relationships_on_resync enumerated a
+        // page and deleted from it in the same loop, so a revoke landing during the listing
+        // was not seen by the deletions that followed. The plan is now formed as a read, the
+        // authorisation is re-asked, and only then is the snapshot deleted. A review found it.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        delegated.setDedupePolicy("replace_relationships_on_resync");
+        delegated.setDedupeMatchBy("filename");   // the child below matches by name
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+
+        // An existing document, so the resync branch is taken at all.
+        jp.aegif.nemaki.model.Document existing = new jp.aegif.nemaki.model.Document();
+        existing.setId("doc-1");
+        existing.setName("a.txt");
+        existing.setObjectType("cmis:document");
+        jp.aegif.nemaki.dao.ContentDaoService dao =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        service.setContentDaoService(dao);
+        when(dao.getChildren(anyString(), anyString())).thenReturn(List.of(existing));
+
+        java.util.concurrent.atomic.AtomicBoolean revoked =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        jp.aegif.nemaki.cmis.service.RelationshipService rels =
+                mock(jp.aegif.nemaki.cmis.service.RelationshipService.class);
+        // The revoke lands WHILE the relationships are enumerated.
+        when(rels.getObjectRelationships(any(), anyString(), anyString(), anyBoolean(), any(),
+                any(), any(), anyBoolean(), any(), any(), any())).thenAnswer(inv -> {
+                    revoked.set(true);
+                    return null;
+                });
+        service.setRelationshipService(rels);
+
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString()))
+                .thenAnswer(inv -> !revoked.get());
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+        req.setFileName("a.txt");
+        req.setMimeType("text/plain");
+        req.setContentStream(new java.io.ByteArrayInputStream("hello".getBytes()));
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(),
+                "a revoke that landed during the relationship listing did not stop the write");
+        verify(objectService, never()).deleteObject(any(), anyString(), anyString(),
+                anyBoolean(), any());
+    }
+
+    @Test
     void testARevokeDuringTheDedupeReadStillStopsTheWrite() {
         // Placement, not presence. The check was moved out of the content-stream branch but
         // still ran BEFORE the dedupe listing and the idempotency record were read, so a
@@ -305,8 +373,8 @@ class CanonicalImportServiceTest {
         // The second call sat inside the content-stream branch, so an import with no stream
         // got only the first check — and the mutations after it (idempotency-record deletion,
         // document deletion, checkout, creation) ran on that one decision. A review named the
-        // branch. The check now runs after every read this import makes and before every
-        // write, stream or no stream.
+        // branch. The check now runs after the reads that decide what to write and before the
+        // writes themselves, stream or no stream.
         ImportProfileDefinition delegated = new ImportProfileDefinition();
         delegated.setProfileId("p1");
         delegated.setEnabled(true);

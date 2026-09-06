@@ -6300,9 +6300,10 @@ upgrade-time round-trip analysis. After deploying RC3:
   means the next write, not a fetch already in progress — a fetch that has
   begun runs to completion, and the write it produces is what gets refused.
   The delegated authorisation is re-asked twice inside an import — when the
-  profile is resolved, and again after everything the import reads and before
-  anything it writes — so a revoke that lands while a large attachment
-  downloads is caught. It is **not** a guarantee that no write follows a
+  profile is resolved, and again after the reads that decide what to write
+  (content, de-duplication listing, idempotency record) and before the writes
+  themselves — so a revoke that lands while a large attachment downloads, or
+  while those reads happen, is caught. It is **not** a guarantee that no write follows a
   revoke: the gap between the second check and the write remains, and closing
   it would need fencing shared with the revoke path or a transaction the store
   does not offer. Revoking a connector's delegation stops later writes from
@@ -6365,8 +6366,11 @@ upgrade-time round-trip analysis. After deploying RC3:
   gates, runtime gates, scheduler defence, and cap-property handling.
 - 21 API E2E tests against a live deployment cover admin / delegated
   user / non-delegated user × CRUD + execute + TOCTOU scenarios.
-- All tests pass on every RC3 commit including the latest
-  hardening rounds.
+- RC3 hardening rounds: the unit suite passes. As of 3.4 the precise figure is
+  6,719 tests with 0 failures and 38 errors, all of them `CmisConnectionException`
+  from integration and TCK classes that need a running server — **the TCK was not
+  run**, and the negative-control sweep is recorded per batch in the design ledger
+  rather than claimed here.
 
 ### Known pre-existing follow-ups (closed in RC4)
 
