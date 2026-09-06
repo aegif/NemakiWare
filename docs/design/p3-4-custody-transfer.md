@@ -7471,3 +7471,105 @@ Failures 0 (残る 38 件は `CmisConnectionException` — サーバ未起動)�
 **TCK は依然未実施**)、事前検査 350/350 通過、`--compile-check` は前巡の 123 本 + UW。
 コントロールは UW / TM / TU / TV / TY / UA / UD の **7 本を測定して 7/7 FIRED**。
 **残る 343 本はこの巡では未測定** — 通しは別途。
+
+## 63. fail-closed reads 第 2 バッチ — webhook・ページ上限・重複検査・一意性規則 (2026-09-07)
+
+§62 の収束後に残した「次バッチ」。E2E (デプロイ・TCK・前提の実測) は**行わない**前提で
+指示された。
+
+### 起点 — プランのセルフレビューで、プラン自体が 2 か所間違っていた
+
+実コードに当てて確かめた結果:
+
+- **「スケジューラと同じ直し方がそのまま使える」は不正確。** `listScheduledIndexFree` は
+  無所属行 (repositoryId 空) を落とす。`list()` は落とさない。置き換えると**無所属行が
+  webhook を受け取らなくなる** — 裁定 (無所属 = 自分の行ではない) と整合するが、黙って
+  変わる副作用ではなく意図した変更として錠を付ける必要があった。
+- **「解釈不能な行 → standing な 409」は誤り。** コードは「破損」(恒久) と「ローリング
+  アップグレード中に新しいノードが書いた値」(一過性、`getForRepository` のコメントが名指し)
+  を区別できない。409 は後者に対して行を消せと嘘をつく。**状態コードではなく読む範囲**を
+  直すべきだった — 規則が読むのは 4 欄だけで、全部 raw の `props` から読める。
+- **プランが書き落としていた影響範囲**: `findDefaultForRepository` (profileId を省いた取込の
+  自動解決) も同じ walk を呼ぶので、解釈不能な行 1 つで**そのリポジトリの自動解決が全部 503**。
+  create/update より広い。
+- **新規発見 — `findRawDocs` の `limit(200)`。** bookmark 継続なしの 1 ページを全件として
+  返していた。`list()` / `listByRepository()` は 201 件目以降を黙って落とす —
+  索引再構築とは無関係に毎回。呼び出しは webhook・管理 API 一覧 2 本・
+  `FolderConnectorController`。**コードから確認できる唯一の「成功して不完全」機構**。
+- **前提の機序と食い違う実測が §34 にある。** 「索引を張る前の 1 回目の問い合わせは構築を
+  待つので timeout する」— 空ではなく例外。`findRawDocs` は `update=false` も `stale` も
+  渡していないので、私が読む限り Mango が「在る行に空を返す」機序は見当たらない。再構築が
+  timeout → 例外として現れるなら、索引不要経路は既に 503、`list()` 経路は 500 だった —
+  **webhook の直しはどちらの機序でも要る**。前提の実測 (空か、待って timeout か) は E2E
+  なので今回は行わない。**前提が未測定であることは変わらない。**
+
+### 単位 1 — webhook の受信先を索引不要に、セレクタ一覧の上限撤去 (`9a47b3470`)
+
+- `IngestWebhookController.findAllProfilesForConnector` を `profileService.list()` から
+  `listOwnedIndexFree()` (`_all_docs` 走査) へ。走査が完了できなければ
+  `ProfileIndexNotReadyException` → **503** (従来は `no_profile` 200、例外なら 500)。
+  無所属行は受信先にしない (錠 VZ)。
+- `listScheduledIndexFree` / `listOwnedIndexFree` は 1 つの private walker
+  (`listOwnedRowsIndexFree`) を共有。行単位の方針の写しを 2 つ持たない。
+- `NemakiConfFind.allMatching` — bookmark で続きを読み、進めない full page と `docs` の無い
+  応答は拒否。両サービスの `findRawDocs` が呼ぶ。**索引不要にする変更ではない** (セレクタの
+  まま)。
+- 錠 6 本、コントロール **VX / VY / VZ / WA / WB / WC**、`--compile-check` 6/6、
+  **6/6 FIRED** (497 秒、復元後 clean)。
+
+### 単位 2 — 関係の存在チェックが答えられなかったとき、作った上で黙らない (`2fb5edd36`)
+
+- `relationshipExists` は照会失敗を握り潰して `false` を返し、javadoc が「fail-open する」と
+  開示していた。DAO (`ContentDaoServiceImpl.getRelationshipsBySource`) は「could not ask を
+  none と読ませない」ために意図的に throw しており、**それを false に戻す唯一の層**がここ。
+- 3 値 (`EdgeLookup`: present / absent / unanswered)。unanswered ならリンクは作った上で
+  警告文字列を返し、capture 記録にも同じ文言を載せる。答えた「無い」には出さない
+  (過剰報告は双子の欠陥)。`contentService == null` は配線の不在であって読みではないので
+  absent のまま。
+- `FetchSupport.createRelationshipSafe` 経由 (取込完了後の orchestrator) では警告が
+  `errors` に積まれ、`FetchResult.hasErrors()` が真になる — スケジューラの circuit breaker が
+  それを失敗回数に数える。読めなかったのは事実で、`FetchResult` に他の経路は無い。
+  **設計判断として記録** (レビューに委ねる)。
+- 既存の錠 `createDirectRelationship_failsOpen_whenExistenceCheckThrows` は fail-open を
+  **仕様として**固定していた。「作られる」側の主張は保ち、「黙る」側を反転させて改名。
+- 錠 2 本、コントロール **WD / WE / WF** (黙る fail-open に戻す / 全リンクを疑わしいと言う /
+  拒否する over-throw)、`--compile-check` 3/3、**3/3 FIRED** (253 秒)。
+
+### 単位 3 — 一意性規則は自分の 4 欄だけを読み、自動解決は無効行を解釈しない (`8c7edf02f`)
+
+- `listByRepositoryIndexFree(repositoryId, creating, onlyFields)`: `onlyFields` が与えられれば
+  その欄だけを `MAPPER.convertValue` に渡す。`validateAutoResolveUniqueness` は
+  `UNIQUENESS_RULE_FIELDS` (profileId / defaultConnectorId / enabled / defaultProfile)。
+  他の欄が壊れた行は**規則に数えられたまま**、書き込みを止めなくなる (錠 2 本: 止めない /
+  数えられる)。
+- JSON の `false` そのものを `enabled` に持つ行は、どちらの呼び出し元でも解釈しない —
+  すべての選択規則が enabled を要求するので答えは変わらない。文字列 `"false"` 等は従来どおり
+  解釈してから呼び出し元が除外する。有効な壊れた行は従来どおり 503 (錠 2 本)。
+- 錠 4 本、コントロール **WG / WH / WI / WJ** + 張り直した **PW** と再測定の **QC**。
+
+**手順の記録**: 1 回目の測定で WG / WI が「錠が落ちたが、錠自身の主張ではなく例外で」
+(`FIRED FOR THE WRONG REASON`)。測定対象の拒否が例外なので、`service.create(...)` /
+`findDefaultForRepository(...)` を素で呼ぶ錠は、細工の下で AssertionError ではなく
+`IllegalStateException` で死ぬ — runner の判定では「harness が壊れた」。
+`assertDoesNotThrow` に包んで主張に変え、2 回目で 2/2 FIRED。**合計 6/6 FIRED**、
+`--compile-check` 6/6、復元後 clean。
+
+### この時点の測定
+
+コントロールは **389 本**。このバッチで新設 13 本 + 張り直し 1 本、測定は
+**15 本 (VX〜WJ + PW + QC) すべて FIRED**。**残る 374 本はこのツリーでは未測定** — 通しは
+レビュー収束後。触ったテストクラス: `IngestWebhookBoxDropboxTest` 13、
+`ImportProfileLegacyIdMigrationTest` 78、`ConnectorLegacyIdMigrationTest` 56、
+`CanonicalImportServiceTest` 78、スケジューラ 2 クラス・Graph 検証 1 クラス — Failures 0。
+**フルスイートは未実施** (レビュー収束後)。
+
+### 主張しないこと
+
+- セレクタ一覧を索引不要にしたとは言わない。上限を外しただけで、再構築中に索引が見せない
+  行は今も見えない。
+- 「再構築中のセレクタは在る行に空を返す」は依然として未測定。§34 の実測は機序が違う
+  可能性を示すだけで、nemaki_conf で測ってはいない。
+- `relationshipExists` の警告が `errors` に入る経路 (取込完了後の orchestrator) が
+  circuit breaker を進めるのは、直していない。
+- 公開 4 引数 `createDirectRelationship`・検査と書き込みの窓・リンク再認可の `get()`・
+  `FolderConnectorController` の受け入れ不整合は §62 のまま。
