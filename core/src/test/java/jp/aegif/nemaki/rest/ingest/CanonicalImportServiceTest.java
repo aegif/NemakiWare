@@ -270,7 +270,7 @@ class CanonicalImportServiceTest {
         String error = service.createDirectRelationship(testContext(), "bedroom",
                 "src-1", "tgt-1", "cmis:relationship",
                 jp.aegif.nemaki.rest.ingest.capture.CaptureScope.inactive(),
-                service.relationshipAuthorizingProfileForTest(req));
+                service.relationshipAuthorizingProfileForTest(req), null);
 
         assertTrue(error != null && error.contains("cmis:all"),
                 "a link was created for a delegation that had been revoked: " + error);
@@ -409,7 +409,7 @@ class CanonicalImportServiceTest {
         // document deletion, checkout, creation) ran on that one decision. A review named the
         // branch. The check now runs after the content buffer, the dedupe listing, the
         // idempotency record and the resync plan, and before the writes those decide —
-        // stream or no stream.
+        // stream or no stream. (The relationship path re-asks separately.)
         ImportProfileDefinition delegated = new ImportProfileDefinition();
         delegated.setProfileId("p1");
         delegated.setEnabled(true);
