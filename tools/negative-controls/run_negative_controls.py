@@ -2500,7 +2500,8 @@ CONTROLS = [
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
         # listByRepository is answered by the rebuilding index; the walk is not.
         # Re-anchored in round 3 (the listing gained a range flag).
-        find='        List<ImportProfileDefinition> existing = listByRepositoryIndexFree(repoId, creating);',
+        # Re-anchored again (the listing names the rule's fields).
+        find='        List<ImportProfileDefinition> existing = listByRepositoryIndexFree(repoId, creating,\n                UNIQUENESS_RULE_FIELDS);',
         replace='        List<ImportProfileDefinition> existing = listByRepository(repoId);',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['aHiddenDefaultProfileStillBlocksASecondDefault'],
@@ -4133,6 +4134,59 @@ CONTROLS = [
                 '                }',
         test='CanonicalImportServiceTest',
         expect_fail=['createDirectRelationship_createsAndSaysSo_whenExistenceCheckThrows'],
+    ),
+    dict(
+        id="WG",
+        what="the uniqueness rule interprets whole rows again — one row with a value this node "
+             "cannot read stops every create and update of its repository",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                UNIQUENESS_RULE_FIELDS);',
+        replace='                null);',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aRowTheRuleCanStillReadDoesNotBlockACreate'],
+    ),
+    dict(
+        id="WH",
+        what="the naive fix: rows that do not deserialise are skipped — a second default whose "
+             "other fields are broken slips past the rule",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                if (onlyFields != null) {\n'
+             '                    content.keySet().retainAll(onlyFields);\n'
+             '                }',
+        replace='                if (onlyFields != null) {\n'
+                '                    try {\n'
+                '                        MAPPER.convertValue(content, ImportProfileDefinition.class);\n'
+                '                    } catch (Exception e) {\n'
+                '                        return;\n'
+                '                    }\n'
+                '                    content.keySet().retainAll(onlyFields);\n'
+                '                }',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aRowTheRuleCanReadStillCountsForTheRule'],
+    ),
+    dict(
+        id="WI",
+        what="a disabled row the resolver cannot interpret refuses the whole repository's "
+             "auto-resolution again — over a row that could not have been chosen",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                if (Boolean.FALSE.equals(props.get("enabled"))) {\n'
+             '                    return;\n'
+             '                }\n',
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aDisabledRowTheResolverCannotReadDoesNotRefuseTheResolve'],
+    ),
+    dict(
+        id="WJ",
+        what="an enabled row the resolver cannot interpret is skipped — the resolution answers "
+             "with whatever else was readable, and content lands under the wrong profile",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                    throw new IllegalStateException("the profiles of repository \'"\n'
+             '                            + repositoryId + "\' cannot be listed: row " + id\n'
+             '                            + " could not be read as a profile (" + e.getMessage() + ")");',
+        replace='                    return;',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['anEnabledRowTheResolverCannotInterpretStillRefuses'],
     ),
     dict(
         id="HA",

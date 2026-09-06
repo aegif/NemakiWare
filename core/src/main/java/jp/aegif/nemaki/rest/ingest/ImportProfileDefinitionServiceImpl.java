@@ -1031,7 +1031,10 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         // throws ambiguity once the index recovers. The scan that closed the profileId
         // door does not look at these fields, so this door had to be closed on its own.
         // A review found it after the first closure.
-        List<ImportProfileDefinition> existing = listByRepositoryIndexFree(repoId, creating);
+        // Only the rule's own fields are interpreted: a row whose other fields this node
+        // cannot read still counts for the rule and no longer blocks the write.
+        List<ImportProfileDefinition> existing = listByRepositoryIndexFree(repoId, creating,
+                UNIQUENESS_RULE_FIELDS);
 
         // Check defaultConnectorId uniqueness
         if (def.getDefaultConnectorId() != null && !def.getDefaultConnectorId().isBlank()) {
@@ -1287,14 +1290,36 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         }
     }
 
-    /**
-     * Every profile of {@code repositoryId}, read through the shared walk so the answer holds
-     * while the Mango index rebuilds. A row that cannot be classified refuses — with the
-     * same create/update type-split as the uniqueness scan — because a uniqueness rule
-     * checked against a list that silently dropped a row is not a rule.
-     */
+    /** The fields the auto-resolve uniqueness rule reads; nothing else in a row concerns it. */
+    private static final java.util.Set<String> UNIQUENESS_RULE_FIELDS = java.util.Set.of(
+            "profileId", "defaultConnectorId", "enabled", "defaultProfile");
+
     private List<ImportProfileDefinition> listByRepositoryIndexFree(String repositoryId,
             boolean creating) {
+        return listByRepositoryIndexFree(repositoryId, creating, null);
+    }
+
+    /**
+     * Every ENABLED profile of {@code repositoryId}, read through the shared walk so the
+     * answer holds while the Mango index rebuilds. A row that cannot be classified refuses —
+     * with the same create/update type-split as the uniqueness scan — because a uniqueness
+     * rule checked against a list that silently dropped a row is not a rule.
+     *
+     * <p>{@code onlyFields}, when given, is the whole of what each row is interpreted for;
+     * the rest of the row is not read. A row whose OTHER fields this node cannot interpret —
+     * a value a newer node wrote during a rolling upgrade, or a corrupt one — then neither
+     * refuses the caller nor slips past its rule. Before this, one such row stopped every
+     * create (400) and update (503) of its repository, over fields the rule never looks at.
+     * Null interprets the whole row, which the auto-resolver needs because it returns it.
+     *
+     * <p>A row that says {@code enabled: false} is not interpreted either way. Every caller's
+     * rule applies to enabled rows only, so it cannot change an answer — and refusing on a
+     * disabled row this node cannot read stopped the auto-resolution of a whole repository
+     * over a row that could not have been chosen. Only the literal boolean is read this way;
+     * anything else is interpreted as before and filtered by the caller.
+     */
+    private List<ImportProfileDefinition> listByRepositoryIndexFree(String repositoryId,
+            boolean creating, java.util.Set<String> onlyFields) {
         CloudantClientWrapper client = getConfClient();
         String dbName = client.getDatabaseName();
         com.ibm.cloud.cloudant.v1.Cloudant cloudant = client.getClient();
@@ -1330,8 +1355,14 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                             + repositoryId + "' cannot be listed: row " + id
                             + " has no usable profileId");
                 }
+                if (Boolean.FALSE.equals(props.get("enabled"))) {
+                    return;
+                }
                 Map<String, Object> content = contentOnly(props);
                 content.remove("type");
+                if (onlyFields != null) {
+                    content.keySet().retainAll(onlyFields);
+                }
                 try {
                     results.add(MAPPER.convertValue(content, ImportProfileDefinition.class));
                 } catch (Exception e) {

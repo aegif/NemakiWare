@@ -1994,6 +1994,117 @@ class ImportProfileLegacyIdMigrationTest {
     }
 
     // ────────────────────────────────────────────────────────────────────
+    // The uniqueness rule reads only its own fields — a row broken elsewhere neither blocks
+    // nor slips past
+    // ────────────────────────────────────────────────────────────────────
+
+    /** A row the rule can read (its four fields are fine) but this node cannot interpret. */
+    private static Map<String, Object> brokenElsewhereProps(String profileId, boolean enabled,
+            boolean defaultProfile) {
+        Map<String, Object> props = profileProps(profileId, "Broken " + profileId);
+        props.put("enabled", enabled);
+        props.put("defaultProfile", defaultProfile);
+        props.put("retentionDays", "not-a-number");
+        return props;
+    }
+
+    @Test
+    @DisplayName("a row the rule can still read does not block a create — the rest of the "
+            + "row is not interpreted")
+    void aRowTheRuleCanStillReadDoesNotBlockACreate() {
+        // The listing deserialised the WHOLE row and refused on any it could not: one row
+        // with a value this node cannot read (a newer node's, during a rolling upgrade, or a
+        // corrupt one) stopped every create and update of its repository — 400 on create,
+        // which called the caller's request invalid. The rule reads four fields; only
+        // those are interpreted now.
+        wire();
+        selectorAnswersNothing();
+        deterministicReadAnswers("p-new-default", null);
+        listingAnswers(List.of(row("import_profile_definition:p-broken",
+                brokenElsewhereProps("p-broken", true, false), "1-a")));
+        writesSucceed();
+
+        // assertDoesNotThrow, not a bare call: the refusal under measurement is an exception,
+        // and a test that dies on it is "harness broken" to the runner, not a firing.
+        ImportProfileDefinition created = assertDoesNotThrow(
+                () -> service.create(defaultProfile("p-new-default")),
+                "a row the rule could read refused the create — the rest of the row was "
+                        + "interpreted, and it did not need to be");
+
+        assertEquals("p-new-default", created.getProfileId());
+        verify(cloudant).postDocument(any(PostDocumentOptions.class));
+    }
+
+    @Test
+    @DisplayName("a row the rule can read still COUNTS for the rule — the broken rest does "
+            + "not make it invisible")
+    void aRowTheRuleCanReadStillCountsForTheRule() {
+        // The twin of the test above, and the reason the fix is not "skip rows that do not
+        // deserialise": that row is a second default, and dropping it is how a second default
+        // gets past the rule.
+        wire();
+        selectorAnswersNothing();
+        deterministicReadAnswers("p-second-default", null);
+        listingAnswers(List.of(row("import_profile_definition:p-broken",
+                brokenElsewhereProps("p-broken", true, true), "1-a")));
+        writesSucceed();
+
+        IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
+                () -> service.create(defaultProfile("p-second-default")),
+                "a second default profile was created beside one whose other fields could "
+                        + "not be read — the rule skipped the row instead of reading its fields");
+        assertTrue(refused.getMessage().toLowerCase(java.util.Locale.ROOT).contains("default"),
+                "refused by some other rule: " + refused.getMessage());
+        verify(cloudant, never()).postDocument(any(PostDocumentOptions.class));
+    }
+
+    @Test
+    @DisplayName("a DISABLED row the resolver cannot interpret does not refuse the "
+            + "auto-resolution — it could not have been chosen")
+    void aDisabledRowTheResolverCannotReadDoesNotRefuseTheResolve() {
+        // findDefaultForRepository interprets whole rows (it returns one), and refused on
+        // any it could not — so one disabled broken row answered 503 to every import of its
+        // repository that named no profile. Every pass of the resolver requires enabled;
+        // a row that says it is not can be excluded without reading the rest of it.
+        wire();
+        selectorAnswersNothing();
+        listingAnswers(List.of(
+                row("import_profile_definition:p-off-broken",
+                        brokenElsewhereProps("p-off-broken", false, true), "1-a"),
+                row("import_profile_definition:p-good", defaultProfileProps("p-good"), "1-b")));
+
+        // assertDoesNotThrow, not a bare call: the refusal under measurement is an exception,
+        // and a test that dies on it is "harness broken" to the runner, not a firing.
+        ImportProfileDefinition resolved = assertDoesNotThrow(
+                () -> service.findDefaultForRepository("bedroom", SourceArchetype.FILE_SHARE, null),
+                "a disabled row the node cannot read refused the whole resolution");
+
+        assertTrue(resolved != null && "p-good".equals(resolved.getProfileId()),
+                "the disabled row was chosen, or nothing was: "
+                        + (resolved == null ? null : resolved.getProfileId()));
+    }
+
+    @Test
+    @DisplayName("an ENABLED row the resolver cannot interpret still refuses — it might have "
+            + "been the one")
+    void anEnabledRowTheResolverCannotInterpretStillRefuses() {
+        // The control for the exclusion above: an enabled row the node cannot read may be
+        // the default, and resolving to whatever else was readable sends content under the
+        // wrong profile with a successful import.
+        wire();
+        selectorAnswersNothing();
+        listingAnswers(List.of(
+                row("import_profile_definition:p-on-broken",
+                        brokenElsewhereProps("p-on-broken", true, true), "1-a"),
+                row("import_profile_definition:p-good", defaultProfileProps("p-good"), "1-b")));
+
+        assertThrows(ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+                () -> service.findDefaultForRepository("bedroom", SourceArchetype.FILE_SHARE, null),
+                "an enabled row the node cannot read was skipped and the resolution answered "
+                        + "with whatever else was readable");
+    }
+
+    // ────────────────────────────────────────────────────────────────────
     // existsIndexFree — what the controllers ask before saying 404
     // ────────────────────────────────────────────────────────────────────
 
