@@ -6306,8 +6306,10 @@ upgrade-time round-trip analysis. After deploying RC3:
   attachment downloads, or while those reads happen, is caught. The
   relationship-existence check that decides whether to create a link is followed
   by its own re-check, against the profile and connector that import used. Links
-  created by fetch orchestrators through the public entry point carry no profile
-  and are not re-checked — the one path here that is not fail-closed. It is **not** a guarantee that no write follows a
+  created by fetch orchestrators through the public entry point, after their
+  import has returned, carry no profile and are not re-checked. Inside an import,
+  a link whose profile or connector cannot be resolved is refused and reported as
+  a relationship warning rather than created unchecked. It is **not** a guarantee that no write follows a
   revoke: the gap between the second check and the write remains, and closing
   it would need fencing shared with the revoke path or a transaction the store
   does not offer. Revoking a connector's delegation stops later writes from

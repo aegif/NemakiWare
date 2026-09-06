@@ -4004,6 +4004,29 @@ CONTROLS = [
         expect_fail=['testARevokedDelegationStopsTheRelationshipCreation'],
     ),
     dict(
+        id="VV",
+        what="an unresolvable connector is passed on as null, skipping the connector half of "
+             "the link's authorisation",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find_span=('        if (profile != null && profile.isDelegated() && request != null\n                && request.getConnectorId() != null && connector == null) {',
+                   '                    + " could not be resolved, so its delegation could not be checked";\n        }'),
+        replace='',
+        test='CanonicalImportServiceTest',
+        expect_fail=['testAnUnresolvableConnectorRefusesTheLinkInsteadOfSkippingTheCheck'],
+    ),
+    dict(
+        id="VW",
+        what="a link that cannot be authorised escapes as an exception again — one relationship "
+             "takes the whole import down after the object was committed",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        # A span ending on the next '}' duplicated the catch clause ("exception already
+        # caught"). One line is enough: the catch body is what turns a refusal into a warning.
+        find='            return "the relationship was not created: " + cannotAuthorize.getMessage();',
+        replace='            throw cannotAuthorize;',
+        test='CanonicalImportServiceTest',
+        expect_fail=['testAProfileGoneDuringTheImportIsAWarningNotA500'],
+    ),
+    dict(
         id="HA",
         what="a retained folder is erased from the search index again",
         file="core/src/main/java/jp/aegif/nemaki/cmis/service/impl/ObjectServiceImpl.java",

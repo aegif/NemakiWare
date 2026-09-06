@@ -678,11 +678,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     CaptureScope emlScope = newCaptureScope(callContext, emlReq);
                     ExternalIngestResult emlResult = execute(callContext, emlReq, emlScope);
                     if (emlResult.isSuccess()) {
-                        String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
+                        String relErr = createDirectRelationshipAuthorized(callContext, request.getRepositoryId(),
                                 messageObjectId, emlResult.objectId(), "nemaki:hasAttachment",
                                 emlScope,
-                                relationshipAuthorizingProfile(request),
-                                relationshipAuthorizingConnector(request));
+                                null, request);
                         if (relErr != null) warnings.add(relErr);
                     } else if (!emlResult.skipped()) {
                         warnings.add("Raw .eml preservation failed: " + String.join(", ", emlResult.errors()));
@@ -743,11 +742,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                                 : (attResult.skipped() ? attResult.objectId() : null);
                         if (existingId != null) {
                             // Rule 5: the link is part of THIS attachment's work.
-                            String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
+                            String relErr = createDirectRelationshipAuthorized(callContext, request.getRepositoryId(),
                                     messageObjectId, existingId, "nemaki:hasAttachment",
                                     attScope,
-                                    relationshipAuthorizingProfile(request),
-                                relationshipAuthorizingConnector(request));
+                                    null, request);
                             if (relErr != null) warnings.add(relErr);
                         }
                     } else {
@@ -992,11 +990,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                             }
                             if (importBody && pageObjectId != null && !request.isDryRun()) {
                                 // Rule 5: the link is part of THIS attachment's work.
-                                String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
+                                String relErr = createDirectRelationshipAuthorized(callContext, request.getRepositoryId(),
                                         pageObjectId, attObjectId, "nemaki:hasAttachment",
                                         attScope,
-                                        relationshipAuthorizingProfile(request),
-                                relationshipAuthorizingConnector(request));
+                                        null, request);
                                 if (relErr != null) warnings.add(relErr);
                             }
                         }
@@ -1232,11 +1229,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (request.getMetadata() != null) {
             String parentRecordId = resolveMetadataString(request, "parentRecordId");
             if (parentRecordId != null) {
-                String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
+                String relErr = createDirectRelationshipAuthorized(callContext, request.getRepositoryId(),
                         parentRecordId, result.objectId(), "nemaki:attachedToRecord",
                         captureScope,
-                        relationshipAuthorizingProfile(request),
-                        relationshipAuthorizingConnector(request));
+                        null, request);
                 if (relErr != null) warnings.add(relErr);
             }
         }
@@ -1396,11 +1392,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (request.getMetadata() != null) {
             String parentContextId = resolveMetadataString(request, "parentContextId");
             if (parentContextId != null) {
-                String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
+                String relErr = createDirectRelationshipAuthorized(callContext, request.getRepositoryId(),
                         parentContextId, result.objectId(), "nemaki:derivedFromContext",
                         captureScope,
-                        relationshipAuthorizingProfile(request),
-                        relationshipAuthorizingConnector(request));
+                        null, request);
                 if (relErr != null) warnings.add(relErr);
             }
         }
@@ -2060,7 +2055,9 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * re-authorisation: the check is a read and the creation is a write, and every other
      * read/write pair in this import re-asks in between. Null means the caller has no profile
      * to authorise against — the public four-argument entry point used by fetch orchestrators
-     * — and then no re-check happens, which is recorded rather than hidden.
+     * after their import has returned — and then no re-check happens, which is recorded rather
+     * than hidden. In-import callers go through {@code createDirectRelationshipAuthorized},
+     * which refuses rather than passing a null it could not resolve.
      */
     String createDirectRelationship(CallContext callContext, String repositoryId,
                                             String sourceId, String targetId,
@@ -2366,6 +2363,48 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      */
     ImportProfileDefinition relationshipAuthorizingProfileForTest(ExternalIngestRequest request) {
         return relationshipAuthorizingProfile(request);
+    }
+
+    /**
+     * Creates an in-import link, resolving what authorises it and reporting a refusal the way
+     * a relationship failure is reported — as a warning string, not an exception.
+     *
+     * <p>Two things were wrong before this existed. A resolution that refused (row gone, or
+     * unreadable) escaped to the wrapper's top-level catch, so a link that could not be
+     * authorised turned the whole import into a 500 — over-throwing, after the object had
+     * already been committed. And a connector that could not be resolved arrived as null,
+     * which silently SKIPPED the connector half of the authorisation: `get()` answers null for
+     * absence and for a failed read alike. A review named both.
+     */
+    String createDirectRelationshipAuthorizedForTest(CallContext callContext, String repositoryId,
+            String sourceId, String targetId, String relationshipTypeId, CaptureScope captureScope,
+            ImportProfileDefinition knownProfile, ExternalIngestRequest request) {
+        return createDirectRelationshipAuthorized(callContext, repositoryId, sourceId, targetId,
+                relationshipTypeId, captureScope, knownProfile, request);
+    }
+
+    private String createDirectRelationshipAuthorized(CallContext callContext, String repositoryId,
+            String sourceId, String targetId, String relationshipTypeId, CaptureScope captureScope,
+            ImportProfileDefinition knownProfile, ExternalIngestRequest request) {
+        ImportProfileDefinition profile = knownProfile;
+        ConnectorDefinition connector;
+        try {
+            if (profile == null) {
+                profile = relationshipAuthorizingProfile(request);
+            }
+            connector = relationshipAuthorizingConnector(request);
+        } catch (RuntimeException cannotAuthorize) {
+            return "the relationship was not created: " + cannotAuthorize.getMessage();
+        }
+        if (profile != null && profile.isDelegated() && request != null
+                && request.getConnectorId() != null && connector == null) {
+            // The request names a connector and it could not be produced. Passing null on
+            // would skip the connector check entirely, which is the fail-open this closes.
+            return "the relationship was not created: connector " + request.getConnectorId()
+                    + " could not be resolved, so its delegation could not be checked";
+        }
+        return createDirectRelationship(callContext, repositoryId, sourceId, targetId,
+                relationshipTypeId, captureScope, profile, connector);
     }
 
     /** The connector THIS import used, for the link's re-authorisation. Null when unknown. */
@@ -3934,9 +3973,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // create a duplicate parent→child edge.
         // Carries the profile and connector: this is an in-ingest link, so it is
         // authorisable, and the overload that does not carry them skips the re-check.
-        return createDirectRelationship(callContext, repositoryId, parentObjectId, objectId,
-                "cmis:relationship", captureScope, profile,
-                relationshipAuthorizingConnector(request));
+        return createDirectRelationshipAuthorized(callContext, repositoryId, parentObjectId,
+                objectId, "cmis:relationship", captureScope, profile, request);
     }
 
     /**

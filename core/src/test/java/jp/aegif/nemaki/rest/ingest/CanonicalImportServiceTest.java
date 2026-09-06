@@ -245,6 +245,62 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void testAnUnresolvableConnectorRefusesTheLinkInsteadOfSkippingTheCheck() {
+        // get() answers null for an absent connector and for a read that failed alike, and
+        // that null used to be passed on — which SKIPPED the connector half of the link's
+        // authorisation. A review named the fail-open my own fix had left.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        when(connectorService.get("c1")).thenReturn(null);   // absent, or unreadable
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(true);
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+
+        String error = service.createDirectRelationshipAuthorizedForTest(testContext(), "bedroom",
+                "src-1", "tgt-1", "cmis:relationship",
+                jp.aegif.nemaki.rest.ingest.capture.CaptureScope.inactive(), null, req);
+
+        assertTrue(error != null && error.contains("could not be resolved"),
+                "a link was created with the connector half of the check skipped: " + error);
+        verify(objectService, never()).createRelationship(any(), anyString(), any(), any(),
+                any(), any(), any());
+    }
+
+    @Test
+    void testAProfileGoneDuringTheImportIsAWarningNotA500() {
+        // The resolution refusal used to escape to the wrapper's top-level catch, so a link
+        // that could not be authorised turned the whole import into a 500 — after the object
+        // was already committed. Relationship failures are reported as warnings; this is one.
+        doReturn(null).when(profileService).getForRepository("p1", "bedroom");
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setRepositoryId("bedroom");
+
+        String error = org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> service.createDirectRelationshipAuthorizedForTest(testContext(), "bedroom",
+                        "src-1", "tgt-1", "cmis:relationship",
+                        jp.aegif.nemaki.rest.ingest.capture.CaptureScope.inactive(), null, req),
+                "a link that could not be authorised took the whole import down");
+
+        assertTrue(error != null && error.contains("no longer has a row"),
+                "the refusal does not say why the link was not created: " + error);
+    }
+
+    @Test
     void testARevokedDelegationStopsTheRelationshipCreation() {
         // The existence check inside createDirectRelationship is a read and the creation is a
         // write, and nothing re-asked in between — a review called that a release blocker,
