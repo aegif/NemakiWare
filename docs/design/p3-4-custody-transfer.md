@@ -7455,8 +7455,14 @@ Failures 0 (残る 38 件は `CmisConnectionException` — サーバ未起動)�
 
 **測定していないもの** (変わらない): TCK、実 CouchDB のページングと Mango 再構築の挙動、
 **本バッチの前提そのもの** (「再構築中のセレクタは在る行に空を返す」)、実 IMAP セッションと
-仮想スレッド、webhook / スケジューラの selector 列挙、gate と execute の版 TOCTOU、
-取込完了後に fetch orchestrator が公開 4 引数版で張るリンク。
+仮想スレッド、gate と execute の版 TOCTOU、取込完了後に fetch orchestrator が公開 4 引数版で
+張るリンク。
+
+この一覧に「スケジューラの selector 列挙」も書いていたが**誤り**で、7 巡目までに
+`listScheduledIndexFree` に置き換えて錠とコントロール (VD / VE) も付けてある。
+**残っているのは webhook 側** — `IngestWebhookController` の受信先解決が
+`profileService.list()`、つまり selector 由来の一覧を絞り込む形のままで、索引再構築中は
+「該当プロファイルなし」と読める。次バッチ。
 
 コントロールは **376 本**。
 
