@@ -7727,7 +7727,8 @@ connector controller 23、profile controller (hidden) 34、folder connector 24�
 - **P2 (Codex) / P2-1 (サブ) — 「`get()` の呼び出し元は全員 null の後に索引不要の確認をする」は
   偽。** `/subscribe` 端点 (404)、`resolveConnectorArchetype` (「不明」として別の parser)、
   スケジューラの `:874`、`validateSchedulerParams` など、null をそのまま不在として使う
-  呼び出し元が main に 18 か所あり、**台帳自身が §62 (6599-6601 行) でその種類と例を記録
+  呼び出し元が main に 17 か所 (+ impl 内部の `exists()` から 1) あり、**台帳自身が §62
+  (6599-6601 行) でその種類と例を記録
   済み**だった (全列挙ではない — 4 巡目の指摘で限定)。`get()` を fail-open に残す根拠として
   全称で書いたのが誤り。正直な根拠は「呼び出し元の挙動変更はこのバッチの範囲外なので、
   受信側だけに厳格版を与えた」。interface と impl の javadoc をその形に書き換え、§62 の記録を
@@ -7758,7 +7759,7 @@ TX / US / VX〜XL) すべてを測定して 45/45 FIRED** (3,711 秒)、復元�
 profile controller (hidden) 34、folder connector 24、Graph 検証 11 — Failures 0。
 **残る 371 本はこの木では未測定** — 通しは収束後。
 
-### 4 巡目 (Codex + サブエージェント、並行) — P2 (重複含め) 3・P3 7、両者 `NOT CONVERGED`
+### 4 巡目 (Codex + サブエージェント、並行) — P2 (重複含め) 3・P3 6、両者 `NOT CONVERGED`
 
 コミット `022ef3dd6` に対して。P1 なし。両者が独立に同じ 1 件を P2 に挙げた。Codex の
 2 件目の P2 (「XI / TX / US の発火が 1 つの `assertThrows` に依存」「XK / XL が helper を
@@ -7774,11 +7775,14 @@ profile controller (hidden) 34、folder connector 24、Graph 検証 11 — Failu
   3 巡目の錠は「確定的行が無い」セルしか測っておらず、XI の枝の別名だった。専用の catch で
   rethrow し、錠を「読める確定的行が在っても拒否し、理由が逆直列化の失敗である」セルに変え、
   XL をその catch (呼び出し側) に狙い直した。
+  **→ この専用 catch は 5 巡目で欠陥と判定された (下記): 一覧が完了できないときの型付き
+  wrap まで同じ型で拾い、`get()` のフォールバックと `getOrRefuse` の契約を壊していた。**
 - **P3 (サブ) — `listByRepositoryIndexFree` の文字列 `"false"`。** 「Jackson と呼び出し元が
   文字列を扱う」は Jackson が成功した行にしか当てはまらず、`enabled: "false"` で他の欄が壊れた
   行は自動解決を止めていた。コネクタ側と同じ 2 形を `isRawDisabled` で読む。錠 + **XM**、
   WI / WT を張り直し。`isRawDisabled` はコネクタ側の式と同じ形 (trim なし) に揃えた。
-- **P3 (Codex) — XK / XL が helper を壊していた。** 両方とも呼び出し側に狙い直した。
+- **Codex の 2 件目の P2 の後半 — XK / XL が helper を壊していた。** 両方とも呼び出し側に
+  狙い直した (見出しの P2 3 件に数えたもの。P3 には数えない)。
   **P3 (サブ) — US の span 置換が 3 つの保護を同時に外していた** → `what` が名指す
   1 つ (確定的行の connectorId 不一致検査) だけを壊す形に狭めた。
 - **P3 (サブ) — 受信側のコメントが 3 巡目の限定から取り残されていた** (読めない旧 ID 行は
@@ -7786,7 +7790,7 @@ profile controller (hidden) 34、folder connector 24、Graph 検証 11 — Failu
 - **P3 (サブ) — 台帳の数え間違い 2 か所** (3 巡目の錠 3 本 → 2 本 + control 1 本、P3 6 → 5) と
   **巡番号の矛盾 1 か所** (取り下げは 3 巡目でなく 2 巡目の処置) → 直した。
   **P3 (Codex) — §62 が「10 か所以上」を列挙しているかのような書き方** → 「種類と例」に
-  限定した (main の呼び出し元は 18 か所)。`reportUninterpretable` の javadoc も「リテラル
+  限定した (main の呼び出し元は 17 か所 + impl 内部の `exists()`)。`reportUninterpretable` の javadoc も「リテラル
   だけ」のままだった → 直した。
 - **P3 (サブ) — 測定段落のテスト本数が `@Test` の数と合わない**: canonical 80 / folder 24 /
   connector controller 23 に対し `@Test` は 78 / 23 / 22。**差は完全修飾の
@@ -7810,7 +7814,7 @@ controller (hidden) 34、folder connector 24、Graph 検証 11 — Failures 0。
   受けていた。** `findRawDocs` は一覧が完了できないとき (docs 無し / 進めない full page) を
   `ConnectorIndexNotReadyException` に包む。4 巡目で足した専用 catch はその型を rethrow する
   ので、(a) `get()` はこのセルで従来のフォールバック (確定的 ID 読み) をせず throw するように
-  なり — 18 か所の呼び出し元に新しい例外経路 —、(b) `getOrRefuse` は「セレクタ失敗 + 読める
+  なり — 17 か所の呼び出し元 (+ `exists()`) に新しい例外経路 —、(b) `getOrRefuse` は「セレクタ失敗 + 読める
   確定的行 → 返す」という自分の契約に反して拒否していた。読めない行の拒否を**サブタイプ**
   `UnreadableSelectorRowException` にし、専用 catch はそれだけを拾う。例外の**意味**で分岐し、
   型の偶然で分岐しない。錠 2 本 (`get()` / `getOrRefuse` とも、一覧不完全 + 読める確定的行
@@ -7824,3 +7828,22 @@ controller (hidden) 34、folder connector 24、Graph 検証 11 — Failures 0。
 **47 本 (PW / QC / VT / TX / US / VX〜XN) すべてを測定して 47/47 FIRED** (3,790 秒)、復元後
 clean。触ったテストクラス: connector 65、webhook 23、profile 85、connector controller 23 —
 Failures 0。**残る 371 本はこの木では未測定** — 通しは収束後。
+
+### 6 巡目 (Codex + サブエージェント、並行) — P1/P2 なし、P3 4、両者 `VERDICT: CONVERGED`
+
+コミット `f23a9cc42` に対して。両者とも `read()` の全セル表を契約に当てて一致を確認し、
+`get()` が基点 `7ec4533c2` と全セルで同じであること、サブタイプの到達範囲 (投げ元 1 か所、
+受け側は受信側 2 か所と handler、すべて基底型で受ける)、XN / XL の細工が呼び出し側で錠自身の
+表明で落ちること、数字 (418 / 40 / 47 / 371、テスト本数) を追認した。P3 は文書のみ:
+
+- **(Codex)** 「`get()` の呼び出し元 18 か所」— 実行文は 17、18 番目は impl 内部の `exists()`
+  (Codex はコメントと読んだ)。3 か所を「17 + 内部 1」に直した。
+- **(サブ)** 4 巡目の P2 の項に「→ 5 巡目で欠陥と判定」の前方矢印が無かった → 付けた。
+- **(サブ)** 4 巡目の見出しが Codex の 2 件目の P2 を P2 に数え、本文が同じ件を P3 に数えて
+  いた → 本文を「Codex P2 の後半」に改め、P3 を 6 に。
+- **(サブ)** RELEASE_NOTES「管理端点すべてで 503」は、`get()` 経由の 1 件読み (`GET` by id、
+  `PUT` の既存行解決) が確定的 ID にフォールバックする — 5 巡目がまさに復元した挙動 — ので
+  言い過ぎ → 「一覧を返す端点と一覧を直接使う経路」に絞り、1 件読みはフォールバックすると
+  書いた。
+
+コードは変えていない。**7 巡目を安定確認として回す** (2 巡続けて P1/P2 なしが収束の条件)。
