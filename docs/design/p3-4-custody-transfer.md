@@ -7746,8 +7746,9 @@ connector controller 23、profile controller (hidden) 34、folder connector 24�
 - **P3-4 (サブ) — `reportUninterpretable` の `enabled` 判定がコネクタ側と非対称** (リテラル
   `false` だけ)。文字列 `"false"` も無効扱いに (`isRawDisabled`)。錠 (既存の錠に行を追加) +
   **XK**。`listByRepositoryIndexFree` の方はリテラルだけのまま (Jackson と呼び出し元の filter が
-  文字列を扱う) と javadoc に書いた。受信側のメッセージも「名指ししている」を、宛先不明の
-  行では「名指ししているかもしれない」に。
+  文字列を扱う) と javadoc に書いた **→ 4 巡目で訂正: その根拠は Jackson が成功した行にしか
+  当てはまらず、こちらも 2 形を読むようにした**。受信側のメッセージも「名指ししている」を、
+  宛先不明の行では「名指ししているかもしれない」に。
 - **P3-5 (サブ) — 循環錠のコメント「4 ページ目」と条件 (5 ページ目) の食い違い。** 直した。
 
 **この巡の測定**: コントロールは **416 本** (新設 4: XI〜XL、張り直し TX / US)。変更した
@@ -7757,9 +7758,12 @@ TX / US / VX〜XL) すべてを測定して 45/45 FIRED** (3,711 秒)、復元�
 profile controller (hidden) 34、folder connector 24、Graph 検証 11 — Failures 0。
 **残る 371 本はこの木では未測定** — 通しは収束後。
 
-### 4 巡目 (Codex + サブエージェント、並行) — P2 (両者同じ) 1・P3 7、両者 `NOT CONVERGED`
+### 4 巡目 (Codex + サブエージェント、並行) — P2 (重複含め) 3・P3 7、両者 `NOT CONVERGED`
 
-コミット `022ef3dd6` に対して。P1 なし。両者が独立に同じ 1 件を P2 に挙げ、それ以外は文書。
+コミット `022ef3dd6` に対して。P1 なし。両者が独立に同じ 1 件を P2 に挙げた。Codex の
+2 件目の P2 (「XI / TX / US の発火が 1 つの `assertThrows` に依存」「XK / XL が helper を
+壊す」) は、前半はこのプロジェクトの基準 (JUnit の表明はすべて発火) では欠陥ではなく、
+後半は下記の狙い直しで処置した。それ以外は文書。
 
 - **P2 (両者) — 「セレクタが見せた行を読めなければ拒否」は独立した保護ではなかった。**
   `findBySelector(selector, true)` が投げる `ConnectorIndexNotReadyException` は
@@ -7791,8 +7795,32 @@ profile controller (hidden) 34、folder connector 24、Graph 検証 11 — Failu
 
 **この巡の測定**: コントロールは **417 本** (新設 1: XM、狙い直し XK / XL / US、張り直し
 WI / WT)。変更したファイルを狙う **109 本を compile-check (109/109)** した上で、バッチの
-**46 本 (PW / QC / VT / TX / US / VX〜XM) すべてを測定して 46/46 FIRED** (3,711 秒 — 4 巡目と
-同じ秒数だが別の実行で、ログの日時と発火一覧で確かめた)、復元後 clean。触ったテストクラス:
+**46 本 (PW / QC / VT / TX / US / VX〜XM) すべてを測定して 46/46 FIRED** (3,711 秒 — 3 巡目と
+同じ秒数だが別の実行で、ログの日時と発火一覧で確かめた。ログは木に残していない)、復元後 clean。触ったテストクラス:
 webhook 23、profile 85、connector 63、canonical 80、connector controller 23、profile
 controller (hidden) 34、folder connector 24、Graph 検証 11 — Failures 0。**残る 371 本は
 この木では未測定** — 通しは収束後。
+
+### 5 巡目 (Codex + サブエージェント、並行) — P2 (両者同じ) 1・P3 3、両者 `NOT CONVERGED`
+
+コミット `e0933dc2a` に対して。P1 なし。両者が独立に同じ 1 件だけを P2 に挙げた —
+**4 巡目の私の直しが作ったもの。**
+
+- **P2 (両者) — 専用 catch が「読めない行の拒否」と `findRawDocs` の型付き wrap を同じ型で
+  受けていた。** `findRawDocs` は一覧が完了できないとき (docs 無し / 進めない full page) を
+  `ConnectorIndexNotReadyException` に包む。4 巡目で足した専用 catch はその型を rethrow する
+  ので、(a) `get()` はこのセルで従来のフォールバック (確定的 ID 読み) をせず throw するように
+  なり — 18 か所の呼び出し元に新しい例外経路 —、(b) `getOrRefuse` は「セレクタ失敗 + 読める
+  確定的行 → 返す」という自分の契約に反して拒否していた。読めない行の拒否を**サブタイプ**
+  `UnreadableSelectorRowException` にし、専用 catch はそれだけを拾う。例外の**意味**で分岐し、
+  型の偶然で分岐しない。錠 2 本 (`get()` / `getOrRefuse` とも、一覧不完全 + 読める確定的行
+  → 確定的行を返す)、コントロール **XN** (catch を基底型に広げる)。XL は新しい型に張り直し。
+- **P3 (サブ)** 4 巡目の測定段落の自己参照 (「4 巡目と同じ秒数」→ 3 巡目)、3 巡目の P3-4 に
+  「→ 4 巡目で訂正」の矢印が無かった、4 巡目の見出しが Codex の 2 件目の P2 の処置を
+  書いていなかった — 3 か所とも直した。
+
+**この巡の測定**: コントロールは **418 本** (新設 1: XN、張り直し XL)。変更したファイル
+(`ConnectorDefinitionServiceImpl`) を狙う **40 本を compile-check (40/40)** した上で、バッチの
+**47 本 (PW / QC / VT / TX / US / VX〜XN) すべてを測定して 47/47 FIRED** (3,790 秒)、復元後
+clean。触ったテストクラス: connector 65、webhook 23、profile 85、connector controller 23 —
+Failures 0。**残る 371 本はこの木では未測定** — 通しは収束後。

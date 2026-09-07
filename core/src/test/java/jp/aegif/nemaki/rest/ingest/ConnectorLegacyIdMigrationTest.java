@@ -16,6 +16,7 @@
  */
 package jp.aegif.nemaki.rest.ingest;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -546,6 +547,53 @@ class ConnectorLegacyIdMigrationTest {
                         + "the readable deterministic row answered in its place");
         assertTrue(refused.getMessage().contains("could not be read as a connector"),
                 "refused, but for a reason that was not the unreadable row: " + refused.getMessage());
+    }
+
+    /** The selector listing did not answer (no {@code docs}) — findRawDocs' typed refusal. */
+    private void selectorListingDoesNotAnswer() {
+        ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> noDocs = findCallOf(null, null);
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenReturn(noDocs);
+    }
+
+    private void deterministicRowIsReadable(String connectorId) {
+        Document readable = mock(Document.class);
+        when(readable.getProperties()).thenReturn(connectorProps(connectorId, "Readable"));
+        when(readable.getRev()).thenReturn("2-b");
+        deterministicReadAnswers(connectorId, readable);
+    }
+
+    @Test
+    @DisplayName("getOrRefuse falls back to a readable deterministic row when the selector "
+            + "LISTING could not be completed — that is a selector failure, not an unreadable row")
+    void getOrRefuseFallsBackToTheDeterministicRowWhenTheSelectorListingIsIncomplete() {
+        // The listing's own typed refusal (no docs, no bookmark to continue from) and the
+        // unreadable-row refusal were one type, and the catch meant for the second took the
+        // first: a listing that could not be completed refused over a readable deterministic
+        // row — against the contract, which refuses that only with no deterministic row.
+        // Two reviews found it, one round apart.
+        wire();
+        selectorListingDoesNotAnswer();
+        deterministicRowIsReadable("c-late");
+
+        ConnectorDefinition answered = assertDoesNotThrow(() -> service.getOrRefuse("c-late"),
+                "an incomplete selector listing refused over a readable deterministic row");
+        assertEquals("c-late", answered == null ? null : answered.getConnectorId(),
+                "the deterministic row was not the answer");
+    }
+
+    @Test
+    @DisplayName("get() falls back to a readable deterministic row when the selector listing "
+            + "could not be completed — as it always has")
+    void getFallsBackToTheDeterministicRowWhenTheSelectorListingIsIncomplete() {
+        wire();
+        selectorListingDoesNotAnswer();
+        deterministicRowIsReadable("c-late");
+
+        ConnectorDefinition answered = assertDoesNotThrow(() -> service.get("c-late"),
+                "get() started throwing on an incomplete selector listing — its 18 callers "
+                        + "gained an exception path");
+        assertEquals("c-late", answered == null ? null : answered.getConnectorId());
     }
 
     @Test

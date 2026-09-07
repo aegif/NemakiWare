@@ -4498,17 +4498,22 @@ CONTROLS = [
         # Re-targeted in round 5 at the CALL SITE: the dedicated catch that keeps the
         # unreadable row's refusal from being swallowed as a selector failure. Without it the
         # readable deterministic row answers in the unreadable row's place.
-        find='        } catch (ConnectorIndexNotReadyException unreadableRow) {\n'
-             '            // Thrown only by the refusing read: the selector ANSWERED, with a row this node\n'
-             '            // cannot read as a connector. Not a selector failure — caught by the catch below\n'
-             '            // it became one, the deterministic row (if readable) was returned over it, and\n'
-             '            // the refusal that did reach the caller named the wrong reason. A review found\n'
-             '            // the protection was not one.\n'
-             '            throw unreadableRow;\n'
-             '        } catch (RuntimeException selectorFailed) {',
+        find_span=('        } catch (UnreadableSelectorRowException unreadableRow) {',
+                   '            throw unreadableRow;\n        } catch (RuntimeException selectorFailed) {'),
         replace='        } catch (RuntimeException selectorFailed) {',
         test='ConnectorLegacyIdMigrationTest',
         expect_fail=['getOrRefuseRefusesWhenTheSelectorShowsARowItCannotRead'],
+    ),
+    dict(
+        id="XN",
+        what="the dedicated catch takes the listing's typed refusal too — an incomplete selector "
+             "page refuses over a readable deterministic row, for get() and getOrRefuse alike",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='        } catch (UnreadableSelectorRowException unreadableRow) {',
+        replace='        } catch (ConnectorIndexNotReadyException unreadableRow) {',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['getOrRefuseFallsBackToTheDeterministicRowWhenTheSelectorListingIsIncomplete',
+                     'getFallsBackToTheDeterministicRowWhenTheSelectorListingIsIncomplete'],
     ),
     dict(
         id="XM",

@@ -80,12 +80,16 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
             results = findBySelector(Map.of(
                     "type", ConnectorDefinition.DOC_TYPE,
                     "connectorId", connectorId), refuseUnanswered);
-        } catch (ConnectorIndexNotReadyException unreadableRow) {
+        } catch (UnreadableSelectorRowException unreadableRow) {
             // Thrown only by the refusing read: the selector ANSWERED, with a row this node
             // cannot read as a connector. Not a selector failure — caught by the catch below
             // it became one, the deterministic row (if readable) was returned over it, and
             // the refusal that did reach the caller named the wrong reason. A review found
-            // the protection was not one.
+            // the protection was not one. Its own subtype, because the listing's typed
+            // refusal (an incomplete selector page) is a selector FAILURE and must keep
+            // falling through to the deterministic read — for get() as it always has, and
+            // for the refusing read as its contract says. A second review found the first
+            // catch taking both.
             throw unreadableRow;
         } catch (RuntimeException selectorFailed) {
             logger.debug("selector read for connector {} failed; falling back to the"
@@ -852,13 +856,27 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
                 results.add(MAPPER.convertValue(props, ConnectorDefinition.class));
             } catch (Exception e) {
                 if (refuseUnreadable) {
-                    throw new ConnectorIndexNotReadyException("a connector row the selector"
+                    throw new UnreadableSelectorRowException("a connector row the selector"
                             + " shows could not be read as a connector: " + e.getMessage());
                 }
                 logger.warn("Failed to deserialize connector definition: {}", e.getMessage());
             }
         }
         return results;
+    }
+
+    /**
+     * The selector answered with a row this node cannot read as a connector. A
+     * {@link ConnectorIndexNotReadyException} to every caller (503), but its own type
+     * inside {@code read()}: the listing's own typed refusal (an incomplete selector page)
+     * is a selector failure and falls through to the deterministic read; this does not.
+     */
+    public static final class UnreadableSelectorRowException extends ConnectorIndexNotReadyException {
+        private static final long serialVersionUID = 1L;
+
+        UnreadableSelectorRowException(String message) {
+            super(message);
+        }
     }
 
     /**
