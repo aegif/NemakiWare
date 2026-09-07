@@ -8,6 +8,23 @@ import java.util.List;
 public interface ConnectorDefinitionService {
     ConnectorDefinition create(ConnectorDefinition def);
     ConnectorDefinition get(String connectorId);
+
+    /**
+     * As {@link #get(String)}, except that a read which could not be ANSWERED refuses.
+     * {@code get} answers null for a failed id-addressed read and for absence alike, and its
+     * callers follow a null with an index-free check of their own; a caller that may not
+     * afford that walk — the webhook receiver, before any signature is verified — reported
+     * the first as the second. Null here means the selector and the deterministic-id read
+     * both answered "no such row". A row saved under a legacy generated id that the startup
+     * migration could not rewrite still answers null: it is reported at every startup, and
+     * this read does not walk.
+     *
+     * @throws ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException when the row
+     *         exists but could not be read as this connector, or when the id-addressed read
+     *         failed with anything other than "not found"
+     */
+    ConnectorDefinition getOrRefuse(String connectorId);
+
     List<ConnectorDefinition> list();
     List<ConnectorDefinition> listByArchetype(SourceArchetype archetype);
     ConnectorDefinition update(ConnectorDefinition def);

@@ -478,6 +478,56 @@ class ConnectorLegacyIdMigrationTest {
                         + "refused with the type the create path answers 400 for");
     }
 
+    // ────────────────────────────────────────────────────────────────────
+    // getOrRefuse — a read that did not answer is not "no such connector"
+    // ────────────────────────────────────────────────────────────────────
+
+    @SuppressWarnings("unchecked")
+    private void theIdReadFails() {
+        when(cloudant.getDocument(any(GetDocumentOptions.class))).thenAnswer(inv -> {
+            ServiceCall<Document> call = mock(ServiceCall.class);
+            when(call.execute()).thenThrow(new RuntimeException("connection reset"));
+            return call;
+        });
+    }
+
+    @Test
+    @DisplayName("getOrRefuse refuses when the id-addressed read fails — get() answers null "
+            + "for that, and the webhook receiver read the null as absence")
+    void getOrRefuseRefusesWhenTheIdReadFails() {
+        wire();
+        selectorAnswersNothing();
+        theIdReadFails();
+
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> service.getOrRefuse("c-unanswered"),
+                "a read that did not answer was reported as 'no such connector'");
+    }
+
+    @Test
+    @DisplayName("getOrRefuse still answers null when both reads answer 'no such row' — the "
+            + "control")
+    void getOrRefuseAnswersNullWhenBothReadsAnswerAbsent() {
+        wire();
+        selectorAnswersNothing();
+
+        assertEquals(null, service.getOrRefuse("c-nobody"),
+                "a genuinely absent connector was refused — every 401 would become a 503");
+    }
+
+    @Test
+    @DisplayName("get() keeps answering null for a failed id read — its callers follow a null "
+            + "with an index-free check of their own")
+    void getStillAnswersNullWhenTheIdReadFails() {
+        wire();
+        selectorAnswersNothing();
+        theIdReadFails();
+
+        assertEquals(null, service.get("c-unanswered"),
+                "get() started refusing, and every caller that follows its null with "
+                        + "existsIndexFree now answers 503 before asking");
+    }
+
     /** One raw document as the selector serves it. */
     private static Document selectorDoc(Map<String, Object> props) {
         Document doc = mock(Document.class);

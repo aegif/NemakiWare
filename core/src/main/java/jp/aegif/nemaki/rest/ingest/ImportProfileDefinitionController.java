@@ -112,6 +112,19 @@ public class ImportProfileDefinitionController {
         }
     }
 
+    /**
+     * A listing the service could not complete — a selector page it could not continue,
+     * a walk that did not answer — escaped every endpoint without an explicit catch as a
+     * Spring 500 ({@code GlobalExceptionHandler} does not cover this package). The typed
+     * refusals exist so the answer can be 503, "retry", not "our bug"; this is the floor.
+     * Endpoints that catch them themselves keep their own mapping.
+     */
+    @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+            ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})
+    public ResponseEntity<Map<String, Object>> definitionRowsCouldNotBeRead(RuntimeException e) {
+        return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
+    }
+
     @GetMapping
     public ResponseEntity<List<ImportProfileDefinition>> list(
             @RequestParam(required = false) String repositoryId,

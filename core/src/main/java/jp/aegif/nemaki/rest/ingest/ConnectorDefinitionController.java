@@ -92,6 +92,22 @@ public class ConnectorDefinitionController {
         }
     }
 
+    /**
+     * A listing the service could not complete — a selector page it could not continue,
+     * a walk that did not answer — escaped every endpoint without an explicit catch as a
+     * Spring 500 ({@code GlobalExceptionHandler} does not cover this package). The typed
+     * refusal exists so the answer can be 503, "retry", not "our bug"; this is the floor.
+     * Endpoints that catch it themselves keep their own mapping.
+     */
+    @ExceptionHandler(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class)
+    public ResponseEntity<Map<String, Object>> connectorRowsCouldNotBeRead(
+            ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("status", "error");
+        body.put("message", e.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
     @GetMapping
     public ResponseEntity<List<ConnectorDefinition>> list(
             @RequestParam(required = false) String archetype) {

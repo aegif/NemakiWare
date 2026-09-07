@@ -4204,17 +4204,9 @@ CONTROLS = [
         test='CanonicalImportServiceTest',
         expect_fail=['createDirectRelationship_createsAndSaysSo_whenExistenceCheckThrows'],
     ),
-    dict(
-        id="WL",
-        what="a connector that exists but could not be read is 401 again — the sender takes "
-             "it as an authentication failure and does not retry",
-        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
-        find='            ResponseEntity<?> hidden = refuseIfConnectorHidden(connectorId);\n'
-             '            if (hidden != null) return hidden;',
-        replace='            // (hidden check removed)',
-        test='IngestWebhookBoxDropboxTest',
-        expect_fail=['aConnectorThatExistsButCannotBeReadIsA503NotA401'],
-    ),
+    # WL (the receiver's index-free existence check) was withdrawn in round 3 together with
+    # the protection it measured: a walk of the configuration database per unauthenticated
+    # request was an amplifier. getOrRefuse replaced it (XC / XD / XE).
     dict(
         id="WM",
         what="a connector read that throws escapes the receiver as a 500 again",
@@ -4222,7 +4214,7 @@ CONTROLS = [
         find='            return connectorCouldNotBeRead(connectorId, couldNotRead.getMessage());',
         replace='            throw couldNotRead;',
         test='IngestWebhookBoxDropboxTest',
-        expect_fail=['aConnectorReadThatThrowsIsA503NotA500'],
+        expect_fail=['aConnectorReadThatCouldNotBeAnsweredIsA503NotA401'],
     ),
     dict(
         id="WN",
@@ -4337,6 +4329,127 @@ CONTROLS = [
         replace='            throw incomplete;',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['theSelectorListingRefusesAFullPageWithoutABookmark'],
+    ),
+    # ── round 3 of the second batch: what the second review round found ──
+    dict(
+        id="WX",
+        what="the Dropbox URL-verification GET lets a connector read that threw escape as a "
+             "500 again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='            return connectorCouldNotBeRead(connectorId, couldNotReadOnVerify.getMessage());',
+        replace='            throw couldNotReadOnVerify;',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['theHandshakeAnswers503WhenTheConnectorReadCouldNotBeAnswered'],
+    ),
+    dict(
+        id="WY",
+        what="a row with no profileId is dropped from the owned listing without being reported "
+             "— it may still name the connector the receiver is answering for",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                reportUninterpretable(uninterpretable, id, props, "the row has no profileId");\n',
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theOwnedListingReportsANamelessRowToo'],
+    ),
+    dict(
+        id="WZ",
+        what="a broken recipient row only refuses when nothing else is readable — beside a "
+             "readable recipient the dispatch goes ahead with the broken one left out",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='            if (broken.namesConnector(connId)) {',
+        replace='            if (owned.profiles().isEmpty() && broken.namesConnector(connId)) {',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['aBrokenRecipientRowRefusesTheDispatchEvenBesideReadableOnes'],
+    ),
+    dict(
+        id="XA",
+        what="an unwired profile service answers 'no profile' (200) again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find_span=('            throw new RecipientUnreadableException("the import profile service is not wired,"',
+                   '                    + " cannot be established");'),
+        replace='            return List.of();',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['anUnwiredProfileServiceIsA503NotNoProfile'],
+    ),
+    dict(
+        id="XB",
+        what="a connector field of unreadable shape reads as 'names nobody' again — the skip "
+             "the uninterpretable-row record exists to prevent, one field down",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='        boolean addresseeUnknown = (defaultConnector != null && !(defaultConnector instanceof String))\n'
+             '                || (allowedConnectors != null && !isListOfStrings(allowedConnectors));',
+        replace='        boolean addresseeUnknown = false;',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aRowWhoseConnectorFieldsHaveNoReadableShapeAddressesEveryConnector'],
+    ),
+    dict(
+        id="XC",
+        what="getOrRefuse answers null for a failed id read again — 'could not ask' with the "
+             "value of 'no such connector'",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='            if (refuseUnanswered) {',
+        replace='            if (false) {',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['getOrRefuseRefusesWhenTheIdReadFails'],
+    ),
+    dict(
+        id="XD",
+        what="the receiver resolves the connector through get() again — a failed read is 401, "
+             "'your signature is wrong'",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='            connector = connectorDefinitionService.getOrRefuse(connectorId);\n'
+             '        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotRead) {',
+        replace='            connector = connectorDefinitionService.get(connectorId);\n'
+                '        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotRead) {',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['aConnectorReadThatCouldNotBeAnsweredIsA503NotA401'],
+    ),
+    dict(
+        id="XE",
+        what="the Dropbox URL-verification GET resolves the connector through get() again — "
+             "a failed read is 404",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='            connector = connectorDefinitionService.getOrRefuse(connectorId);\n'
+             '        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotReadOnVerify) {',
+        replace='            connector = connectorDefinitionService.get(connectorId);\n'
+                '        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotReadOnVerify) {',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['theHandshakeAnswers503WhenTheConnectorReadCouldNotBeAnswered'],
+    ),
+    dict(
+        id="XF",
+        what="the connector admin listing lets the typed refusal escape as a Spring 500 again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionController.java',
+        find='    @ExceptionHandler(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class)\n',
+        replace='',
+        test='ConnectorDefinitionControllerPartialPutTest',
+        expect_fail=['theListAnswers503WhenTheListingCannotBeCompleted'],
+    ),
+    dict(
+        id="XG",
+        what="the profile admin listing lets the typed refusal escape as a Spring 500 again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find='    @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,\n'
+             '            ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})\n'
+             '    public ResponseEntity<Map<String, Object>> definitionRowsCouldNotBeRead(RuntimeException e) {\n'
+             '        return errorResponse(',
+        replace='    public ResponseEntity<Map<String, Object>> definitionRowsCouldNotBeRead(RuntimeException e) {\n'
+                '        return errorResponse(',
+        test='ImportProfileHiddenIsNotAbsentTest',
+        expect_fail=['theListAnswers503WhenTheListingCannotBeCompleted'],
+    ),
+    dict(
+        id="XH",
+        what="the folder connector listing lets the typed refusal escape as a Spring 500 again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/FolderConnectorController.java',
+        find='    @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,\n'
+             '            ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})\n'
+             '    public ResponseEntity<Map<String, Object>> definitionRowsCouldNotBeRead(RuntimeException e) {\n'
+             '        Map<String, Object> body',
+        replace='    public ResponseEntity<Map<String, Object>> definitionRowsCouldNotBeRead(RuntimeException e) {\n'
+                '        Map<String, Object> body',
+        test='FolderConnectorControllerTest',
+        expect_fail=['theListAnswers503WhenTheListingCannotBeCompleted'],
     ),
     dict(
         id="HA",

@@ -77,6 +77,29 @@ class FolderConnectorControllerTest {
         return f;
     }
 
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("the folder's connector list answers 503, not 500, when "
+            + "the profile listing could not be completed")
+    void theListAnswers503WhenTheListingCannotBeCompleted() throws Exception {
+        // The typed refusal escaped this endpoint — no catch, and GlobalExceptionHandler does
+        // not cover this package — as a Spring 500. Through MockMvc because the handler is an
+        // @ExceptionHandler, which a direct call never reaches.
+        adminCtx();
+        folder();
+        when(profileService.listByRepository(REPO)).thenThrow(
+                new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(
+                        "a full selector page of 'nemaki_conf' carried no new continuation bookmark"));
+        org.springframework.test.web.servlet.MockMvc mockMvc =
+                org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(controller).build();
+
+        assertDoesNotThrow(() -> mockMvc.perform(
+                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .get("/v1/repo/" + REPO + "/folders/" + FOLDER + "/connectors"))
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                                .status().isServiceUnavailable()),
+                "a listing that could not be completed escaped the folder connector list as a 500");
+    }
+
     private ImportProfileDefinition profile() {
         ImportProfileDefinition p = new ImportProfileDefinition();
         p.setProfileId(PROFILE);

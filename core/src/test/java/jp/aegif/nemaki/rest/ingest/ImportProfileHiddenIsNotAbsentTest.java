@@ -115,6 +115,28 @@ class ImportProfileHiddenIsNotAbsentTest {
     }
 
     @Test
+    @DisplayName("GET /admin/import-profiles answers 503, not 500, when the listing could not "
+            + "be completed")
+    void theListAnswers503WhenTheListingCannotBeCompleted() throws Exception {
+        // The typed refusal escaped the list endpoint — no catch, and GlobalExceptionHandler
+        // does not cover this package — as a Spring 500. Through MockMvc because the handler
+        // is an @ExceptionHandler, which a direct call never reaches.
+        adminCtx();
+        when(importProfileDefinitionService.listByRepository(REPO)).thenThrow(
+                new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(
+                        "a full selector page of 'nemaki_conf' carried no new continuation bookmark"));
+        org.springframework.test.web.servlet.MockMvc mockMvc =
+                org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(controller).build();
+
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> mockMvc.perform(
+                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .get("/v1/admin/import-profiles"))
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                                .status().isServiceUnavailable()),
+                "a listing that could not be completed escaped the profile list as a 500");
+    }
+
+    @Test
     @DisplayName("PUT: a profile the selector cannot show is 503, not 404")
     void aHiddenProfileIsA503OnPut() {
         adminCtx();

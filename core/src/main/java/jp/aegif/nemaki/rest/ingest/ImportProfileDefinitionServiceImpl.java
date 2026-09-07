@@ -926,24 +926,42 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         if (Boolean.FALSE.equals(props.get("enabled"))) {
             return;
         }
+        Object defaultConnector = props.get("defaultConnectorId");
+        Object allowedConnectors = props.get("allowedConnectorIds");
+        // A connector field that is there but not in a readable shape leaves the addressee
+        // unknown — the row then names every connector, not none. A review found the first
+        // version reading such a field as "names nobody", which is the skip this record
+        // exists to prevent, one field down.
+        boolean addresseeUnknown = (defaultConnector != null && !(defaultConnector instanceof String))
+                || (allowedConnectors != null && !isListOfStrings(allowedConnectors));
         sink.add(new UninterpretableRow(docId, rawString(props.get("profileId")),
-                rawString(props.get("defaultConnectorId")),
-                rawStrings(props.get("allowedConnectorIds")), reason));
+                rawString(defaultConnector), rawStrings(allowedConnectors), addresseeUnknown,
+                reason));
     }
 
     private static String rawString(Object value) {
         return value instanceof String s ? s : null;
     }
 
-    private static List<String> rawStrings(Object value) {
+    private static boolean isListOfStrings(Object value) {
         if (!(value instanceof List<?> values)) {
+            return false;
+        }
+        for (Object v : values) {
+            if (!(v instanceof String)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static List<String> rawStrings(Object value) {
+        if (!isListOfStrings(value)) {
             return null;
         }
         List<String> strings = new ArrayList<>();
-        for (Object v : values) {
-            if (v instanceof String s) {
-                strings.add(s);
-            }
+        for (Object v : (List<?>) value) {
+            strings.add((String) v);
         }
         return strings;
     }

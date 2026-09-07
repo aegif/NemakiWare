@@ -77,6 +77,19 @@ public class FolderConnectorController {
      * Returns only profiles the caller may run (write + delegation/admin),
      * so an empty list means "don't show the run button".
      */
+    /**
+     * A listing the service could not complete escaped as a Spring 500 (this package is
+     * outside {@code GlobalExceptionHandler}); the typed refusals answer 503, "retry".
+     */
+    @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+            ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})
+    public ResponseEntity<Map<String, Object>> definitionRowsCouldNotBeRead(RuntimeException e) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("status", "error");
+        body.put("message", e.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
     @GetMapping
     public ResponseEntity<Map<String, Object>> list(
             @PathVariable String repositoryId, @PathVariable String folderId) {

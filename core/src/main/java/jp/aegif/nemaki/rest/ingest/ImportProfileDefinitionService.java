@@ -102,15 +102,26 @@ public interface ImportProfileDefinitionService {
      * receiver asks {@link #namesConnector(String)}: a row that names its connector and
      * cannot be read is a recipient it cannot establish, not "no recipient".
      *
+     * @param addresseeUnknown true when a connector field is present in the row but not in
+     *                         a shape this node can read (a value that is not a string, a
+     *                         list with non-string entries): whom the row addresses cannot
+     *                         be established, so it addresses every connector
      * @param reason why the row could not be read (the deserialisation failure, or that the
      *               row has no profileId)
      */
     record UninterpretableRow(String docId, String profileId, String defaultConnectorId,
-            List<String> allowedConnectorIds, String reason) {
-        /** Whether the row, as far as its raw connector fields say, names this connector. */
+            List<String> allowedConnectorIds, boolean addresseeUnknown, String reason) {
+        /**
+         * Whether the row names this connector — as far as its raw connector fields say, and
+         * "yes" for every connector when those fields are there but cannot be read: a row
+         * whose addressee cannot be established is not a row that addresses nobody.
+         */
         public boolean namesConnector(String connectorId) {
             if (connectorId == null) {
                 return false;
+            }
+            if (addresseeUnknown) {
+                return true;
             }
             return connectorId.equals(defaultConnectorId)
                     || (allowedConnectorIds != null && allowedConnectorIds.contains(connectorId));

@@ -46,6 +46,21 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
 
     @Override
     public ConnectorDefinition get(String connectorId) {
+        return read(connectorId, false);
+    }
+
+    @Override
+    public ConnectorDefinition getOrRefuse(String connectorId) {
+        return read(connectorId, true);
+    }
+
+    /**
+     * The one read behind {@link #get} and {@link #getOrRefuse}; they differ only in what a
+     * failed id-addressed read becomes — null (every {@code get} caller follows a null with
+     * an index-free check of its own) or the typed refusal (the webhook receiver, which may
+     * not walk the database for an unauthenticated request).
+     */
+    private ConnectorDefinition read(String connectorId, boolean refuseUnanswered) {
         // Null means "no such connector", not a crash: Map.of rejects null values with an NPE,
         // so an ingest request that simply omits connectorId used to answer 500 with a stack
         // trace, while a WRONG id answered a clean 404. Callers already treat null as
@@ -89,6 +104,14 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
         } catch (ConnectorIndexNotReadyException mismatch) {
             throw mismatch;
         } catch (RuntimeException idReadFailed) {
+            if (refuseUnanswered) {
+                // Not "no such connector": the read that decides did not answer. A caller
+                // that has no index-free check to follow this with must not be handed the
+                // value of absence.
+                throw new ConnectorIndexNotReadyException("connector " + connectorId
+                        + " could not be read, so whether it exists cannot be established: "
+                        + idReadFailed.getMessage());
+            }
             // Opportunistic only: it can improve the selector's answer, never worsen it.
             // "Could not ask" is kept apart from "no" by existsIndexFree, which refuses.
             logger.debug("id-addressed fallback for connector {} failed: {}", connectorId,

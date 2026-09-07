@@ -2057,33 +2057,15 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
     }
 
-    /**
-     * Typed relationship with no capture scope.
-     *
-     * <p>Kept so a caller that has no scope in hand still compiles, but it is NOT the right
-     * overload inside an ingest: a relationship created here is a change that no intent covers.
-     * The call sites that legitimately use it are the ones design §4 rule 7 puts outside this
-     * PR's boundary — the orchestrators that link objects after the entry point returns.
-     */
-    String createDirectRelationship(CallContext callContext, String repositoryId,
-                                    String sourceId, String targetId, String relationshipTypeId) {
-        return outsideAnImport(createLink(callContext, repositoryId, sourceId, targetId,
-                relationshipTypeId, CaptureScope.inactive(), null, null));
-    }
+    // The five- and six-argument overloads (typed relationship without a profile) were
+    // removed: nothing in production called them, and the six-argument one took a capture
+    // scope — an in-import thing — while answering with the outside-an-import contract, so
+    // a future in-import caller would have lost the duplicate-check warning in silence. A
+    // review found the dead pair.
 
     /**
-     * Creates a typed CMIS relationship.
+     * Creates a typed CMIS relationship, with the profile whose import this link belongs to.
      * Falls back to generic cmis:relationship if the custom type is not available.
-     */
-    String createDirectRelationship(CallContext callContext, String repositoryId,
-                                            String sourceId, String targetId,
-                                            String relationshipTypeId, CaptureScope captureScope) {
-        return outsideAnImport(createLink(callContext, repositoryId, sourceId, targetId,
-                relationshipTypeId, captureScope, null, null));
-    }
-
-    /**
-     * As above, with the profile whose import this link belongs to.
      *
      * <p>{@code authorizingProfile} is what lets the existence check below be followed by a
      * re-authorisation: the check is a read and the creation is a write, and every other

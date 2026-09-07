@@ -7591,6 +7591,10 @@ Failures 0 (残る 38 件は `CmisConnectionException` — サーバ未起動)�
   検証も同じ (404 → 503)。存在の開示 (503 か 401 か) は GET 検証が既に受け入れている前提
   (id は運用者が登録した URL の中) と同じ。錠 5 本 (在るが読めない / 確かめられない /
   読みが throw / 不在は 401 のまま / GET)、コントロール **WL / WM**。
+  **→ この直し方は 2 巡目で欠陥と判定され、3 巡目で取り下げた** (下記): 署名検証より前に
+  `existsIndexFree` の全走査を置いたので、未認証の 1 リクエストで `nemaki_conf` を全走査
+  できた。「GET 検証と同じ前提」も範囲が違う (GET が開示していたのは有効な Dropbox
+  コネクタだけ) と指摘された。
 - **P2 (両者): 解釈できない受信先行を飛ばして `no_profile` 200。** 私の錠は
   「壊れた行は無いものとして返す」を**仕様として固定**していた — バッチの規則そのものへの
   違反。全体を拒否すると壊れた行 1 つで全 webhook が止まる (過剰拒否) ので、walker が
@@ -7646,3 +7650,57 @@ Failures 0 (残る 38 件は `CmisConnectionException` — サーバ未起動)�
 復元後 clean。触ったテストクラス: webhook 21、profile 82、connector 57、canonical 80、
 スケジューラ 2 クラス・Graph 検証 1 クラス — Failures 0。**残る 373 本はこの木では
 未測定** — 通しは 2 巡目の収束後。
+
+### 2 巡目 (Codex + サブエージェント、並行) — P2 (重複含め) 8・P3 5、両者 `NOT CONVERGED`
+
+コミット `221d96df2` に対して。**1 巡目の私の直しが 1 つ、新しい欠陥だった。**
+
+- **P2 (サブ) — 未認証リクエスト 1 本ごとの `nemaki_conf` 全走査。** 1 巡目で足した
+  `refuseIfConnectorHidden` → `existsIndexFree` は署名検証と rate limiter より**前**に走る。
+  存在しない connectorId を付けた未認証の POST/GET 1 本 = セレクタ 1 回 + ID 直読み 1 回 +
+  `_all_docs` 全件 (本文込み)。id を変えれば limiter (コネクタ id キー) も効かない。
+  **取り下げた。** 正しい形は「走査しない」: `get()` が「両方の読みが不在と答えた」と
+  「ID 直読みが失敗した」を同じ null にしていたのが原因なので、後者を typed refusal にする
+  `getOrRefuse` を足し、受信側 (POST / GET 検証) はそれを使う。不在は 401 のまま、答えられ
+  なかった読みは 503。**存在の開示 (Codex P2 / サブ P3-1) も消える** — 503 は読みの失敗にしか
+  出ず、存在に依存しない。残る 1 点: 起動時移行が書き直せなかった旧 ID の行 (索引が
+  見せない間) は 401 — 起動のたびに ERROR で報告される行で、文書に書いた。WL 撤去、
+  錠 4 本 (POST / GET × 答えられない・不在) + service 段 3 本 (`getOrRefuse` が拒否する /
+  両方不在なら null / `get()` は今までどおり null)、コントロール **XC / XD / XE**。
+- **P2 (両者) — 管理 API の一覧端点は型付き例外を捕まえず 500 のまま**で、RELEASE_NOTES は
+  「503」と一般化していた。`GlobalExceptionHandler` は `rest.controller` 限定でこの
+  パッケージを覆わない。3 つのコントローラ (connector / profile / folder-connector) に
+  `@ExceptionHandler` → 503 を置き、明示的に捕まえる端点は自分の写像を保つ。MockMvc の
+  錠 3 本 (直接呼び出しでは handler に届かない)、コントロール **XF / XG / XH**。
+- **P2 (Codex) — GET 検証側の 503 に負のコントロールが無い** / **P2-4 (サブ) — 錠の無い枝**
+  (GET の catch、`refuseIfConnectorHidden` の catch、profileId 無し行の報告)。GET の catch に
+  錠 + **WX**、profileId 無し行の報告に錠 + **WY**。`refuseIfConnectorHidden` は撤去。
+- **P2 (Codex) — 「読める受信先があっても、名指しする壊れた行があれば配送全体を拒否」が
+  錠で固定されていない。** 拒否条件を `profiles().isEmpty() &&` に弱めても全錠が通った。
+  錠 + **WZ**。判断そのものは保つ: 読める分だけ配送して 200 を返すと壊れた行宛ての
+  イベントが黙って消え、503 を返しつつ部分配送すると再試行で二重配送になる。
+- **P2-3 (サブ) — 「401 を受けた送信側は再試行しない」を正典 2 文書とコードコメントで
+  事実として断定していた。** 「503 は唯一の答え」を弱めた直後の箇条で、401 についての
+  送信側の仕様を断定していた。根拠は別にある — 401 は「あなたの署名が違う」という
+  送信側への帰責で、送信側のログでは本物の署名失敗と区別がつかず、運用者が secret を疑う。
+  3 か所をその形に書き直した。
+- **P3-2 (サブ)** `profileService == null → List.of()` → `no_profile` 200。unwired は
+  「無い」ではない (同じコミットが `contentService` に適用した規則)。503 に。錠 + **XA**。
+- **P3-3 (サブ)** raw の `defaultConnectorId` / `allowedConnectorIds` が在るのに読める形で
+  ない行は「誰も名指さない」と読まれ、読める行だけで答えていた。`addresseeUnknown` を
+  付け、宛先を確かめられない行は**全コネクタ**を名指すものとして扱う。錠 + **XB**。
+- **P3-4 (サブ)** 5 / 6 引数の overload は本番に呼び出し元が無く、6 引数版は `CaptureScope`
+  (取込内のもの) を受けながら取込外の契約で答えていた。**削除**。
+- **P3-5 (サブ)** 循環の錠は WQ の細工の下で 200 参照/周ずつ伸びて、10 秒の timeout より先に
+  OOM で fork ごと死にうる。stub 側で 5 ページ目に `AssertionError` を投げる形に。
+- **P3-1 (サブ)** 「GET 検証と同じ開示」は集合が違う (有効な Dropbox コネクタ vs 読めない行)。
+  設計変更で開示自体が消えたので、コメントと台帳から取り下げた。
+
+**この巡の測定**: コントロールは **412 本** (新設 11: WX〜XH、撤去 1: WL、錠の改名で
+WM の期待を張り直し)。`get()` を `read()` に分けた refactor と 3 コントローラの handler が
+既存の細工を壊していないか、**変更したファイルを狙う 178 本を compile-check (178/178)** した上で、
+このバッチの **39 本 (PW / QC / VT / VX〜XH) すべてを測定して 39/39 FIRED** (3,373 秒)、
+復元後 clean。触ったテストクラス: webhook 22、profile 84、connector 60、canonical 80、
+connector controller 23、profile controller (hidden) 34、folder connector 24、
+スケジューラ 2 クラス・Graph 検証 1 クラス — Failures 0。**残る 373 本はこの木では
+未測定** — 通しは収束後。

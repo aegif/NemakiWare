@@ -70,7 +70,9 @@ class IngestWebhookBoxDropboxTest {
         c.setSourceSystem(system);
         c.setSourceArchetype(SourceArchetype.FILE_SHARE);
         c.setWebhookSecret(secret);
-        when(connectorDefinitionService.get(id)).thenReturn(c);
+        // The receiver reads through getOrRefuse; get() is left unstubbed so a receiver that
+        // went back to it would find no connector here.
+        when(connectorDefinitionService.getOrRefuse(id)).thenReturn(c);
         return c;
     }
 
@@ -211,7 +213,7 @@ class IngestWebhookBoxDropboxTest {
         connector("c-dbx", "dropbox", secret);
         when(profileService.listOwnedIndexFree()).thenReturn(owned(List.of(), List.of(
                 new ImportProfileDefinitionService.UninterpretableRow(
-                        "import_profile_definition:p-broken", "p-broken", "c-dbx", null,
+                        "import_profile_definition:p-broken", "p-broken", "c-dbx", null, false,
                         "retentionDays: not a number"))));
 
         mockMvc.perform(signedDropboxPost("c-dbx", secret))
@@ -230,7 +232,7 @@ class IngestWebhookBoxDropboxTest {
         when(profileService.listOwnedIndexFree()).thenReturn(owned(List.of(), List.of(
                 new ImportProfileDefinitionService.UninterpretableRow(
                         "import_profile_definition:p-broken", "p-broken", "c-other",
-                        List.of("c-a", "c-dbx"), "retentionDays: not a number"))));
+                        List.of("c-a", "c-dbx"), false, "retentionDays: not a number"))));
 
         mockMvc.perform(signedDropboxPost("c-dbx", secret))
                 .andExpect(status().isServiceUnavailable());
@@ -248,7 +250,7 @@ class IngestWebhookBoxDropboxTest {
         when(profileService.listOwnedIndexFree()).thenReturn(owned(List.of(p), List.of(
                 new ImportProfileDefinitionService.UninterpretableRow(
                         "import_profile_definition:p-theirs", "p-theirs", "c-other",
-                        List.of("c-other"), "retentionDays: not a number"))));
+                        List.of("c-other"), false, "retentionDays: not a number"))));
 
         mockMvc.perform(signedDropboxPost("c-dbx", secret))
                 .andExpect(status().isOk())
@@ -257,74 +259,105 @@ class IngestWebhookBoxDropboxTest {
         verify(schedulerService).authorizeDelegatedFetch(any(), any());
     }
 
-    // ── The connector read itself: hidden is not absent ──
+    // ── The connector read itself: a read that did not answer is not absence ──
 
     @Test
-    void aConnectorThatExistsButCannotBeReadIsA503NotA401() throws Exception {
-        // get() answers null for a failed read and for absence alike, and the receiver
-        // answered 401 for both — a sender given 401 does not retry. The index-free
-        // existence check tells them apart.
-        when(connectorDefinitionService.get("c-hidden")).thenReturn(null);
-        when(connectorDefinitionService.existsIndexFree("c-hidden")).thenReturn(true);
-
-        mockMvc.perform(signedDropboxPost("c-hidden", "irrelevant"))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(content().string(containsString("retry")));
-    }
-
-    @Test
-    void aConnectorWhoseExistenceCannotBeEstablishedIsA503() throws Exception {
-        when(connectorDefinitionService.get("c-unknown")).thenReturn(null);
-        when(connectorDefinitionService.existsIndexFree("c-unknown")).thenThrow(
+    void aConnectorReadThatCouldNotBeAnsweredIsA503NotA401() throws Exception {
+        // getOrRefuse throws when the id-addressed read failed, or when the row exists but
+        // could not be read as this connector. The receiver used get(), whose null covers a
+        // failed read too, and answered 401 — "your signature is wrong" — for a read that
+        // did not answer; and a read that threw sat outside the guarded try (500). No
+        // index-free walk is made here: a walk per unauthenticated request is an amplifier.
+        when(connectorDefinitionService.getOrRefuse("c-unanswered")).thenThrow(
                 new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
-                        "the _all_docs listing of 'nemaki_conf' could not be read"));
-
-        mockMvc.perform(signedDropboxPost("c-unknown", "irrelevant"))
-                .andExpect(status().isServiceUnavailable());
-    }
-
-    @Test
-    void aConnectorReadThatThrowsIsA503NotA500() throws Exception {
-        // get() throws when the row exists under its deterministic id but could not be read
-        // as this connector. That call sat outside the guarded try and escaped as a 500.
-        when(connectorDefinitionService.get("c-broken")).thenThrow(
-                new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
-                        "connector c-broken exists but could not be read as that connector"));
+                        "connector c-unanswered could not be read, so whether it exists cannot"
+                                + " be established"));
 
         // assertDoesNotThrow: the failure under measurement is an exception escaping the
         // controller, and a test that dies on it is "harness broken", not a firing.
-        assertDoesNotThrow(() -> mockMvc.perform(signedDropboxPost("c-broken", "irrelevant"))
-                        .andExpect(status().isServiceUnavailable()),
-                "a connector read that threw escaped the receiver instead of answering 503");
+        assertDoesNotThrow(() -> mockMvc.perform(signedDropboxPost("c-unanswered", "irrelevant"))
+                        .andExpect(status().isServiceUnavailable())
+                        .andExpect(content().string(containsString("retry"))),
+                "a connector read that could not be answered was reported as absence (401) "
+                        + "or escaped as a 500");
+        verify(connectorDefinitionService, never()).existsIndexFree(any());
     }
 
     @Test
     void anAbsentConnectorIsStill401() throws Exception {
-        // The control for the three above: a connector that genuinely does not exist keeps
-        // the uniform 401, so the status code still does not enumerate ids.
-        when(connectorDefinitionService.get("c-nobody")).thenReturn(null);
-        when(connectorDefinitionService.existsIndexFree("c-nobody")).thenReturn(false);
+        // The control: a connector that both reads answered "no such row" for keeps the
+        // uniform 401, so the status code still does not enumerate ids — and no walk is
+        // made to second-guess the answer.
+        when(connectorDefinitionService.getOrRefuse("c-nobody")).thenReturn(null);
 
         mockMvc.perform(signedDropboxPost("c-nobody", "irrelevant"))
                 .andExpect(status().isUnauthorized());
+        verify(connectorDefinitionService, never()).existsIndexFree(any());
     }
 
     @Test
-    void theHandshakeAnswers503ForAConnectorItCannotRead() throws Exception {
+    void theHandshakeAnswers503WhenTheConnectorReadCouldNotBeAnswered() throws Exception {
         // The Dropbox URL-verification GET resolved the connector the same way and answered
-        // 404 for a row it could not read — failing the operator's verification for good.
-        when(connectorDefinitionService.get("c-hidden")).thenReturn(null);
-        when(connectorDefinitionService.existsIndexFree("c-hidden")).thenReturn(true);
+        // 404 for a read that did not answer — failing the operator's verification as if the
+        // id were wrong.
+        when(connectorDefinitionService.getOrRefuse("c-unanswered")).thenThrow(
+                new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                        "connector c-unanswered could not be read"));
 
-        mockMvc.perform(get("/v1/ingest-webhook/c-hidden").param("challenge", "abc123"))
+        assertDoesNotThrow(() -> mockMvc.perform(get("/v1/ingest-webhook/c-unanswered")
+                        .param("challenge", "abc123"))
+                        .andExpect(status().isServiceUnavailable()),
+                "the handshake reported a read that did not answer as 404, or escaped");
+    }
+
+    @Test
+    void theHandshakeStill404sAnAbsentConnector() throws Exception {
+        when(connectorDefinitionService.getOrRefuse("c-nobody")).thenReturn(null);
+
+        mockMvc.perform(get("/v1/ingest-webhook/c-nobody").param("challenge", "abc123"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void aBrokenRecipientRowRefusesTheDispatchEvenBesideReadableOnes() throws Exception {
+        // The documented rule is "refuse the dispatch of the connector the broken row
+        // names" — not "dispatch to the readable rows and leave this one out". Every other
+        // broken-row lock had no readable recipient beside it, so a receiver that refused
+        // only when nothing else was readable passed them all. A review found the gap.
+        String secret = "dbxsecret";
+        connector("c-dbx", "dropbox", secret);
+        ImportProfileDefinition readable = profileFor("c-dbx", Map.of("folderPath", "/Documents"));
+        when(profileService.listOwnedIndexFree()).thenReturn(owned(List.of(readable), List.of(
+                new ImportProfileDefinitionService.UninterpretableRow(
+                        "import_profile_definition:p-broken", "p-broken", "c-dbx", null, false,
+                        "retentionDays: not a number"))));
+
+        mockMvc.perform(signedDropboxPost("c-dbx", secret))
                 .andExpect(status().isServiceUnavailable());
+
+        verify(schedulerService, never()).authorizeDelegatedFetch(any(), any());
+    }
+
+    @Test
+    void anUnwiredProfileServiceIsA503NotNoProfile() throws Exception {
+        // The receiver answered "no profile" (200) when its profile service was not wired —
+        // "could not ask" with the value of "asked, none", the arm this batch closes
+        // everywhere else.
+        String secret = "dbxsecret";
+        connector("c-dbx", "dropbox", secret);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "profileService", null);
+
+        mockMvc.perform(signedDropboxPost("c-dbx", secret))
+                .andExpect(status().isServiceUnavailable());
+
+        verify(schedulerService, never()).authorizeDelegatedFetch(any(), any());
     }
 
     @Test
     void aListingThatCannotBeCompletedIsA503NotNoProfile() throws Exception {
         // The walk refused: a row could not be read. That is neither "no profile" (200, the
         // sender takes the event as delivered) nor the generic 500 (our bug, nothing to wait
-        // for) — it is the one answer the sender is entitled to retry.
+        // for) — 503 leaves the sender room to retry.
         String secret = "dbxsecret";
         connector("c-dbx", "dropbox", secret);
         when(profileService.listOwnedIndexFree()).thenThrow(

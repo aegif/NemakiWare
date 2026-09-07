@@ -77,6 +77,30 @@ class ConnectorDefinitionControllerPartialPutTest {
         f.set(controller, value);
     }
 
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("GET /admin/connectors answers 503, not 500, when the "
+            + "listing could not be completed")
+    void theListAnswers503WhenTheListingCannotBeCompleted() throws Exception {
+        // The typed refusal (a selector page with nothing to continue from, a walk that did
+        // not answer) escaped the list endpoint — no catch, and GlobalExceptionHandler does
+        // not cover this package — as a Spring 500. Through MockMvc because the handler is
+        // an @ExceptionHandler, which a direct call never reaches.
+        when(connectorDefinitionService.list()).thenThrow(
+                new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                        "a full selector page of 'nemaki_conf' carried no new continuation bookmark"));
+        org.springframework.test.web.servlet.MockMvc mockMvc =
+                org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(controller).build();
+
+        // assertDoesNotThrow: without the handler the exception escapes MockMvc as a servlet
+        // exception — an escape, not an assertion, and the runner would not count it.
+        assertDoesNotThrow(() -> mockMvc.perform(
+                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .get("/v1/admin/connectors"))
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                                .status().isServiceUnavailable()),
+                "a listing that could not be completed escaped the connector list as a 500");
+    }
+
     private ConnectorDefinition existingDelegatedConnector() {
         ConnectorDefinition c = new ConnectorDefinition();
         c.setConnectorId("conn-1");

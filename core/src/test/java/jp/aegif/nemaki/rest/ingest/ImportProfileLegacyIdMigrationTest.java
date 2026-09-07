@@ -1322,7 +1322,52 @@ class ImportProfileLegacyIdMigrationTest {
         assertTrue(reported.namesConnector("c-dbx") && reported.namesConnector("c-a")
                         && !reported.namesConnector("c-z"),
                 "namesConnector does not read both raw fields");
+        assertFalse(reported.addresseeUnknown(), "readable connector fields were reported as unreadable");
         verify(cloudant, never()).postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class));
+    }
+
+    @Test
+    @DisplayName("an owned row with no profileId is reported too — it may still name a connector")
+    void theOwnedListingReportsANamelessRowToo() {
+        // The second shape of "one broken row": deserialisable, no identity. It is not
+        // listed (nothing can be dispatched to it) but it is not silently dropped either —
+        // its raw connector fields still say whom it was addressed to. The earlier lock's
+        // broken row had a profileId, so this arm was unmeasured. A review found it.
+        wire();
+        Map<String, Object> nameless = profileProps("p-x", "Nameless");
+        nameless.remove("profileId");
+        nameless.put("defaultConnectorId", "c-dbx");
+        listingAnswers(List.of(row("nameless-row", nameless, "1-a")));
+
+        ImportProfileDefinitionService.OwnedProfiles owned = service.listOwnedIndexFree();
+
+        assertTrue(owned.profiles().isEmpty(), "a row with no profileId was listed: " + owned.profiles());
+        assertEquals(1, owned.uninterpretable().size(),
+                "the nameless row was dropped instead of reported: " + owned.uninterpretable());
+        assertTrue(owned.uninterpretable().get(0).namesConnector("c-dbx"),
+                "the nameless row's raw default connector was not read");
+    }
+
+    @Test
+    @DisplayName("a row whose connector fields have no readable shape addresses EVERY connector")
+    void aRowWhoseConnectorFieldsHaveNoReadableShapeAddressesEveryConnector() {
+        // defaultConnectorId that is not a string (a newer node's shape, or corruption): the
+        // first version read it as "names nobody" — the skip this record exists to prevent,
+        // one field down. Whom the row addresses cannot be established, so it addresses all.
+        wire();
+        Map<String, Object> oddShape = profileProps("p-odd", "Odd");
+        oddShape.put("retentionDays", "not-a-number");
+        oddShape.put("defaultConnectorId", 42);
+        listingAnswers(List.of(row("import_profile_definition:p-odd", oddShape, "1-a")));
+
+        ImportProfileDefinitionService.OwnedProfiles owned = service.listOwnedIndexFree();
+
+        assertEquals(1, owned.uninterpretable().size(), "the row was not reported: " + owned);
+        ImportProfileDefinitionService.UninterpretableRow reported = owned.uninterpretable().get(0);
+        assertTrue(reported.addresseeUnknown(),
+                "a connector field of unreadable shape was not reported as such");
+        assertTrue(reported.namesConnector("c-anything"),
+                "a row whose addressee cannot be established answered 'names nobody'");
     }
 
     @Test
@@ -1426,9 +1471,17 @@ class ImportProfileLegacyIdMigrationTest {
         ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> first = findCallOf(fullPage, "A");
         ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> pageA = findCallOf(fullPage, "B");
         ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> pageB = findCallOf(fullPage, "A");
+        int[] served = new int[1];
         when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
                 .thenAnswer(call -> {
                     com.ibm.cloud.cloudant.v1.model.PostFindOptions options = call.getArgument(0);
+                    // A listing that follows the cycle grows by 200 references a turn and
+                    // would hit the heap before the preemptive timeout — a fork death, not a
+                    // firing. The stub ends it deterministically on the fourth page instead.
+                    if (++served[0] > 4) {
+                        throw new AssertionError("bookmark cycle followed: page " + served[0]
+                                + " requested");
+                    }
                     if (options.bookmark() == null) return first;
                     return "A".equals(options.bookmark()) ? pageA : pageB;
                 });

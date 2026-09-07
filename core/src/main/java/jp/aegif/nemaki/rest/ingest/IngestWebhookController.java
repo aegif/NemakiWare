@@ -128,21 +128,20 @@ public class IngestWebhookController {
         // connector ID enumeration via status code differences
         ConnectorDefinition connector;
         try {
-            connector = connectorDefinitionService.get(connectorId);
+            // getOrRefuse, not get: get() answers null for a failed id-addressed read as
+            // well as for absence, and this receiver answered 401 for both — "your
+            // signature is wrong", which in the sender's logs is indistinguishable from a
+            // real signature failure and sends an operator after the wrong secret. A read
+            // that did not answer is 503 here; absence stays 401. No index-free walk is
+            // made for that: this runs before the signature is verified, and a walk of the
+            // configuration database per unauthenticated request is an amplifier. The one
+            // row this leaves as 401 is a legacy-id row the startup migration could not
+            // rewrite — reported at every startup.
+            connector = connectorDefinitionService.getOrRefuse(connectorId);
         } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotRead) {
-            // A row that exists and could not be read as this connector. This sat outside
-            // the try below and escaped as a Spring 500 — our bug, to the sender; it is the
-            // retryable answer.
+            // A row that exists and could not be read as this connector, or a read that
+            // did not answer. This sat outside the try below and escaped as a Spring 500.
             return connectorCouldNotBeRead(connectorId, couldNotRead.getMessage());
-        }
-        if (connector == null) {
-            // get() answers null for a failed read as well as for absence, and a sender
-            // given 401 does not retry — the event is gone. "No such connector" is a claim
-            // about the database, so it is checked without the index before the 401. The
-            // 503 discloses that a row with this id exists, as the GET handshake below
-            // already does; the id is in the operator-registered URL.
-            ResponseEntity<?> hidden = refuseIfConnectorHidden(connectorId);
-            if (hidden != null) return hidden;
         }
         if (connector == null || !connector.isEnabled()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -244,15 +243,11 @@ public class IngestWebhookController {
             @RequestParam(value = "challenge", required = false) String challenge) {
         ConnectorDefinition connector;
         try {
-            connector = connectorDefinitionService.get(connectorId);
+            // As in receiveWebhook: a read that did not answer is not "no such connector",
+            // and a 404 here fails the operator's URL verification as if the id were wrong.
+            connector = connectorDefinitionService.getOrRefuse(connectorId);
         } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotReadOnVerify) {
             return connectorCouldNotBeRead(connectorId, couldNotReadOnVerify.getMessage());
-        }
-        if (connector == null) {
-            // As in receiveWebhook: a row that exists but could not be read is not "no such
-            // connector", and a 404 here fails the operator's URL verification for good.
-            ResponseEntity<?> hiddenOnVerify = refuseIfConnectorHidden(connectorId);
-            if (hiddenOnVerify != null) return hiddenOnVerify;
         }
         if (connector == null || !connector.isEnabled()
                 || !"dropbox".equals(connector.getSourceSystem())
@@ -534,7 +529,14 @@ public class IngestWebhookController {
      * refused, not left out.
      */
     private List<ImportProfileDefinition> findAllProfilesForConnector(ConnectorDefinition connector) {
-        if (profileService == null) return List.of();
+        if (profileService == null) {
+            // Wiring, not a read — and not "no profile" either: the rule this batch applies
+            // to an unwired service everywhere else. A review found the arm still answering
+            // an empty list.
+            throw new RecipientUnreadableException("the import profile service is not wired,"
+                    + " so the recipients of connector " + connector.getConnectorId()
+                    + " cannot be established");
+        }
         String connId = connector.getConnectorId();
         ImportProfileDefinitionService.OwnedProfiles owned = profileService.listOwnedIndexFree();
         for (ImportProfileDefinitionService.UninterpretableRow broken : owned.uninterpretable()) {
@@ -564,21 +566,6 @@ public class IngestWebhookController {
 
         RecipientUnreadableException(String message) {
             super(message);
-        }
-    }
-
-    /**
-     * 503 when the connector exists but could not be read, or when whether it exists cannot
-     * be established; null when it is genuinely absent (the caller's 401/404 stands).
-     */
-    private ResponseEntity<?> refuseIfConnectorHidden(String connectorId) {
-        try {
-            if (!connectorDefinitionService.existsIndexFree(connectorId)) {
-                return null;
-            }
-            return connectorCouldNotBeRead(connectorId, "the row exists but could not be read");
-        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotAsk) {
-            return connectorCouldNotBeRead(connectorId, couldNotAsk.getMessage());
         }
     }
 
