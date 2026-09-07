@@ -27,13 +27,19 @@ public interface ConnectorDefinitionService {
      * older node's, during a rolling upgrade) is not reported until the next one, and whether
      * a rebuilding index leaves an existing row out is not measured. This read does not walk.
      *
-     * <p>Two things this read discloses to an unauthenticated caller through 503-versus-
-     * absence, both stated rather than hidden: that a deterministic-id row exists and is
-     * broken (always), and — only while the selector is failing — whether a deterministic-id
-     * row exists at all (a readable one answers, an absent one refuses because a legacy row
-     * cannot be excluded). Refusing whenever the selector fails would close the second at
-     * the price of every webhook while the index is down; the caller's decision was to keep
-     * the receiver answering and to say what the window reveals.
+     * <p>What this read discloses to an unauthenticated caller, stated as the classes the
+     * answer actually separates rather than as a stronger claim. A 503 means one of: a row
+     * this read refuses exists at the id (unreadable — deterministic or legacy, as the
+     * selector shows it — or two rows), or the id-addressed read failed, or the selector
+     * failed and no deterministic row exists; which of these, the answer does not say. A
+     * non-503 means the id is absent or one readable row exists (the signature then
+     * decides); while the selector answers, those two are not distinguishable from outside.
+     * While the selector is FAILING, a non-503 does mean a readable deterministic-id row
+     * exists, because absence then refuses (a legacy row cannot be excluded). Refusing
+     * whenever the selector fails would remove that last disclosure at the price of every
+     * webhook while the index is down; answering 503 instead of 401 to a failed signature
+     * during that window would remove it without that price and is recorded as a follow-up.
+     * The caller's decision was to keep the receiver answering and to say what is revealed.
      *
      * @throws ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException when the row
      *         exists but could not be read as this connector, when the id-addressed read

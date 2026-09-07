@@ -4559,6 +4559,16 @@ CONTROLS = [
         expect_fail=['getOrRefuseRefusesAVisiblePair'],
     ),
     dict(
+        id="XW",
+        what="the over-throw twin of XQ: get() refuses a visible pair too — its callers gain an "
+             "exception path this batch did not change them for",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='                if (refuseUnanswered && definitionsOf(connectorId, results) > 1) {',
+        replace='                if (definitionsOf(connectorId, results) > 1) {',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['getStillReturnsTheFirstOfAVisiblePair'],
+    ),
+    dict(
         id="XR",
         what="the over-throw twin of XI: a genuinely absent connector refuses whenever the read "
              "is the refusing one — every 401 becomes a 503",

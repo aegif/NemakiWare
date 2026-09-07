@@ -1528,7 +1528,11 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         } catch (RuntimeException transportFailed) {
             // The SDK's own failure (a reset, a 5xx) is a listing that could not be
             // completed too. Left raw it escaped the controllers' handlers as a 500 while
-            // the three refusals above answered 503. A review found the fourth shape.
+            // the three refusals above answered 503. A review found the fourth shape. This
+            // arm takes every RuntimeException, a programming error included, and the
+            // handlers do not log — so the cause is kept here, where the container's
+            // stack trace used to be.
+            logger.warn("the selector listing of '{}' could not be read", dbName, transportFailed);
             throw new ProfileIndexNotReadyException("the selector listing of '" + dbName
                     + "' could not be read: " + transportFailed.getMessage());
         }
