@@ -1454,6 +1454,34 @@ class ImportProfileLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("a selector transport failure is logged WARN with its cause — the admin "
+            + "handlers answer 503 without logging, so this is where the stack trace lives")
+    void theSelectorTransportFailureIsLoggedWithItsCause() {
+        wire();
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenThrow(new RuntimeException("connection reset"));
+        ch.qos.logback.classic.Logger log = (ch.qos.logback.classic.Logger)
+                org.slf4j.LoggerFactory.getLogger(ImportProfileDefinitionServiceImpl.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        log.addAppender(appender);
+        try {
+            assertThrows(ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+                    () -> service.list());
+        } finally {
+            log.detachAppender(appender);
+        }
+
+        assertTrue(appender.list.stream().anyMatch(e ->
+                        e.getLevel() == ch.qos.logback.classic.Level.WARN
+                                && e.getThrowableProxy() != null
+                                && e.getFormattedMessage().contains("could not be read")),
+                "the selector transport failure was not logged WARN with its cause: "
+                        + appender.list);
+    }
+
+    @Test
     @DisplayName("the selector listing refuses a TRANSPORT failure with the typed refusal too — "
             + "not the raw exception the controllers' handlers never see")
     void theSelectorListingRefusesATransportFailureWithTheTypedRefusal() {

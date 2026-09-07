@@ -138,10 +138,13 @@ public class IngestWebhookController {
             // this leaves as 401 is a legacy-id row the selector answered WITHOUT (see
             // getOrRefuse's contract): one the startup migration could not rewrite, or one
             // written after its last pass and not reported until the next. What the 503
-            // discloses (that something this read refuses — an unreadable row, two rows —
-            // exists at the id, OR that a read failed; and, only while the selector is
-            // failing, that a non-503 means a readable deterministic row exists) is stated
-            // in that contract and in the release notes as the classes it separates.
+            // discloses (that something this read refuses — an unreadable row, two or more
+            // rows — exists at the id, OR that a read failed; and, only while the selector
+            // is failing, that a non-503 means a readable deterministic row exists) is
+            // stated in that contract and in the release notes as the classes it separates.
+            // The Graph validationToken echo below and the Dropbox GET challenge disclose an
+            // enabled connector's existence without a signature — protocol requirements
+            // that predate this read, recorded on the GET.
             connector = connectorDefinitionService.getOrRefuse(connectorId);
         } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotRead) {
             // A row that exists and could not be read as this connector, or a read that

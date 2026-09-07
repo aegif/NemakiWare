@@ -679,6 +679,62 @@ class ConnectorLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("a selector transport failure is logged WARN with its cause — the admin "
+            + "handlers answer 503 without logging, so this is where the stack trace lives")
+    void theSelectorTransportFailureIsLoggedWithItsCause() {
+        // The typed refusal carries only a message; the handlers do not log. Without this
+        // line a programming error surfacing here would be a 503 with no trace anywhere.
+        wire();
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenThrow(new RuntimeException("connection reset"));
+        ch.qos.logback.classic.Logger log = (ch.qos.logback.classic.Logger)
+                org.slf4j.LoggerFactory.getLogger(ConnectorDefinitionServiceImpl.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        log.addAppender(appender);
+        try {
+            assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                    () -> service.list());
+        } finally {
+            log.detachAppender(appender);
+        }
+
+        assertTrue(appender.list.stream().anyMatch(e ->
+                        e.getLevel() == ch.qos.logback.classic.Level.WARN
+                                && e.getThrowableProxy() != null
+                                && e.getFormattedMessage().contains("could not be read")),
+                "the selector transport failure was not logged WARN with its cause: "
+                        + appender.list);
+    }
+
+    @Test
+    @DisplayName("a deterministic row that cannot be read as a connector is refused as "
+            + "'exists but could not be read', not as a read that did not answer")
+    void getOrRefuseNamesTheRowWhenTheDeterministicRowCannotBeReadAsAConnector() {
+        // fromRawDoc's failure fell into the id-read-failed arm and was reported as "could
+        // not be read, so whether it exists cannot be established" — the read had
+        // established that the row exists. An operator was sent after the connection
+        // instead of the row. A review found the reason one level down.
+        wire();
+        selectorAnswersNothing();
+        Document unreadable = mock(Document.class);
+        Map<String, Object> odd = connectorProps("c-odd", "Odd");
+        odd.put("delegateAllFolders", "not-a-boolean");
+        when(unreadable.getProperties()).thenReturn(odd);
+        when(unreadable.getRev()).thenReturn("1-a");
+        deterministicReadAnswers("c-odd", unreadable);
+
+        ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused = assertThrows(
+                ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> service.getOrRefuse("c-odd"),
+                "a deterministic row that cannot be read as a connector was returned or "
+                        + "answered null");
+        assertTrue(refused.getMessage().contains("exists but could not be read as that connector"),
+                "refused, but as a read that did not answer: " + refused.getMessage());
+    }
+
+    @Test
     @DisplayName("the selector listing refuses a TRANSPORT failure with the typed refusal too — "
             + "not the raw exception the controllers' handlers never see")
     void theSelectorListingRefusesATransportFailureWithTheTypedRefusal() {

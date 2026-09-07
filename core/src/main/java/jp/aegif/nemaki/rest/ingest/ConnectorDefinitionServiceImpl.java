@@ -119,10 +119,12 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
         // The profile twin of this fallback, mirrored: a selector that answers nothing while
         // its index rebuilds answers the same as one that has no such row, and every caller
         // reads null as absence. One id-addressed read, on the miss path only.
+        boolean rowFound = false;
         try {
             CloudantClientWrapper client = getConfClient();
             com.ibm.cloud.cloudant.v1.model.Document row = readByDeterministicId(
                     client.getClient(), client.getDatabaseName(), connectorId);
+            rowFound = row != null;
             if (row == null) {
                 if (refuseUnanswered && !selectorAnswered) {
                     // The deterministic id has no row and the selector did not answer: a row
@@ -147,10 +149,16 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
             if (refuseUnanswered) {
                 // Not "no such connector": the read that decides did not answer. A caller
                 // that has no index-free check to follow this with must not be handed the
-                // value of absence.
-                throw new ConnectorIndexNotReadyException("connector " + connectorId
-                        + " could not be read, so whether it exists cannot be established: "
-                        + idReadFailed.getMessage());
+                // value of absence. Two reasons share this arm and are told apart: the row
+                // was READ and could not be interpreted as a connector (it exists), or the
+                // read itself failed (whether it exists is open). A review found the first
+                // reported as the second — an operator sent after the connection instead
+                // of the row.
+                throw new ConnectorIndexNotReadyException(rowFound
+                        ? "connector " + connectorId + " exists but could not be read as that"
+                                + " connector: " + idReadFailed.getMessage()
+                        : "connector " + connectorId + " could not be read, so whether it"
+                                + " exists cannot be established: " + idReadFailed.getMessage());
             }
             // Opportunistic only: it can improve the selector's answer, never worsen it.
             // "Could not ask" is kept apart from "no" by existsIndexFree, which refuses.
@@ -920,8 +928,10 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
             // completed too. Left raw it escaped the controllers' handlers as a 500 while
             // the three refusals above answered 503. A review found the fourth shape. This
             // arm takes every RuntimeException, a programming error included, and the
-            // handlers do not log — so the cause is kept here, where the container's
-            // stack trace used to be.
+            // admin @ExceptionHandlers do not log — so the cause is kept here, where the
+            // container's stack trace used to be. (The webhook receiver logs its own ERROR
+            // above this, and get()'s fallback records the same failure at DEBUG: one
+            // failure, up to three lines, the stack trace only here.)
             logger.warn("the selector listing of '{}' could not be read", dbName, transportFailed);
             throw new ConnectorIndexNotReadyException("the selector listing of '" + dbName
                     + "' could not be read: " + transportFailed.getMessage());

@@ -27,19 +27,24 @@ public interface ConnectorDefinitionService {
      * older node's, during a rolling upgrade) is not reported until the next one, and whether
      * a rebuilding index leaves an existing row out is not measured. This read does not walk.
      *
-     * <p>What this read discloses to an unauthenticated caller, stated as the classes the
-     * answer actually separates rather than as a stronger claim. A 503 means one of: a row
-     * this read refuses exists at the id (unreadable — deterministic or legacy, as the
-     * selector shows it — or two rows), or the id-addressed read failed, or the selector
-     * failed and no deterministic row exists; which of these, the answer does not say. A
-     * non-503 means the id is absent or one readable row exists (the signature then
-     * decides); while the selector answers, those two are not distinguishable from outside.
+     * <p>What THIS READ's answer — 503 or not — discloses to an unauthenticated caller,
+     * stated as the classes it actually separates. A 503 means one of: a row this read
+     * refuses exists at the id (unreadable — deterministic or legacy, as the selector shows
+     * it — or two or more rows), or the id-addressed read failed, or the selector failed and
+     * no deterministic row exists; which of these, the answer does not say. A non-503 means
+     * the id is absent or one readable row exists; what the receiver then answers (401 for a
+     * disabled row or a failed signature; on the GET handshake 404 for a disabled, non-Dropbox
+     * or challenge-less request) does not separate absent from present by this read alone.
      * While the selector is FAILING, a non-503 does mean a readable deterministic-id row
-     * exists, because absence then refuses (a legacy row cannot be excluded). Refusing
-     * whenever the selector fails would remove that last disclosure at the price of every
-     * webhook while the index is down; answering 503 instead of 401 to a failed signature
-     * during that window would remove it without that price and is recorded as a follow-up.
-     * The caller's decision was to keep the receiver answering and to say what is revealed.
+     * exists, because absence then refuses (a legacy row cannot be excluded). The receiver's
+     * protocol handshakes disclose more and always did, independently of this read: an
+     * enabled Dropbox connector answers the GET challenge, an enabled teams / m365_mail
+     * connector echoes {@code validationToken} before any signature — both recorded on the
+     * receiver. Refusing whenever the selector fails would remove the window disclosure at
+     * the price of every webhook while the index is down; answering 503 instead of 401 to a
+     * failed signature during that window would remove it without that price and is recorded
+     * as a follow-up. The caller's decision was to keep the receiver answering and to say
+     * what is revealed.
      *
      * @throws ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException when the row
      *         exists but could not be read as this connector, when the id-addressed read

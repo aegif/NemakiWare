@@ -4569,6 +4569,35 @@ CONTROLS = [
         expect_fail=['getStillReturnsTheFirstOfAVisiblePair'],
     ),
     dict(
+        id="XX",
+        what="the connector listing's transport failure loses its WARN — a 503 with no trace "
+             "anywhere",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='            logger.warn("the selector listing of \'{}\' could not be read", dbName, transportFailed);\n',
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theSelectorTransportFailureIsLoggedWithItsCause'],
+    ),
+    dict(
+        id="XY",
+        what="the profile listing's transport failure loses its WARN — XX's profile twin",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='            logger.warn("the selector listing of \'{}\' could not be read", dbName, transportFailed);\n',
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theSelectorTransportFailureIsLoggedWithItsCause'],
+    ),
+    dict(
+        id="XZ",
+        what="a deterministic row that cannot be read as a connector is refused as a read that "
+             "did not answer — the operator is sent after the connection instead of the row",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='                throw new ConnectorIndexNotReadyException(rowFound',
+        replace='                throw new ConnectorIndexNotReadyException(false',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['getOrRefuseNamesTheRowWhenTheDeterministicRowCannotBeReadAsAConnector'],
+    ),
+    dict(
         id="XR",
         what="the over-throw twin of XI: a genuinely absent connector refuses whenever the read "
              "is the refusing one — every 401 becomes a 503",
