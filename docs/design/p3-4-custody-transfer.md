@@ -7494,8 +7494,11 @@ Failures 0 (残る 38 件は `CmisConnectionException` — サーバ未起動)�
   create/update より広い。
 - **新規発見 — `findRawDocs` の `limit(200)`。** bookmark 継続なしの 1 ページを全件として
   返していた。`list()` / `listByRepository()` は 201 件目以降を黙って落とす —
-  索引再構築とは無関係に毎回。呼び出しは webhook・管理 API 一覧 2 本・
-  `FolderConnectorController`。**コードから確認できる唯一の「成功して不完全」機構**。
+  索引再構築とは無関係に毎回。**コードから確認できる唯一の「成功して不完全」機構**。
+  (呼び出しを「webhook・管理 API 一覧 2 本・`FolderConnectorController`」と書いたのは
+  不完全で、1 巡目のレビューが訂正した: `findRawDocs` を通る呼び出しは他に
+  `/summary` / `/by-principal` / `/by-group`、`listByArchetype`、両サービスの `get()` と
+  `upsertDocument` の既存行確認がある。上限も撤去もそこ全部に及ぶ。)
 - **前提の機序と食い違う実測が §34 にある。** 「索引を張る前の 1 回目の問い合わせは構築を
   待つので timeout する」— 空ではなく例外。`findRawDocs` は `update=false` も `stale` も
   渡していないので、私が読む限り Mango が「在る行に空を返す」機序は見当たらない。再構築が
@@ -7507,8 +7510,10 @@ Failures 0 (残る 38 件は `CmisConnectionException` — サーバ未起動)�
 
 - `IngestWebhookController.findAllProfilesForConnector` を `profileService.list()` から
   `listOwnedIndexFree()` (`_all_docs` 走査) へ。走査が完了できなければ
-  `ProfileIndexNotReadyException` → **503** (従来は `no_profile` 200、例外なら 500)。
-  無所属行は受信先にしない (錠 VZ)。
+  `ProfileIndexNotReadyException` → **503** (従来は索引が行を見せなければ `no_profile` 200、
+  例外なら 500)。無所属行は受信先にしない (錠 VZ)。(初版はここに「503 は送信側が
+  再試行してよい唯一の答え」と書いた — 再試行は送信側の仕様で、1 巡目が言い過ぎと
+  判定した。「再試行の余地を残す答え」に直した。)
 - `listScheduledIndexFree` / `listOwnedIndexFree` は 1 つの private walker
   (`listOwnedRowsIndexFree`) を共有。行単位の方針の写しを 2 つ持たない。
 - `NemakiConfFind.allMatching` — bookmark で続きを読み、進めない full page と `docs` の無い
@@ -7573,3 +7578,71 @@ Failures 0 (残る 38 件は `CmisConnectionException` — サーバ未起動)�
   circuit breaker を進めるのは、直していない。
 - 公開 4 引数 `createDirectRelationship`・検査と書き込みの窓・リンク再認可の `get()`・
   `FolderConnectorController` の受け入れ不整合は §62 のまま。
+
+### 1 巡目 (Codex + サブエージェント、並行) — P1 1・P2 (重複含め) 8・P3 6、両者 `NOT CONVERGED`
+
+コミット `55db9a4ad` に対して。両者が独立に同じ 2 件を P2 に挙げた。指摘と処置:
+
+- **P1 (Codex) / P3-6 (サブ): webhook のコネクタ解決が try の外。** `get()` は失敗の null と
+  不在の null を区別せず、受信側は両方を **401** (署名不正) にしていた — 401 を受けた送信側は
+  再試行しない。行が在って読めない場合は `ConnectorIndexNotReadyException` が Spring の 500。
+  セルフレビューで見つけて「軽微」と流した箇所で、Codex の方が正しい。`existsIndexFree` で
+  「在るが読めない / 確かめられない」を **503** に、不在だけを 401 のまま。Dropbox の GET
+  検証も同じ (404 → 503)。存在の開示 (503 か 401 か) は GET 検証が既に受け入れている前提
+  (id は運用者が登録した URL の中) と同じ。錠 5 本 (在るが読めない / 確かめられない /
+  読みが throw / 不在は 401 のまま / GET)、コントロール **WL / WM**。
+- **P2 (両者): 解釈できない受信先行を飛ばして `no_profile` 200。** 私の錠は
+  「壊れた行は無いものとして返す」を**仕様として固定**していた — バッチの規則そのものへの
+  違反。全体を拒否すると壊れた行 1 つで全 webhook が止まる (過剰拒否) ので、walker が
+  飛ばした行を **raw の `defaultConnectorId` / `allowedConnectorIds` 付きで持ち帰り**
+  (`OwnedProfiles.uninterpretable()`)、受信中のコネクタを名指す行があれば **503**、他の
+  コネクタの行なら配送を止めない。raw `enabled: false` の行は報告しない (受信先になれない)。
+  錠 4 本 (名指し default / 名指し allowed / 他コネクタは止めない / walker が報告する)、
+  コントロール **WN / WO**。VZ の錠は名前を変えて主張を反転させた。
+- **P2 (両者): 警告が `FetchResult.errors` に入り、取込 0 の取得が FAILED、breaker +1。**
+  台帳で「レビューに委ねる」と書いた判断への答えは両者とも**受け入れ不可**。サブは
+  `imported == 0` が例外的でないこと (dedupe-skip の再ポーリングこそ重複検査の主場面) を
+  示した。公開 4 引数版 (と scope 付き overload) は**「非 null = 作られなかった」の契約を
+  守り**、未回答の検査は WARN ログに残す (`outsideAnImport`)。取込内の 8 引数版だけが
+  警告を返す。core を `LinkOutcome(linked, message)` にして両者を分けた。錠 1 本、
+  コントロール **WP**。
+- **P2 (サブ): RELEASE_NOTES が「再構築中は空を返して no_profile 200」を過去の事実として
+  断定。** 台帳自身が未測定と書いた機序で、正典 2 文書が矛盾し利用者向けの方が強かった。
+  コード側のコメント 3 か所と錠のコメントも同じ断定。**全部「索引がその行を見せない状態
+  では」に弱め**、確実に起きていた 200 件上限と分けて書いた。
+- **P2 (Codex): `NemakiConfFind` の A→B→A 循環と、guard に錠が無いこと。** 実機の bookmark
+  では起きない形だが安い: 既視の bookmark 集合で拒否。guard 3 つ (docs 無し / bookmark
+  無し / 循環) に錠、循環の錠は `assertTimeoutPreemptively` (細工の下で無限ループする錠は
+  ハングであって発火ではない)。コントロール **WQ / WR / WS**。
+- **P2 (Codex): WD が helper を壊している。** 呼び出し側 (`if (!edge.answered())`) を壊す
+  **WK** を足した。WD は残す (helper 段の fail-open も実在した退行の形)。
+- **P3-1 (サブ): profileId 空の拒否が無効行 skip より前。** 無効で無名の行は選ばれ得ないのに
+  書き込みを止めていた。順序を入れ替え。錠 1 本、コントロール **WT** (順序を戻す)。
+- **P3-2 (サブ): `contentService == null → absent`。** 「訊けない」を「訊いた、無い」の値で
+  返す枝が本番にあった。unanswered に。錠 1 本、コントロール **WU**。
+- **P3-3 (サブ): `NemakiConfFind` の素の `IllegalStateException` が create の 400 になる。**
+  両サービスの `findRawDocs` で型付き (503) に包んだ。錠 2 本、コントロール **WV / WW**。
+- **P3-4 (サブ): 文書の精度 4 点** (呼び出し一覧の不足・「委譲ゲートが拒否」は誤りで
+  取込側の解決が見つけないのが正しい・「全部止まる」は有効プロファイルだけ・
+  `no_matching_profile`)。RELEASE_NOTES・台帳・javadoc を直した。**「委譲ゲートが拒否」は
+  私の誤り**: `authorizeDelegatedFetch` は管理者プロファイルを無条件で通す。
+- **P3-5 (サブ): webhook 1 イベントごとの `nemaki_conf` 全走査のコスト未記録。** RELEASE_NOTES
+  に書いた。自動解決側と同じで、`nemaki_conf` からジョブ記録を追い出すのが根本の直し。
+- **記録のみ**: スケジューラの idempotency purge は `nemaki_conf` を自前のループで
+  ページングし、full page + bookmark 無しで**黙って止まる**。`NemakiConfFind` の javadoc から
+  「唯一の」を外した。直していない (削除の取りこぼしで、fail-closed reads の主題からは外)。
+- `--compile-check` は全 12 本通ったが、**1 回目の測定で WG / WI が例外で落ちた**
+  (`FIRED FOR THE WRONG REASON`) のと同じ形を、今回は最初から `assertDoesNotThrow` で
+  避けた (WM の錠)。**別の罠を 1 回踏んだ**: 新しい錠 3 本が `findCallOf(...)` を
+  `thenReturn(...)` の中で呼び、`UnfinishedStubbingException` でクラスごと死んだ — §62 で
+  112 本を殺したのと同じ罠。stub を先に組み立ててから `when` に渡す形に直した。
+
+**この巡の測定**: コントロールは **402 本** (新設 13: WK〜WW、張り直し VX / VT)。
+1 度目の通しは **WF で死んだ** — anchor は一致したまま、置換文 (`return "..."`) が
+`LinkOutcome` を返す core に対してコンパイルできなくなっていた。新設分しか
+`--compile-check` していなかった、§62 で 7 時間 40 分の通しを殺したのと同じ穴。
+置換文を型に合わせ、**変更したファイルを狙う 135 本すべてを compile-check (135/135)** した上で
+残りを測った。結果: **29/29 FIRED** (1 度目 11 + 2 度目 18; PW / QC / VT / VX〜WW)、
+復元後 clean。触ったテストクラス: webhook 21、profile 82、connector 57、canonical 80、
+スケジューラ 2 クラス・Graph 検証 1 クラス — Failures 0。**残る 373 本はこの木では
+未測定** — 通しは 2 巡目の収束後。

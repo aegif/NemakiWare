@@ -2246,6 +2246,39 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void thePublicEntryPointAnswersNullForALinkCreatedWithoutItsCheck() {
+        // The four-argument entry point is what the fetch orchestrators call after their
+        // import has returned, and FetchSupport puts every non-null answer into the fetch's
+        // ERRORS — which records a fetch that imported nothing as FAILED and advances the
+        // connector's circuit breaker. A created link is not a failure: it answers null
+        // here (the fact is logged), and only the in-import overload reports it as a warning.
+        when(contentService.getRelationsipsOfObject(eq("bedroom"), eq("src-1"), any()))
+                .thenThrow(new RuntimeException("view unavailable"));
+
+        String answer = service.createDirectRelationship(testContext(), "bedroom", "src-1", "tgt-1");
+
+        verify(objectService, times(1)).createRelationship(any(), any(), any(), any(), any(), any(), any());
+        assertNull(answer, "a link that was created was reported as an error to a caller that"
+                + " records it as a failed fetch: " + answer);
+    }
+
+    @Test
+    void aMissingContentServiceIsAnUnansweredCheckNotAnAbsentEdge() {
+        // The arm for a service that is not wired answered "absent" — "could not ask" with
+        // the value of "asked, none". The in-import overload reports it like any other read
+        // that did not answer.
+        service.setContentService(null);
+
+        String note = service.createDirectRelationship(testContext(), "bedroom", "src-1", "tgt-1",
+                "cmis:relationship", jp.aegif.nemaki.rest.ingest.capture.CaptureScope.inactive(),
+                null, null);
+
+        verify(objectService, times(1)).createRelationship(any(), any(), any(), any(), any(), any(), any());
+        assertTrue(note != null && note.contains("without its duplicate check"),
+                "a check that could not be asked was reported as answered: " + note);
+    }
+
+    @Test
     void createDirectRelationship_saysNothing_whenExistenceCheckAnswersNoEdge() {
         // The control for the warning above: an ANSWERED "no such edge" is the ordinary
         // first link. Reporting it as an unanswered check would make every first link look

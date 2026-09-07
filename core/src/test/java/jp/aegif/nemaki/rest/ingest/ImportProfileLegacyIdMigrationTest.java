@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -1272,12 +1273,14 @@ class ImportProfileLegacyIdMigrationTest {
 
     @Test
     @DisplayName("the owned listing returns every owned row the walk can read — legacy id or "
-            + "deterministic, enabled or not — and neither an unowned row nor one it cannot interpret")
-    void theOwnedListingSeesEveryOwnedRowAndSkipsTheRest() {
-        // The webhook receiver picked its recipients out of list() — a selector. While its
-        // index rebuilt it saw no profiles and answered no_profile with a 200: the sender's
-        // event consumed, nothing captured. The walk does not consult the index, so the
-        // selector is left unstubbed here and asserted never asked.
+            + "deterministic, enabled or not — reports the ones it cannot interpret with their "
+            + "raw connector fields, and neither lists nor reports an unowned or disabled one")
+    void theOwnedListingSeesEveryOwnedRowAndReportsTheRest() {
+        // The webhook receiver picked its recipients out of list() — a selector: whenever
+        // the index did not show a row it saw no profile and answered no_profile with a 200,
+        // the sender's event consumed. The walk does not consult the index, so the selector
+        // is left unstubbed here and asserted never asked. A row the walk cannot interpret is
+        // REPORTED, not dropped: dropped, it answered no_profile for a recipient that exists.
         wire();
         Map<String, Object> legacy = profileProps("p-legacy", "Legacy");
         Map<String, Object> disabled = profileProps("p-off", "Off");
@@ -1286,19 +1289,39 @@ class ImportProfileLegacyIdMigrationTest {
         unowned.put("repositoryId", "  ");
         Map<String, Object> broken = profileProps("p-broken", "Broken");
         broken.put("retentionDays", "not-a-number");
+        broken.put("defaultConnectorId", "c-dbx");
+        broken.put("allowedConnectorIds", List.of("c-a", "c-dbx"));
+        Map<String, Object> offAndBroken = profileProps("p-off-broken", "Off and broken");
+        offAndBroken.put("enabled", false);
+        offAndBroken.put("retentionDays", "not-a-number");
+        offAndBroken.put("defaultConnectorId", "c-dbx");
         listingAnswers(List.of(
                 row("a1b2c3-generated", legacy, "1-a"),
                 row("import_profile_definition:p-off", disabled, "1-b"),
                 row("import_profile_definition:p-nobody", unowned, "1-c"),
-                row("import_profile_definition:p-broken", broken, "1-d")));
+                row("import_profile_definition:p-broken", broken, "1-d"),
+                row("import_profile_definition:p-off-broken", offAndBroken, "1-e")));
 
-        List<String> listed = service.listOwnedIndexFree().stream()
+        ImportProfileDefinitionService.OwnedProfiles owned = service.listOwnedIndexFree();
+        List<String> listed = owned.profiles().stream()
                 .map(ImportProfileDefinition::getProfileId).sorted().toList();
 
         assertEquals(List.of("p-legacy", "p-off"), listed,
                 "not the owned rows the walk could read — an unowned row is not a recipient, "
                         + "a disabled one is listed (the receiver filters enabled itself), and "
-                        + "a row that cannot be interpreted is skipped: " + listed);
+                        + "a row that cannot be interpreted is not listed as read: " + listed);
+        assertEquals(1, owned.uninterpretable().size(),
+                "the rows the walk could not read are not reported as such (a disabled one is "
+                        + "not a recipient and must not be): " + owned.uninterpretable());
+        ImportProfileDefinitionService.UninterpretableRow reported = owned.uninterpretable().get(0);
+        assertEquals("import_profile_definition:p-broken", reported.docId());
+        assertEquals("p-broken", reported.profileId());
+        assertEquals("c-dbx", reported.defaultConnectorId(),
+                "the raw default connector is what tells the receiver the row was addressed to it");
+        assertEquals(List.of("c-a", "c-dbx"), reported.allowedConnectorIds());
+        assertTrue(reported.namesConnector("c-dbx") && reported.namesConnector("c-a")
+                        && !reported.namesConnector("c-z"),
+                "namesConnector does not read both raw fields");
         verify(cloudant, never()).postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class));
     }
 
@@ -1351,6 +1374,93 @@ class ImportProfileLegacyIdMigrationTest {
                 "the listing stopped at its first page — a profile past it is not listed");
         assertTrue(all.stream().anyMatch(p -> "p-late".equals(p.getProfileId())),
                 "the profile on page two is missing: " + all.size() + " listed");
+    }
+
+    @Test
+    @DisplayName("a full selector page with no bookmark to continue from is refused, not "
+            + "returned as the whole answer")
+    void theSelectorListingRefusesAFullPageWithoutABookmark() {
+        // The typed refusal, not a bare IllegalStateException: the create path answers 400
+        // for that, and "the listing could not be completed" is not the caller's fault.
+        wire();
+        List<Document> fullPage = new ArrayList<>();
+        for (int i = 0; i < NemakiConfFind.PAGE; i++) {
+            fullPage.add(selectorDoc(profileProps(String.format("p-%04d", i), "Early")));
+        }
+        // Built BEFORE the stubbing: findCallOf stubs mocks of its own, and doing that inside
+        // thenReturn(...) leaves this stubbing unfinished — the class then dies with
+        // UnfinishedStubbingException instead of failing on its own claim.
+        ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> noBookmark = findCallOf(fullPage, null);
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenReturn(noBookmark);
+
+        assertThrows(ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+                () -> service.list(),
+                "a full page with nothing to continue from was returned as complete");
+    }
+
+    @Test
+    @DisplayName("a selector listing that did not answer is refused, not returned empty")
+    void theSelectorListingRefusesAListingThatDidNotAnswer() {
+        wire();
+        ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> noDocs = findCallOf(null, null);
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenReturn(noDocs);
+
+        assertThrows(ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+                () -> service.list(),
+                "an answer without docs was read as an empty listing");
+    }
+
+    @Test
+    @DisplayName("a bookmark that comes back a second time is refused — a cycle would append "
+            + "the same pages for ever")
+    void theSelectorListingRefusesABookmarkCycle() {
+        // A → B → A: the immediate-repeat check alone lets this loop. Preemptive timeout so
+        // that a listing that DOES loop fails on this assertion instead of hanging the class.
+        wire();
+        List<Document> fullPage = new ArrayList<>();
+        for (int i = 0; i < NemakiConfFind.PAGE; i++) {
+            fullPage.add(selectorDoc(profileProps(String.format("p-%04d", i), "Early")));
+        }
+        ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> first = findCallOf(fullPage, "A");
+        ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> pageA = findCallOf(fullPage, "B");
+        ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> pageB = findCallOf(fullPage, "A");
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenAnswer(call -> {
+                    com.ibm.cloud.cloudant.v1.model.PostFindOptions options = call.getArgument(0);
+                    if (options.bookmark() == null) return first;
+                    return "A".equals(options.bookmark()) ? pageA : pageB;
+                });
+
+        assertTimeoutPreemptively(java.time.Duration.ofSeconds(10),
+                () -> assertThrows(ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+                        () -> service.list(),
+                        "a bookmark cycle was followed instead of refused"),
+                "the listing looped on the bookmark cycle");
+    }
+
+    @Test
+    @DisplayName("a DISABLED row with no profileId does not block a create — it cannot be "
+            + "chosen either")
+    void aDisabledRowWithoutAProfileIdDoesNotBlockACreate() {
+        // The identity check ran before the disabled skip, so a disabled row with no
+        // profileId refused every write of its repository — over a row no rule can read
+        // anything from. A review found the order.
+        wire();
+        selectorAnswersNothing();
+        deterministicReadAnswers("p-new3", null);
+        Map<String, Object> offAndNameless = profileProps("p-x", "X");
+        offAndNameless.remove("profileId");
+        offAndNameless.put("enabled", false);
+        listingAnswers(List.of(row("nameless-off-row", offAndNameless, "1-r")));
+        writesSucceed();
+
+        ImportProfileDefinition created = assertDoesNotThrow(
+                () -> service.create(defaultProfile("p-new3")),
+                "a disabled row with no identity refused the create");
+
+        assertEquals("p-new3", created.getProfileId());
     }
 
     /** One raw document as the selector serves it. */

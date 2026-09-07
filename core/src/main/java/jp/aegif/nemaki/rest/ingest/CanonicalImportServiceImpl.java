@@ -2019,8 +2019,42 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     @Override
     public String createDirectRelationship(CallContext callContext, String repositoryId,
                                            String sourceId, String targetId) {
-        return createDirectRelationship(callContext, repositoryId, sourceId, targetId,
-                "cmis:relationship", CaptureScope.inactive());
+        return outsideAnImport(createLink(callContext, repositoryId, sourceId, targetId,
+                "cmis:relationship", CaptureScope.inactive(), null, null));
+    }
+
+    /**
+     * The answer of an entry point whose callers put every non-null value into their fetch
+     * ERRORS: null when the link is there, a message only when it is not. A link created
+     * without its duplicate check is there, so it answers null — and the fact is logged
+     * here, WARN, source and target named, because a fetch that imported nothing and carries
+     * one "error" is recorded FAILED and advances the connector's circuit breaker, and that
+     * would be a report of a failure that did not happen. Inside an import the same fact is
+     * a relationship warning on the result (the eight-argument overload).
+     */
+    private String outsideAnImport(LinkOutcome outcome) {
+        if (!outcome.linked()) {
+            return outcome.message();
+        }
+        if (outcome.message() != null) {
+            logger.warn("{} (created outside an import: reported here only)", outcome.message());
+        }
+        return null;
+    }
+
+    /**
+     * What a link attempt came to. {@code linked} is true when the relationship is there —
+     * created now, or found already; {@code message} is the refusal when it is not, and the
+     * unanswered-duplicate-check note when it is and the check did not answer.
+     */
+    private record LinkOutcome(boolean linked, String message) {
+        static LinkOutcome linked(String note) {
+            return new LinkOutcome(true, note);
+        }
+
+        static LinkOutcome notLinked(String why) {
+            return new LinkOutcome(false, why);
+        }
     }
 
     /**
@@ -2033,8 +2067,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      */
     String createDirectRelationship(CallContext callContext, String repositoryId,
                                     String sourceId, String targetId, String relationshipTypeId) {
-        return createDirectRelationship(callContext, repositoryId, sourceId, targetId,
-                relationshipTypeId, CaptureScope.inactive());
+        return outsideAnImport(createLink(callContext, repositoryId, sourceId, targetId,
+                relationshipTypeId, CaptureScope.inactive(), null, null));
     }
 
     /**
@@ -2044,8 +2078,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     String createDirectRelationship(CallContext callContext, String repositoryId,
                                             String sourceId, String targetId,
                                             String relationshipTypeId, CaptureScope captureScope) {
-        return createDirectRelationship(callContext, repositoryId, sourceId, targetId,
-                relationshipTypeId, captureScope, null, null);
+        return outsideAnImport(createLink(callContext, repositoryId, sourceId, targetId,
+                relationshipTypeId, captureScope, null, null));
     }
 
     /**
@@ -2058,12 +2092,25 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * after their import has returned — and then no re-check happens, which is recorded rather
      * than hidden. In-import callers go through {@code createDirectRelationshipAuthorized},
      * which refuses rather than passing a null it could not resolve.
+     *
+     * <p>In-import semantics: a non-null answer is a WARNING — the link was not created, or
+     * it was created without its duplicate check. The callers add it to the result's
+     * warnings and treat nothing else as a failure.
      */
     String createDirectRelationship(CallContext callContext, String repositoryId,
                                             String sourceId, String targetId,
                                             String relationshipTypeId, CaptureScope captureScope,
                                             ImportProfileDefinition authorizingProfile,
                                             ConnectorDefinition authorizingConnector) {
+        return createLink(callContext, repositoryId, sourceId, targetId, relationshipTypeId,
+                captureScope, authorizingProfile, authorizingConnector).message();
+    }
+
+    private LinkOutcome createLink(CallContext callContext, String repositoryId,
+                                   String sourceId, String targetId,
+                                   String relationshipTypeId, CaptureScope captureScope,
+                                   ImportProfileDefinition authorizingProfile,
+                                   ConnectorDefinition authorizingConnector) {
         try {
             // Idempotent: if this source→target link already exists, do not
             // create a duplicate. Relationship creation is otherwise re-run on
@@ -2073,7 +2120,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (sourceId != null && targetId != null) {
                 EdgeLookup edge = lookUpRelationship(repositoryId, sourceId, targetId);
                 if (edge.answered() && edge.exists()) {
-                    return null;
+                    return LinkOutcome.linked(null);
                 }
                 if (!edge.answered()) {
                     // Created anyway (below) and SAID SO. The check used to fail open to
@@ -2101,7 +2148,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         "relationship", authorizingProfile, authorizingConnector, callContext,
                         repositoryId, folderNow);
                 if (revokedHere != null) {
-                    return "the relationship was not created: " + revokedHere.errors().get(0);
+                    return LinkOutcome.notLinked("the relationship was not created: "
+                            + revokedHere.errors().get(0));
                 }
             }
             PropertiesImpl relProps = new PropertiesImpl();
@@ -2120,7 +2168,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             } else {
                 captureScope.record("createRelationship", MutationOutcome.SUCCEEDED);
             }
-            return unansweredCheck;
+            return LinkOutcome.linked(unansweredCheck);
         } catch (CaptureScope.CaptureIntentFailedException failClosed) {
             // Never swallowed. This is the fail-closed point: it means the intent could 
             // not be written, so nothing may be changed. Caught by the surrounding catch
@@ -2131,7 +2179,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // Fallback to generic cmis:relationship if custom type fails
             if (!"cmis:relationship".equals(relationshipTypeId)) {
                 logger.debug("Custom relationship type {} failed, falling back to cmis:relationship", relationshipTypeId);
-                return createDirectRelationship(callContext, repositoryId, sourceId, targetId,
+                return createLink(callContext, repositoryId, sourceId, targetId,
                         "cmis:relationship", captureScope, authorizingProfile, authorizingConnector);
             }
             logger.warn("Relationship {} → {} failed: {}", sourceId, targetId, e.getMessage());
@@ -2139,7 +2187,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // call itself, and the wrapper below it returns null for every kind of failure.
             captureScope.record("createRelationship", MutationOutcome.INDETERMINATE,
                     e.getMessage());
-            return "Relationship failed: " + e.getMessage();
+            return LinkOutcome.notLinked("Relationship failed: " + e.getMessage());
         }
     }
 
@@ -2181,9 +2229,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      */
     private EdgeLookup lookUpRelationship(String repositoryId, String sourceId, String targetId) {
         if (contentService == null) {
-            // Wiring, not a read: the service is a required dependency, and null only in a
-            // fixture that never creates links. Not reported as an unanswered check.
-            return EdgeLookup.absent();
+            // Wiring, not a read — but "could not ask" all the same, and the batch's rule for
+            // a missing service is that it is not "there is none". A review found the arm
+            // answering absent.
+            return EdgeLookup.unanswered("contentService is not wired");
         }
         try {
             List<jp.aegif.nemaki.model.Relationship> rels = contentService.getRelationsipsOfObject(

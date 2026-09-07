@@ -25,17 +25,18 @@ import com.ibm.cloud.cloudant.v1.model.FindResult;
 import com.ibm.cloud.cloudant.v1.model.PostFindOptions;
 
 /**
- * The one paged Mango selector read over {@code nemaki_conf} — the selector twin of
- * {@link NemakiConfAllDocs}.
+ * The definition services' paged Mango selector read over {@code nemaki_conf} — the selector
+ * twin of {@link NemakiConfAllDocs}. (The scheduler's idempotency purge pages the same
+ * database with its own loop and its own stop rule; it is not routed through here.)
  *
  * <p>Both definition services asked the selector for one page of 200 and returned it as the
  * whole answer. Nothing continued past the page: the 201st matching row was not listed, by
- * the admin listing or by any caller that filtered {@code list()} — and unlike the
- * rebuilding-index case, that is a listing that answers short every time it runs. The page
- * is followed by its bookmark until a page comes back partial.
+ * the admin listing or by any caller that filtered {@code list()} — a listing that answered
+ * short every time it ran, whatever the index was doing. The page is followed by its
+ * bookmark until a page comes back partial.
  *
- * <p>This does not make the selector index-free. It still answers from the Mango index, so a
- * rebuild still shows a partial view; the runtime resolvers walk {@code _all_docs} for that
+ * <p>This does not make the selector index-free. It still answers from the Mango index and
+ * shows whatever the index shows; the runtime resolvers walk {@code _all_docs} for that
  * reason and are not changed by this.
  */
 final class NemakiConfFind {
@@ -48,11 +49,13 @@ final class NemakiConfFind {
 
     /**
      * Every document matching {@code selector}. Throws — never returns short — when a full
-     * page carries no bookmark to continue from, or when the listing did not answer.
+     * page carries no bookmark to continue from, when a bookmark comes back a second time
+     * (a cycle would append the same page for ever), or when the listing did not answer.
      */
     static List<Document> allMatching(com.ibm.cloud.cloudant.v1.Cloudant cloudant, String dbName,
             Map<String, Object> selector) {
         List<Document> all = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
         String bookmark = null;
         while (true) {
             PostFindOptions.Builder page = new PostFindOptions.Builder()
@@ -74,13 +77,14 @@ final class NemakiConfFind {
                 return all;
             }
             String next = result.getBookmark();
-            if (next == null || next.isBlank() || next.equals(bookmark)) {
-                // A FULL page with nothing to continue from: repeating the query would loop
-                // on the same page for ever, and stopping quietly would claim the rest of
-                // the database was seen.
+            if (next == null || next.isBlank() || !seen.add(next)) {
+                // A FULL page with nothing NEW to continue from: repeating the query would
+                // loop on the same page for ever (a bookmark seen before, immediately or
+                // not, is the same loop with more steps), and stopping quietly would claim
+                // the rest of the database was seen.
                 throw new IllegalStateException("a full selector page of '" + dbName
-                        + "' carried no continuation bookmark, so the listing cannot make"
-                        + " progress");
+                        + "' carried no new continuation bookmark, so the listing cannot"
+                        + " make progress");
             }
             bookmark = next;
         }

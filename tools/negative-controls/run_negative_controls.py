@@ -3988,8 +3988,9 @@ CONTROLS = [
         what="the relationship creation stops re-asking the delegated authorisation — the "
              "existence read is a database read placed after the last authorisation",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        # Re-anchored in round 2 of the second batch (the refusal became a LinkOutcome).
         find_span=('            if (authorizingProfile != null && authorizingProfile.isDelegated()) {',
-                   '                    return "the relationship was not created: " + revokedHere.errors().get(0);\n                }\n            }'),
+                   '                            + revokedHere.errors().get(0));\n                }\n            }'),
         replace='',
         test='CanonicalImportServiceTest',
         expect_fail=['testARevokedDelegationStopsTheRelationshipCreation'],
@@ -4033,7 +4034,8 @@ CONTROLS = [
         what="the webhook receiver picks its recipients out of the Mango selector again — a "
              "rebuilding index reads as 'no profile', 200, and the sender's event is gone",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
-        find='        return profileService.listOwnedIndexFree().stream()',
+        # Re-anchored in round 2 (the listing became OwnedProfiles; `owned` stays unused).
+        find='        return owned.profiles().stream()',
         replace='        return profileService.list().stream()',
         test='IngestWebhookBoxDropboxTest',
         expect_fail=['theRecipientsAreReadFromTheWalkNotTheSelector'],
@@ -4061,7 +4063,7 @@ CONTROLS = [
         find='                    || isBlank(props.get("repositoryId"))) {\n                return;\n            }',
         replace='                    || false) {\n                return;\n            }',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['theOwnedListingSeesEveryOwnedRowAndSkipsTheRest'],
+        expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest'],
     ),
     dict(
         id="WA",
@@ -4129,8 +4131,11 @@ CONTROLS = [
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
         find_span=('                if (!edge.answered()) {',
                    '                            + "), so a duplicate edge may now exist";\n                }'),
+        # Replacement re-typed in round 2 (the core returns a LinkOutcome). The sweep died
+        # here once: the anchor still matched and the replacement no longer compiled —
+        # only the NEW controls had been compile-checked.
         replace='                if (!edge.answered()) {\n'
-                '                    return "the relationship was not created: " + edge.failure();\n'
+                '                    return LinkOutcome.notLinked("the relationship was not created: " + edge.failure());\n'
                 '                }',
         test='CanonicalImportServiceTest',
         expect_fail=['createDirectRelationship_createsAndSaysSo_whenExistenceCheckThrows'],
@@ -4187,6 +4192,151 @@ CONTROLS = [
         replace='                    return;',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['anEnabledRowTheResolverCannotInterpretStillRefuses'],
+    ),
+    # ── round 2 of the second batch: what two reviews found ──
+    dict(
+        id="WK",
+        what="the CALL SITE stops telling an unanswered duplicate check apart — the helper "
+             "still says unanswered, and nothing is reported (WD's call-site twin)",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='                if (!edge.answered()) {',
+        replace='                if (false) {',
+        test='CanonicalImportServiceTest',
+        expect_fail=['createDirectRelationship_createsAndSaysSo_whenExistenceCheckThrows'],
+    ),
+    dict(
+        id="WL",
+        what="a connector that exists but could not be read is 401 again — the sender takes "
+             "it as an authentication failure and does not retry",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='            ResponseEntity<?> hidden = refuseIfConnectorHidden(connectorId);\n'
+             '            if (hidden != null) return hidden;',
+        replace='            // (hidden check removed)',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['aConnectorThatExistsButCannotBeReadIsA503NotA401'],
+    ),
+    dict(
+        id="WM",
+        what="a connector read that throws escapes the receiver as a 500 again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='            return connectorCouldNotBeRead(connectorId, couldNotRead.getMessage());',
+        replace='            throw couldNotRead;',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['aConnectorReadThatThrowsIsA503NotA500'],
+    ),
+    dict(
+        id="WN",
+        what="a recipient row the walk could not read is left out again — the readable rows "
+             "answer 'no profile' (200) for a recipient that exists",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find_span=('            if (broken.namesConnector(connId)) {',
+                   '                        + " names it and could not be read as a profile (" + broken.reason() + ")");\n            }'),
+        replace='            if (broken.namesConnector(connId)) {\n                continue;\n            }',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['aRecipientRowThatCannotBeInterpretedIsA503NotNoProfile'],
+    ),
+    dict(
+        id="WO",
+        what="the walk stops reporting the rows it could not read — the receiver has nothing "
+             "to refuse on and answers from the readable rows alone",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                reportUninterpretable(uninterpretable, id, props, e.getMessage());\n',
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest'],
+    ),
+    dict(
+        id="WP",
+        what="the public entry point reports a created link as an error again — the fetch "
+             "that imported nothing is recorded FAILED and the circuit breaker advances",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='        if (!outcome.linked()) {\n            return outcome.message();\n        }',
+        replace='        if (true) {\n            return outcome.message();\n        }',
+        test='CanonicalImportServiceTest',
+        expect_fail=['thePublicEntryPointAnswersNullForALinkCreatedWithoutItsCheck'],
+    ),
+    dict(
+        id="WQ",
+        what="a bookmark seen before is followed again — an A→B→A cycle appends the same "
+             "pages for ever",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/NemakiConfFind.java',
+        find='            if (next == null || next.isBlank() || !seen.add(next)) {',
+        replace='            if (next == null || next.isBlank()) {',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theSelectorListingRefusesABookmarkCycle'],
+    ),
+    dict(
+        id="WR",
+        what="a selector answer without docs is returned as an empty (or short) listing",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/NemakiConfFind.java',
+        find_span=('                throw new IllegalStateException("the selector listing of \'" + dbName',
+                   '                        + " established");'),
+        replace='                return all;',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theSelectorListingRefusesAListingThatDidNotAnswer'],
+    ),
+    dict(
+        id="WS",
+        what="a full page with no new bookmark is returned as the whole answer",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/NemakiConfFind.java',
+        find_span=('                throw new IllegalStateException("a full selector page of \'" + dbName',
+                   '                        + " make progress");'),
+        replace='                return all;',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theSelectorListingRefusesAFullPageWithoutABookmark'],
+    ),
+    dict(
+        id="WT",
+        what="the identity check runs before the disabled skip again — a disabled row with no "
+             "profileId refuses every write of its repository",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find_span=('                if (Boolean.FALSE.equals(props.get("enabled"))) {\n'
+                   '                    return;\n'
+                   '                }\n'
+                   '                // After the disabled skip, not before it:',
+                   '                            + " has no usable profileId");\n'
+                   '                }'),
+        replace='                Object pid = props.get("profileId");\n'
+                '                if (!(pid instanceof String) || ((String) pid).isBlank()) {\n'
+                '                    throw new IllegalStateException("the profiles of repository \'"\n'
+                '                            + repositoryId + "\' cannot be listed: row " + id\n'
+                '                            + " has no usable profileId");\n'
+                '                }\n'
+                '                if (Boolean.FALSE.equals(props.get("enabled"))) {\n'
+                '                    return;\n'
+                '                }',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aDisabledRowWithoutAProfileIdDoesNotBlockACreate'],
+    ),
+    dict(
+        id="WU",
+        what="a content service that is not wired answers 'no such edge' again — could not "
+             "ask, with the value of asked-and-none",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='            return EdgeLookup.unanswered("contentService is not wired");',
+        replace='            return EdgeLookup.absent();',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aMissingContentServiceIsAnUnansweredCheckNotAnAbsentEdge'],
+    ),
+    dict(
+        id="WV",
+        what="the connector selector listing lets the bare IllegalStateException out — the "
+             "create path answers 400 for a listing that could not be completed",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='            throw new ConnectorIndexNotReadyException(incomplete.getMessage());',
+        replace='            throw incomplete;',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theSelectorListingRefusesAFullPageWithoutABookmark'],
+    ),
+    dict(
+        id="WW",
+        what="the profile selector listing lets the bare IllegalStateException out — WV's "
+             "profile twin",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='            throw new ProfileIndexNotReadyException(incomplete.getMessage());',
+        replace='            throw incomplete;',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theSelectorListingRefusesAFullPageWithoutABookmark'],
     ),
     dict(
         id="HA",

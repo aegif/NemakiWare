@@ -805,10 +805,17 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
     /**
      * Every row the selector shows — all of its pages, not the first one. The single page
      * this used to return capped every selector listing at 200 rows without saying so.
+     *
+     * <p>A listing that cannot be completed is the typed refusal (503 at the controllers),
+     * not a bare {@code IllegalStateException} — which the create path answers 400 for.
      */
     private List<com.ibm.cloud.cloudant.v1.model.Document> findRawDocs(
             com.ibm.cloud.cloudant.v1.Cloudant cloudant, String dbName, Map<String, Object> selector) {
-        return NemakiConfFind.allMatching(cloudant, dbName, selector);
+        try {
+            return NemakiConfFind.allMatching(cloudant, dbName, selector);
+        } catch (IllegalStateException incomplete) {
+            throw new ConnectorIndexNotReadyException(incomplete.getMessage());
+        }
     }
 
     /** The shared walk's page size, re-exported so the paging test can build a full page. */

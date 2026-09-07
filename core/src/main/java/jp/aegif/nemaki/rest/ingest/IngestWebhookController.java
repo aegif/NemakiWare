@@ -126,7 +126,24 @@ public class IngestWebhookController {
 
         // 1. Resolve connector — return uniform 401 for not-found/disabled to prevent
         // connector ID enumeration via status code differences
-        ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
+        ConnectorDefinition connector;
+        try {
+            connector = connectorDefinitionService.get(connectorId);
+        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotRead) {
+            // A row that exists and could not be read as this connector. This sat outside
+            // the try below and escaped as a Spring 500 — our bug, to the sender; it is the
+            // retryable answer.
+            return connectorCouldNotBeRead(connectorId, couldNotRead.getMessage());
+        }
+        if (connector == null) {
+            // get() answers null for a failed read as well as for absence, and a sender
+            // given 401 does not retry — the event is gone. "No such connector" is a claim
+            // about the database, so it is checked without the index before the 401. The
+            // 503 discloses that a row with this id exists, as the GET handshake below
+            // already does; the id is in the operator-registered URL.
+            ResponseEntity<?> hidden = refuseIfConnectorHidden(connectorId);
+            if (hidden != null) return hidden;
+        }
         if (connector == null || !connector.isEnabled()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("error", "Signature verification failed"));
@@ -181,11 +198,22 @@ public class IngestWebhookController {
         } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException couldNotList) {
             // The recipients could not be enumerated. Not "no profile" (200 tells the sender
             // the event was delivered) and not the 500 below (our bug, nothing to wait for):
-            // 503 is the one answer a sender is entitled to retry.
+            // 503 leaves the sender room to retry — whether and how often it does is the
+            // sender's own policy.
             logger.error("Webhook for {} not dispatched: the import profiles could not be"
                     + " listed ({})", connectorId, couldNotList.getMessage());
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .body(Map.of("error", "Import profiles could not be read; retry shortly"));
+        } catch (RecipientUnreadableException recipientBroken) {
+            // A profile row that names this connector could not be read as a profile. The
+            // readable rows alone would have said "no profile" (200) or dispatched to the
+            // others with this one silently left out. Standing until the row is repaired or
+            // the node that can read it takes over, so "retry" here is "retry later".
+            logger.error("Webhook for {} not dispatched: {}", connectorId,
+                    recipientBroken.getMessage());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("error", "An import profile of this connector could not be"
+                            + " read; retry later"));
         } catch (Exception e) {
             logger.error("Webhook processing failed for {}: {}", connectorId, e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -214,7 +242,18 @@ public class IngestWebhookController {
     public ResponseEntity<?> verifyWebhook(
             @PathVariable String connectorId,
             @RequestParam(value = "challenge", required = false) String challenge) {
-        ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
+        ConnectorDefinition connector;
+        try {
+            connector = connectorDefinitionService.get(connectorId);
+        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotReadOnVerify) {
+            return connectorCouldNotBeRead(connectorId, couldNotReadOnVerify.getMessage());
+        }
+        if (connector == null) {
+            // As in receiveWebhook: a row that exists but could not be read is not "no such
+            // connector", and a 404 here fails the operator's URL verification for good.
+            ResponseEntity<?> hiddenOnVerify = refuseIfConnectorHidden(connectorId);
+            if (hiddenOnVerify != null) return hiddenOnVerify;
+        }
         if (connector == null || !connector.isEnabled()
                 || !"dropbox".equals(connector.getSourceSystem())
                 || challenge == null || challenge.isBlank()
@@ -483,18 +522,33 @@ public class IngestWebhookController {
      * is intentionally NOT used here to prevent unrelated profiles from
      * receiving webhook events.
      *
-     * <p>Read through the {@code _all_docs} walk, not the selector. The selector answered
-     * an empty list while its index rebuilt (and past its page cap), and the receiver then
-     * said {@code no_profile} with a 200 — the sender's event was consumed and nothing
-     * captured it. A listing that cannot be completed now throws, and
-     * {@link #receiveWebhook} answers 503 so the sender retries. Rows that name no
-     * repository are not recipients: the delegated gate refuses them for every repository,
-     * so dispatching to one was a fetch that could only fail.
+     * <p>Read through the {@code _all_docs} walk, not the selector. Whenever the selector
+     * did not show a row the receiver said {@code no_profile} with a 200 — the sender's event
+     * consumed, nothing captured — and the selector's single page showed no row past the
+     * 200th, every time. (Whether a rebuilding index shows an existing row as absent is not
+     * measured on a real CouchDB; a listing that failed outright was a 500.) A listing that
+     * cannot be completed now throws, and {@link #receiveWebhook} answers 503. Rows that
+     * name no repository are not recipients: the import resolves no row for them in any
+     * repository, so dispatching to one was a fetch that could only fail. A row that names
+     * this connector and could not be read is a recipient this receiver cannot establish —
+     * refused, not left out.
      */
     private List<ImportProfileDefinition> findAllProfilesForConnector(ConnectorDefinition connector) {
         if (profileService == null) return List.of();
         String connId = connector.getConnectorId();
-        return profileService.listOwnedIndexFree().stream()
+        ImportProfileDefinitionService.OwnedProfiles owned = profileService.listOwnedIndexFree();
+        for (ImportProfileDefinitionService.UninterpretableRow broken : owned.uninterpretable()) {
+            if (broken.namesConnector(connId)) {
+                // Answering from the readable rows alone would say "no profile" (200) when
+                // this was the only one, or dispatch to the others with this one silently
+                // left out. A broken row that names another connector is that connector's
+                // problem and does not stop this dispatch.
+                throw new RecipientUnreadableException("the recipients of connector " + connId
+                        + " could not be established: profile row " + broken.docId()
+                        + " names it and could not be read as a profile (" + broken.reason() + ")");
+            }
+        }
+        return owned.profiles().stream()
                 .filter(ImportProfileDefinition::isEnabled)
                 .filter(p -> connId.equals(p.getDefaultConnectorId())
                         || (p.getAllowedConnectorIds() != null
@@ -502,6 +556,37 @@ public class IngestWebhookController {
                             && p.getAllowedConnectorIds().contains(connId)))
                 .filter(p -> p.isArchetypeAllowed(connector.getSourceArchetype()))
                 .toList();
+    }
+
+    /** A recipient row this receiver could not read; {@link #receiveWebhook} answers 503. */
+    private static final class RecipientUnreadableException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        RecipientUnreadableException(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * 503 when the connector exists but could not be read, or when whether it exists cannot
+     * be established; null when it is genuinely absent (the caller's 401/404 stands).
+     */
+    private ResponseEntity<?> refuseIfConnectorHidden(String connectorId) {
+        try {
+            if (!connectorDefinitionService.existsIndexFree(connectorId)) {
+                return null;
+            }
+            return connectorCouldNotBeRead(connectorId, "the row exists but could not be read");
+        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotAsk) {
+            return connectorCouldNotBeRead(connectorId, couldNotAsk.getMessage());
+        }
+    }
+
+    private ResponseEntity<?> connectorCouldNotBeRead(String connectorId, String why) {
+        logger.error("Webhook for {} not dispatched: the connector could not be read ({})",
+                connectorId, why);
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(Map.of("error", "Connector could not be read; retry shortly"));
     }
 
     /**

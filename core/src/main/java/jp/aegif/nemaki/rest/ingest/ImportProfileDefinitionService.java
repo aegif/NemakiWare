@@ -97,22 +97,57 @@ public interface ImportProfileDefinitionService {
     List<ImportProfileDefinition> listScheduledIndexFree();
 
     /**
+     * A row of the owned listing that could not be interpreted as a profile, with the raw
+     * fields a caller needs to tell whether the row was addressed to it. The webhook
+     * receiver asks {@link #namesConnector(String)}: a row that names its connector and
+     * cannot be read is a recipient it cannot establish, not "no recipient".
+     *
+     * @param reason why the row could not be read (the deserialisation failure, or that the
+     *               row has no profileId)
+     */
+    record UninterpretableRow(String docId, String profileId, String defaultConnectorId,
+            List<String> allowedConnectorIds, String reason) {
+        /** Whether the row, as far as its raw connector fields say, names this connector. */
+        public boolean namesConnector(String connectorId) {
+            if (connectorId == null) {
+                return false;
+            }
+            return connectorId.equals(defaultConnectorId)
+                    || (allowedConnectorIds != null && allowedConnectorIds.contains(connectorId));
+        }
+    }
+
+    /**
+     * The owned listing: the rows the walk could read, and the rows it could not. A caller
+     * that would answer "none" from {@code profiles()} alone has to look at
+     * {@code uninterpretable()} first.
+     */
+    record OwnedProfiles(List<ImportProfileDefinition> profiles,
+            List<UninterpretableRow> uninterpretable) {
+    }
+
+    /**
      * Every OWNED profile row of every repository — enabled or not — read from
      * {@code _all_docs}: the same walk and the same per-row policy as
      * {@link #listScheduledIndexFree()}, without the scheduler filter.
      *
      * <p>Written for the webhook receiver, which used to pick its recipients out of
-     * {@link #list()} — a selector. While that index rebuilt the receiver saw no profiles,
-     * answered {@code no_profile} with a 200, and the event was gone; the selector's page cap
-     * dropped the same way past its first page. Neither is what "no profile" means.
+     * {@link #list()} — a selector. When the index did not show a row the receiver saw no
+     * profile, answered {@code no_profile} with a 200, and the event was gone (a listing
+     * that could not be completed was a 500); and the selector's single page dropped every
+     * row past the 200th the same way. Whether a rebuilding index shows an existing row as
+     * absent has NOT been measured on a real CouchDB; the page cap needed no rebuild.
      *
      * <p>Rows that name no repository are not returned: they are not a wildcard, and the
-     * runtime gate refuses them for every repository. A row that cannot be interpreted is
-     * logged and skipped, as in the scheduled listing. Throws
-     * {@code ProfileIndexNotReadyException} when the walk cannot be completed — the caller
-     * must not read that as an empty list.
+     * import resolves no row for them in any repository. A row that cannot be interpreted is
+     * logged and reported in {@code uninterpretable()} with its raw connector fields — not
+     * dropped: the receiver refuses (503) when such a row names its connector, and ignores it
+     * otherwise, so one broken row stops the webhooks of the connector it names and no other.
+     * Rows whose raw {@code enabled} is {@code false} are not reported: they could not have
+     * been recipients. Throws {@code ProfileIndexNotReadyException} when the walk cannot be
+     * completed — the caller must not read that as an empty list.
      */
-    List<ImportProfileDefinition> listOwnedIndexFree();
+    OwnedProfiles listOwnedIndexFree();
 
     /**
      * Rewrites every legacy import-profile row saved under a CouchDB-generated id to its

@@ -76,7 +76,15 @@ public interface CanonicalImportService {
     /**
      * Create a CMIS relationship between two objects.
      *
-     * @return error message if failed, null on success
+     * <p>Used by the fetch orchestrators after their import has returned; carries no capture
+     * scope and no profile, so no delegated re-check happens here. A link whose duplicate
+     * check could not be answered is still created and still answers {@code null} — the
+     * fact is logged at WARN, because the callers put every non-null answer into their
+     * fetch errors and a created link is not one. Inside an import the same case is
+     * reported as a relationship warning.
+     *
+     * @return a message when the relationship was NOT created, null when it was (or already
+     *         existed)
      */
     String createDirectRelationship(CallContext callContext, String repositoryId,
                                     String sourceId, String targetId);

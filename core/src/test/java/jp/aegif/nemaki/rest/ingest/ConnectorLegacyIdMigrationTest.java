@@ -457,6 +457,27 @@ class ConnectorLegacyIdMigrationTest {
                 "the connector on page two is missing: " + all.size() + " listed");
     }
 
+    @Test
+    @DisplayName("a full selector page with no bookmark to continue from is refused with the "
+            + "typed 503, not a bare IllegalStateException")
+    void theSelectorListingRefusesAFullPageWithoutABookmark() {
+        wire();
+        List<Document> fullPage = new ArrayList<>();
+        for (int i = 0; i < NemakiConfFind.PAGE; i++) {
+            fullPage.add(selectorDoc(connectorProps(String.format("c-%04d", i), "Early")));
+        }
+        // Built BEFORE the stubbing (findCallOf stubs mocks of its own; inside thenReturn it
+        // leaves this stubbing unfinished and the class dies on UnfinishedStubbingException).
+        ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> noBookmark = findCallOf(fullPage, null);
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenReturn(noBookmark);
+
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> service.list(),
+                "a full page with nothing to continue from was returned as complete, or "
+                        + "refused with the type the create path answers 400 for");
+    }
+
     /** One raw document as the selector serves it. */
     private static Document selectorDoc(Map<String, Object> props) {
         Document doc = mock(Document.class);

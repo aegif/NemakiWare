@@ -821,12 +821,16 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
 
     @Override
     public List<ImportProfileDefinition> listScheduledIndexFree() {
+        // The rows the walk could not read are logged by it and not reported further here:
+        // the scheduler has no caller to answer, and refusing the poll would let one broken
+        // row stop every scheduled capture.
         return listOwnedRowsIndexFree("the scheduled profiles", "scheduled-profile enumeration",
-                "is not being scheduled", def -> def.isEnabled() && def.isSchedulerEnabled());
+                "is not being scheduled", def -> def.isEnabled() && def.isSchedulerEnabled())
+                .profiles();
     }
 
     @Override
-    public List<ImportProfileDefinition> listOwnedIndexFree() {
+    public OwnedProfiles listOwnedIndexFree() {
         return listOwnedRowsIndexFree("the profiles", "profile enumeration",
                 "is not being listed", def -> true);
     }
@@ -841,7 +845,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
      * @param context   the log prefix that lets an operator find a skipped row
      * @param consequence what the skip means for the row ("is not being scheduled")
      */
-    private List<ImportProfileDefinition> listOwnedRowsIndexFree(String what, String context,
+    private OwnedProfiles listOwnedRowsIndexFree(String what, String context,
             String consequence, java.util.function.Predicate<ImportProfileDefinition> wanted) {
         CloudantClientWrapper client;
         try {
@@ -851,6 +855,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         }
         String dbName = client.getDatabaseName();
         List<ImportProfileDefinition> listed = new ArrayList<>();
+        List<UninterpretableRow> uninterpretable = new ArrayList<>();
         java.util.function.Consumer<com.ibm.cloud.cloudant.v1.model.DocsResultRow> perRow = row -> {
             String id = row.getId();
             if (row.getError() != null || id == null) {
@@ -879,9 +884,12 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
             } catch (Exception e) {
                 // Standing, not transient: no poll repairs this row, and refusing the whole
                 // enumeration would let one broken row stop every scheduled capture. Named so
-                // an operator can find it.
+                // an operator can find it — and reported to the caller with the raw fields
+                // that say whom it was addressed to, so a caller with someone to answer does
+                // not answer "none" for a recipient it could not read.
                 logger.error("{}: row {} could not be read as a profile and {} ({})",
                         context, id, consequence, e.getMessage());
+                reportUninterpretable(uninterpretable, id, props, e.getMessage());
                 return;
             }
             if (def.getProfileId() == null || def.getProfileId().isBlank()) {
@@ -891,6 +899,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                 // that escaped to the poll's outer catch and stopped every profile after it.
                 // A review traced the second shape of "one broken row".
                 logger.error("{}: row {} has no profileId and {}", context, id, consequence);
+                reportUninterpretable(uninterpretable, id, props, "the row has no profileId");
                 return;
             }
             if (wanted.test(def)) {
@@ -904,7 +913,39 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         } catch (RuntimeException transportFailed) {
             throw new ProfileIndexNotReadyException(transportFailed.getMessage());
         }
-        return listed;
+        return new OwnedProfiles(listed, uninterpretable);
+    }
+
+    /**
+     * Records a row the walk could not read, with the raw fields a caller needs to tell
+     * whether the row was addressed to it. A row whose raw {@code enabled} is the literal
+     * {@code false} is not recorded: it could not have been a recipient of anything.
+     */
+    private static void reportUninterpretable(List<UninterpretableRow> sink, String docId,
+            Map<String, Object> props, String reason) {
+        if (Boolean.FALSE.equals(props.get("enabled"))) {
+            return;
+        }
+        sink.add(new UninterpretableRow(docId, rawString(props.get("profileId")),
+                rawString(props.get("defaultConnectorId")),
+                rawStrings(props.get("allowedConnectorIds")), reason));
+    }
+
+    private static String rawString(Object value) {
+        return value instanceof String s ? s : null;
+    }
+
+    private static List<String> rawStrings(Object value) {
+        if (!(value instanceof List<?> values)) {
+            return null;
+        }
+        List<String> strings = new ArrayList<>();
+        for (Object v : values) {
+            if (v instanceof String s) {
+                strings.add(s);
+            }
+        }
+        return strings;
     }
 
     /** Null, or a value whose text is empty — a row that names no repository either way. */
@@ -1346,6 +1387,12 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                         || !repositoryId.equals(props.get("repositoryId"))) {
                     return;
                 }
+                if (Boolean.FALSE.equals(props.get("enabled"))) {
+                    return;
+                }
+                // After the disabled skip, not before it: a disabled row with no identity
+                // cannot be chosen either, and refusing on it would stop the repository over
+                // a row no rule can read anything from. A review found the order.
                 Object pid = props.get("profileId");
                 if (!(pid instanceof String) || ((String) pid).isBlank()) {
                     // Deserialisable, but with no identity: the uniqueness comparison
@@ -1354,9 +1401,6 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                     throw new IllegalStateException("the profiles of repository '"
                             + repositoryId + "' cannot be listed: row " + id
                             + " has no usable profileId");
-                }
-                if (Boolean.FALSE.equals(props.get("enabled"))) {
-                    return;
                 }
                 Map<String, Object> content = contentOnly(props);
                 content.remove("type");
@@ -1439,10 +1483,17 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
     /**
      * Every row the selector shows — all of its pages, not the first one. The single page
      * this used to return capped every selector listing at 200 rows without saying so.
+     *
+     * <p>A listing that cannot be completed is the typed refusal (503 at the controllers),
+     * not a bare {@code IllegalStateException} — which the create path answers 400 for.
      */
     private List<com.ibm.cloud.cloudant.v1.model.Document> findRawDocs(
             com.ibm.cloud.cloudant.v1.Cloudant cloudant, String dbName, Map<String, Object> selector) {
-        return NemakiConfFind.allMatching(cloudant, dbName, selector);
+        try {
+            return NemakiConfFind.allMatching(cloudant, dbName, selector);
+        } catch (IllegalStateException incomplete) {
+            throw new ProfileIndexNotReadyException(incomplete.getMessage());
+        }
     }
 
     private CloudantClientWrapper getConfClient() {
