@@ -134,9 +134,10 @@ public class IngestWebhookController {
             // real signature failure and sends an operator after the wrong secret. A read
             // that did not answer is 503 here; absence stays 401. No index-free walk is
             // made for that: this runs before the signature is verified, and a walk of the
-            // configuration database per unauthenticated request is an amplifier. The one
-            // row this leaves as 401 is a legacy-id row the startup migration could not
-            // rewrite — reported at every startup.
+            // configuration database per unauthenticated request is an amplifier. What
+            // this leaves as 401 is a legacy-id row the selector answered WITHOUT (see
+            // getOrRefuse's contract): one the startup migration could not rewrite, or one
+            // written after its last pass and not reported until the next.
             connector = connectorDefinitionService.getOrRefuse(connectorId);
         } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotRead) {
             // A row that exists and could not be read as this connector, or a read that

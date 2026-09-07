@@ -80,6 +80,13 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
             results = findBySelector(Map.of(
                     "type", ConnectorDefinition.DOC_TYPE,
                     "connectorId", connectorId), refuseUnanswered);
+        } catch (ConnectorIndexNotReadyException unreadableRow) {
+            // Thrown only by the refusing read: the selector ANSWERED, with a row this node
+            // cannot read as a connector. Not a selector failure — caught by the catch below
+            // it became one, the deterministic row (if readable) was returned over it, and
+            // the refusal that did reach the caller named the wrong reason. A review found
+            // the protection was not one.
+            throw unreadableRow;
         } catch (RuntimeException selectorFailed) {
             logger.debug("selector read for connector {} failed; falling back to the"
                     + " deterministic id: {}", connectorId, selectorFailed.getMessage());

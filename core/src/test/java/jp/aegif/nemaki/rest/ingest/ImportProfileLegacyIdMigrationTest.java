@@ -2258,6 +2258,33 @@ class ImportProfileLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("a row disabled by the STRING \"false\" that the resolver cannot interpret "
+            + "does not refuse the auto-resolution either")
+    void aDisabledByStringRowTheResolverCannotReadDoesNotRefuseTheResolve() {
+        // The literal-only skip left the string to Jackson — which never runs on the row that
+        // matters here, the one Jackson cannot read. The connector listing reads both shapes
+        // as disabled; a review found the two listings disagreeing.
+        wire();
+        selectorAnswersNothing();
+        Map<String, Object> offByString = profileProps("p-off-str-broken", "Off (string)");
+        offByString.put("enabled", "false");
+        offByString.put("retentionDays", "not-a-number");
+        offByString.put("defaultProfile", true);
+        listingAnswers(List.of(
+                row("import_profile_definition:p-off-str-broken", offByString, "1-a"),
+                row("import_profile_definition:p-good", defaultProfileProps("p-good"), "1-b")));
+
+        ImportProfileDefinition resolved = assertDoesNotThrow(
+                () -> service.findDefaultForRepository("bedroom", SourceArchetype.FILE_SHARE, null),
+                "a row disabled by the string \"false\" that the node cannot read refused the "
+                        + "whole resolution");
+
+        assertTrue(resolved != null && "p-good".equals(resolved.getProfileId()),
+                "the disabled row was chosen, or nothing was: "
+                        + (resolved == null ? null : resolved.getProfileId()));
+    }
+
+    @Test
     @DisplayName("an ENABLED row the resolver cannot interpret still refuses — it might have "
             + "been the one")
     void anEnabledRowTheResolverCannotInterpretStillRefuses() {

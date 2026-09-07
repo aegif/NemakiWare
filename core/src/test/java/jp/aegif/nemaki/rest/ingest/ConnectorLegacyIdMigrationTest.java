@@ -522,18 +522,30 @@ class ConnectorLegacyIdMigrationTest {
     }
 
     @Test
-    @DisplayName("getOrRefuse refuses when the selector shows a row it cannot read — skipped, "
-            + "a legacy-id row this node cannot read looked like no row")
+    @DisplayName("getOrRefuse refuses when the selector shows a row it cannot read — even when "
+            + "a readable deterministic row exists beside it")
     void getOrRefuseRefusesWhenTheSelectorShowsARowItCannotRead() {
+        // The cell that told the protection apart: with the deterministic row ABSENT, the
+        // selector-failed branch refused anyway and this read's own refusal was never what
+        // answered. With a readable deterministic row present, the first version returned
+        // it — the unreadable row's refusal had been caught as a selector failure. A review
+        // found the protection was not one.
         wire();
         Map<String, Object> unreadable = connectorProps("c-odd", "Odd");
         unreadable.put("delegateAllFolders", "not-a-boolean");
         selectorShows(row("legacy-c-odd", unreadable, "1-a"));
+        Document readable = mock(Document.class);
+        when(readable.getProperties()).thenReturn(connectorProps("c-odd", "Odd"));
+        when(readable.getRev()).thenReturn("2-b");
+        deterministicReadAnswers("c-odd", readable);
 
-        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+        ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused = assertThrows(
+                ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
                 () -> service.getOrRefuse("c-odd"),
-                "a row the selector showed but this node could not read was skipped, and the "
-                        + "read answered 'no such connector'");
+                "a row the selector showed but this node could not read was passed over, and "
+                        + "the readable deterministic row answered in its place");
+        assertTrue(refused.getMessage().contains("could not be read as a connector"),
+                "refused, but for a reason that was not the unreadable row: " + refused.getMessage());
     }
 
     @Test

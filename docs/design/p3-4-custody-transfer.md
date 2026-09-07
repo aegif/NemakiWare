@@ -7594,7 +7594,7 @@ Failures 0 (残る 38 件は `CmisConnectionException` — サーバ未起動)�
   検証も同じ (404 → 503)。存在の開示 (503 か 401 か) は GET 検証が既に受け入れている前提
   (id は運用者が登録した URL の中) と同じ。錠 5 本 (在るが読めない / 確かめられない /
   読みが throw / 不在は 401 のまま / GET)、コントロール **WL / WM**。
-  **→ この直し方は 2 巡目で欠陥と判定され、3 巡目で取り下げた** (下記): 署名検証より前に
+  **→ この直し方は 2 巡目で欠陥と判定され、その処置 (`dece81f7d`) で取り下げた** (下記): 署名検証より前に
   `existsIndexFree` の全走査を置いたので、未認証の 1 リクエストで `nemaki_conf` を全走査
   できた。「GET 検証と同じ前提」も範囲が違う (GET が開示していたのは有効な Dropbox
   コネクタだけ) と指摘された。
@@ -7712,7 +7712,7 @@ connector controller 23、profile controller (hidden) 34、folder connector 24�
 スケジューラ 2 クラス・Graph 検証 1 クラス — Failures 0。**残る 373 本はこの木では
 未測定** — 通しは収束後。
 
-### 3 巡目 (Codex + サブエージェント、並行) — P2 (重複含め) 6・P3 6、両者 `NOT CONVERGED`
+### 3 巡目 (Codex + サブエージェント、並行) — P2 (重複含め) 6・P3 5、両者 `NOT CONVERGED`
 
 コミット `dece81f7d` に対して。P1 なし。両者が独立に同じ 2 件を挙げた。
 
@@ -7722,14 +7722,16 @@ connector controller 23、profile controller (hidden) 34、folder connector 24�
   この枝を typed refusal に (`selectorAnswered`)。併せて (サブ P3-3a) セレクタが**見せた**行を
   逆直列化できずに落とす `findBySelector` の skip も、refusing read では refusal に
   (`findBySelector(selector, refuseUnreadable)`)。`get()` は両方とも従来どおり null。
-  錠 3 本 + `get()` の control 錠 1 本、コントロール **XI / XL**。US を span に張り直し。
+  錠 2 本 + `get()` の control 錠 1 本、コントロール **XI / XL**。US を span に張り直し。
+  **→ 4 巡目が、この 2 つ目の refusal が独立した保護になっていないことを見つけた (下記)。**
 - **P2 (Codex) / P2-1 (サブ) — 「`get()` の呼び出し元は全員 null の後に索引不要の確認をする」は
   偽。** `/subscribe` 端点 (404)、`resolveConnectorArchetype` (「不明」として別の parser)、
   スケジューラの `:874`、`validateSchedulerParams` など、null をそのまま不在として使う
-  呼び出し元が 10 か所以上あり、**台帳自身が §62 (6599-6601 行) で記録済み**だった。
-  `get()` を fail-open に残す根拠として全称で書いたのが誤り。正直な根拠は「呼び出し元の挙動
-  変更はこのバッチの範囲外なので、受信側だけに厳格版を与えた」。interface と impl の javadoc を
-  その形に書き換え、§62 の記録を参照。**それらの呼び出し元は直していない (残件)。**
+  呼び出し元が main に 18 か所あり、**台帳自身が §62 (6599-6601 行) でその種類と例を記録
+  済み**だった (全列挙ではない — 4 巡目の指摘で限定)。`get()` を fail-open に残す根拠として
+  全称で書いたのが誤り。正直な根拠は「呼び出し元の挙動変更はこのバッチの範囲外なので、
+  受信側だけに厳格版を与えた」。interface と impl の javadoc をその形に書き換え、§62 の記録を
+  参照。**それらの呼び出し元は直していない (残件)。**
 - **P2 (Codex) / P3-2 (サブ) — 「存在の開示も消える」は過大。** 上記 2 巡目の記述に訂正を入れた。
 - **P2 (Codex) — `addresseeUnknown` の受信側に錠が無い。** 受信側の錠 + **XJ** (受信側が
   metadata を無視する細工)。全コネクタ拒否の trade は interface 契約 (P3-1 のサブ指摘:
@@ -7754,3 +7756,43 @@ TX / US / VX〜XL) すべてを測定して 45/45 FIRED** (3,711 秒)、復元�
 クラス: webhook 23、profile 84、connector 63、canonical 80、connector controller 23、
 profile controller (hidden) 34、folder connector 24、Graph 検証 11 — Failures 0。
 **残る 371 本はこの木では未測定** — 通しは収束後。
+
+### 4 巡目 (Codex + サブエージェント、並行) — P2 (両者同じ) 1・P3 7、両者 `NOT CONVERGED`
+
+コミット `022ef3dd6` に対して。P1 なし。両者が独立に同じ 1 件を P2 に挙げ、それ以外は文書。
+
+- **P2 (両者) — 「セレクタが見せた行を読めなければ拒否」は独立した保護ではなかった。**
+  `findBySelector(selector, true)` が投げる `ConnectorIndexNotReadyException` は
+  `RuntimeException` なので、直後の `catch (RuntimeException selectorFailed)` に握られて
+  「セレクタが失敗した」扱いになっていた。読める確定的 ID 行があればそれが返り (契約は無条件に
+  拒否)、無ければ XI の枝が「セレクタが答えなかった」という**誤った理由**で拒否していた
+  (本当の理由は DEBUG にしか残らず、旧 skip 経路の WARN より可観測性が下がっていた)。
+  3 巡目の錠は「確定的行が無い」セルしか測っておらず、XI の枝の別名だった。専用の catch で
+  rethrow し、錠を「読める確定的行が在っても拒否し、理由が逆直列化の失敗である」セルに変え、
+  XL をその catch (呼び出し側) に狙い直した。
+- **P3 (サブ) — `listByRepositoryIndexFree` の文字列 `"false"`。** 「Jackson と呼び出し元が
+  文字列を扱う」は Jackson が成功した行にしか当てはまらず、`enabled: "false"` で他の欄が壊れた
+  行は自動解決を止めていた。コネクタ側と同じ 2 形を `isRawDisabled` で読む。錠 + **XM**、
+  WI / WT を張り直し。`isRawDisabled` はコネクタ側の式と同じ形 (trim なし) に揃えた。
+- **P3 (Codex) — XK / XL が helper を壊していた。** 両方とも呼び出し側に狙い直した。
+  **P3 (サブ) — US の span 置換が 3 つの保護を同時に外していた** → `what` が名指す
+  1 つ (確定的行の connectorId 不一致検査) だけを壊す形に狭めた。
+- **P3 (サブ) — 受信側のコメントが 3 巡目の限定から取り残されていた** (読めない旧 ID 行は
+  503、直近の移行より後の行は次の起動まで報告されない) → 直した。
+- **P3 (サブ) — 台帳の数え間違い 2 か所** (3 巡目の錠 3 本 → 2 本 + control 1 本、P3 6 → 5) と
+  **巡番号の矛盾 1 か所** (取り下げは 3 巡目でなく 2 巡目の処置) → 直した。
+  **P3 (Codex) — §62 が「10 か所以上」を列挙しているかのような書き方** → 「種類と例」に
+  限定した (main の呼び出し元は 18 か所)。`reportUninterpretable` の javadoc も「リテラル
+  だけ」のままだった → 直した。
+- **P3 (サブ) — 測定段落のテスト本数が `@Test` の数と合わない**: canonical 80 / folder 24 /
+  connector controller 23 に対し `@Test` は 78 / 23 / 22。**差は完全修飾の
+  `@org.junit.jupiter.api.Test` で書いた錠** (2 / 1 / 1 本) で、surefire の "Tests run" は
+  80 / 24 / 23 — 台帳の値はその出力を写したもので正しい。数え方の注記をここに残す。
+
+**この巡の測定**: コントロールは **417 本** (新設 1: XM、狙い直し XK / XL / US、張り直し
+WI / WT)。変更したファイルを狙う **109 本を compile-check (109/109)** した上で、バッチの
+**46 本 (PW / QC / VT / TX / US / VX〜XM) すべてを測定して 46/46 FIRED** (3,711 秒 — 4 巡目と
+同じ秒数だが別の実行で、ログの日時と発火一覧で確かめた)、復元後 clean。触ったテストクラス:
+webhook 23、profile 85、connector 63、canonical 80、connector controller 23、profile
+controller (hidden) 34、folder connector 24、Graph 検証 11 — Failures 0。**残る 371 本は
+この木では未測定** — 通しは収束後。

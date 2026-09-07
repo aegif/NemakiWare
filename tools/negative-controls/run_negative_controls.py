@@ -3665,11 +3665,11 @@ CONTROLS = [
         id="US",
         what="get() returns a deterministic row whose body names another connectorId",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
-        # Re-anchored as a span in round 4 of the second batch: the null branch inside
-        # this block gained the selector-failed refusal, so the exact text moved.
-        find_span=('        if (!results.isEmpty()) {\n            ConnectorDefinition first = results.get(0);',
-                   '        } catch (RuntimeException idReadFailed) {'),
-        replace='        if (!results.isEmpty()) {\n            return results.get(0);\n        }\n        // The profile twin of this fallback, mirrored: a selector that answers nothing while\n        // its index rebuilds answers the same as one that has no such row, and every caller\n        // reads null as absence. One id-addressed read, on the miss path only.\n        try {\n            CloudantClientWrapper client = getConfClient();\n            com.ibm.cloud.cloudant.v1.model.Document row = readByDeterministicId(\n                    client.getClient(), client.getDatabaseName(), connectorId);\n            return row == null ? null : fromRawDoc(row);\n        } catch (RuntimeException idReadFailed) {',
+        # Narrowed in round 5 of the second batch to the ONE check its `what` names: the
+        # span version removed three protections at once (first-row identity, the
+        # selector-failed refusal, and this), and a firing could not be attributed.
+        find='            if (fromId == null || !connectorId.equals(fromId.getConnectorId())) {',
+        replace='            if (false) {',
         test='ConnectorLegacyIdMigrationTest',
         expect_fail=['aDeterministicRowThatNamesAnotherConnectorIsNotReturned'],
     ),
@@ -4179,7 +4179,8 @@ CONTROLS = [
         what="a disabled row the resolver cannot interpret refuses the whole repository's "
              "auto-resolution again — over a row that could not have been chosen",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
-        find='                if (Boolean.FALSE.equals(props.get("enabled"))) {\n'
+        # Re-anchored in round 5 of the second batch (the skip reads both disabled shapes).
+        find='                if (isRawDisabled(props.get("enabled"))) {\n'
              '                    return;\n'
              '                }\n',
         replace='',
@@ -4287,7 +4288,8 @@ CONTROLS = [
         what="the identity check runs before the disabled skip again — a disabled row with no "
              "profileId refuses every write of its repository",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
-        find_span=('                if (Boolean.FALSE.equals(props.get("enabled"))) {\n'
+        # Re-anchored in round 5 of the second batch (the skip reads both disabled shapes).
+        find_span=('                if (isRawDisabled(props.get("enabled"))) {\n'
                    '                    return;\n'
                    '                }\n'
                    '                // After the disabled skip, not before it:',
@@ -4299,7 +4301,7 @@ CONTROLS = [
                 '                            + repositoryId + "\' cannot be listed: row " + id\n'
                 '                            + " has no usable profileId");\n'
                 '                }\n'
-                '                if (Boolean.FALSE.equals(props.get("enabled"))) {\n'
+                '                if (isRawDisabled(props.get("enabled"))) {\n'
                 '                    return;\n'
                 '                }',
         test='ImportProfileLegacyIdMigrationTest',
@@ -4482,8 +4484,9 @@ CONTROLS = [
         what="a row disabled by the string \"false\" is reported as a possible recipient — the "
              "profile listing reads the string differently from the connector listing again",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
-        find='                || (enabled instanceof String s && "false".equalsIgnoreCase(s.trim()));',
-        replace='                || false;',
+        # Re-targeted in round 5 at the CALL SITE (the reporting of a row), not the helper.
+        find='        if (isRawDisabled(props.get("enabled"))) {\n            return;\n        }\n        Object defaultConnector',
+        replace='        if (Boolean.FALSE.equals(props.get("enabled"))) {\n            return;\n        }\n        Object defaultConnector',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest'],
     ),
@@ -4492,10 +4495,36 @@ CONTROLS = [
         what="the refusing read skips a row the selector shows but cannot read — a legacy-id row "
              "this node cannot read looks like no row",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
-        find='                if (refuseUnreadable) {',
-        replace='                if (false) {',
+        # Re-targeted in round 5 at the CALL SITE: the dedicated catch that keeps the
+        # unreadable row's refusal from being swallowed as a selector failure. Without it the
+        # readable deterministic row answers in the unreadable row's place.
+        find='        } catch (ConnectorIndexNotReadyException unreadableRow) {\n'
+             '            // Thrown only by the refusing read: the selector ANSWERED, with a row this node\n'
+             '            // cannot read as a connector. Not a selector failure — caught by the catch below\n'
+             '            // it became one, the deterministic row (if readable) was returned over it, and\n'
+             '            // the refusal that did reach the caller named the wrong reason. A review found\n'
+             '            // the protection was not one.\n'
+             '            throw unreadableRow;\n'
+             '        } catch (RuntimeException selectorFailed) {',
+        replace='        } catch (RuntimeException selectorFailed) {',
         test='ConnectorLegacyIdMigrationTest',
         expect_fail=['getOrRefuseRefusesWhenTheSelectorShowsARowItCannotRead'],
+    ),
+    dict(
+        id="XM",
+        what="the repository listing skips only the literal false again — a row disabled by the "
+             "string \"false\" that the node cannot read refuses the whole auto-resolution",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                if (isRawDisabled(props.get("enabled"))) {\n'
+             '                    return;\n'
+             '                }\n'
+             '                // After the disabled skip, not before it:',
+        replace='                if (Boolean.FALSE.equals(props.get("enabled"))) {\n'
+                '                    return;\n'
+                '                }\n'
+                '                // After the disabled skip, not before it:',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aDisabledByStringRowTheResolverCannotReadDoesNotRefuseTheResolve'],
     ),
     dict(
         id="HA",

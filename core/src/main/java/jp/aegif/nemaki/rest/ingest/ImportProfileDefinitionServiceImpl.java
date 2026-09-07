@@ -918,8 +918,9 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
 
     /**
      * Records a row the walk could not read, with the raw fields a caller needs to tell
-     * whether the row was addressed to it. A row whose raw {@code enabled} is the literal
-     * {@code false} is not recorded: it could not have been a recipient of anything.
+     * whether the row was addressed to it. A row whose raw {@code enabled} says disabled
+     * (the literal {@code false} or the string) is not recorded: it could not have been a
+     * recipient of anything.
      */
     private static void reportUninterpretable(List<UninterpretableRow> sink, String docId,
             Map<String, Object> props, String reason) {
@@ -940,14 +941,14 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
     }
 
     /**
-     * The literal {@code false}, or the string {@code "false"} — the connector listing reads
-     * a disabled row both ways, and a row this node cannot interpret has no other reader
-     * to normalise the string. Kept apart from {@code listByRepositoryIndexFree}, which
-     * skips only the literal and leaves the string to Jackson and the caller's filter.
+     * The literal {@code false}, or the string {@code "false"} — the same two shapes the
+     * connector listing reads as disabled. A row this node cannot interpret has no other
+     * reader to normalise the string, so the raw check has to accept both; an absent value
+     * is not a "no".
      */
     private static boolean isRawDisabled(Object enabled) {
         return Boolean.FALSE.equals(enabled)
-                || (enabled instanceof String s && "false".equalsIgnoreCase(s.trim()));
+                || "false".equalsIgnoreCase(String.valueOf(enabled));
     }
 
     private static String rawString(Object value) {
@@ -1382,11 +1383,13 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
      * create (400) and update (503) of its repository, over fields the rule never looks at.
      * Null interprets the whole row, which the auto-resolver needs because it returns it.
      *
-     * <p>A row that says {@code enabled: false} is not interpreted either way. Every caller's
+     * <p>A row that says {@code enabled: false} — the literal or the string, the two shapes
+     * the connector listing reads as disabled — is not interpreted either way. Every caller's
      * rule applies to enabled rows only, so it cannot change an answer — and refusing on a
      * disabled row this node cannot read stopped the auto-resolution of a whole repository
-     * over a row that could not have been chosen. Only the literal boolean is read this way;
-     * anything else is interpreted as before and filtered by the caller.
+     * over a row that could not have been chosen. (The first version read only the literal
+     * and left the string to Jackson — which never runs on the row that matters here, the
+     * one Jackson cannot read. A review found it.) An absent value is not a "no".
      */
     private List<ImportProfileDefinition> listByRepositoryIndexFree(String repositoryId,
             boolean creating, java.util.Set<String> onlyFields) {
@@ -1416,7 +1419,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                         || !repositoryId.equals(props.get("repositoryId"))) {
                     return;
                 }
-                if (Boolean.FALSE.equals(props.get("enabled"))) {
+                if (isRawDisabled(props.get("enabled"))) {
                     return;
                 }
                 // After the disabled skip, not before it: a disabled row with no identity
