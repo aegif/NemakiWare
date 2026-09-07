@@ -56,9 +56,11 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
 
     /**
      * The one read behind {@link #get} and {@link #getOrRefuse}; they differ only in what a
-     * failed id-addressed read becomes — null (every {@code get} caller follows a null with
-     * an index-free check of its own) or the typed refusal (the webhook receiver, which may
-     * not walk the database for an unauthenticated request).
+     * read that did not answer becomes. {@code get} answers null for it, as it always has —
+     * its callers are outside this change, and the ledger lists the ones that take that null
+     * as absence without an index-free check of their own. {@code getOrRefuse} refuses: the
+     * webhook receiver may not walk the database for an unauthenticated request, so it has
+     * nothing to follow a null with.
      */
     private ConnectorDefinition read(String connectorId, boolean refuseUnanswered) {
         // Null means "no such connector", not a crash: Map.of rejects null values with an NPE,
@@ -70,14 +72,19 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
         // RuntimeException and became a 500 in front of verbs this batch made index-free. A
         // failed selector is not an answer — fall through to the id-addressed read.
         List<ConnectorDefinition> results;
+        boolean selectorAnswered = true;
         try {
+            // For the refusing read a row the selector shows but cannot deserialise is not
+            // skipped: skipped, a legacy-id row that this node cannot read looked like no
+            // row at all. A review found the skip one layer below the refusal.
             results = findBySelector(Map.of(
                     "type", ConnectorDefinition.DOC_TYPE,
-                    "connectorId", connectorId));
+                    "connectorId", connectorId), refuseUnanswered);
         } catch (RuntimeException selectorFailed) {
             logger.debug("selector read for connector {} failed; falling back to the"
                     + " deterministic id: {}", connectorId, selectorFailed.getMessage());
             results = List.of();
+            selectorAnswered = false;
         }
         if (!results.isEmpty()) {
             ConnectorDefinition first = results.get(0);
@@ -93,6 +100,15 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
             com.ibm.cloud.cloudant.v1.model.Document row = readByDeterministicId(
                     client.getClient(), client.getDatabaseName(), connectorId);
             if (row == null) {
+                if (refuseUnanswered && !selectorAnswered) {
+                    // The deterministic id has no row and the selector did not answer: a row
+                    // under a legacy generated id cannot be excluded, so this is not "no such
+                    // connector". A review found the branch answering null.
+                    throw new ConnectorIndexNotReadyException("connector " + connectorId
+                            + " could not be read: the selector did not answer and no row"
+                            + " exists under its deterministic id, so a row under a legacy id"
+                            + " cannot be excluded");
+                }
                 return null;
             }
             ConnectorDefinition fromId = fromRawDoc(row);
@@ -803,8 +819,17 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
         }
     }
 
-    @SuppressWarnings("unchecked")
     private List<ConnectorDefinition> findBySelector(Map<String, Object> selector) {
+        return findBySelector(selector, false);
+    }
+
+    /**
+     * @param refuseUnreadable when true, a row the selector shows but this node cannot read
+     *                         as a connector refuses instead of being skipped — for the read
+     *                         whose null the caller takes as absence with nothing to follow
+     */
+    private List<ConnectorDefinition> findBySelector(Map<String, Object> selector,
+            boolean refuseUnreadable) {
         CloudantClientWrapper client = getConfClient();
         String dbName = client.getDatabaseName();
         com.ibm.cloud.cloudant.v1.Cloudant cloudant = client.getClient();
@@ -819,6 +844,10 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
                 props.remove("type");
                 results.add(MAPPER.convertValue(props, ConnectorDefinition.class));
             } catch (Exception e) {
+                if (refuseUnreadable) {
+                    throw new ConnectorIndexNotReadyException("a connector row the selector"
+                            + " shows could not be read as a connector: " + e.getMessage());
+                }
                 logger.warn("Failed to deserialize connector definition: {}", e.getMessage());
             }
         }

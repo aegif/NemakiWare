@@ -3485,9 +3485,11 @@ CONTROLS = [
         what="the connector selector read is unwrapped again — a Mango read that throws "
              "becomes a 500",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
-        find_span=('        List<ConnectorDefinition> results;\n        try {',
-                   '            results = List.of();\n        }'),
-        replace='        List<ConnectorDefinition> results = findBySelector(Map.of(\n                "type", ConnectorDefinition.DOC_TYPE,\n                "connectorId", connectorId));',
+        # Re-anchored in round 4 of the second batch (the read tracks whether the selector
+        # answered; the flag stays declared so the code below it still compiles).
+        find_span=('        List<ConnectorDefinition> results;\n        boolean selectorAnswered = true;\n        try {',
+                   '            results = List.of();\n            selectorAnswered = false;\n        }'),
+        replace='        List<ConnectorDefinition> results = findBySelector(Map.of(\n                "type", ConnectorDefinition.DOC_TYPE,\n                "connectorId", connectorId), refuseUnanswered);\n        boolean selectorAnswered = true;',
         test='ConnectorLegacyIdMigrationTest',
         expect_fail=['aFailingSelectorDoesNotEscape'],
     ),
@@ -3663,7 +3665,10 @@ CONTROLS = [
         id="US",
         what="get() returns a deterministic row whose body names another connectorId",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
-        find='        if (!results.isEmpty()) {\n            ConnectorDefinition first = results.get(0);\n            if (connectorId.equals(first.getConnectorId())) {\n                return first;\n            }\n        }\n        // The profile twin of this fallback, mirrored: a selector that answers nothing while\n        // its index rebuilds answers the same as one that has no such row, and every caller\n        // reads null as absence. One id-addressed read, on the miss path only.\n        try {\n            CloudantClientWrapper client = getConfClient();\n            com.ibm.cloud.cloudant.v1.model.Document row = readByDeterministicId(\n                    client.getClient(), client.getDatabaseName(), connectorId);\n            if (row == null) {\n                return null;\n            }\n            ConnectorDefinition fromId = fromRawDoc(row);\n            if (fromId == null || !connectorId.equals(fromId.getConnectorId())) {\n                throw new ConnectorIndexNotReadyException("connector " + connectorId\n                        + " exists but could not be read as that connector");\n            }\n            return fromId;\n        } catch (ConnectorIndexNotReadyException mismatch) {\n            throw mismatch;\n        } catch (RuntimeException idReadFailed) {',
+        # Re-anchored as a span in round 4 of the second batch: the null branch inside
+        # this block gained the selector-failed refusal, so the exact text moved.
+        find_span=('        if (!results.isEmpty()) {\n            ConnectorDefinition first = results.get(0);',
+                   '        } catch (RuntimeException idReadFailed) {'),
         replace='        if (!results.isEmpty()) {\n            return results.get(0);\n        }\n        // The profile twin of this fallback, mirrored: a selector that answers nothing while\n        // its index rebuilds answers the same as one that has no such row, and every caller\n        // reads null as absence. One id-addressed read, on the miss path only.\n        try {\n            CloudantClientWrapper client = getConfClient();\n            com.ibm.cloud.cloudant.v1.model.Document row = readByDeterministicId(\n                    client.getClient(), client.getDatabaseName(), connectorId);\n            return row == null ? null : fromRawDoc(row);\n        } catch (RuntimeException idReadFailed) {',
         test='ConnectorLegacyIdMigrationTest',
         expect_fail=['aDeterministicRowThatNamesAnotherConnectorIsNotReturned'],
@@ -4222,7 +4227,7 @@ CONTROLS = [
              "answer 'no profile' (200) for a recipient that exists",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
         find_span=('            if (broken.namesConnector(connId)) {',
-                   '                        + " names it and could not be read as a profile (" + broken.reason() + ")");\n            }'),
+                   '                        + " and could not be read as a profile (" + broken.reason() + ")");\n            }'),
         replace='            if (broken.namesConnector(connId)) {\n                continue;\n            }',
         test='IngestWebhookBoxDropboxTest',
         expect_fail=['aRecipientRowThatCannotBeInterpretedIsA503NotNoProfile'],
@@ -4450,6 +4455,47 @@ CONTROLS = [
                 '        Map<String, Object> body',
         test='FolderConnectorControllerTest',
         expect_fail=['theListAnswers503WhenTheListingCannotBeCompleted'],
+    ),
+    # ── round 4 of the second batch: what the third review round found ──
+    dict(
+        id="XI",
+        what="a selector that did not answer plus an absent deterministic row reads as 'no such "
+             "connector' again — a legacy-id row was never excluded",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='                if (refuseUnanswered && !selectorAnswered) {',
+        replace='                if (false) {',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['getOrRefuseRefusesWhenTheSelectorFailedAndTheIdReadFindsNothing'],
+    ),
+    dict(
+        id="XJ",
+        what="the receiver ignores a row whose addressee cannot be read — 'names nobody I can "
+             "see' read as 'does not name me'",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='            if (broken.namesConnector(connId)) {',
+        replace='            if (!broken.addresseeUnknown() && broken.namesConnector(connId)) {',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['aRowWhoseAddresseeCannotBeReadRefusesEveryConnectorsDispatch'],
+    ),
+    dict(
+        id="XK",
+        what="a row disabled by the string \"false\" is reported as a possible recipient — the "
+             "profile listing reads the string differently from the connector listing again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                || (enabled instanceof String s && "false".equalsIgnoreCase(s.trim()));',
+        replace='                || false;',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest'],
+    ),
+    dict(
+        id="XL",
+        what="the refusing read skips a row the selector shows but cannot read — a legacy-id row "
+             "this node cannot read looks like no row",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='                if (refuseUnreadable) {',
+        replace='                if (false) {',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['getOrRefuseRefusesWhenTheSelectorShowsARowItCannotRead'],
     ),
     dict(
         id="HA",

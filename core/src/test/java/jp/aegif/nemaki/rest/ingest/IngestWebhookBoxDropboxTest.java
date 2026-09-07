@@ -339,6 +339,25 @@ class IngestWebhookBoxDropboxTest {
     }
 
     @Test
+    void aRowWhoseAddresseeCannotBeReadRefusesEveryConnectorsDispatch() throws Exception {
+        // The row's connector fields could not be read, so whom it addresses is unknown: the
+        // receiver must not read "names nobody I can see" as "does not name me". This is the
+        // receiver-side lock; the service-side one only shows the record answering true.
+        String secret = "dbxsecret";
+        connector("c-dbx", "dropbox", secret);
+        ImportProfileDefinition readable = profileFor("c-dbx", Map.of("folderPath", "/Documents"));
+        when(profileService.listOwnedIndexFree()).thenReturn(owned(List.of(readable), List.of(
+                new ImportProfileDefinitionService.UninterpretableRow(
+                        "import_profile_definition:p-odd", "p-odd", null, null, true,
+                        "retentionDays: not a number"))));
+
+        mockMvc.perform(signedDropboxPost("c-dbx", secret))
+                .andExpect(status().isServiceUnavailable());
+
+        verify(schedulerService, never()).authorizeDelegatedFetch(any(), any());
+    }
+
+    @Test
     void anUnwiredProfileServiceIsA503NotNoProfile() throws Exception {
         // The receiver answered "no profile" (200) when its profile service was not wired —
         // "could not ask" with the value of "asked, none", the arm this batch closes

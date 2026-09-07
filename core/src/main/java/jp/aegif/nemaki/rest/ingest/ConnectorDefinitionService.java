@@ -11,17 +11,26 @@ public interface ConnectorDefinitionService {
 
     /**
      * As {@link #get(String)}, except that a read which could not be ANSWERED refuses.
-     * {@code get} answers null for a failed id-addressed read and for absence alike, and its
-     * callers follow a null with an index-free check of their own; a caller that may not
-     * afford that walk — the webhook receiver, before any signature is verified — reported
-     * the first as the second. Null here means the selector and the deterministic-id read
-     * both answered "no such row". A row saved under a legacy generated id that the startup
-     * migration could not rewrite still answers null: it is reported at every startup, and
-     * this read does not walk.
+     * {@code get} answers null for a failed read and for absence alike; that is unchanged
+     * here, and its callers are outside this change (the design ledger lists the ones that
+     * take the null as absence without an index-free check of their own). The webhook
+     * receiver resolves its connector before any signature is verified and may not walk the
+     * database for an unauthenticated request, so it has nothing to follow a null with —
+     * this read refuses instead.
+     *
+     * <p>Null means: the deterministic-id read answered "no such row", AND the selector
+     * answered (empty, or with rows it could read that were not this connector's). A selector
+     * that failed leaves a legacy-id row unexcluded and refuses; a selector that shows a row
+     * this node cannot read refuses. What remains as null is a row under a legacy generated
+     * id that the selector answered WITHOUT — the startup migration rewrites such rows and
+     * reports the ones it could not, but a row written after the last migration pass (an
+     * older node's, during a rolling upgrade) is not reported until the next one, and whether
+     * a rebuilding index leaves an existing row out is not measured. This read does not walk.
      *
      * @throws ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException when the row
-     *         exists but could not be read as this connector, or when the id-addressed read
-     *         failed with anything other than "not found"
+     *         exists but could not be read as this connector, when the id-addressed read
+     *         failed with anything other than "not found", when the selector failed and no
+     *         deterministic row exists, or when the selector shows a row that cannot be read
      */
     ConnectorDefinition getOrRefuse(String connectorId);
 

@@ -505,6 +505,52 @@ class ConnectorLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("getOrRefuse refuses when the selector FAILED and the deterministic id has no "
+            + "row — a legacy-id row cannot be excluded")
+    void getOrRefuseRefusesWhenTheSelectorFailedAndTheIdReadFindsNothing() {
+        // The first version answered null here: the selector's failure was swallowed into
+        // an empty list, the id read said NotFound, and "both reads answered no such row" was
+        // the contract's wording for a read that had not answered. A review found it.
+        wire();
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenThrow(new RuntimeException("index building"));
+
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> service.getOrRefuse("c-maybe-legacy"),
+                "a selector that did not answer plus an absent deterministic row was reported "
+                        + "as 'no such connector'");
+    }
+
+    @Test
+    @DisplayName("getOrRefuse refuses when the selector shows a row it cannot read — skipped, "
+            + "a legacy-id row this node cannot read looked like no row")
+    void getOrRefuseRefusesWhenTheSelectorShowsARowItCannotRead() {
+        wire();
+        Map<String, Object> unreadable = connectorProps("c-odd", "Odd");
+        unreadable.put("delegateAllFolders", "not-a-boolean");
+        selectorShows(row("legacy-c-odd", unreadable, "1-a"));
+
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> service.getOrRefuse("c-odd"),
+                "a row the selector showed but this node could not read was skipped, and the "
+                        + "read answered 'no such connector'");
+    }
+
+    @Test
+    @DisplayName("get() still skips a row the selector cannot read and answers null — its "
+            + "contract is unchanged")
+    void getStillSkipsARowTheSelectorCannotRead() {
+        wire();
+        Map<String, Object> unreadable = connectorProps("c-odd", "Odd");
+        unreadable.put("delegateAllFolders", "not-a-boolean");
+        selectorShows(row("legacy-c-odd", unreadable, "1-a"));
+
+        assertEquals(null, service.get("c-odd"),
+                "get() started refusing on a row it cannot read — its callers are outside "
+                        + "this change");
+    }
+
+    @Test
     @DisplayName("getOrRefuse still answers null when both reads answer 'no such row' — the "
             + "control")
     void getOrRefuseAnswersNullWhenBothReadsAnswerAbsent() {

@@ -153,10 +153,14 @@ public interface ImportProfileDefinitionService {
      * import resolves no row for them in any repository. A row that cannot be interpreted is
      * logged and reported in {@code uninterpretable()} with its raw connector fields — not
      * dropped: the receiver refuses (503) when such a row names its connector, and ignores it
-     * otherwise, so one broken row stops the webhooks of the connector it names and no other.
-     * Rows whose raw {@code enabled} is {@code false} are not reported: they could not have
-     * been recipients. Throws {@code ProfileIndexNotReadyException} when the walk cannot be
-     * completed — the caller must not read that as an empty list.
+     * otherwise, so one broken row stops the webhooks of the connector it names and no other
+     * — except a row whose connector fields themselves cannot be read, which names every
+     * connector ({@link UninterpretableRow#addresseeUnknown()}): the trade is one such row
+     * stopping every webhook until it is repaired, against an event to it being consumed as
+     * "no profile". Rows whose raw {@code enabled} is {@code false} (the literal, or the
+     * string) are not reported: they could not have been recipients. Throws
+     * {@code ProfileIndexNotReadyException} when the walk cannot be completed — the caller
+     * must not read that as an empty list.
      */
     OwnedProfiles listOwnedIndexFree();
 

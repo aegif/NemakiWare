@@ -923,7 +923,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
      */
     private static void reportUninterpretable(List<UninterpretableRow> sink, String docId,
             Map<String, Object> props, String reason) {
-        if (Boolean.FALSE.equals(props.get("enabled"))) {
+        if (isRawDisabled(props.get("enabled"))) {
             return;
         }
         Object defaultConnector = props.get("defaultConnectorId");
@@ -937,6 +937,17 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         sink.add(new UninterpretableRow(docId, rawString(props.get("profileId")),
                 rawString(defaultConnector), rawStrings(allowedConnectors), addresseeUnknown,
                 reason));
+    }
+
+    /**
+     * The literal {@code false}, or the string {@code "false"} — the connector listing reads
+     * a disabled row both ways, and a row this node cannot interpret has no other reader
+     * to normalise the string. Kept apart from {@code listByRepositoryIndexFree}, which
+     * skips only the literal and leaves the string to Jackson and the caller's filter.
+     */
+    private static boolean isRawDisabled(Object enabled) {
+        return Boolean.FALSE.equals(enabled)
+                || (enabled instanceof String s && "false".equalsIgnoreCase(s.trim()));
     }
 
     private static String rawString(Object value) {

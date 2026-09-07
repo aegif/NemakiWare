@@ -1295,12 +1295,20 @@ class ImportProfileLegacyIdMigrationTest {
         offAndBroken.put("enabled", false);
         offAndBroken.put("retentionDays", "not-a-number");
         offAndBroken.put("defaultConnectorId", "c-dbx");
+        // The string form of a disabled row, as the connector listing reads it too: a row
+        // this node cannot interpret has no other reader to normalise the string, so it is
+        // not reported either. A review found the two listings reading "false" differently.
+        Map<String, Object> offAsStringAndBroken = profileProps("p-off-str-broken", "Off (string)");
+        offAsStringAndBroken.put("enabled", "false");
+        offAsStringAndBroken.put("retentionDays", "not-a-number");
+        offAsStringAndBroken.put("defaultConnectorId", "c-dbx");
         listingAnswers(List.of(
                 row("a1b2c3-generated", legacy, "1-a"),
                 row("import_profile_definition:p-off", disabled, "1-b"),
                 row("import_profile_definition:p-nobody", unowned, "1-c"),
                 row("import_profile_definition:p-broken", broken, "1-d"),
-                row("import_profile_definition:p-off-broken", offAndBroken, "1-e")));
+                row("import_profile_definition:p-off-broken", offAndBroken, "1-e"),
+                row("import_profile_definition:p-off-str-broken", offAsStringAndBroken, "1-f")));
 
         ImportProfileDefinitionService.OwnedProfiles owned = service.listOwnedIndexFree();
         List<String> listed = owned.profiles().stream()
@@ -1311,8 +1319,9 @@ class ImportProfileLegacyIdMigrationTest {
                         + "a disabled one is listed (the receiver filters enabled itself), and "
                         + "a row that cannot be interpreted is not listed as read: " + listed);
         assertEquals(1, owned.uninterpretable().size(),
-                "the rows the walk could not read are not reported as such (a disabled one is "
-                        + "not a recipient and must not be): " + owned.uninterpretable());
+                "the rows the walk could not read are not reported as such (a disabled one — "
+                        + "literal or string — is not a recipient and must not be): "
+                        + owned.uninterpretable());
         ImportProfileDefinitionService.UninterpretableRow reported = owned.uninterpretable().get(0);
         assertEquals("import_profile_definition:p-broken", reported.docId());
         assertEquals("p-broken", reported.profileId());
@@ -1477,7 +1486,8 @@ class ImportProfileLegacyIdMigrationTest {
                     com.ibm.cloud.cloudant.v1.model.PostFindOptions options = call.getArgument(0);
                     // A listing that follows the cycle grows by 200 references a turn and
                     // would hit the heap before the preemptive timeout — a fork death, not a
-                    // firing. The stub ends it deterministically on the fourth page instead.
+                    // firing. The stub ends it deterministically on the fifth page instead
+                    // (a correct listing asks for at most three: first, A, B).
                     if (++served[0] > 4) {
                         throw new AssertionError("bookmark cycle followed: page " + served[0]
                                 + " requested");

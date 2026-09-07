@@ -547,7 +547,10 @@ public class IngestWebhookController {
                 // problem and does not stop this dispatch.
                 throw new RecipientUnreadableException("the recipients of connector " + connId
                         + " could not be established: profile row " + broken.docId()
-                        + " names it and could not be read as a profile (" + broken.reason() + ")");
+                        + (broken.addresseeUnknown()
+                                ? " may name it (its connector fields cannot be read)"
+                                : " names it")
+                        + " and could not be read as a profile (" + broken.reason() + ")");
             }
         }
         return owned.profiles().stream()
