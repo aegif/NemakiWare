@@ -27,10 +27,19 @@ public interface ConnectorDefinitionService {
      * older node's, during a rolling upgrade) is not reported until the next one, and whether
      * a rebuilding index leaves an existing row out is not measured. This read does not walk.
      *
+     * <p>Two things this read discloses to an unauthenticated caller through 503-versus-
+     * absence, both stated rather than hidden: that a deterministic-id row exists and is
+     * broken (always), and — only while the selector is failing — whether a deterministic-id
+     * row exists at all (a readable one answers, an absent one refuses because a legacy row
+     * cannot be excluded). Refusing whenever the selector fails would close the second at
+     * the price of every webhook while the index is down; the caller's decision was to keep
+     * the receiver answering and to say what the window reveals.
+     *
      * @throws ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException when the row
      *         exists but could not be read as this connector, when the id-addressed read
      *         failed with anything other than "not found", when the selector failed and no
-     *         deterministic row exists, or when the selector shows a row that cannot be read
+     *         deterministic row exists, when the selector shows a row that cannot be read,
+     *         or when the selector shows two rows that both define this connector
      */
     ConnectorDefinition getOrRefuse(String connectorId);
 

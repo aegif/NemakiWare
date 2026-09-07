@@ -1525,6 +1525,12 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
             return NemakiConfFind.allMatching(cloudant, dbName, selector);
         } catch (IllegalStateException incomplete) {
             throw new ProfileIndexNotReadyException(incomplete.getMessage());
+        } catch (RuntimeException transportFailed) {
+            // The SDK's own failure (a reset, a 5xx) is a listing that could not be
+            // completed too. Left raw it escaped the controllers' handlers as a 500 while
+            // the three refusals above answered 503. A review found the fourth shape.
+            throw new ProfileIndexNotReadyException("the selector listing of '" + dbName
+                    + "' could not be read: " + transportFailed.getMessage());
         }
     }
 

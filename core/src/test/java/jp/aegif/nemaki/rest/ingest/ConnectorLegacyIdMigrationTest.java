@@ -605,9 +605,12 @@ class ConnectorLegacyIdMigrationTest {
         unreadable.put("delegateAllFolders", "not-a-boolean");
         selectorShows(row("legacy-c-odd", unreadable, "1-a"));
 
-        assertEquals(null, service.get("c-odd"),
+        // assertDoesNotThrow: the over-throw under measurement is an exception, and a lock
+        // that dies on it is "harness broken" to the runner, not a firing.
+        ConnectorDefinition answered = assertDoesNotThrow(() -> service.get("c-odd"),
                 "get() started refusing on a row it cannot read — its callers are outside "
                         + "this change");
+        assertEquals(null, answered, "get() answered a row it could not read");
     }
 
     @Test
@@ -617,21 +620,78 @@ class ConnectorLegacyIdMigrationTest {
         wire();
         selectorAnswersNothing();
 
-        assertEquals(null, service.getOrRefuse("c-nobody"),
+        // assertDoesNotThrow: the over-throw under measurement is an exception, and a lock
+        // that dies on it is "harness broken" to the runner, not a firing.
+        ConnectorDefinition answered = assertDoesNotThrow(() -> service.getOrRefuse("c-nobody"),
                 "a genuinely absent connector was refused — every 401 would become a 503");
+        assertEquals(null, answered, "an absent connector answered a row");
     }
 
     @Test
-    @DisplayName("get() keeps answering null for a failed id read — its callers follow a null "
-            + "with an index-free check of their own")
+    @DisplayName("get() keeps answering null for a failed id read — its callers are outside "
+            + "this change")
     void getStillAnswersNullWhenTheIdReadFails() {
         wire();
         selectorAnswersNothing();
         theIdReadFails();
 
-        assertEquals(null, service.get("c-unanswered"),
-                "get() started refusing, and every caller that follows its null with "
-                        + "existsIndexFree now answers 503 before asking");
+        // assertDoesNotThrow: the over-throw under measurement is an exception, and a lock
+        // that dies on it is "harness broken" to the runner, not a firing.
+        ConnectorDefinition answered = assertDoesNotThrow(() -> service.get("c-unanswered"),
+                "get() started refusing — its callers (the ledger lists the ones that take "
+                        + "its null as absence) gained an exception path this batch did not "
+                        + "change them for");
+        assertEquals(null, answered, "a failed id read answered a row");
+    }
+
+    @Test
+    @DisplayName("getOrRefuse refuses a VISIBLE pair — two rows defining the connector — "
+            + "instead of running with whichever the index listed first")
+    void getOrRefuseRefusesAVisiblePair() {
+        // get() returns the selector's first row when several exist, and the receiver
+        // would then run with that row's secret and enabled state chosen by Mango ordering.
+        // The service's own rule is that the runtime refuses a pair; a review found this
+        // read not applying it. Only a pair the selector SHOWS is seen here — this read does
+        // not walk.
+        wire();
+        selectorShows(row("connector_definition:c-twin", connectorProps("c-twin", "Twin A"), "1-a"),
+                row("legacy-c-twin", connectorProps("c-twin", "Twin B"), "1-b"));
+
+        ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused = assertThrows(
+                ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> service.getOrRefuse("c-twin"),
+                "two visible rows of one connector were resolved to whichever came first");
+        assertTrue(refused.getMessage().contains("2 definition rows"),
+                "refused for another reason: " + refused.getMessage());
+    }
+
+    @Test
+    @DisplayName("get() still returns the first of a visible pair — the control; its callers "
+            + "are outside this change")
+    void getStillReturnsTheFirstOfAVisiblePair() {
+        wire();
+        selectorShows(row("connector_definition:c-twin", connectorProps("c-twin", "Twin A"), "1-a"),
+                row("legacy-c-twin", connectorProps("c-twin", "Twin B"), "1-b"));
+
+        ConnectorDefinition first = assertDoesNotThrow(() -> service.get("c-twin"),
+                "get() started refusing a pair — its callers gained an exception path");
+        assertEquals("Twin A", first == null ? null : first.getDisplayName());
+    }
+
+    @Test
+    @DisplayName("the selector listing refuses a TRANSPORT failure with the typed refusal too — "
+            + "not the raw exception the controllers' handlers never see")
+    void theSelectorListingRefusesATransportFailureWithTheTypedRefusal() {
+        // The three listing refusals (no docs, no bookmark, a repeated bookmark) were typed;
+        // the SDK's own failure escaped raw and became a 500 where they answered 503. A
+        // review found the fourth shape.
+        wire();
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenThrow(new RuntimeException("connection reset"));
+
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> service.list(),
+                "a selector transport failure escaped the listing untyped");
     }
 
     /** One raw document as the selector serves it. */

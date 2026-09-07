@@ -100,6 +100,19 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
         if (!results.isEmpty()) {
             ConnectorDefinition first = results.get(0);
             if (connectorId.equals(first.getConnectorId())) {
+                if (refuseUnanswered && definitionsOf(connectorId, results) > 1) {
+                    // Two rows define this connector and both are visible. get() returns
+                    // whichever the index listed first — its callers are outside this
+                    // change — but the receiver would then run with that row's secret and
+                    // enabled state chosen by Mango ordering. The service's own rule is
+                    // that the runtime refuses a pair; a review found this read not
+                    // applying it. A pair of which only one row is visible is not seen
+                    // here (this read does not walk), as everywhere the walk is not afforded.
+                    throw new ConnectorIndexNotReadyException("connector " + connectorId
+                            + " has " + definitionsOf(connectorId, results)
+                            + " definition rows; refusing to run with whichever the index"
+                            + " listed first");
+                }
                 return first;
             }
         }
@@ -145,6 +158,16 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
                     idReadFailed.getMessage());
             return null;
         }
+    }
+
+    private static int definitionsOf(String connectorId, List<ConnectorDefinition> rows) {
+        int n = 0;
+        for (ConnectorDefinition row : rows) {
+            if (connectorId.equals(row.getConnectorId())) {
+                n++;
+            }
+        }
+        return n;
     }
 
     /** One raw row as a definition, with the storage bookkeeping removed (see findBySelector). */
@@ -892,6 +915,12 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
             return NemakiConfFind.allMatching(cloudant, dbName, selector);
         } catch (IllegalStateException incomplete) {
             throw new ConnectorIndexNotReadyException(incomplete.getMessage());
+        } catch (RuntimeException transportFailed) {
+            // The SDK's own failure (a reset, a 5xx) is a listing that could not be
+            // completed too. Left raw it escaped the controllers' handlers as a 500 while
+            // the three refusals above answered 503. A review found the fourth shape.
+            throw new ConnectorIndexNotReadyException("the selector listing of '" + dbName
+                    + "' could not be read: " + transportFailed.getMessage());
         }
     }
 

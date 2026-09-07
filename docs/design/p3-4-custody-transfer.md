@@ -7530,7 +7530,7 @@ Failures 0 (残る 38 件は `CmisConnectionException` — サーバ未起動)�
 - 3 値 (`EdgeLookup`: present / absent / unanswered)。unanswered ならリンクは作った上で
   警告文字列を返し、capture 記録にも同じ文言を載せる。答えた「無い」には出さない
   (過剰報告は双子の欠陥)。`contentService == null` は配線の不在であって読みではないので
-  absent のまま。
+  absent のまま。**→ 1 巡目 (P3-2) で unanswered に変えた。**
 - `FetchSupport.createRelationshipSafe` 経由 (取込完了後の orchestrator) では警告が
   `errors` に積まれ、`FetchResult.hasErrors()` が真になる — スケジューラの circuit breaker が
   それを失敗回数に数える。読めなかったのは事実で、`FetchResult` に他の経路は無い。
@@ -7549,7 +7549,8 @@ Failures 0 (残る 38 件は `CmisConnectionException` — サーバ未起動)�
   数えられる)。
 - JSON の `false` そのものを `enabled` に持つ行は、どちらの呼び出し元でも解釈しない —
   すべての選択規則が enabled を要求するので答えは変わらない。文字列 `"false"` 等は従来どおり
-  解釈してから呼び出し元が除外する。有効な壊れた行は従来どおり 503 (錠 2 本)。
+  解釈してから呼び出し元が除外する (**→ 4 巡目で訂正: 文字列も raw で読む**)。有効な壊れた行は
+  従来どおり 503 (錠 2 本)。
 - 錠 4 本、コントロール **WG / WH / WI / WJ** + 張り直した **PW** と再測定の **QC**。
 
 **手順の記録**: 1 回目の測定で WG / WI が「錠が落ちたが、錠自身の主張ではなく例外で」
@@ -7575,7 +7576,8 @@ Failures 0 (残る 38 件は `CmisConnectionException` — サーバ未起動)�
 - 「再構築中のセレクタは在る行に空を返す」は依然として未測定。§34 の実測は機序が違う
   可能性を示すだけで、nemaki_conf で測ってはいない。
 - `relationshipExists` の警告が `errors` に入る経路 (取込完了後の orchestrator) が
-  circuit breaker を進めるのは、直していない。
+  circuit breaker を進めるのは、直していない。**→ 1 巡目で直した (`outsideAnImport`: 公開経路は
+  作られたリンクに null を返し、WARN ログに残す)。この項は当時の記録。**
 - 公開 4 引数 `createDirectRelationship`・検査と書き込みの窓・リンク再認可の `get()`・
   `FolderConnectorController` の受け入れ不整合は §62 のまま。
 
@@ -7847,3 +7849,51 @@ Failures 0。**残る 371 本はこの木では未測定** — 通しは収束�
   書いた。
 
 コードは変えていない。**7 巡目を安定確認として回す** (2 巡続けて P1/P2 なしが収束の条件)。
+
+### 7 巡目 (安定確認、Codex + サブエージェント、並行) — P2 3・P3 7、両者 `NOT CONVERGED`
+
+コミット `651a5dc8a` に対して。安定しなかった — 新しい目で読み直した両者が、それぞれ
+別の P2 を見つけた。
+
+- **P2 (Codex) — `NemakiConfFind` のセレクタ通信失敗が素の RuntimeException のまま。**
+  `findRawDocs` は `IllegalStateException` (docs 無し / bookmark 無し / 循環) だけを型付きに
+  包んでいたので、SDK 自身の失敗 (reset・5xx) は handler に届かず 500 — 「一覧が完了できない
+  → 503」の 4 つ目の形が抜けていた。両サービスとも RuntimeException も型付きに包む。
+  `get()` の広い catch は型付き例外 (RuntimeException) も握るので挙動不変。錠 2 本、
+  コントロール **XO / XP**。
+- **P2 (Codex) — `getOrRefuse` がセレクタの見せた 2 行 (同じ connectorId) の先頭を採る。**
+  サービス自身の規則 (`countIndexFree` の javadoc: 「runtime は pair を拒否する」) に反し、
+  受信側が索引の並び順で選ばれた行の秘密・有効状態で動く。refusing read だけ、見える pair を
+  拒否 (`get()` は不変 — 呼び出し元はバッチ外)。片方しか見えない pair は見えない (walk を
+  使わない経路に共通の残る穴)。錠 2 本 (拒否する / `get()` は先頭のまま)、コントロール **XQ**。
+  RD を 1 行の anchor に張り直し。
+- **P2 (サブ) — セレクタ障害の窓での存在開示。** (失敗, 健全な確定的行) → 401 (署名検証へ)、
+  (失敗, 行なし) → 503 (XI) なので、セレクタが失敗している間は未認証の 1 リクエストで
+  「その id に健全な確定的 ID 行が在るか」が分かる。RELEASE_NOTES「健全な行の存在は
+  分かりません」は偽だった。**判断: コードは保ち、開示を正確に書く (選択肢 b)。** 一律 503
+  (選択肢 a) は索引障害の間すべての webhook を止める over-throw で、2 巡目が退けたのは
+  「常時・全走査つき」の開示であって、索引障害の窓に限る開示とは重さが違う。「(失敗, 行なし)
+  を 401 に戻す」は 3 巡目の P2 の再来なので採らない。RELEASE_NOTES・interface javadoc・
+  受信側コメント・この節に、開示 2 点 (壊れた行は常に、健全な行は窓の間だけ) と退けた
+  選択肢を書いた。
+- **P3 (サブ) — 超過拒否側の錠 4 本に control が無かった** (`getOrRefuseAnswersNullWhenBoth…`、
+  `getStillAnswersNull…`、`getStillSkips…`、`aBrokenRowOfAnotherConnector…`) → **XR / XS / XT /
+  XU**。**P3 (サブ) — capture 記録の detail を観測する錠が無かった** (2 引数の `record` に
+  戻してもスイートが通る) → Mockito 5 (inline) で final の `CaptureScope` を mock して
+  `record(…, SUCCEEDED, contains("without its duplicate check"))` を検証する錠 + **XV**。
+- **P3 (Codex / サブ) — 文面**: `getStillAnswersNullWhenTheIdReadFails` の説明文がまだ
+  「呼び出し元は null の後に確認する」と言っていた → 直した。「作成の既存行確認では 400
+  でした」は基点では 500 (400 はこのバッチの途中版だけ) → 直した。「1 件の読み取りは
+  フォールバック」と「書き込み前の既存行確認は 503」が同じ「PUT の既存行」に読めた →
+  入口の解決 (フォールバック) と保存前の確認 (503) に分けて書いた。§63 で後の巡が覆した
+  記述 3 か所 (単位 2 の `contentService == null`、単位 3 の文字列 `"false"`、主張しないことの
+  circuit breaker) に前方矢印を付けた。
+
+**この巡の測定**: コントロールは **426 本** (新設 8: XO〜XV、張り直し RD)。変更したファイル
+4 本を狙う **153 本を compile-check (153/153)** した上で、バッチの **56 本 (PW / QC / VT /
+TX / US / RD / VX〜XV) を測定**。1 度目は **53/56** — 超過拒否側の錠 3 本 (XR / XS / XT) が
+「錠自身の主張ではなく例外で落ちた」。3 巡目で WG / WI が踏んだのと同じ罠を、同じ形で
+また踏んだ (`assertEquals(null, service.get(…))` の素の呼び出し)。`assertDoesNotThrow` に
+包んで再測定し 3/3 FIRED — 合計 **56/56 FIRED**、復元後 clean。触ったテストクラス:
+connector 68、profile 86、canonical 81、webhook 23 — Failures 0。**残る 370 本はこの木では
+未測定** — 通しは収束後。

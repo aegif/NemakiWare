@@ -2782,8 +2782,12 @@ CONTROLS = [
         id="RD",
         what='the connector twin of RC',
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
-        find='        if (!results.isEmpty()) {\n            ConnectorDefinition first = results.get(0);\n            if (connectorId.equals(first.getConnectorId())) {\n                return first;\n            }\n        }',
-        replace='        if (true) return results.isEmpty() ? null : results.get(0);',
+        # Re-anchored in round 8 of the second batch (the block gained the visible-pair
+        # refusal). The sabotage is what it always was: answer from the selector alone and
+        # never fall back to the deterministic id. An early return keeps the block below
+        # it compiling (javac does not flag statements after `if (true) return`).
+        find='        if (!results.isEmpty()) {\n            ConnectorDefinition first = results.get(0);',
+        replace='        if (true) return results.isEmpty() ? null : results.get(0);\n        if (!results.isEmpty()) {\n            ConnectorDefinition first = results.get(0);',
         test='ConnectorLegacyIdMigrationTest',
         expect_fail=['aDeterministicRowTheIndexCannotShowIsStillFoundByGet'],
     ),
@@ -4514,6 +4518,96 @@ CONTROLS = [
         test='ConnectorLegacyIdMigrationTest',
         expect_fail=['getOrRefuseFallsBackToTheDeterministicRowWhenTheSelectorListingIsIncomplete',
                      'getFallsBackToTheDeterministicRowWhenTheSelectorListingIsIncomplete'],
+    ),
+    # ── round 8 of the second batch: what the seventh review round found ──
+    dict(
+        id="XO",
+        what="a selector transport failure escapes the profile listing untyped again — a 500 "
+             "where the three listing refusals answer 503",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find_span=('        } catch (RuntimeException transportFailed) {\n'
+                   '            // The SDK\'s own failure (a reset, a 5xx) is a listing that could not be',
+                   '            throw new ProfileIndexNotReadyException("the selector listing of \'" + dbName\n'
+                   '                    + "\' could not be read: " + transportFailed.getMessage());\n'
+                   '        }'),
+        replace='        }',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theSelectorListingRefusesATransportFailureWithTheTypedRefusal'],
+    ),
+    dict(
+        id="XP",
+        what="a selector transport failure escapes the connector listing untyped again — XO's "
+             "connector twin",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find_span=('        } catch (RuntimeException transportFailed) {\n'
+                   '            // The SDK\'s own failure (a reset, a 5xx) is a listing that could not be',
+                   '            throw new ConnectorIndexNotReadyException("the selector listing of \'" + dbName\n'
+                   '                    + "\' could not be read: " + transportFailed.getMessage());\n'
+                   '        }'),
+        replace='        }',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theSelectorListingRefusesATransportFailureWithTheTypedRefusal'],
+    ),
+    dict(
+        id="XQ",
+        what="the refusing read runs with the first of a visible pair again — the receiver's "
+             "secret and enabled state chosen by Mango ordering",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='                if (refuseUnanswered && definitionsOf(connectorId, results) > 1) {',
+        replace='                if (false) {',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['getOrRefuseRefusesAVisiblePair'],
+    ),
+    dict(
+        id="XR",
+        what="the over-throw twin of XI: a genuinely absent connector refuses whenever the read "
+             "is the refusing one — every 401 becomes a 503",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='                if (refuseUnanswered && !selectorAnswered) {',
+        replace='                if (refuseUnanswered) {',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['getOrRefuseAnswersNullWhenBothReadsAnswerAbsent'],
+    ),
+    dict(
+        id="XS",
+        what="the over-throw twin of XC: get() refuses a failed id read — its callers gain an "
+             "exception path this batch did not change them for",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='            if (refuseUnanswered) {',
+        replace='            if (true) {',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['getStillAnswersNullWhenTheIdReadFails'],
+    ),
+    dict(
+        id="XT",
+        what="the over-throw twin of XL: get() refuses a selector row it cannot read instead of "
+             "skipping it",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='                    "connectorId", connectorId), refuseUnanswered);',
+        replace='                    "connectorId", connectorId), true);',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['getStillSkipsARowTheSelectorCannotRead'],
+    ),
+    dict(
+        id="XU",
+        what="the over-throw twin of WN: every broken row stops every dispatch, whichever "
+             "connector it names",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='            if (broken.namesConnector(connId)) {',
+        replace='            if (true) {',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['aBrokenRowOfAnotherConnectorDoesNotStopTheDispatch'],
+    ),
+    dict(
+        id="XV",
+        what="the capture record drops the unanswered-check detail — 'succeeded' alone, as the "
+             "ordinary case reads",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='                captureScope.record("createRelationship", MutationOutcome.SUCCEEDED,\n'
+             '                        unansweredCheck);',
+        replace='                captureScope.record("createRelationship", MutationOutcome.SUCCEEDED);',
+        test='CanonicalImportServiceTest',
+        expect_fail=['theCaptureRecordCarriesTheUnansweredCheck'],
     ),
     dict(
         id="XM",

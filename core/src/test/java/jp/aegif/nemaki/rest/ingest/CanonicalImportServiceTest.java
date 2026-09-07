@@ -2263,6 +2263,24 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void theCaptureRecordCarriesTheUnansweredCheck() {
+        // The release notes say the capture record carries the same fact as the warning.
+        // Nothing observed the record — a two-argument record() would have passed the
+        // suite. A review found the claim unlocked.
+        when(contentService.getRelationsipsOfObject(eq("bedroom"), eq("src-1"), any()))
+                .thenThrow(new RuntimeException("view unavailable"));
+        jp.aegif.nemaki.rest.ingest.capture.CaptureScope scope =
+                mock(jp.aegif.nemaki.rest.ingest.capture.CaptureScope.class);
+
+        service.createDirectRelationship(testContext(), "bedroom", "src-1", "tgt-1",
+                "cmis:relationship", scope, null, null);
+
+        verify(scope).record(eq("createRelationship"),
+                eq(jp.aegif.nemaki.rest.ingest.capture.MutationOutcome.SUCCEEDED),
+                contains("without its duplicate check"));
+    }
+
+    @Test
     void aMissingContentServiceIsAnUnansweredCheckNotAnAbsentEdge() {
         // The arm for a service that is not wired answered "absent" — "could not ask" with
         // the value of "asked, none". The in-import overload reports it like any other read

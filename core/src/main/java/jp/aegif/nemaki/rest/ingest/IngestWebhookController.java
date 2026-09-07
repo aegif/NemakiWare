@@ -137,7 +137,10 @@ public class IngestWebhookController {
             // configuration database per unauthenticated request is an amplifier. What
             // this leaves as 401 is a legacy-id row the selector answered WITHOUT (see
             // getOrRefuse's contract): one the startup migration could not rewrite, or one
-            // written after its last pass and not reported until the next.
+            // written after its last pass and not reported until the next. What the split
+            // discloses (a broken deterministic row; and, while the selector is failing,
+            // whether a deterministic row exists) is stated in that contract and in the
+            // release notes, not hidden.
             connector = connectorDefinitionService.getOrRefuse(connectorId);
         } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotRead) {
             // A row that exists and could not be read as this connector, or a read that

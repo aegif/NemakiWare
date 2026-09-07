@@ -1454,6 +1454,22 @@ class ImportProfileLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("the selector listing refuses a TRANSPORT failure with the typed refusal too — "
+            + "not the raw exception the controllers' handlers never see")
+    void theSelectorListingRefusesATransportFailureWithTheTypedRefusal() {
+        // The three listing refusals (no docs, no bookmark, a repeated bookmark) were typed;
+        // the SDK's own failure escaped raw and became a 500 where they answered 503. A
+        // review found the fourth shape.
+        wire();
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenThrow(new RuntimeException("connection reset"));
+
+        assertThrows(ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+                () -> service.list(),
+                "a selector transport failure escaped the listing untyped");
+    }
+
+    @Test
     @DisplayName("a selector listing that did not answer is refused, not returned empty")
     void theSelectorListingRefusesAListingThatDidNotAnswer() {
         wire();
