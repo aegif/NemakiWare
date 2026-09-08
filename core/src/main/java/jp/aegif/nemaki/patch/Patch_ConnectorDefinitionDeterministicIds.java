@@ -131,7 +131,10 @@ public class Patch_ConnectorDefinitionDeterministicIds extends AbstractNemakiPat
     private void reportPass(String what,
             ConnectorDefinitionService.LegacyIdMigrationResult result, String resolver) {
         if (result.clean()) {
-            if (result.migrated == 0 && result.sweptDuplicates == 0) {
+            // normalised counts too: a pass that rewrote a stored identity DID something, and
+            // summarising it as "no legacy rows" was the one shape of this summary that could
+            // read as "nothing was touched" while rows were written. A review found it.
+            if (result.migrated == 0 && result.sweptDuplicates == 0 && result.normalised == 0) {
                 log.debug("[patch=" + getName() + "] no legacy " + what + " rows");
             } else {
                 log.info("[patch=" + getName() + "] " + what + ": " + result);

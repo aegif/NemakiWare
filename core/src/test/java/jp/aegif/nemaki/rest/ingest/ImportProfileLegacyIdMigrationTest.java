@@ -2101,10 +2101,22 @@ class ImportProfileLegacyIdMigrationTest {
         Map<String, Object> capitalised = profileProps("p-cap", "Capitalised");
         capitalised.put("enabled", "False");
         capitalised.put("retentionDays", "not-a-number");
+        Map<String, Object> shouted = profileProps("p-shout", "Shouted");
+        shouted.put("enabled", "FALSE");
+        shouted.put("retentionDays", "not-a-number");
+        Map<String, Object> lower = profileProps("p-lower", "Lower");
+        lower.put("enabled", "false");
+        lower.put("retentionDays", "not-a-number");
+        Map<String, Object> empty = profileProps("p-empty", "Empty");
+        empty.put("enabled", "");
+        empty.put("retentionDays", "not-a-number");
         Map<String, Object> oddSpelling = profileProps("p-odd-case", "Odd case");
         oddSpelling.put("enabled", "fAlSe");
         listingAnswers(List.of(
                 row("import_profile_definition:p-cap", capitalised, "1-a"),
+                row("import_profile_definition:p-shout", shouted, "1-c"),
+                row("import_profile_definition:p-lower", lower, "1-d"),
+                row("import_profile_definition:p-empty", empty, "1-e"),
                 row("import_profile_definition:p-odd-case", oddSpelling, "1-b")));
 
         ImportProfileDefinitionService.OwnedProfiles owned = service.listOwnedIndexFree();
@@ -2113,9 +2125,86 @@ class ImportProfileLegacyIdMigrationTest {
                 owned.uninterpretable().stream()
                         .map(ImportProfileDefinitionService.UninterpretableRow::docId).toList(),
                 "the mapper's spellings are not the ones this code acts on — the release "
-                        + "notes name \"false\"/\"False\"/\"FALSE\": " + owned.uninterpretable());
+                        + "notes name \"false\"/\"False\"/\"FALSE\" and the empty string: "
+                        + owned.uninterpretable());
         assertTrue(owned.profiles().isEmpty(),
                 "a row the mapper cannot read as a profile was listed: " + owned.profiles());
+    }
+
+    @Test
+    @DisplayName("a row at its deterministic id that carries ATTACHMENTS is not rewritten — "
+            + "the binaries are not the migration's to destroy")
+    void aRowWithAttachmentsIsNotRewrittenInPlace() {
+        // getProperties() does not carry attachments, so writing the row back from them
+        // deletes the binaries — and here the row IS the only holder, there is no copy to
+        // lose them from. The copy path refuses exactly this bet; the in-place path was
+        // making it, and would have reported a clean pass. Two reviews found it.
+        wire();
+        Map<String, Object> numeric = profileProps("42", "Numeric");
+        numeric.put("profileId", 42);
+        DocsResultRow withAttachment = row("import_profile_definition:42", numeric, "3-c");
+        when(withAttachment.getDoc().getAttachments())
+                .thenReturn(Map.of("evidence.pdf", mock(com.ibm.cloud.cloudant.v1.model.Attachment.class)));
+        listingAnswers(List.of(withAttachment));
+        writesSucceed();
+
+        ConnectorDefinitionService.LegacyIdMigrationResult result =
+                service.migrateLegacyGeneratedIds();
+
+        verify(cloudant, never()).postDocument(any(PostDocumentOptions.class));
+        assertTrue(result.failures.stream().anyMatch(f -> f.contains("import_profile_definition:42")),
+                "the row was left alone without saying so: " + result.failures);
+        assertTrue(!result.clean(), "a pass that could not repair the row reported clean");
+    }
+
+    @Test
+    @DisplayName("a foreign row occupying the deterministic id stays divergent — the identity "
+            + "is read from each row, not assumed")
+    void aForeignRowOnTheDeterministicIdIsStillDivergent() {
+        // The normalised comparison substituted the profileId being migrated into BOTH sides,
+        // so a row occupying import_profile_definition:42 while naming a DIFFERENT profile
+        // compared equal to the legacy row — and the only row defining "42" was retired as
+        // its duplicate, counted as a swept duplicate. A review caught it before first
+        // contact. Each side is now read on its own.
+        wire();
+        Map<String, Object> legacy = profileProps("42", "Mine");
+        legacy.put("profileId", 42);
+        listingAnswers(List.of(row("legacy-42", legacy, "1-a")));
+        Map<String, Object> foreign = profileProps("42", "Mine");
+        foreign.put("profileId", "99");
+        Document impostor = mock(Document.class);
+        when(impostor.getProperties()).thenReturn(foreign);
+        when(impostor.getRev()).thenReturn("2-b");
+        deterministicReadAnswers("42", impostor);
+        writesSucceed();
+
+        ConnectorDefinitionService.LegacyIdMigrationResult result =
+                service.migrateLegacyGeneratedIds();
+
+        assertTrue(deletedIds.isEmpty(),
+                "the only row defining \"42\" was retired as a duplicate of a row that names "
+                        + "another profile: " + deletedIds);
+        assertTrue(result.divergent.stream().anyMatch(d -> d.contains("42")),
+                "the pair was not reported as divergent: " + result.divergent);
+    }
+
+    @Test
+    @DisplayName("a rewrite the store refuses is reported, not swallowed")
+    void aRefusedRewriteIsReported() {
+        wire();
+        Map<String, Object> numeric = profileProps("42", "Numeric");
+        numeric.put("profileId", 42);
+        listingAnswers(List.of(row("import_profile_definition:42", numeric, "3-c")));
+        when(cloudant.postDocument(any(PostDocumentOptions.class)))
+                .thenThrow(new RuntimeException("conflict"));
+
+        ConnectorDefinitionService.LegacyIdMigrationResult result =
+                assertDoesNotThrow(() -> service.migrateLegacyGeneratedIds(),
+                        "a refused rewrite took the whole pass down");
+
+        assertTrue(result.failures.stream().anyMatch(f -> f.contains("import_profile_definition:42")),
+                "the refused rewrite was swallowed: " + result.failures);
+        assertTrue(!result.clean(), "a pass with a refused rewrite reported clean");
     }
 
     @Test

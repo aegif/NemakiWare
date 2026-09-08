@@ -4287,7 +4287,8 @@ CONTROLS = [
         find='                reportUninterpretable(uninterpretable, id, props, e.getMessage());\n',
         replace='',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest'],
+        expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest',
+                     'whichSpellingsOfADisabledFlagCountIsTheMappersAnswer'],
     ),
     dict(
         id="WP",
@@ -4539,7 +4540,8 @@ CONTROLS = [
         replace='        if (Boolean.FALSE.equals(props.get("enabled"))) {\n            return;\n        }\n        ImportProfileDefinition idOnly',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest',
-                     'aRowWhoseEnabledIsAnExplicitNullIsNotARecipient'],
+                     'aRowWhoseEnabledIsAnExplicitNullIsNotARecipient',
+                     'whichSpellingsOfADisabledFlagCountIsTheMappersAnswer'],
     ),
     dict(
         id="XL",
@@ -4832,13 +4834,78 @@ CONTROLS = [
         expect_fail=['aDisabledByNullRowTheResolverCannotReadDoesNotRefuseTheResolution'],
     ),
     dict(
+        id="ZP",
+        what="the in-place rewrite stops refusing a row that carries attachments — the binaries "
+             "the row is the only holder of are destroyed by a pass that reports clean",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find_span=('        if (row.getAttachments() != null && !row.getAttachments().isEmpty()) {',
+                   '                    + " rewritten; updates of this profile answer 503 until it is repaired", id);\n            return;\n        }'),
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aRowWithAttachmentsIsNotRewrittenInPlace'],
+    ),
+    dict(
+        id="ZQ",
+        what="the connector in-place rewrite stops refusing a row with attachments — ZP's twin",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find_span=('        if (row.getAttachments() != null && !row.getAttachments().isEmpty()) {',
+                   '                    + " rewritten; updates of this connector answer 503 until it is repaired", id);\n            return;\n        }'),
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aRowWithAttachmentsIsNotRewrittenInPlace'],
+    ),
+    dict(
+        id="ZR",
+        what="the migration's comparison stops reading each row's OWN identity — a foreign row "
+             "occupying the deterministic id compares equal to the legacy one, and the only row "
+             "defining the profile is retired as its duplicate",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='        ImportProfileDefinition idOnly = readAlone(props, "profileId");\n'
+             '        if (idOnly != null && idOnly.getProfileId() != null) {\n'
+             '            content.put("profileId", idOnly.getProfileId());\n'
+             '        }\n',
+        replace='        content.put("profileId", "");\n',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aForeignRowOnTheDeterministicIdIsStillDivergent'],
+    ),
+    dict(
+        id="ZS",
+        what="the connector migration's comparison stops reading each row's own identity — "
+             "ZR's twin",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='        ConnectorDefinition idOnly = readAlone(props, "connectorId");\n'
+             '        if (idOnly != null && idOnly.getConnectorId() != null) {\n'
+             '            content.put("connectorId", idOnly.getConnectorId());\n'
+             '        }\n',
+        replace='        content.put("connectorId", "");\n',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aForeignRowOnTheDeterministicIdIsStillDivergent'],
+    ),
+    dict(
+        id="ZT",
+        what="a rewrite the store refuses is swallowed — the pass reports clean while the row "
+             "still cannot be matched by the selector",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='        } catch (RuntimeException rowFailed) {\n'
+             '            result.failures.add(id + " (its stored profileId is not the string \\"" + profileId\n'
+             '                    + "\\", which the Mango selector cannot match, and rewriting it failed: "\n'
+             '                    + rowFailed.getMessage() + ")");\n'
+             '        }',
+        replace='        } catch (RuntimeException rowFailed) {\n'
+                '            logger.debug("rewrite of {} failed: {}", id, rowFailed.getMessage());\n'
+                '        }',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aRefusedRewriteIsReported'],
+    ),
+    dict(
         id="ZJ",
         what="the migration compares raw contents again — an interrupted normalising pass calls "
              "an identical pair divergent and never retires the legacy row",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        # Re-anchored in round 19 (each side is now read on its own).
         find='            } else if (!java.util.Objects.equals(\n'
-             '                    normalisedContent(legacy.getProperties(), profileId),\n'
-             '                    normalisedContent(existing.getProperties(), profileId))) {',
+             '                    normalisedContent(legacy.getProperties()),\n'
+             '                    normalisedContent(existing.getProperties()))) {',
         replace='            } else if (!java.util.Objects.equals(contentOnly(legacy.getProperties()),\n'
                 '                    contentOnly(existing.getProperties()))) {',
         test='ImportProfileLegacyIdMigrationTest',
@@ -4888,9 +4955,10 @@ CONTROLS = [
         id="ZN",
         what="the connector migration compares raw contents again — ZJ's twin",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        # Re-anchored in round 19 (each side is now read on its own).
         find='            } else if (!java.util.Objects.equals(\n'
-             '                    normalisedContent(legacy.getProperties(), connectorId),\n'
-             '                    normalisedContent(existing.getProperties(), connectorId))) {',
+             '                    normalisedContent(legacy.getProperties()),\n'
+             '                    normalisedContent(existing.getProperties()))) {',
         replace='            } else if (!java.util.Objects.equals(contentOnly(legacy.getProperties()),\n'
                 '                    contentOnly(existing.getProperties()))) {',
         test='ConnectorLegacyIdMigrationTest',
@@ -4949,7 +5017,12 @@ CONTROLS = [
         replace='            Object pid = props.get("profileId");\n'
                 '            String profileId = pid instanceof String ? (String) pid : null;',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['theMigrationNormalisesAProfileIdTheMapperCoerces'],
+        expect_fail=['theMigrationNormalisesAProfileIdTheMapperCoerces',
+                     'anInterruptedNormalisingMigrationRetiresTheLegacyRowOnTheNextPass',
+                     'aRowAlreadyAtItsDeterministicIdIsNormalisedInPlace',
+                     'aRowWithAttachmentsIsNotRewrittenInPlace',
+                     'aRefusedRewriteIsReported',
+                     'aForeignRowOnTheDeterministicIdIsStillDivergent'],
     ),
     dict(
         id="ZC",
@@ -4997,7 +5070,11 @@ CONTROLS = [
         replace='            Object cid = props.get("connectorId");\n'
                 '            String connectorId = cid instanceof String ? (String) cid : null;',
         test='ConnectorLegacyIdMigrationTest',
-        expect_fail=['theMigrationNormalisesAConnectorIdTheMapperCoerces'],
+        expect_fail=['theMigrationNormalisesAConnectorIdTheMapperCoerces',
+                     'anInterruptedNormalisingMigrationRetiresTheLegacyRowOnTheNextPass',
+                     'aRowAlreadyAtItsDeterministicIdIsNormalisedInPlace',
+                     'aRowWithAttachmentsIsNotRewrittenInPlace',
+                     'aForeignRowOnTheDeterministicIdIsStillDivergent'],
     ),
     dict(
         id="ZG",

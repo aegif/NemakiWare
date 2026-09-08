@@ -8351,6 +8351,10 @@ profile 92→101、connector 72→73、webhook 26→25)。11 はコントロー�
   メッセージ) ので「503 にトレースが無い」ではない。スタックトレースは残らない (一覧側の arm は
   残す) 差はあるので、P3 として記録し直さない。
 
+**19 巡目で訂正**: この節の P2 の帰属「Codex P2 3・サブ P2 2」(コミットメッセージ) と本文の
+ラベルが食い違っていた。本文が正 — **両者が同じものを挙げた 2 件 + Codex 単独 1 件 + サブ単独
+2 件 = 重複を除いて 5 件**、つまり Codex 3・サブ 4 で、コミットメッセージの内訳が誤り。
+
 **この巡の測定**: **未実施**。コントロールは **470 本** (新設 6: ZJ ZK ZL ZM ZN ZO)、事前検査は
 470/470 (self-test 19/19、expect_fail 0 問題、anchor 0 drift) を通したが、**バッチは走らせて
 いない** — 通しの最中にレビューが木を読むと誤検出が出るため、**レビューが 2 巡連続で収束して
@@ -8358,3 +8362,39 @@ profile 92→101、connector 72→73、webhook 26→25)。11 はコントロー�
 起動していた通しは compile-check の途中で停止し、サボタージュが残った 1 ファイルを
 `git show HEAD:` + スナップショットの hunk で復元して一致を確認済み。錠は **7 本追加**
 (profile 105→110、connector 77→79) で、触れた 4 クラスは green (110 / 79 / 25 / 34)。
+
+### 18 巡目 (Codex + サブエージェント、並行) — Codex P1 1・P3 1、サブ P2 2・P3 6、両者 `NOT CONVERGED`
+
+コミット `43e4768f2` に対して。**17 巡目の処置が、2 か所で「触ってはいけないもの」を触っていた。**
+
+- **P1 (Codex) / P2-1 (サブ) — その場書き戻しが添付を消す。** `normaliseIdentityInPlace` は
+  `getProperties()` から本文を組み直して POST するが、Cloudant SDK の `Document` は
+  `_attachments` を宣言フィールドに持ち `getProperties()` に含めないので、**その revision で
+  添付が全削除**される。**同じクラスのコピー経路は、まさにこの理由で添付付きの行を拒否している**
+  (「a migration must not bet on that」) のに、新しい経路は拒否も報告もせず clean を返していた。
+  → **コピー経路と同じ拒否**にし、`failures` に「添付があるので書き直さない。更新は 503 のまま」
+  と記録する。錠 2 本 (profile / connector)、コントロール **ZP / ZQ**。javadoc の
+  「Nothing else about the row changes」も「content は変えない、添付付きは拒否する」に訂正。
+- **P2 (サブ) — 正規化比較が確定 ID 側の識別まで塗り潰していた。** `normalisedContent(props, id)`
+  は**両側**に期待値を差し込むので、確定 ID を占有しているが**別のプロファイルを名乗る行**
+  (このコード自身が WARN で警告している状態) が legacy 行と一致と判定され、**本物の唯一の行が
+  「重複」として削除**され、`sweptDuplicates` と INFO「identical」まで出ていた。「勝者を黙って
+  選ぶのは、この移行が防ぐためにある損失そのもの」に正面から反する。→ **各側を自分の mapper
+  読みで正規化**する (`normalisedContent(props)`)。読めない値は格納値のまま。錠 2 本、
+  コントロール **ZR / ZS**。`sweptDuplicates` の javadoc も「識別の格納表現を除いて同一」に。
+- **P3 (Codex) — 3 綴りの主張を錠が測っていなかった** (`"False"` と `"fAlSe"` だけ) → 錠を
+  `"false"` / `"False"` / `"FALSE"` / 空文字まで広げた。
+- **P3 (サブ) — 開示が網羅していなかった**: mapper は空文字と `"null"` も false と読む
+  (`_checkFromStringCoercion` → `AsNull` → primitive の null は false)。→ RELEASE_NOTES に
+  追記し、空文字を錠でも測る。
+- **P3 (サブ) — `expect_fail` の過小宣言が新たに 4 件** (ZB ZF WO XK) → 列挙。新設分
+  (ZP ZQ ZR ZS ZT) も含めて宣言し直した。
+- **P3 (サブ)** 書き戻しの失敗腕に錠が無かった → 錠 1 本 (`aRefusedRewriteIsReported`)、
+  コントロール **ZT**。正規化だけのパスが patch 要約で「no legacy rows」と読めた →
+  `LegacyIdMigrationResult.normalised` を足して要約の条件に入れた。コネクタ側のコメント位置、
+  17 巡目の P2 帰属の食い違いも訂正。
+
+**この巡の測定**: **未実施** (2 巡収束後にまとめて 1 回)。コントロールは **475 本**
+(新設 5: ZP ZQ ZR ZS ZT。ZJ / ZN は張り直し)、事前検査 475/475 (self-test 19/19、expect_fail
+0 問題、anchor 0 drift)。錠は **5 本追加** (profile 110→113、connector 79→81) で、触れた
+4 クラスは green (113 / 81 / 25 / 34)。

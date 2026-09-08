@@ -1242,6 +1242,56 @@ class ConnectorLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("a row at its deterministic id that carries ATTACHMENTS is not rewritten")
+    void aRowWithAttachmentsIsNotRewrittenInPlace() {
+        // The profile twin carries the reasoning: getProperties() does not carry attachments,
+        // and here the row is the only holder.
+        wire();
+        Map<String, Object> numeric = connectorProps("42", "Numeric");
+        numeric.put("connectorId", 42);
+        DocsResultRow withAttachment = row("connector_definition:42", numeric, "3-c");
+        when(withAttachment.getDoc().getAttachments())
+                .thenReturn(Map.of("evidence.pdf", mock(com.ibm.cloud.cloudant.v1.model.Attachment.class)));
+        listingAnswers(List.of(withAttachment));
+        writesSucceed();
+
+        ConnectorDefinitionService.LegacyIdMigrationResult result =
+                service.migrateLegacyGeneratedIds();
+
+        verify(cloudant, never()).postDocument(any(PostDocumentOptions.class));
+        assertTrue(result.failures.stream().anyMatch(f -> f.contains("connector_definition:42")),
+                "the row was left alone without saying so: " + result.failures);
+        assertTrue(!result.clean(), "a pass that could not repair the row reported clean");
+    }
+
+    @Test
+    @DisplayName("a foreign row occupying the deterministic id stays divergent")
+    void aForeignRowOnTheDeterministicIdIsStillDivergent() {
+        // The profile twin carries the reasoning: substituting an EXPECTED identity into both
+        // sides made a row that names a different connector compare equal to the legacy one.
+        wire();
+        Map<String, Object> legacy = connectorProps("42", "Mine");
+        legacy.put("connectorId", 42);
+        listingAnswers(List.of(row("legacy-42", legacy, "1-a")));
+        Map<String, Object> foreign = connectorProps("42", "Mine");
+        foreign.put("connectorId", "99");
+        Document impostor = mock(Document.class);
+        when(impostor.getProperties()).thenReturn(foreign);
+        when(impostor.getRev()).thenReturn("2-b");
+        deterministicReadAnswers("42", impostor);
+        writesSucceed();
+
+        ConnectorDefinitionService.LegacyIdMigrationResult result =
+                service.migrateLegacyGeneratedIds();
+
+        assertTrue(deletedIds.isEmpty(),
+                "the only row defining \"42\" was retired as a duplicate of a row that names "
+                        + "another connector: " + deletedIds);
+        assertTrue(result.divergent.stream().anyMatch(d -> d.contains("42")),
+                "the pair was not reported as divergent: " + result.divergent);
+    }
+
+    @Test
     @DisplayName("a MATCHING connector disabled by an explicit NULL that cannot be read does not "
             + "refuse the resolution — the mapper reads null into the primitive as false")
     void aDisabledByNullRowTheResolverCannotReadDoesNotRefuseTheResolution() {

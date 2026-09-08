@@ -506,9 +506,10 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
 
     /**
      * Writes a row that already sits under its deterministic id back with its identity as the
-     * string this node reads. Nothing else about the row changes, and the write is conditional
-     * on the revision the row was read at, so a concurrent edit refuses rather than overwrites.
-     * A failure is reported and retried on the next startup, like every other step here.
+     * string this node reads. Nothing else about the row's content changes, and the write is
+     * conditional on the revision the row was read at, so a concurrent edit refuses rather
+     * than overwrites. A row carrying attachments is refused instead (see below). A failure is
+     * reported and retried on the next startup, like every other step here.
      */
     private void normaliseIdentityInPlace(com.ibm.cloud.cloudant.v1.Cloudant cloudant,
             String dbName, String id, com.ibm.cloud.cloudant.v1.model.Document row,
@@ -517,12 +518,28 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         // identity, and the id is deterministic — everything after the prefix is the profileId
         // this node reads the row as.
         String profileId = id.substring(ImportProfileDefinition.DOC_TYPE.length() + 1);
+        if (row.getAttachments() != null && !row.getAttachments().isEmpty()) {
+            // The same refusal the copy path makes, for the same reason: getProperties() does
+            // not carry attachments, so writing the row back from them would destroy the
+            // binaries — and here there is no copy to lose them from, the only holder IS this
+            // row. The row keeps its stored identity, so its update goes on answering 503;
+            // that is said here rather than paid for silently. A review found the new path
+            // making exactly the bet the copy path refuses to make.
+            result.failures.add(id + " (its stored profileId is not the string \"" + profileId
+                    + "\", which the Mango selector cannot match, and the row carries"
+                    + " attachments this migration does not copy; it is left as it is, so"
+                    + " updates of this profile keep answering 503 until it is repaired)");
+            logger.error("Import profile row {} carries attachments and its profileId was NOT"
+                    + " rewritten; updates of this profile answer 503 until it is repaired", id);
+            return;
+        }
         try {
             Document rewritten = new Document();
             for (Map.Entry<String, Object> entry
-                    : normalisedContent(row.getProperties(), profileId).entrySet()) {
+                    : normalisedContent(row.getProperties()).entrySet()) {
                 rewritten.put(entry.getKey(), entry.getValue());
             }
+            rewritten.put("profileId", profileId);
             rewritten.setId(id);
             rewritten.setRev(row.getRev());
             DocumentResult written = cloudant.postDocument(new PostDocumentOptions.Builder()
@@ -534,6 +551,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                         + (written == null ? "no result" : written.getError()) + ")");
                 return;
             }
+            result.normalised++;
             logger.info("Rewrote the profileId of {} as the string \"{}\" this node reads it"
                     + " as; the Mango selector could not match its stored value", id, profileId);
         } catch (RuntimeException rowFailed) {
@@ -574,16 +592,27 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
     }
 
     /**
-     * A row's content with its identity as this node reads it — what the copy this migration
-     * writes carries. Comparing the raw contents instead made an INTERRUPTED pass unable to
-     * converge: the copy is written normalised, so if the retirement of the legacy row then
-     * failed, the next pass compared a normalised deterministic row with the un-normalised
-     * legacy one, called the identical pair divergent, and never retired it — a standing twin
-     * that blocks every update of that profile. A review found the retry path.
+     * A row's content with ITS OWN identity as this node reads it — what the copy this
+     * migration writes carries. Comparing the raw contents instead made an INTERRUPTED pass
+     * unable to converge: the copy is written normalised, so if the retirement of the legacy
+     * row then failed, the next pass compared a normalised deterministic row with the
+     * un-normalised legacy one, called the identical pair divergent, and never retired it — a
+     * standing twin that blocks every update of that profile. A review found the retry path.
+     *
+     * <p>Each row's own reading, not an expected one: the first version substituted the
+     * profileId being migrated into BOTH sides, which made a foreign row occupying the
+     * deterministic id (one that names a different profile — a state this service warns about
+     * elsewhere) compare EQUAL to the legacy row, so the only row defining this profile was
+     * retired as a duplicate of it. A review caught that before first contact. A value the
+     * mapper refuses is left as it is stored: two rows are then equal only if their stored
+     * values are.
      */
-    private static Map<String, Object> normalisedContent(Map<String, Object> props, String profileId) {
+    private static Map<String, Object> normalisedContent(Map<String, Object> props) {
         Map<String, Object> content = contentOnly(props);
-        content.put("profileId", profileId);
+        ImportProfileDefinition idOnly = readAlone(props, "profileId");
+        if (idOnly != null && idOnly.getProfileId() != null) {
+            content.put("profileId", idOnly.getProfileId());
+        }
         return content;
     }
 
@@ -653,8 +682,8 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                 }
                 createdNow = true;
             } else if (!java.util.Objects.equals(
-                    normalisedContent(legacy.getProperties(), profileId),
-                    normalisedContent(existing.getProperties(), profileId))) {
+                    normalisedContent(legacy.getProperties()),
+                    normalisedContent(existing.getProperties()))) {
                 // Choosing a winner silently destroys the other row's configuration — the
                 // loss this migration exists to prevent — so NEITHER is touched.
                 Object legacyRepo = legacy.getProperties() == null ? null

@@ -128,9 +128,18 @@ public interface ConnectorDefinitionService {
     final class LegacyIdMigrationResult {
         /** Legacy rows rewritten under their deterministic id (copy verified, then retired). */
         public int migrated;
-        /** Legacy rows whose deterministic twin already held IDENTICAL content — leftovers of
-         *  an interrupted earlier pass — retired without a new write. */
+        /** Legacy rows whose deterministic twin already held the same content — leftovers of
+         *  an interrupted earlier pass — retired without a new write. "The same" is read the
+         *  way this node reads a row, so two rows that differ only in how the identity is
+         *  STORED (the number 42 against the string "42") are the same content here; the
+         *  copy this migration writes is normalised, so an interrupted pass must be able to
+         *  recognise its own leftover. */
         public int sweptDuplicates;
+        /** Rows already under their deterministic id whose stored identity was rewritten as
+         *  the string this node reads it as. Until that happens the type-strict Mango
+         *  selector cannot match the row while every index-free walk counts it, so its
+         *  updates answer 503. */
+        public int normalised;
         /** connectorIds where the legacy row and the deterministic row DISAGREE. Neither row
          *  is touched: choosing silently is exactly the data loss §62 is about. */
         public final java.util.List<String> divergent = new java.util.ArrayList<>();
@@ -145,6 +154,7 @@ public interface ConnectorDefinitionService {
         @Override
         public String toString() {
             return "migrated=" + migrated + ", sweptDuplicates=" + sweptDuplicates
+                    + ", normalised=" + normalised
                     + ", divergent=" + divergent + ", failures=" + failures;
         }
     }
