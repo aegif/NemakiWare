@@ -99,19 +99,32 @@ public interface ImportProfileDefinitionService {
     /**
      * A row of the owned listing that could not be interpreted as a profile, with the raw
      * fields a caller needs to tell whether the row was addressed to it. The webhook
-     * receiver asks {@link #namesConnector(String)}: a row that names its connector and
-     * cannot be read is a recipient it cannot establish, not "no recipient".
+     * receiver asks {@link #addressedTo(String, SourceArchetype)}: a row that was addressed
+     * to its connector and cannot be read is a recipient it cannot establish, not "no
+     * recipient".
+     *
+     * <p>The two questions the receiver asks of a readable row — does it name the connector,
+     * does it admit the connector's archetype — are asked of the raw fields one at a time,
+     * and each field of unreadable shape leaves only ITS question open. A row whose connector
+     * fields cannot be read but whose archetype list plainly excludes the connector's
+     * archetype is not addressed to it, and neither is a row whose archetype list cannot be
+     * read but whose connector fields name someone else: in both, a readable row with the
+     * same fields would have been filtered out on the readable field. The first version
+     * folded both fields into one flag and refused on either; a review found the over-throw.
      *
      * @param allowedArchetypes the raw {@code allowedArchetypes} entries when the field is a
      *                          list of strings (an empty list restricts none, as
      *                          {@link ImportProfileDefinition#isArchetypeAllowed} reads it);
      *                          null when the field is absent or of a shape this node cannot
-     *                          read — {@code addresseeUnknown} says which
-     * @param addresseeUnknown true when a connector or archetype field is present in the row
-     *                         but not in a shape this node can read (a value that is not a
-     *                         string, a list with non-string entries): whom the row
-     *                         addresses cannot be established, so it addresses every
-     *                         connector
+     *                          read — both admit every archetype, which is the fail-closed
+     *                          reading of a restriction that cannot be established, so the
+     *                          two need no telling apart
+     * @param addresseeUnknown true when {@code defaultConnectorId} or
+     *                         {@code allowedConnectorIds} is present in the row but not in a
+     *                         shape this node can read (a value that is not a string, a list
+     *                         with non-string entries): whom the row names cannot be
+     *                         established, so it names every connector. The archetype list
+     *                         does not feed this flag — see {@code allowedArchetypes}
      * @param reason why the row could not be read (the deserialisation failure, or that the
      *               row has no profileId)
      */
@@ -135,23 +148,16 @@ public interface ImportProfileDefinitionService {
         }
 
         /**
-         * Whether the row was addressed to this connector: it names it, and its raw
-         * {@code allowedArchetypes} — when present and readable as archetypes — admit the
-         * connector's archetype, read the way {@link ImportProfileDefinition#isArchetypeAllowed}
-         * reads a readable row (an absent or empty list admits every archetype; a connector
-         * with no archetype is admitted by no restricting list). A readable row with the same
-         * fields would have been filtered out by the receiver; refusing on it would stop a
-         * dispatch that row could never have received — a review found the receiver refusing
-         * on the name alone. A list holding a name that is not an archetype this node knows
-         * cannot be established to exclude anything (such a row would not have read at all,
-         * whatever its author meant), so it addresses every archetype, like a list of
-         * unreadable shape.
+         * Whether the row's raw {@code allowedArchetypes} admit this archetype, read the way
+         * {@link ImportProfileDefinition#isArchetypeAllowed} reads a readable row: an absent
+         * or empty list admits every archetype, and a connector with no archetype is admitted
+         * by no restricting list. A list holding a name that is not an archetype this node
+         * knows cannot be established to exclude anything (such a row would not have read at
+         * all, whatever its author meant), so it admits every archetype, like a list of
+         * unreadable shape. The connector fields play no part here.
          */
-        public boolean addressedTo(String connectorId, SourceArchetype archetype) {
-            if (!namesConnector(connectorId)) {
-                return false;
-            }
-            if (addresseeUnknown || allowedArchetypes == null || allowedArchetypes.isEmpty()) {
+        public boolean admitsArchetype(SourceArchetype archetype) {
+            if (allowedArchetypes == null || allowedArchetypes.isEmpty()) {
                 return true;
             }
             for (String name : allowedArchetypes) {
@@ -160,6 +166,18 @@ public interface ImportProfileDefinitionService {
                 }
             }
             return archetype != null && allowedArchetypes.contains(archetype.name());
+        }
+
+        /**
+         * Whether the row was addressed to this connector: it names it AND admits its
+         * archetype — the receiver's conjunction for a readable row, asked of the raw fields.
+         * A readable row with the same fields would have been filtered out on whichever
+         * question answers "no"; refusing on it would stop a dispatch that row could never
+         * have received. A review found the receiver refusing on the name alone; the next
+         * found it refusing on either field's unreadable shape.
+         */
+        public boolean addressedTo(String connectorId, SourceArchetype archetype) {
+            return namesConnector(connectorId) && admitsArchetype(archetype);
         }
 
         private static boolean isAnArchetype(String name) {

@@ -8069,7 +8069,7 @@ anchor 不動) の値のまま。**残る 370 本はこの木では未測定** �
   除外する行でも webhook を止めていた** (読める行なら受信側の archetype 判定
   `isArchetypeAllowed` で外れる) — over-throw。`UninterpretableRow` に raw `allowedArchetypes`
   を持たせ、受信側は `addressedTo(connectorId, archetype)` で判定する。読める行の読み方を
-  写して、絶対または空の list は全 archetype を許し、archetype の無いコネクタはどの制限 list
+  写して、不在または空の list は全 archetype を許し、archetype の無いコネクタはどの制限 list
   にも入らない。**list が読めない形 (文字列の list でない) なら `addresseeUnknown`**、
   **この node の知らない名前を含む list は「除外と確定できない」として全 archetype 宛て**
   (`SourceArchetype` は enum で、既定の mapper は名前を厳密に読む — `"file_share"` の行は
@@ -8098,3 +8098,53 @@ anchor 不動) の値のまま。**残る 370 本はこの木では未測定** �
 起動前スナップショット (`git diff HEAD` の保存) の hunk を `git apply --include` で当てて復元し、
 変更ファイル全部がスナップショットと一致することを確認してから再起動した (checkout は使って
 いない — 未コミットの変更が消えるため)。測定値は再起動後のものだけ。
+
+### 14 巡目 (Codex + サブエージェント、並行) — P2 (重複含め) 4・P3 8、両者 `NOT CONVERGED`
+
+コミット `cc97f50c5` に対して。P1 なし。**13 巡目の処置が、over-throw を 1 つ直して 2 つ作った。**
+
+- **P2 (両者) — RELEASE_NOTES「飛ばした行の ID は WARN にあり、`?docId=` で消せます」は木より
+  強い。** `?docId=` 付き DELETE は分岐した対の片方を消す操作で、単独の行は
+  `ProfileHasNoTwinException` / `ConnectorHasNoTwinException` (409) で拒む。プロファイルは
+  管理者限定で呼出元 repository と行の一致も要り、URL には profileId も要る (WARN には docId
+  しか無い)。**さらに (サブ)、ID なしの DELETE も `resolveMine` → `getForRepository` が
+  その行を `convertValue` できず `ProfileIndexNotReadyException` → 503** — つまり**読めない
+  単独行のプロファイルは、この版の管理 API では消せない**。文を「ID は WARN に出る」に弱め、
+  この制約を利用者向けに開示した (直すのは別の版 — 読めない行を消す操作は、この batch の
+  「読めなかった」の範囲外)。
+- **P2 (サブ) — `addresseeUnknown` に 2 欄を畳んで、確定できる除外を捨てていた (over-throw
+  2 セル)。** (A) コネクタ欄が読めず archetype list は読めて除外 → 拒否していた (読める行なら
+  archetype で外れる)。(B) archetype 欄が読めずコネクタ欄は読めて名指していない → 13 巡目で
+  flag を archetype にも広げたため**全コネクタ拒否になった (cc97f50c5 が持ち込んだ回帰)**。
+  しかも 13 巡目に書いた錠 `aRowWhoseArchetypeFieldHasNoReadableShapeAddressesEveryConnector`
+  がその誤りを固定していた。処置: flag はコネクタ 2 欄だけに戻し、archetype は
+  `admitsArchetype` (読めない形は null = 全 archetype を許す、fail-closed 側で flag 不要) に
+  分け、`addressedTo` = `namesConnector && admitsArchetype` の連言にした。錠: 受信側にセル A
+  (200)、service 側にセル A / セル B (書き直し)。コントロール **YM** (呼び出し側で flag を
+  先に見る) / **YN** (flag に archetype を畳み直す) / **YO** (`admitsArchetype` が flag で
+  短絡)。
+- **P2 (Codex) — YI が helper (`addressedTo` の未知名ループ) を壊していて呼び出し側でない。**
+  YI を受信側の行の再実装 (未知名 arm 抜き) に変え、helper 側の arm 削除は premise 錠を期待
+  する **YJ** に分けた。
+- **P3 (Codex)** record の javadoc「receiver asks namesConnector」→ `addressedTo`。台帳 13 巡目の
+  「絶対または空」→「不在または空」。
+- **P3 (サブ)** 受信側 javadoc に archetype の条件を足した。503 の文言「may name it (its
+  connector fields cannot be read)」は flag をコネクタ欄だけに戻したので再び正確。コントロールの
+  欠け → **YK** (raw list を運ばない) / **YL** (`archetype != null` の arm、錠は owned-listing に
+  追加)。錠の数え方: cc97f50c5 の新規テストメソッドは 6 本 (受信側 2、profile 3 — premise 錠を
+  含む — 、connector 1) + 既存 1 本の拡張で、コミットメッセージの「錠 6 本 + 拡張 1 + premise
+  錠 1」は premise 錠を二重に数えていた (**訂正: 6 + 拡張 1**)。premise 錠は本番と同じ
+  `MAPPER` で `["file_share"]` の行が読めないことを走らせて測っており、「既定の mapper は名前を
+  厳密に読む」は知識でなく測定 — ここに記録する。RELEASE_NOTES の行単位の列挙に ID 指定の
+  読み書き (`resolveMine` → `getForRepository` の 503) を足した。
+- **記録のみ (サブ)**: list に `null` 要素 (`["CHAT_CONTEXT", null]`) は Jackson は読めるが
+  `isListOfStrings` は読めない形とし、null → 全 archetype 宛て → 名指していれば拒否。読める行
+  なら FILE_SHARE は外れるので厳密には over-throw だが、API の書込みが作らない退化した形で、
+  fail-closed 側に倒れている。直さず開示。
+
+**この巡の測定**: コントロールは **445 本** (新設 6: YJ YK YL YM YN YO。YH / YI は書き直し、XB は
+anchor を 13 巡目前の式に戻した)。事前検査 445/445 (self-test 19/19、expect_fail の宣言 0 問題、
+anchor 0 drift)。変更ファイル (interface / profile impl / 受信側) を標的にする **85 本を
+compile-check し 85/85**、続けてバッチ **75 本 (64 + 13 巡目の 5 + 新設 6) を測定し 75/75 FIRED**
+(compile-check 61 分、バッチ 110 分)。木は起動前スナップショットと一致 (`.nc-backup` 残り 0)。
+**残る 370 本はこの木では未測定** — 通しは収束後。

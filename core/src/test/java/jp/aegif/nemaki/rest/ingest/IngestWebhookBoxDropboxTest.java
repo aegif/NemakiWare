@@ -379,6 +379,29 @@ class IngestWebhookBoxDropboxTest {
     }
 
     @Test
+    void aBrokenRowWhoseConnectorFieldsCannotBeReadButWhoseArchetypesExcludeTheConnectorDoesNotStopTheDispatch()
+            throws Exception {
+        // The connector fields cannot be read (the row may name anyone), but the archetype
+        // list is readable and plainly excludes FILE_SHARE: a readable row with these fields
+        // would have been filtered out on the archetype alone, whatever its connector fields
+        // said. The first version folded both fields into one flag and refused; a review
+        // found the over-throw.
+        String secret = "dbxsecret";
+        connector("c-dbx", "dropbox", secret);
+        ImportProfileDefinition readable = profileFor("c-dbx", Map.of("folderPath", "/Documents"));
+        when(profileService.listOwnedIndexFree()).thenReturn(owned(List.of(readable), List.of(
+                new ImportProfileDefinitionService.UninterpretableRow(
+                        "import_profile_definition:p-mail-anyone", "p-mail-anyone", null, null,
+                        List.of("MESSAGE_CONTEXT"), true, "defaultConnectorId: not a string"))));
+
+        mockMvc.perform(signedDropboxPost("c-dbx", secret))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("\"status\":\"accepted\"")));
+
+        verify(schedulerService).authorizeDelegatedFetch(any(), any());
+    }
+
+    @Test
     void aBrokenRowWithAnUnknownArchetypeNameStillStopsTheDispatch() throws Exception {
         // "file_share" is not an archetype this node knows (the enum reads its exact names),
         // so the row cannot be established to exclude the connector — whatever its author

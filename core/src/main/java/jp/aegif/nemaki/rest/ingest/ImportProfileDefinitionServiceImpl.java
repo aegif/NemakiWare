@@ -930,16 +930,18 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         Object defaultConnector = props.get("defaultConnectorId");
         Object allowedConnectors = props.get("allowedConnectorIds");
         Object allowedArchetypes = props.get("allowedArchetypes");
-        // A connector (or archetype) field that is there but not in a readable shape leaves
-        // the addressee unknown — the row then names every connector, not none. A review
-        // found the first version reading such a field as "names nobody", which is the skip
-        // this record exists to prevent, one field down. The archetype list is carried so
-        // that a row whose archetypes plainly exclude the connector's is not refused on its
-        // name alone — a readable row with the same list would be filtered out. A later
-        // review found that over-throw.
+        // A connector field that is there but not in a readable shape leaves the addressee
+        // unknown — the row then names every connector, not none. A review found the first
+        // version reading such a field as "names nobody", which is the skip this record
+        // exists to prevent, one field down. The archetype list is carried so that a row
+        // whose archetypes plainly exclude the connector's is not refused on its name alone —
+        // a readable row with the same list would be filtered out; a later review found that
+        // over-throw. The archetype list's shape does NOT feed the flag: an unreadable list
+        // reads as null, which admits every archetype — the fail-closed answer for THAT
+        // question — while the connector fields keep answering theirs. Folding it in made a
+        // row naming someone else stop every connector's dispatch; a review found that too.
         boolean addresseeUnknown = (defaultConnector != null && !(defaultConnector instanceof String))
-                || (allowedConnectors != null && !isListOfStrings(allowedConnectors))
-                || (allowedArchetypes != null && !isListOfStrings(allowedArchetypes));
+                || (allowedConnectors != null && !isListOfStrings(allowedConnectors));
         sink.add(new UninterpretableRow(docId, rawString(props.get("profileId")),
                 rawString(defaultConnector), rawStrings(allowedConnectors),
                 rawStrings(allowedArchetypes), addresseeUnknown, reason));

@@ -4401,8 +4401,7 @@ CONTROLS = [
              "the uninterpretable-row record exists to prevent, one field down",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
         find='        boolean addresseeUnknown = (defaultConnector != null && !(defaultConnector instanceof String))\n'
-             '                || (allowedConnectors != null && !isListOfStrings(allowedConnectors))\n'
-             '                || (allowedArchetypes != null && !isListOfStrings(allowedArchetypes));',
+             '                || (allowedConnectors != null && !isListOfStrings(allowedConnectors));',
         replace='        boolean addresseeUnknown = false;',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['aRowWhoseConnectorFieldsHaveNoReadableShapeAddressesEveryConnector'],
@@ -4673,19 +4672,33 @@ CONTROLS = [
     ),
     dict(
         id="YH",
-        what="an archetype list of unreadable shape reads as 'excludes everyone' again — XB one "
-             "field further down, for the field YG added",
+        what="an archetype field of unreadable shape is 'helpfully' read as a one-name list "
+             "again — a bare string restricts the row to that archetype instead of admitting all",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
-        find='                || (allowedConnectors != null && !isListOfStrings(allowedConnectors))\n'
-             '                || (allowedArchetypes != null && !isListOfStrings(allowedArchetypes));',
-        replace='                || (allowedConnectors != null && !isListOfStrings(allowedConnectors));',
+        find='                rawStrings(allowedArchetypes), addresseeUnknown, reason));',
+        replace='                (allowedArchetypes instanceof String s ? List.of(s) : rawStrings(allowedArchetypes)),\n'
+                '                addresseeUnknown, reason));',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['aRowWhoseArchetypeFieldHasNoReadableShapeAddressesEveryConnector'],
+        expect_fail=['aRowWhoseArchetypeFieldHasNoReadableShapeAdmitsEveryArchetypeButNamesOnlyItsConnectors'],
     ),
     dict(
         id="YI",
-        what="a broken row's archetype list with a name this node does not know reads as "
-             "'excludes the connector' — the same silent loss YG's relaxation must not reopen",
+        what="the receiver reads a broken row's archetype list with a name this node does not "
+             "know as 'excludes the connector' — the same silent loss YG's relaxation must not "
+             "reopen. At the call site: a receiver that re-derives the admission from the raw "
+             "list without the unknown-name arm",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='            if (broken.addressedTo(connId, connector.getSourceArchetype())) {',
+        replace='            if (broken.namesConnector(connId) && (broken.allowedArchetypes() == null'
+                ' || broken.allowedArchetypes().isEmpty()'
+                ' || broken.allowedArchetypes().contains(connector.getSourceArchetype().name()))) {',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['aBrokenRowWithAnUnknownArchetypeNameStillStopsTheDispatch'],
+    ),
+    dict(
+        id="YJ",
+        what="the unknown-name arm itself goes (YI's helper twin, measured against the premise "
+             "lock that reads the row through the production mapper)",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionService.java',
         find='            for (String name : allowedArchetypes) {\n'
              '                if (!isAnArchetype(name)) {\n'
@@ -4693,8 +4706,64 @@ CONTROLS = [
              '                }\n'
              '            }\n',
         replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aMiscasedArchetypeNameMakesTheRowUnreadableAndItAddressesEveryArchetype'],
+    ),
+    dict(
+        id="YK",
+        what="the raw archetype list is not carried on the uninterpretable row — the receiver "
+             "is back to judging on the name alone",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                rawStrings(allowedArchetypes), addresseeUnknown, reason));',
+        replace='                null, addresseeUnknown, reason));',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest'],
+    ),
+    dict(
+        id="YL",
+        what="a connector with no archetype is admitted by a restricting list — the readable "
+             "path's isArchetypeAllowed admits it by none",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionService.java',
+        find='            return archetype != null && allowedArchetypes.contains(archetype.name());',
+        replace='            return archetype == null || allowedArchetypes.contains(archetype.name());',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest'],
+    ),
+    dict(
+        id="YM",
+        what="the receiver refuses on unreadable connector fields before looking at a readable "
+             "archetype list that plainly excludes the connector — the fold's over-throw, at "
+             "the call site",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='            if (broken.addressedTo(connId, connector.getSourceArchetype())) {',
+        replace='            if (broken.addresseeUnknown() || broken.addressedTo(connId, connector.getSourceArchetype())) {',
         test='IngestWebhookBoxDropboxTest',
-        expect_fail=['aBrokenRowWithAnUnknownArchetypeNameStillStopsTheDispatch'],
+        expect_fail=['aBrokenRowWhoseConnectorFieldsCannotBeReadButWhoseArchetypesExcludeTheConnectorDoesNotStopTheDispatch'],
+    ),
+    dict(
+        id="YN",
+        what="the archetype field's shape is folded into addresseeUnknown again — a row naming "
+             "someone else stops every connector's dispatch (the regression cc97f50c5 carried)",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='        boolean addresseeUnknown = (defaultConnector != null && !(defaultConnector instanceof String))\n'
+             '                || (allowedConnectors != null && !isListOfStrings(allowedConnectors));',
+        replace='        boolean addresseeUnknown = (defaultConnector != null && !(defaultConnector instanceof String))\n'
+                '                || (allowedConnectors != null && !isListOfStrings(allowedConnectors))\n'
+                '                || (allowedArchetypes != null && !isListOfStrings(allowedArchetypes));',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aRowWhoseArchetypeFieldHasNoReadableShapeAdmitsEveryArchetypeButNamesOnlyItsConnectors'],
+    ),
+    dict(
+        id="YO",
+        what="admitsArchetype short-circuits on the connector flag again — YM's helper twin, "
+             "measured at the record",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionService.java',
+        find='        public boolean admitsArchetype(SourceArchetype archetype) {\n'
+             '            if (allowedArchetypes == null || allowedArchetypes.isEmpty()) {',
+        replace='        public boolean admitsArchetype(SourceArchetype archetype) {\n'
+                '            if (addresseeUnknown || allowedArchetypes == null || allowedArchetypes.isEmpty()) {',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aRowWhoseConnectorFieldsHaveNoReadableShapeIsNotAddressedToAnArchetypeItExcludes'],
     ),
     dict(
         id="XR",

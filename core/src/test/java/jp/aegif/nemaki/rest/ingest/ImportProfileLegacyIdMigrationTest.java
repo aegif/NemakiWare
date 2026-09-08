@@ -1338,6 +1338,9 @@ class ImportProfileLegacyIdMigrationTest {
         assertTrue(reported.addressedTo("c-dbx", SourceArchetype.FILE_SHARE)
                         && !reported.addressedTo("c-dbx", SourceArchetype.MESSAGE_CONTEXT),
                 "addressedTo does not read the raw archetype list");
+        assertFalse(reported.addressedTo("c-dbx", null),
+                "a connector with no archetype was admitted by a restricting list — "
+                        + "isArchetypeAllowed admits it by none");
         verify(cloudant, never()).postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class));
     }
 
@@ -1421,13 +1424,15 @@ class ImportProfileLegacyIdMigrationTest {
     }
 
     @Test
-    @DisplayName("a row whose archetype field has no readable shape addresses EVERY connector "
-            + "and every archetype")
-    void aRowWhoseArchetypeFieldHasNoReadableShapeAddressesEveryConnector() {
+    @DisplayName("a row whose archetype field has no readable shape admits EVERY archetype — "
+            + "but still names only the connectors its readable connector fields name")
+    void aRowWhoseArchetypeFieldHasNoReadableShapeAdmitsEveryArchetypeButNamesOnlyItsConnectors() {
         // The archetype list is the third field the receiver reads off a broken row (to let a
         // row that plainly excludes the connector's archetype through). A list that is not a
         // list of strings cannot exclude anything — reading it as "excludes everyone" would be
-        // the same skip one field further down.
+        // the same skip one field further down. But its shape says nothing about WHOM the row
+        // names: the first version folded it into addresseeUnknown, and a row naming c-dbx
+        // stopped c-other's dispatch. A review found that over-throw.
         wire();
         Map<String, Object> oddShape = profileProps("p-odd", "Odd");
         oddShape.put("retentionDays", "not-a-number");
@@ -1439,10 +1444,41 @@ class ImportProfileLegacyIdMigrationTest {
 
         assertEquals(1, owned.uninterpretable().size(), "the row was not reported: " + owned);
         ImportProfileDefinitionService.UninterpretableRow reported = owned.uninterpretable().get(0);
-        assertTrue(reported.addresseeUnknown(),
-                "an archetype field of unreadable shape was not reported as such");
-        assertTrue(reported.addressedTo("c-anything", SourceArchetype.MESSAGE_CONTEXT),
+        assertEquals(null, reported.allowedArchetypes(),
+                "an archetype field of unreadable shape was carried as a list");
+        assertTrue(reported.addressedTo("c-dbx", SourceArchetype.MESSAGE_CONTEXT),
                 "a row whose archetypes cannot be read answered 'not addressed to this one'");
+        assertFalse(reported.addresseeUnknown(),
+                "the archetype field's shape was folded into the connector fields' flag");
+        assertFalse(reported.addressedTo("c-other", SourceArchetype.FILE_SHARE),
+                "a row naming c-dbx, whose archetypes cannot be read, was addressed to c-other");
+    }
+
+    @Test
+    @DisplayName("a row whose connector fields have no readable shape is still not addressed to "
+            + "a connector its readable archetype list plainly excludes")
+    void aRowWhoseConnectorFieldsHaveNoReadableShapeIsNotAddressedToAnArchetypeItExcludes() {
+        // Whom the row names cannot be established (it names everyone), but its archetype list
+        // is readable and excludes FILE_SHARE: a readable row with these fields would have
+        // been filtered out on the archetype alone. The first version short-circuited on the
+        // connector flag before looking at the list; a review found the over-throw.
+        wire();
+        Map<String, Object> oddShape = profileProps("p-odd", "Odd");
+        oddShape.put("retentionDays", "not-a-number");
+        oddShape.put("defaultConnectorId", 42);
+        oddShape.put("allowedArchetypes", List.of("MESSAGE_CONTEXT"));
+        listingAnswers(List.of(row("import_profile_definition:p-odd", oddShape, "1-a")));
+
+        ImportProfileDefinitionService.OwnedProfiles owned = service.listOwnedIndexFree();
+
+        assertEquals(1, owned.uninterpretable().size(), "the row was not reported: " + owned);
+        ImportProfileDefinitionService.UninterpretableRow reported = owned.uninterpretable().get(0);
+        assertTrue(reported.addresseeUnknown(),
+                "a connector field of unreadable shape was not reported as such");
+        assertTrue(reported.addressedTo("c-anything", SourceArchetype.MESSAGE_CONTEXT),
+                "a row that may name anyone was not addressed to the archetype it admits");
+        assertFalse(reported.addressedTo("c-anything", SourceArchetype.FILE_SHARE),
+                "a row whose readable archetype list excludes FILE_SHARE was addressed to it");
     }
 
     @Test

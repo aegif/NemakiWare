@@ -533,9 +533,12 @@ public class IngestWebhookController {
      * measured on a real CouchDB; a listing that failed outright was a 500.) A listing that
      * cannot be completed now throws, and {@link #receiveWebhook} answers 503. Rows that
      * name no repository are not recipients: the import resolves no row for them in any
-     * repository, so dispatching to one was a fetch that could only fail. A row that names
-     * this connector and could not be read is a recipient this receiver cannot establish —
-     * refused, not left out.
+     * repository, so dispatching to one was a fetch that could only fail. A row that was
+     * addressed to this connector — names it and, as far as its raw archetype list can be
+     * read, admits its archetype — and could not be read is a recipient this receiver cannot
+     * establish: refused, not left out. A broken row that a readable row with the same
+     * fields would have been filtered out on (another connector's name, or an archetype
+     * list that plainly excludes this one) does not stop the dispatch.
      */
     private List<ImportProfileDefinition> findAllProfilesForConnector(ConnectorDefinition connector) {
         if (profileService == null) {
