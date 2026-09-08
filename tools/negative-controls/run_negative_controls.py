@@ -4043,7 +4043,8 @@ CONTROLS = [
         what="the webhook receiver picks its recipients out of the Mango selector again — a "
              "rebuilding index reads as 'no profile', 200, and the sender's event is gone",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
-        # Re-anchored in round 2 (the listing became OwnedProfiles; `owned` stays unused).
+        # Re-anchored in round 2 (the listing became OwnedProfiles; the uninterpretable-row
+        # loop above the anchor still reads `owned`, so the sabotage compiles).
         find='        return owned.profiles().stream()',
         replace='        return profileService.list().stream()',
         test='IngestWebhookBoxDropboxTest',
@@ -4234,6 +4235,17 @@ CONTROLS = [
         find_span=('            if (broken.namesConnector(connId)) {',
                    '                        + " and could not be read as a profile (" + broken.reason() + ")");\n            }'),
         replace='            if (broken.namesConnector(connId)) {\n                continue;\n            }',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['aRecipientRowThatCannotBeInterpretedIsA503NotNoProfile'],
+    ),
+    dict(
+        id="YD",
+        what="the receiver's catch for an unreadable recipient row is gone — the refusal falls to "
+             "the generic 500 (VY's twin for RecipientUnreadableException)",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find_span=('        } catch (RecipientUnreadableException recipientBroken) {',
+                   '                            + " read; retry later"));'),
+        replace='',
         test='IngestWebhookBoxDropboxTest',
         expect_fail=['aRecipientRowThatCannotBeInterpretedIsA503NotNoProfile'],
     ),
