@@ -2123,6 +2123,12 @@ class ImportProfileLegacyIdMigrationTest {
         Map<String, Object> textualNull = profileProps("p-null-text", "Null text");
         textualNull.put("enabled", "null");
         textualNull.put("retentionDays", "not-a-number");
+        Map<String, Object> paddedNull = profileProps("p-null-padded", "Null padded");
+        paddedNull.put("enabled", "  null  ");
+        paddedNull.put("retentionDays", "not-a-number");
+        Map<String, Object> zero = profileProps("p-zero", "Zero");
+        zero.put("enabled", 0);
+        zero.put("retentionDays", "not-a-number");
         Map<String, Object> oddSpelling = profileProps("p-odd-case", "Odd case");
         oddSpelling.put("enabled", "fAlSe");
         listingAnswers(List.of(
@@ -2133,6 +2139,8 @@ class ImportProfileLegacyIdMigrationTest {
                 row("import_profile_definition:p-padded", padded, "1-f"),
                 row("import_profile_definition:p-blank-flag", blank, "1-g"),
                 row("import_profile_definition:p-null-text", textualNull, "1-h"),
+                row("import_profile_definition:p-null-padded", paddedNull, "1-i"),
+                row("import_profile_definition:p-zero", zero, "1-j"),
                 row("import_profile_definition:p-odd-case", oddSpelling, "1-b")));
 
         ImportProfileDefinitionService.OwnedProfiles owned = service.listOwnedIndexFree();
@@ -3118,8 +3126,11 @@ class ImportProfileLegacyIdMigrationTest {
         // log line: what has to hold is that the condition names the counter.
         String source = JavaSource.withoutComments(JavaSource.read(
                 "src/main/java/jp/aegif/nemaki/patch/Patch_ConnectorDefinitionDeterministicIds.java"));
-        assertTrue(source.contains("result.migrated == 0 && result.sweptDuplicates == 0")
-                        && source.contains("result.normalised == 0"),
+        // Scoped to the method, not the file: a window wider than the thing it measures goes
+        // green when the condition moves elsewhere. The sister lock below scopes the same way.
+        String summary = JavaSource.methodBody(source, "private void reportPass(");
+        assertTrue(summary.contains("result.migrated == 0 && result.sweptDuplicates == 0")
+                        && summary.contains("result.normalised == 0"),
                 "the quiet summary no longer counts normalised rows as work done");
     }
 

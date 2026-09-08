@@ -5021,7 +5021,8 @@ CONTROLS = [
         replace='',
         test='ConnectorLegacyIdMigrationTest',
         expect_fail=['aRowAlreadyAtItsDeterministicIdIsNormalisedInPlace',
-                     'aRowWithAttachmentsIsNotRewrittenInPlace'],
+                     'aRowWithAttachmentsIsNotRewrittenInPlace',
+                     'aRefusedRewriteIsReported'],
     ),
     dict(
         id="YZ",
