@@ -367,6 +367,11 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         // profileId/connectorId -> (row id -> row). Filled by the walk, acted on after it.
         Map<String, Map<String, com.ibm.cloud.cloudant.v1.model.Document>> legacyRows =
                 new java.util.LinkedHashMap<>();
+        // Rows already under their deterministic id whose STORED identity is not the string
+        // this node reads (row id -> row). Same rule as the legacy rows: collected during the
+        // walk, written after it.
+        Map<String, com.ibm.cloud.cloudant.v1.model.Document> unnormalised =
+                new java.util.LinkedHashMap<>();
 
         // The shared _all_docs walk, not the Mango selector — the selector is answered by
         // the index whose rebuild opens the window this migration closes.
@@ -427,6 +432,15 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
             }
             String deterministicId = ImportProfileDefinition.DOC_TYPE + ":" + profileId;
             if (deterministicId.equals(id)) {
+                // Already where it belongs — but its stored identity may still not be the
+                // string this node reads it as, and then the type-strict Mango selector can
+                // never match it while every walk counts it. That row's update answers a
+                // permanent 503, exactly the state normalising the migrated copies removes.
+                // Returning here without looking left the whole fix conditional on the row
+                // being under a legacy id; a review found the gap.
+                if (!profileId.equals(props.get("profileId"))) {
+                    unnormalised.put(id, doc);
+                }
                 return;
             }
             // COLLECTED, not migrated here. Two reasons, both found by review. (1) With two
@@ -483,7 +497,50 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
             migrateOneLegacyRow(client, cloudant, dbName, only.getValue(), only.getKey(),
                     profileId, deterministicId, result);
         }
+        for (Map.Entry<String, com.ibm.cloud.cloudant.v1.model.Document> entry
+                : unnormalised.entrySet()) {
+            normaliseIdentityInPlace(cloudant, dbName, entry.getKey(), entry.getValue(), result);
+        }
         return result;
+    }
+
+    /**
+     * Writes a row that already sits under its deterministic id back with its identity as the
+     * string this node reads. Nothing else about the row changes, and the write is conditional
+     * on the revision the row was read at, so a concurrent edit refuses rather than overwrites.
+     * A failure is reported and retried on the next startup, like every other step here.
+     */
+    private void normaliseIdentityInPlace(com.ibm.cloud.cloudant.v1.Cloudant cloudant,
+            String dbName, String id, com.ibm.cloud.cloudant.v1.model.Document row,
+            ConnectorDefinitionService.LegacyIdMigrationResult result) {
+        // From the id, not from the row: the row is here BECAUSE its stored value is not the
+        // identity, and the id is deterministic — everything after the prefix is the profileId
+        // this node reads the row as.
+        String profileId = id.substring(ImportProfileDefinition.DOC_TYPE.length() + 1);
+        try {
+            Document rewritten = new Document();
+            for (Map.Entry<String, Object> entry
+                    : normalisedContent(row.getProperties(), profileId).entrySet()) {
+                rewritten.put(entry.getKey(), entry.getValue());
+            }
+            rewritten.setId(id);
+            rewritten.setRev(row.getRev());
+            DocumentResult written = cloudant.postDocument(new PostDocumentOptions.Builder()
+                    .db(dbName).document(rewritten).build()).execute().getResult();
+            if (written == null || !Boolean.TRUE.equals(written.isOk())) {
+                result.failures.add(id + " (its stored profileId is not the string \""
+                        + profileId + "\", which the Mango selector cannot match, and"
+                        + " rewriting it did not take: "
+                        + (written == null ? "no result" : written.getError()) + ")");
+                return;
+            }
+            logger.info("Rewrote the profileId of {} as the string \"{}\" this node reads it"
+                    + " as; the Mango selector could not match its stored value", id, profileId);
+        } catch (RuntimeException rowFailed) {
+            result.failures.add(id + " (its stored profileId is not the string \"" + profileId
+                    + "\", which the Mango selector cannot match, and rewriting it failed: "
+                    + rowFailed.getMessage() + ")");
+        }
     }
 
     private static String kindMessage(String what, String id, int removed, int total,
@@ -513,6 +570,20 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         content.remove("_id");
         content.remove("_rev");
         content.remove("_attachments");
+        return content;
+    }
+
+    /**
+     * A row's content with its identity as this node reads it — what the copy this migration
+     * writes carries. Comparing the raw contents instead made an INTERRUPTED pass unable to
+     * converge: the copy is written normalised, so if the retirement of the legacy row then
+     * failed, the next pass compared a normalised deterministic row with the un-normalised
+     * legacy one, called the identical pair divergent, and never retired it — a standing twin
+     * that blocks every update of that profile. A review found the retry path.
+     */
+    private static Map<String, Object> normalisedContent(Map<String, Object> props, String profileId) {
+        Map<String, Object> content = contentOnly(props);
+        content.put("profileId", profileId);
         return content;
     }
 
@@ -581,8 +652,9 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                     return;
                 }
                 createdNow = true;
-            } else if (!java.util.Objects.equals(contentOnly(legacy.getProperties()),
-                    contentOnly(existing.getProperties()))) {
+            } else if (!java.util.Objects.equals(
+                    normalisedContent(legacy.getProperties(), profileId),
+                    normalisedContent(existing.getProperties(), profileId))) {
                 // Choosing a winner silently destroys the other row's configuration — the
                 // loss this migration exists to prevent — so NEITHER is touched.
                 Object legacyRepo = legacy.getProperties() == null ? null
@@ -924,8 +996,9 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
 
     /**
      * Records a row the walk could not read, with the fields a caller needs to tell whether
-     * the row was addressed to it. Each of those fields is read ON ITS OWN through the
-     * production mapper — the reader of the readable path — so "this node cannot read it"
+     * the row was addressed to it. Those fields are read one QUESTION at a time — the two
+     * connector fields together, the archetype list apart from them — each reading going
+     * through the production mapper, the reader of the readable path, so "this node cannot read it"
      * means exactly "the mapper refuses it": a number where a string is expected coerces
      * ({@code 42} reads as {@code "42"}), an explicit null for the primitive {@code enabled}
      * reads as {@code false}, a null element of a list stays a null element, an archetype
@@ -1232,10 +1305,6 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         if (!errors.isEmpty()) {
             throw new IllegalArgumentException(String.join("; ", errors));
         }
-    }
-
-    private static boolean isBlank(String s) {
-        return s == null || s.isBlank();
     }
 
     /**

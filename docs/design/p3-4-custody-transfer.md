@@ -8301,5 +8301,60 @@ profile 92→101、connector 72→73、webhook 26→25)。11 はコントロー�
 変更 3 ファイルを標的にする **141 本を compile-check し 141/141**、続けてバッチ **106 本
 (15〜16 巡目の 91 + 新設 10 + 張り直した PE QA TH VA VB の 5) を測定し 106/106 FIRED**
 (compile-check 95 分、バッチ 147 分)。木は起動前スナップショットと一致 (`.nc-backup` 残り 0)。
-錠は **10 本追加** (profile 101→105、connector 73→77、他 4 クラスは変化なしで green)。
+錠は **8 本追加** (profile 101→105、connector 73→77、他 4 クラスは変化なしで green。コミット
+メッセージ `f4160c5eb` の「錠 10 本追加」はコントロールの数との取り違えで、**17 巡目に訂正**)。
 **残る 358 本はこの木では未測定** — 通しは収束後。
+
+### 17 巡目 (Codex + サブエージェント、並行) — P2 (重複含め) 5・P3 8、両者 `NOT CONVERGED`
+
+コミット `f4160c5eb` に対して。P1 なし。**16 巡目の正規化が、片側だけに入っていた。**
+
+- **P2 (両者・同一) — コピーは正規化、比較は生のままで、移行が自分の再開経路を塞いでいた。**
+  コピーを書いた後に legacy 行の条件付き delete が落ちると (409・通信断)、次のパスは
+  **正規化済みの確定 ID 行**と**未正規化の legacy 行**を生で比較して必ず不一致 → 恒久的に
+  `divergent`「exists as BOTH … with DIFFERENT content」。その間、件数は両方を `"42"` として
+  数えるので **PUT / create が恒久 409**。`sweptDuplicates` の retire 経路には二度と入らない。
+  **16 巡目が新しく作った状態**だった。→ 比較も `normalisedContent` を通す (両側とも識別欄を
+  読んだ文字列に差し替えてから比較)。錠 2 本 (profile / connector: 中断後のパスが legacy 行を
+  retire し、divergent にしない)、コントロール **ZJ / ZN**。ERROR「DIFFERENT content」も、
+  本当に内容が違う行にしか出なくなった。
+- **P2 (両者・同一) — 確定 ID に既に居る行は正規化されない。** 両 migration は
+  `deterministicId.equals(id)` で早期 return するので、`import_profile_definition:42` に
+  `profileId: 42` (数値) が入っている行は移行後も未正規化のまま。その行の update は
+  **恒久 503** (件数 1・セレクタ 0 の腕) で、RELEASE_NOTES の「移行が走るまでの間」という
+  限定が**永続**していた。→ walk 中に収集し、walk の後に**同じ id・読んだ revision 条件付きで
+  書き直す** (`normaliseIdentityInPlace`)。失敗は `failures` に記録して次回起動で再試行。
+  錠 2 本、コントロール **ZK / ZO**。
+- **P2 (サブ) — `namesNoRepository` の 3 か所のうち 2 か所が未測定**
+  (`getOwnedRowIndexFree` / 共有 owned walk)。既存コントロール VB / VZ は `== null` に戻す
+  細工なので、「非文字列は名指さない」だけ戻しても全緑だった。→ 錠 2 本、コントロール
+  **ZL / ZM**。
+- **P3 (サブ) — `expect_fail` の過小宣言 8 件** (ZE QA YU VA TH VB VZ、および新設錠を巻き込む
+  YR)。runner は欠けしか見ないので測定結果は正しいが、15 巡目に決めた「落ちる錠を全部列挙
+  する」から外れていた → 全部列挙した。
+- **P3 (両者) — 「錠 10 本追加」は 8 本** (コントロール数との取り違え。**15 巡目に同じ訂正を
+  書いた直下で再発させた**) → 16 巡目の測定節に訂正。
+- **P3 (サブ)** javadoc の「1 欄ずつ」が 2 か所残っていた (コネクタ 2 欄はまとめて読む) → 訂正。
+  死んだ `isBlank(String)` を削除。RELEASE_NOTES の `"fAlSe"` 開示は「大文字小文字が混ざった」
+  では広すぎる (`"False"` / `"FALSE"` は mapper が読む) → **無効と読む 3 綴りを明記**し、
+  それが mapper の答えであることを**測る錠**を足した (YR が細工で落とす)。
+
+- **並行レビュー (ユーザー転送) の P2 は誤検出**: 「profile 側 `findRawDocs` の通信失敗 WARN が
+  消えている」— コミット `f4160c5eb` にも作業木にも
+  `logger.warn("the selector listing of '{}' could not be read", dbName, transportFailed);` は
+  1 か所ある (コネクタ側 989 行と同形)。**この行が無ければコントロール XY の anchor が一致しない**
+  (XY の細工はこの 1 行の削除) のに、18 巡目の事前検査は 470/470・drift 0 だった。読んだのは
+  **XY を適用中の木**と考えられる (通しの実行中)。13 巡目の QI と同じ形。→ 以後、**レビュー中は
+  通しを走らせない** (ユーザー指示: 「レビュー結果が安定するまでは長時間のテストは控える」)。
+  隣接する本物の論点として `listOwnedRowsIndexFree` の `RuntimeException` arm に WARN が無い点を
+  確かめたが、**受信側が ERROR で残す** (`IngestWebhookController` 211 / 220 行、コネクタ ID と
+  メッセージ) ので「503 にトレースが無い」ではない。スタックトレースは残らない (一覧側の arm は
+  残す) 差はあるので、P3 として記録し直さない。
+
+**この巡の測定**: **未実施**。コントロールは **470 本** (新設 6: ZJ ZK ZL ZM ZN ZO)、事前検査は
+470/470 (self-test 19/19、expect_fail 0 問題、anchor 0 drift) を通したが、**バッチは走らせて
+いない** — 通しの最中にレビューが木を読むと誤検出が出るため、**レビューが 2 巡連続で収束して
+から 1 回だけ流す**方針に切り替えた (17 巡目の並行レビュー P2 が実際にその形で出た)。
+起動していた通しは compile-check の途中で停止し、サボタージュが残った 1 ファイルを
+`git show HEAD:` + スナップショットの hunk で復元して一致を確認済み。錠は **7 本追加**
+(profile 105→110、connector 77→79) で、触れた 4 クラスは green (110 / 79 / 25 / 34)。

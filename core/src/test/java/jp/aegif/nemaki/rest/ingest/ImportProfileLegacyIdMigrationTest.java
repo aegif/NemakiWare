@@ -2032,6 +2032,130 @@ class ImportProfileLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("an interrupted normalising pass converges: the legacy row is retired next "
+            + "time, not called divergent")
+    void anInterruptedNormalisingMigrationRetiresTheLegacyRowOnTheNextPass() {
+        // The copy this migration writes is normalised. If the copy succeeded and the
+        // retirement of the legacy row then failed, the next pass compared a NORMALISED
+        // deterministic row with the UN-normalised legacy one, called the identical pair
+        // divergent and never retired it — a standing twin that blocks every update of that
+        // profile, for ever. A review found the retry path.
+        wire();
+        Map<String, Object> numeric = profileProps("42", "Numeric");
+        numeric.put("profileId", 42);
+        listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
+        Document alreadyCopied = mock(Document.class);
+        when(alreadyCopied.getProperties()).thenReturn(profileProps("42", "Numeric"));
+        when(alreadyCopied.getRev()).thenReturn("2-b");
+        deterministicReadAnswers("42", alreadyCopied);
+        writesSucceed();
+
+        ConnectorDefinitionService.LegacyIdMigrationResult result =
+                service.migrateLegacyGeneratedIds();
+
+        assertTrue(deletedIds.contains("legacy-42"),
+                "the leftover of an interrupted pass was not retired: " + deletedIds);
+        assertTrue(result.divergent.isEmpty(),
+                "an identical pair was reported as divergent: " + result.divergent);
+        assertTrue(result.clean(), "the retry pass reported problems: " + result.failures);
+    }
+
+    @Test
+    @DisplayName("a row ALREADY at its deterministic id whose profileId is the number is "
+            + "rewritten in place")
+    void aRowAlreadyAtItsDeterministicIdIsNormalisedInPlace() {
+        // Normalising only the copies left the fix conditional on the row being under a
+        // legacy id: a row already at import_profile_definition:42 that stores the number
+        // stays invisible to the type-strict Mango selector while every walk counts it, so
+        // its update answers a permanent 503. A review found the gap.
+        wire();
+        Map<String, Object> numeric = profileProps("42", "Numeric");
+        numeric.put("profileId", 42);
+        listingAnswers(List.of(row("import_profile_definition:42", numeric, "3-c")));
+        writesSucceed();
+
+        ConnectorDefinitionService.LegacyIdMigrationResult result =
+                service.migrateLegacyGeneratedIds();
+
+        ArgumentCaptor<PostDocumentOptions> written =
+                ArgumentCaptor.forClass(PostDocumentOptions.class);
+        verify(cloudant).postDocument(written.capture());
+        assertEquals("import_profile_definition:42", written.getValue().document().getId());
+        assertEquals("3-c", written.getValue().document().getRev(),
+                "the rewrite is not conditional on the revision the row was READ at");
+        assertEquals("42", written.getValue().document().get("profileId"),
+                "the stored number was left in place, so the selector can never match the row");
+        assertTrue(result.clean(), "the normalising pass reported problems: " + result.failures);
+        verify(cloudant, never()).deleteDocument(any(DeleteDocumentOptions.class));
+    }
+
+    @Test
+    @DisplayName("which spellings of a string \"enabled\" count as disabled is the mapper's "
+            + "answer — \"False\" yes, \"fAlSe\" no")
+    void whichSpellingsOfADisabledFlagCountIsTheMappersAnswer() {
+        // The release notes name the three spellings. They are the mapper's, not this code's,
+        // so they are measured here on the production mapper rather than asserted from
+        // knowledge: a row disabled by "False" is not a possible recipient, and one whose
+        // enabled is spelled any other way cannot be established as disabled and is reported.
+        wire();
+        Map<String, Object> capitalised = profileProps("p-cap", "Capitalised");
+        capitalised.put("enabled", "False");
+        capitalised.put("retentionDays", "not-a-number");
+        Map<String, Object> oddSpelling = profileProps("p-odd-case", "Odd case");
+        oddSpelling.put("enabled", "fAlSe");
+        listingAnswers(List.of(
+                row("import_profile_definition:p-cap", capitalised, "1-a"),
+                row("import_profile_definition:p-odd-case", oddSpelling, "1-b")));
+
+        ImportProfileDefinitionService.OwnedProfiles owned = service.listOwnedIndexFree();
+
+        assertEquals(List.of("import_profile_definition:p-odd-case"),
+                owned.uninterpretable().stream()
+                        .map(ImportProfileDefinitionService.UninterpretableRow::docId).toList(),
+                "the mapper's spellings are not the ones this code acts on — the release "
+                        + "notes name \"false\"/\"False\"/\"FALSE\": " + owned.uninterpretable());
+        assertTrue(owned.profiles().isEmpty(),
+                "a row the mapper cannot read as a profile was listed: " + owned.profiles());
+    }
+
+    @Test
+    @DisplayName("a row whose repositoryId is not a string is not owned by anybody")
+    void aRowWhoseRepositoryIdIsNotAStringIsNotOwned() {
+        // The blank twin of this lock has been here since the value was widened to blank;
+        // a value of any other shape names no repository either, and IDLE would otherwise
+        // start a capture on a row no repository can manage.
+        wire();
+        Map<String, Object> odd = profileProps("p-odd", "Odd");
+        odd.put("repositoryId", 42);
+        listingAnswers(List.of(row("odd-repo-row", odd, "1-a")));
+
+        assertEquals(null, service.getOwnedRowIndexFree("p-odd"),
+                "a row that names no repository was handed back as an owned one");
+    }
+
+    @Test
+    @DisplayName("the owned listing skips a row whose repositoryId is not a string")
+    void theOwnedListingSkipsARowWhoseRepositoryIdIsNotAString() {
+        // The shared owned-row walk's half of the same reading: such a row is not a webhook
+        // recipient and not a scheduled capture, exactly as a blank one is not.
+        wire();
+        Map<String, Object> odd = profileProps("p-odd", "Odd");
+        odd.put("repositoryId", 42);
+        listingAnswers(List.of(
+                row("import_profile_definition:p-fine", profileProps("p-fine", "Fine"), "1-a"),
+                row("odd-repo-row", odd, "1-b")));
+
+        ImportProfileDefinitionService.OwnedProfiles owned = service.listOwnedIndexFree();
+
+        assertEquals(List.of("p-fine"),
+                owned.profiles().stream().map(ImportProfileDefinition::getProfileId).toList(),
+                "a row that names no repository was listed as owned");
+        assertTrue(owned.uninterpretable().isEmpty(),
+                "a row that names no repository was reported as a possible recipient: "
+                        + owned.uninterpretable());
+    }
+
+    @Test
     @DisplayName("a row of ANOTHER repository is still refused by docId")
     void anotherRepositorysRowIsStillRefused() {
         // The exemption above is for rows with NO repositoryId. A row that names a different

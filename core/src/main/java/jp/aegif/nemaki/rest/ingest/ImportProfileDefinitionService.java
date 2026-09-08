@@ -205,8 +205,8 @@ public interface ImportProfileDefinitionService {
      *
      * <p>Rows that name no repository are not returned: they are not a wildcard, and the
      * import resolves no row for them in any repository. A row that cannot be interpreted is
-     * logged and reported in {@code uninterpretable()} with its addressing fields, each read
-     * on its own through the production mapper — not dropped: the receiver refuses (503) when
+     * logged and reported in {@code uninterpretable()} with its addressing fields, read
+     * through the production mapper one question at a time — not dropped: the receiver refuses (503) when
      * such a row was addressed to its connector ({@link UninterpretableRow#addressedTo}: names
      * it, and admits its archetype as far as the list can be read), and ignores it otherwise,
      * so one broken row stops the webhooks of the connector it was addressed to and no other

@@ -2549,7 +2549,8 @@ CONTROLS = [
         find='                if (definesConnector(props, connectorId)) {\n                    targets.add(doc);',
         replace='                if (definesConnector(props, connectorId)\n                        && id.startsWith(ConnectorDefinition.DOC_TYPE + ":")) {\n                    targets.add(doc);',
         test='ConnectorLegacyIdMigrationTest',
-        expect_fail=['thePlainDeleteRemovesHiddenTwinsToo'],
+        expect_fail=['thePlainDeleteRemovesHiddenTwinsToo',
+                     'thePlainDeleteRemovesARowWhoseConnectorIdIsTheNumber'],
     ),
     dict(
         id="QG",
@@ -3372,7 +3373,9 @@ CONTROLS = [
         find='        boolean unowned = props != null && namesNoRepository(props.get("repositoryId"));',
         replace='        boolean unowned = false;',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['anUnownedRowIsReachable'],
+        expect_fail=['anUnownedRowIsReachable',
+                     'aBlankRepositoryRowIsReachable',
+                     'theOneRowDeleteReachesARowWhoseRepositoryIdIsNotAString'],
     ),
     dict(
         id="TI",
@@ -3792,7 +3795,8 @@ CONTROLS = [
         find='        boolean unowned = props != null && namesNoRepository(props.get("repositoryId"));',
         replace='        boolean unowned = props != null && props.get("repositoryId") == null;',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['aBlankRepositoryRowIsReachable'],
+        expect_fail=['aBlankRepositoryRowIsReachable',
+                     'theOneRowDeleteReachesARowWhoseRepositoryIdIsNotAString'],
     ),
     dict(
         id="VB",
@@ -3803,7 +3807,8 @@ CONTROLS = [
         find='                    || namesNoRepository(props.get("repositoryId"))) {\n                // Blank, not only null:',
         replace='                    || props.get("repositoryId") == null) {\n                // Blank, not only null:',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['aBlankRepositoryRowIsNotOwned'],
+        expect_fail=['aBlankRepositoryRowIsNotOwned',
+                     'aRowWhoseRepositoryIdIsNotAStringIsNotOwned'],
     ),
     dict(
         id="VC",
@@ -4092,7 +4097,8 @@ CONTROLS = [
         find='                    || namesNoRepository(props.get("repositoryId"))) {\n                return;\n            }',
         replace='                    || false) {\n                return;\n            }',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest'],
+        expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest',
+                     'theOwnedListingSkipsARowWhoseRepositoryIdIsNotAString'],
     ),
     dict(
         id="WA",
@@ -4794,7 +4800,8 @@ CONTROLS = [
                 '        return Boolean.FALSE.equals(enabled) || "false".equalsIgnoreCase(String.valueOf(enabled));',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['aRowWhoseEnabledIsAnExplicitNullIsNotARecipient',
-                     'aDisabledByNullRowTheResolverCannotReadDoesNotRefuseTheResolve'],
+                     'aDisabledByNullRowTheResolverCannotReadDoesNotRefuseTheResolve',
+                     'whichSpellingsOfADisabledFlagCountIsTheMappersAnswer'],
     ),
     dict(
         id="YS",
@@ -4823,6 +4830,83 @@ CONTROLS = [
                 ' || "false".equalsIgnoreCase(String.valueOf(props.get("enabled")));',
         test='ConnectorLegacyIdMigrationTest',
         expect_fail=['aDisabledByNullRowTheResolverCannotReadDoesNotRefuseTheResolution'],
+    ),
+    dict(
+        id="ZJ",
+        what="the migration compares raw contents again — an interrupted normalising pass calls "
+             "an identical pair divergent and never retires the legacy row",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='            } else if (!java.util.Objects.equals(\n'
+             '                    normalisedContent(legacy.getProperties(), profileId),\n'
+             '                    normalisedContent(existing.getProperties(), profileId))) {',
+        replace='            } else if (!java.util.Objects.equals(contentOnly(legacy.getProperties()),\n'
+                '                    contentOnly(existing.getProperties()))) {',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['anInterruptedNormalisingMigrationRetiresTheLegacyRowOnTheNextPass'],
+    ),
+    dict(
+        id="ZK",
+        what="a row already at its deterministic id is passed over without looking at its stored "
+             "identity — the normalisation stays conditional on the row being under a legacy id",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                if (!profileId.equals(props.get("profileId"))) {\n'
+             '                    unnormalised.put(id, doc);\n'
+             '                }\n',
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aRowAlreadyAtItsDeterministicIdIsNormalisedInPlace'],
+    ),
+    dict(
+        id="ZL",
+        what="the owned-row lookup goes back to null-or-blank — a row whose repositoryId is not "
+             "a string is handed back as owned, and IDLE starts a capture on it",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='            if (!definesProfile(props, profileId)\n'
+             '                    || namesNoRepository(props.get("repositoryId"))) {',
+        replace='            if (!definesProfile(props, profileId)\n'
+                '                    || props.get("repositoryId") == null\n'
+                '                    || (props.get("repositoryId") instanceof String blank && blank.isBlank())) {',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aRowWhoseRepositoryIdIsNotAStringIsNotOwned'],
+    ),
+    dict(
+        id="ZM",
+        what="the shared owned-row walk goes back to null-or-blank — a row that names no "
+             "repository becomes a webhook recipient and a scheduled capture again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                    || namesNoRepository(props.get("repositoryId"))) {\n'
+             '                return;\n'
+             '            }',
+        replace='                    || props.get("repositoryId") == null\n'
+                '                    || (props.get("repositoryId") instanceof String blank && blank.isBlank())) {\n'
+                '                return;\n'
+                '            }',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theOwnedListingSkipsARowWhoseRepositoryIdIsNotAString'],
+    ),
+    dict(
+        id="ZN",
+        what="the connector migration compares raw contents again — ZJ's twin",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='            } else if (!java.util.Objects.equals(\n'
+             '                    normalisedContent(legacy.getProperties(), connectorId),\n'
+             '                    normalisedContent(existing.getProperties(), connectorId))) {',
+        replace='            } else if (!java.util.Objects.equals(contentOnly(legacy.getProperties()),\n'
+                '                    contentOnly(existing.getProperties()))) {',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['anInterruptedNormalisingMigrationRetiresTheLegacyRowOnTheNextPass'],
+    ),
+    dict(
+        id="ZO",
+        what="a connector row already at its deterministic id is passed over without looking at "
+             "its stored identity — ZK's twin",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='                if (!connectorId.equals(props.get("connectorId"))) {\n'
+             '                    unnormalised.put(id, doc);\n'
+             '                }\n',
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aRowAlreadyAtItsDeterministicIdIsNormalisedInPlace'],
     ),
     dict(
         id="YZ",
@@ -4901,7 +4985,8 @@ CONTROLS = [
                 '                    && connectorId.equals(props.get("connectorId"))) {\n'
                 '                found[0]++;',
         test='ConnectorLegacyIdMigrationTest',
-        expect_fail=['aNumericLegacyRowIsCountedByTheCreateOfItsStringId'],
+        expect_fail=['aNumericLegacyRowIsCountedByTheCreateOfItsStringId',
+                     'theOneRowDeleteAcceptsARowWhoseConnectorIdIsTheNumber'],
     ),
     dict(
         id="ZF",
@@ -4958,7 +5043,8 @@ CONTROLS = [
                 '                    && profileId.equals(props.get("profileId"))\n'
                 '                    && (repositoryId == null || repositoryId.equals(props.get("repositoryId")))) {',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['aNumericLegacyRowIsATwinForTheCreateOfItsStringId'],
+        expect_fail=['aNumericLegacyRowIsATwinForTheCreateOfItsStringId',
+                     'theOneRowDeleteAcceptsARowWhoseProfileIdIsTheNumber'],
     ),
     dict(
         id="YV",

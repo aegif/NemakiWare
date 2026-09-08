@@ -1002,6 +1002,10 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
         com.ibm.cloud.cloudant.v1.Cloudant cloudant = client.getClient();
         LegacyIdMigrationResult result = new LegacyIdMigrationResult();
         // connectorId -> (row id -> row). Filled by the walk, acted on after it.
+        // Rows already under their deterministic id whose STORED identity is not the string
+        // this node reads (row id -> row). The profile twin carries the reasoning.
+        Map<String, com.ibm.cloud.cloudant.v1.model.Document> unnormalised =
+                new java.util.LinkedHashMap<>();
         Map<String, Map<String, com.ibm.cloud.cloudant.v1.model.Document>> legacyRows =
                 new java.util.LinkedHashMap<>();
 
@@ -1051,6 +1055,13 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
             }
             String deterministicId = ConnectorDefinition.DOC_TYPE + ":" + connectorId;
             if (deterministicId.equals(id)) {
+                // Already where it belongs — but its stored identity may still not be the
+                // string this node reads it as, and the type-strict Mango selector can then
+                // never match it while every walk counts it. The profile twin carries the
+                // reasoning; a review found the gap on that side first.
+                if (!connectorId.equals(props.get("connectorId"))) {
+                    unnormalised.put(id, doc);
+                }
                 return;
             }
             // COLLECTED, not migrated here — the profile twin of this change, mirrored. With
@@ -1081,7 +1092,48 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
             migrateOneLegacyRow(client, cloudant, dbName, only.getValue(), only.getKey(),
                     connectorId, deterministicId, result);
         }
+        for (Map.Entry<String, com.ibm.cloud.cloudant.v1.model.Document> entry
+                : unnormalised.entrySet()) {
+            normaliseIdentityInPlace(cloudant, dbName, entry.getKey(), entry.getValue(), result);
+        }
         return result;
+    }
+
+    /**
+     * Writes a row that already sits under its deterministic id back with its identity as the
+     * string this node reads. Nothing else about the row changes, and the write is conditional
+     * on the revision the row was read at. The profile twin carries the reasoning.
+     */
+    private void normaliseIdentityInPlace(com.ibm.cloud.cloudant.v1.Cloudant cloudant,
+            String dbName, String id, com.ibm.cloud.cloudant.v1.model.Document row,
+            LegacyIdMigrationResult result) {
+        // From the id, not from the row: the row is here BECAUSE its stored value is not the
+        // identity, and the id is deterministic.
+        String connectorId = id.substring(ConnectorDefinition.DOC_TYPE.length() + 1);
+        try {
+            Document rewritten = new Document();
+            for (Map.Entry<String, Object> entry
+                    : normalisedContent(row.getProperties(), connectorId).entrySet()) {
+                rewritten.put(entry.getKey(), entry.getValue());
+            }
+            rewritten.setId(id);
+            rewritten.setRev(row.getRev());
+            DocumentResult written = cloudant.postDocument(new PostDocumentOptions.Builder()
+                    .db(dbName).document(rewritten).build()).execute().getResult();
+            if (written == null || !Boolean.TRUE.equals(written.isOk())) {
+                result.failures.add(id + " (its stored connectorId is not the string \""
+                        + connectorId + "\", which the Mango selector cannot match, and"
+                        + " rewriting it did not take: "
+                        + (written == null ? "no result" : written.getError()) + ")");
+                return;
+            }
+            logger.info("Rewrote the connectorId of {} as the string \"{}\" this node reads"
+                    + " it as; the Mango selector could not match its stored value", id, connectorId);
+        } catch (RuntimeException rowFailed) {
+            result.failures.add(id + " (its stored connectorId is not the string \"" + connectorId
+                    + "\", which the Mango selector cannot match, and rewriting it failed: "
+                    + rowFailed.getMessage() + ")");
+        }
     }
 
     /**
@@ -1099,6 +1151,17 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
         content.remove("_id");
         content.remove("_rev");
         content.remove("_attachments");
+        return content;
+    }
+
+    /**
+     * A row's content with its identity as this node reads it — the profile twin of this
+     * helper carries the reasoning (comparing raw contents left an interrupted pass unable to
+     * converge, because the copy this migration writes is normalised).
+     */
+    private static Map<String, Object> normalisedContent(Map<String, Object> props, String connectorId) {
+        Map<String, Object> content = contentOnly(props);
+        content.put("connectorId", connectorId);
         return content;
     }
 
@@ -1172,8 +1235,9 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
                     return;
                 }
                 createdNow = true;
-            } else if (!java.util.Objects.equals(contentOnly(legacy.getProperties()),
-                    contentOnly(existing.getProperties()))) {
+            } else if (!java.util.Objects.equals(
+                    normalisedContent(legacy.getProperties(), connectorId),
+                    normalisedContent(existing.getProperties(), connectorId))) {
                 // The real §62 damage, or an admin edit that landed on one of the twins.
                 // Choosing a winner here silently destroys the other row's configuration —
                 // the exact loss this migration exists to prevent — so NEITHER is touched

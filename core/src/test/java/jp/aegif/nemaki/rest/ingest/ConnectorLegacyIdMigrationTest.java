@@ -1189,6 +1189,59 @@ class ConnectorLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("an interrupted normalising pass converges: the legacy row is retired next "
+            + "time, not called divergent")
+    void anInterruptedNormalisingMigrationRetiresTheLegacyRowOnTheNextPass() {
+        // The profile twin carries the reasoning: the copy is normalised, so comparing raw
+        // contents made an interrupted pass call an identical pair divergent for ever.
+        wire();
+        Map<String, Object> numeric = connectorProps("42", "Numeric");
+        numeric.put("connectorId", 42);
+        listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
+        Document alreadyCopied = mock(Document.class);
+        when(alreadyCopied.getProperties()).thenReturn(connectorProps("42", "Numeric"));
+        when(alreadyCopied.getRev()).thenReturn("2-b");
+        deterministicReadAnswers("42", alreadyCopied);
+        writesSucceed();
+
+        ConnectorDefinitionService.LegacyIdMigrationResult result =
+                service.migrateLegacyGeneratedIds();
+
+        assertTrue(deletedIds.contains("legacy-42"),
+                "the leftover of an interrupted pass was not retired: " + deletedIds);
+        assertTrue(result.divergent.isEmpty(),
+                "an identical pair was reported as divergent: " + result.divergent);
+        assertTrue(result.clean(), "the retry pass reported problems: " + result.failures);
+    }
+
+    @Test
+    @DisplayName("a row ALREADY at its deterministic id whose connectorId is the number is "
+            + "rewritten in place")
+    void aRowAlreadyAtItsDeterministicIdIsNormalisedInPlace() {
+        // The profile twin carries the reasoning: normalising only the copies left the fix
+        // conditional on the row being under a legacy id.
+        wire();
+        Map<String, Object> numeric = connectorProps("42", "Numeric");
+        numeric.put("connectorId", 42);
+        listingAnswers(List.of(row("connector_definition:42", numeric, "3-c")));
+        writesSucceed();
+
+        ConnectorDefinitionService.LegacyIdMigrationResult result =
+                service.migrateLegacyGeneratedIds();
+
+        ArgumentCaptor<PostDocumentOptions> written =
+                ArgumentCaptor.forClass(PostDocumentOptions.class);
+        verify(cloudant).postDocument(written.capture());
+        assertEquals("connector_definition:42", written.getValue().document().getId());
+        assertEquals("3-c", written.getValue().document().getRev(),
+                "the rewrite is not conditional on the revision the row was READ at");
+        assertEquals("42", written.getValue().document().get("connectorId"),
+                "the stored number was left in place, so the selector can never match the row");
+        assertTrue(result.clean(), "the normalising pass reported problems: " + result.failures);
+        verify(cloudant, never()).deleteDocument(any(DeleteDocumentOptions.class));
+    }
+
+    @Test
     @DisplayName("a MATCHING connector disabled by an explicit NULL that cannot be read does not "
             + "refuse the resolution — the mapper reads null into the primitive as false")
     void aDisabledByNullRowTheResolverCannotReadDoesNotRefuseTheResolution() {
