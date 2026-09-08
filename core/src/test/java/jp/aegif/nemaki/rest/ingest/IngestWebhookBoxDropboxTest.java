@@ -369,7 +369,7 @@ class IngestWebhookBoxDropboxTest {
         when(profileService.listOwnedIndexFree()).thenReturn(owned(List.of(readable), List.of(
                 new ImportProfileDefinitionService.UninterpretableRow(
                         "import_profile_definition:p-mail-only", "p-mail-only", "c-dbx", null,
-                        List.of("MESSAGE_CONTEXT"), false, "retentionDays: not a number"))));
+                        List.of(SourceArchetype.MESSAGE_CONTEXT), false, "retentionDays: not a number"))));
 
         mockMvc.perform(signedDropboxPost("c-dbx", secret))
                 .andExpect(status().isOk())
@@ -392,33 +392,13 @@ class IngestWebhookBoxDropboxTest {
         when(profileService.listOwnedIndexFree()).thenReturn(owned(List.of(readable), List.of(
                 new ImportProfileDefinitionService.UninterpretableRow(
                         "import_profile_definition:p-mail-anyone", "p-mail-anyone", null, null,
-                        List.of("MESSAGE_CONTEXT"), true, "defaultConnectorId: not a string"))));
+                        List.of(SourceArchetype.MESSAGE_CONTEXT), true, "defaultConnectorId: not a string"))));
 
         mockMvc.perform(signedDropboxPost("c-dbx", secret))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("\"status\":\"accepted\"")));
 
         verify(schedulerService).authorizeDelegatedFetch(any(), any());
-    }
-
-    @Test
-    void aBrokenRowWithAnUnknownArchetypeNameStillStopsTheDispatch() throws Exception {
-        // "file_share" is not an archetype this node knows (the enum reads its exact names),
-        // so the row cannot be established to exclude the connector — whatever its author
-        // meant, a readable row would never have carried it. Letting it through would be the
-        // same silent loss the name-only refusal exists to prevent, one field down.
-        String secret = "dbxsecret";
-        connector("c-dbx", "dropbox", secret);
-        ImportProfileDefinition readable = profileFor("c-dbx", Map.of("folderPath", "/Documents"));
-        when(profileService.listOwnedIndexFree()).thenReturn(owned(List.of(readable), List.of(
-                new ImportProfileDefinitionService.UninterpretableRow(
-                        "import_profile_definition:p-miscased", "p-miscased", "c-dbx", null,
-                        List.of("file_share"), false, "allowedArchetypes: not an archetype"))));
-
-        mockMvc.perform(signedDropboxPost("c-dbx", secret))
-                .andExpect(status().isServiceUnavailable());
-
-        verify(schedulerService, never()).authorizeDelegatedFetch(any(), any());
     }
 
     @Test

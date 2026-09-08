@@ -89,9 +89,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
             // answer with a different row. The connector twin has always checked this; a
             // review found the profile half missing it.
             Map<String, Object> props = row.getProperties();
-            if (props == null
-                    || !ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))
-                    || !profileId.equals(props.get("profileId"))) {
+            if (!definesProfile(props, profileId)) {
                 logger.warn("document {} occupies the deterministic id of import profile {}"
                         + " but does not define it; ignoring",
                         ImportProfileDefinition.DOC_TYPE + ":" + profileId, profileId);
@@ -169,8 +167,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                             + " cannot be deleted completely: row " + id
                             + " came back without a body");
                 }
-                if (ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))
-                        && profileId.equals(props.get("profileId"))
+                if (definesProfile(props, profileId)
                         && repositoryId != null && repositoryId.equals(props.get("repositoryId"))) {
                     targets.add(doc);
                 }
@@ -242,9 +239,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         // prescribes, and went on blocking every write of that profileId. A review found the
         // two halves disagreeing.
         boolean unowned = props != null && isBlank(props.get("repositoryId"));
-        if (props == null
-                || !ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))
-                || !profileId.equals(props.get("profileId"))
+        if (!definesProfile(props, profileId)
                 || repositoryId == null
                 || !(unowned || repositoryId.equals(props.get("repositoryId")))) {
             // An id-addressed delete with the WRONG target is worse than the divergence it
@@ -656,8 +651,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                         + profileId + "' cannot be established: row " + id
                         + " came back without a body");
             }
-            if (ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))
-                    && profileId.equals(props.get("profileId"))
+            if (definesProfile(props, profileId)
                     && (repositoryId == null || repositoryId.equals(props.get("repositoryId")))) {
                 found[0]++;
             }
@@ -701,9 +695,8 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
             // or the repositoryId-less row the migration deliberately leaves in place) made
             // every read of every profile answer 503. That is the connector over-throw this
             // batch fixed one round earlier, reintroduced here; a review caught it.
-            if (!ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))
-                    || !repositoryId.equals(props.get("repositoryId"))
-                    || !profileId.equals(props.get("profileId"))) {
+            if (!definesProfile(props, profileId)
+                    || !repositoryId.equals(props.get("repositoryId"))) {
                 return;
             }
             Map<String, Object> content = contentOnly(props);
@@ -763,8 +756,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                 throw new IllegalStateException("import profile " + profileId
                         + " cannot be looked up: row " + id + " came back without a body");
             }
-            if (!ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))
-                    || !profileId.equals(props.get("profileId"))
+            if (!definesProfile(props, profileId)
                     || isBlank(props.get("repositoryId"))) {
                 // Blank, not only null: a blank row belongs to no repository either, and
                 // treating it as owned would start a capture on a row no repository can
@@ -917,72 +909,95 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
     }
 
     /**
-     * Records a row the walk could not read, with the raw fields a caller needs to tell
-     * whether the row was addressed to it. A row whose raw {@code enabled} says disabled
-     * (the literal {@code false} or the string) is not recorded: it could not have been a
-     * recipient of anything.
+     * Records a row the walk could not read, with the fields a caller needs to tell whether
+     * the row was addressed to it. Each of those fields is read ON ITS OWN through the
+     * production mapper — the reader of the readable path — so "this node cannot read it"
+     * means exactly "the mapper refuses it": a number where a string is expected coerces
+     * ({@code 42} reads as {@code "42"}), an explicit null for the primitive {@code enabled}
+     * reads as {@code false}, a null element of a list stays a null element, an archetype
+     * name the node does not know is refused. Hand-rolled readers disagreed with the mapper
+     * on each of those, and reviews found the disagreements one at a time — each a row
+     * refused, or reported, over a field the readable path would have read. A row whose
+     * {@code enabled} the mapper reads as {@code false} is not recorded: it could not have
+     * been a recipient of anything.
      */
     private static void reportUninterpretable(List<UninterpretableRow> sink, String docId,
             Map<String, Object> props, String reason) {
-        if (isRawDisabled(props.get("enabled"))) {
+        if (readsDisabled(props)) {
             return;
         }
-        Object defaultConnector = props.get("defaultConnectorId");
-        Object allowedConnectors = props.get("allowedConnectorIds");
-        Object allowedArchetypes = props.get("allowedArchetypes");
-        // A connector field that is there but not in a readable shape leaves the addressee
-        // unknown — the row then names every connector, not none. A review found the first
-        // version reading such a field as "names nobody", which is the skip this record
-        // exists to prevent, one field down. The archetype list is carried so that a row
-        // whose archetypes plainly exclude the connector's is not refused on its name alone —
-        // a readable row with the same list would be filtered out; a later review found that
-        // over-throw. The archetype list's shape does NOT feed the flag: an unreadable list
-        // reads as null, which admits every archetype — the fail-closed answer for THAT
-        // question — while the connector fields keep answering theirs. Folding it in made a
-        // row naming someone else stop every connector's dispatch; a review found that too.
-        boolean addresseeUnknown = (defaultConnector != null && !(defaultConnector instanceof String))
-                || (allowedConnectors != null && !isListOfStrings(allowedConnectors));
-        sink.add(new UninterpretableRow(docId, rawString(props.get("profileId")),
-                rawString(defaultConnector), rawStrings(allowedConnectors),
-                rawStrings(allowedArchetypes), addresseeUnknown, reason));
+        ImportProfileDefinition idOnly = readAlone(props, "profileId");
+        // The two connector fields are read together: whom the row names cannot be
+        // established when either is refused — the row then names every connector, not
+        // none (a review found the first version reading such a field as "names nobody",
+        // the skip this record exists to prevent, one field down). The archetype list is
+        // read apart from them, and a refusal there leaves the list null — every archetype
+        // admitted, the fail-closed answer for THAT question — without touching whom the
+        // row names. Folding the two into one flag made a row naming someone else stop
+        // every connector's dispatch; a review found that.
+        ImportProfileDefinition connectorsOnly = readAlone(props, "defaultConnectorId",
+                "allowedConnectorIds");
+        ImportProfileDefinition archetypesOnly = readAlone(props, "allowedArchetypes");
+        sink.add(new UninterpretableRow(docId,
+                idOnly == null ? null : idOnly.getProfileId(),
+                connectorsOnly == null ? null : connectorsOnly.getDefaultConnectorId(),
+                connectorsOnly == null ? null : connectorsOnly.getAllowedConnectorIds(),
+                archetypesOnly == null ? null : archetypesOnly.getAllowedArchetypes(),
+                connectorsOnly == null, reason));
     }
 
     /**
-     * The literal {@code false}, or the string {@code "false"} — the same two shapes the
-     * connector listing reads as disabled. A row this node cannot interpret has no other
-     * reader to normalise the string, so the raw check has to accept both; an absent value
-     * is not a "no".
+     * Whether the production mapper reads the row's {@code enabled}, on that field alone, as
+     * {@code false} — the literal, the string {@code "false"}, an explicit null for the
+     * primitive, whatever else it coerces. A row this node cannot interpret as a whole has no
+     * other reader to normalise the value, so the same mapper is asked about the one field.
+     * An absent value is not a "no" (the definition's default is enabled), and neither is a
+     * value the mapper refuses: only an established "no" is one.
      */
-    private static boolean isRawDisabled(Object enabled) {
-        return Boolean.FALSE.equals(enabled)
-                || "false".equalsIgnoreCase(String.valueOf(enabled));
+    private static boolean readsDisabled(Map<String, Object> props) {
+        ImportProfileDefinition enabledOnly = readAlone(props, "enabled");
+        return enabledOnly != null && !enabledOnly.isEnabled();
     }
 
-    private static String rawString(Object value) {
-        return value instanceof String s ? s : null;
-    }
-
-    private static boolean isListOfStrings(Object value) {
-        if (!(value instanceof List<?> values)) {
+    /**
+     * Whether the row defines {@code profileId}: it is a profile row, and its
+     * {@code profileId}, read on its own through the production mapper, is that identity.
+     * The mapper's reading, not the raw value: the uniqueness listing reads the identity that
+     * way ({@code 42} is {@code "42"}), and a count or lookup that compared the raw value with
+     * the string did not see the row the listing did — a legacy row with a numeric id could
+     * be twinned under the deterministic id, and could not be looked up or deleted by the id
+     * the listing gave it. A parallel review found the two halves disagreeing the moment the
+     * listing's reading changed. Every raw comparison of a row's identity goes through here.
+     * A row whose identity the mapper refuses defines nothing: the same reading the whole-row
+     * path gives it.
+     */
+    private static boolean definesProfile(Map<String, Object> props, String profileId) {
+        if (props == null || profileId == null
+                || !ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))) {
             return false;
         }
-        for (Object v : values) {
-            if (!(v instanceof String)) {
-                return false;
-            }
-        }
-        return true;
+        ImportProfileDefinition idOnly = readAlone(props, "profileId");
+        return idOnly != null && profileId.equals(idOnly.getProfileId());
     }
 
-    private static List<String> rawStrings(Object value) {
-        if (!isListOfStrings(value)) {
+    /**
+     * The named fields of a row read through the production mapper and nothing else — the
+     * definition a readable row would carry in those fields; null when the mapper refuses
+     * them. Fields the row does not have are left to the definition's defaults, as they would
+     * be on a readable row.
+     */
+    private static ImportProfileDefinition readAlone(Map<String, Object> props, String... fields) {
+        Map<String, Object> alone = new HashMap<>();
+        for (String field : fields) {
+            if (props.containsKey(field)) {
+                alone.put(field, props.get(field));
+            }
+        }
+        try {
+            return MAPPER.convertValue(alone, ImportProfileDefinition.class);
+        } catch (RuntimeException refused) {
             return null;
         }
-        List<String> strings = new ArrayList<>();
-        for (Object v : (List<?>) value) {
-            strings.add((String) v);
-        }
-        return strings;
     }
 
     /** Null, or a value whose text is empty — a row that names no repository either way. */
@@ -1390,13 +1405,18 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
      * create (400) and update (503) of its repository, over fields the rule never looks at.
      * Null interprets the whole row, which the auto-resolver needs because it returns it.
      *
-     * <p>A row that says {@code enabled: false} — the literal or the string, the two shapes
-     * the connector listing reads as disabled — is not interpreted either way. Every caller's
-     * rule applies to enabled rows only, so it cannot change an answer — and refusing on a
-     * disabled row this node cannot read stopped the auto-resolution of a whole repository
-     * over a row that could not have been chosen. (The first version read only the literal
-     * and left the string to Jackson — which never runs on the row that matters here, the
-     * one Jackson cannot read. A review found it.) An absent value is not a "no".
+     * <p>A row whose {@code enabled} the production mapper reads as {@code false} on that
+     * field alone — the literal, the string, an explicit null, whatever else it coerces; the
+     * same reading the connector listing applies — is not interpreted either way. Every
+     * caller's rule applies to enabled rows only, so it cannot change an answer — and refusing
+     * on a disabled row this node cannot read stopped the auto-resolution of a whole
+     * repository over a row that could not have been chosen. (The first version read only the
+     * literal and left the string to Jackson — which never runs on the row that matters here,
+     * the one Jackson cannot read; the second read the literal and the string by hand, and
+     * missed the shapes the mapper coerces. Reviews found both; the mapper now reads the
+     * field itself.) An absent value is not a "no". The row's {@code profileId} is read the
+     * same way: a value the mapper coerces to a string is an identity, a value it refuses is
+     * not.
      */
     private List<ImportProfileDefinition> listByRepositoryIndexFree(String repositoryId,
             boolean creating, java.util.Set<String> onlyFields) {
@@ -1426,14 +1446,15 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                         || !repositoryId.equals(props.get("repositoryId"))) {
                     return;
                 }
-                if (isRawDisabled(props.get("enabled"))) {
+                if (readsDisabled(props)) {
                     return;
                 }
                 // After the disabled skip, not before it: a disabled row with no identity
                 // cannot be chosen either, and refusing on it would stop the repository over
                 // a row no rule can read anything from. A review found the order.
-                Object pid = props.get("profileId");
-                if (!(pid instanceof String) || ((String) pid).isBlank()) {
+                ImportProfileDefinition idOnly = readAlone(props, "profileId");
+                if (idOnly == null || idOnly.getProfileId() == null
+                        || idOnly.getProfileId().isBlank()) {
                     // Deserialisable, but with no identity: the uniqueness comparison
                     // dereferenced it and answered 500. A profile row without a profileId
                     // is a row this rule cannot reason about.

@@ -1117,6 +1117,34 @@ class ConnectorLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("a MATCHING connector disabled by an explicit NULL that cannot be read does not "
+            + "refuse the resolution — the mapper reads null into the primitive as false")
+    void aDisabledByNullRowTheResolverCannotReadDoesNotRefuseTheResolution() {
+        // The hand-rolled check knew the literal and the string; the mapper — which reads
+        // the readable rows this resolver compares against — reads an explicit null for the
+        // primitive as false. A row it would never choose refused the whole resolution over
+        // the shape of its "no". A review found it; the field is now read by the mapper.
+        wire();
+        selectorAnswersNothing();
+        Map<String, Object> wanted = connectorProps("box-1", "Box");
+        wanted.put("enabled", true);
+        wanted.put("sourceArchetype", SourceArchetype.FILE_SHARE.name());
+        Map<String, Object> disabledByNull = connectorProps("retired-2", "Retired (null)");
+        disabledByNull.put("enabled", null);
+        disabledByNull.put("sourceArchetype", SourceArchetype.FILE_SHARE.name());
+        disabledByNull.put("allowedPrincipalIds", Map.of("not", "a list"));
+        listingAnswers(List.of(row("connector_definition:box-1", wanted, "1-a"),
+                row("connector_definition:retired-2", disabledByNull, "1-c")));
+
+        ConnectorDefinition found = assertDoesNotThrow(
+                () -> service.findBySystemAndArchetype("google", SourceArchetype.FILE_SHARE),
+                "a matching row disabled by an explicit null that this node cannot read "
+                        + "refused the resolution");
+        assertTrue(found != null && "box-1".equals(found.getConnectorId()),
+                "resolved to: " + found);
+    }
+
+    @Test
     @DisplayName("a MATCHING connector that cannot be read still refuses")
     void aMatchingUnreadableConnectorStillRefuses() {
         // The other arm: a row whose system and archetype match could be the answer, so it

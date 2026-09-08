@@ -442,6 +442,25 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
      * walk that finds something is still incomplete, and the callers' rules (refuse when
      * several match) are made of completeness.
      */
+    /**
+     * Whether the production mapper reads the row's {@code enabled}, on that field alone, as
+     * {@code false}. A row this node cannot interpret as a whole has no other reader to
+     * normalise the value, so the same mapper is asked about the one field. An absent value is
+     * not a "no" (the definition's default is enabled), and neither is a value the mapper
+     * refuses: only an established "no" is one.
+     */
+    private static boolean readsDisabled(Map<String, Object> props) {
+        Map<String, Object> alone = new HashMap<>();
+        if (props.containsKey("enabled")) {
+            alone.put("enabled", props.get("enabled"));
+        }
+        try {
+            return !MAPPER.convertValue(alone, ConnectorDefinition.class).isEnabled();
+        } catch (RuntimeException refused) {
+            return false;
+        }
+    }
+
     private List<ConnectorDefinition> listIndexFree(List<String> onlySystems,
             SourceArchetype onlyArchetype) {
         CloudantClientWrapper client = getConfClient();
@@ -480,14 +499,13 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
             if (onlyArchetype != null && !onlyArchetype.name().equals(props.get("sourceArchetype"))) {
                 return;
             }
-            // Boolean false OR the string "false": a hand-written or legacy row can carry
-            // either, and Jackson reads both as disabled — so skipping only the Boolean left
-            // a row the resolver would have ignored anyway able to refuse the whole
-            // resolution by failing to deserialise. A review named the gap.
-            Object enabledRaw = props.get("enabled");
-            boolean explicitlyDisabled = Boolean.FALSE.equals(enabledRaw)
-                    || "false".equalsIgnoreCase(String.valueOf(enabledRaw));
-            if (onlySystems != null && explicitlyDisabled) {
+            // The row's enabled, read on its own by the production mapper — the literal
+            // false, the string "false", an explicit null for the primitive, whatever else it
+            // coerces. The first version skipped only the Boolean, the second the Boolean and
+            // the string by hand; the mapper reads more shapes than a hand-rolled check names,
+            // and a disabled row the check missed could refuse the whole resolution by
+            // failing to deserialise. Reviews found both gaps.
+            if (onlySystems != null && readsDisabled(props)) {
                 // A DISABLED row can be neither the answer nor half of an ambiguity, so
                 // reading it cannot change the outcome — and reading it is what let one
                 // unreadable disabled row refuse every import. Only an explicit false is

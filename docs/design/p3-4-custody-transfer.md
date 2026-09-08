@@ -8140,7 +8140,9 @@ anchor 不動) の値のまま。**残る 370 本はこの木では未測定** �
 - **記録のみ (サブ)**: list に `null` 要素 (`["CHAT_CONTEXT", null]`) は Jackson は読めるが
   `isListOfStrings` は読めない形とし、null → 全 archetype 宛て → 名指していれば拒否。読める行
   なら FILE_SHARE は外れるので厳密には over-throw だが、API の書込みが作らない退化した形で、
-  fail-closed 側に倒れている。直さず開示。
+  fail-closed 側に倒れている。直さず開示。→ **15 巡目で撤回**: 「API が作らない」は木より強く
+  (Spring の束縛も mapper も Gson も null 要素を通す — サブ)、しかも同じ食い違いが 3 種あった
+  (Codex)。手書きの読みをやめて mapper に読ませることで解消 (下記)。
 
 **この巡の測定**: コントロールは **445 本** (新設 6: YJ YK YL YM YN YO。YH / YI は書き直し、XB は
 anchor を 13 巡目前の式に戻した)。事前検査 445/445 (self-test 19/19、expect_fail の宣言 0 問題、
@@ -8148,3 +8150,91 @@ anchor 0 drift)。変更ファイル (interface / profile impl / 受信側) を�
 compile-check し 85/85**、続けてバッチ **75 本 (64 + 13 巡目の 5 + 新設 6) を測定し 75/75 FIRED**
 (compile-check 61 分、バッチ 110 分)。木は起動前スナップショットと一致 (`.nc-backup` 残り 0)。
 **残る 370 本はこの木では未測定** — 通しは収束後。
+
+### 15 巡目 (Codex + サブエージェント、並行) — Codex P2 4 `NOT CONVERGED`、サブ P3 5 `CONVERGED`
+
+コミット `7f6814ff7` に対して。P1 なし。**片方だけ収束。壊れた行の欄を「手書きの読み方」で
+読んでいたことが、Codex の 4 件のうち 3 件の根。**
+
+- **P2 (Codex ×3) — 手書きの読みが本体の mapper と食い違い、確定できる除外を捨てていた。**
+  本体の mapper は `JsonMapper.builderWithJackson2Defaults()` (`ObjectMapperFactory`) で、
+  (1) `defaultConnectorId: 42` を `"42"` に coerce する (手書きは「文字列でない → 読めない →
+  全コネクタ宛て」)、(2) list の null 要素 (`["MESSAGE_CONTEXT", null]`) をそのまま読む
+  (手書きは「読めない → 全 archetype 宛て」— 14 巡目に「記録のみ」とした件、上に訂正)、
+  (3) `enabled: null` を primitive の false に読む (手書きは literal と文字列だけ →
+  報告 → 503 になり得る)。どれも読める行なら受信側で外れる行を止める over-throw。
+  **処置: 手書きの `rawString` / `isListOfStrings` / `rawStrings` / `isRawDisabled` を廃し、
+  欄を 1 つずつ本番の `MAPPER` で `convertValue` して読む `readAlone(props, fields...)` に
+  した** — 「この node が読めない」=「mapper が拒む」が構成上一致する。`enabled` は
+  `readsDisabled(props)` (mapper が false と読めば無効。不在・拒否は「いいえ」ではない)、
+  コネクタ 2 欄は一緒に読んで拒まれれば `addresseeUnknown`、`allowedArchetypes` は
+  `List<SourceArchetype>` として運び、`admitsArchetype` は使い捨ての
+  `ImportProfileDefinition` に載せて **`isArchetypeAllowed` そのものに訊く** (写しでなく同じ
+  メソッド)。同じ手書き読みは一意性一覧の `enabled` / `profileId` 前検査とコネクタ解決 walk の
+  `enabled` にもあったので、同じ形 (`readsDisabled` / `readAlone`) に揃えた。未知の archetype
+  名は mapper が拒む → null → 全 archetype 宛て (`isAnArchetype` のループは不要になり削除)。
+  錠: (1) `aNumericConnectorIdReadsAsTheMapperReadsIt`、(2)
+  `aNullElementInTheArchetypeListReadsAsTheMapperReadsIt`、(3)
+  `aRowWhoseEnabledIsAnExplicitNullIsNotARecipient`、一意性一覧の
+  `aNumericProfileIdIsAnIdentityForTheUniquenessListing`、自動解決・コネクタ解決の null 変種
+  各 1 — いずれも本番の `MAPPER` を通して測る (premise でなく測定)。コントロール **YP / YQ /
+  YR / YS / YT** (それぞれ手書きの読みに戻す)。既存錠 2 本が `defaultConnectorId: 42` を
+  「読めない形」の例に使っていたのも誤り (mapper は読む) → `List.of("c-dbx")` に変更。
+- **P2 (Codex) — RELEASE_NOTES「読めない単独行のプロファイルは消せない」は木より強い。**
+  `repositoryId` を持たない行は `?docId=` の単独行拒否から除外 (`rows == 1 && !unowned`)
+  され、管理者が消せる。ID なしの DELETE もその行を `getForRepository` で読まず 404。→
+  「呼出元のリポジトリを持つ行」に限定し、unowned 行の経路を書いた。
+- **P3 (サブ ×5)** (1) 「API の書込みが作らない退化形」→ 上記のとおり撤回。(2) `expect_fail`
+  の過小宣言 (YK / XB / YG / XU、加えて WN / WZ) → 落ちる錠を全部列挙した (runner は欠けだけ
+  を見るが、「名指した錠だけが落ちた」と読める書き方をやめる)。(3) `listOwnedIndexFree` の
+  javadoc「names its connector → refuses」→ `addressedTo` に。(4) RELEASE_NOTES「2 欄が読める形
+  でない」→「2 欄のどちらかが」。(5) bare string の `allowedArchetypes` が読める行になり得ない
+  premise は未測定 → mapper 読みにしたので premise でなく挙動 (錠 `…AdmitsEveryArchetype…` が
+  本番 mapper で bare string を拒むことを測る)。
+- **コントロールの組み替え**: YI (受信側で raw 文字列から再導出) は**撤回** — 行が運ぶのは
+  mapper が読んだ list なので、未知名は受信側に届く前に null になり、呼び出し側の細工で
+  その損失を開けない。YJ を「`readAlone` の mapper を `READ_UNKNOWN_ENUM_VALUES_AS_NULL` で
+  緩める」細工に置き換え (未知名が null 要素になり、`["file_share"]` が全 archetype を除外
+  する — premise 錠が落ちる)。YH は「bare string を 1 要素 list に coerce する読み」、YK / YL
+  / YN / YO / XB は新しい行に張り直し。受信側の錠 `…UnknownArchetypeName…` は typed list では
+  表現できない (未知名 = null = 不在の list) ので削除 — その場面は既存の
+  `aRecipientRowThatCannotBeInterpretedIsA503NotNoProfile` (list null) が覆う。
+
+**並行レビュー (ユーザー転送、作業木に対して) — 親判定 HOLD、新規 P1 1**: 上の処置の途中
+(通しの走行中) に届いた。**採択 (P1)**: 一意性一覧は `readAlone` で `42` を `"42"` と読むのに、
+書込みを止める `countProfileRowsIndexFree` と `getForRepository` は `profileId.equals(props.get(
+"profileId"))` の生比較のまま — `"42".equals(42)` は false なので、数値 id のレガシー行があっても
+create `"42"` の件数は 0 で、deterministic id に twin を書ける。「数値は identity」と決めた以上、
+書込み側が生比較では閉じない。→ **識別の比較を 1 か所 `definesProfile(props, profileId)`
+(type + mapper で読んだ `profileId`) に集め、生比較 6 か所 (`get` の deterministic-id 確認 /
+`delete(profileId, repositoryId)` の walk / `delete(profileId, docId, …)` の宛先確認 /
+`countProfileRowsIndexFree` / `getForRepository` / `getOwnedRowIndexFree`) を全部それに
+した**。錠 4 本 (create `"42"` が数値行を twin と数える / `getForRepository` / 
+`getOwnedRowIndexFree` / deterministic-id 読みが数値行を自分の行と認める)、コントロール
+**YU / YV / YX / YY** (各呼び出し側を生比較に戻す) + **YW** (helper を生比較に戻す — 4 本全部
+落ちる)。**delete の 2 か所は helper 経由で YW が測るだけで、呼び出し側ごとの錠は無い**。
+**却下 (P2 に降格、対応せず)**: `repositoryId` の生比較 — 同じ種類だが、この製品の repositoryId
+は `bedroom` / `canopy` で、数値の repositoryId を持つ行はどのリポジトリにも属さない (mapper で
+読んでも同じ答え)。並行レビュー自身が P2 に落とした。**却下**: 独立レビューの
+`rowFound = false` — 作業木が通しのサボタージュで一瞬その形になったのを読んだもの (実装は変数
+`rowFound`)。**残り (P3、対応せず)**: 起動時 migration は `profileId` を生で読み、数値 id の行を
+「migrate できない」と報告して legacy id のまま残す。読みの側は全部 index-free walk なので
+その行を `"42"` として見る — 読みが食い違うのではなく、migration の報告が「使えない id」と
+呼ぶだけ。
+
+**この巡の測定**: コントロールは **454 本** (新設 11: YP YQ YR YS YT YU YV YW YX YY と YJ の
+置換 — YI は撤回)。事前検査 454/454 (self-test 19/19、expect_fail の宣言 0 問題、anchor 0 drift —
+途中で drift した 11 本 (QF SM WI WT XK XM、次いで PS PV QB SX VC) を張り直してから)。変更
+ファイル (interface / profile impl / connector impl) を標的にする **131 本を compile-check し
+131/131**、続けてバッチ **91 本 (64 + 13〜14 巡目の 10 + 新設 11 + 張り直した QF SM PS PV
+QB SX VC の 7 — YI 抜き) を測定し 91/91 FIRED** (compile-check 91 分、バッチ 137 分)。木は起動前
+スナップショットと一致 (`.nc-backup` 残り 0)。**残る 363 本はこの木では未測定** — 通しは
+収束後。
+
+起動の記録: 3 回起動した。1 回目は compile-check が **YJ の細工の綴りを捕まえて止めた**
+(`READ_UNKNOWN_ENUM_VALUES_AS_NULL` は Jackson 3 では `DeserializationFeature` でなく
+`cfg.EnumFeature` — jar の `javap` で確認して直した。他の 125 本は compile 済み)。2 回目
+(YJ の compile-check 1/1 → バッチ) は並行レビューの P1 が届いたので、測定 0 本の時点で
+`pkill -TERM` で止めた — バッチ中は runner が `.nc-backup` を書くので、残った
+`CanonicalImportServiceImpl.java` の backup が HEAD と一致することを確かめて戻した。3 回目が
+上の値。

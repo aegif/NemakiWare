@@ -1333,8 +1333,8 @@ class ImportProfileLegacyIdMigrationTest {
                         && !reported.namesConnector("c-z"),
                 "namesConnector does not read both raw fields");
         assertFalse(reported.addresseeUnknown(), "readable connector fields were reported as unreadable");
-        assertEquals(List.of("FILE_SHARE"), reported.allowedArchetypes(),
-                "the raw archetype list was not carried — the receiver refuses on the name alone");
+        assertEquals(List.of(SourceArchetype.FILE_SHARE), reported.allowedArchetypes(),
+                "the archetype list was not carried — the receiver refuses on the name alone");
         assertTrue(reported.addressedTo("c-dbx", SourceArchetype.FILE_SHARE)
                         && !reported.addressedTo("c-dbx", SourceArchetype.MESSAGE_CONTEXT),
                 "addressedTo does not read the raw archetype list");
@@ -1410,7 +1410,10 @@ class ImportProfileLegacyIdMigrationTest {
         wire();
         Map<String, Object> oddShape = profileProps("p-odd", "Odd");
         oddShape.put("retentionDays", "not-a-number");
-        oddShape.put("defaultConnectorId", 42);
+        // A list where a string is expected: a shape the mapper refuses. (A number would
+        // not be one — the mapper coerces it to "42"; a review found the first version of
+        // this lock pinning that mistake.)
+        oddShape.put("defaultConnectorId", List.of("c-dbx"));
         listingAnswers(List.of(row("import_profile_definition:p-odd", oddShape, "1-a")));
 
         ImportProfileDefinitionService.OwnedProfiles owned = service.listOwnedIndexFree();
@@ -1465,7 +1468,10 @@ class ImportProfileLegacyIdMigrationTest {
         wire();
         Map<String, Object> oddShape = profileProps("p-odd", "Odd");
         oddShape.put("retentionDays", "not-a-number");
-        oddShape.put("defaultConnectorId", 42);
+        // A list where a string is expected: a shape the mapper refuses. (A number would
+        // not be one — the mapper coerces it to "42"; a review found the first version of
+        // this lock pinning that mistake.)
+        oddShape.put("defaultConnectorId", List.of("c-dbx"));
         oddShape.put("allowedArchetypes", List.of("MESSAGE_CONTEXT"));
         listingAnswers(List.of(row("import_profile_definition:p-odd", oddShape, "1-a")));
 
@@ -1502,15 +1508,92 @@ class ImportProfileLegacyIdMigrationTest {
 
         assertTrue(owned.profiles().isEmpty(),
                 "a mis-cased archetype name read as a profile — the mapper is not reading enum "
-                        + "names exactly, and addressedTo's unknown-name arm no longer mirrors it: "
-                        + owned.profiles());
+                        + "names exactly: " + owned.profiles());
         assertEquals(1, owned.uninterpretable().size(), "the row was not reported: " + owned);
         ImportProfileDefinitionService.UninterpretableRow reported = owned.uninterpretable().get(0);
-        assertEquals(List.of("file_share"), reported.allowedArchetypes());
+        assertEquals(null, reported.allowedArchetypes(),
+                "a list the mapper refuses was carried as a list — read by something other "
+                        + "than the mapper");
         assertFalse(reported.addresseeUnknown(), "a list of strings was reported as unreadable in shape");
         assertTrue(reported.addressedTo("c-dbx", SourceArchetype.FILE_SHARE)
                         && reported.addressedTo("c-dbx", SourceArchetype.MESSAGE_CONTEXT),
                 "a list with a name this node does not know was read as excluding an archetype");
+    }
+
+    @Test
+    @DisplayName("a numeric connector id on a broken row reads as the mapper reads it — \"42\", "
+            + "not 'cannot be read'")
+    void aNumericConnectorIdReadsAsTheMapperReadsIt() {
+        // The production mapper coerces a number into a string field (Jackson 2 defaults),
+        // so a readable row with defaultConnectorId 42 names connector "42". The hand-rolled
+        // reader called it unreadable and made the row name every connector — an
+        // establishable recipient turned into a refusal of all. A review found it; the
+        // fields are now read by the mapper itself, and this measures that on the real one.
+        wire();
+        Map<String, Object> numeric = profileProps("p-num", "Numeric");
+        numeric.put("retentionDays", "not-a-number");
+        numeric.put("defaultConnectorId", 42);
+        listingAnswers(List.of(row("import_profile_definition:p-num", numeric, "1-a")));
+
+        ImportProfileDefinitionService.OwnedProfiles owned = service.listOwnedIndexFree();
+
+        assertEquals(1, owned.uninterpretable().size(), "the row was not reported: " + owned);
+        ImportProfileDefinitionService.UninterpretableRow reported = owned.uninterpretable().get(0);
+        assertFalse(reported.addresseeUnknown(),
+                "a connector id the mapper reads was reported as unreadable");
+        assertEquals("42", reported.defaultConnectorId());
+        assertTrue(reported.namesConnector("42") && !reported.namesConnector("c-dbx"),
+                "a row naming connector \"42\" was read as naming someone else");
+    }
+
+    @Test
+    @DisplayName("a null element in a broken row's archetype list reads as the mapper reads it — "
+            + "the list still excludes what it does not contain")
+    void aNullElementInTheArchetypeListReadsAsTheMapperReadsIt() {
+        // Jackson keeps a null element in an enum list, and isArchetypeAllowed then answers
+        // by contains(): a readable row carrying [MESSAGE_CONTEXT, null] excludes FILE_SHARE.
+        // The hand-rolled reader rejected the whole list as unreadable and admitted every
+        // archetype — a refusal the readable path would not have made. A review found it.
+        wire();
+        Map<String, Object> holed = profileProps("p-holed", "Holed");
+        holed.put("retentionDays", "not-a-number");
+        holed.put("defaultConnectorId", "c-dbx");
+        holed.put("allowedArchetypes", java.util.Arrays.asList("MESSAGE_CONTEXT", null));
+        listingAnswers(List.of(row("import_profile_definition:p-holed", holed, "1-a")));
+
+        ImportProfileDefinitionService.OwnedProfiles owned = service.listOwnedIndexFree();
+
+        assertEquals(1, owned.uninterpretable().size(), "the row was not reported: " + owned);
+        ImportProfileDefinitionService.UninterpretableRow reported = owned.uninterpretable().get(0);
+        assertEquals(java.util.Arrays.asList(SourceArchetype.MESSAGE_CONTEXT, null),
+                reported.allowedArchetypes(), "the list was not read as the mapper reads it");
+        assertTrue(reported.addressedTo("c-dbx", SourceArchetype.MESSAGE_CONTEXT));
+        assertFalse(reported.addressedTo("c-dbx", SourceArchetype.FILE_SHARE),
+                "a list that plainly excludes FILE_SHARE was read as admitting it");
+    }
+
+    @Test
+    @DisplayName("a broken row whose enabled is an explicit null is not a recipient — the mapper "
+            + "reads null into the primitive as false")
+    void aRowWhoseEnabledIsAnExplicitNullIsNotARecipient() {
+        // A readable row with enabled: null carries enabled == false (Jackson 2 defaults for a
+        // primitive) and the receiver filters it out; the hand-rolled check knew only the
+        // literal and the string, so the same row, broken elsewhere, was reported and could
+        // refuse a dispatch it could never have received. A review found it.
+        wire();
+        Map<String, Object> nulled = profileProps("p-nulled", "Nulled");
+        nulled.put("retentionDays", "not-a-number");
+        nulled.put("defaultConnectorId", "c-dbx");
+        nulled.put("enabled", null);
+        listingAnswers(List.of(row("import_profile_definition:p-nulled", nulled, "1-a")));
+
+        ImportProfileDefinitionService.OwnedProfiles owned = service.listOwnedIndexFree();
+
+        assertTrue(owned.uninterpretable().isEmpty(),
+                "a row the mapper reads as disabled was reported as a possible recipient: "
+                        + owned.uninterpretable());
+        assertTrue(owned.profiles().isEmpty(),
+                "a broken row was listed as read: " + owned.profiles());
     }
 
     @Test
@@ -2371,6 +2454,108 @@ class ImportProfileLegacyIdMigrationTest {
         verify(cloudant).postDocument(any(PostDocumentOptions.class));
     }
 
+    @Test
+    @DisplayName("the uniqueness listing reads a numeric profileId as the mapper reads it — "
+            + "\"42\" is an identity, not 'no usable profileId'")
+    void aNumericProfileIdIsAnIdentityForTheUniquenessListing() {
+        // The listing's identity check was hand-rolled (a String, or nothing) while the rule's
+        // fields are read by the mapper, which coerces 42 to "42": a row the rule could read
+        // refused every write of its repository over an identity it had. A review found the
+        // class of disagreement; the check now asks the mapper.
+        wire();
+        selectorAnswersNothing();
+        deterministicReadAnswers("p-beside-42", null);
+        Map<String, Object> numeric = profileProps("42", "Numeric");
+        numeric.put("profileId", 42);
+        listingAnswers(List.of(row("import_profile_definition:42", numeric, "1-a")));
+        writesSucceed();
+
+        ImportProfileDefinition created = assertDoesNotThrow(
+                () -> service.create(defaultProfile("p-beside-42")),
+                "a profileId the mapper reads as \"42\" was refused as 'no usable profileId'");
+
+        assertEquals("p-beside-42", created.getProfileId());
+        verify(cloudant).postDocument(any(PostDocumentOptions.class));
+    }
+
+    @Test
+    @DisplayName("a legacy row with a numeric profileId is a twin for the create of \"42\" — the "
+            + "count reads identity the way the listing does")
+    void aNumericLegacyRowIsATwinForTheCreateOfItsStringId() {
+        // The uniqueness listing reads 42 as "42" (above); the count that stops a create from
+        // writing a second row under the deterministic id compared the raw value —
+        // "42".equals(42) is false — so the legacy row was invisible to it and the twin was
+        // written. A parallel review found the two halves disagreeing the moment the
+        // listing's reading changed; every identity comparison now asks the mapper.
+        wire();
+        selectorAnswersNothing();
+        deterministicReadAnswers("42", null);
+        Map<String, Object> numeric = profileProps("42", "Numeric");
+        numeric.put("profileId", 42);
+        listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
+        writesSucceed();
+
+        IllegalStateException refused = assertThrows(IllegalStateException.class,
+                () -> service.create(defaultProfile("42")),
+                "a second row of profile \"42\" was written beside the legacy row whose "
+                        + "profileId is the number 42");
+        assertTrue(refused.getMessage().contains("already exists"),
+                "refused by some other rule: " + refused.getMessage());
+        verify(cloudant, never()).postDocument(any(PostDocumentOptions.class));
+    }
+
+    @Test
+    @DisplayName("getForRepository finds a legacy row by the identity the mapper reads — \"42\" "
+            + "for the number 42")
+    void getForRepositoryReadsANumericProfileIdAsTheMapperReadsIt() {
+        wire();
+        Map<String, Object> numeric = profileProps("42", "Numeric");
+        numeric.put("profileId", 42);
+        listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
+
+        ImportProfileDefinition found = service.getForRepository("42", "bedroom");
+
+        assertTrue(found != null && "42".equals(found.getProfileId()),
+                "the row the listing calls \"42\" could not be looked up by that id: " + found);
+    }
+
+    @Test
+    @DisplayName("getOwnedRowIndexFree finds a legacy row by the identity the mapper reads")
+    void getOwnedRowIndexFreeReadsANumericProfileIdAsTheMapperReadsIt() {
+        wire();
+        Map<String, Object> numeric = profileProps("42", "Numeric");
+        numeric.put("profileId", 42);
+        listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
+
+        ImportProfileDefinition found = service.getOwnedRowIndexFree("42");
+
+        assertTrue(found != null && "42".equals(found.getProfileId()),
+                "the row the listing calls \"42\" could not be looked up by that id: " + found);
+    }
+
+    @Test
+    @DisplayName("the deterministic-id read accepts a row whose profileId is the number — the "
+            + "same identity the walks read")
+    void theDeterministicIdReadAcceptsARowWhoseProfileIdIsTheNumber() {
+        // get() confirms that the document under the deterministic id IS this profile before
+        // answering it; that confirmation compared the raw value and disowned a row the
+        // mapper reads as "42" — get() null, while every walk saw the row.
+        wire();
+        selectorAnswersNothing();
+        Map<String, Object> numeric = profileProps("42", "Numeric");
+        numeric.put("profileId", 42);
+        Document underTheId = mock(Document.class);
+        when(underTheId.getId()).thenReturn("import_profile_definition:42");
+        when(underTheId.getRev()).thenReturn("1-a");
+        when(underTheId.getProperties()).thenReturn(numeric);
+        deterministicReadAnswers("42", underTheId);
+
+        ImportProfileDefinition found = service.get("42");
+
+        assertTrue(found != null && "42".equals(found.getProfileId()),
+                "the row under the deterministic id of \"42\" was disowned: " + found);
+    }
+
     // ────────────────────────────────────────────────────────────────────
     // The uniqueness rule reads only its own fields — a row broken elsewhere neither blocks
     // nor slips past
@@ -2482,6 +2667,35 @@ class ImportProfileLegacyIdMigrationTest {
         ImportProfileDefinition resolved = assertDoesNotThrow(
                 () -> service.findDefaultForRepository("bedroom", SourceArchetype.FILE_SHARE, null),
                 "a row disabled by the string \"false\" that the node cannot read refused the "
+                        + "whole resolution");
+
+        assertTrue(resolved != null && "p-good".equals(resolved.getProfileId()),
+                "the disabled row was chosen, or nothing was: "
+                        + (resolved == null ? null : resolved.getProfileId()));
+    }
+
+    @Test
+    @DisplayName("a row disabled by an explicit NULL that the resolver cannot interpret does "
+            + "not refuse the auto-resolution either — the mapper reads null into the primitive "
+            + "as false")
+    void aDisabledByNullRowTheResolverCannotReadDoesNotRefuseTheResolve() {
+        // The hand-rolled check knew the literal and the string; the mapper — which reads the
+        // readable rows this resolver compares against — reads an explicit null for the
+        // primitive as false. A row it would never choose refused the whole resolution over
+        // the shape of its "no". A review found it; the field is now read by the mapper.
+        wire();
+        selectorAnswersNothing();
+        Map<String, Object> offByNull = profileProps("p-off-null-broken", "Off (null)");
+        offByNull.put("enabled", null);
+        offByNull.put("retentionDays", "not-a-number");
+        offByNull.put("defaultProfile", true);
+        listingAnswers(List.of(
+                row("import_profile_definition:p-off-null-broken", offByNull, "1-a"),
+                row("import_profile_definition:p-good", defaultProfileProps("p-good"), "1-b")));
+
+        ImportProfileDefinition resolved = assertDoesNotThrow(
+                () -> service.findDefaultForRepository("bedroom", SourceArchetype.FILE_SHARE, null),
+                "a row disabled by an explicit null that the node cannot read refused the "
                         + "whole resolution");
 
         assertTrue(resolved != null && "p-good".equals(resolved.getProfileId()),

@@ -2449,8 +2449,9 @@ CONTROLS = [
         what='the profile one-row delete removes rows of OTHER profiles',
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
         # Twin of PE.
-        # Re-anchored after the repository clause joined the check (review round 1).
-        find='        if (props == null\n                || !ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))\n                || !profileId.equals(props.get("profileId"))\n                || repositoryId == null\n                || !(unowned || repositoryId.equals(props.get("repositoryId")))) {',
+        # Re-anchored after the repository clause joined the check (review round 1), and again
+        # in round 16 of the second batch (the identity check moved into definesProfile).
+        find='        if (!definesProfile(props, profileId)\n                || repositoryId == null\n                || !(unowned || repositoryId.equals(props.get("repositoryId")))) {',
         replace='        if (props == null) {',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['theOneRowDeleteRefusesAMismatchedRow'],
@@ -2489,8 +2490,10 @@ CONTROLS = [
         # The P1 from the profile closure's first review: the controller authorises
         # against whichever twin the selector returned, so only a check on the ADDRESSED
         # row stops a caller of repository A deleting repository B's twin.
-        find='                || !profileId.equals(props.get("profileId"))\n                || repositoryId == null\n                || !(unowned || repositoryId.equals(props.get("repositoryId")))) {',
-        replace='                || !profileId.equals(props.get("profileId"))) {',
+        # Re-anchored in round 16 of the second batch (the identity check moved into
+        # definesProfile).
+        find='        if (!definesProfile(props, profileId)\n                || repositoryId == null\n                || !(unowned || repositoryId.equals(props.get("repositoryId")))) {',
+        replace='        if (!definesProfile(props, profileId)) {',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['theOneRowDeleteRefusesAnotherRepositorysRow'],
     ),
@@ -2572,8 +2575,10 @@ CONTROLS = [
         what='the profile plain delete skips legacy rows — a hidden twin survives',
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
         # Twin of QA.
-        find='                if (ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))\n                        && profileId.equals(props.get("profileId"))\n                        && repositoryId != null && repositoryId.equals(props.get("repositoryId"))) {\n                    targets.add(doc);',
-        replace='                if (ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))\n                        && profileId.equals(props.get("profileId"))\n                        && repositoryId != null && repositoryId.equals(props.get("repositoryId"))\n                        && id.startsWith(ImportProfileDefinition.DOC_TYPE + ":")) {\n                    targets.add(doc);',
+        # Re-anchored in round 16 of the second batch (the identity check moved into
+        # definesProfile).
+        find='                if (definesProfile(props, profileId)\n                        && repositoryId != null && repositoryId.equals(props.get("repositoryId"))) {\n                    targets.add(doc);',
+        replace='                if (definesProfile(props, profileId)\n                        && repositoryId != null && repositoryId.equals(props.get("repositoryId"))\n                        && id.startsWith(ImportProfileDefinition.DOC_TYPE + ":")) {\n                    targets.add(doc);',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['thePlainDeleteRemovesHiddenTwinsToo'],
     ),
@@ -2621,7 +2626,8 @@ CONTROLS = [
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
         # The identity guard removed: the deserialised row has a null profileId and the
         # comparison dereferences it.
-        find='                Object pid = props.get("profileId");\n                if (!(pid instanceof String) || ((String) pid).isBlank()) {\n                    // Deserialisable, but with no identity: the uniqueness comparison\n                    // dereferenced it and answered 500. A profile row without a profileId\n                    // is a row this rule cannot reason about.\n                    throw new IllegalStateException("the profiles of repository \'"\n                            + repositoryId + "\' cannot be listed: row " + id\n                            + " has no usable profileId");\n                }\n',
+        # Re-anchored in round 16 of the second batch (the identity is read by the mapper).
+        find='                ImportProfileDefinition idOnly = readAlone(props, "profileId");\n                if (idOnly == null || idOnly.getProfileId() == null\n                        || idOnly.getProfileId().isBlank()) {\n                    // Deserialisable, but with no identity: the uniqueness comparison\n                    // dereferenced it and answered 500. A profile row without a profileId\n                    // is a row this rule cannot reason about.\n                    throw new IllegalStateException("the profiles of repository \'"\n                            + repositoryId + "\' cannot be listed: row " + id\n                            + " has no usable profileId");\n                }\n',
         replace='',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['aRowWithoutAProfileIdRefusesTheListing'],
@@ -3111,11 +3117,13 @@ CONTROLS = [
         id="SM",
         what='a DISABLED row is deserialised before it is filtered out — one unreadable disabled row refuses every import',
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
-        find_span=('            Object enabledRaw = props.get("enabled");',
+        # Re-anchored in round 16 of the second batch (the mapper reads the field).
+        find_span=('            if (onlySystems != null && readsDisabled(props)) {',
                    '                // skipped: an absent value is not a "no".\n                return;\n            }'),
         replace='',
         test='ConnectorLegacyIdMigrationTest',
-        expect_fail=['anUnrelatedUnreadableConnectorDoesNotStopTheResolution'],
+        expect_fail=['anUnrelatedUnreadableConnectorDoesNotStopTheResolution',
+                     'aDisabledByNullRowTheResolverCannotReadDoesNotRefuseTheResolution'],
     ),
     dict(
         id="SN",
@@ -3220,7 +3228,9 @@ CONTROLS = [
         id="SX",
         what='getForRepository deserialises every profile of the repository — one unrelated broken row refuses every read',
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
-        find_span=('            if (!ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))\n                    || !repositoryId.equals(props.get("repositoryId"))\n                    || !profileId.equals(props.get("profileId"))) {',
+        # Re-anchored in round 16 of the second batch (the identity check moved into
+        # definesProfile).
+        find_span=('            if (!definesProfile(props, profileId)\n                    || !repositoryId.equals(props.get("repositoryId"))) {',
                    '                return;\n            }'),
         replace='            if (!ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))\n                    || !repositoryId.equals(props.get("repositoryId"))) {\n                return;\n            }',
         test='ImportProfileLegacyIdMigrationTest',
@@ -3795,7 +3805,9 @@ CONTROLS = [
         what="the deterministic-id fallback returns whatever document occupies the id — GET of "
              "one profile answers with another row",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
-        find_span=('            Map<String, Object> props = row.getProperties();\n            if (props == null\n                    || !ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))',
+        # Re-anchored in round 16 of the second batch (the identity check moved into
+        # definesProfile).
+        find_span=('            Map<String, Object> props = row.getProperties();\n            if (!definesProfile(props, profileId)) {',
                    '                return null;\n            }'),
         replace='',
         test='ImportProfileLegacyIdMigrationTest',
@@ -4185,13 +4197,16 @@ CONTROLS = [
         what="a disabled row the resolver cannot interpret refuses the whole repository's "
              "auto-resolution again — over a row that could not have been chosen",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
-        # Re-anchored in round 5 of the second batch (the skip reads both disabled shapes).
-        find='                if (isRawDisabled(props.get("enabled"))) {\n'
+        # Re-anchored in round 5 of the second batch (the skip reads both disabled shapes)
+        # and again in round 16 (the mapper reads the field).
+        find='                if (readsDisabled(props)) {\n'
              '                    return;\n'
              '                }\n',
         replace='',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['aDisabledRowTheResolverCannotReadDoesNotRefuseTheResolve'],
+        expect_fail=['aDisabledRowTheResolverCannotReadDoesNotRefuseTheResolve',
+                     'aDisabledByStringRowTheResolverCannotReadDoesNotRefuseTheResolve',
+                     'aDisabledByNullRowTheResolverCannotReadDoesNotRefuseTheResolve'],
     ),
     dict(
         id="WJ",
@@ -4237,7 +4252,9 @@ CONTROLS = [
                    '                        + " and could not be read as a profile (" + broken.reason() + ")");\n            }'),
         replace='            if (broken.addressedTo(connId, connector.getSourceArchetype())) {\n                continue;\n            }',
         test='IngestWebhookBoxDropboxTest',
-        expect_fail=['aRecipientRowThatCannotBeInterpretedIsA503NotNoProfile'],
+        expect_fail=['aRecipientRowThatCannotBeInterpretedIsA503NotNoProfile',
+                     'aBrokenRecipientRowRefusesTheDispatchEvenBesideReadableOnes',
+                     'aRowWhoseAddresseeCannotBeReadRefusesEveryConnectorsDispatch'],
     ),
     dict(
         id="YD",
@@ -4305,20 +4322,22 @@ CONTROLS = [
         what="the identity check runs before the disabled skip again — a disabled row with no "
              "profileId refuses every write of its repository",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
-        # Re-anchored in round 5 of the second batch (the skip reads both disabled shapes).
-        find_span=('                if (isRawDisabled(props.get("enabled"))) {\n'
+        # Re-anchored in round 5 of the second batch (the skip reads both disabled shapes)
+        # and again in round 16 (the mapper reads both fields).
+        find_span=('                if (readsDisabled(props)) {\n'
                    '                    return;\n'
                    '                }\n'
                    '                // After the disabled skip, not before it:',
                    '                            + " has no usable profileId");\n'
                    '                }'),
-        replace='                Object pid = props.get("profileId");\n'
-                '                if (!(pid instanceof String) || ((String) pid).isBlank()) {\n'
+        replace='                ImportProfileDefinition idOnly = readAlone(props, "profileId");\n'
+                '                if (idOnly == null || idOnly.getProfileId() == null\n'
+                '                        || idOnly.getProfileId().isBlank()) {\n'
                 '                    throw new IllegalStateException("the profiles of repository \'"\n'
                 '                            + repositoryId + "\' cannot be listed: row " + id\n'
                 '                            + " has no usable profileId");\n'
                 '                }\n'
-                '                if (isRawDisabled(props.get("enabled"))) {\n'
+                '                if (readsDisabled(props)) {\n'
                 '                    return;\n'
                 '                }',
         test='ImportProfileLegacyIdMigrationTest',
@@ -4383,7 +4402,8 @@ CONTROLS = [
         find='            if (broken.addressedTo(connId, connector.getSourceArchetype())) {',
         replace='            if (owned.profiles().isEmpty() && broken.addressedTo(connId, connector.getSourceArchetype())) {',
         test='IngestWebhookBoxDropboxTest',
-        expect_fail=['aBrokenRecipientRowRefusesTheDispatchEvenBesideReadableOnes'],
+        expect_fail=['aBrokenRecipientRowRefusesTheDispatchEvenBesideReadableOnes',
+                     'aRowWhoseAddresseeCannotBeReadRefusesEveryConnectorsDispatch'],
     ),
     dict(
         id="XA",
@@ -4400,11 +4420,11 @@ CONTROLS = [
         what="a connector field of unreadable shape reads as 'names nobody' again — the skip "
              "the uninterpretable-row record exists to prevent, one field down",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
-        find='        boolean addresseeUnknown = (defaultConnector != null && !(defaultConnector instanceof String))\n'
-             '                || (allowedConnectors != null && !isListOfStrings(allowedConnectors));',
-        replace='        boolean addresseeUnknown = false;',
+        find='                connectorsOnly == null, reason));',
+        replace='                false, reason));',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['aRowWhoseConnectorFieldsHaveNoReadableShapeAddressesEveryConnector'],
+        expect_fail=['aRowWhoseConnectorFieldsHaveNoReadableShapeAddressesEveryConnector',
+                     'aRowWhoseConnectorFieldsHaveNoReadableShapeIsNotAddressedToAnArchetypeItExcludes'],
     ),
     dict(
         id="XC",
@@ -4501,11 +4521,13 @@ CONTROLS = [
         what="a row disabled by the string \"false\" is reported as a possible recipient — the "
              "profile listing reads the string differently from the connector listing again",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
-        # Re-targeted in round 5 at the CALL SITE (the reporting of a row), not the helper.
-        find='        if (isRawDisabled(props.get("enabled"))) {\n            return;\n        }\n        Object defaultConnector',
-        replace='        if (Boolean.FALSE.equals(props.get("enabled"))) {\n            return;\n        }\n        Object defaultConnector',
+        # Re-targeted in round 5 at the CALL SITE (the reporting of a row), not the helper;
+        # re-anchored in round 16 (the mapper reads the field).
+        find='        if (readsDisabled(props)) {\n            return;\n        }\n        ImportProfileDefinition idOnly',
+        replace='        if (Boolean.FALSE.equals(props.get("enabled"))) {\n            return;\n        }\n        ImportProfileDefinition idOnly',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest'],
+        expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest',
+                     'aRowWhoseEnabledIsAnExplicitNullIsNotARecipient'],
     ),
     dict(
         id="XL",
@@ -4668,66 +4690,195 @@ CONTROLS = [
         find='            if (broken.addressedTo(connId, connector.getSourceArchetype())) {',
         replace='            if (broken.namesConnector(connId)) {',
         test='IngestWebhookBoxDropboxTest',
-        expect_fail=['aBrokenRowWhoseArchetypesExcludeTheConnectorDoesNotStopTheDispatch'],
+        expect_fail=['aBrokenRowWhoseArchetypesExcludeTheConnectorDoesNotStopTheDispatch',
+                     'aBrokenRowWhoseConnectorFieldsCannotBeReadButWhoseArchetypesExcludeTheConnectorDoesNotStopTheDispatch'],
     ),
     dict(
         id="YH",
-        what="an archetype field of unreadable shape is 'helpfully' read as a one-name list "
-             "again — a bare string restricts the row to that archetype instead of admitting all",
+        what="an archetype field that is a bare string is 'helpfully' read as a one-name list "
+             "again — the mapper refuses it, and a reader that coerces it restricts the row to "
+             "that archetype instead of admitting all",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
-        find='                rawStrings(allowedArchetypes), addresseeUnknown, reason));',
-        replace='                (allowedArchetypes instanceof String s ? List.of(s) : rawStrings(allowedArchetypes)),\n'
-                '                addresseeUnknown, reason));',
+        find='                alone.put(field, props.get(field));',
+        replace='                alone.put(field, "allowedArchetypes".equals(field) && props.get(field) instanceof String s\n'
+                '                        ? List.of(s) : props.get(field));',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['aRowWhoseArchetypeFieldHasNoReadableShapeAdmitsEveryArchetypeButNamesOnlyItsConnectors'],
     ),
-    dict(
-        id="YI",
-        what="the receiver reads a broken row's archetype list with a name this node does not "
-             "know as 'excludes the connector' — the same silent loss YG's relaxation must not "
-             "reopen. At the call site: a receiver that re-derives the admission from the raw "
-             "list without the unknown-name arm",
-        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
-        find='            if (broken.addressedTo(connId, connector.getSourceArchetype())) {',
-        replace='            if (broken.namesConnector(connId) && (broken.allowedArchetypes() == null'
-                ' || broken.allowedArchetypes().isEmpty()'
-                ' || broken.allowedArchetypes().contains(connector.getSourceArchetype().name()))) {',
-        test='IngestWebhookBoxDropboxTest',
-        expect_fail=['aBrokenRowWithAnUnknownArchetypeNameStillStopsTheDispatch'],
-    ),
+    # YI (a receiver re-deriving the archetype admission from raw strings without the
+    # unknown-name arm) was withdrawn in round 15 of the second batch: the row now carries the
+    # list as the mapper read it, so an unknown name is a refused list (null) before the
+    # receiver sees it, and no call-site sabotage can reopen that loss. YJ measures the reading.
     dict(
         id="YJ",
-        what="the unknown-name arm itself goes (YI's helper twin, measured against the premise "
-             "lock that reads the row through the production mapper)",
-        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionService.java',
-        find='            for (String name : allowedArchetypes) {\n'
-             '                if (!isAnArchetype(name)) {\n'
-             '                    return true;\n'
-             '                }\n'
-             '            }\n',
-        replace='',
+        what="the per-field reader turns lenient about enum names — an archetype name this node "
+             "does not know reads as a null element instead of a refusal, and a list of unknown "
+             "names excludes every archetype (the silent loss YG's relaxation must not reopen)",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='            return MAPPER.convertValue(alone, ImportProfileDefinition.class);',
+        # Jackson 3 keeps this on EnumFeature (a DatatypeFeature), not DeserializationFeature;
+        # the compile-check caught the first spelling before the sweep could die on it.
+        replace='            return MAPPER.rebuild().enable(tools.jackson.databind.cfg.EnumFeature'
+                '.READ_UNKNOWN_ENUM_VALUES_AS_NULL).build()'
+                '.convertValue(alone, ImportProfileDefinition.class);',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['aMiscasedArchetypeNameMakesTheRowUnreadableAndItAddressesEveryArchetype'],
     ),
     dict(
         id="YK",
-        what="the raw archetype list is not carried on the uninterpretable row — the receiver "
+        what="the archetype list is not carried on the uninterpretable row — the receiver "
              "is back to judging on the name alone",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
-        find='                rawStrings(allowedArchetypes), addresseeUnknown, reason));',
-        replace='                null, addresseeUnknown, reason));',
+        find='                archetypesOnly == null ? null : archetypesOnly.getAllowedArchetypes(),',
+        replace='                null,',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest'],
+        expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest',
+                     'aRowWhoseConnectorFieldsHaveNoReadableShapeIsNotAddressedToAnArchetypeItExcludes',
+                     'aNullElementInTheArchetypeListReadsAsTheMapperReadsIt'],
     ),
     dict(
         id="YL",
         what="a connector with no archetype is admitted by a restricting list — the readable "
              "path's isArchetypeAllowed admits it by none",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionService.java',
-        find='            return archetype != null && allowedArchetypes.contains(archetype.name());',
-        replace='            return archetype == null || allowedArchetypes.contains(archetype.name());',
+        find='            return reading.isArchetypeAllowed(archetype);',
+        replace='            return archetype == null || reading.isArchetypeAllowed(archetype);',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest'],
+    ),
+    dict(
+        id="YP",
+        what="a connector id the mapper coerces (42 → \"42\") is called unreadable again — the "
+             "hand-rolled 'a String, or nothing' reading, which made such a row name every "
+             "connector",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                connectorsOnly == null, reason));',
+        replace='                connectorsOnly == null || !(props.get("defaultConnectorId") == null'
+                ' || props.get("defaultConnectorId") instanceof String), reason));',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aNumericConnectorIdReadsAsTheMapperReadsIt'],
+    ),
+    dict(
+        id="YQ",
+        what="a list with a null element is refused before the mapper sees it — the hand-rolled "
+             "'list of strings' reading, which admitted every archetype for a list that plainly "
+             "excludes one",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='        try {\n'
+             '            return MAPPER.convertValue(alone, ImportProfileDefinition.class);',
+        replace='        for (Object v : alone.values()) {\n'
+                '            if (v instanceof List<?> l && l.stream().anyMatch(java.util.Objects::isNull)) {\n'
+                '                return null;\n'
+                '            }\n'
+                '        }\n'
+                '        try {\n'
+                '            return MAPPER.convertValue(alone, ImportProfileDefinition.class);',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aNullElementInTheArchetypeListReadsAsTheMapperReadsIt'],
+    ),
+    dict(
+        id="YR",
+        what="the profile services' disabled check goes back to the literal and the string by "
+             "hand — an explicit null, which the mapper reads as false, is a possible recipient "
+             "again (and the auto-resolver refuses on it again)",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='        ImportProfileDefinition enabledOnly = readAlone(props, "enabled");\n'
+             '        return enabledOnly != null && !enabledOnly.isEnabled();',
+        replace='        Object enabled = props.get("enabled");\n'
+                '        return Boolean.FALSE.equals(enabled) || "false".equalsIgnoreCase(String.valueOf(enabled));',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aRowWhoseEnabledIsAnExplicitNullIsNotARecipient',
+                     'aDisabledByNullRowTheResolverCannotReadDoesNotRefuseTheResolve'],
+    ),
+    dict(
+        id="YS",
+        what="the uniqueness listing's identity check goes back to 'a String, or nothing' — a "
+             "profileId the mapper coerces (42 → \"42\") refuses every write of its repository "
+             "again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                ImportProfileDefinition idOnly = readAlone(props, "profileId");\n'
+             '                if (idOnly == null || idOnly.getProfileId() == null\n'
+             '                        || idOnly.getProfileId().isBlank()) {',
+        replace='                Object pid = props.get("profileId");\n'
+                '                if (!(pid instanceof String) || ((String) pid).isBlank()) {',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aNumericProfileIdIsAnIdentityForTheUniquenessListing'],
+    ),
+    dict(
+        id="YT",
+        what="the connector resolution's disabled check goes back to the literal and the string "
+             "by hand — a disabled-by-null row this node cannot read refuses the whole "
+             "resolution again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='            return !MAPPER.convertValue(alone, ConnectorDefinition.class).isEnabled();',
+        replace='            return Boolean.FALSE.equals(props.get("enabled"))'
+                ' || "false".equalsIgnoreCase(String.valueOf(props.get("enabled")));',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aDisabledByNullRowTheResolverCannotReadDoesNotRefuseTheResolution'],
+    ),
+    dict(
+        id="YU",
+        what="the count that stops a twin compares the raw profileId again — a legacy row whose "
+             "id is the number 42 is invisible to the create of \"42\", and the twin is written",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='            if (definesProfile(props, profileId)\n'
+             '                    && (repositoryId == null || repositoryId.equals(props.get("repositoryId")))) {',
+        replace='            if (ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))\n'
+                '                    && profileId.equals(props.get("profileId"))\n'
+                '                    && (repositoryId == null || repositoryId.equals(props.get("repositoryId")))) {',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aNumericLegacyRowIsATwinForTheCreateOfItsStringId'],
+    ),
+    dict(
+        id="YV",
+        what="getForRepository compares the raw profileId again — the row the listing calls "
+             "\"42\" cannot be looked up by that id",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='            if (!definesProfile(props, profileId)\n'
+             '                    || !repositoryId.equals(props.get("repositoryId"))) {',
+        replace='            if (!ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))\n'
+                '                    || !repositoryId.equals(props.get("repositoryId"))\n'
+                '                    || !profileId.equals(props.get("profileId"))) {',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['getForRepositoryReadsANumericProfileIdAsTheMapperReadsIt'],
+    ),
+    dict(
+        id="YW",
+        what="the shared identity check compares the raw value again — every count, lookup and "
+             "delete disagrees with the listing at once",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='        return idOnly != null && profileId.equals(idOnly.getProfileId());',
+        replace='        return profileId.equals(props.get("profileId"));',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aNumericLegacyRowIsATwinForTheCreateOfItsStringId',
+                     'getForRepositoryReadsANumericProfileIdAsTheMapperReadsIt',
+                     'getOwnedRowIndexFreeReadsANumericProfileIdAsTheMapperReadsIt',
+                     'theDeterministicIdReadAcceptsARowWhoseProfileIdIsTheNumber'],
+    ),
+    dict(
+        id="YX",
+        what="getOwnedRowIndexFree compares the raw profileId again — YV's twin on the owned-row "
+             "walk",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='            if (!definesProfile(props, profileId)\n'
+             '                    || isBlank(props.get("repositoryId"))) {',
+        replace='            if (!ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))\n'
+                '                    || !profileId.equals(props.get("profileId"))\n'
+                '                    || isBlank(props.get("repositoryId"))) {',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['getOwnedRowIndexFreeReadsANumericProfileIdAsTheMapperReadsIt'],
+    ),
+    dict(
+        id="YY",
+        what="the deterministic-id read disowns a row whose profileId is the number again — "
+             "get() null for a row every walk sees",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='            if (!definesProfile(props, profileId)) {',
+        replace='            if (props == null\n'
+                '                    || !ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))\n'
+                '                    || !profileId.equals(props.get("profileId"))) {',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theDeterministicIdReadAcceptsARowWhoseProfileIdIsTheNumber'],
     ),
     dict(
         id="YM",
@@ -4745,13 +4896,11 @@ CONTROLS = [
         what="the archetype field's shape is folded into addresseeUnknown again — a row naming "
              "someone else stops every connector's dispatch (the regression cc97f50c5 carried)",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
-        find='        boolean addresseeUnknown = (defaultConnector != null && !(defaultConnector instanceof String))\n'
-             '                || (allowedConnectors != null && !isListOfStrings(allowedConnectors));',
-        replace='        boolean addresseeUnknown = (defaultConnector != null && !(defaultConnector instanceof String))\n'
-                '                || (allowedConnectors != null && !isListOfStrings(allowedConnectors))\n'
-                '                || (allowedArchetypes != null && !isListOfStrings(allowedArchetypes));',
+        find='                connectorsOnly == null, reason));',
+        replace='                connectorsOnly == null || archetypesOnly == null, reason));',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['aRowWhoseArchetypeFieldHasNoReadableShapeAdmitsEveryArchetypeButNamesOnlyItsConnectors'],
+        expect_fail=['aRowWhoseArchetypeFieldHasNoReadableShapeAdmitsEveryArchetypeButNamesOnlyItsConnectors',
+                     'aMiscasedArchetypeNameMakesTheRowUnreadableAndItAddressesEveryArchetype'],
     ),
     dict(
         id="YO",
@@ -4759,9 +4908,12 @@ CONTROLS = [
              "measured at the record",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionService.java',
         find='        public boolean admitsArchetype(SourceArchetype archetype) {\n'
-             '            if (allowedArchetypes == null || allowedArchetypes.isEmpty()) {',
+             '            ImportProfileDefinition reading = new ImportProfileDefinition();',
         replace='        public boolean admitsArchetype(SourceArchetype archetype) {\n'
-                '            if (addresseeUnknown || allowedArchetypes == null || allowedArchetypes.isEmpty()) {',
+                '            if (addresseeUnknown) {\n'
+                '                return true;\n'
+                '            }\n'
+                '            ImportProfileDefinition reading = new ImportProfileDefinition();',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['aRowWhoseConnectorFieldsHaveNoReadableShapeIsNotAddressedToAnArchetypeItExcludes'],
     ),
@@ -4803,7 +4955,9 @@ CONTROLS = [
         find='            if (broken.addressedTo(connId, connector.getSourceArchetype())) {',
         replace='            if (true) {',
         test='IngestWebhookBoxDropboxTest',
-        expect_fail=['aBrokenRowOfAnotherConnectorDoesNotStopTheDispatch'],
+        expect_fail=['aBrokenRowOfAnotherConnectorDoesNotStopTheDispatch',
+                     'aBrokenRowWhoseArchetypesExcludeTheConnectorDoesNotStopTheDispatch',
+                     'aBrokenRowWhoseConnectorFieldsCannotBeReadButWhoseArchetypesExcludeTheConnectorDoesNotStopTheDispatch'],
     ),
     dict(
         id="XV",
@@ -4821,7 +4975,8 @@ CONTROLS = [
         what="the repository listing skips only the literal false again — a row disabled by the "
              "string \"false\" that the node cannot read refuses the whole auto-resolution",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
-        find='                if (isRawDisabled(props.get("enabled"))) {\n'
+        # Re-anchored in round 16 of the second batch (the mapper reads the field).
+        find='                if (readsDisabled(props)) {\n'
              '                    return;\n'
              '                }\n'
              '                // After the disabled skip, not before it:',
@@ -4830,7 +4985,8 @@ CONTROLS = [
                 '                }\n'
                 '                // After the disabled skip, not before it:',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['aDisabledByStringRowTheResolverCannotReadDoesNotRefuseTheResolve'],
+        expect_fail=['aDisabledByStringRowTheResolverCannotReadDoesNotRefuseTheResolve',
+                     'aDisabledByNullRowTheResolverCannotReadDoesNotRefuseTheResolve'],
     ),
     dict(
         id="HA",
