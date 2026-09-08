@@ -46,8 +46,9 @@ public interface ConnectorDefinitionService {
      * {@code isMicrosoftGraphSubscriptionValidation}). Refusing whenever the selector fails
      * would remove the window disclosure at the price of every webhook while the index is
      * down; answering 503 instead of 401 during that window to a failed signature AND to a
-     * disabled row would remove it without that price and is recorded as a follow-up. The
-     * caller's decision was to keep the receiver answering and to say what is revealed.
+     * disabled row would remove it on the POST without that price (the GET handshake's 404
+     * would need the same treatment) and is recorded as a follow-up. The caller's decision
+     * was to keep the receiver answering and to say what is revealed.
      *
      * @throws ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException when the row
      *         exists but could not be read as this connector, when the id-addressed read

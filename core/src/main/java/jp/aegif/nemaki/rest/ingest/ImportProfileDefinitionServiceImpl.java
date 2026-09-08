@@ -1533,9 +1533,10 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
             // The SDK's own failure (a reset, a 5xx) is a listing that could not be
             // completed too. Left raw it escaped the controllers' handlers as a 500 while
             // the three refusals above answered 503. A review found the fourth shape. This
-            // arm takes every RuntimeException, a programming error included, and the
-            // admin @ExceptionHandlers do not log — so the cause is kept here, where the
-            // container's stack trace used to be. (get()'s fallback records the same failure
+            // arm takes every other RuntimeException (the IllegalStateException arm above
+            // takes those), a programming error included, and the admin @ExceptionHandlers
+            // do not log — so the cause is kept here, where the container's stack trace
+            // used to be. (get()'s fallback records the same failure
             // at DEBUG: one failure, two lines, the stack trace only here.)
             logger.warn("the selector listing of '{}' could not be read", dbName, transportFailed);
             throw new ProfileIndexNotReadyException("the selector listing of '" + dbName
