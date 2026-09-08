@@ -8054,3 +8054,47 @@ arm に行くので字義どおりには偽 (「every other」に)、「4 か所
 文書のみ) なので、**YD だけを compile-check (1/1) して測定し 1/1 FIRED** (93 秒)。バッチの残り
 63 本は 10 巡目の測定 (`c8449112e` の木、以後コメント以外の変更なし — 事前検査 434/434 で
 anchor 不動) の値のまま。**残る 370 本はこの木では未測定** — 通しは収束後。
+
+### 13 巡目 (Codex + サブエージェント、並行) — P2 (重複含め) 3・P3 3、両者 `NOT CONVERGED`
+
+コミット `011e3e966` に対して。P1 なし。**12 巡目の処置が持ち込んだ文が、また木より強かった。**
+
+- **P2 (両者) — 「管理一覧は WARN ログに行の ID を出して飛ばし」は木に無かった。** 両サービスの
+  skip の WARN は例外メッセージしか出さず、しかも `convertValue` の前に `_id` を消していた。
+  12 巡目の判断の根拠 (「一覧が見えることが、その行を消すのに要る」) も、一覧は壊れた行を
+  見せず WARN も名指さないので成り立っていなかった — 成り立つのは「読める行の管理を 1 行の
+  ために止めない」だけ (サブの指摘)。**WARN に `rawDoc.getId()` を載せ**、錠 2 本 (ListAppender で
+  WARN に行の ID) + **YE / YF**。RELEASE_NOTES の根拠文を書き直した。
+- **P2 (Codex) — 壊れた行を connector 名だけで拒否し、raw の `allowedArchetypes` が明確に
+  除外する行でも webhook を止めていた** (読める行なら受信側の archetype 判定
+  `isArchetypeAllowed` で外れる) — over-throw。`UninterpretableRow` に raw `allowedArchetypes`
+  を持たせ、受信側は `addressedTo(connectorId, archetype)` で判定する。読める行の読み方を
+  写して、絶対または空の list は全 archetype を許し、archetype の無いコネクタはどの制限 list
+  にも入らない。**list が読めない形 (文字列の list でない) なら `addresseeUnknown`**、
+  **この node の知らない名前を含む list は「除外と確定できない」として全 archetype 宛て**
+  (`SourceArchetype` は enum で、既定の mapper は名前を厳密に読む — `"file_share"` の行は
+  読める行としては存在し得ず、書いた人の意図は読めない)。錠 4 本 (受信側: archetype で除外
+  される壊れた行は止めない / 未知の名前の行は止める、service 側: raw list を運ぶ / 読めない
+  形は `addresseeUnknown`)、コントロール **YG / YH / YI**。XB の anchor と WN / WZ / XJ / XU
+  の呼び出し行を張り直し。
+- **P3 (サブ)** RELEASE_NOTES「行単位で答えるのは…だけ」は過小 (受信側のコネクタ解決と
+  一意性規則の 4 欄も行単位に答える) → 直した。200 件上限の項に「webhook の受信先」を bookmark
+  の経路として並べていた → 走査に切り替えたので対象外と注記。VY のコメント「generic catch that
+  follows」は 2 巡目以降偽 → 直した。
+- **自己レビューで 1 件**: 直した RELEASE_NOTES の文「従来どおり WARN ログに行の ID を出して
+  飛ばし」は、飛ばすのは従来どおりでも ID はこの版からなので、「従来どおり」が ID にも掛かる
+  読みを許していた → 「この版から ID が載る (以前は例外メッセージだけ)」に分けた。
+
+**この巡の測定**: コントロールは **439 本** (新設 5: YE YF YG YH YI)。事前検査 439/439
+(self-test 19/19、expect_fail の宣言 0 問題、anchor 0 drift — 最初の検査で XB の anchor が
+`addresseeUnknown` の式の延長で外れていたのを張り直してから)。変更ファイルを標的にする
+**130 本を compile-check し 130/130**、続けてバッチ **69 本 (64 + 新設 5) を測定し 69/69 FIRED**
+(compile-check 91 分、バッチ 101 分)。**残る 370 本はこの木では未測定** — 通しは収束後。
+
+起動の記録: 最初の起動は、自己レビューで `addressedTo` の締め (未知の名前の arm) を入れると
+決めたため約 7 分で止めた。`kill -INT` は nohup 配下の非対話シェルが非同期ジョブの SIGINT を
+無視させるため効かず、`kill -TERM` で止めたが、**compile-check は `.nc-backup` を書かない**ので
+`ConnectorDefinitionServiceImpl.java` がサボタージュのまま残った。`git show HEAD:` の内容に
+起動前スナップショット (`git diff HEAD` の保存) の hunk を `git apply --include` で当てて復元し、
+変更ファイル全部がスナップショットと一致することを確認してから再起動した (checkout は使って
+いない — 未コミットの変更が消えるため)。測定値は再起動後のものだけ。

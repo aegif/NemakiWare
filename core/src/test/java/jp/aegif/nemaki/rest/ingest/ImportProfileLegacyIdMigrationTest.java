@@ -1291,6 +1291,7 @@ class ImportProfileLegacyIdMigrationTest {
         broken.put("retentionDays", "not-a-number");
         broken.put("defaultConnectorId", "c-dbx");
         broken.put("allowedConnectorIds", List.of("c-a", "c-dbx"));
+        broken.put("allowedArchetypes", List.of("FILE_SHARE"));
         Map<String, Object> offAndBroken = profileProps("p-off-broken", "Off and broken");
         offAndBroken.put("enabled", false);
         offAndBroken.put("retentionDays", "not-a-number");
@@ -1332,7 +1333,47 @@ class ImportProfileLegacyIdMigrationTest {
                         && !reported.namesConnector("c-z"),
                 "namesConnector does not read both raw fields");
         assertFalse(reported.addresseeUnknown(), "readable connector fields were reported as unreadable");
+        assertEquals(List.of("FILE_SHARE"), reported.allowedArchetypes(),
+                "the raw archetype list was not carried — the receiver refuses on the name alone");
+        assertTrue(reported.addressedTo("c-dbx", SourceArchetype.FILE_SHARE)
+                        && !reported.addressedTo("c-dbx", SourceArchetype.MESSAGE_CONTEXT),
+                "addressedTo does not read the raw archetype list");
         verify(cloudant, never()).postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class));
+    }
+
+    @Test
+    @DisplayName("the admin listing names the row it could not read — the WARN carries the "
+            + "row's id, as the release notes promise")
+    void theAdminListingNamesTheRowItCannotRead() {
+        // list() skips a row it cannot deserialise and answers with the rest; the operator's
+        // only handle on the skipped row is this WARN, and it carried the exception message
+        // without the id. A review found the notes promising more than the log said.
+        wire();
+        Map<String, Object> odd = profileProps("p-odd", "Odd");
+        odd.put("retentionDays", "not-a-number");
+        Document oddDoc = selectorDoc(odd);
+        when(oddDoc.getId()).thenReturn("legacy-p-odd-row");
+        ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> page = findCallOf(List.of(oddDoc), null);
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenReturn(page);
+        ch.qos.logback.classic.Logger log = (ch.qos.logback.classic.Logger)
+                org.slf4j.LoggerFactory.getLogger(ImportProfileDefinitionServiceImpl.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        log.addAppender(appender);
+        List<ImportProfileDefinition> listed;
+        try {
+            listed = service.list();
+        } finally {
+            log.detachAppender(appender);
+        }
+
+        assertTrue(listed.isEmpty(), "the unreadable row was listed: " + listed);
+        assertTrue(appender.list.stream().anyMatch(e ->
+                        e.getLevel() == ch.qos.logback.classic.Level.WARN
+                                && e.getFormattedMessage().contains("legacy-p-odd-row")),
+                "the WARN does not name the skipped row: " + appender.list);
     }
 
     @Test
@@ -1377,6 +1418,63 @@ class ImportProfileLegacyIdMigrationTest {
                 "a connector field of unreadable shape was not reported as such");
         assertTrue(reported.namesConnector("c-anything"),
                 "a row whose addressee cannot be established answered 'names nobody'");
+    }
+
+    @Test
+    @DisplayName("a row whose archetype field has no readable shape addresses EVERY connector "
+            + "and every archetype")
+    void aRowWhoseArchetypeFieldHasNoReadableShapeAddressesEveryConnector() {
+        // The archetype list is the third field the receiver reads off a broken row (to let a
+        // row that plainly excludes the connector's archetype through). A list that is not a
+        // list of strings cannot exclude anything — reading it as "excludes everyone" would be
+        // the same skip one field further down.
+        wire();
+        Map<String, Object> oddShape = profileProps("p-odd", "Odd");
+        oddShape.put("retentionDays", "not-a-number");
+        oddShape.put("defaultConnectorId", "c-dbx");
+        oddShape.put("allowedArchetypes", "FILE_SHARE");
+        listingAnswers(List.of(row("import_profile_definition:p-odd", oddShape, "1-a")));
+
+        ImportProfileDefinitionService.OwnedProfiles owned = service.listOwnedIndexFree();
+
+        assertEquals(1, owned.uninterpretable().size(), "the row was not reported: " + owned);
+        ImportProfileDefinitionService.UninterpretableRow reported = owned.uninterpretable().get(0);
+        assertTrue(reported.addresseeUnknown(),
+                "an archetype field of unreadable shape was not reported as such");
+        assertTrue(reported.addressedTo("c-anything", SourceArchetype.MESSAGE_CONTEXT),
+                "a row whose archetypes cannot be read answered 'not addressed to this one'");
+    }
+
+    @Test
+    @DisplayName("a mis-cased archetype name is unreadable through the real mapper, and the row "
+            + "it breaks addresses every archetype — the premise addressedTo's unknown-name arm "
+            + "stands on")
+    void aMiscasedArchetypeNameMakesTheRowUnreadableAndItAddressesEveryArchetype() {
+        // addressedTo lets a broken row through when its raw list plainly excludes the
+        // connector's archetype, on the ground that a readable row with that list would have
+        // been filtered out. That ground holds only if a list with a name the enum does not
+        // spell that way cannot be a readable row at all — which is the mapper's doing, not
+        // this code's. Measured here so a mapper made case-insensitive would show up as this
+        // failing, not as a broken row silently read as "excludes everyone".
+        wire();
+        Map<String, Object> miscased = profileProps("p-miscased", "Miscased");
+        miscased.put("defaultConnectorId", "c-dbx");
+        miscased.put("allowedArchetypes", List.of("file_share"));
+        listingAnswers(List.of(row("import_profile_definition:p-miscased", miscased, "1-a")));
+
+        ImportProfileDefinitionService.OwnedProfiles owned = service.listOwnedIndexFree();
+
+        assertTrue(owned.profiles().isEmpty(),
+                "a mis-cased archetype name read as a profile — the mapper is not reading enum "
+                        + "names exactly, and addressedTo's unknown-name arm no longer mirrors it: "
+                        + owned.profiles());
+        assertEquals(1, owned.uninterpretable().size(), "the row was not reported: " + owned);
+        ImportProfileDefinitionService.UninterpretableRow reported = owned.uninterpretable().get(0);
+        assertEquals(List.of("file_share"), reported.allowedArchetypes());
+        assertFalse(reported.addresseeUnknown(), "a list of strings was reported as unreadable in shape");
+        assertTrue(reported.addressedTo("c-dbx", SourceArchetype.FILE_SHARE)
+                        && reported.addressedTo("c-dbx", SourceArchetype.MESSAGE_CONTEXT),
+                "a list with a name this node does not know was read as excluding an archetype");
     }
 
     @Test

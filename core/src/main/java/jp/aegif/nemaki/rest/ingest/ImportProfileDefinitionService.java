@@ -102,15 +102,22 @@ public interface ImportProfileDefinitionService {
      * receiver asks {@link #namesConnector(String)}: a row that names its connector and
      * cannot be read is a recipient it cannot establish, not "no recipient".
      *
-     * @param addresseeUnknown true when a connector field is present in the row but not in
-     *                         a shape this node can read (a value that is not a string, a
-     *                         list with non-string entries): whom the row addresses cannot
-     *                         be established, so it addresses every connector
+     * @param allowedArchetypes the raw {@code allowedArchetypes} entries when the field is a
+     *                          list of strings (an empty list restricts none, as
+     *                          {@link ImportProfileDefinition#isArchetypeAllowed} reads it);
+     *                          null when the field is absent or of a shape this node cannot
+     *                          read — {@code addresseeUnknown} says which
+     * @param addresseeUnknown true when a connector or archetype field is present in the row
+     *                         but not in a shape this node can read (a value that is not a
+     *                         string, a list with non-string entries): whom the row
+     *                         addresses cannot be established, so it addresses every
+     *                         connector
      * @param reason why the row could not be read (the deserialisation failure, or that the
      *               row has no profileId)
      */
     record UninterpretableRow(String docId, String profileId, String defaultConnectorId,
-            List<String> allowedConnectorIds, boolean addresseeUnknown, String reason) {
+            List<String> allowedConnectorIds, List<String> allowedArchetypes,
+            boolean addresseeUnknown, String reason) {
         /**
          * Whether the row names this connector — as far as its raw connector fields say, and
          * "yes" for every connector when those fields are there but cannot be read: a row
@@ -125,6 +132,43 @@ public interface ImportProfileDefinitionService {
             }
             return connectorId.equals(defaultConnectorId)
                     || (allowedConnectorIds != null && allowedConnectorIds.contains(connectorId));
+        }
+
+        /**
+         * Whether the row was addressed to this connector: it names it, and its raw
+         * {@code allowedArchetypes} — when present and readable as archetypes — admit the
+         * connector's archetype, read the way {@link ImportProfileDefinition#isArchetypeAllowed}
+         * reads a readable row (an absent or empty list admits every archetype; a connector
+         * with no archetype is admitted by no restricting list). A readable row with the same
+         * fields would have been filtered out by the receiver; refusing on it would stop a
+         * dispatch that row could never have received — a review found the receiver refusing
+         * on the name alone. A list holding a name that is not an archetype this node knows
+         * cannot be established to exclude anything (such a row would not have read at all,
+         * whatever its author meant), so it addresses every archetype, like a list of
+         * unreadable shape.
+         */
+        public boolean addressedTo(String connectorId, SourceArchetype archetype) {
+            if (!namesConnector(connectorId)) {
+                return false;
+            }
+            if (addresseeUnknown || allowedArchetypes == null || allowedArchetypes.isEmpty()) {
+                return true;
+            }
+            for (String name : allowedArchetypes) {
+                if (!isAnArchetype(name)) {
+                    return true;
+                }
+            }
+            return archetype != null && allowedArchetypes.contains(archetype.name());
+        }
+
+        private static boolean isAnArchetype(String name) {
+            for (SourceArchetype known : SourceArchetype.values()) {
+                if (known.name().equals(name)) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 

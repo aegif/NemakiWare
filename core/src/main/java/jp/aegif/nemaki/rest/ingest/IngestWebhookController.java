@@ -549,7 +549,7 @@ public class IngestWebhookController {
         String connId = connector.getConnectorId();
         ImportProfileDefinitionService.OwnedProfiles owned = profileService.listOwnedIndexFree();
         for (ImportProfileDefinitionService.UninterpretableRow broken : owned.uninterpretable()) {
-            if (broken.namesConnector(connId)) {
+            if (broken.addressedTo(connId, connector.getSourceArchetype())) {
                 // Answering from the readable rows alone would say "no profile" (200) when
                 // this was the only one, or dispatch to the others with this one silently
                 // left out. A broken row that names another connector is that connector's

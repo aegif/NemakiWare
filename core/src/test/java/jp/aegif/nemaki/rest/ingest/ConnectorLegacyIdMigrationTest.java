@@ -512,6 +512,38 @@ class ConnectorLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("the admin listing names the row it could not read — the WARN carries the "
+            + "row's id, as the release notes promise")
+    void theAdminListingNamesTheRowItCannotRead() {
+        wire();
+        Map<String, Object> odd = connectorProps("c-odd", "Odd");
+        odd.put("delegateAllFolders", "not-a-boolean");
+        Document oddDoc = selectorDoc(odd);
+        when(oddDoc.getId()).thenReturn("legacy-c-odd-row");
+        ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> page = findCallOf(List.of(oddDoc), null);
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenReturn(page);
+        ch.qos.logback.classic.Logger log = (ch.qos.logback.classic.Logger)
+                org.slf4j.LoggerFactory.getLogger(ConnectorDefinitionServiceImpl.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        log.addAppender(appender);
+        List<ConnectorDefinition> listed;
+        try {
+            listed = service.list();
+        } finally {
+            log.detachAppender(appender);
+        }
+
+        assertTrue(listed.isEmpty(), "the unreadable row was listed: " + listed);
+        assertTrue(appender.list.stream().anyMatch(e ->
+                        e.getLevel() == ch.qos.logback.classic.Level.WARN
+                                && e.getFormattedMessage().contains("legacy-c-odd-row")),
+                "the WARN does not name the skipped row: " + appender.list);
+    }
+
+    @Test
     @DisplayName("an IllegalStateException from the SDK is logged WARN with its cause too — the "
             + "listing's own refusals share that arm")
     void anSdkIllegalStateExceptionIsLoggedWithItsCause() {

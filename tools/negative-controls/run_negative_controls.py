@@ -4056,7 +4056,8 @@ CONTROLS = [
              "the sender reads it as our bug, not as an answer to retry",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
         # The whole 503 catch clause goes; the closing brace of the try is supplied by the
-        # generic catch that follows it.
+        # catch that follows it (the RecipientUnreadableException one since round 2 of the
+        # second batch; the generic catch before that).
         find_span=('        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException couldNotList) {',
                    '                    .body(Map.of("error", "Import profiles could not be read; retry shortly"));'),
         replace='',
@@ -4232,9 +4233,9 @@ CONTROLS = [
         what="a recipient row the walk could not read is left out again — the readable rows "
              "answer 'no profile' (200) for a recipient that exists",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
-        find_span=('            if (broken.namesConnector(connId)) {',
+        find_span=('            if (broken.addressedTo(connId, connector.getSourceArchetype())) {',
                    '                        + " and could not be read as a profile (" + broken.reason() + ")");\n            }'),
-        replace='            if (broken.namesConnector(connId)) {\n                continue;\n            }',
+        replace='            if (broken.addressedTo(connId, connector.getSourceArchetype())) {\n                continue;\n            }',
         test='IngestWebhookBoxDropboxTest',
         expect_fail=['aRecipientRowThatCannotBeInterpretedIsA503NotNoProfile'],
     ),
@@ -4379,8 +4380,8 @@ CONTROLS = [
         what="a broken recipient row only refuses when nothing else is readable — beside a "
              "readable recipient the dispatch goes ahead with the broken one left out",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
-        find='            if (broken.namesConnector(connId)) {',
-        replace='            if (owned.profiles().isEmpty() && broken.namesConnector(connId)) {',
+        find='            if (broken.addressedTo(connId, connector.getSourceArchetype())) {',
+        replace='            if (owned.profiles().isEmpty() && broken.addressedTo(connId, connector.getSourceArchetype())) {',
         test='IngestWebhookBoxDropboxTest',
         expect_fail=['aBrokenRecipientRowRefusesTheDispatchEvenBesideReadableOnes'],
     ),
@@ -4400,7 +4401,8 @@ CONTROLS = [
              "the uninterpretable-row record exists to prevent, one field down",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
         find='        boolean addresseeUnknown = (defaultConnector != null && !(defaultConnector instanceof String))\n'
-             '                || (allowedConnectors != null && !isListOfStrings(allowedConnectors));',
+             '                || (allowedConnectors != null && !isListOfStrings(allowedConnectors))\n'
+             '                || (allowedArchetypes != null && !isListOfStrings(allowedArchetypes));',
         replace='        boolean addresseeUnknown = false;',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['aRowWhoseConnectorFieldsHaveNoReadableShapeAddressesEveryConnector'],
@@ -4490,8 +4492,8 @@ CONTROLS = [
         what="the receiver ignores a row whose addressee cannot be read — 'names nobody I can "
              "see' read as 'does not name me'",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
-        find='            if (broken.namesConnector(connId)) {',
-        replace='            if (!broken.addresseeUnknown() && broken.namesConnector(connId)) {',
+        find='            if (broken.addressedTo(connId, connector.getSourceArchetype())) {',
+        replace='            if (!broken.addresseeUnknown() && broken.addressedTo(connId, connector.getSourceArchetype())) {',
         test='IngestWebhookBoxDropboxTest',
         expect_fail=['aRowWhoseAddresseeCannotBeReadRefusesEveryConnectorsDispatch'],
     ),
@@ -4639,6 +4641,62 @@ CONTROLS = [
         expect_fail=['getOrRefuseRefusesWhenTheIdReadFails'],
     ),
     dict(
+        id="YE",
+        what="the profile listing's skip WARN loses the row's id again — the operator has no "
+             "handle on the row the listing left out",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                logger.warn("Failed to deserialize import profile row {}: {}", rawDoc.getId(),\n'
+             '                        e.getMessage());',
+        replace='                logger.warn("Failed to deserialize import profile: {}", e.getMessage());',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theAdminListingNamesTheRowItCannotRead'],
+    ),
+    dict(
+        id="YF",
+        what="the connector listing's skip WARN loses the row's id again — YE's connector twin",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='                logger.warn("Failed to deserialize connector definition row {}: {}", rawDoc.getId(),\n'
+             '                        e.getMessage());',
+        replace='                logger.warn("Failed to deserialize connector definition: {}", e.getMessage());',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theAdminListingNamesTheRowItCannotRead'],
+    ),
+    dict(
+        id="YG",
+        what="the receiver refuses on the broken row's connector name alone again — a row whose "
+             "archetypes plainly exclude the connector stops a dispatch it could never have received",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='            if (broken.addressedTo(connId, connector.getSourceArchetype())) {',
+        replace='            if (broken.namesConnector(connId)) {',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['aBrokenRowWhoseArchetypesExcludeTheConnectorDoesNotStopTheDispatch'],
+    ),
+    dict(
+        id="YH",
+        what="an archetype list of unreadable shape reads as 'excludes everyone' again — XB one "
+             "field further down, for the field YG added",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                || (allowedConnectors != null && !isListOfStrings(allowedConnectors))\n'
+             '                || (allowedArchetypes != null && !isListOfStrings(allowedArchetypes));',
+        replace='                || (allowedConnectors != null && !isListOfStrings(allowedConnectors));',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aRowWhoseArchetypeFieldHasNoReadableShapeAddressesEveryConnector'],
+    ),
+    dict(
+        id="YI",
+        what="a broken row's archetype list with a name this node does not know reads as "
+             "'excludes the connector' — the same silent loss YG's relaxation must not reopen",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionService.java',
+        find='            for (String name : allowedArchetypes) {\n'
+             '                if (!isAnArchetype(name)) {\n'
+             '                    return true;\n'
+             '                }\n'
+             '            }\n',
+        replace='',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['aBrokenRowWithAnUnknownArchetypeNameStillStopsTheDispatch'],
+    ),
+    dict(
         id="XR",
         what="the over-throw twin of XI: a genuinely absent connector refuses whenever the read "
              "is the refusing one — every 401 becomes a 503",
@@ -4673,7 +4731,7 @@ CONTROLS = [
         what="the over-throw twin of WN: every broken row stops every dispatch, whichever "
              "connector it names",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
-        find='            if (broken.namesConnector(connId)) {',
+        find='            if (broken.addressedTo(connId, connector.getSourceArchetype())) {',
         replace='            if (true) {',
         test='IngestWebhookBoxDropboxTest',
         expect_fail=['aBrokenRowOfAnotherConnectorDoesNotStopTheDispatch'],

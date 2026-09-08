@@ -890,7 +890,10 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
                     throw new UnreadableSelectorRowException("a connector row the selector"
                             + " shows could not be read as a connector: " + e.getMessage());
                 }
-                logger.warn("Failed to deserialize connector definition: {}", e.getMessage());
+                // The row's id, so an operator can find the row the listing left out. The
+                // release notes promised it before the log carried it; a review caught that.
+                logger.warn("Failed to deserialize connector definition row {}: {}", rawDoc.getId(),
+                        e.getMessage());
             }
         }
         return results;

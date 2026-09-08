@@ -929,15 +929,20 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         }
         Object defaultConnector = props.get("defaultConnectorId");
         Object allowedConnectors = props.get("allowedConnectorIds");
-        // A connector field that is there but not in a readable shape leaves the addressee
-        // unknown — the row then names every connector, not none. A review found the first
-        // version reading such a field as "names nobody", which is the skip this record
-        // exists to prevent, one field down.
+        Object allowedArchetypes = props.get("allowedArchetypes");
+        // A connector (or archetype) field that is there but not in a readable shape leaves
+        // the addressee unknown — the row then names every connector, not none. A review
+        // found the first version reading such a field as "names nobody", which is the skip
+        // this record exists to prevent, one field down. The archetype list is carried so
+        // that a row whose archetypes plainly exclude the connector's is not refused on its
+        // name alone — a readable row with the same list would be filtered out. A later
+        // review found that over-throw.
         boolean addresseeUnknown = (defaultConnector != null && !(defaultConnector instanceof String))
-                || (allowedConnectors != null && !isListOfStrings(allowedConnectors));
+                || (allowedConnectors != null && !isListOfStrings(allowedConnectors))
+                || (allowedArchetypes != null && !isListOfStrings(allowedArchetypes));
         sink.add(new UninterpretableRow(docId, rawString(props.get("profileId")),
-                rawString(defaultConnector), rawStrings(allowedConnectors), addresseeUnknown,
-                reason));
+                rawString(defaultConnector), rawStrings(allowedConnectors),
+                rawStrings(allowedArchetypes), addresseeUnknown, reason));
     }
 
     /**
@@ -1506,7 +1511,10 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                 props.remove("type");
                 results.add(MAPPER.convertValue(props, ImportProfileDefinition.class));
             } catch (Exception e) {
-                logger.warn("Failed to deserialize import profile: {}", e.getMessage());
+                // The row's id, so an operator can find the row the listing left out. The
+                // release notes promised it before the log carried it; a review caught that.
+                logger.warn("Failed to deserialize import profile row {}: {}", rawDoc.getId(),
+                        e.getMessage());
             }
         }
         return results;
