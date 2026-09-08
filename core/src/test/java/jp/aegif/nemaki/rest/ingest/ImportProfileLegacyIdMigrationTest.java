@@ -1532,7 +1532,7 @@ class ImportProfileLegacyIdMigrationTest {
         wire();
         Map<String, Object> numeric = profileProps("p-num", "Numeric");
         numeric.put("retentionDays", "not-a-number");
-        numeric.put("defaultConnectorId", 42);
+        numeric.put("defaultConnectorId", new com.google.gson.internal.LazilyParsedNumber("42"));
         listingAnswers(List.of(row("import_profile_definition:p-num", numeric, "1-a")));
 
         ImportProfileDefinitionService.OwnedProfiles owned = service.listOwnedIndexFree();
@@ -1554,7 +1554,9 @@ class ImportProfileLegacyIdMigrationTest {
         // LazilyParsedNumber, not an Integer. For a primitive boolean the mapper refuses that
         // type (a review found a lock holding the opposite claim green with an Integer), so
         // the identity claims — counted, looked up and deleted as "42" — have to be measured
-        // on the same shape rather than inherited from the boolean case.
+        // on the same shape rather than inherited from the boolean case. Every numeric fixture
+        // in these two classes now uses this type, so those locks measure it too; this one
+        // names the concern.
         wire();
         Map<String, Object> numeric = profileProps("42", "Numeric");
         numeric.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
@@ -1957,7 +1959,7 @@ class ImportProfileLegacyIdMigrationTest {
         // state; the delete verbs were in it too and no lock said so.
         wire();
         Map<String, Object> numeric = profileProps("42", "Numeric");
-        numeric.put("profileId", 42);
+        numeric.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
         listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
         writesSucceed();
 
@@ -1975,7 +1977,7 @@ class ImportProfileLegacyIdMigrationTest {
         // it is meant to be.
         wire();
         Map<String, Object> numeric = profileProps("42", "Numeric");
-        numeric.put("profileId", 42);
+        numeric.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
         Document addressed = mock(Document.class);
         when(addressed.getProperties()).thenReturn(numeric);
         when(addressed.getRev()).thenReturn("1-a");
@@ -2004,7 +2006,7 @@ class ImportProfileLegacyIdMigrationTest {
         // found it again one value further out.
         wire();
         Map<String, Object> odd = profileProps("p-odd", "Odd");
-        odd.put("repositoryId", 42);
+        odd.put("repositoryId", new com.google.gson.internal.LazilyParsedNumber("42"));
         Document orphan = mock(Document.class);
         when(orphan.getProperties()).thenReturn(odd);
         when(orphan.getRev()).thenReturn("1-a");
@@ -2033,7 +2035,7 @@ class ImportProfileLegacyIdMigrationTest {
         // caught up" for a state no rebuild reaches).
         wire();
         Map<String, Object> numeric = profileProps("42", "Numeric");
-        numeric.put("profileId", 42);
+        numeric.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
         listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
         deterministicReadAnswers("42", null);
         writesSucceed();
@@ -2064,7 +2066,7 @@ class ImportProfileLegacyIdMigrationTest {
         // profile, for ever. A review found the retry path.
         wire();
         Map<String, Object> numeric = profileProps("42", "Numeric");
-        numeric.put("profileId", 42);
+        numeric.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
         listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
         Document alreadyCopied = mock(Document.class);
         when(alreadyCopied.getProperties()).thenReturn(profileProps("42", "Numeric"));
@@ -2092,7 +2094,7 @@ class ImportProfileLegacyIdMigrationTest {
         // its update answers a permanent 503. A review found the gap.
         wire();
         Map<String, Object> numeric = profileProps("42", "Numeric");
-        numeric.put("profileId", 42);
+        numeric.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
         listingAnswers(List.of(row("import_profile_definition:42", numeric, "3-c")));
         writesSucceed();
 
@@ -2178,10 +2180,10 @@ class ImportProfileLegacyIdMigrationTest {
                         "import_profile_definition:p-zero"),
                 owned.uninterpretable().stream()
                         .map(ImportProfileDefinitionService.UninterpretableRow::docId).sorted().toList(),
-                "the mapper's readings are not the ones this code acts on — the release notes "
-                        + "name the literal false, \"false\"/\"False\"/\"FALSE\" (trimmed), a "
-                        + "blank string, \"null\" (trimmed) and an explicit null as disabled, "
-                        + "and a stored NUMBER as unreadable: " + owned.uninterpretable());
+                "the mapper's readings are not the ones this code acts on — the rows here are "
+                        + "\"false\"/\"False\"/\"FALSE\" (trimmed), a blank string and \"null\" "
+                        + "(trimmed), which must count as disabled, against \"fAlSe\" and a "
+                        + "stored NUMBER, which must not: " + owned.uninterpretable());
         assertTrue(owned.profiles().isEmpty(),
                 "a row the mapper cannot read as a profile was listed: " + owned.profiles());
     }
@@ -2196,7 +2198,7 @@ class ImportProfileLegacyIdMigrationTest {
         // making it, and would have reported a clean pass. Two reviews found it.
         wire();
         Map<String, Object> numeric = profileProps("42", "Numeric");
-        numeric.put("profileId", 42);
+        numeric.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
         DocsResultRow withAttachment = row("import_profile_definition:42", numeric, "3-c");
         when(withAttachment.getDoc().getAttachments())
                 .thenReturn(Map.of("evidence.pdf", mock(com.ibm.cloud.cloudant.v1.model.Attachment.class)));
@@ -2223,7 +2225,7 @@ class ImportProfileLegacyIdMigrationTest {
         // contact. Each side is now read on its own.
         wire();
         Map<String, Object> legacy = profileProps("42", "Mine");
-        legacy.put("profileId", 42);
+        legacy.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
         listingAnswers(List.of(row("legacy-42", legacy, "1-a")));
         Map<String, Object> foreign = profileProps("42", "Mine");
         foreign.put("profileId", "99");
@@ -2248,7 +2250,7 @@ class ImportProfileLegacyIdMigrationTest {
     void aRefusedRewriteIsReported() {
         wire();
         Map<String, Object> numeric = profileProps("42", "Numeric");
-        numeric.put("profileId", 42);
+        numeric.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
         listingAnswers(List.of(row("import_profile_definition:42", numeric, "3-c")));
         when(cloudant.postDocument(any(PostDocumentOptions.class)))
                 .thenThrow(new RuntimeException("conflict"));
@@ -2270,7 +2272,7 @@ class ImportProfileLegacyIdMigrationTest {
         // start a capture on a row no repository can manage.
         wire();
         Map<String, Object> odd = profileProps("p-odd", "Odd");
-        odd.put("repositoryId", 42);
+        odd.put("repositoryId", new com.google.gson.internal.LazilyParsedNumber("42"));
         listingAnswers(List.of(row("odd-repo-row", odd, "1-a")));
 
         assertEquals(null, service.getOwnedRowIndexFree("p-odd"),
@@ -2284,7 +2286,7 @@ class ImportProfileLegacyIdMigrationTest {
         // recipient and not a scheduled capture, exactly as a blank one is not.
         wire();
         Map<String, Object> odd = profileProps("p-odd", "Odd");
-        odd.put("repositoryId", 42);
+        odd.put("repositoryId", new com.google.gson.internal.LazilyParsedNumber("42"));
         listingAnswers(List.of(
                 row("import_profile_definition:p-fine", profileProps("p-fine", "Fine"), "1-a"),
                 row("odd-repo-row", odd, "1-b")));
@@ -2839,7 +2841,7 @@ class ImportProfileLegacyIdMigrationTest {
         selectorAnswersNothing();
         deterministicReadAnswers("p-beside-42", null);
         Map<String, Object> numeric = profileProps("42", "Numeric");
-        numeric.put("profileId", 42);
+        numeric.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
         listingAnswers(List.of(row("import_profile_definition:42", numeric, "1-a")));
         writesSucceed();
 
@@ -2864,7 +2866,7 @@ class ImportProfileLegacyIdMigrationTest {
         selectorAnswersNothing();
         deterministicReadAnswers("42", null);
         Map<String, Object> numeric = profileProps("42", "Numeric");
-        numeric.put("profileId", 42);
+        numeric.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
         listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
         writesSucceed();
 
@@ -2883,7 +2885,7 @@ class ImportProfileLegacyIdMigrationTest {
     void getForRepositoryReadsANumericProfileIdAsTheMapperReadsIt() {
         wire();
         Map<String, Object> numeric = profileProps("42", "Numeric");
-        numeric.put("profileId", 42);
+        numeric.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
         listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
 
         ImportProfileDefinition found = service.getForRepository("42", "bedroom");
@@ -2897,7 +2899,7 @@ class ImportProfileLegacyIdMigrationTest {
     void getOwnedRowIndexFreeReadsANumericProfileIdAsTheMapperReadsIt() {
         wire();
         Map<String, Object> numeric = profileProps("42", "Numeric");
-        numeric.put("profileId", 42);
+        numeric.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
         listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
 
         ImportProfileDefinition found = service.getOwnedRowIndexFree("42");
@@ -2916,7 +2918,7 @@ class ImportProfileLegacyIdMigrationTest {
         wire();
         selectorAnswersNothing();
         Map<String, Object> numeric = profileProps("42", "Numeric");
-        numeric.put("profileId", 42);
+        numeric.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
         Document underTheId = mock(Document.class);
         when(underTheId.getId()).thenReturn("import_profile_definition:42");
         when(underTheId.getRev()).thenReturn("1-a");

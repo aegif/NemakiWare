@@ -1126,7 +1126,7 @@ class ConnectorLegacyIdMigrationTest {
         // called it a P1 there; this is its mirror.
         wire();
         Map<String, Object> numeric = connectorProps("42", "Numeric");
-        numeric.put("connectorId", 42);
+        numeric.put("connectorId", new com.google.gson.internal.LazilyParsedNumber("42"));
         listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
         writesSucceed();
 
@@ -1144,7 +1144,7 @@ class ConnectorLegacyIdMigrationTest {
         selectorAnswersNothing();
         deterministicReadAnswers("42", null);
         Map<String, Object> numeric = connectorProps("42", "Numeric");
-        numeric.put("connectorId", 42);
+        numeric.put("connectorId", new com.google.gson.internal.LazilyParsedNumber("42"));
         listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
         writesSucceed();
 
@@ -1169,7 +1169,7 @@ class ConnectorLegacyIdMigrationTest {
         // stays un-writable while every walk counts it.
         wire();
         Map<String, Object> numeric = connectorProps("42", "Numeric");
-        numeric.put("connectorId", 42);
+        numeric.put("connectorId", new com.google.gson.internal.LazilyParsedNumber("42"));
         listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
         deterministicReadAnswers("42", null);
         writesSucceed();
@@ -1196,7 +1196,7 @@ class ConnectorLegacyIdMigrationTest {
         // contents made an interrupted pass call an identical pair divergent for ever.
         wire();
         Map<String, Object> numeric = connectorProps("42", "Numeric");
-        numeric.put("connectorId", 42);
+        numeric.put("connectorId", new com.google.gson.internal.LazilyParsedNumber("42"));
         listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
         Document alreadyCopied = mock(Document.class);
         when(alreadyCopied.getProperties()).thenReturn(connectorProps("42", "Numeric"));
@@ -1222,7 +1222,7 @@ class ConnectorLegacyIdMigrationTest {
         // conditional on the row being under a legacy id.
         wire();
         Map<String, Object> numeric = connectorProps("42", "Numeric");
-        numeric.put("connectorId", 42);
+        numeric.put("connectorId", new com.google.gson.internal.LazilyParsedNumber("42"));
         listingAnswers(List.of(row("connector_definition:42", numeric, "3-c")));
         writesSucceed();
 
@@ -1249,7 +1249,7 @@ class ConnectorLegacyIdMigrationTest {
         // and here the row is the only holder.
         wire();
         Map<String, Object> numeric = connectorProps("42", "Numeric");
-        numeric.put("connectorId", 42);
+        numeric.put("connectorId", new com.google.gson.internal.LazilyParsedNumber("42"));
         DocsResultRow withAttachment = row("connector_definition:42", numeric, "3-c");
         when(withAttachment.getDoc().getAttachments())
                 .thenReturn(Map.of("evidence.pdf", mock(com.ibm.cloud.cloudant.v1.model.Attachment.class)));
@@ -1271,7 +1271,7 @@ class ConnectorLegacyIdMigrationTest {
         // The profile twin of this lock; the two migrations lock each arm on both sides.
         wire();
         Map<String, Object> numeric = connectorProps("42", "Numeric");
-        numeric.put("connectorId", 42);
+        numeric.put("connectorId", new com.google.gson.internal.LazilyParsedNumber("42"));
         listingAnswers(List.of(row("connector_definition:42", numeric, "3-c")));
         when(cloudant.postDocument(any(PostDocumentOptions.class)))
                 .thenThrow(new RuntimeException("conflict"));
@@ -1292,7 +1292,7 @@ class ConnectorLegacyIdMigrationTest {
         // sides made a row that names a different connector compare equal to the legacy one.
         wire();
         Map<String, Object> legacy = connectorProps("42", "Mine");
-        legacy.put("connectorId", 42);
+        legacy.put("connectorId", new com.google.gson.internal.LazilyParsedNumber("42"));
         listingAnswers(List.of(row("legacy-42", legacy, "1-a")));
         Map<String, Object> foreign = connectorProps("42", "Mine");
         foreign.put("connectorId", "99");
@@ -1310,6 +1310,29 @@ class ConnectorLegacyIdMigrationTest {
                         + "another connector: " + deletedIds);
         assertTrue(result.divergent.stream().anyMatch(d -> d.contains("42")),
                 "the pair was not reported as divergent: " + result.divergent);
+    }
+
+    @Test
+    @DisplayName("a MATCHING connector whose enabled is a stored NUMBER still refuses the "
+            + "resolution — a number is not a readable 'no'")
+    void aMatchingRowWhoseEnabledIsAStoredNumberStillRefusesTheResolution() {
+        // The shape the read path really delivers: the SDK builds the row with Gson, so a
+        // JSON number is a LazilyParsedNumber, which the mapper REFUSES for a primitive
+        // boolean. Such a row is therefore NOT established as disabled — it is a matching row
+        // this node cannot read, and the resolution must refuse rather than skip it. The
+        // profile side measured this after a review found a claim to the contrary held green
+        // by a Java Integer; the connector side had no lock at all.
+        wire();
+        selectorAnswersNothing();
+        Map<String, Object> numericFlag = connectorProps("box-1", "Box");
+        numericFlag.put("enabled", new com.google.gson.internal.LazilyParsedNumber("0"));
+        numericFlag.put("sourceArchetype", SourceArchetype.FILE_SHARE.name());
+        listingAnswers(List.of(row("connector_definition:box-1", numericFlag, "1-a")));
+
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> service.findBySystemAndArchetype("google", SourceArchetype.FILE_SHARE),
+                "a matching row whose enabled is a stored number was skipped as disabled — "
+                        + "the mapper cannot read that value, so 'disabled' is not established");
     }
 
     @Test
@@ -2299,7 +2322,7 @@ class ConnectorLegacyIdMigrationTest {
         // check refused the repair its own 409 prescribes for a row the listings call "42".
         wire();
         Map<String, Object> numeric = connectorProps("42", "Numeric");
-        numeric.put("connectorId", 42);
+        numeric.put("connectorId", new com.google.gson.internal.LazilyParsedNumber("42"));
         Document addressed = mock(Document.class);
         when(addressed.getProperties()).thenReturn(numeric);
         when(addressed.getRev()).thenReturn("1-a");

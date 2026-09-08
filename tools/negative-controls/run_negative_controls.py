@@ -4287,9 +4287,14 @@ CONTROLS = [
         find='                reportUninterpretable(uninterpretable, id, props, e.getMessage());\n',
         replace='',
         test='ImportProfileLegacyIdMigrationTest',
-        # Every lock that reads uninterpretable() for a row broken by DESERIALISATION;
-        # the nameless-row report is a second call site this sabotage does not touch.
+        # The locks that read uninterpretable() for a row broken by DESERIALISATION. The
+        # three that stay green do so for two different reasons: the nameless-row report is a
+        # SECOND call site this sabotage does not touch, and the two isEmpty() locks use rows
+        # the walk reads as disabled, so nothing was going to be reported anyway. Completed
+        # from a run rather than by hand after three rounds of missing one; the runner now
+        # prints the locks that failed undeclared.
         expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest',
+                     'aNumericProfileIdInTheReadPathsOwnShapeStillReadsAsTheMapperReadsIt',
                      'whichValuesOfADisabledFlagCountIsTheMappersAnswer',
                      'aRowWhoseConnectorFieldsHaveNoReadableShapeAddressesEveryConnector',
                      'aRowWhoseArchetypeFieldHasNoReadableShapeAdmitsEveryArchetypeButNamesOnlyItsConnectors',
@@ -4840,6 +4845,29 @@ CONTROLS = [
                 ' || "false".equalsIgnoreCase(String.valueOf(props.get("enabled")));',
         test='ConnectorLegacyIdMigrationTest',
         expect_fail=['aDisabledByNullRowTheResolverCannotReadDoesNotRefuseTheResolution'],
+    ),
+    dict(
+        id="ZY",
+        what="a value the mapper REFUSES for enabled is read as 'disabled' — a connector row "
+             "this node cannot read is skipped instead of refusing the resolution",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='        return readAlone(props, "enabled") instanceof ConnectorDefinition read && !read.isEnabled();',
+        replace='        ConnectorDefinition read = readAlone(props, "enabled");\n'
+                '        return read == null || !read.isEnabled();',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aMatchingRowWhoseEnabledIsAStoredNumberStillRefusesTheResolution'],
+    ),
+    dict(
+        id="ZZ",
+        what="ZY's profile twin: an enabled the mapper refuses counts as disabled, so a row "
+             "this node cannot read is silently not a recipient",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='        ImportProfileDefinition enabledOnly = readAlone(props, "enabled");\n'
+             '        return enabledOnly != null && !enabledOnly.isEnabled();',
+        replace='        ImportProfileDefinition enabledOnly = readAlone(props, "enabled");\n'
+                '        return enabledOnly == null || !enabledOnly.isEnabled();',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['whichValuesOfADisabledFlagCountIsTheMappersAnswer'],
     ),
     dict(
         id="ZU",
@@ -5431,6 +5459,22 @@ def _delimiter_delta(span: str) -> tuple:
     return (depth["{"], depth["("])
 
 
+# [control id, [lock names]] for locks that failed under a control that did not declare them.
+# Printed at the end of a run; see the call site for why the run reports this rather than a
+# reviewer deriving it.
+UNDECLARED: list = []
+
+
+def failed_method_names(failed: str) -> list:
+    """The test method names in surefire's failure lines ("name(Class)  Time elapsed ...")."""
+    names = []
+    for line in failed.splitlines():
+        match = re.match(r"\s*(\w+)\(", line)
+        if match:
+            names.append(match.group(1))
+    return names
+
+
 def run_test(test_class: str) -> tuple[bool, str, str]:
     """Run one test class; return (all_green, failure_lines, full_report_text)."""
     for old in REPORTS.glob("*.txt"):
@@ -5936,6 +5980,17 @@ def main() -> None:
                     else:
                         results.append((control["id"], True, failed.splitlines()[0]))
                         print(f"[{control['id']}] fired: {control['expect_fail']}")
+                        # Locks that failed WITHOUT being declared. Not a bad verdict — extra
+                        # failures are tolerated by design — but the record of "which
+                        # protections this sabotage removes" is then incomplete, and three
+                        # rounds in a row a lock added in the same commit as its control was
+                        # left out of an OLDER control's list. Derivation by hand kept missing
+                        # them; the run knows the answer, so it says it.
+                        undeclared = sorted(set(failed_method_names(failed))
+                                            - set(control["expect_fail"]))
+                        if undeclared:
+                            UNDECLARED.append((control["id"], undeclared))
+                            print(f"[{control['id']}] also failed, undeclared: {undeclared}")
             finally:
                 # Refuse to restore over a CONCURRENT edit: if the file no longer holds the
                 # sabotage this runner wrote, someone else changed it mid-control, and blindly
@@ -5977,6 +6032,13 @@ def main() -> None:
               f"{len(CONTROLS) - len(results)} controls not measured by this run)")
     else:
         print(f"{fired}/{len(results)} controls fired")
+    if UNDECLARED:
+        # Gathered, not fatal: an extra failing lock does not weaken the verdict, but the
+        # record of what a sabotage removes has to be completed from the run rather than
+        # derived by hand (which missed one three rounds running).
+        print("\n== locks that failed without being declared (complete the expect_fail lists) ==")
+        for cid, names in UNDECLARED:
+            print(f"  {cid}: {names}")
     if fired != len(results):
         sys.exit(1)
 
