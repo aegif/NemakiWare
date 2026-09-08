@@ -1482,6 +1482,33 @@ class ImportProfileLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("an IllegalStateException from the SDK is logged WARN with its cause too — the "
+            + "listing's own refusals share that arm")
+    void anSdkIllegalStateExceptionIsLoggedWithItsCause() {
+        wire();
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenThrow(new IllegalStateException("client closed"));
+        ch.qos.logback.classic.Logger log = (ch.qos.logback.classic.Logger)
+                org.slf4j.LoggerFactory.getLogger(ImportProfileDefinitionServiceImpl.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        log.addAppender(appender);
+        try {
+            assertThrows(ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+                    () -> service.list());
+        } finally {
+            log.detachAppender(appender);
+        }
+
+        assertTrue(appender.list.stream().anyMatch(e ->
+                        e.getLevel() == ch.qos.logback.classic.Level.WARN
+                                && e.getThrowableProxy() != null
+                                && e.getFormattedMessage().contains("could not be completed")),
+                "an SDK IllegalStateException was not logged WARN with its cause: " + appender.list);
+    }
+
+    @Test
     @DisplayName("the selector listing refuses a TRANSPORT failure with the typed refusal too — "
             + "not the raw exception the controllers' handlers never see")
     void theSelectorListingRefusesATransportFailureWithTheTypedRefusal() {

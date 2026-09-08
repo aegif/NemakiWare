@@ -32,25 +32,28 @@ public interface ConnectorDefinitionService {
      * refuses exists at the id (unreadable — deterministic or legacy, as the selector shows
      * it — or two or more rows), or the id-addressed read failed, or the selector failed and
      * no deterministic row exists; which of these, the answer does not say. A non-503 means
-     * the id is absent or one readable row exists; what the receiver then answers (401 for a
-     * disabled row or a failed signature; on the GET handshake 404 for a disabled, non-Dropbox
-     * or challenge-less request) does not separate absent from present by this read alone.
-     * While the selector is FAILING, a non-503 does mean a readable deterministic-id row
-     * exists, because absence then refuses (a legacy row cannot be excluded). The receiver's
-     * protocol handshakes disclose more and always did, independently of this read: an
-     * enabled Dropbox connector answers the GET challenge, an enabled teams / m365_mail
-     * connector echoes {@code validationToken} before any signature — both recorded on the
-     * receiver. Refusing whenever the selector fails would remove the window disclosure at
-     * the price of every webhook while the index is down; answering 503 instead of 401 to a
-     * failed signature during that window would remove it without that price and is recorded
-     * as a follow-up. The caller's decision was to keep the receiver answering and to say
-     * what is revealed.
+     * the id is absent, or this read found at least one readable row and did not see a
+     * second (a pair of which the selector shows one row, or a legacy-id row the selector
+     * leaves out, is not seen by it); what the receiver then answers (401 for a disabled row
+     * or a failed signature; on the GET handshake 404 for a disabled or non-Dropbox connector
+     * or a missing, blank or over-long challenge) does not separate absent from present by
+     * this read alone. While the selector is FAILING, a non-503 does mean a readable
+     * deterministic-id row exists, because absence then refuses (a legacy row cannot be
+     * excluded). The receiver's protocol handshakes disclose more and always did,
+     * independently of this read: an enabled Dropbox connector answers the GET challenge
+     * (recorded on that GET), an enabled teams / m365_mail connector echoes
+     * {@code validationToken} before any signature (recorded at the receiver's
+     * {@code isMicrosoftGraphSubscriptionValidation}). Refusing whenever the selector fails
+     * would remove the window disclosure at the price of every webhook while the index is
+     * down; answering 503 instead of 401 during that window to a failed signature AND to a
+     * disabled row would remove it without that price and is recorded as a follow-up. The
+     * caller's decision was to keep the receiver answering and to say what is revealed.
      *
      * @throws ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException when the row
      *         exists but could not be read as this connector, when the id-addressed read
      *         failed with anything other than "not found", when the selector failed and no
      *         deterministic row exists, when the selector shows a row that cannot be read,
-     *         or when the selector shows two rows that both define this connector
+     *         or when the selector shows two or more rows that define this connector
      */
     ConnectorDefinition getOrRefuse(String connectorId);
 

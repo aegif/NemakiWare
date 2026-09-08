@@ -142,9 +142,10 @@ public class IngestWebhookController {
             // rows — exists at the id, OR that a read failed; and, only while the selector
             // is failing, that a non-503 means a readable deterministic row exists) is
             // stated in that contract and in the release notes as the classes it separates.
-            // The Graph validationToken echo below and the Dropbox GET challenge disclose an
+            // The Graph validationToken echo below (see isMicrosoftGraphSubscriptionValidation)
+            // and the Dropbox GET challenge (recorded on that GET's javadoc) disclose an
             // enabled connector's existence without a signature — protocol requirements
-            // that predate this read, recorded on the GET.
+            // that predate this read.
             connector = connectorDefinitionService.getOrRefuse(connectorId);
         } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotRead) {
             // A row that exists and could not be read as this connector, or a read that

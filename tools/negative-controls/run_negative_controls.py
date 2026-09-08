@@ -4598,6 +4598,35 @@ CONTROLS = [
         expect_fail=['getOrRefuseNamesTheRowWhenTheDeterministicRowCannotBeReadAsAConnector'],
     ),
     dict(
+        id="YA",
+        what="an SDK IllegalStateException on the connector listing loses its WARN — the one "
+             "RuntimeException the WARN arm did not see",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='            logger.warn("the selector listing of \'{}\' could not be completed", dbName, incomplete);\n',
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['anSdkIllegalStateExceptionIsLoggedWithItsCause'],
+    ),
+    dict(
+        id="YB",
+        what="an SDK IllegalStateException on the profile listing loses its WARN — YA's profile twin",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='            logger.warn("the selector listing of \'{}\' could not be completed", dbName, incomplete);\n',
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['anSdkIllegalStateExceptionIsLoggedWithItsCause'],
+    ),
+    dict(
+        id="YC",
+        what="the other arm of XZ: a failed id read is reported as a row that exists — the "
+             "weaker fact read as the stronger one",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='                throw new ConnectorIndexNotReadyException(rowFound',
+        replace='                throw new ConnectorIndexNotReadyException(true',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['getOrRefuseRefusesWhenTheIdReadFails'],
+    ),
+    dict(
         id="XR",
         what="the over-throw twin of XI: a genuinely absent connector refuses whenever the read "
              "is the refusing one — every 401 becomes a 503",

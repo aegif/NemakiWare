@@ -500,9 +500,45 @@ class ConnectorLegacyIdMigrationTest {
         selectorAnswersNothing();
         theIdReadFails();
 
-        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+        ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused = assertThrows(
+                ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
                 () -> service.getOrRefuse("c-unanswered"),
                 "a read that did not answer was reported as 'no such connector'");
+        // The other arm of the reason: a read that FAILED must not be reported as a row
+        // that exists — the weaker fact read as the stronger one. A review found this lock
+        // asserting only the type.
+        assertTrue(refused.getMessage().contains("whether it exists cannot be established"),
+                "a failed id read was reported as a row that exists: " + refused.getMessage());
+    }
+
+    @Test
+    @DisplayName("an IllegalStateException from the SDK is logged WARN with its cause too — the "
+            + "listing's own refusals share that arm")
+    void anSdkIllegalStateExceptionIsLoggedWithItsCause() {
+        // The IllegalStateException arm existed for the listing's three refusals and logged
+        // nothing; an SDK IllegalStateException landed there and became a 503 with no trace
+        // anywhere — the one RuntimeException the WARN arm did not see. A review found it.
+        wire();
+        when(cloudant.postFind(any(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class)))
+                .thenThrow(new IllegalStateException("client closed"));
+        ch.qos.logback.classic.Logger log = (ch.qos.logback.classic.Logger)
+                org.slf4j.LoggerFactory.getLogger(ConnectorDefinitionServiceImpl.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        log.addAppender(appender);
+        try {
+            assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                    () -> service.list());
+        } finally {
+            log.detachAppender(appender);
+        }
+
+        assertTrue(appender.list.stream().anyMatch(e ->
+                        e.getLevel() == ch.qos.logback.classic.Level.WARN
+                                && e.getThrowableProxy() != null
+                                && e.getFormattedMessage().contains("could not be completed")),
+                "an SDK IllegalStateException was not logged WARN with its cause: " + appender.list);
     }
 
     @Test
