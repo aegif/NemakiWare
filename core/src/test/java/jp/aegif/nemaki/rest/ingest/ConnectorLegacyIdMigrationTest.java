@@ -1238,6 +1238,7 @@ class ConnectorLegacyIdMigrationTest {
         assertEquals("42", written.getValue().document().get("connectorId"),
                 "the stored number was left in place, so the selector can never match the row");
         assertTrue(result.clean(), "the normalising pass reported problems: " + result.failures);
+        assertEquals(1, result.normalised, "the rewrite was not counted: " + result);
         verify(cloudant, never()).deleteDocument(any(DeleteDocumentOptions.class));
     }
 
@@ -1262,6 +1263,26 @@ class ConnectorLegacyIdMigrationTest {
         assertTrue(result.failures.stream().anyMatch(f -> f.contains("connector_definition:42")),
                 "the row was left alone without saying so: " + result.failures);
         assertTrue(!result.clean(), "a pass that could not repair the row reported clean");
+    }
+
+    @Test
+    @DisplayName("a rewrite the store refuses is reported, not swallowed")
+    void aRefusedRewriteIsReported() {
+        // The profile twin of this lock; the two migrations lock each arm on both sides.
+        wire();
+        Map<String, Object> numeric = connectorProps("42", "Numeric");
+        numeric.put("connectorId", 42);
+        listingAnswers(List.of(row("connector_definition:42", numeric, "3-c")));
+        when(cloudant.postDocument(any(PostDocumentOptions.class)))
+                .thenThrow(new RuntimeException("conflict"));
+
+        ConnectorDefinitionService.LegacyIdMigrationResult result =
+                assertDoesNotThrow(() -> service.migrateLegacyGeneratedIds(),
+                        "a refused rewrite took the whole pass down");
+
+        assertTrue(result.failures.stream().anyMatch(f -> f.contains("connector_definition:42")),
+                "the refused rewrite was swallowed: " + result.failures);
+        assertTrue(!result.clean(), "a pass with a refused rewrite reported clean");
     }
 
     @Test

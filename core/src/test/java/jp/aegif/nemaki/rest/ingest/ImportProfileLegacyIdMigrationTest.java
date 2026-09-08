@@ -2086,6 +2086,10 @@ class ImportProfileLegacyIdMigrationTest {
         assertEquals("42", written.getValue().document().get("profileId"),
                 "the stored number was left in place, so the selector can never match the row");
         assertTrue(result.clean(), "the normalising pass reported problems: " + result.failures);
+        // The counter, not just the write: a pass that ONLY normalises is otherwise summarised
+        // by the startup patch as "no legacy rows", which reads as "nothing was touched" while
+        // rows were written. A review found the summary unmeasured.
+        assertEquals(1, result.normalised, "the rewrite was not counted: " + result);
         verify(cloudant, never()).deleteDocument(any(DeleteDocumentOptions.class));
     }
 
@@ -2110,6 +2114,15 @@ class ImportProfileLegacyIdMigrationTest {
         Map<String, Object> empty = profileProps("p-empty", "Empty");
         empty.put("enabled", "");
         empty.put("retentionDays", "not-a-number");
+        Map<String, Object> padded = profileProps("p-padded", "Padded");
+        padded.put("enabled", "  false  ");
+        padded.put("retentionDays", "not-a-number");
+        Map<String, Object> blank = profileProps("p-blank-flag", "Blank");
+        blank.put("enabled", "   ");
+        blank.put("retentionDays", "not-a-number");
+        Map<String, Object> textualNull = profileProps("p-null-text", "Null text");
+        textualNull.put("enabled", "null");
+        textualNull.put("retentionDays", "not-a-number");
         Map<String, Object> oddSpelling = profileProps("p-odd-case", "Odd case");
         oddSpelling.put("enabled", "fAlSe");
         listingAnswers(List.of(
@@ -2117,6 +2130,9 @@ class ImportProfileLegacyIdMigrationTest {
                 row("import_profile_definition:p-shout", shouted, "1-c"),
                 row("import_profile_definition:p-lower", lower, "1-d"),
                 row("import_profile_definition:p-empty", empty, "1-e"),
+                row("import_profile_definition:p-padded", padded, "1-f"),
+                row("import_profile_definition:p-blank-flag", blank, "1-g"),
+                row("import_profile_definition:p-null-text", textualNull, "1-h"),
                 row("import_profile_definition:p-odd-case", oddSpelling, "1-b")));
 
         ImportProfileDefinitionService.OwnedProfiles owned = service.listOwnedIndexFree();
@@ -2124,9 +2140,9 @@ class ImportProfileLegacyIdMigrationTest {
         assertEquals(List.of("import_profile_definition:p-odd-case"),
                 owned.uninterpretable().stream()
                         .map(ImportProfileDefinitionService.UninterpretableRow::docId).toList(),
-                "the mapper's spellings are not the ones this code acts on — the release "
-                        + "notes name \"false\"/\"False\"/\"FALSE\" and the empty string: "
-                        + owned.uninterpretable());
+                "the mapper's readings are not the ones this code acts on — the release notes "
+                        + "name \"false\"/\"False\"/\"FALSE\" (trimmed), a blank string, and "
+                        + "\"null\": " + owned.uninterpretable());
         assertTrue(owned.profiles().isEmpty(),
                 "a row the mapper cannot read as a profile was listed: " + owned.profiles());
     }
@@ -3092,6 +3108,20 @@ class ImportProfileLegacyIdMigrationTest {
     // ────────────────────────────────────────────────────────────────────
     // The wiring that makes the closure real
     // ────────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("the startup patch's quiet summary counts a normalising pass as work done")
+    void thePatchSummaryDoesNotCallANormalisingPassEmpty() throws Exception {
+        // The DEBUG arm says "no legacy rows". A pass that rewrote a stored identity DID
+        // write, and summarising it that way was the one shape of this summary that reads as
+        // "nothing was touched" while rows changed. Read from the source because the arm is a
+        // log line: what has to hold is that the condition names the counter.
+        String source = JavaSource.withoutComments(JavaSource.read(
+                "src/main/java/jp/aegif/nemaki/patch/Patch_ConnectorDefinitionDeterministicIds.java"));
+        assertTrue(source.contains("result.migrated == 0 && result.sweptDuplicates == 0")
+                        && source.contains("result.normalised == 0"),
+                "the quiet summary no longer counts normalised rows as work done");
+    }
 
     @Test
     @DisplayName("the profile migration reads no view and no Mango selector, through the "

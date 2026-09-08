@@ -129,11 +129,13 @@ public interface ConnectorDefinitionService {
         /** Legacy rows rewritten under their deterministic id (copy verified, then retired). */
         public int migrated;
         /** Legacy rows whose deterministic twin already held the same content — leftovers of
-         *  an interrupted earlier pass — retired without a new write. "The same" is read the
-         *  way this node reads a row, so two rows that differ only in how the identity is
-         *  STORED (the number 42 against the string "42") are the same content here; the
-         *  copy this migration writes is normalised, so an interrupted pass must be able to
-         *  recognise its own leftover. */
+         *  an interrupted earlier pass — retired without a new write. "The same" means equal
+         *  APART FROM HOW THE IDENTITY IS STORED: only the identity field is read through the
+         *  mapper before comparing (the number 42 and the string "42" are the same identity),
+         *  every other field is compared as stored ({@code retentionDays: 30} and
+         *  {@code "30"} are still different content). The copy this migration writes carries
+         *  the read identity, so an interrupted pass has to be able to recognise its own
+         *  leftover. */
         public int sweptDuplicates;
         /** Rows already under their deterministic id whose stored identity was rewritten as
          *  the string this node reads it as. Until that happens the type-strict Mango

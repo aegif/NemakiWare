@@ -4834,6 +4834,50 @@ CONTROLS = [
         expect_fail=['aDisabledByNullRowTheResolverCannotReadDoesNotRefuseTheResolution'],
     ),
     dict(
+        id="ZU",
+        what="a rewritten row is not counted — a pass that only normalised is summarised by the "
+             "startup patch as 'no legacy rows', which reads as 'nothing was touched'",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='            result.normalised++;\n',
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aRowAlreadyAtItsDeterministicIdIsNormalisedInPlace'],
+    ),
+    dict(
+        id="ZV",
+        what="the connector rewrite is not counted — ZU's twin",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='            result.normalised++;\n',
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aRowAlreadyAtItsDeterministicIdIsNormalisedInPlace'],
+    ),
+    dict(
+        id="ZW",
+        what="the startup patch's quiet summary stops counting normalised rows — a pass that "
+             "rewrote rows is logged as 'no legacy rows'",
+        file='core/src/main/java/jp/aegif/nemaki/patch/Patch_ConnectorDefinitionDeterministicIds.java',
+        find=' && result.normalised == 0',
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['thePatchSummaryDoesNotCallANormalisingPassEmpty'],
+    ),
+    dict(
+        id="ZX",
+        what="the connector rewrite's failure arm is swallowed — ZT's twin",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='        } catch (RuntimeException rowFailed) {\n'
+             '            result.failures.add(id + " (its stored connectorId is not the string \\"" + connectorId\n'
+             '                    + "\\", which the Mango selector cannot match, and rewriting it failed: "\n'
+             '                    + rowFailed.getMessage() + ")");\n'
+             '        }',
+        replace='        } catch (RuntimeException rowFailed) {\n'
+                '            logger.debug("rewrite of {} failed: {}", id, rowFailed.getMessage());\n'
+                '        }',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aRefusedRewriteIsReported'],
+    ),
+    dict(
         id="ZP",
         what="the in-place rewrite stops refusing a row that carries attachments — the binaries "
              "the row is the only holder of are destroyed by a pass that reports clean",
@@ -4921,7 +4965,9 @@ CONTROLS = [
              '                }\n',
         replace='',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['aRowAlreadyAtItsDeterministicIdIsNormalisedInPlace'],
+        expect_fail=['aRowAlreadyAtItsDeterministicIdIsNormalisedInPlace',
+                     'aRowWithAttachmentsIsNotRewrittenInPlace',
+                     'aRefusedRewriteIsReported'],
     ),
     dict(
         id="ZL",
@@ -4974,7 +5020,8 @@ CONTROLS = [
              '                }\n',
         replace='',
         test='ConnectorLegacyIdMigrationTest',
-        expect_fail=['aRowAlreadyAtItsDeterministicIdIsNormalisedInPlace'],
+        expect_fail=['aRowAlreadyAtItsDeterministicIdIsNormalisedInPlace',
+                     'aRowWithAttachmentsIsNotRewrittenInPlace'],
     ),
     dict(
         id="YZ",
@@ -5017,11 +5064,13 @@ CONTROLS = [
         replace='            Object pid = props.get("profileId");\n'
                 '            String profileId = pid instanceof String ? (String) pid : null;',
         test='ImportProfileLegacyIdMigrationTest',
+        # NOT aRowWithAttachmentsIsNotRewrittenInPlace / aRefusedRewriteIsReported: under the
+        # raw read those rows are reported as "no usable profileId" with the same id in the
+        # failure, which is what both locks assert, so they stay green. A review caught the
+        # over-declaration, which the runner scores as WRONG TEST FIRED.
         expect_fail=['theMigrationNormalisesAProfileIdTheMapperCoerces',
                      'anInterruptedNormalisingMigrationRetiresTheLegacyRowOnTheNextPass',
                      'aRowAlreadyAtItsDeterministicIdIsNormalisedInPlace',
-                     'aRowWithAttachmentsIsNotRewrittenInPlace',
-                     'aRefusedRewriteIsReported',
                      'aForeignRowOnTheDeterministicIdIsStillDivergent'],
     ),
     dict(
@@ -5070,10 +5119,10 @@ CONTROLS = [
         replace='            Object cid = props.get("connectorId");\n'
                 '            String connectorId = cid instanceof String ? (String) cid : null;',
         test='ConnectorLegacyIdMigrationTest',
+        # NOT aRowWithAttachmentsIsNotRewrittenInPlace: ZB's reasoning, connector side.
         expect_fail=['theMigrationNormalisesAConnectorIdTheMapperCoerces',
                      'anInterruptedNormalisingMigrationRetiresTheLegacyRowOnTheNextPass',
                      'aRowAlreadyAtItsDeterministicIdIsNormalisedInPlace',
-                     'aRowWithAttachmentsIsNotRewrittenInPlace',
                      'aForeignRowOnTheDeterministicIdIsStillDivergent'],
     ),
     dict(
