@@ -1547,6 +1547,28 @@ class ImportProfileLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("a numeric profileId in the shape the READ PATH delivers still reads as \"42\" "
+            + "— the identity claims are measured on Gson's number, not a Java Integer")
+    void aNumericProfileIdInTheReadPathsOwnShapeStillReadsAsTheMapperReadsIt() {
+        // The rows this service reads are built by the SDK with Gson, so a JSON number is a
+        // LazilyParsedNumber, not an Integer. For a primitive boolean the mapper refuses that
+        // type (a review found a lock holding the opposite claim green with an Integer), so
+        // the identity claims — counted, looked up and deleted as "42" — have to be measured
+        // on the same shape rather than inherited from the boolean case.
+        wire();
+        Map<String, Object> numeric = profileProps("42", "Numeric");
+        numeric.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
+        numeric.put("retentionDays", "not-a-number");
+        listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
+
+        ImportProfileDefinitionService.OwnedProfiles owned = service.listOwnedIndexFree();
+
+        assertEquals(1, owned.uninterpretable().size(), "the row was not reported: " + owned);
+        assertEquals("42", owned.uninterpretable().get(0).profileId(),
+                "the identity of a row whose profileId is a Gson number was not read as \"42\"");
+    }
+
+    @Test
     @DisplayName("a null element in a broken row's archetype list reads as the mapper reads it — "
             + "the list still excludes what it does not contain")
     void aNullElementInTheArchetypeListReadsAsTheMapperReadsIt() {
@@ -2094,13 +2116,14 @@ class ImportProfileLegacyIdMigrationTest {
     }
 
     @Test
-    @DisplayName("which spellings of a string \"enabled\" count as disabled is the mapper's "
-            + "answer — \"False\" yes, \"fAlSe\" no")
-    void whichSpellingsOfADisabledFlagCountIsTheMappersAnswer() {
-        // The release notes name the three spellings. They are the mapper's, not this code's,
-        // so they are measured here on the production mapper rather than asserted from
-        // knowledge: a row disabled by "False" is not a possible recipient, and one whose
-        // enabled is spelled any other way cannot be established as disabled and is reported.
+    @DisplayName("which VALUES of \"enabled\" count as disabled is the mapper's answer — the "
+            + "three spellings, blank, \"null\" yes; \"fAlSe\" and a stored number no")
+    void whichValuesOfADisabledFlagCountIsTheMappersAnswer() {
+        // The release notes name these values. They are the mapper's answer, not this code's,
+        // so they are measured here through the production mapper rather than asserted from
+        // knowledge: a row disabled by one of them is not a possible recipient, and one whose
+        // enabled the mapper cannot read is reported instead. The values are built in the
+        // shapes the read path really delivers (Gson types for numbers).
         wire();
         Map<String, Object> capitalised = profileProps("p-cap", "Capitalised");
         capitalised.put("enabled", "False");
@@ -2126,8 +2149,14 @@ class ImportProfileLegacyIdMigrationTest {
         Map<String, Object> paddedNull = profileProps("p-null-padded", "Null padded");
         paddedNull.put("enabled", "  null  ");
         paddedNull.put("retentionDays", "not-a-number");
+        // The shape a row really has when it comes back from CouchDB: the SDK builds the
+        // properties with Gson, so a JSON number is a LazilyParsedNumber, which the mapper
+        // REFUSES for a primitive boolean. A Java Integer would be coerced — measuring with
+        // one made the release notes claim a numeric 0 counts as disabled, and this lock held
+        // that claim green against a value the read path cannot produce. A review found the
+        // substitution; the row is here to measure the refusal, on the production shape.
         Map<String, Object> zero = profileProps("p-zero", "Zero");
-        zero.put("enabled", 0);
+        zero.put("enabled", new com.google.gson.internal.LazilyParsedNumber("0"));
         zero.put("retentionDays", "not-a-number");
         Map<String, Object> oddSpelling = profileProps("p-odd-case", "Odd case");
         oddSpelling.put("enabled", "fAlSe");
@@ -2145,12 +2174,14 @@ class ImportProfileLegacyIdMigrationTest {
 
         ImportProfileDefinitionService.OwnedProfiles owned = service.listOwnedIndexFree();
 
-        assertEquals(List.of("import_profile_definition:p-odd-case"),
+        assertEquals(List.of("import_profile_definition:p-odd-case",
+                        "import_profile_definition:p-zero"),
                 owned.uninterpretable().stream()
-                        .map(ImportProfileDefinitionService.UninterpretableRow::docId).toList(),
+                        .map(ImportProfileDefinitionService.UninterpretableRow::docId).sorted().toList(),
                 "the mapper's readings are not the ones this code acts on — the release notes "
-                        + "name \"false\"/\"False\"/\"FALSE\" (trimmed), a blank string, and "
-                        + "\"null\": " + owned.uninterpretable());
+                        + "name the literal false, \"false\"/\"False\"/\"FALSE\" (trimmed), a "
+                        + "blank string, \"null\" (trimmed) and an explicit null as disabled, "
+                        + "and a stored NUMBER as unreadable: " + owned.uninterpretable());
         assertTrue(owned.profiles().isEmpty(),
                 "a row the mapper cannot read as a profile was listed: " + owned.profiles());
     }

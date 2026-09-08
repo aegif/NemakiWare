@@ -4287,8 +4287,16 @@ CONTROLS = [
         find='                reportUninterpretable(uninterpretable, id, props, e.getMessage());\n',
         replace='',
         test='ImportProfileLegacyIdMigrationTest',
+        # Every lock that reads uninterpretable() for a row broken by DESERIALISATION;
+        # the nameless-row report is a second call site this sabotage does not touch.
         expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest',
-                     'whichSpellingsOfADisabledFlagCountIsTheMappersAnswer'],
+                     'whichValuesOfADisabledFlagCountIsTheMappersAnswer',
+                     'aRowWhoseConnectorFieldsHaveNoReadableShapeAddressesEveryConnector',
+                     'aRowWhoseArchetypeFieldHasNoReadableShapeAdmitsEveryArchetypeButNamesOnlyItsConnectors',
+                     'aRowWhoseConnectorFieldsHaveNoReadableShapeIsNotAddressedToAnArchetypeItExcludes',
+                     'aMiscasedArchetypeNameMakesTheRowUnreadableAndItAddressesEveryArchetype',
+                     'aNumericConnectorIdReadsAsTheMapperReadsIt',
+                     'aNullElementInTheArchetypeListReadsAsTheMapperReadsIt'],
     ),
     dict(
         id="WP",
@@ -4541,7 +4549,7 @@ CONTROLS = [
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest',
                      'aRowWhoseEnabledIsAnExplicitNullIsNotARecipient',
-                     'whichSpellingsOfADisabledFlagCountIsTheMappersAnswer'],
+                     'whichValuesOfADisabledFlagCountIsTheMappersAnswer'],
     ),
     dict(
         id="XL",
@@ -4803,7 +4811,7 @@ CONTROLS = [
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['aRowWhoseEnabledIsAnExplicitNullIsNotARecipient',
                      'aDisabledByNullRowTheResolverCannotReadDoesNotRefuseTheResolve',
-                     'whichSpellingsOfADisabledFlagCountIsTheMappersAnswer'],
+                     'whichValuesOfADisabledFlagCountIsTheMappersAnswer'],
     ),
     dict(
         id="YS",
@@ -5120,7 +5128,9 @@ CONTROLS = [
         replace='            Object cid = props.get("connectorId");\n'
                 '            String connectorId = cid instanceof String ? (String) cid : null;',
         test='ConnectorLegacyIdMigrationTest',
-        # NOT aRowWithAttachmentsIsNotRewrittenInPlace: ZB's reasoning, connector side.
+        # NOT aRowWithAttachmentsIsNotRewrittenInPlace / aRefusedRewriteIsReported:
+        # ZB's reasoning, connector side (the connector twin of the second lock was
+        # added in the same commit as this comment, and the comment named only one).
         expect_fail=['theMigrationNormalisesAConnectorIdTheMapperCoerces',
                      'anInterruptedNormalisingMigrationRetiresTheLegacyRowOnTheNextPass',
                      'aRowAlreadyAtItsDeterministicIdIsNormalisedInPlace',
