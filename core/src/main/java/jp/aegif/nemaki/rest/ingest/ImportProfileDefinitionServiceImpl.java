@@ -238,7 +238,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         // literal null — so a blank row was undeletable through the very API the message
         // prescribes, and went on blocking every write of that profileId. A review found the
         // two halves disagreeing.
-        boolean unowned = props != null && isBlank(props.get("repositoryId"));
+        boolean unowned = props != null && namesNoRepository(props.get("repositoryId"));
         if (!definesProfile(props, profileId)
                 || repositoryId == null
                 || !(unowned || repositoryId.equals(props.get("repositoryId")))) {
@@ -394,8 +394,13 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
             if (!ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))) {
                 return;
             }
-            Object pid = props.get("profileId");
-            String profileId = pid instanceof String ? (String) pid : null;
+            // The identity as this node reads it — the same reading the duplicate check and
+            // every lookup use. Reading it raw here classified a row the rest of the service
+            // calls "42" as having no usable id, and then said so in an ERROR that also
+            // claimed the row was invisible to the duplicate check — which the mapper-based
+            // count had just made false. A review found the two halves disagreeing.
+            ImportProfileDefinition idOnly = readAlone(props, "profileId");
+            String profileId = idOnly == null ? null : idOnly.getProfileId();
             if (profileId == null || profileId.isBlank()) {
                 result.failures.add(id + " (an import_profile_definition row without a"
                         + " usable profileId cannot be given a deterministic id)");
@@ -540,6 +545,15 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                         : contentOnly(legacy.getProperties()).entrySet()) {
                     copy.put(entry.getKey(), entry.getValue());
                 }
+                // The identity written back as the string this node reads. A raw value the
+                // mapper coerces (the number 42, read as "42") is invisible to the Mango
+                // selector, which compares types strictly and which get(), exists() and the
+                // write path still use — while every index-free walk counts the row as "42".
+                // Migrating without normalising left that profile permanently un-writable:
+                // the count said one row defines it, the selector said none, and the update
+                // answered 503 "retry once the index has caught up" for a state no index
+                // rebuild can reach. A review found it.
+                copy.put("profileId", profileId);
                 copy.setId(deterministicId);
                 PostDocumentOptions write = new PostDocumentOptions.Builder()
                         .db(dbName).document(copy).build();
@@ -757,7 +771,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                         + " cannot be looked up: row " + id + " came back without a body");
             }
             if (!definesProfile(props, profileId)
-                    || isBlank(props.get("repositoryId"))) {
+                    || namesNoRepository(props.get("repositoryId"))) {
                 // Blank, not only null: a blank row belongs to no repository either, and
                 // treating it as owned would start a capture on a row no repository can
                 // manage.
@@ -865,7 +879,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                         + id + " came back without a body");
             }
             if (!ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))
-                    || isBlank(props.get("repositoryId"))) {
+                    || namesNoRepository(props.get("repositoryId"))) {
                 return;
             }
             Map<String, Object> content = contentOnly(props);
@@ -1000,9 +1014,17 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         }
     }
 
-    /** Null, or a value whose text is empty — a row that names no repository either way. */
-    private static boolean isBlank(Object value) {
-        return value == null || (value instanceof String && ((String) value).isBlank());
+    /**
+     * Whether the row names no repository: the value is absent, empty, or not a string at
+     * all. A repository id is a name from {@code repositories.yml} and is always a string, so
+     * a value of any other shape names none of them — and the startup migration says exactly
+     * that (it calls such a row malformed and tells the operator to remove it with
+     * {@code ?docId=}). Reading only null and blank left the row-addressed delete refusing
+     * the very repair its own message prescribes, which is the shape of a defect this path
+     * was already fixed for once, one value further out. A review found it.
+     */
+    private static boolean namesNoRepository(Object value) {
+        return !(value instanceof String s) || s.isBlank();
     }
 
     /** An id-addressed read of the deterministic document id; needs no index. */

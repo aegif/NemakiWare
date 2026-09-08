@@ -2284,7 +2284,8 @@ CONTROLS = [
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
         # Narrows the verification to null-props only: an id-addressed delete then
         # removes any row whatsoever — worse than the divergence it resolves.
-        find='        if (props == null\n                || !ConnectorDefinition.DOC_TYPE.equals(props.get("type"))\n                || !connectorId.equals(props.get("connectorId"))) {',
+        # Re-anchored in round 17 (the identity check moved into definesConnector).
+        find='        if (!definesConnector(props, connectorId)) {',
         replace='        if (props == null) {',
         test='ConnectorLegacyIdMigrationTest',
         expect_fail=['theOneRowDeleteRefusesAMismatchedRow'],
@@ -2544,8 +2545,9 @@ CONTROLS = [
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
         # The index-free delete narrowed to deterministic ids only: the legacy twin the
         # selector hid survives a delete that reports success.
-        find='                if (ConnectorDefinition.DOC_TYPE.equals(props.get("type"))\n                        && connectorId.equals(props.get("connectorId"))) {\n                    targets.add(doc);',
-        replace='                if (ConnectorDefinition.DOC_TYPE.equals(props.get("type"))\n                        && connectorId.equals(props.get("connectorId"))\n                        && id.startsWith(ConnectorDefinition.DOC_TYPE + ":")) {\n                    targets.add(doc);',
+        # Re-anchored in round 17 (the identity check moved into definesConnector).
+        find='                if (definesConnector(props, connectorId)) {\n                    targets.add(doc);',
+        replace='                if (definesConnector(props, connectorId)\n                        && id.startsWith(ConnectorDefinition.DOC_TYPE + ":")) {\n                    targets.add(doc);',
         test='ConnectorLegacyIdMigrationTest',
         expect_fail=['thePlainDeleteRemovesHiddenTwinsToo'],
     ),
@@ -3366,7 +3368,8 @@ CONTROLS = [
         what="a row that belongs to no repository is refused by the row-addressed delete again — "
              "unreachable, while it makes that profileId's PUT a standing 409",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
-        find='        boolean unowned = props != null && isBlank(props.get("repositoryId"));',
+        # Re-anchored in round 17 (isBlank became namesNoRepository).
+        find='        boolean unowned = props != null && namesNoRepository(props.get("repositoryId"));',
         replace='        boolean unowned = false;',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['anUnownedRowIsReachable'],
@@ -3785,7 +3788,8 @@ CONTROLS = [
         what="a blank repositoryId stops counting as unowned — the row the migration tells the "
              "operator to delete by docId is refused by that very API",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
-        find='        boolean unowned = props != null && isBlank(props.get("repositoryId"));',
+        # Re-anchored in round 17 (isBlank became namesNoRepository).
+        find='        boolean unowned = props != null && namesNoRepository(props.get("repositoryId"));',
         replace='        boolean unowned = props != null && props.get("repositoryId") == null;',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['aBlankRepositoryRowIsReachable'],
@@ -3795,7 +3799,8 @@ CONTROLS = [
         what="the IDLE resolution treats a blank repositoryId as owned again — a capture starts "
              "on a row no repository can manage",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
-        find='                    || isBlank(props.get("repositoryId"))) {\n                // Blank, not only null:',
+        # Re-anchored in round 17 (isBlank became namesNoRepository).
+        find='                    || namesNoRepository(props.get("repositoryId"))) {\n                // Blank, not only null:',
         replace='                    || props.get("repositoryId") == null) {\n                // Blank, not only null:',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['aBlankRepositoryRowIsNotOwned'],
@@ -4083,7 +4088,8 @@ CONTROLS = [
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
         # The three-line form is what makes this anchor unique: getOwnedRowIndexFree has the
         # same condition, followed by a comment instead of the return.
-        find='                    || isBlank(props.get("repositoryId"))) {\n                return;\n            }',
+        # Re-anchored in round 17 (isBlank became namesNoRepository).
+        find='                    || namesNoRepository(props.get("repositoryId"))) {\n                return;\n            }',
         replace='                    || false) {\n                return;\n            }',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest'],
@@ -4802,7 +4808,8 @@ CONTROLS = [
         replace='                Object pid = props.get("profileId");\n'
                 '                if (!(pid instanceof String) || ((String) pid).isBlank()) {',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['aNumericProfileIdIsAnIdentityForTheUniquenessListing'],
+        expect_fail=['aNumericProfileIdIsAnIdentityForTheUniquenessListing',
+                     'aNumericLegacyRowIsATwinForTheCreateOfItsStringId'],
     ),
     dict(
         id="YT",
@@ -4810,11 +4817,135 @@ CONTROLS = [
              "by hand — a disabled-by-null row this node cannot read refuses the whole "
              "resolution again",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
-        find='            return !MAPPER.convertValue(alone, ConnectorDefinition.class).isEnabled();',
-        replace='            return Boolean.FALSE.equals(props.get("enabled"))'
+        # Re-anchored in round 17 of the second batch (readsDisabled goes through readAlone).
+        find='        return readAlone(props, "enabled") instanceof ConnectorDefinition read && !read.isEnabled();',
+        replace='        return Boolean.FALSE.equals(props.get("enabled"))'
                 ' || "false".equalsIgnoreCase(String.valueOf(props.get("enabled")));',
         test='ConnectorLegacyIdMigrationTest',
         expect_fail=['aDisabledByNullRowTheResolverCannotReadDoesNotRefuseTheResolution'],
+    ),
+    dict(
+        id="YZ",
+        what="the plain delete's walk compares the raw profileId again — a row the listing "
+             "calls \"42\" survives a delete that reports success",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                if (definesProfile(props, profileId)\n'
+             '                        && repositoryId != null && repositoryId.equals(props.get("repositoryId"))) {\n'
+             '                    targets.add(doc);',
+        replace='                if (ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))\n'
+                '                        && profileId.equals(props.get("profileId"))\n'
+                '                        && repositoryId != null && repositoryId.equals(props.get("repositoryId"))) {\n'
+                '                    targets.add(doc);',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['thePlainDeleteRemovesARowWhoseProfileIdIsTheNumber'],
+    ),
+    dict(
+        id="ZA",
+        what="the row-addressed delete compares the raw profileId again — the repair its own "
+             "409 prescribes is refused for a row the listing calls \"42\"",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='        if (!definesProfile(props, profileId)\n'
+             '                || repositoryId == null\n'
+             '                || !(unowned || repositoryId.equals(props.get("repositoryId")))) {',
+        replace='        if (props == null\n'
+                '                || !ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))\n'
+                '                || !profileId.equals(props.get("profileId"))\n'
+                '                || repositoryId == null\n'
+                '                || !(unowned || repositoryId.equals(props.get("repositoryId")))) {',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theOneRowDeleteAcceptsARowWhoseProfileIdIsTheNumber'],
+    ),
+    dict(
+        id="ZB",
+        what="the startup migration classifies the identity raw again — a row the duplicate "
+             "check counts as \"42\" is reported as having no usable profileId",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='            ImportProfileDefinition idOnly = readAlone(props, "profileId");\n'
+             '            String profileId = idOnly == null ? null : idOnly.getProfileId();',
+        replace='            Object pid = props.get("profileId");\n'
+                '            String profileId = pid instanceof String ? (String) pid : null;',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theMigrationNormalisesAProfileIdTheMapperCoerces'],
+    ),
+    dict(
+        id="ZC",
+        what="the migrated copy keeps the stored number as its profileId — the type-strict "
+             "Mango selector can never match it, and the profile stays un-writable",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                copy.put("profileId", profileId);\n',
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theMigrationNormalisesAProfileIdTheMapperCoerces'],
+    ),
+    dict(
+        id="ZD",
+        what="the connector plain delete compares the raw connectorId again — DELETE "
+             ".../connectors/42 answers success while the row stays",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='                if (definesConnector(props, connectorId)) {\n'
+             '                    targets.add(doc);',
+        replace='                if (ConnectorDefinition.DOC_TYPE.equals(props.get("type"))\n'
+                '                        && connectorId.equals(props.get("connectorId"))) {\n'
+                '                    targets.add(doc);',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['thePlainDeleteRemovesARowWhoseConnectorIdIsTheNumber'],
+    ),
+    dict(
+        id="ZE",
+        what="the connector uniqueness count compares the raw connectorId again — a create of "
+             "\"42\" writes a twin beside the legacy row the listings call \"42\"",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='            if (definesConnector(props, connectorId)) {\n'
+             '                found[0]++;',
+        replace='            if (ConnectorDefinition.DOC_TYPE.equals(props.get("type"))\n'
+                '                    && connectorId.equals(props.get("connectorId"))) {\n'
+                '                found[0]++;',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aNumericLegacyRowIsCountedByTheCreateOfItsStringId'],
+    ),
+    dict(
+        id="ZF",
+        what="the connector migration classifies the identity raw again — ZB's connector twin",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='            ConnectorDefinition idOnly = readAlone(props, "connectorId");\n'
+             '            String connectorId = idOnly == null ? null : idOnly.getConnectorId();',
+        replace='            Object cid = props.get("connectorId");\n'
+                '            String connectorId = cid instanceof String ? (String) cid : null;',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theMigrationNormalisesAConnectorIdTheMapperCoerces'],
+    ),
+    dict(
+        id="ZG",
+        what="the migrated connector copy keeps the stored number as its connectorId — ZC's twin",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='                copy.put("connectorId", connectorId);\n',
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theMigrationNormalisesAConnectorIdTheMapperCoerces'],
+    ),
+    dict(
+        id="ZH",
+        what="'names no repository' goes back to null-or-blank — a row whose repositoryId is "
+             "not a string is refused by the very DELETE the migration's message prescribes",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='        boolean unowned = props != null && namesNoRepository(props.get("repositoryId"));',
+        replace='        boolean unowned = props != null && (props.get("repositoryId") == null\n'
+                '                || (props.get("repositoryId") instanceof String blank && blank.isBlank()));',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['theOneRowDeleteReachesARowWhoseRepositoryIdIsNotAString'],
+    ),
+    dict(
+        id="ZI",
+        what="the connector row-addressed delete compares the raw connectorId again — ZA's twin",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='        Map<String, Object> props = row != null ? row.getProperties() : null;\n'
+             '        if (!definesConnector(props, connectorId)) {',
+        replace='        Map<String, Object> props = row != null ? row.getProperties() : null;\n'
+                '        if (props == null\n'
+                '                || !ConnectorDefinition.DOC_TYPE.equals(props.get("type"))\n'
+                '                || !connectorId.equals(props.get("connectorId"))) {',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['theOneRowDeleteAcceptsARowWhoseConnectorIdIsTheNumber'],
     ),
     dict(
         id="YU",
@@ -4853,7 +4984,9 @@ CONTROLS = [
         expect_fail=['aNumericLegacyRowIsATwinForTheCreateOfItsStringId',
                      'getForRepositoryReadsANumericProfileIdAsTheMapperReadsIt',
                      'getOwnedRowIndexFreeReadsANumericProfileIdAsTheMapperReadsIt',
-                     'theDeterministicIdReadAcceptsARowWhoseProfileIdIsTheNumber'],
+                     'theDeterministicIdReadAcceptsARowWhoseProfileIdIsTheNumber',
+                     'thePlainDeleteRemovesARowWhoseProfileIdIsTheNumber',
+                     'theOneRowDeleteAcceptsARowWhoseProfileIdIsTheNumber'],
     ),
     dict(
         id="YX",
@@ -4861,10 +4994,10 @@ CONTROLS = [
              "walk",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
         find='            if (!definesProfile(props, profileId)\n'
-             '                    || isBlank(props.get("repositoryId"))) {',
+             '                    || namesNoRepository(props.get("repositoryId"))) {',
         replace='            if (!ImportProfileDefinition.DOC_TYPE.equals(props.get("type"))\n'
                 '                    || !profileId.equals(props.get("profileId"))\n'
-                '                    || isBlank(props.get("repositoryId"))) {',
+                '                    || namesNoRepository(props.get("repositoryId"))) {',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['getOwnedRowIndexFreeReadsANumericProfileIdAsTheMapperReadsIt'],
     ),

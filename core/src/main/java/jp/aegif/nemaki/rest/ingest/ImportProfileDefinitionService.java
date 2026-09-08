@@ -97,16 +97,18 @@ public interface ImportProfileDefinitionService {
     List<ImportProfileDefinition> listScheduledIndexFree();
 
     /**
-     * A row of the owned listing that could not be interpreted as a profile, with the raw
-     * fields a caller needs to tell whether the row was addressed to it. The webhook
+     * A row of the owned listing that could not be interpreted as a profile, with the
+     * addressing fields a caller needs to tell whether the row was addressed to it. The webhook
      * receiver asks {@link #addressedTo(String, SourceArchetype)}: a row that was addressed
      * to its connector and cannot be read is a recipient it cannot establish, not "no
      * recipient".
      *
      * <p>The two questions the receiver asks of a readable row — does it name the connector,
-     * does it admit the connector's archetype — are asked of the row's fields one at a time,
-     * each read on its own through the production mapper (the reader of the readable path),
-     * and a field the mapper refuses leaves only ITS question open. A row whose connector
+     * does it admit the connector's archetype — are asked of the row's fields one QUESTION at
+     * a time: the two connector fields are read together (they answer one question between
+     * them) and the archetype list is read apart from them, each reading going through the
+     * production mapper (the reader of the readable path) on those fields alone, so a field
+     * the mapper refuses leaves only ITS question open. A row whose connector
      * fields cannot be read but whose archetype list plainly excludes the connector's
      * archetype is not addressed to it, and neither is a row whose archetype list cannot be
      * read but whose connector fields name someone else: in both, a readable row with the
@@ -135,9 +137,10 @@ public interface ImportProfileDefinitionService {
             List<String> allowedConnectorIds, List<SourceArchetype> allowedArchetypes,
             boolean addresseeUnknown, String reason) {
         /**
-         * Whether the row names this connector — as far as its raw connector fields say, and
-         * "yes" for every connector when those fields are there but cannot be read: a row
-         * whose addressee cannot be established is not a row that addresses nobody.
+         * Whether the row names this connector — as far as its connector fields say, read the
+         * way the readable path reads them, and "yes" for every connector when the mapper
+         * refuses those fields: a row whose addressee cannot be established is not a row that
+         * addresses nobody.
          */
         public boolean namesConnector(String connectorId) {
             if (connectorId == null) {
@@ -167,7 +170,8 @@ public interface ImportProfileDefinitionService {
 
         /**
          * Whether the row was addressed to this connector: it names it AND admits its
-         * archetype — the receiver's conjunction for a readable row, asked of the raw fields.
+         * archetype — the receiver's conjunction for a readable row, asked of the fields this
+         * row could carry.
          * A readable row with the same fields would have been filtered out on whichever
          * question answers "no"; refusing on it would stop a dispatch that row could never
          * have received. A review found the receiver refusing on the name alone; the next

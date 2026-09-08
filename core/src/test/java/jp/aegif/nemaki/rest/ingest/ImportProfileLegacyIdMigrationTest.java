@@ -1927,6 +1927,111 @@ class ImportProfileLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("the plain delete removes a row whose profileId is the number — 'deleted' "
+            + "means deleted for the identity every other read uses")
+    void thePlainDeleteRemovesARowWhoseProfileIdIsTheNumber() {
+        // The walk compared the raw value, so a row the listing calls "42" was left standing
+        // while the delete reported success. A review found the count and the lookups in that
+        // state; the delete verbs were in it too and no lock said so.
+        wire();
+        Map<String, Object> numeric = profileProps("42", "Numeric");
+        numeric.put("profileId", 42);
+        listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
+        writesSucceed();
+
+        service.delete("42", "bedroom");
+
+        assertTrue(deletedIds.contains("legacy-42"),
+                "the row the listing calls \"42\" survived a 'successful' delete: " + deletedIds);
+    }
+
+    @Test
+    @DisplayName("the row-addressed delete accepts a row whose profileId is the number")
+    void theOneRowDeleteAcceptsARowWhoseProfileIdIsTheNumber() {
+        // The addressed-row check compared the raw value and refused the repair its own
+        // 409 prescribes. Two rows define "42" here, so this is the pair-resolving operation
+        // it is meant to be.
+        wire();
+        Map<String, Object> numeric = profileProps("42", "Numeric");
+        numeric.put("profileId", 42);
+        Document addressed = mock(Document.class);
+        when(addressed.getProperties()).thenReturn(numeric);
+        when(addressed.getRev()).thenReturn("1-a");
+        stubGetDocument("legacy-42", addressed);
+        listingAnswers(List.of(row("legacy-42", numeric, "1-a"),
+                row("import_profile_definition:42", profileProps("42", "Canonical"), "1-b")));
+        writesSucceed();
+
+        // assertDoesNotThrow: the refusal under measurement is an IllegalArgumentException,
+        // and a lock that dies on it is "harness broken" to the runner, not a firing.
+        assertDoesNotThrow(() -> service.delete("42", "legacy-42", "bedroom"),
+                "the row the listing calls \"42\" was refused by the repair its own 409 names");
+
+        assertTrue(deletedIds.contains("legacy-42"),
+                "the addressed row was not removed: " + deletedIds);
+    }
+
+    @Test
+    @DisplayName("a row whose repositoryId is not a string names no repository — the addressed "
+            + "delete the migration prescribes reaches it")
+    void theOneRowDeleteReachesARowWhoseRepositoryIdIsNotAString() {
+        // The migration calls such a row malformed and tells the operator to remove it with
+        // ?docId=; the delete read "names no repository" as null-or-blank only, so a value of
+        // any other shape was neither owned by the caller nor unowned, and the prescribed
+        // repair answered 404. The same defect was fixed once for the blank value; a review
+        // found it again one value further out.
+        wire();
+        Map<String, Object> odd = profileProps("p-odd", "Odd");
+        odd.put("repositoryId", 42);
+        Document orphan = mock(Document.class);
+        when(orphan.getProperties()).thenReturn(odd);
+        when(orphan.getRev()).thenReturn("1-a");
+        stubGetDocument("odd-repo-row", orphan);
+        listingAnswers(List.of(row("odd-repo-row", odd, "1-a")));
+        writesSucceed();
+
+        assertDoesNotThrow(() -> service.delete("p-odd", "odd-repo-row", "bedroom"),
+                "the row whose repositoryId is not a string was refused by the very DELETE "
+                        + "the migration's message prescribes");
+
+        assertTrue(deletedIds.contains("odd-repo-row"),
+                "the malformed row is still unreachable: " + deletedIds);
+    }
+
+    @Test
+    @DisplayName("a legacy row whose profileId is the number is migrated, and the copy carries "
+            + "that identity as the string every read uses")
+    void theMigrationNormalisesAProfileIdTheMapperCoerces() {
+        // Two halves, both found by review. The classification read the identity raw and
+        // reported such a row as having none — while the mapper-based count called it "42".
+        // And migrating it without normalising would not have been enough: the Mango selector
+        // compares types strictly, so get(), exists() and the write path could never see a
+        // stored number, and the profile stayed permanently un-writable (the count said one
+        // row, the selector said none, and the update answered "retry once the index has
+        // caught up" for a state no rebuild reaches).
+        wire();
+        Map<String, Object> numeric = profileProps("42", "Numeric");
+        numeric.put("profileId", 42);
+        listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
+        deterministicReadAnswers("42", null);
+        writesSucceed();
+
+        ConnectorDefinitionService.LegacyIdMigrationResult result =
+                service.migrateLegacyGeneratedIds();
+
+        ArgumentCaptor<PostDocumentOptions> written =
+                ArgumentCaptor.forClass(PostDocumentOptions.class);
+        verify(cloudant).postDocument(written.capture());
+        assertEquals("import_profile_definition:42", written.getValue().document().getId(),
+                "the row the rest of the service calls \"42\" was not given that deterministic id");
+        assertEquals("42", written.getValue().document().get("profileId"),
+                "the copy kept the stored number, which the Mango selector can never match — "
+                        + "the profile stays un-writable");
+        assertEquals(1, result.migrated);
+        assertTrue(result.clean(), "a clean migration reported problems: " + result);
+    }
+
+    @Test
     @DisplayName("a row of ANOTHER repository is still refused by docId")
     void anotherRepositorysRowIsStillRefused() {
         // The exemption above is for rows with NO repositoryId. A row that names a different

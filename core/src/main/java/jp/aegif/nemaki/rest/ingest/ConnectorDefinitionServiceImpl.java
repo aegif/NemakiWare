@@ -237,8 +237,7 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
                             + " cannot be deleted completely: row " + id
                             + " came back without a body");
                 }
-                if (ConnectorDefinition.DOC_TYPE.equals(props.get("type"))
-                        && connectorId.equals(props.get("connectorId"))) {
+                if (definesConnector(props, connectorId)) {
                     targets.add(doc);
                 }
             });
@@ -283,9 +282,7 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
                     + " deleted", e);
         }
         Map<String, Object> props = row != null ? row.getProperties() : null;
-        if (props == null
-                || !ConnectorDefinition.DOC_TYPE.equals(props.get("type"))
-                || !connectorId.equals(props.get("connectorId"))) {
+        if (!definesConnector(props, connectorId)) {
             // An id-addressed delete with the WRONG target is worse than the divergence it
             // resolves: refusing is the only answer that cannot destroy an unrelated row.
             throw new IllegalArgumentException("row " + docId + " is not a definition of"
@@ -437,12 +434,6 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
     }
 
     /**
-     * Every connector definition, read without the Mango index — the whole config database,
-     * every time. A variant bounded to the deterministic-id range was withdrawn: a bounded
-     * walk that finds something is still incomplete, and the callers' rules (refuse when
-     * several match) are made of completeness.
-     */
-    /**
      * Whether the production mapper reads the row's {@code enabled}, on that field alone, as
      * {@code false}. A row this node cannot interpret as a whole has no other reader to
      * normalise the value, so the same mapper is asked about the one field. An absent value is
@@ -450,17 +441,54 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
      * refuses: only an established "no" is one.
      */
     private static boolean readsDisabled(Map<String, Object> props) {
+        return readAlone(props, "enabled") instanceof ConnectorDefinition read && !read.isEnabled();
+    }
+
+    /**
+     * The named fields of a row read through the production mapper and nothing else — the
+     * definition a readable row would carry in those fields; null when the mapper refuses
+     * them. Fields the row does not have are left to the definition's defaults, as they would
+     * be on a readable row. The profile service's twin of this helper carries the reasoning.
+     */
+    private static ConnectorDefinition readAlone(Map<String, Object> props, String... fields) {
         Map<String, Object> alone = new HashMap<>();
-        if (props.containsKey("enabled")) {
-            alone.put("enabled", props.get("enabled"));
+        for (String field : fields) {
+            if (props.containsKey(field)) {
+                alone.put(field, props.get(field));
+            }
         }
         try {
-            return !MAPPER.convertValue(alone, ConnectorDefinition.class).isEnabled();
+            return MAPPER.convertValue(alone, ConnectorDefinition.class);
         } catch (RuntimeException refused) {
-            return false;
+            return null;
         }
     }
 
+    /**
+     * Whether the row defines {@code connectorId}: it is a connector row, and its
+     * {@code connectorId}, read on its own through the production mapper, is that identity.
+     * The mapper's reading, not the raw value — the listings read whole rows through the same
+     * mapper, so a row whose stored id is the number 42 appears in them as connector "42",
+     * and a count or delete that compared the raw value did not see the row the listing did:
+     * {@code DELETE .../connectors/42} answered success while the row stayed, and a create of
+     * "42" could write a twin. The profile service had the same split; a review found it
+     * there, and this is its mirror.
+     */
+    private static boolean definesConnector(Map<String, Object> props, String connectorId) {
+        if (props == null || connectorId == null
+                || !ConnectorDefinition.DOC_TYPE.equals(props.get("type"))) {
+            return false;
+        }
+        ConnectorDefinition idOnly = readAlone(props, "connectorId");
+        return idOnly != null && connectorId.equals(idOnly.getConnectorId());
+    }
+
+    /**
+     * Every connector definition, read without the Mango index — the whole config database,
+     * every time. A variant bounded to the deterministic-id range was withdrawn: a bounded
+     * walk that finds something is still incomplete, and the callers' rules (refuse when
+     * several match) are made of completeness.
+     */
     private List<ConnectorDefinition> listIndexFree(List<String> onlySystems,
             SourceArchetype onlyArchetype) {
         CloudantClientWrapper client = getConfClient();
@@ -1010,8 +1038,10 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
             if (!ConnectorDefinition.DOC_TYPE.equals(props.get("type"))) {
                 return;
             }
-            Object cid = props.get("connectorId");
-            String connectorId = cid instanceof String ? (String) cid : null;
+            // The identity as this node reads it — the same reading the duplicate check and
+            // the listings use. The profile twin of this line carries the reasoning.
+            ConnectorDefinition idOnly = readAlone(props, "connectorId");
+            String connectorId = idOnly == null ? null : idOnly.getConnectorId();
             if (connectorId == null || connectorId.isBlank()) {
                 result.failures.add(id + " (a connector_definition row without a usable"
                         + " connectorId cannot be given a deterministic id)");
@@ -1104,6 +1134,11 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
                         : contentOnly(legacy.getProperties()).entrySet()) {
                     copy.put(entry.getKey(), entry.getValue());
                 }
+                // The identity written back as the string this node reads; the profile twin
+                // of this line carries the reasoning (a raw value the mapper coerces is
+                // invisible to the type-strict Mango selector that get() and the write path
+                // still use, while every walk counts the row under the coerced id).
+                copy.put("connectorId", connectorId);
                 copy.setId(deterministicId);
                 PostDocumentOptions write = new PostDocumentOptions.Builder()
                         .db(dbName).document(copy).build();
@@ -1207,8 +1242,7 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
                 throw new IllegalStateException("the uniqueness of connector '" + connectorId
                         + "' cannot be established: row " + id + " came back without a body");
             }
-            if (ConnectorDefinition.DOC_TYPE.equals(props.get("type"))
-                    && connectorId.equals(props.get("connectorId"))) {
+            if (definesConnector(props, connectorId)) {
                 found[0]++;
             }
         });

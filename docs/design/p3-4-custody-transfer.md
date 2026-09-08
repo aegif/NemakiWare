@@ -8220,7 +8220,11 @@ create `"42"` の件数は 0 で、deterministic id に twin を書ける。「�
 `rowFound`)。**残り (P3、対応せず)**: 起動時 migration は `profileId` を生で読み、数値 id の行を
 「migrate できない」と報告して legacy id のまま残す。読みの側は全部 index-free walk なので
 その行を `"42"` として見る — 読みが食い違うのではなく、migration の報告が「使えない id」と
-呼ぶだけ。
+呼ぶだけ。→ **16 巡目で撤回** (両レビュー): ERROR は「使えない id」だけでなく「duplicate check
+から見えないままになる」とも言っており、mapper 識別にした件数からは**見える**ので偽になっていた。
+さらに「読みの側は全部 index-free walk」も偽で、`get` / `exists` / 書込み前の既存行読みは Mango
+セレクタ (型に厳密) なので数値 id の行に当たらない。結果、その行がある間 **PUT が恒久的に 503**
+(「索引が追いつくまで待て」) になっていた。16 巡目で移行側を直した (下記)。
 
 **この巡の測定**: コントロールは **454 本** (新設 11: YP YQ YR YS YT YU YV YW YX YY と YJ の
 置換 — YI は撤回)。事前検査 454/454 (self-test 19/19、expect_fail の宣言 0 問題、anchor 0 drift —
@@ -8231,6 +8235,13 @@ QB SX VC の 7 — YI 抜き) を測定し 91/91 FIRED** (compile-check 91 分�
 スナップショットと一致 (`.nc-backup` 残り 0)。**残る 363 本はこの木では未測定** — 通しは
 収束後。
 
+**16 巡目で訂正**: この節の「錠 11 本」は **10 本 (新設) + 1 本削除**が正しい (`@Test` の実数は
+profile 92→101、connector 72→73、webhook 26→25)。11 はコントロールの数 (新設 10 + 置換 1) で、
+錠の数ではない。コミットメッセージ `96597607c` にも同じ誤りが入っている。あわせて、この節の
+「delete の 2 か所は helper 経由で YW が測る」も言い過ぎだった — YW の `expect_fail` は count /
+`getForRepository` / `getOwnedRowIndexFree` / 確定 ID 読みの 4 本で、delete 2 か所を観測する錠は
+無かった (16 巡目で錠とコントロールを足した)。
+
 起動の記録: 3 回起動した。1 回目は compile-check が **YJ の細工の綴りを捕まえて止めた**
 (`READ_UNKNOWN_ENUM_VALUES_AS_NULL` は Jackson 3 では `DeserializationFeature` でなく
 `cfg.EnumFeature` — jar の `javap` で確認して直した。他の 125 本は compile 済み)。2 回目
@@ -8238,3 +8249,57 @@ QB SX VC の 7 — YI 抜き) を測定し 91/91 FIRED** (compile-check 91 分�
 `pkill -TERM` で止めた — バッチ中は runner が `.nc-backup` を書くので、残った
 `CanonicalImportServiceImpl.java` の backup が HEAD と一致することを確かめて戻した。3 回目が
 上の値。
+
+### 16 巡目 (Codex + サブエージェント、並行) — P2 (重複含め) 5・P3 10、両者 `NOT CONVERGED`
+
+コミット `96597607c` に対して。P1 なし。**識別を mapper の読みに揃えた結果、揃えきれていない
+場所が 3 つ残っていた。**
+
+- **P2 (両者) — RELEASE_NOTES に、撤回した機構の説明が新しい説明の 5 行上に残っていた**
+  (「飛ばした行の 2 欄を**生のまま**読み」)。このリポジトリで「生」は一貫して「mapper を
+  通さない」の意味で、`defaultConnectorId: 42` の読み方は利用者可視の変更点なので、言い回しの
+  問題ではない。→ 削除。
+- **P2 (両者) — 起動時 migration の ERROR が、この batch が偽にした主張を言い続けていた。**
+  「使える profileId が無い / **duplicate check から見えないままになる**」— 件数は mapper 識別で
+  その行を `"42"` として**見る**。さらにサブが踏み込んで、**読みの側は index-free walk だけでは
+  ない**ことを見つけた: `get` / `exists` / `upsertDocument` の既存行読みは Mango セレクタで、
+  CouchDB の `$eq` は型に厳密なので数値 id の行に当たらない。したがって件数 1・セレクタ 0 の腕に
+  入り、**PUT が恒久的に 503「索引が追いつくまで待ってください」**を返す (索引の再構築では
+  絶対に解消しない)。create の 400 も「移行待ちのレガシー行」と言うが、その移行はこの行を拒否
+  し続ける。
+  → **移行側を直した**: 識別を `readAlone` (mapper) で読み、確定 ID を与え、**コピーを書くとき
+  に識別欄そのものも読んだ文字列に直す**。正規化しないと移行後もセレクタが一生当たらないので、
+  移行だけでは足りない。コネクタ側も同じ。錠 2 本 (profile / connector それぞれ「確定 ID が
+  付き、書かれた文書の識別欄が文字列」)、コントロール **ZB / ZC / ZF / ZG** (識別を生読みに
+  戻す / 正規化を落とす)。
+- **P2 (Codex) — delete 2 か所が呼び出し側で測られていなかった** (YW は helper のみ)。→ 錠 2 本
+  (plain delete が数値 id の行を消す / 行指定 delete が数値 id の行を受け付ける)、コントロール
+  **YZ / ZA**。YW の `expect_fail` にも追加。
+- **P2 (サブ) — コネクタ側に同型の分裂が残っていた** (並行レビューが profile 側で P1 とした
+  もの)。一覧は行全体を mapper で読むので `connectorId: 42` の行を `"42"` と表示するのに、
+  delete の walk・行指定 delete・件数は生比較 → **`DELETE /admin/connectors/42` が成功を返した
+  まま行が残る** (「'deleted' must mean deleted」と書いてあるメソッド)。create も twin を書けた。
+  → `definesConnector` に集約。錠 3 本、コントロール **ZD / ZE / ZI**。
+- **P3 (サブ) — 移行の案内と削除 API の食い違いが 1 段外側に残っていた**: 移行は
+  `repositoryId` が文字列でない行を malformed と呼び「`?docId=` で消せ」と案内するが、
+  削除側の unowned 判定は null/空だけを見ていたので 404。→ `namesNoRepository` (文字列でない値も
+  「どのリポジトリも名指していない」) に。錠 1 本、コントロール **ZH**。
+- **P3 (サブ)** `enabled` の文字列読みが狭くなった (`"fAlSe"` は mapper が読めない) —
+  **未開示の挙動変更**。方向は fail-closed (行全体も逆直列化できないので「無効と確かめられない」
+  側)。直さず RELEASE_NOTES に開示。
+- **P3 (両者)** 「錠 11 本」は 10 本 + 1 本削除 / 「delete 2 か所は YW が測る」は言い過ぎ →
+  15 巡目の節に訂正を追記。javadoc の "raw" 表現、「1 欄ずつ」(コネクタ 2 欄はまとめて読む)、
+  `listIndexFree` の javadoc が `readsDisabled` に付いていた配置、YS の `expect_fail` 過小宣言、
+  RELEASE_NOTES から落ちた「明確に」— すべて訂正。
+- **却下 / 残置**: `repositoryId` の生比較 (15 巡目に P2 降格したまま。数値の repositoryId は
+  どのリポジトリも名指さず、`namesNoRepository` で unowned に落ちるので識別としての比較は
+  不要)。migration が非文字列 `repositoryId` の行を移行しない点は仕様どおり (削除経路が開いた)。
+
+**この巡の測定**: コントロールは **464 本** (新設 10: YZ ZA ZB ZC ZD ZE ZF ZG ZH ZI)。事前検査
+464/464 (self-test 19/19、expect_fail の宣言 0 問題、anchor 0 drift — 途中で drift した 7 本
+(PE QA TH VA VB VZ YX) を張り直し、YT も `readsDisabled` の書き換えに合わせて張り直してから)。
+変更 3 ファイルを標的にする **141 本を compile-check し 141/141**、続けてバッチ **106 本
+(15〜16 巡目の 91 + 新設 10 + 張り直した PE QA TH VA VB の 5) を測定し 106/106 FIRED**
+(compile-check 95 分、バッチ 147 分)。木は起動前スナップショットと一致 (`.nc-backup` 残り 0)。
+錠は **10 本追加** (profile 101→105、connector 73→77、他 4 クラスは変化なしで green)。
+**残る 358 本はこの木では未測定** — 通しは収束後。

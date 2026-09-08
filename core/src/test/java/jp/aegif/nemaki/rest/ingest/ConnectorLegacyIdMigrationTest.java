@@ -1117,6 +1117,78 @@ class ConnectorLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("the plain delete removes a row whose connectorId is the number — 'deleted' "
+            + "means deleted for the identity the listings use")
+    void thePlainDeleteRemovesARowWhoseConnectorIdIsTheNumber() {
+        // The listings read whole rows through the mapper, so a stored number appears as
+        // connector "42"; the delete compared the raw value, removed nothing, and the
+        // controller answered success. The profile service had the same split and a review
+        // called it a P1 there; this is its mirror.
+        wire();
+        Map<String, Object> numeric = connectorProps("42", "Numeric");
+        numeric.put("connectorId", 42);
+        listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
+        writesSucceed();
+
+        service.delete("42");
+
+        assertTrue(deletedIds.contains("legacy-42"),
+                "the row the listing calls \"42\" survived a 'successful' delete: " + deletedIds);
+    }
+
+    @Test
+    @DisplayName("a legacy row whose connectorId is the number is counted by the create of "
+            + "\"42\" — no twin is written beside it")
+    void aNumericLegacyRowIsCountedByTheCreateOfItsStringId() {
+        wire();
+        selectorAnswersNothing();
+        deterministicReadAnswers("42", null);
+        Map<String, Object> numeric = connectorProps("42", "Numeric");
+        numeric.put("connectorId", 42);
+        listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
+        writesSucceed();
+
+        ConnectorDefinition fresh = new ConnectorDefinition();
+        fresh.setConnectorId("42");
+        fresh.setDisplayName("New");
+        fresh.setSourceSystem("google");
+        fresh.setSourceArchetype(SourceArchetype.FILE_SHARE);
+
+        assertThrows(RuntimeException.class, () -> service.create(fresh),
+                "a second row of connector \"42\" was written beside the legacy row whose "
+                        + "connectorId is the number 42");
+        verify(cloudant, never()).postDocument(any(PostDocumentOptions.class));
+    }
+
+    @Test
+    @DisplayName("a legacy row whose connectorId is the number is migrated, and the copy carries "
+            + "that identity as the string every read uses")
+    void theMigrationNormalisesAConnectorIdTheMapperCoerces() {
+        // The profile twin of this lock carries the reasoning: without normalising, the
+        // type-strict Mango selector can never match the stored number, so the connector
+        // stays un-writable while every walk counts it.
+        wire();
+        Map<String, Object> numeric = connectorProps("42", "Numeric");
+        numeric.put("connectorId", 42);
+        listingAnswers(List.of(row("legacy-42", numeric, "1-a")));
+        deterministicReadAnswers("42", null);
+        writesSucceed();
+
+        ConnectorDefinitionService.LegacyIdMigrationResult result =
+                service.migrateLegacyGeneratedIds();
+
+        ArgumentCaptor<PostDocumentOptions> written =
+                ArgumentCaptor.forClass(PostDocumentOptions.class);
+        verify(cloudant).postDocument(written.capture());
+        assertEquals("connector_definition:42", written.getValue().document().getId(),
+                "the row the rest of the service calls \"42\" was not given that deterministic id");
+        assertEquals("42", written.getValue().document().get("connectorId"),
+                "the copy kept the stored number, which the Mango selector can never match — "
+                        + "the connector stays un-writable");
+        assertEquals(1, result.migrated);
+    }
+
+    @Test
     @DisplayName("a MATCHING connector disabled by an explicit NULL that cannot be read does not "
             + "refuse the resolution — the mapper reads null into the primitive as false")
     void aDisabledByNullRowTheResolverCannotReadDoesNotRefuseTheResolution() {
@@ -2094,6 +2166,32 @@ class ConnectorLegacyIdMigrationTest {
         verify(cloudant).deleteDocument(deleted.capture());
         assertEquals("legacy-abc", deleted.getValue().docId());
         assertEquals("7-r", deleted.getValue().rev());
+    }
+
+    @Test
+    @DisplayName("the row-addressed delete accepts a row whose connectorId is the number")
+    void theOneRowDeleteAcceptsARowWhoseConnectorIdIsTheNumber() {
+        // The third of the connector service's raw identity comparisons: the addressed-row
+        // check refused the repair its own 409 prescribes for a row the listings call "42".
+        wire();
+        Map<String, Object> numeric = connectorProps("42", "Numeric");
+        numeric.put("connectorId", 42);
+        Document addressed = mock(Document.class);
+        when(addressed.getProperties()).thenReturn(numeric);
+        when(addressed.getRev()).thenReturn("1-a");
+        stubGetDocument("legacy-42", addressed);
+        listingAnswers(List.of(row("legacy-42", numeric, "1-a"),
+                row("connector_definition:42", connectorProps("42", "Canonical"), "1-b")));
+        listingAnswers(List.of(row("connector_definition:42", connectorProps("42", "Canonical"), "1-b")));
+        writesSucceed();
+
+        // assertDoesNotThrow: the refusal under measurement is an IllegalArgumentException,
+        // and a lock that dies on it is "harness broken" to the runner, not a firing.
+        assertDoesNotThrow(() -> service.delete("42", "legacy-42"),
+                "the row the listing calls \"42\" was refused by the repair its own 409 names");
+
+        assertTrue(deletedIds.contains("legacy-42"),
+                "the addressed row was not removed: " + deletedIds);
     }
 
     @Test
