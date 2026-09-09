@@ -791,4 +791,34 @@ class ExternalIngestControllerGateTest {
         assertNotNull(res.getBody(), "the refusal answered no document at all");
         assertFalse(res.getBody().isSuccess(), "a refusal reported success");
     }
+
+    @Test
+    void aDelegatedIngestRefusedInsideTheGateIsAlsoAudited() throws Exception {
+        // The gate READS the connector too, and its two reads sit outside the catch the
+        // previous round added around the dispatch — so this half of the audit gap stayed
+        // open while the javadoc and the release notes said every outcome was recorded. The
+        // control for the other half stayed green under this one's sabotage, which is how it
+        // was found to need its own lock.
+        CallContext ctx = nonAdminContext();
+        jp.aegif.nemaki.audit.AuditLogger auditLogger =
+                mock(jp.aegif.nemaki.audit.AuditLogger.class);
+        inject("auditLogger", auditLogger);
+        ImportProfileDefinition p = delegatedProfile();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER))
+                .thenReturn(true);
+        // The GATE's own read is the one that refuses.
+        when(connectorDefinitionService.get(CONN)).thenThrow(
+                new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                        "connector " + CONN + " exists but could not be read as that connector"));
+
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> ingest(messageOnANamedConnector()));
+
+        verify(auditLogger).logOperation(
+                any(jp.aegif.nemaki.audit.AuditOperation.class), any(), any(), any(),
+                eq(false), any(), any());
+    }
 }

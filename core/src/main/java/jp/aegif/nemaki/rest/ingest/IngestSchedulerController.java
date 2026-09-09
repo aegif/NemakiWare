@@ -51,7 +51,15 @@ public class IngestSchedulerController {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("scheduledProfiles", entries);
         response.put("count", entries.size());
-        response.put("idleProfiles", schedulerService.getIdleProfiles());
+        // The scheduled list IS established by this point. Letting the idle listing's refusal
+        // take the whole answer down discards it — over-throwing, which this batch counts as
+        // a defect of the same weight. The part that could not be answered says so in its own
+        // field instead. A review found the endpoint turned 503 as a whole.
+        try {
+            response.put("idleProfiles", schedulerService.getIdleProfiles());
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException couldNotAsk) {
+            response.put("idleProfilesUnavailable", couldNotAsk.getMessage());
+        }
         return ResponseEntity.ok(response);
     }
 
@@ -140,7 +148,7 @@ public class IngestSchedulerController {
         if (error != null) {
             response.put("status", "error");
             response.put("message", error);
-            return ResponseEntity.status(statusOfIdleRefusal(error)).body(response);
+            return ResponseEntity.status(statusOfIdleRefusal(error, profileId)).body(response);
         }
         response.put("status", "success");
         response.put("message", "IMAP IDLE started for " + profileId);
@@ -159,13 +167,24 @@ public class IngestSchedulerController {
      * keeps its 400.
      */
     private static HttpStatus statusOfIdleRefusal(String error) {
-        String message = error == null ? "" : error;
-        // PREFIX-matched arms first. Every message here embeds the caller's own profileId, so
-        // a substring test can be satisfied by the id itself: an admin asking to start
-        // "foo retry shortly" produced "Profile not found: foo retry shortly" and got a 503.
-        // A review found it. Anchoring these at the start, and testing them before the
-        // substring arms, takes the id out of the decision for the cases that have a fixed
-        // opening.
+        return statusOfIdleRefusal(error, null);
+    }
+
+    private static HttpStatus statusOfIdleRefusal(String error, String profileId) {
+        String raw = error == null ? "" : error;
+        // The caller's own profileId is interpolated into every message here, so the caller
+        // can write markers into the text this method reads. Anchoring the arms at the start
+        // was the first answer and it was not enough: a profile named
+        // " no longer has a row in repository " turned an UNWIRED node's message into the
+        // 404 arm — a could-not-ask answered as "it is not there", the batch's own defect,
+        // newly introduced. A review found it one round later.
+        //
+        // So the id is taken OUT of the text before the arms that mean "the store answered"
+        // (404 / 409 / 403) are tested, and the arm that means "could not ask" (503) is
+        // tested against BOTH forms. A hostile id can then only ever buy itself a 503, never
+        // a settled answer, and can never take a 503 away.
+        String message = profileId == null || profileId.isBlank() ? raw
+                : raw.replace(profileId, "{id}");
         //
         // Absence the index-free read ESTABLISHED — not a retry, and not a wrong request.
         if (message.startsWith("Profile not found")
@@ -183,10 +202,7 @@ public class IngestSchedulerController {
         if (message.startsWith("Delegated authorization denied")) {
             return HttpStatus.FORBIDDEN;
         }
-        if (message.contains("retry shortly")
-                || message.contains("could not be established")
-                || message.contains("could not be read")
-                || message.contains("could not be looked up")) {
+        if (couldNotAsk(message) || couldNotAsk(raw)) {
             return HttpStatus.SERVICE_UNAVAILABLE;
         }
         // The twin-pair wording of both services, 409 here exactly as on the definition APIs.
@@ -195,6 +211,14 @@ public class IngestSchedulerController {
             return HttpStatus.CONFLICT;
         }
         return HttpStatus.BAD_REQUEST;
+    }
+
+    /** The vocabulary that means "this node could not ask", wherever it appears. */
+    private static boolean couldNotAsk(String message) {
+        return message.contains("retry shortly")
+                || message.contains("could not be established")
+                || message.contains("could not be read")
+                || message.contains("could not be looked up");
     }
 
     @PostMapping("/idle/stop/{profileId}")
@@ -206,7 +230,7 @@ public class IngestSchedulerController {
             response.put("status", "error");
             response.put("message", error);
             // Same classifier as the start: an unwired node is not a bad request here either.
-            return ResponseEntity.status(statusOfIdleRefusal(error)).body(response);
+            return ResponseEntity.status(statusOfIdleRefusal(error, profileId)).body(response);
         }
         response.put("status", "success");
         response.put("message", "IMAP IDLE stopped for " + profileId);

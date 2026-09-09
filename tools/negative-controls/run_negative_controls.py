@@ -5608,7 +5608,7 @@ CONTROLS = [
              "request again",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java',
         find='            // Same classifier as the start: an unwired node is not a bad request here either.\n'
-             '            return ResponseEntity.status(statusOfIdleRefusal(error)).body(response);\n',
+             '            return ResponseEntity.status(statusOfIdleRefusal(error, profileId)).body(response);\n',
         replace='            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);\n',
         test='IngestSchedulerControllerAnswerTest',
         # The second name is from the measurement: that lock drives the stop endpoint too.
@@ -5736,6 +5736,64 @@ CONTROLS = [
                 '    /** A connector whose stored row cannot say which flow the request belongs to. */\n',
         test='ExternalIngestControllerGateTest',
         expect_fail=['theRefusalAnswersTheEndpointsOwnDocument'],
+    ),
+    dict(
+        id="RK2",
+        what="the IDLE classifier reads the caller's profileId again, so a hostile id can buy "
+             "a settled answer or take a 503 away",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java',
+        find='        String message = profileId == null || profileId.isBlank() ? raw\n'
+             '                : raw.replace(profileId, "{id}");\n',
+        replace='        String message = raw;\n',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['absenceAfterTheFactIsA404AndTheIdCannotSteerTheStatus'],
+    ),
+    dict(
+        id="RL2",
+        what="GET /status throws away the scheduled list it had read when the idle listing "
+             "refuses",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java',
+        find='        try {\n'
+             '            response.put("idleProfiles", schedulerService.getIdleProfiles());\n'
+             '        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException couldNotAsk) {\n'
+             '            response.put("idleProfilesUnavailable", couldNotAsk.getMessage());\n'
+             '        }\n',
+        replace='        response.put("idleProfiles", schedulerService.getIdleProfiles());\n',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['theStatusEndpointDoesNotLoseWhatItAlreadyHas'],
+    ),
+    dict(
+        id="RM2",
+        what="a delegated attempt refused inside the AUTHORIZATION GATE leaves no audit entry "
+             "again — the half the previous round's fix and its javadoc both missed",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='            } catch (RuntimeException refused) {\n'
+             '                // The gate READS the connector too, and get() rethrows when the deterministic\n',
+        replace='            } catch (RuntimeException refused) {\n'
+                '                if (true) throw refused;\n'
+                '                // The gate READS the connector too, and get() rethrows when the deterministic\n',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['aDelegatedIngestRefusedInsideTheGateIsAlsoAudited'],
+    ),
+    dict(
+        id="RN2",
+        what="the monitor stops writing the prefix the endpoint's 404 arm reads, so an absent "
+             "profile is a malformed request again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='            return new LiveLoad(null, null, "Profile not found: " + profileId);\n',
+        replace='            return new LiveLoad(null, null, "no such import profile: " + profileId);\n',
+        test='ImapIdleMonitorWiringTest',
+        expect_fail=['theStatusArmsAreCoupledToTheProductsWording'],
+    ),
+    dict(
+        id="RO2",
+        what="the monitor stops writing the prefix the endpoint's 403 arm reads, so an "
+             "authorisation denial is a malformed request again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='                return "Delegated authorization denied for profile " + profileId\n',
+        replace='                return "delegation refused for profile " + profileId\n',
+        test='ImapIdleMonitorWiringTest',
+        expect_fail=['theStatusArmsAreCoupledToTheProductsWording'],
     ),
 ]
 

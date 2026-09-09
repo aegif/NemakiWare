@@ -250,7 +250,7 @@ class IngestSchedulerControllerAnswerTest {
                         + " this node; retry shortly against a node that runs it"),
                 "an unwired scheduler was answered as a malformed request");
         assertEquals(HttpStatus.FORBIDDEN, startIdleAnswering(
-                "Delegated authorization denied for profile p1 (CREATOR_INACTIVE)"),
+                "Delegated authorization denied for profile p1 (CREATOR_USER_INACTIVE)"),
                 "an authorisation denial was answered as a malformed request");
     }
 
@@ -262,12 +262,28 @@ class IngestSchedulerControllerAnswerTest {
                 "import profile p1 no longer has a row in repository bedroom;"
                         + " IDLE not started"),
                 "an absence established after registration was answered as a bad request");
-        // Every message here embeds the caller's own profileId, and the substring arms were
-        // tested first — so an admin could ask to start a profile NAMED "foo retry shortly"
-        // and be told 503. A review found it. The prefix-anchored arms now decide first.
-        assertEquals(HttpStatus.NOT_FOUND, startIdleAnswering(
+        // Every message here embeds the caller's own profileId, so the caller can write the
+        // markers this classifier reads. Anchoring the arms at the start was the first
+        // answer and a review showed it was not enough, in BOTH directions. The id is now
+        // taken out of the text before the settled-answer arms are tested, and the
+        // could-not-ask arm is tested against the text with and without it.
+        assertEquals(HttpStatus.NOT_FOUND, statusFor("foo retry shortly",
                 "Profile not found: foo retry shortly"),
-                "the profileId in the message chose the status");
+                "an id carrying a retry marker took a settled 404 away");
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, statusFor(
+                " no longer has a row in repository ",
+                "import profile  no longer has a row in repository  could not be looked up:"
+                        + " no profile service is wired on this node; IDLE not started"),
+                "an id shaped like the 404 arm turned an unwired node into 'it is not there'");
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, statusFor("could not be read",
+                "connector c-1 exists but could not be read; retry shortly"),
+                "an id that spells a marker took the 503 away");
+    }
+
+    /** The refusal a monitor would build for {@code profileId}, through the real endpoint. */
+    private HttpStatus statusFor(String profileId, String refusal) {
+        when(schedulerService.startIdle(profileId)).thenReturn(refusal);
+        return (HttpStatus) controller.startIdle(profileId).getStatusCode();
     }
 
     @Test
@@ -282,5 +298,35 @@ class IngestSchedulerControllerAnswerTest {
                 "a node that cannot run IDLE answered 'no session is running'");
         assertTrue(refused.getMessage().contains("not wired on this node"),
                 "the refusal does not say what is wrong: " + refused.getMessage());
+    }
+
+    @Test
+    @DisplayName("GET /status keeps the part it established when the idle listing refuses")
+    void theStatusEndpointDoesNotLoseWhatItAlreadyHas() {
+        // Making the idle listing refuse turned this whole endpoint into a 503, discarding a
+        // scheduled list that HAD been read. Over-throwing, which this batch counts the same
+        // as a fail-open. A review found it in the round that introduced it.
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setRepositoryId("bedroom");
+        when(schedulerService.getScheduledProfiles()).thenReturn(java.util.List.of(profile));
+        when(schedulerService.getIdleProfiles()).thenThrow(
+                new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(
+                        "the IMAP IDLE monitor is not wired on this node"));
+
+        // assertDoesNotThrow: the regression under measurement IS the exception leaving the
+        // endpoint, and a lock that dies on it reads as "harness broken" to the control
+        // runner rather than as a firing. The runner said exactly that.
+        ResponseEntity<Map<String, Object>> res = assertDoesNotThrow(controller::getStatus,
+                "the idle listing's refusal took the whole endpoint down with it");
+
+        assertEquals(HttpStatus.OK, res.getStatusCode(),
+                "a scheduled list that was read was thrown away with the part that was not");
+        Map<String, Object> body = res.getBody();
+        assertNotNull(body);
+        assertEquals(1, body.get("count"), "the part that WAS established went missing");
+        assertNull(body.get("idleProfiles"), "a listing that refused answered a list anyway");
+        assertNotNull(body.get("idleProfilesUnavailable"),
+                "the part that could not be answered said nothing: " + body);
     }
 }

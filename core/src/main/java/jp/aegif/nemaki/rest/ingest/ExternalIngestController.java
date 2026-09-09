@@ -147,7 +147,20 @@ public class ExternalIngestController {
         }
         if (!ingestAuthorizationService.isAdmin(callContext)) {
             delegatedRequest = true;
-            Denial denial = enforceDelegatedExecution(callContext, repositoryId, request);
+            Denial denial;
+            try {
+                denial = enforceDelegatedExecution(callContext, repositoryId, request);
+            } catch (RuntimeException refused) {
+                // The gate READS the connector too, and get() rethrows when the deterministic
+                // id holds another document — so a delegated attempt refused inside the gate
+                // left no audit entry at all. The previous round audited the dispatch's
+                // refusals and then wrote, in this class's javadoc and in the release notes,
+                // that every outcome is recorded. It was not: a review found the gate's two
+                // reads outside the catch. Audited here, then rethrown for the handler.
+                auditDelegatedAttempt(callContext, repositoryId, request, false,
+                        refused.getMessage(), DenialReason.SERVICES_UNAVAILABLE);
+                throw refused;
+            }
             if (denial != null) {
                 auditDelegatedAttempt(callContext, repositoryId, request, false,
                         denial.message(), denial.reason());

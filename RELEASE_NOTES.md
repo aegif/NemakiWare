@@ -160,6 +160,8 @@ only repository gotchas.
     **停止するセッションが無い**など、設定や要求そのものの問題
   - `GET .../idle/status` も、monitor が配線されていないノードでは **503** です (従来は
     空の一覧を返していました。「動いていない」と「このノードでは答えられない」は別です)
+  - `GET .../status` は、この状態でも **200** のままです。スケジュール一覧は読めているので、
+    答え全体を落とさず `idleProfiles` の代わりに `idleProfilesUnavailable` に理由を入れます
 - **チェックポイントの一括リセットが「全部消した」と答えなくなりました。**
   `DELETE /core/api/v1/admin/ingest-scheduler/checkpoint/{profileId}` (scope 無し) が消せるのは、
   そのプロファイルの定義行から鍵を組み立てられた分だけです。定義行が読めなかった場合
