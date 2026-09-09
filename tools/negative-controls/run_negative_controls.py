@@ -31,11 +31,19 @@ Rules learned the hard way, encoded here:
 Usage:
     python3 tools/negative-controls/run_negative_controls.py            # all
     python3 tools/negative-controls/run_negative_controls.py FE GG      # subset
-Exit code 0 = every control fired, every control's expect_fail is complete (no lock
-failed undeclared on its own assertion), and the tree was restored to green. A non-zero
-exit therefore means one of THREE things — a control did not fire, a control fired for
-the wrong reason, or a control's record of what it removes is incomplete — and the last
-line of the run says which.
+Exit code 0 from a measuring run = every control IT RAN fired, each on its own
+assertion; no lock failed under a control without being declared; every failure line was
+readable; and the tree was restored to green. A subset run says so in its own summary, and
+its 0 covers only the controls it names. `--self-test` and `--compile-check` measure no
+control at all and have their own 0.
+
+A non-zero exit is NOT one thing. It can mean a control did not fire, fired for the wrong
+reason, or removes more protections than its record says; it can equally mean NOTHING WAS
+MEASURED — the pre-flight refused (self-test, a stale expect_fail, a drifted anchor, an
+unknown id), a Maven run produced no reports, a sabotage no longer applies, the tree was
+edited under the run so a restore was refused, or the restored tree did not come back
+green. The last line printed says which; do not read a non-zero exit as "a protection is
+missing" without it.
 """
 
 import subprocess
@@ -5483,6 +5491,10 @@ def _delimiter_delta(span: str) -> tuple:
 # Printed at the end of a run; see the call site for why the run reports this rather than a
 # reviewer deriving it.
 UNDECLARED: list = []
+# [control id, [lines]] for failure lines whose method this runner could not read. A hole in
+# the reader, not in the protections — but it makes the undeclared report incomplete without
+# saying so, which is the shape of defect that took four rounds to find last time.
+PARSE_GAPS: list = []
 
 
 def failed_method_names(failed: str) -> list:
@@ -5511,26 +5523,74 @@ def failed_method_names(failed: str) -> list:
     """
     names = []
     for line in failed.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        head = stripped.split(" -- ")[0].strip()
-        if "(" in head:
-            # Surefire 2.x: "method(Class)".
-            name, parent = head.split("(", 1)[0].strip(), "Class"
-        else:
-            parts = head.rsplit(".", 1)
-            if len(parts) != 2:
-                continue
-            parent, name = parts[0].rsplit(".", 1)[-1], parts[1]
-        # A parameterised invocation adds "[1]" or "[1] name"; the lock is the method.
-        name = name.split("[", 1)[0].strip()
-        if not re.fullmatch(r"[A-Za-z_$][\w$]*", name):
-            continue
-        if not re.match(r"[A-Z]", parent):
-            continue
-        names.append(name)
+        name = failure_line_method(line)
+        if name:
+            names.append(name)
     return names
+
+
+def failure_line_method(line: str):
+    """One failure line's method name, or None when the line names no method.
+
+    Kept separate so the caller can tell "this line has no method in it" (the per-class
+    summary) from "this line has one and we could not read it", which is a defect and is
+    reported rather than dropped — every other judgement in this runner refuses loudly, and
+    four rounds running this one failed silently instead.
+    """
+    stripped = line.strip()
+    if not stripped:
+        return None
+    head = stripped.split(" -- ")[0].strip()
+    if "(" in head:
+        before_paren = head.split("(", 1)[0]
+        if "." in before_paren:
+            # Surefire 3.x with a method that TAKES ARGUMENTS: "<FQCN>.method(Type)", and
+            # "<FQCN>.method(Type)[1]" when parameterised. Reading every parenthesised line as
+            # the 2.x shape dropped all of them — this tree has such a class, used by eleven
+            # controls, so the undeclared report was structurally blind there. A review found
+            # it with the reports in hand.
+            parent, name = before_paren.rsplit(".", 2)[-2:]
+        else:
+            # Surefire 2.x: "method(Class)". No dot before the paren is what tells them apart.
+            name, parent = before_paren.strip(), "Class"
+    else:
+        parts = head.rsplit(".", 1)
+        if len(parts) != 2:
+            return None
+        parent, name = parts[0].rsplit(".", 1)[-1], parts[1]
+    # No index to strip: a parameterised invocation's "[1]" follows the ARGUMENT LIST
+    # ("method(String)[1]"), so it is already gone with everything after the paren. A version
+    # of this reader carried a name.split("[") here with a self-test for "method[1]" — a shape
+    # surefire does not emit in this tree, so the strip protected nothing and its case
+    # discriminated nothing. Measured and removed rather than left as decoration.
+    if not re.fullmatch(r"[A-Za-z_$][\w$]*", name):
+        return None
+    # A method's parent is a class, a class's parent is a package: the capital tells a
+    # CLASS-LEVEL failure line from a method's. A CONVENTION, not a law. Checked against this
+    # tree when the rule went in: core/src/test declares no class whose name starts lower-case.
+    # If it is ever broken, the lock drops out of the undeclared report — and because a
+    # dropped line is reported as unreadable (below), that shows up rather than reading as
+    # "nothing undeclared".
+    if not re.match(r"[A-Z]", parent):
+        return None
+    return name
+
+
+def unreadable_failure_lines(failed: str) -> list:
+    """Failure lines that name a test but whose method this runner could not read.
+
+    The per-class summary ("Tests run: ...") names no method by construction and is not one.
+    Anything else that carries a failure marker and yields no name is a hole in the reader,
+    and the runner says so instead of counting zero undeclared locks.
+    """
+    gaps = []
+    for line in failed.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("Tests run:"):
+            continue
+        if failure_line_method(stripped) is None:
+            gaps.append(stripped)
+    return gaps
 
 
 def run_test(test_class: str) -> tuple[bool, str, str]:
@@ -5693,14 +5753,33 @@ SELF_TEST_CASES = [
      lambda: failed_method_names(
          "jp.aegif.nemaki.rest.ingest.SomeTest.some$Lock -- Time elapsed: 0.1 s <<< FAILURE!"),
      ["some$Lock"]),
-    ("a parameterised invocation names its method",
+    # The two shapes below are copied from this tree's own reports, not invented: a method
+    # that TAKES ARGUMENTS is reported with them, and a parameterised one adds the index after
+    # the parens. The first version of this case used "someLock[1]", which surefire does not
+    # emit here — measuring a substitute for the shape it claimed to measure.
+    ("a method that takes arguments is still a lock (this tree's real shape)",
      lambda: failed_method_names(
-         "jp.aegif.nemaki.rest.ingest.SomeTest.someLock[1] -- Time elapsed: 0.1 s <<< FAILURE!"),
-     ["someLock"]),
-    ("a nested class's method is still a lock",
+         "jp.aegif.nemaki.rest.importexport.ExportsRefuseMissingBytesTest"
+         ".aRefusedDocumentLeavesNoFile(Path) -- Time elapsed: 0.1 s <<< FAILURE!"),
+     ["aRefusedDocumentLeavesNoFile"]),
+    ("a parameterised invocation names its method (this tree's real shape)",
+     lambda: failed_method_names(
+         "jp.aegif.nemaki.util.UrlValidatorTest"
+         ".testLinkLocalAllowedInSetupOnAllowedPort(String)[1] -- Time elapsed: 0.1 s <<< FAILURE!"),
+     ["testLinkLocalAllowedInSetupOnAllowedPort"]),
+    # A POSITIVE control: no protection added here makes it red, and it is not counted among
+    # the ones that do. It guards the shape against a future reader that splits on the first
+    # dot or the last dollar.
+    ("a nested class's method is still a lock (positive control)",
      lambda: failed_method_names(
          "jp.aegif.nemaki.rest.ingest.Outer$Nested.someLock -- Time elapsed: 0.1 s <<< FAILURE!"),
      ["someLock"]),
+    ("a failure line whose method cannot be read is REPORTED, not dropped",
+     lambda: unreadable_failure_lines(
+         "?? -- Time elapsed: 0.1 s <<< FAILURE!\n"
+         "Tests run: 1, Failures: 1 <<< FAILURE! -- in jp.aegif.SomeTest\n"
+         "jp.aegif.SomeTest.someLock -- Time elapsed: 0.1 s <<< FAILURE!"),
+     ["?? -- Time elapsed: 0.1 s <<< FAILURE!"]),
     ("the older parenthesised shape still yields the method name",
      lambda: failed_method_names("someLock(jp.aegif.nemaki.rest.ingest.SomeTest)  Time elapsed"),
      ["someLock"]),
@@ -6087,6 +6166,11 @@ def main() -> None:
                         # with an exception under the sabotage lost its harness, which says
                         # nothing about a protection being removed. A review asked for the
                         # distinction before this list is acted on.
+                        gaps = unreadable_failure_lines(failed)
+                        if gaps:
+                            PARSE_GAPS.append((control["id"], gaps))
+                            print(f"[{control['id']}] failure lines this runner could not read"
+                                  f" (the undeclared report is incomplete here): {gaps}")
                         undeclared = sorted(
                             name for name in set(failed_method_names(failed))
                             if name not in control["expect_fail"]
@@ -6145,6 +6229,11 @@ def main() -> None:
             print(f"  {cid}: {names}")
     if fired != len(results):
         sys.exit(1)
+    if PARSE_GAPS:
+        print("\n== failure lines this runner could not read (the undeclared report above is "
+              "incomplete for these controls) ==")
+        for cid, lines in PARSE_GAPS:
+            print(f"  {cid}: {lines}")
     if UNDECLARED:
         # FATAL, after the full measurement is printed. Every control fired, so the
         # protections are there — but a control whose record says it removes two protections
@@ -6153,6 +6242,9 @@ def main() -> None:
         # the list as a note nobody has to act on.
         sys.exit("controls whose expect_fail is incomplete (the locks above failed under them "
                  "on their own assertions and are not declared)")
+    if PARSE_GAPS:
+        sys.exit("failure lines this runner could not read; the undeclared-lock report is not "
+                 "complete for the controls listed above")
 
 
 if __name__ == "__main__":
