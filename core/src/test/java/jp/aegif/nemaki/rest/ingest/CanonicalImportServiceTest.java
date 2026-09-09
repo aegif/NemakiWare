@@ -2616,11 +2616,22 @@ class CanonicalImportServiceTest {
         delegatedProfileForReCheck();
         IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
         when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(false);
+        // Every LATER gate is stubbed to PASS. Without that, deleting the confinement arm
+        // simply fell through to the cmis:all arm, which is also 403 — so the lock stayed
+        // green while the protection it names was gone. A review found all three of these
+        // measuring "some refusal, and it is 403" rather than this one.
+        when(auth.isAdmin(any())).thenReturn(false);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(true);
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
         service.setIngestAuthorizationService(auth);
 
         ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
 
         assertFalse(result.isSuccess(), "the confinement did not refuse");
+        assertTrue(result.errors().get(0).contains("not the repository this caller authenticated"),
+                "a different refusal fired, so this lock is not measuring the confinement: "
+                        + result.errors());
         assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
                 ExternalIngestController.classifyErrorStatus(result),
                 "the gate answers 403 (PROFILE_REPO_MISMATCH) for this state; this door said "
@@ -2634,11 +2645,19 @@ class CanonicalImportServiceTest {
         when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
         when(auth.isAdmin(any())).thenReturn(false);
         when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(false);
+        // The connector gate is stubbed to PASS so only the cmis:all arm can refuse; without
+        // it, deleting this arm fell through to the connector arm, also 403, and the lock
+        // stayed green.
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
         service.setIngestAuthorizationService(auth);
 
         ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
 
         assertFalse(result.isSuccess(), "the cmis:all re-check did not refuse");
+        assertTrue(result.errors().get(0).contains("was not held when this import ran"),
+                "a different refusal fired, so this lock is not measuring cmis:all: "
+                        + result.errors());
         // This one landed on 400 rather than 500, purely because the sentence contains
         // "is required". The 403 arm has to stay ABOVE that arm for it to stay 403.
         assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
@@ -2661,6 +2680,11 @@ class CanonicalImportServiceTest {
         ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
 
         assertFalse(result.isSuccess(), "the connector re-check did not refuse");
+        // This one is already the LAST arm, so nothing can stand in for it — but say which
+        // refusal fired anyway, so the lock keeps meaning this arm if an arm is added after.
+        assertTrue(result.errors().get(0).contains("no longer delegated"),
+                "a different refusal fired, so this lock is not measuring the connector "
+                        + "re-check: " + result.errors());
         assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
                 ExternalIngestController.classifyErrorStatus(result),
                 "the gate answers 403 (CONNECTOR_NOT_DELEGATED) for this state; this door "
@@ -2676,9 +2700,122 @@ class CanonicalImportServiceTest {
         ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
 
         assertFalse(result.isSuccess(), "an unwired authorization service let the write run");
+        assertTrue(result.errors().get(0).contains("the authorization service is not available"),
+                "a different refusal fired, so this lock is not measuring the unwired arm: "
+                        + result.errors());
         assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
                 ExternalIngestController.classifyErrorStatus(result),
                 "the gate answers 503 (SERVICES_UNAVAILABLE) for this state; this door said "
                         + "something else: " + result.errors());
+    }
+
+    // ---- the three statuses that were 500 on master and stayed 500 through this branch ----
+    //
+    // Same shape as the four above and measured the same way: drive the REAL message out of
+    // execute() and hand it to the REAL classifier. Two reviewers found these while checking
+    // the four; each is a condition the product had already classified correctly for itself
+    // and then answered 500 for.
+
+    private ImportProfileDefinition plainProfileReachingTheWrite() {
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        when(profileService.get("p1")).thenReturn(profile);
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+        return profile;
+    }
+
+    @Test
+    void aTransientStoreFailureDuringTheWrite_is503NotAServerError() {
+        plainProfileReachingTheWrite();
+        // isTransientError() reads "Read timed out" as retryable and the product marks the
+        // message "[transient] ". That verdict was then thrown away at the door.
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                isNull(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenThrow(new RuntimeException("Read timed out"));
+
+        ExternalIngestRequest req = requestForReCheck();
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(), "the write did not fail");
+        assertTrue(result.errors().get(0).contains("[transient]"),
+                "the product no longer marks its own verdict, so the arm below keys on "
+                        + "nothing: " + result.errors());
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                ExternalIngestController.classifyErrorStatus(result),
+                "a condition the product itself called transient was answered as our bug: "
+                        + result.errors());
+    }
+
+    @Test
+    void aPermissionDeniedDuringTheWrite_is403NotAServerError() {
+        plainProfileReachingTheWrite();
+        // The THIRD checkpoint: the CMIS ACL evaluation inside the write. Revoking cmis:all
+        // one millisecond after the re-check landed here, and it answered 500 where both
+        // earlier checkpoints answer 403.
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                isNull(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenThrow(new org.apache.chemistry.opencmis.commons.exceptions
+                        .CmisPermissionDeniedException(
+                                "Permission Denied! repositoryId=bedroom key=cmis:all"));
+
+        ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
+
+        assertFalse(result.isSuccess(), "the denied write reported success");
+        assertTrue(result.errors().get(0).toLowerCase().contains("permission denied"),
+                "a different refusal fired, so this lock is not measuring the write's own "
+                        + "ACL evaluation: " + result.errors());
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
+                ExternalIngestController.classifyErrorStatus(result),
+                "a permission denial was answered as our bug: " + result.errors());
+    }
+
+    @Test
+    void aFailedProfileReadWhoseCauseSaysNotFound_isStill503NotA404() {
+        // The 503 arm sits ABOVE the 404 arm, and that ordering is load-bearing: ten of these
+        // wrappers splice a FOREIGN e.getMessage() in after "retry shortly", so a store error
+        // that happens to say "not found" carries both tokens. Swap the two arms and a read
+        // that FAILED answers 404 — "there is no such profile" — which is the exact defect
+        // this whole batch is about. A review found the ordering measured on the 403/400 pair
+        // and not on this one.
+        doThrow(new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(
+                        "the design document was not found on this node"))
+                .when(profileService).getForRepository("p1", "bedroom");
+
+        ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
+
+        assertFalse(result.isSuccess(), "a failed profile read was treated as a resolution");
+        String said = result.errors().get(0);
+        assertTrue(said.contains("retry shortly"), "the retry marker is gone: " + said);
+        assertTrue(said.toLowerCase().contains("not found"),
+                "this lock needs BOTH tokens present to measure the ordering; the cause's "
+                        + "wording no longer reaches the caller: " + said);
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                ExternalIngestController.classifyErrorStatus(result),
+                "a read that could not answer was reported as an absence: " + said);
+    }
+
+    @Test
+    void aMetadataPayloadOverTheCap_is400NotAServerError() {
+        plainProfileReachingTheWrite();
+        ExternalIngestRequest req = requestForReCheck();
+        req.setMetadata(Map.of("blob", "x".repeat(1_100_000)));
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(), "the oversized metadata was accepted");
+        assertTrue(result.errors().get(0).contains("exceeds max size"),
+                "a different refusal fired: " + result.errors());
+        // The SAME endpoint answers 400 for the sibling mistake one layer up ("File exceeds
+        // maximum size (100MB)"). One door, one answer for "your request was too big".
+        assertEquals(org.springframework.http.HttpStatus.BAD_REQUEST,
+                ExternalIngestController.classifyErrorStatus(result),
+                "a caller mistake was answered as our bug: " + result.errors());
     }
 }

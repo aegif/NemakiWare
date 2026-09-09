@@ -169,7 +169,9 @@ public class IngestJobService {
             // found the regression in the round that introduced it. Merging with "no previous
             // entry" is the same thing the old swallow did, and the upsert repairs the row.
             IngestDeadLetterRecord existing;
-            boolean earlierPayloadIsStillAttached = false;
+            // Tri-state on purpose: TRUE = the stored row carries a payload, FALSE = it was
+            // read and carries none, null = the question could not be asked.
+            Boolean earlierPayloadIsStillAttached = Boolean.FALSE;
             try {
                 existing = getDlqEntry(dlqId);
             } catch (DlqEntryUnreadableException couldNotRead) {
@@ -207,11 +209,26 @@ public class IngestJobService {
             // by the import that has already run). That must not be read as "this item has no
             // payload" — the earlier attempt's payload is still attached and still the thing a
             // retry needs.
+            boolean presenceCouldNotBeEstablished = earlierPayloadIsStillAttached == null;
             boolean keptEarlierPayload = payload == null
                     && ((existing != null && existing.isHasContent())
-                            || earlierPayloadIsStillAttached);
+                            || Boolean.TRUE.equals(earlierPayloadIsStillAttached)
+                            // Could not ask -> assume there IS one. Wrong in this direction
+                            // costs a retry that refuses (409/CONFLICT) and keeps the row;
+                            // wrong in the other direction loses the payload silently.
+                            || presenceCouldNotBeEstablished);
             dlq.setHasContent(payload != null || keptEarlierPayload);
-            dlq.setPayloadDropReason(payload == null && !keptEarlierPayload ? dropReason : null);
+            String whyNoPayload = payload == null && !keptEarlierPayload ? dropReason : null;
+            if (payload == null && presenceCouldNotBeEstablished) {
+                // hasContent is TRUE above, and it may be wrong. Say that it is an assumption
+                // rather than something a read established, or the row asserts a payload
+                // nothing checked — and the reason this attempt stored no bytes would be
+                // dropped along with it.
+                whyNoPayload = (dropReason == null ? "" : dropReason + "; ")
+                        + "whether the stored entry still carries its payload could not be"
+                        + " established, so this row assumes it does";
+            }
+            dlq.setPayloadDropReason(whyNoPayload);
             @SuppressWarnings("unchecked")
             Map<String, Object> jsonMap = MAPPER.convertValue(dlq, Map.class);
             String docId = upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE, jsonMap);
@@ -371,11 +388,17 @@ public class IngestJobService {
      * <p>Used only when the typed read refused: the merge below must not conclude "this item
      * has no payload" from a row it could not decode, because the upsert carries the
      * attachment forward and the retry then imports content-less and deletes the row.
-     * Answers false when the question itself cannot be asked, which is the same value as
-     * "no attachment" — that is a known limit of this arm, and the loud one (clearing a
-     * payload that IS there) is the one it removes.
+     *
+     * <p>Returns {@code null} when the question itself could not be asked. It used to return
+     * {@code false} there — the same value as an answered "no attachment" — and its javadoc
+     * recorded that as a known limit rather than fixing it. A review pointed out the limit is
+     * the very loss chain this method was added to close, only reached through a failed raw
+     * read instead of a failed typed one: the row then says {@code hasContent=false} while the
+     * upsert carries the physical attachment forward, and the next retry imports content-less
+     * and deletes the row. The caller resolves {@code null} by ASSUMING a payload is there,
+     * which is the harmless direction — the retry refuses with 409/503 and KEEPS the row.
      */
-    private boolean storedDocumentHasAttachment(String dlqId) {
+    private Boolean storedDocumentHasAttachment(String dlqId) {
         try {
             CloudantClientWrapper client = getConfClient();
             List<Document> raw = findRawDocs(client.getClient(), client.getDatabaseName(),
@@ -385,7 +408,7 @@ public class IngestJobService {
         } catch (RuntimeException couldNotAsk) {
             logger.warn("whether the stored DLQ row for {} still carries its payload could not"
                     + " be established: {}", dlqId, couldNotAsk.getMessage());
-            return false;
+            return null;
         }
     }
 

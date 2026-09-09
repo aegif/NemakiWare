@@ -3914,8 +3914,24 @@ CONTROLS = [
         find='        if (profile == null || !profile.isDelegated()) {',
         replace='        if (true) {',
         test='CanonicalImportServiceTest',
+        # The list below is the MEASURED one, not a derived one. Four rounds in a row a
+        # lock added in the same commit as its own control was left out of an OLDER
+        # control's list; a review found this batch's three, and the count it derived
+        # by reading (~9 for VF) was short of what the run reported (12).
         expect_fail=['testDelegatedImportReAsksTheAuthorizationAtTheWrite',
-                     'testDelegatedImportRefusesWhenTheAuthorizationIsNotWired'],
+                     'testDelegatedImportRefusesWhenTheAuthorizationIsNotWired',
+                     'aWriteInAnotherRepositoryThanTheCallerAuthenticatedIn_is403NotAServerError',
+                     'aWriteWhoseAuthorizationServiceIsNotWired_is503NotAServerError',
+                     'aWriteWithARevokedConnectorDelegation_is403NotAServerError',
+                     'aWriteWithoutCmisAllOnTheTargetFolder_is403NotABadRequest',
+                     'testARevokeDuringTheDedupeReadStillStopsTheWrite',
+                     'testARevokeDuringTheRelationshipListingStillStopsTheWrite',
+                     'testARevokedDelegationStopsTheRelationshipCreation',
+                     'testAnAdministratorOfAnotherRepositoryIsStillRefused',
+                     'testAnImportWithNoContentStreamIsAlsoReChecked',
+                     'testDelegatedImportReAsksTheConnectorDelegation',
+                     'testDelegatedImportWithNoCallerIsRefused',
+                     'testTheDelegationIsReAskedAfterTheContentIsRead'],
     ),
     dict(
         id="VG",
@@ -3933,7 +3949,10 @@ CONTROLS = [
                    '                            : "the authorization service is not available"));\n        }'),
         replace='        if (ingestAuthorizationService == null || callContext == null) {\n            return null;\n        }',
         test='CanonicalImportServiceTest',
-        expect_fail=['testDelegatedImportRefusesWhenTheAuthorizationIsNotWired'],
+        # Measured, not derived — see the note on VF.
+        expect_fail=['testDelegatedImportRefusesWhenTheAuthorizationIsNotWired',
+                     'aWriteWhoseAuthorizationServiceIsNotWired_is503NotAServerError',
+                     'testDelegatedImportWithNoCallerIsRefused'],
     ),
     dict(
         id="VH",
@@ -3996,7 +4015,9 @@ CONTROLS = [
                    '                    + " caller and target folder");\n        }'),
         replace='',
         test='CanonicalImportServiceTest',
-        expect_fail=['testDelegatedImportReAsksTheConnectorDelegation'],
+        # Measured, not derived — see the note on VF.
+        expect_fail=['testDelegatedImportReAsksTheConnectorDelegation',
+                     'aWriteWithARevokedConnectorDelegation_is403NotAServerError'],
     ),
     dict(
         id="VN",
@@ -6192,8 +6213,10 @@ CONTROLS = [
         what="the standing-misconfiguration message matches no status arm again, so the "
              "ingest endpoint answers 500 for it",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
-        find='                || firstError.contains("fix the profile")) return HttpStatus.BAD_REQUEST;\n',
-        replace='                ) return HttpStatus.BAD_REQUEST;\n',
+        # Re-anchored: the 400 arm gained the two caller-mistake tokens, so this token is no
+        # longer the last one in the arm. Narrowed to its own line.
+        find='                || firstError.contains("fix the profile")\n',
+        replace='',
         test='ExternalIngestControllerGateTest',
         expect_fail=['aStandingProfileMisconfigurationIsA400_notARetryAndNotOurBug'],
     ),
@@ -6206,8 +6229,10 @@ CONTROLS = [
         what="the standing-misconfiguration arm is deleted, measured against the message the "
              "product actually emits rather than one the test wrote",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
-        find='                || firstError.contains("fix the profile")) return HttpStatus.BAD_REQUEST;\n',
-        replace='                ) return HttpStatus.BAD_REQUEST;\n',
+        # Re-anchored: the 400 arm gained the two caller-mistake tokens, so this token is no
+        # longer the last one in the arm. Narrowed to its own line.
+        find='                || firstError.contains("fix the profile")\n',
+        replace='',
         test='IngestEvidenceSnapshotTest',
         expect_fail=['aTargetFolderPathThatIsNotAFolderIsNotAMissingSetting'],
     ),
@@ -6235,8 +6260,10 @@ CONTROLS = [
         id="TW2",
         what="the revoked-connector refusal at the write point matches no status arm again",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
-        find='                || firstError.contains("no longer delegated")) return HttpStatus.FORBIDDEN;',
-        replace='                ) return HttpStatus.FORBIDDEN;',
+        # Re-anchored: the 403 arm gained the permission-denied token, so this token is no
+        # longer the last one in the arm. Narrowed to its own line.
+        find='                || firstError.contains("no longer delegated")\n',
+        replace='',
         test='CanonicalImportServiceTest',
         expect_fail=['aWriteWithARevokedConnectorDelegation_is403NotAServerError'],
     ),
@@ -6245,8 +6272,10 @@ CONTROLS = [
         what="an unwired authorization service at the write point is answered as a server "
              "fault instead of \"could not ask, retry\"",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
-        find='                || firstError.contains("the authorization service is not available")) {\n',
-        replace='                ) {\n',
+        # Re-anchored: the 503 arm gained the [transient] token, so the old find (which
+        # included the arm's closing brace) no longer matched. Narrowed to this token's line.
+        find='                || firstError.contains("the authorization service is not available")\n',
+        replace='',
         test='CanonicalImportServiceTest',
         expect_fail=['aWriteWhoseAuthorizationServiceIsNotWired_is503NotAServerError'],
     ),
@@ -6256,18 +6285,106 @@ CONTROLS = [
              "required\", so a denial becomes the caller\'s bad request without any message "
              "changing. The ordering is a claim the comment makes; this measures it.",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
-        find_span=('        if (firstError.contains("not allowed") || firstError.contains("scoped to repository")',
-                   '                || firstError.contains("fix the profile")) return HttpStatus.BAD_REQUEST;'),
-        replace='        if (firstError.contains("disabled") || firstError.contains("is required")\n'
-                '                || firstError.contains("no resolvable")\n'
-                '                || firstError.contains("fix the profile")) return HttpStatus.BAD_REQUEST;\n'
-                '        if (firstError.contains("not allowed") || firstError.contains("scoped to repository")\n'
-                '                || firstError.contains("repository mismatch")\n'
-                '                || firstError.contains("not the repository this caller authenticated")\n'
-                '                || firstError.contains("was not held when this import ran")\n'
-                '                || firstError.contains("no longer delegated")) return HttpStatus.FORBIDDEN;',
+        # Rewritten: the first version re-emitted BOTH arms' token lists literally, so a token
+        # added to the product's 403 arm later would have been silently deleted by this
+        # sabotage while the anchors still matched — the control would have drifted from
+        # measuring ORDER to measuring token removal. A review found it. Inserting one 400
+        # check above the 403 arm says "the 400 arm is first" and copies nothing.
+        find='        if (firstError.contains("not allowed") || firstError.contains("scoped to repository")\n',
+        replace='        if (firstError.contains("is required")) return HttpStatus.BAD_REQUEST;\n'
+                '        if (firstError.contains("not allowed") || firstError.contains("scoped to repository")\n',
         test='CanonicalImportServiceTest',
         expect_fail=['aWriteWithoutCmisAllOnTheTargetFolder_is403NotABadRequest'],
+    ),
+    dict(
+        id="UA2",
+        what="a REFUSED DLQ retry goes back to answering 200 \'failed\' with a retryCount — "
+             "an authorisation refusal told the operator to try again, forever",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find_span=('                HttpStatus refusal = ExternalIngestController.classifyErrorStatus(result);',
+                   '                            + "; the entry is kept and nothing was imported");\n                }'),
+        replace='',
+        test='DlqRetryRefusalStatusTest',
+        expect_fail=['aRefusedRetryIsNotAnswered200'],
+    ),
+    dict(
+        id="UB2",
+        what="the import\'s own [transient] verdict is thrown away at the door again, so a "
+             "condition the product classified as retryable answers 500",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='                || firstError.contains("[transient] ")) {\n',
+        replace='                ) {\n',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aTransientStoreFailureDuringTheWrite_is503NotAServerError'],
+    ),
+    dict(
+        id="UC2",
+        what="the write\'s own ACL denial answers 500 again — the third checkpoint disagreeing "
+             "with the two before it",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='                || firstError.contains("permission denied")) return HttpStatus.FORBIDDEN;',
+        replace='                ) return HttpStatus.FORBIDDEN;',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aPermissionDeniedDuringTheWrite_is403NotAServerError'],
+    ),
+    dict(
+        id="UD2",
+        what="two caller mistakes answer 500 again, while the same door answers 400 for the "
+             "sibling mistake one layer up",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='                || firstError.contains("exceeds max size")\n'
+             '                || firstError.contains("invalid metadata format")) return HttpStatus.BAD_REQUEST;',
+        replace='                ) return HttpStatus.BAD_REQUEST;',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aMetadataPayloadOverTheCap_is400NotAServerError'],
+    ),
+    dict(
+        id="UE2",
+        what="the 404 arm is moved above the 503 arm — a read that FAILED with a cause saying "
+             "\'not found\' is then answered as an absence, which is this batch\'s headline "
+             "defect. The ordering was measured on the 403/400 pair and not on this one.",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='        if (firstError.contains("retry shortly") || firstError.contains("temporarily unavailable")\n',
+        replace='        if (firstError.contains("not found")) return HttpStatus.NOT_FOUND;\n'
+                '        if (firstError.contains("retry shortly") || firstError.contains("temporarily unavailable")\n',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aFailedProfileReadWhoseCauseSaysNotFound_isStill503NotA404'],
+    ),
+    dict(
+        id="UF2",
+        what="the cmis:all arm of the write-point re-authorisation is deleted. Five controls "
+             "isolated the other arms of that method and none this one; only VF, which kills "
+             "the whole method, touched it.",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find_span=('        if (!ingestAuthorizationService.canManageProfileForFolder(',
+                   '                    + " not held when this import ran");\n        }'),
+        replace='',
+        test='CanonicalImportServiceTest',
+        # Measured. The six beyond the first are the locks that reach this arm through the
+        # other two call sites of the method (the dedupe read, the relationship listing and
+        # the link creation), which is why removing one arm reddens them all.
+        expect_fail=['aWriteWithoutCmisAllOnTheTargetFolder_is403NotABadRequest',
+                     'testARevokeDuringTheDedupeReadStillStopsTheWrite',
+                     'testARevokeDuringTheRelationshipListingStillStopsTheWrite',
+                     'testARevokedDelegationStopsTheRelationshipCreation',
+                     'testAnImportWithNoContentStreamIsAlsoReChecked',
+                     'testDelegatedImportReAsksTheAuthorizationAtTheWrite',
+                     'testTheDelegationIsReAskedAfterTheContentIsRead'],
+    ),
+    dict(
+        id="UG2",
+        # SU2's twin on the 503 side. TN runs this same sabotage, but only against
+        # ExternalIngestControllerGateTest, where the message is the test's own. Here the
+        # message is the one the PRODUCT built. Without this the 503 half of the join was
+        # measured on a hand-written string only — the exact asymmetry SU2 removed on 400.
+        what="the retry token is deleted from the status classifier, measured against the "
+             "messages the product actually emits",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='        if (firstError.contains("retry shortly") || firstError.contains("temporarily unavailable")\n',
+        replace='        if (false\n',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aTargetFolderReadThatCouldNotAnswerKeepsItsRetryMarker',
+                     'aFailedProfileReadWhoseCauseSaysNotFound_isStill503NotA404'],
     ),
     dict(
         id="ST2",

@@ -400,7 +400,16 @@ public class ExternalIngestController {
                 // message "no caller to authorise" is deliberately not listed: doIngest
                 // answers 401 before dispatching without a CallContext, so that refusal
                 // cannot arrive here, and if it ever did the 500 would be the true answer.
-                || firstError.contains("the authorization service is not available")) {
+                || firstError.contains("the authorization service is not available")
+                // The import's own verdict, not a guess about the words: execute() prefixes
+                // "[transient] " only after isTransientError() has classified the cause
+                // (socket timeout, conflict, 429/502/503/504, rate limit — with 401/403/404
+                // explicitly excluded). That verdict was then thrown away here and the same
+                // condition answered 500, while the identical store failure seen one frame
+                // earlier ("...; retry shortly") answered 503. This arm is above "not found"
+                // on purpose: a transient failure whose text happens to carry a foreign
+                // "not found" is still a retry, not an absence.
+                || firstError.contains("[transient] ")) {
             return HttpStatus.SERVICE_UNAVAILABLE;
         }
         if (firstError.contains("definition rows")
@@ -425,7 +434,13 @@ public class ExternalIngestController {
                 // third one. A review found the split.
                 || firstError.contains("not the repository this caller authenticated")
                 || firstError.contains("was not held when this import ran")
-                || firstError.contains("no longer delegated")) return HttpStatus.FORBIDDEN;
+                || firstError.contains("no longer delegated")
+                // The THIRD checkpoint. The gate refuses at the door, the write point
+                // re-asks, and the CMIS ACL evaluation inside the write refuses last —
+                // CmisPermissionDeniedException, wrapped as "[permanent] Permission Denied!
+                // ...". Only that last one still answered 500, so revoking cmis:all one
+                // millisecond later than the re-check turned a 403 into "our bug".
+                || firstError.contains("permission denied")) return HttpStatus.FORBIDDEN;
         if (firstError.contains("disabled") || firstError.contains("is required")
                 || firstError.contains("no resolvable")
                 // A standing profile misconfiguration the read ANSWERED. Making the refusal
@@ -433,7 +448,12 @@ public class ExternalIngestController {
                 // it onto the 500 fallback below — worse than the 400 the vaguer message
                 // "no resolvable target folder" had always produced. Two reviewers measured
                 // it in the round that made the suffix conditional.
-                || firstError.contains("fix the profile")) return HttpStatus.BAD_REQUEST;
+                || firstError.contains("fix the profile")
+                // Two caller mistakes that answered 500. The same door already answers 400
+                // for the sibling mistake one layer up ("File exceeds maximum size (100MB)"),
+                // so one endpoint gave two different answers to "your request was too big".
+                || firstError.contains("exceeds max size")
+                || firstError.contains("invalid metadata format")) return HttpStatus.BAD_REQUEST;
         return HttpStatus.INTERNAL_SERVER_ERROR;
     }
 

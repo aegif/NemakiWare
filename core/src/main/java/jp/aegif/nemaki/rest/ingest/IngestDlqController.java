@@ -187,6 +187,22 @@ public class IngestDlqController {
                 response.put("status", "success");
                 response.put("objectId", result.objectId());
             } else {
+                // A PERMANENT refusal must not read as a failed attempt. "200 + failed +
+                // retryCount" says "try again"; an authorisation refusal will answer the same
+                // way forever. The branch's write-point re-authorisation made this reachable:
+                // this door is bound to the DEFAULT repository (AuthenticationFilter maps
+                // /v1/admin/* that way), the replayed request carries its ORIGINAL one, and
+                // the confinement check runs before the admin short-circuit — so replaying a
+                // delegated entry of another repository is refused every time. A review found
+                // it answering 200. The same classifier the ingest door uses decides, so the
+                // two doors cannot drift apart.
+                HttpStatus refusal = ExternalIngestController.classifyErrorStatus(result);
+                if (refusal == HttpStatus.FORBIDDEN) {
+                    return errorResponse(HttpStatus.FORBIDDEN, (result.errors() == null
+                            || result.errors().isEmpty() ? "the retry was refused"
+                                    : result.errors().get(0))
+                            + "; the entry is kept and nothing was imported");
+                }
                 response.put("status", "failed");
                 response.put("errors", result.errors());
                 response.put("retryCount", dlq.getRetryCount() + 1);
