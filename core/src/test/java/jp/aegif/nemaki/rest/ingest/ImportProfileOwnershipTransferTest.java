@@ -496,4 +496,31 @@ class ImportProfileOwnershipTransferTest {
         assertEquals(NEW_OWNER, details.get("newOwnerUserId"));
         assertEquals(FOLDER, details.get("targetFolderId"));
     }
+
+    @Test
+    void createAndUpdate_connectorRowCouldNotBeRead_is503NotUnknown() throws Exception {
+        // The OTHER half of the same split, and the one that runs most: every non-admin
+        // create and update goes through validateDelegatedConnectors. The control for the
+        // transfer site anchors 20-space-indented code and cannot reach this one, so the
+        // ledger's "measured" covered half of what it named. A review found the gap.
+        adminCtx();
+        ImportProfileDefinition def = adminOwnedProfile();
+        def.setDelegated(true);
+        when(connectorDefinitionService.get(CONN)).thenReturn(null);
+        when(connectorDefinitionService.existsIndexFree(CONN)).thenReturn(true);
+
+        java.lang.reflect.Method validate = ImportProfileDefinitionController.class
+                .getDeclaredMethod("validateDelegatedConnectors",
+                        org.apache.chemistry.opencmis.commons.server.CallContext.class,
+                        String.class, String.class, ImportProfileDefinition.class);
+        validate.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        ResponseEntity<Map<String, Object>> res = (ResponseEntity<Map<String, Object>>)
+                validate.invoke(controller, null, REPO, FOLDER, def);
+
+        assertNotNull(res, "a connector row that could not be read was accepted");
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
+                "a row that exists and could not be read was called unknown");
+        assertNotEquals("UNKNOWN_CONNECTOR", res.getBody().get("denialReason"));
+    }
 }

@@ -341,6 +341,26 @@ public class IngestJobService {
     }
 
     /** Load binary content from a DLQ CouchDB document's attachment. */
+    /** A payload this node could not read — never the same answer as "there is none". */
+    public static class DlqContentUnreadableException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        public DlqContentUnreadableException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
+    /**
+     * The stored payload, or null when the entry HAS none.
+     *
+     * <p>It used to answer null for a read that failed as well — a rotated encryption key, a
+     * ciphertext this node cannot decrypt (the refusal that exists so ciphertext is never fed
+     * to a retry), an attachment read that timed out. The caller then retried the entry with
+     * NO content, the import succeeded as metadata-only, and the DLQ row — which this class
+     * calls the only record that the source item was lost — was deleted. A review found it.
+     *
+     * @throws DlqContentUnreadableException when the entry has a payload this node could not
+     *         read. The retry must refuse rather than run content-less.
+     */
     public byte[] loadDlqContent(String dlqId) {
         try {
             CloudantClientWrapper client = getConfClient();
@@ -359,8 +379,13 @@ public class IngestJobService {
             // Check attachment size before loading to prevent OOM
             var attMeta = doc.getAttachments().get(attName);
             if (attMeta != null && attMeta.length() != null && attMeta.length() > 100L * 1024 * 1024) {
-                logger.warn("DLQ attachment too large ({} bytes) for {}, skipping", attMeta.length(), dlqId);
-                return null;
+                logger.warn("DLQ attachment too large ({} bytes) for {}", attMeta.length(), dlqId);
+                // Also not "there is none": the payload is there and this node will not load
+                // it. Retrying content-less would import an empty document and then delete
+                // the only record of the original.
+                throw new DlqContentUnreadableException("the stored payload of DLQ entry "
+                        + dlqId + " is " + attMeta.length() + " bytes, above this node's"
+                        + " 100MB limit, so it was not loaded", null);
             }
 
             var getAttOpts = new com.ibm.cloud.cloudant.v1.model.GetAttachmentOptions.Builder()
@@ -370,7 +395,8 @@ public class IngestJobService {
             }
         } catch (Exception e) {
             logger.warn("Failed to load DLQ content for {}: {}", dlqId, e.getMessage());
-            return null;
+            throw new DlqContentUnreadableException("the stored payload of DLQ entry " + dlqId
+                    + " could not be read: " + e.getMessage(), e);
         }
     }
 

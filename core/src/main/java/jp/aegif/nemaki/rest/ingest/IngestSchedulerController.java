@@ -147,9 +147,10 @@ public class IngestSchedulerController {
                 schedulerService.resolveConnectorFor(profile);
         ConnectorDefinition connector = resolution.connector();
         if (connector == null) {
-            ResponseEntity<Map<String, Object>> refusal =
-                    unresolvedConnector(profile, resolution, response);
-            if (refusal != null) return refusal;
+            // Unconditional: every arm of unresolvedConnector returns, and the earlier
+            // `if (refusal != null)` left a path where a future null would reach executeFetch
+            // with a null connector. The folder twin never had the hole.
+            return unresolvedConnector(profile, resolution, response);
         }
 
         CallContext callContext = getCallContext();
@@ -204,10 +205,6 @@ public class IngestSchedulerController {
      * monitor and the scheduler service build; a message that says nothing about any of these
      * keeps its 400.
      */
-    private static HttpStatus statusOfIdleRefusal(String error) {
-        return statusOfIdleRefusal(error, null);
-    }
-
     private static HttpStatus statusOfIdleRefusal(String error, String profileId) {
         String raw = error == null ? "" : error;
         // The caller's own profileId is interpolated into every message here, so the caller
@@ -425,19 +422,22 @@ public class IngestSchedulerController {
      * definition APIs have had this floor since the batch began; a review found the scheduler,
      * ingest, DLQ and webhook controllers without it.
      *
-     * <p>Where they come from, as of this revision. The PROFILE refusal comes from the
-     * listing behind {@code GET /status} and {@code POST /trigger/{id}}
-     * ({@code listScheduledIndexFree}), from the unwired arm of {@code getScheduledProfiles},
-     * and from {@code getIdleProfiles} on {@code GET /idle/status}. The CONNECTOR refusal no
-     * longer arrives through the per-profile resolution — {@code resolveConnectorFor} catches
-     * it and answers {@code NOT_READ} — so what remains is the archetype fallback's
-     * {@code listByArchetype}. NOT the checkpoint enumeration, which the first version of
-     * this note named: that path reads through the profile {@code get()}, and every arm of
-     * that read answers null rather than throwing.
+     * <p>Where they come from, as of this revision. The PROFILE refusal reaches here from
+     * {@code scheduledProfilesWithUnreadable} — its unwired arm, and the walk it delegates
+     * to ({@code listScheduledIndexFreeWithUnreadable}) — which both {@code GET /status} and
+     * {@code POST /trigger/{id}} read, and from {@code getIdleProfiles} on
+     * {@code GET /idle/status}. NOT from {@code getScheduledProfiles}: since the endpoints
+     * moved off it, its only caller is the poll, which catches the refusal itself. The
+     * CONNECTOR refusal does not arrive through the per-profile resolution either —
+     * {@code resolveConnectorFor} catches it and answers {@code NOT_READ} — so what remains
+     * is the archetype fallback's {@code listByArchetype}. NOT the checkpoint enumeration,
+     * which the first version of this note named: that path reads through the profile
+     * {@code get()}, and every arm of that read answers null rather than throwing.
      *
-     * <p>This paragraph has now been wrong three times, twice because the code moved under it
-     * and once because the ledger recorded a correction that was never made. Check every
-     * throw site before editing it.
+     * <p>This paragraph has now been wrong FOUR times: three because the code moved under it
+     * and once because the ledger recorded a correction that was never made. The fourth was
+     * the very commit that added the warning below. If you move a throw, edit this in the
+     * same commit.
      */
     @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
             ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})

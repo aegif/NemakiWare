@@ -141,9 +141,6 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.listByRepository(REPO)).thenReturn(List.of(profile()));
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
-        // The controller reads the RESOLUTION now, so the reason travels with the
-        // value; the old signature is kept for callers that only need the value.
         when(schedulerService.resolveConnectorFor(any())).thenReturn(
                 new IngestSchedulerService.ConnectorForProfile(connector(), null));
 
@@ -183,9 +180,6 @@ class FolderConnectorControllerTest {
         // repositories it hands back an arbitrary twin). A fixture that answers only the
         // selector leaves the controller at 404.
         when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
-        // The controller reads the RESOLUTION now, so the reason travels with the
-        // value; the old signature is kept for callers that only need the value.
         when(schedulerService.resolveConnectorFor(any())).thenReturn(
                 new IngestSchedulerService.ConnectorForProfile(connector(), null));
         when(schedulerService.executeFetch(any(), any(), any(), any()))
@@ -208,9 +202,6 @@ class FolderConnectorControllerTest {
         // repositories it hands back an arbitrary twin). A fixture that answers only the
         // selector leaves the controller at 404.
         when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
-        // The controller reads the RESOLUTION now, so the reason travels with the
-        // value; the old signature is kept for callers that only need the value.
         when(schedulerService.resolveConnectorFor(any())).thenReturn(
                 new IngestSchedulerService.ConnectorForProfile(connector(), null));
         when(schedulerService.executeFetch(any(), any(), any(), any()))
@@ -233,9 +224,6 @@ class FolderConnectorControllerTest {
         // repositories it hands back an arbitrary twin). A fixture that answers only the
         // selector leaves the controller at 404.
         when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
-        // The controller reads the RESOLUTION now, so the reason travels with the
-        // value; the old signature is kept for callers that only need the value.
         when(schedulerService.resolveConnectorFor(any())).thenReturn(
                 new IngestSchedulerService.ConnectorForProfile(connector(), null));
         when(schedulerService.executeFetch(any(), any(), any(), any()))
@@ -254,9 +242,6 @@ class FolderConnectorControllerTest {
         // repositories it hands back an arbitrary twin). A fixture that answers only the
         // selector leaves the controller at 404.
         when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
-        // The controller reads the RESOLUTION now, so the reason travels with the
-        // value; the old signature is kept for callers that only need the value.
         when(schedulerService.resolveConnectorFor(any())).thenReturn(
                 new IngestSchedulerService.ConnectorForProfile(connector(), null));
         when(schedulerService.executeFetch(any(), any(), any(), any()))
@@ -329,9 +314,6 @@ class FolderConnectorControllerTest {
         // repositories it hands back an arbitrary twin). A fixture that answers only the
         // selector leaves the controller at 404.
         when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
-        // The controller reads the RESOLUTION now, so the reason travels with the
-        // value; the old signature is kept for callers that only need the value.
         when(schedulerService.resolveConnectorFor(any())).thenReturn(
                 new IngestSchedulerService.ConnectorForProfile(connector(), null));
         when(authService.canUseConnectorForDelegatedProfile(any(), any(), any(), any()))
@@ -352,9 +334,6 @@ class FolderConnectorControllerTest {
         // repositories it hands back an arbitrary twin). A fixture that answers only the
         // selector leaves the controller at 404.
         when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
-        // The controller reads the RESOLUTION now, so the reason travels with the
-        // value; the old signature is kept for callers that only need the value.
         when(schedulerService.resolveConnectorFor(any())).thenReturn(
                 new IngestSchedulerService.ConnectorForProfile(connector(), null));
         when(schedulerService.executeFetch(any(), any(), any(), any()))
@@ -391,9 +370,6 @@ class FolderConnectorControllerTest {
         when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         ConnectorDefinition c = connector();
         c.setCredentialRef("INGEST_SLACK_TOKEN");
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(c);
-        // The controller reads the RESOLUTION now, so the reason travels with the
-        // value; the old signature is kept for callers that only need the value.
         when(schedulerService.resolveConnectorFor(any())).thenReturn(
                 new IngestSchedulerService.ConnectorForProfile(c, null));
 
@@ -414,9 +390,6 @@ class FolderConnectorControllerTest {
         // selector leaves the controller at 404.
         when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         // connector() leaves credentialRef null
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
-        // The controller reads the RESOLUTION now, so the reason travels with the
-        // value; the old signature is kept for callers that only need the value.
         when(schedulerService.resolveConnectorFor(any())).thenReturn(
                 new IngestSchedulerService.ConnectorForProfile(connector(), null));
 
@@ -439,9 +412,6 @@ class FolderConnectorControllerTest {
         ConnectorDefinition c = connector();
         // Documented credentialRef convention: ingest.* namespace.
         c.setCredentialRef("ingest.slack.sales.token");
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(c);
-        // The controller reads the RESOLUTION now, so the reason travels with the
-        // value; the old signature is kept for callers that only need the value.
         when(schedulerService.resolveConnectorFor(any())).thenReturn(
                 new IngestSchedulerService.ConnectorForProfile(c, null));
 
@@ -467,9 +437,6 @@ class FolderConnectorControllerTest {
         // a core infra key) must be refused so the endpoint can't be
         // repurposed as a general config writer.
         c.setCredentialRef("couchdb.password");
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(c);
-        // The controller reads the RESOLUTION now, so the reason travels with the
-        // value; the old signature is kept for callers that only need the value.
         when(schedulerService.resolveConnectorFor(any())).thenReturn(
                 new IngestSchedulerService.ConnectorForProfile(c, null));
 
@@ -493,9 +460,6 @@ class FolderConnectorControllerTest {
         // Not infra, but still outside the ingest.* namespace → rejected
         // (allowlist, not denylist).
         c.setCredentialRef("myapp.api.secret");
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(c);
-        // The controller reads the RESOLUTION now, so the reason travels with the
-        // value; the old signature is kept for callers that only need the value.
         when(schedulerService.resolveConnectorFor(any())).thenReturn(
                 new IngestSchedulerService.ConnectorForProfile(c, null));
 

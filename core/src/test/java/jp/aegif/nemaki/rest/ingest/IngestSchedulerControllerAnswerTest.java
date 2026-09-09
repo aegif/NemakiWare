@@ -309,8 +309,6 @@ class IngestSchedulerControllerAnswerTest {
         ImportProfileDefinition profile = new ImportProfileDefinition();
         profile.setProfileId("p1");
         profile.setRepositoryId("bedroom");
-        when(schedulerService.getScheduledProfiles()).thenReturn(java.util.List.of(profile));
-        // Both endpoints read the walk that carries the unreadable rows now.
         when(schedulerService.scheduledProfilesWithUnreadable()).thenReturn(
                 new ImportProfileDefinitionService.OwnedProfiles(
                         java.util.List.of(profile), java.util.List.of()));
@@ -396,8 +394,6 @@ class IngestSchedulerControllerAnswerTest {
     @DisplayName("the trigger endpoint answers 503 / 404 / 400 by the reason, not 400 for all")
     void theTriggerEndpointSplitsByReason() {
         ImportProfileDefinition profile = scheduledProfile();
-        when(schedulerService.getScheduledProfiles()).thenReturn(java.util.List.of(profile));
-        // Both endpoints read the walk that carries the unreadable rows now.
         when(schedulerService.scheduledProfilesWithUnreadable()).thenReturn(
                 new ImportProfileDefinitionService.OwnedProfiles(
                         java.util.List.of(profile), java.util.List.of()));
@@ -439,8 +435,6 @@ class IngestSchedulerControllerAnswerTest {
     @DisplayName("the dashboard says why a profile is not ready, and whether that is an answer")
     void theDashboardSaysWhyNotReady() {
         ImportProfileDefinition profile = scheduledProfile();
-        when(schedulerService.getScheduledProfiles()).thenReturn(java.util.List.of(profile));
-        // Both endpoints read the walk that carries the unreadable rows now.
         when(schedulerService.scheduledProfilesWithUnreadable()).thenReturn(
                 new ImportProfileDefinitionService.OwnedProfiles(
                         java.util.List.of(profile), java.util.List.of()));

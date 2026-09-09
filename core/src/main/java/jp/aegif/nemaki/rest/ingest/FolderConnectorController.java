@@ -140,8 +140,11 @@ public class FolderConnectorController {
         body.put("canWrite", canWrite || admin);
         body.put("connectors", runnable);
         if (!unresolved.isEmpty()) {
-            // Named, not counted: the caller can ask about each one and get 503 rather than
-            // reading the short list as "nothing to run here".
+            // Named, not counted: the caller can ask about each one and be told what is
+            // wrong with it, rather than reading the short list as "nothing to run here".
+            // The answer to that ask is 503 for a read that failed and 404 when the walk
+            // establishes the connector is gone — this list does no walk, so it cannot tell
+            // them apart, which is why it names rather than explains.
             body.put("connectorsUnresolved", unresolved);
         }
         return ResponseEntity.ok(body);

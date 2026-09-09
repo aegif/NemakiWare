@@ -889,8 +889,10 @@ public class IngestSchedulerService {
      *         configured and enabled, never "the schedule could not be read"
      * @throws ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException when the
      *         listing could not be answered, including when this node is not wired for it.
-     *         All three callers depend on this: the poll logs and skips, and the two
-     *         endpoints answer 503 through the controller's handler.
+     *         ONE caller depends on this now — the poll, which logs and skips. The two
+     *         endpoints moved to {@link #scheduledProfilesWithUnreadable}, which carries the
+     *         rows the walk could not read; an earlier version of this line still said
+     *         "all three callers" after that move.
      */
     public List<ImportProfileDefinition> getScheduledProfiles() {
         if (repositoryInfoMap == null || profileService == null) {
@@ -977,22 +979,10 @@ public class IngestSchedulerService {
      * are not facts about the connector at all. A review found the whole family.
      */
     public record ConnectorForProfile(ConnectorDefinition connector, Unresolved why) {
-        public boolean resolved() { return connector != null; }
         /** Whether this is a fact about the connector. The other three are "could not ask". */
         public boolean answered() {
             return why == null || why == Unresolved.NOT_USABLE || why == Unresolved.NO_CANDIDATE;
         }
-    }
-
-    /**
-     * Resolves the default connector for a scheduled profile.
-     *
-     * @return the connector to use, or null if none available. Callers that STATE something
-     *         about the result must use {@link #resolveConnectorFor} instead: this signature
-     *         cannot tell "there is no such connector" from "this node could not ask".
-     */
-    public ConnectorDefinition resolveConnectorForProfile(ImportProfileDefinition profile) {
-        return resolveConnectorFor(profile).connector();
     }
 
     /** As {@link #resolveConnectorForProfile}, saying why when it did not resolve. */

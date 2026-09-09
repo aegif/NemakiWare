@@ -143,9 +143,25 @@ public class IngestDlqController {
 
             // Restore content stream from CouchDB attachment if available
             if (dlq.isHasContent()) {
-                byte[] content = ingestJobService.loadDlqContent(dlqId);
+                // A read that could not answer must not become "this entry had nothing to
+                // restore": the retry would import a content-less document, report success,
+                // and DELETE the row that is the only record the source item was lost.
+                byte[] content;
+                try {
+                    content = ingestJobService.loadDlqContent(dlqId);
+                } catch (IngestJobService.DlqContentUnreadableException unreadable) {
+                    return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, unreadable.getMessage()
+                            + "; the entry is kept and nothing was imported");
+                }
                 if (content != null) {
                     request.setContentStream(new java.io.ByteArrayInputStream(content));
+                } else {
+                    // The record says it HAS content and the store says there is none. Not a
+                    // retry: importing without it would record an empty document as the
+                    // recovered item.
+                    return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId
+                            + " is recorded as carrying content, but no stored payload came"
+                            + " back; the entry is kept and nothing was imported");
                 }
             }
 

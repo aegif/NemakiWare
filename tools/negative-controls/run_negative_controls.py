@@ -5968,6 +5968,45 @@ CONTROLS = [
         test='IngestSchedulerControllerAnswerTest',
         expect_fail=['anUnwiredScheduledListingRefuses'],
     ),
+    dict(
+        id="SC2",
+        what="every non-admin create and update calls a connector row it could not read "
+             "'unknown' again — RW2's twin, for the site that runs most",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find='                boolean rowIsThere;\n'
+             '                try {\n'
+             '                    rowIsThere = connectorDefinitionService.existsIndexFree(cid);\n',
+        replace='                boolean rowIsThere = false;\n'
+                '                try {\n'
+                '                    rowIsThere = false && connectorDefinitionService.existsIndexFree(cid);\n',
+        test='ImportProfileOwnershipTransferTest',
+        expect_fail=['createAndUpdate_connectorRowCouldNotBeRead_is503NotUnknown'],
+    ),
+    dict(
+        id="SD2",
+        what="a DLQ payload this node could not read is answered as 'this entry had nothing "
+             "to restore', the retry runs content-less and then deletes the entry",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='            throw new DlqContentUnreadableException("the stored payload of DLQ entry " + dlqId\n'
+             '                    + " could not be read: " + e.getMessage(), e);\n',
+        replace='            return null;\n',
+        test='DlqReplayArchetypeGateTest',
+        # The SERVICE's throw. The controller lock mocks the service, so it measures the
+        # controller's arm and left this green — the pair was found by the control not firing.
+        expect_fail=['thePayloadReadRefusesRatherThanAnsweringNone'],
+    ),
+    dict(
+        id="SE2",
+        what="the DLQ retry swallows an unreadable payload again and imports the entry with "
+             "no content, then deletes the row",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find='                } catch (IngestJobService.DlqContentUnreadableException unreadable) {\n',
+        replace='                } catch (IngestJobService.DlqContentUnreadableException unreadable) {\n'
+                '                    content = null;\n'
+                '                    if (true) { /* swallowed */ } else\n',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['aRetryWhosePayloadCannotBeReadDoesNotRunContentLess'],
+    ),
 ]
 
 

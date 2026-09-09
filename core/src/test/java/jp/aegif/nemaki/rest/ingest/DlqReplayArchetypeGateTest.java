@@ -150,4 +150,73 @@ class DlqReplayArchetypeGateTest {
                 () -> controller.retryDlqEntry("d-1"),
                 "the retry swallowed a read refusal as a 500 'Retry failed'");
     }
+
+    @Test
+    @DisplayName("a retry whose stored payload cannot be read does not run content-less")
+    void aRetryWhosePayloadCannotBeReadDoesNotRunContentLess() throws Exception {
+        // loadDlqContent answered null both for "this entry has no attachment" and for a read
+        // that FAILED — a rotated key, a ciphertext this node cannot decrypt (the refusal that
+        // exists so ciphertext is never fed to a retry), a timed-out attachment read. The
+        // retry then imported the entry with NO content, the import succeeded as
+        // metadata-only, and the DLQ row — the only record that the source item was lost —
+        // was deleted. A review found it.
+        IngestDlqController controller = new IngestDlqController();
+
+        IngestJobService jobs = mock(IngestJobService.class);
+        jp.aegif.nemaki.rest.ingest.IngestDeadLetterRecord dlq =
+                new jp.aegif.nemaki.rest.ingest.IngestDeadLetterRecord();
+        dlq.setOriginalRequestJson("{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\","
+                + "\"sourceObjectId\":\"m-1\"}");
+        dlq.setHasContent(true);
+        when(jobs.getDlqEntry("d-1")).thenReturn(dlq);
+        when(jobs.reserveDlqRetry(dlq)).thenReturn(true);
+        when(jobs.loadDlqContent("d-1")).thenThrow(
+                new IngestJobService.DlqContentUnreadableException(
+                        "the stored payload of DLQ entry d-1 could not be read: bad key", null));
+
+        jakarta.servlet.http.HttpServletRequest request =
+                mock(jakarta.servlet.http.HttpServletRequest.class);
+        org.apache.chemistry.opencmis.commons.server.CallContext ctx =
+                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        when(ctx.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN))
+                .thenReturn(Boolean.TRUE);
+        when(request.getAttribute("CallContext")).thenReturn(ctx);
+
+        CanonicalImportService importService = mock(CanonicalImportService.class);
+        for (Object[] wire : new Object[][]{
+                {"ingestJobService", jobs},
+                {"connectorDefinitionService", mock(ConnectorDefinitionService.class)},
+                {"canonicalImportService", importService},
+                {"httpRequest", request}}) {
+            Field f = IngestDlqController.class.getDeclaredField((String) wire[0]);
+            f.setAccessible(true);
+            f.set(controller, wire[1]);
+        }
+
+        org.springframework.http.ResponseEntity<?> res = controller.retryDlqEntry("d-1");
+
+        org.junit.jupiter.api.Assertions.assertEquals(503, res.getStatusCode().value(),
+                "a payload that could not be read was answered as an entry with none");
+        verify(importService, never()).execute(any(), any());
+        verify(jobs, never()).deleteDlqEntry(any());
+    }
+
+    @Test
+    @DisplayName("the payload read itself refuses rather than answering 'there is none'")
+    void thePayloadReadRefusesRatherThanAnsweringNone() {
+        // The controller lock above mocks the service, so it measures the controller's arm
+        // and not the service's throw — the control on the throw stayed green, which is how
+        // the pair was found. This drives the service: with nothing wired, the read cannot
+        // answer, and "there is no payload" is not the answer.
+        IngestJobService jobs = new IngestJobService();
+
+        IngestJobService.DlqContentUnreadableException refused =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        IngestJobService.DlqContentUnreadableException.class,
+                        () -> jobs.loadDlqContent("d-1"),
+                        "a payload read that could not answer returned 'there is none'");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                refused.getMessage().contains("could not be read"),
+                "the refusal does not say what happened: " + refused.getMessage());
+    }
 }
