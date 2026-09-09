@@ -350,8 +350,11 @@ public class ImapIdleMonitor {
         try {
             conn = resolveConnector(current);
         } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+            // The refusal's own words, not a fixed sentence: this arm now also carries "the
+            // connector service is not wired on this node", for which "exists but could not
+            // be read" would assert an existence nothing established.
             return new LiveLoad(null, null, "connector " + current.getDefaultConnectorId()
-                    + " exists but could not be read; retry shortly");
+                    + " could not be read; retry shortly: " + e.getMessage());
         }
         String askedConnectorId = current.getDefaultConnectorId();
         if (conn != null && askedConnectorId != null
@@ -451,7 +454,16 @@ public class ImapIdleMonitor {
 
     /** Resolve the connector for a profile. */
     private ConnectorDefinition resolveConnector(ImportProfileDefinition profile) {
-        if (connectorService == null) return null;
+        if (connectorService == null) {
+            // Answering null here reaches "No connector for profile", which the endpoint
+            // classifies 400 — the request blamed for the deployment. The profile-service
+            // arm of this same class was corrected for that shape two rounds ago; this one
+            // was left behind. A review found it.
+            throw new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                    "the connector service is not wired on this node, so the profile's"
+                            + " connector could not be read; retry shortly against a node"
+                            + " that runs it");
+        }
         String connId = profile.getDefaultConnectorId();
         if (connId != null) return connectorService.get(connId);
         return null;

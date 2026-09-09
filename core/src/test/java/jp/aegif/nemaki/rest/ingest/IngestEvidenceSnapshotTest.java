@@ -173,6 +173,14 @@ class IngestEvidenceSnapshotTest {
         // the code that CHOOSES, which is where every previous version of this logic was wrong
         // (external review): metadata-only and no-change updates retain their attachment.
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to
+        // create one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolder =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolder.getChildren(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolder);
         // A delegated import re-asks cmis:all against the folder it actually writes into, so
         // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
         // authorise earlier; the check that binds it to the write lives in the service.)
@@ -292,6 +300,14 @@ class IngestEvidenceSnapshotTest {
     @DisplayName("a blank or unresolvable attachment reference is not 'stored'")
     void attachmentReferenceIsResolved() throws Exception {
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to
+        // create one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolder =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolder.getChildren(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolder);
         // A delegated import re-asks cmis:all against the folder it actually writes into, so
         // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
         // authorise earlier; the check that binds it to the write lives in the service.)
@@ -341,6 +357,14 @@ class IngestEvidenceSnapshotTest {
         // getUsername() would leave them all green (external review). So this drives the real
         // import and reads what the emitter was actually handed.
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to
+        // create one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolder =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolder.getChildren(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolder);
         // A delegated import re-asks cmis:all against the folder it actually writes into, so
         // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
         // authorise earlier; the check that binds it to the write lives in the service.)
@@ -486,6 +510,14 @@ class IngestEvidenceSnapshotTest {
     /** Drives a real re-import of an already-imported document whose recorded hash matches. */
     private static RecordingEmitter runReimport(String updatePolicy) {
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to
+        // create one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolder =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolder.getChildren(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolder);
         // A delegated import re-asks cmis:all against the folder it actually writes into, so
         // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
         // authorise earlier; the check that binds it to the write lives in the service.)
@@ -822,6 +854,14 @@ class IngestEvidenceSnapshotTest {
     private static ExternalIngestResult runNoteFilesOnlyImport(NoteAttachmentStore store,
             RecordingEmitter emitter) {
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to
+        // create one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolder =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolder.getChildren(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolder);
         // A delegated import re-asks cmis:all against the folder it actually writes into, so
         // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
         // authorise earlier; the check that binds it to the write lives in the service.)
@@ -934,6 +974,14 @@ class IngestEvidenceSnapshotTest {
     private static ExternalIngestResult runBusinessRecordImport(ArchetypeStore store,
             RecordingEmitter emitter) {
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to
+        // create one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolder =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolder.getChildren(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolder);
         // A delegated import re-asks cmis:all against the folder it actually writes into, so
         // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
         // authorise earlier; the check that binds it to the write lives in the service.)
@@ -1091,6 +1139,14 @@ class IngestEvidenceSnapshotTest {
     private static ExternalIngestResult runChatImport(ChatStore store, boolean objectIsNew,
             RecordingEmitter emitter, IngestMetadataService metadataService) {
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to
+        // create one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolder =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolder.getChildren(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolder);
         // A delegated import re-asks cmis:all against the folder it actually writes into, so
         // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
         // authorise earlier; the check that binds it to the write lives in the service.)
@@ -1375,6 +1431,14 @@ class IngestEvidenceSnapshotTest {
         // answer "read" for everything would leave it green: the helper is measured and the
         // CALL SITE is not. This drives the emit itself.
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to
+        // create one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolder =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolder.getChildren(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolder);
         IngestLineageEmitter emitter = mock(IngestLineageEmitter.class);
         ConnectorDefinitionService connectors = mock(ConnectorDefinitionService.class);
         ImportProfileDefinitionService profiles = mock(ImportProfileDefinitionService.class);
@@ -1430,5 +1494,122 @@ class IngestEvidenceSnapshotTest {
         java.lang.reflect.Field f = CanonicalImportServiceImpl.class.getDeclaredField(field);
         f.setAccessible(true);
         f.set(target, value);
+    }
+
+    @Test
+    @DisplayName("a re-import event that cannot be attributed says so instead of vanishing")
+    void anUnattributableReimportEventIsNotSilent() throws Exception {
+        // get() answers null for a read that did not answer as readily as for an absent
+        // connector, and this method is only entered when evidence WAS written or refused.
+        // The early return left no event and, unlike the catch at the end of the method, no
+        // warning — the pass reported success with nothing recording that evidence changed.
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to
+        // create one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolder =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolder.getChildren(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolder);
+        IngestLineageEmitter emitter = mock(IngestLineageEmitter.class);
+        ConnectorDefinitionService connectors = mock(ConnectorDefinitionService.class);
+        when(connectors.get("c1")).thenReturn(null);
+        inject(service, "ingestLineageEmitter", emitter);
+        inject(service, "connectorDefinitionService", connectors);
+        inject(service, "importProfileDefinitionService",
+                mock(ImportProfileDefinitionService.class));
+        inject(service, "contentService", mock(jp.aegif.nemaki.businesslogic.ContentService.class));
+
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setProfileId("p1");
+        request.setConnectorId("c1");
+        request.setRepositoryId("bedroom");
+        ExternalIngestResult result =
+                ExternalIngestResult.success("src-1", "obj-1", "1.0", false, null);
+
+        java.util.List<String> warnings = new java.util.ArrayList<>();
+        java.lang.reflect.Method emit = CanonicalImportServiceImpl.class.getDeclaredMethod(
+                "emitReimportEvent",
+                org.apache.chemistry.opencmis.commons.server.CallContext.class,
+                ExternalIngestRequest.class, ExternalIngestResult.class,
+                java.util.List.class, java.util.List.class, java.util.List.class);
+        emit.setAccessible(true);
+        emit.invoke(service, (Object) null, request, result,
+                java.util.List.of("subject"), java.util.List.of(), warnings);
+
+        org.mockito.Mockito.verify(emitter, org.mockito.Mockito.never()).emitLineageEvent(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+        // The measurable trace. `verify(never())` alone does not discriminate — it was true
+        // before the fix too — so what is asserted is that the caller is TOLD the event did
+        // not happen. A log line is not a record.
+        assertEquals(1, warnings.size(),
+                "the pass changed evidence and said nothing about the missing event: "
+                        + warnings);
+        assertTrue(warnings.get(0).contains("no re-import lineage event was recorded"),
+                "the warning does not say what is missing: " + warnings);
+    }
+
+    @Test
+    @DisplayName("the duplicate check refuses an unwired store instead of answering 'no "
+            + "existing document'")
+    void theDuplicateCheckRefusesAnUnwiredStore() throws Exception {
+        // The caller reads null as permission to CREATE, so an unwired store produced a
+        // duplicate and reported success. The catch fourteen lines below already refuses an
+        // enumeration that could not be answered, and lookUpRelationship refuses its own
+        // unwired arm — the two helpers answered the same question opposite ways.
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        java.lang.reflect.Method find = CanonicalImportServiceImpl.class.getDeclaredMethod(
+                "findExistingDocument", String.class, String.class, String.class,
+                String.class, String.class, String.class, String.class);
+        find.setAccessible(true);
+
+        java.lang.reflect.InvocationTargetException wrapped =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                java.lang.reflect.InvocationTargetException.class,
+                () -> find.invoke(service, "bedroom", "folder-1", "f.txt", "box", "src-1",
+                        "file", "source_id"),
+                "an unwired content store answered 'there is no existing document'");
+        assertTrue(wrapped.getCause() instanceof IllegalStateException,
+                "the refusal is not the typed one: " + wrapped.getCause());
+        assertTrue(wrapped.getCause().getMessage().contains("not wired on this node"),
+                "the refusal does not say what is wrong: " + wrapped.getCause().getMessage());
+    }
+
+    @Test
+    @DisplayName("a target folder PATH that could not be resolved is not 'the profile has "
+            + "neither field'")
+    void anUnresolvableTargetFolderPathIsNotAMissingSetting() throws Exception {
+        // A permission denial or a store failure answered the same null as "there is no such
+        // path", and the caller then said the profile configured NEITHER field — provably
+        // false, since control only reaches the path branch because targetFolderPath is set.
+        // Worse, that return happens before the try that saves to the DLQ, so the source item
+        // left no trace at all. A review found both halves.
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setRepositoryId("bedroom");
+        profile.setTargetFolderPath("/a/b");
+
+        java.lang.reflect.Method resolve = CanonicalImportServiceImpl.class.getDeclaredMethod(
+                "resolveTargetFolderId", ImportProfileDefinition.class, String.class,
+                org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        resolve.setAccessible(true);
+
+        java.lang.reflect.InvocationTargetException wrapped =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        java.lang.reflect.InvocationTargetException.class,
+                        () -> resolve.invoke(service, profile, "bedroom", null),
+                        "a path this node could not resolve answered 'there is no folder'");
+        assertTrue(wrapped.getCause()
+                        instanceof CanonicalImportServiceImpl.TargetFolderUnreadableException,
+                "the refusal is not the typed one: " + wrapped.getCause());
+        assertTrue(wrapped.getCause().getMessage().contains("could not be resolved"),
+                "the refusal does not say what happened: " + wrapped.getCause().getMessage());
     }
 }

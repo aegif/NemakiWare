@@ -31,6 +31,15 @@ class CanonicalImportServiceTest {
     @BeforeEach
     void setUp() {
         service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to create
+        // one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolderDao =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolderDao.getChildren(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolderDao);
         connectorService = mock(ConnectorDefinitionService.class);
         profileService = mock(ImportProfileDefinitionService.class);
         objectService = mock(ObjectService.class);
@@ -2349,6 +2358,15 @@ class CanonicalImportServiceTest {
                     .thenReturn(java.util.List.of());
             org.mockito.Mockito.when(dao.lastUnreadableChildCount()).thenReturn(count);
             CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+            // The duplicate check refuses an unwired content store now (it used to answer
+            // "there is no existing document", which the caller reads as permission to create
+            // one). An empty folder is what these fixtures mean.
+            jp.aegif.nemaki.dao.ContentDaoService emptyFolderDao =
+                    org.mockito.Mockito.mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+            org.mockito.Mockito.when(emptyFolderDao.getChildren(
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                    .thenReturn(java.util.List.of());
+            service.setContentDaoService(emptyFolderDao);
             setPrivateField(service, "contentDaoService", dao);
 
             java.lang.reflect.Method finder = CanonicalImportServiceImpl.class
@@ -2381,6 +2399,15 @@ class CanonicalImportServiceTest {
                 .thenReturn(java.util.List.of());
         org.mockito.Mockito.when(dao.lastUnreadableChildCount()).thenReturn(0);
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to create
+        // one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolderDao =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolderDao.getChildren(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolderDao);
         setPrivateField(service, "contentDaoService", dao);
 
         java.lang.reflect.Method finder = CanonicalImportServiceImpl.class

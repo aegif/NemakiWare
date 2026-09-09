@@ -298,6 +298,12 @@ public class IngestDlqController {
      * APIs have had this floor since the batch began; a review found the DLQ, ingest and
      * webhook controllers without it. Endpoints that map these themselves keep their mapping.
      */
+    /** A stored entry this node could not read is a retry, never "there is no such entry". */
+    @ExceptionHandler(IngestJobService.DlqEntryUnreadableException.class)
+    public ResponseEntity<?> dlqEntryCouldNotBeRead(IngestJobService.DlqEntryUnreadableException e) {
+        return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
+    }
+
     @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
             ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})
     public ResponseEntity<?> definitionRowsCouldNotBeRead(RuntimeException e) {

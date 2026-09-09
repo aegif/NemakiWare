@@ -112,4 +112,25 @@ class ImapIdleMonitorWiringTest {
             throw new IllegalStateException("the denial shape changed: " + e, e);
         }
     }
+
+    @Test
+    @DisplayName("an unwired connector service is not 'this profile has no connector'")
+    void anUnwiredConnectorServiceSaysSo() {
+        // Answering null reached "No connector for profile", which the endpoint classifies
+        // 400 — the request blamed for the deployment. The profile-service arm of this same
+        // class was corrected for that shape two rounds earlier; this one was left behind.
+        ImapIdleMonitor monitor = new ImapIdleMonitor();
+        ImportProfileDefinitionService profiles = mock(ImportProfileDefinitionService.class);
+        when(profiles.getOwnedRowIndexFree("p1")).thenReturn(delegatedImapProfile());
+        monitor.setProfileService(profiles);
+        // connectorService deliberately left unwired.
+
+        String refusal = monitor.startIdle("p1");
+
+        assertNotNull(refusal);
+        assertTrue(refusal.contains("not wired on this node"),
+                "an unwired connector service was reported as 'no connector': " + refusal);
+        assertTrue(refusal.contains("retry shortly"),
+                "the refusal carries no retry marker, so the endpoint answers 400: " + refusal);
+    }
 }

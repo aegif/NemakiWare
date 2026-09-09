@@ -6007,6 +6007,62 @@ CONTROLS = [
         test='DlqReplayArchetypeGateTest',
         expect_fail=['aRetryWhosePayloadCannotBeReadDoesNotRunContentLess'],
     ),
+    dict(
+        id="SF2",
+        what="the duplicate check answers 'there is no existing document' on an unwired "
+             "content store again, and the caller creates one",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='        if (contentDaoService == null) {\n',
+        replace='        if (contentDaoService == null) {\n'
+                '            if (true) return null;\n',
+        test='IngestEvidenceSnapshotTest',
+        expect_fail=['theDuplicateCheckRefusesAnUnwiredStore'],
+    ),
+    dict(
+        id="SG2",
+        what="a re-import pass that changed evidence and could not attribute the event says "
+             "nothing to the caller again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='                warnings.add("evidence was changed by this pass, but no re-import lineage"\n',
+        replace='                if (false) warnings.add("evidence was changed by this pass, but no re-import lineage"\n',
+        test='IngestEvidenceSnapshotTest',
+        expect_fail=['anUnattributableReimportEventIsNotSilent'],
+    ),
+    dict(
+        id="SH2",
+        what="an unwired connector service is 'this profile has no connector' again on the "
+             "IDLE path, which the endpoint answers 400",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='        if (connectorService == null) {\n',
+        replace='        if (connectorService == null) {\n'
+                '            if (true) return null;\n',
+        test='ImapIdleMonitorWiringTest',
+        expect_fail=['anUnwiredConnectorServiceSaysSo'],
+    ),
+    dict(
+        id="SI2",
+        what="a DLQ entry whose read could not answer is reported as absent again, which the "
+             "endpoint turns into 404 'not found'",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='        } catch (RuntimeException couldNotAsk) {\n'
+             '            // The selector itself did not answer. Not "there is no such entry".\n',
+        replace='        } catch (RuntimeException couldNotAsk) {\n'
+                '            if (true) return null;\n'
+                '            // The selector itself did not answer. Not "there is no such entry".\n',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['theEntryReadRefusesRatherThanAnsweringNone'],
+    ),
+    dict(
+        id="SJ2",
+        what="a target folder PATH this node could not resolve answers the same null as an "
+             "absent one, and the caller says the profile configured neither field",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='                throw new TargetFolderUnreadableException("the target folder path \'" + folderPath\n'
+             '                        + "\' of this profile could not be resolved: " + e.getMessage(), e);\n',
+        replace='                if (true) return null;\n',
+        test='IngestEvidenceSnapshotTest',
+        expect_fail=['anUnresolvableTargetFolderPathIsNotAMissingSetting'],
+    ),
 ]
 
 

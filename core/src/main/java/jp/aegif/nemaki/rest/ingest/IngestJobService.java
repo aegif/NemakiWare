@@ -539,11 +539,49 @@ public class IngestJobService {
         return deleted;
     }
 
+    /**
+     * One dead-letter entry, or null when there is none.
+     *
+     * <p>A row that IS there and cannot be deserialised refuses instead of answering null.
+     * The listing skips such rows on purpose — one broken row must not hide the queue — but
+     * the caller of this method answers 404 "DLQ entry not found", and this class says three
+     * times that the entry is the only record a source item was lost. Telling an operator
+     * that record does not exist is the worst answer available. A review found it.
+     */
     public IngestDeadLetterRecord getDlqEntry(String dlqId) {
-        List<IngestDeadLetterRecord> results = findBySelector(
-                Map.of("type", IngestDeadLetterRecord.DOC_TYPE, "dlqId", dlqId),
-                IngestDeadLetterRecord.class, 1);
-        return results.isEmpty() ? null : results.get(0);
+        Map<String, Object> selector =
+                Map.of("type", IngestDeadLetterRecord.DOC_TYPE, "dlqId", dlqId);
+        List<IngestDeadLetterRecord> results;
+        try {
+            results = findBySelector(selector, IngestDeadLetterRecord.class, 1);
+        } catch (RuntimeException couldNotAsk) {
+            // The selector itself did not answer. Not "there is no such entry".
+            throw new DlqEntryUnreadableException("whether DLQ entry " + dlqId + " exists could"
+                    + " not be established; retry shortly: " + couldNotAsk.getMessage());
+        }
+        if (!results.isEmpty()) return results.get(0);
+        try {
+            CloudantClientWrapper client = getConfClient();
+            List<Document> raw = findRawDocs(client.getClient(), client.getDatabaseName(),
+                    selector, 1, 0);
+            if (!raw.isEmpty()) {
+                throw new DlqEntryUnreadableException("DLQ entry " + dlqId + " is stored but"
+                        + " could not be read; it has NOT been lost, and it is not safe to"
+                        + " report it as absent");
+            }
+        } catch (DlqEntryUnreadableException unreadable) {
+            throw unreadable;
+        } catch (RuntimeException couldNotAsk) {
+            throw new DlqEntryUnreadableException("whether DLQ entry " + dlqId + " exists could"
+                    + " not be established; retry shortly: " + couldNotAsk.getMessage());
+        }
+        return null;
+    }
+
+    /** A dead-letter entry that is stored and could not be read as one. */
+    public static class DlqEntryUnreadableException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        public DlqEntryUnreadableException(String message) { super(message); }
     }
 
     /**

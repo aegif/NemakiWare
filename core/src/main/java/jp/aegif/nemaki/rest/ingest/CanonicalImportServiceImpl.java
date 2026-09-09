@@ -1580,7 +1580,23 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             ConnectorDefinition connector = connectorDefinitionService.get(request.getConnectorId());
             ProfileRead profileRead = confinedProfileRead(request);
             ImportProfileDefinition profile = profileRead.profile();
-            if (connector == null) return;
+            if (connector == null) {
+                // get() answers null for a read that did not answer as readily as for an
+                // absent connector, and this method is only entered when evidence WAS
+                // written or refused. Returning here left no event and, unlike the catch at
+                // the end of this method, no warning either — the pass reported success with
+                // nothing recording that evidence changed. A review found it.
+                logger.warn("no re-import lineage event was emitted for {}: connector {} did"
+                        + " not come back, so the event could not be attributed. Evidence"
+                        + " fields {} were filled and {} refused by this pass.",
+                        result.objectId(), request.getConnectorId(), filled, refused);
+                // The caller is told too. A line in the log is not a record: the pass changed
+                // evidence and the answer said nothing about the event that did not happen.
+                warnings.add("evidence was changed by this pass, but no re-import lineage"
+                        + " event was recorded: connector " + request.getConnectorId()
+                        + " could not be read");
+                return;
+            }
             String repositoryId = request.getRepositoryId();
             // The same resolution execute() uses, not profile.getTargetFolderId(): a profile
             // defined with targetFolderPath only has a null id, and the original capture event
@@ -3233,9 +3249,17 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
         // 4. Resolve target folder
         // (needed for both dry-run and real execution)
-        String targetFolderId = (request.getTargetFolderOverride() != null && !request.getTargetFolderOverride().isBlank())
-                ? request.getTargetFolderOverride()
-                : resolveTargetFolderId(profile, repositoryId, callContext);
+        String targetFolderId;
+        try {
+            targetFolderId = (request.getTargetFolderOverride() != null && !request.getTargetFolderOverride().isBlank())
+                    ? request.getTargetFolderOverride()
+                    : resolveTargetFolderId(profile, repositoryId, callContext);
+        } catch (TargetFolderUnreadableException couldNotResolve) {
+            // Not "the profile configured neither field". Said as what it is, and said in a
+            // way the caller can retry.
+            return ExternalIngestResult.error(requestId, couldNotResolve.getMessage()
+                    + "; retry shortly");
+        }
         if (targetFolderId == null || targetFolderId.isBlank()) {
             return ExternalIngestResult.error(requestId,
                     "Profile has no resolvable target folder (neither targetFolderId nor targetFolderPath)");
@@ -4144,7 +4168,16 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     private Content findExistingDocument(String repositoryId, String targetFolderId,
                                          String fileName, String sourceSystem, String sourceObjectId,
                                          String sourceObjectType, String dedupeMatchBy) {
-        if (contentDaoService == null) return null;
+        if (contentDaoService == null) {
+            // NOT "there is no existing document": the caller reads that as permission to
+            // CREATE one. The catch fourteen lines below already refuses an unanswered
+            // enumeration for exactly this reason, and lookUpRelationship refuses its own
+            // unwired arm with "Wiring, not a read — but 'could not ask' all the same".
+            // This arm answered the opposite. A review found the two helpers disagreeing.
+            throw new IllegalStateException("the content store is not wired on this node, so"
+                    + " whether this object was already imported cannot be established;"
+                    + " retry shortly against a node that runs it");
+        }
 
         boolean trySourceId = !"filename".equals(dedupeMatchBy);
         boolean tryFilename = "filename".equals(dedupeMatchBy) || "source_id_or_filename".equals(dedupeMatchBy);
@@ -4297,12 +4330,34 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     folderPathCache.put(cacheKey, new CachedFolderId(objectData.getId(), System.currentTimeMillis()));
                     return objectData.getId();
                 }
+            } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException absent) {
+                // The store ANSWERED: there is no such path. That is the one outcome the
+                // caller's "the profile configured neither field" message may stand for.
+                logger.warn("targetFolderPath '{}' does not exist in repository '{}'",
+                        folderPath, repositoryId);
+                return null;
             } catch (Exception e) {
+                // Everything else — a permission denial, a store failure — used to answer the
+                // same null, and the caller then said the profile has NEITHER field
+                // configured, which is provably false: control only reaches here because
+                // targetFolderPath IS set. Worse, that return happens before the try that
+                // saves to the DLQ, so the source item left no trace at all. A review found
+                // both halves.
                 logger.warn("Failed to resolve targetFolderPath '{}' in repository '{}': {}",
                         folderPath, repositoryId, e.getMessage());
+                throw new TargetFolderUnreadableException("the target folder path '" + folderPath
+                        + "' of this profile could not be resolved: " + e.getMessage(), e);
             }
         }
         return null;
+    }
+
+    /** A target folder path this node could not resolve — not "the profile has no folder". */
+    public static class TargetFolderUnreadableException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        public TargetFolderUnreadableException(String message, Throwable cause) {
+            super(message, cause);
+        }
     }
 
     // buildCanonicalSourceUri, isAttachmentObjectType, resolveProcessType

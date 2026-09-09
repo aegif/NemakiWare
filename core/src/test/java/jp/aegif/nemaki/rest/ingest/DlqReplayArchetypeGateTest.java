@@ -219,4 +219,46 @@ class DlqReplayArchetypeGateTest {
                 refused.getMessage().contains("could not be read"),
                 "the refusal does not say what happened: " + refused.getMessage());
     }
+
+    @Test
+    @DisplayName("a stored DLQ entry that cannot be read is 503, not 'not found'")
+    void aStoredButUnreadableEntryIsNotReportedAsAbsent() {
+        // The listing skips such rows on purpose — one broken row must not hide the queue —
+        // but the single-entry read answered null, and the endpoint turned that into
+        // 404 "DLQ entry not found". This class says three times that the entry is the only
+        // record a source item was lost. A review found the answer.
+        IngestDlqController controller = new IngestDlqController();
+        IngestJobService jobs = mock(IngestJobService.class);
+        when(jobs.getDlqEntry("d-1")).thenThrow(
+                new IngestJobService.DlqEntryUnreadableException(
+                        "DLQ entry d-1 is stored but could not be read"));
+        org.springframework.http.ResponseEntity<?> res =
+                controller.dlqEntryCouldNotBeRead(
+                        new IngestJobService.DlqEntryUnreadableException(
+                                "DLQ entry d-1 is stored but could not be read"));
+
+        org.junit.jupiter.api.Assertions.assertEquals(503, res.getStatusCode().value(),
+                "a stored entry that could not be read was answered as absent");
+        org.junit.jupiter.api.Assertions.assertNotNull(jobs);
+    }
+
+    @Test
+    @DisplayName("the entry read itself refuses rather than answering 'there is none'")
+    void theEntryReadRefusesRatherThanAnsweringNone() {
+        // The controller lock above mocks the service, so it measures the handler. This
+        // drives the service: with nothing wired, whether the entry exists cannot be
+        // established, and null is what the endpoint turns into 404 "not found" — for the
+        // row this class calls the only record that a source item was lost.
+        IngestJobService jobs = new IngestJobService();
+
+        IngestJobService.DlqEntryUnreadableException refused =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        IngestJobService.DlqEntryUnreadableException.class,
+                        () -> jobs.getDlqEntry("d-1"),
+                        "a read that could not answer reported the entry as absent");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                refused.getMessage().contains("could not be established")
+                        || refused.getMessage().contains("could not be read"),
+                "the refusal does not say what happened: " + refused.getMessage());
+    }
 }

@@ -63,6 +63,15 @@ class IngestAclSyncPolicyTest {
     private ExternalIngestResult runImport(String aclSyncPolicy, boolean aclUpdateFails,
             boolean withSourceAcl) {
         service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to create
+        // one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolderDao =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolderDao.getChildren(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolderDao);
         ConnectorDefinitionService connectorService = mock(ConnectorDefinitionService.class);
         ImportProfileDefinitionService profileService = mock(ImportProfileDefinitionService.class);
         jp.aegif.nemaki.cmis.service.ObjectService objectService =
