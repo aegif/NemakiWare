@@ -176,6 +176,13 @@ public class IngestDlqController {
                 response.put("retryCount", dlq.getRetryCount() + 1);
             }
             return ResponseEntity.ok(response);
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException
+                | ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused) {
+            // This catch-all made the handler below unreachable: the one call in this
+            // controller that can raise a typed refusal sits inside it, so a retry of an
+            // entry whose connector row cannot be read answered 500, "our bug", for a
+            // condition a retry fixes. A review found the handler was dead code.
+            throw refused;
         } catch (Exception e) {
             return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
                     "Retry failed: " + e.getMessage());

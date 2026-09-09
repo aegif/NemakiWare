@@ -89,6 +89,12 @@ public class CheckpointManager {
      * ALONE. {@code profileRowRead} says which of the two happened. It exists because the
      * caller cannot tell from the map: a profile with no scoped checkpoints and a profile
      * whose row could not be read both come back with only the static ones.
+     *
+     * <p>What it does NOT separate: a row that is ABSENT from a row whose read FAILED. Both
+     * reach this class as {@code get() == null}, and telling them apart needs the row's
+     * repository, which this class is not given. {@code false} therefore means "this pass did
+     * not have the row", never "there is no such profile" — the wording of every message
+     * derived from it has to stay on that side, and a caller must not read absence out of it.
      */
     public record Enumeration(Map<String, Object> checkpoints, boolean profileRowRead) {}
 
@@ -145,8 +151,11 @@ public class CheckpointManager {
             String key = "ingest.checkpoint." + profileId + "." + scope;
             settingsService.writeSetting(key, "");
             logger.info("Checkpoint reset: {}", key);
-            // One named key: the profile row has no part in reaching it.
-            return new ResetSummary(1, true);
+            // false, not true: the profile row was NOT read on this path — it is not needed,
+            // because the caller named the key. Answering true here says "the row took part"
+            // about a pass that never asked, and a review found the record contradicting its
+            // own javadoc. The caller distinguishes the two passes by the scope it passed.
+            return new ResetSummary(1, false);
         }
         // Reset all checkpoints for this profile
         Enumeration enumerated = enumerateCheckpoints(profileId);

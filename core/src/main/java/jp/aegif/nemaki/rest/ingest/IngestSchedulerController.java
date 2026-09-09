@@ -148,20 +148,36 @@ public class IngestSchedulerController {
     }
 
     /**
-     * 400 or 503 for one refusal message. Every refusal here used to be a 400, including the
+     * The status for one refusal message. Every refusal here used to be a 400, including the
      * ones this batch added for a read that did not answer — a body ending in "retry shortly"
      * inside a status that says the request itself is wrong. The other entry points (the
-     * webhook receiver, the ingest endpoints, the definition APIs) already split the two; a
-     * review found this one left behind. Matched on the refusal texts the monitor builds, so
-     * a message that says nothing about a failed read keeps its 400.
+     * webhook receiver, the ingest endpoints, the definition APIs) already split these; a
+     * review found this one left behind, and the next one found the split still too coarse:
+     * a standing twin pair is not a malformed request (409 everywhere else), and a profile the
+     * walk established is ABSENT is not one either (404). Matched on the refusal texts the
+     * monitor and the scheduler service build; a message that says nothing about any of these
+     * keeps its 400.
      */
     private static HttpStatus statusOfIdleRefusal(String error) {
         String message = error == null ? "" : error;
-        boolean couldNotAsk = message.contains("retry shortly")
+        if (message.contains("retry shortly")
                 || message.contains("could not be established")
                 || message.contains("could not be read")
-                || message.contains("could not be looked up");
-        return couldNotAsk ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.BAD_REQUEST;
+                || message.contains("could not be looked up")) {
+            return HttpStatus.SERVICE_UNAVAILABLE;
+        }
+        // The twin-pair wording of both services. No retry makes a standing pair go away, so
+        // it is 409 here exactly as it is on the definition APIs and the ingest endpoints.
+        if (message.contains("more than one definition row")
+                || message.contains("more than one owned definition row")) {
+            return HttpStatus.CONFLICT;
+        }
+        // Absence the index-free read ESTABLISHED — the one case here that is not about the
+        // request being wrong and not about retrying.
+        if (message.startsWith("Profile not found")) {
+            return HttpStatus.NOT_FOUND;
+        }
+        return HttpStatus.BAD_REQUEST;
     }
 
     @PostMapping("/idle/stop/{profileId}")
@@ -172,7 +188,8 @@ public class IngestSchedulerController {
         if (error != null) {
             response.put("status", "error");
             response.put("message", error);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            // Same classifier as the start: an unwired node is not a bad request here either.
+            return ResponseEntity.status(statusOfIdleRefusal(error)).body(response);
         }
         response.put("status", "success");
         response.put("message", "IMAP IDLE stopped for " + profileId);
@@ -217,7 +234,12 @@ public class IngestSchedulerController {
                 schedulerService.resetCheckpoint(profileId, scope);
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", "success");
-        if (scope != null) {
+        // BLANK, not just null: the manager treats a blank scope as "reset everything" and
+        // this branch used to treat it as "one named scope", so `?scope=` cleared every
+        // static checkpoint while the answer named a single one — and the incomplete-reset
+        // warning below could not be reached at all. A review found the two predicates
+        // disagreeing on the same input.
+        if (scope != null && !scope.isBlank()) {
             response.put("message", "Checkpoint reset for " + profileId + "/" + scope);
         } else if (summary.profileRowRead()) {
             response.put("message", "All checkpoints reset for " + profileId
@@ -257,11 +279,16 @@ public class IngestSchedulerController {
     }
 
     /**
-     * The typed "this row could not be read" refusals reach these endpoints through the
-     * checkpoint enumeration and the scheduler's own profile reads, and Spring answers 500 —
-     * "our bug" for a condition whose whole point is that a retry fixes it. The definition
-     * APIs have had this floor since the batch began; a review found the scheduler, ingest,
-     * DLQ and webhook controllers without it.
+     * The typed "this row could not be read" refusals reach these endpoints and Spring answers
+     * 500 — "our bug" for a condition whose whole point is that a retry fixes it. The
+     * definition APIs have had this floor since the batch began; a review found the scheduler,
+     * ingest, DLQ and webhook controllers without it.
+     *
+     * <p>Where they come from, corrected: the listing behind {@code GET /status} and
+     * {@code POST /trigger/{id}} ({@code listScheduledIndexFree}). NOT the checkpoint
+     * enumeration, which an earlier version of this note named — that path reads through the
+     * profile {@code get()}, and every arm of that read answers null rather than throwing. A
+     * review found the note describing a route that does not exist.
      */
     @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
             ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})

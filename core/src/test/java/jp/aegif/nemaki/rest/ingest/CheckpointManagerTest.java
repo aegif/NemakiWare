@@ -104,8 +104,14 @@ class CheckpointManagerTest {
     @Test
     void resetCheckpoint_specificScope() {
         mockSettings.store.put("ingest.checkpoint.p1.gmail", "somevalue");
-        manager.resetCheckpoint("p1", "gmail");
+        CheckpointManager.ResetSummary summary = manager.resetCheckpoint("p1", "gmail");
         assertEquals("", mockSettings.store.get("ingest.checkpoint.p1.gmail"));
+        // The named-scope pass never reads the profile row — it does not need to, the caller
+        // named the key. Claiming it did says the row took part in a pass that never asked,
+        // which is the record's own javadoc read backwards. A review found it.
+        assertFalse(summary.profileRowRead(),
+                "a pass that never read the profile row reported that it had");
+        assertEquals(1, summary.keysReset());
     }
 
     @Test

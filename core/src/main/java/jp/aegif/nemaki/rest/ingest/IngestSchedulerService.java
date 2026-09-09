@@ -178,12 +178,20 @@ public class IngestSchedulerService {
         this.imapIdleMonitor = imapIdleMonitor;
     }
 
+    // "not wired on this node", not a bad request. The endpoint classifies a refusal by its
+    // text, and "ImapIdleMonitor not available" carried no marker, so an unwired node answered
+    // 400 — the request blamed for the deployment. A review found it one layer above the same
+    // shape the monitor's own null check had just been corrected for.
+    private static final String IDLE_NOT_WIRED =
+            "the IMAP IDLE monitor is not wired on this node, so IDLE could not be started;"
+                    + " retry shortly against a node that runs it";
+
     public String startIdle(String profileId) {
-        return imapIdleMonitor != null ? imapIdleMonitor.startIdle(profileId) : "ImapIdleMonitor not available";
+        return imapIdleMonitor != null ? imapIdleMonitor.startIdle(profileId) : IDLE_NOT_WIRED;
     }
 
     public String stopIdle(String profileId) {
-        return imapIdleMonitor != null ? imapIdleMonitor.stopIdle(profileId) : "ImapIdleMonitor not available";
+        return imapIdleMonitor != null ? imapIdleMonitor.stopIdle(profileId) : IDLE_NOT_WIRED;
     }
 
     public List<String> getIdleProfiles() {

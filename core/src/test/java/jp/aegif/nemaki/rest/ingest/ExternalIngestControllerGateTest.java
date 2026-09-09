@@ -606,4 +606,88 @@ class ExternalIngestControllerGateTest {
         org.junit.jupiter.api.Assertions.assertTrue(reasons.contains("PROFILE_NOT_FOUND"),
                 "expected PROFILE_NOT_FOUND in " + reasons);
     }
+
+    // ──────────────────────────────────────────────────────────────────
+    // A connector read that did not answer must not become "no connector"
+    // ──────────────────────────────────────────────────────────────────
+
+    private CallContext adminContext() {
+        CallContext ctx = mock(CallContext.class);
+        when(ctx.getUsername()).thenReturn("admin");
+        when(httpRequest.getAttribute("CallContext")).thenReturn(ctx);
+        when(ingestAuthorizationService.isAdmin(ctx)).thenReturn(true);
+        return ctx;
+    }
+
+    /** A request that names a connector and whose type alone would route it to the mail flow. */
+    private ExternalIngestRequest messageOnANamedConnector() {
+        ExternalIngestRequest req = baseRequest();
+        req.setSourceObjectType("message");
+        req.setConnectorId(CONN);
+        return req;
+    }
+
+    @Test
+    void aFailedConnectorReadDoesNotPickTheImportFlowFromTheFileName() {
+        // resolveConnectorArchetype answered null for a FAILED read, and null is what the
+        // dispatch reads as "no connector context" — so the request was committed through the
+        // flow the file name and sourceObjectType suggest. On a CHAT_CONTEXT connector,
+        // "message" is parsed as mail, and the chosen flow does not re-check the archetype.
+        adminContext();
+        when(connectorDefinitionService.get(CONN))
+                .thenThrow(new RuntimeException("connection reset"));
+
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> ingest(messageOnANamedConnector()),
+                "a connector read that failed was answered as 'no connector context'");
+        verifyNoInteractions(canonicalImportService);
+    }
+
+    @Test
+    void aHiddenConnectorRowDoesNotPickTheImportFlowFromTheFileName() {
+        // The other half: get() answers null for a row the selector cannot show while its
+        // index rebuilds, exactly as it does for an absent connector. Only the index-free
+        // walk separates them, and only this one may not fall through.
+        adminContext();
+        when(connectorDefinitionService.get(CONN)).thenReturn(null);
+        when(connectorDefinitionService.existsIndexFree(CONN)).thenReturn(true);
+
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> ingest(messageOnANamedConnector()),
+                "a connector row the index could not show was answered as 'no connector'");
+        verifyNoInteractions(canonicalImportService);
+    }
+
+    @Test
+    void aConnectorTheWalkSaysIsAbsentStillFallsThroughToTheHeuristics() {
+        // The over-throw control. An unknown connectorId must keep behaving as it always has;
+        // turning absence into a 503 would make every mistyped id a retry loop.
+        CallContext ctx = adminContext();
+        when(connectorDefinitionService.get(CONN)).thenReturn(null);
+        when(connectorDefinitionService.existsIndexFree(CONN)).thenReturn(false);
+        when(canonicalImportService.executeMailImport(eq(ctx), any(ExternalIngestRequest.class)))
+                .thenReturn(ExternalIngestResult.error("src-1", "downstream said no"));
+
+        assertDoesNotThrow(() -> ingest(messageOnANamedConnector()),
+                "an absent connector started refusing — every unknown id becomes a 503");
+        verify(canonicalImportService).executeMailImport(eq(ctx), any(ExternalIngestRequest.class));
+    }
+
+    @Test
+    void theMultipartDoorAnswersTheSameRefusalAsTheJsonDoor() throws Exception {
+        // ingestMultipart wraps parsing AND the whole ingest in one catch(Exception) -> 400
+        // "Invalid request", so the same ingest answered 503 as JSON and 400 as multipart —
+        // the 400 asserting something about the caller's request that no read established.
+        adminContext();
+        when(connectorDefinitionService.get(CONN))
+                .thenThrow(new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                        "connector " + CONN + " exists but could not be read as that connector"));
+        String json = "{\"profileId\":\"" + PROF + "\",\"connectorId\":\"" + CONN
+                + "\",\"sourceObjectId\":\"src-1\",\"sourceObjectType\":\"message\"}";
+
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> controller.ingestMultipart(REPO, json, null),
+                "the multipart door swallowed a read refusal as \"Invalid request\" (400)");
+        verifyNoInteractions(canonicalImportService);
+    }
 }

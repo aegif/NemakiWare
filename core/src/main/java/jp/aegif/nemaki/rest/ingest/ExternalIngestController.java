@@ -99,6 +99,15 @@ public class ExternalIngestController {
                 }
             }
             return doIngest(repositoryId, request);
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException
+                | ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused) {
+            // NOT "Invalid request". This arm exists for a malformed multipart body, and it
+            // was swallowing the typed "this row could not be read" refusals raised deep
+            // inside doIngest — so the same ingest answered 503 as JSON and 400 as multipart,
+            // the 400 asserting something about the caller's request that no read
+            // established. Two reviews found it in the same round. Rethrown for the handler
+            // below, which answers 503 for both shapes.
+            throw refused;
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(ExternalIngestResult.error("unknown", "Invalid request"));
@@ -236,17 +245,48 @@ public class ExternalIngestController {
         return canonicalImportService.executeMailImport(callContext, request);
     }
 
-    /** Look up the connector's archetype, returning null if unavailable. */
+    /**
+     * The named connector's archetype; null only when the caller named no connector, or when
+     * the connector is established NOT to exist.
+     *
+     * <p>It used to answer null for a failed lookup too, and null is what the dispatch above
+     * reads as "no connector context" — so a transient read failure sent the request into the
+     * filename / sourceObjectType heuristics and COMMITTED it through a different import flow
+     * ({@code sourceObjectType=message} on a CHAT_CONTEXT connector is parsed as mail). The
+     * chosen flow does not re-check the archetype, so the wrong shape is what gets stored. A
+     * review found it; it is the batch's rule applied to a dispatch rather than to a status
+     * code — an explicitly named connector whose archetype cannot be ESTABLISHED must not be
+     * replaced by a guess from the file name.
+     *
+     * <p>Absence still behaves as it always has: a connector the walk says is not there
+     * answers null and the heuristics run, so this does not turn an unknown connectorId into
+     * a new refusal. The walk costs one pass of the config database, and only on the path
+     * where the ordinary read already failed to produce a connector.
+     */
     private SourceArchetype resolveConnectorArchetype(String connectorId) {
-        if (connectorId == null) return null;
+        if (connectorId == null || connectorDefinitionService == null) return null;
         try {
-            if (connectorDefinitionService != null) {
-                ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
-                if (connector != null) return connector.getSourceArchetype();
-            }
-        } catch (Exception e) {
+            ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
+            if (connector != null) return connector.getSourceArchetype();
+        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused) {
+            throw refused;
+        } catch (RuntimeException lookupFailed) {
             org.slf4j.LoggerFactory.getLogger(ExternalIngestController.class)
-                    .warn("Connector lookup failed for {}: {}", connectorId, e.getMessage());
+                    .warn("Connector lookup failed for {}: {}", connectorId,
+                            lookupFailed.getMessage());
+            throw new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                    "connector " + connectorId + " could not be read, so which import flow this"
+                            + " request belongs to cannot be established; retry shortly: "
+                            + lookupFailed.getMessage());
+        }
+        // null from get() is "absent" OR "the selector answered nothing while its index
+        // rebuilds". Only the index-free walk tells them apart, and only the second may not
+        // fall through to the heuristics.
+        if (connectorDefinitionService.existsIndexFree(connectorId)) {
+            throw new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                    "connector " + connectorId + " exists but could not be read, so which"
+                            + " import flow this request belongs to cannot be established;"
+                            + " retry shortly");
         }
         return null;
     }

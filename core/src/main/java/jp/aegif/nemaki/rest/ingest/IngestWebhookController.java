@@ -1133,10 +1133,16 @@ public class IngestWebhookController {
     @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
             ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})
     public ResponseEntity<?> definitionRowsCouldNotBeRead(RuntimeException e) {
-        // The reason is logged, not sent. This controller's front door is unauthenticated,
-        // and the refusal texts say whether a row exists at the id — the one thing the
-        // receiver's disclosure analysis (see ConnectorDefinitionService#getOrRefuse) keeps
-        // out of the answer. A blanket handler that echoed getMessage() would put it back.
+        // The reason is logged, not sent. This is a CLASS-level handler and this class has an
+        // unauthenticated front door (the receiver's POST and GET), whose refusal texts say
+        // whether a row exists at the id — the one thing the receiver's disclosure analysis
+        // (see ConnectorDefinitionService#getOrRefuse) keeps out of the answer. A handler that
+        // echoed getMessage() would put it back on whichever path reached it.
+        //
+        // The cost, since a review named it: the endpoints this handler can actually serve are
+        // the admin-gated /subscribe POST and DELETE, and their administrator loses the reason
+        // from the response body. It is in the log line below. Splitting the two would take a
+        // per-endpoint catch, and the receiver's front door is the one that must not be wrong.
         logger.warn("a definition row could not be read while serving a webhook request: {}",
                 e.getMessage());
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)

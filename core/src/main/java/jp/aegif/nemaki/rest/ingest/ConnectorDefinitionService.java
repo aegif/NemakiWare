@@ -33,10 +33,16 @@ public interface ConnectorDefinitionService {
      * then answered with a legacy twin unexcluded, so the receiver can run with the canonical
      * row's secret and enabled state while a twin holds others. That is the same value this
      * read gives when the selector ANSWERS that no twin exists, and it is a decision, not an
-     * oversight — a review named it and it was kept. Refusing instead would 503 every webhook
-     * for the length of an index rebuild, which at scale is measured in hours (see the v3.3.0
-     * upgrade runbook), and past a provider's retry window that is lost events for every
-     * installation. What bounds the other side: an event signed with the twin's secret still
+     * oversight — a review named it and it was kept. Why: the id-addressed read IS the
+     * index-free path this batch exists to provide. A selector that THROWS is what CouchDB
+     * does when no usable Mango index is there — a fresh node, a rebuilt database — and
+     * refusing then would stop every webhook exactly in the window the batch was written to
+     * keep working through, which is also the window in which the §62 twin was created. How
+     * long that window lasts is NOT measured here (an earlier version of this note cited the
+     * v3.3.0 runbook's hours-scale figure, which measures the Solr/CMIS reindex and says
+     * nothing about a Mango index over the config database; a review caught the substitution).
+     * The decision does not rest on that figure. What bounds the other side: an event signed
+     * with the twin's secret still
      * fails verification, an operator's edit during the window is refused because the write
      * path counts rows index-free, and the twin only exists on an installation upgraded past
      * a row the migration has not yet retired. Excluding it here is not affordable — the only

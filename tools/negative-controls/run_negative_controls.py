@@ -2707,7 +2707,12 @@ CONTROLS = [
         find='        if (rowsDefiningThisProfile > 1) {',
         replace='        if (rowsDefiningThisProfile > existing.size()) {',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['anUpdateWithTwoVisibleTwinsDoesNotWrite'],
+        # Two more locks were measured firing under this same sabotage and were not
+        # declared; the runner scores an incomplete expect_fail as a gap. Added from
+        # that measurement, not from reading.
+        expect_fail=['anUpdateWithTwoVisibleTwinsDoesNotWrite',
+                     'aCreateRefusesWhenTheScanFindsALegacyRow',
+                     'anUpdateOverAnInvisibleLegacyRowRefusesRetryably'],
     ),
     dict(
         id="QQ",
@@ -5481,6 +5486,107 @@ CONTROLS = [
         replace='        boolean profileRowRead = true;',
         test='CheckpointManagerTest',
         expect_fail=['aResetThatCouldNotNameTheScopedKeysDoesNotReportAll'],
+    ),
+    dict(
+        id="QP2",
+        what="a connector read that FAILED becomes 'no connector context' again, and the "
+             "import flow is picked from the file name",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='        } catch (RuntimeException lookupFailed) {\n',
+        replace='        } catch (RuntimeException lookupFailed) {\n'
+                '            if (true) return null;\n',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['aFailedConnectorReadDoesNotPickTheImportFlowFromTheFileName'],
+    ),
+    dict(
+        id="QQ2",
+        what="a connector row the index cannot show becomes 'no connector context' again — "
+             "QP's other half, the one get() cannot tell from absence",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='        // fall through to the heuristics.\n'
+             '        if (connectorDefinitionService.existsIndexFree(connectorId)) {\n',
+        replace='        // fall through to the heuristics.\n'
+                '        if (false) {\n',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['aHiddenConnectorRowDoesNotPickTheImportFlowFromTheFileName'],
+    ),
+    dict(
+        id="QR2",
+        what="the multipart door swallows a typed read refusal as 400 'Invalid request' again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException\n'
+             '                | ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused) {\n',
+        replace='        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException\n'
+                '                | ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused) {\n'
+                '            if (true) return ResponseEntity.status(HttpStatus.BAD_REQUEST)\n'
+                '                    .body(ExternalIngestResult.error("unknown", "Invalid request"));\n',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['theMultipartDoorAnswersTheSameRefusalAsTheJsonDoor'],
+    ),
+    dict(
+        id="QS2",
+        what="the DLQ retry swallows a typed read refusal as 500 'Retry failed' again, which "
+             "is what made its @ExceptionHandler unreachable",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find='        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException\n'
+             '                | ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused) {\n',
+        replace='        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException\n'
+                '                | ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused) {\n'
+                '            if (true) return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR,\n'
+                '                    "Retry failed: " + refused.getMessage());\n',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['aRetryWhoseConnectorCannotBeReadIsNotOurBug'],
+    ),
+    dict(
+        id="QT2",
+        what="the IDLE endpoint goes back to a binary split — a standing twin pair and an "
+             "established absence both answer 400 again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java',
+        find='        if (message.contains("more than one definition row")',
+        replace='        if (false && message.contains("more than one definition row")',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['aStandingPairIsA409'],
+    ),
+    dict(
+        id="QU2",
+        what="QT2's other half — the 404 arm for an absence the read established",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java',
+        find='        if (message.startsWith("Profile not found")) {',
+        replace='        if (false) {',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['absenceIsA404AndABadSettingIsStillA400'],
+    ),
+    dict(
+        id="QV2",
+        what="the reset endpoint reads a BLANK scope as one named scope again, while the "
+             "manager reads it as 'reset everything'",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java',
+        find='        if (scope != null && !scope.isBlank()) {\n'
+             '            response.put("message", "Checkpoint reset for "',
+        replace='        if (scope != null) {\n'
+                '            response.put("message", "Checkpoint reset for "',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['aBlankScopeIsNotOneNamedScope'],
+    ),
+    dict(
+        id="QW2",
+        what="the named-scope reset claims the profile row took part again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CheckpointManager.java',
+        find='            return new ResetSummary(1, false);',
+        replace='            return new ResetSummary(1, true);',
+        test='CheckpointManagerTest',
+        expect_fail=['resetCheckpoint_specificScope'],
+    ),
+    dict(
+        id="QX2",
+        what="the cross-repository divergence arm stops skipping the normalising pass — the "
+             "third of the profile migration's three divergence arms",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                    unnormalised.remove(deterministicId);\n'
+             '                    continue;\n',
+        replace='                    continue;\n',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['legacyRowsInDifferentRepositoriesLeaveTheDeterministicRowAlone'],
     ),
 ]
 

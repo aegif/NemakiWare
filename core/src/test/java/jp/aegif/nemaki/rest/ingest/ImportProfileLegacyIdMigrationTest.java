@@ -2341,6 +2341,39 @@ class ImportProfileLegacyIdMigrationTest {
     }
 
     @Test
+    @DisplayName("with legacy rows in DIFFERENT repositories, the deterministic row is not "
+            + "rewritten either — the third arm that reports a divergence")
+    void legacyRowsInDifferentRepositoriesLeaveTheDeterministicRowAlone() {
+        // The profile side has a third divergence arm the connector side has no twin for: two
+        // legacy rows whose repositoryId differs, where only one repository can keep the id.
+        // It carries its own skip of the normalising pass, and the review that added the other
+        // two locks noted this one was covered by argument rather than by measurement.
+        wire();
+        Map<String, Object> a = profileProps("42", "A");
+        a.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
+        a.put("repositoryId", "bedroom");
+        Map<String, Object> b = profileProps("42", "B");
+        b.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
+        b.put("repositoryId", "canopy");
+        Map<String, Object> standing = profileProps("42", "Standing");
+        standing.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
+        listingAnswers(List.of(row("legacy-a", a, "1-a"), row("legacy-b", b, "1-b"),
+                row("import_profile_definition:42", standing, "3-c")));
+        writesSucceed();
+
+        ConnectorDefinitionService.LegacyIdMigrationResult result =
+                service.migrateLegacyGeneratedIds();
+
+        assertTrue(result.divergent.stream().anyMatch(d -> d.contains("bedroom")
+                        && d.contains("canopy")),
+                "the two repositories were not reported: " + result.divergent);
+        verify(cloudant, never()).postDocument(any(PostDocumentOptions.class));
+        assertEquals(0, result.normalised,
+                "the deterministic row of a cross-repository divergence was rewritten: "
+                        + result);
+    }
+
+    @Test
     @DisplayName("a row whose repositoryId is not a string is not owned by anybody")
     void aRowWhoseRepositoryIdIsNotAStringIsNotOwned() {
         // The blank twin of this lock has been here since the value was widened to blank;

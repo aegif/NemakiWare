@@ -101,4 +101,53 @@ class DlqReplayArchetypeGateTest {
         verify(importService).execute(any(), any());
         assertTrue(result.skipped(), "the archetype gate must not refuse legitimate replays");
     }
+
+    @Test
+    @DisplayName("a retry whose connector row cannot be read answers 503, not 500 — the "
+            + "controller's own catch-all had made its handler unreachable")
+    void aRetryWhoseConnectorCannotBeReadIsNotOurBug() throws Exception {
+        // retryDlqEntry wraps everything after the reservation in catch(Exception) -> 500
+        // "Retry failed: ...". The one call in this controller that can raise a typed refusal
+        // sits inside it, so the @ExceptionHandler added for exactly this condition was dead
+        // code and the caller was told "our bug" for something a retry fixes. Two reviews
+        // found it in the same round, one of them by tracing every catch between the throw
+        // and the handler.
+        IngestDlqController controller = new IngestDlqController();
+
+        IngestJobService jobs = mock(IngestJobService.class);
+        jp.aegif.nemaki.rest.ingest.IngestDeadLetterRecord dlq =
+                new jp.aegif.nemaki.rest.ingest.IngestDeadLetterRecord();
+        dlq.setOriginalRequestJson("{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\","
+                + "\"sourceObjectId\":\"m-1\"}");
+        when(jobs.getDlqEntry("d-1")).thenReturn(dlq);
+        when(jobs.reserveDlqRetry(dlq)).thenReturn(true);
+
+        ConnectorDefinitionService connectorService = mock(ConnectorDefinitionService.class);
+        when(connectorService.get("c1")).thenThrow(
+                new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                        "connector c1 exists but could not be read as that connector"));
+
+        jakarta.servlet.http.HttpServletRequest request =
+                mock(jakarta.servlet.http.HttpServletRequest.class);
+        org.apache.chemistry.opencmis.commons.server.CallContext ctx =
+                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        when(ctx.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN))
+                .thenReturn(Boolean.TRUE);
+        when(request.getAttribute("CallContext")).thenReturn(ctx);
+
+        for (Object[] wire : new Object[][]{
+                {"ingestJobService", jobs},
+                {"connectorDefinitionService", connectorService},
+                {"canonicalImportService", mock(CanonicalImportService.class)},
+                {"httpRequest", request}}) {
+            Field f = IngestDlqController.class.getDeclaredField((String) wire[0]);
+            f.setAccessible(true);
+            f.set(controller, wire[1]);
+        }
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> controller.retryDlqEntry("d-1"),
+                "the retry swallowed a read refusal as a 500 'Retry failed'");
+    }
 }

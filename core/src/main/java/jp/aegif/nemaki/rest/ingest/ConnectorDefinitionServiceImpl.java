@@ -1091,9 +1091,10 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
                 // in would rewrite one member of a pair the operator is being asked to
                 // compare, and both the message above and the release notes say neither row
                 // is touched. A review found the pass undoing the promise. Nothing is lost by
-                // waiting: every write verb answers 409 while the pair stands (the count is
-                // index-free), so an unmatchable row changes no answer, and the next startup
-                // normalises it once the unwanted row is gone.
+                // waiting: while the pair stands, PUT and ownership transfer answer 409 and a
+                // create answers 400 (the count is index-free either way), so an unmatchable
+                // row changes no answer, and the next startup normalises it once the unwanted
+                // row is gone.
                 unnormalised.remove(deterministicId);
                 continue;
             }
