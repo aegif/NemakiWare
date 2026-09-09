@@ -1339,4 +1339,29 @@ class IngestEvidenceSnapshotTest {
                 org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
         return auth;
     }
+
+    @Test
+    @DisplayName("a profile row that could not be READ is not attributed as an unrecorded one")
+    void anUnreadProfileRowIsNotAttributedAsUnrecorded() {
+        // With a null profile the attribution reads "scheduler: admin profile unknown,
+        // schedule configured-by unrecorded" — three statements, and "unrecorded" is defined
+        // in this file as "the row carries no such field". None is established when the read
+        // refused, and this string is persisted as evidence. A review found the swallow in
+        // confinedProfile and this as its consequence.
+        var refused = CanonicalImportServiceImpl.resolveExecutionAttribution(
+                null, null, false, "p1");
+
+        assertTrue(refused.executedBy().contains("could not be read"),
+                "a row that was never read was attributed anyway: " + refused.executedBy());
+        assertFalse(refused.executedBy().contains("unrecorded"),
+                "a read that refused was reported as a row with no such field: "
+                        + refused.executedBy());
+        assertNull(refused.onBehalfOf(),
+                "delegation was asserted from a row that was not read");
+
+        // The control: a row that WAS read and genuinely carries nothing still says so.
+        var read = CanonicalImportServiceImpl.resolveExecutionAttribution(null, null, true, "p1");
+        assertTrue(read.executedBy().contains("unrecorded"),
+                "an established absence stopped being reported as one: " + read.executedBy());
+    }
 }

@@ -519,8 +519,21 @@ public class IngestSchedulerService {
                 if (!profile.isDelegated() && !warnedDelegatedSchedulerProfiles.isEmpty()) {
                     warnedDelegatedSchedulerProfiles.remove(profile.getProfileId());
                 }
-                ConnectorDefinition connector = resolveConnectorForProfile(profile);
-                if (connector == null) continue;
+                ConnectorForProfile resolution = resolveConnectorFor(profile);
+                ConnectorDefinition connector = resolution.connector();
+                if (connector == null) {
+                    // Skipping is right either way, but only one of the reasons is a fact.
+                    // The poll used to skip in silence for all of them, so a capture that
+                    // stopped running because a row could not be READ looked exactly like one
+                    // whose connector an operator had disabled on purpose. A review found it.
+                    if (!resolution.answered()) {
+                        logger.error("scheduled capture for profile {} did not run: its"
+                                + " connector could not be resolved ({}); this is not a"
+                                + " statement that the connector is absent or unusable",
+                                profile.getProfileId(), resolution.why());
+                    }
+                    continue;
+                }
 
                 // RC5: for delegated profiles, also re-check connector
                 // delegation against the creator. Catches admin-revoked
@@ -900,22 +913,73 @@ public class IngestSchedulerService {
                 .toList();
     }
 
+    /** Why a connector could not be resolved — and whether that is a FACT about the connector. */
+    public enum Unresolved {
+        /** This node has no connector service. Says nothing about the connector. */
+        NOT_WIRED,
+        /** The read refused: a row is at that id and could not be read as that connector. */
+        NOT_READ,
+        /** The read answered null. That is "no such connector" OR "a row the index cannot
+         *  show" — the two are told apart only by an index-free walk, which this method does
+         *  not do (it runs once per profile on a listing). Not a fact on its own. */
+        ABSENT_OR_HIDDEN,
+        /** The row was READ and is not usable: disabled, not allowed, wrong archetype. */
+        NOT_USABLE,
+        /** No default is named and no allowed archetype produced a candidate. */
+        NO_CANDIDATE
+    }
+
+    /**
+     * One resolution: the connector, or why not.
+     *
+     * <p>{@code resolveConnectorForProfile} answered null for all five reasons alike, and five
+     * callers turned that null into a statement — {@code ready: false} on the admin dashboard,
+     * "No compatible connector found" (400), "No connector resolved" (400), an empty connector
+     * list on a folder, and a silently skipped capture in the poll. Three of the five reasons
+     * are not facts about the connector at all. A review found the whole family.
+     */
+    public record ConnectorForProfile(ConnectorDefinition connector, Unresolved why) {
+        public boolean resolved() { return connector != null; }
+        /** Whether this is a fact about the connector. The other three are "could not ask". */
+        public boolean answered() {
+            return why == null || why == Unresolved.NOT_USABLE || why == Unresolved.NO_CANDIDATE;
+        }
+    }
+
     /**
      * Resolves the default connector for a scheduled profile.
      *
-     * @return the connector to use, or null if none available
+     * @return the connector to use, or null if none available. Callers that STATE something
+     *         about the result must use {@link #resolveConnectorFor} instead: this signature
+     *         cannot tell "there is no such connector" from "this node could not ask".
      */
     public ConnectorDefinition resolveConnectorForProfile(ImportProfileDefinition profile) {
-        if (connectorService == null) return null;
+        return resolveConnectorFor(profile).connector();
+    }
+
+    /** As {@link #resolveConnectorForProfile}, saying why when it did not resolve. */
+    public ConnectorForProfile resolveConnectorFor(ImportProfileDefinition profile) {
+        if (connectorService == null) {
+            return new ConnectorForProfile(null, Unresolved.NOT_WIRED);
+        }
 
         // Prefer defaultConnectorId — but still enforce profile's own restrictions
         String defaultId = profile.getDefaultConnectorId();
         if (defaultId != null && !defaultId.isBlank()) {
-            ConnectorDefinition connector = connectorService.get(defaultId);
+            ConnectorDefinition connector;
+            try {
+                connector = connectorService.get(defaultId);
+            } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused) {
+                // get() rethrows this when the deterministic id holds another document. It
+                // used to escape as a 500 from the endpoints and to kill the poll's tick.
+                logger.warn("Default connector {} for profile {} could not be read: {}",
+                        defaultId, profile.getProfileId(), refused.getMessage());
+                return new ConnectorForProfile(null, Unresolved.NOT_READ);
+            }
             if (connector != null && connector.isEnabled()
                     && profile.isConnectorAllowed(connector.getConnectorId())
                     && profile.isArchetypeAllowed(connector.getSourceArchetype())) {
-                return connector;
+                return new ConnectorForProfile(connector, null);
             }
             if (connector != null) {
                 logger.warn("Default connector {} for profile {} is not usable " +
@@ -923,14 +987,22 @@ public class IngestSchedulerService {
                         defaultId, profile.getProfileId(), connector.isEnabled(),
                         profile.isConnectorAllowed(connector.getConnectorId()),
                         profile.isArchetypeAllowed(connector.getSourceArchetype()));
+                if (profile.isSchedulerEnabled()) {
+                    return new ConnectorForProfile(null, Unresolved.NOT_USABLE);
+                }
             } else {
-                logger.warn("Default connector {} for profile {} does not exist", defaultId, profile.getProfileId());
+                // NOT "does not exist": this read answers null for a row the selector cannot
+                // show while its index rebuilds, exactly as it does for absence.
+                logger.warn("Default connector {} for profile {} did not come back; it is"
+                        + " either absent or not visible to the index", defaultId,
+                        profile.getProfileId());
+                if (profile.isSchedulerEnabled()) {
+                    return new ConnectorForProfile(null, Unresolved.ABSENT_OR_HIDDEN);
+                }
             }
             // Scheduler-enabled profiles must NOT fall back to a different connector —
-            // doing so would silently switch the data source being polled
-            if (profile.isSchedulerEnabled()) {
-                return null;
-            }
+            // doing so would silently switch the data source being polled. (Handled above,
+            // per reason.)
         }
 
         // Fallback for non-scheduled profiles only: find first allowed connector by archetype
@@ -939,13 +1011,13 @@ public class IngestSchedulerService {
                 List<ConnectorDefinition> candidates = connectorService.listByArchetype(archetype);
                 for (ConnectorDefinition c : candidates) {
                     if (c.isEnabled() && profile.isConnectorAllowed(c.getConnectorId())) {
-                        return c;
+                        return new ConnectorForProfile(c, null);
                     }
                 }
             }
         }
 
-        return null;
+        return new ConnectorForProfile(null, Unresolved.NO_CANDIDATE);
     }
 
     // ── Checkpoint admin API (delegated to CheckpointManager) ─────

@@ -310,6 +310,9 @@ class IngestSchedulerControllerAnswerTest {
         profile.setProfileId("p1");
         profile.setRepositoryId("bedroom");
         when(schedulerService.getScheduledProfiles()).thenReturn(java.util.List.of(profile));
+        when(schedulerService.resolveConnectorFor(profile)).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(
+                        null, IngestSchedulerService.Unresolved.NOT_USABLE));
         when(schedulerService.getIdleProfiles()).thenThrow(
                 new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(
                         "the IMAP IDLE monitor is not wired on this node"));
@@ -328,5 +331,122 @@ class IngestSchedulerControllerAnswerTest {
         assertNull(body.get("idleProfiles"), "a listing that refused answered a list anyway");
         assertNotNull(body.get("idleProfilesUnavailable"),
                 "the part that could not be answered said nothing: " + body);
+    }
+
+    private ImportProfileDefinition scheduledProfile() {
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setRepositoryId("bedroom");
+        profile.setEnabled(true);
+        profile.setSchedulerEnabled(true);
+        profile.setDefaultConnectorId("c1");
+        return profile;
+    }
+
+    @Test
+    @DisplayName("the resolution says WHY, and three of the five reasons are not facts about "
+            + "the connector")
+    void theResolutionSaysWhichReasonItIs() {
+        // One null answered all five, and five callers turned it into a statement: ready:false
+        // on the dashboard, two 400s, an empty folder listing, and a silently skipped capture.
+        IngestSchedulerService service = new IngestSchedulerService();
+        assertEquals(IngestSchedulerService.Unresolved.NOT_WIRED,
+                service.resolveConnectorFor(scheduledProfile()).why(),
+                "an unwired node reported something about the connector");
+
+        ConnectorDefinitionService connectors = mock(ConnectorDefinitionService.class);
+        service.setConnectorService(connectors);
+
+        // doThrow/doReturn, not when(...): re-stubbing a call that already throws would
+        // invoke it during the stubbing and raise right there.
+        org.mockito.Mockito.doThrow(
+                new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException("nope"))
+                .when(connectors).get("c1");
+        IngestSchedulerService.ConnectorForProfile notRead =
+                assertDoesNotThrow(() -> service.resolveConnectorFor(scheduledProfile()),
+                        "a refused read took the resolution down instead of being reported");
+        assertEquals(IngestSchedulerService.Unresolved.NOT_READ, notRead.why());
+        assertFalse(notRead.answered(), "a refused read was reported as an answer");
+
+        org.mockito.Mockito.doReturn(null).when(connectors).get("c1");
+        IngestSchedulerService.ConnectorForProfile hidden =
+                service.resolveConnectorFor(scheduledProfile());
+        assertEquals(IngestSchedulerService.Unresolved.ABSENT_OR_HIDDEN, hidden.why());
+        assertFalse(hidden.answered(),
+                "a null from a read that cannot tell absence from a hidden row was reported "
+                        + "as an answer");
+
+        ConnectorDefinition disabled = new ConnectorDefinition();
+        disabled.setConnectorId("c1");
+        disabled.setEnabled(false);
+        org.mockito.Mockito.doReturn(disabled).when(connectors).get("c1");
+        IngestSchedulerService.ConnectorForProfile unusable =
+                service.resolveConnectorFor(scheduledProfile());
+        assertEquals(IngestSchedulerService.Unresolved.NOT_USABLE, unusable.why());
+        assertTrue(unusable.answered(),
+                "a row that WAS read and is disabled stopped being an answer — the split went "
+                        + "too far");
+    }
+
+    @Test
+    @DisplayName("the trigger endpoint answers 503 / 404 / 400 by the reason, not 400 for all")
+    void theTriggerEndpointSplitsByReason() {
+        ImportProfileDefinition profile = scheduledProfile();
+        when(schedulerService.getScheduledProfiles()).thenReturn(java.util.List.of(profile));
+
+        when(schedulerService.resolveConnectorFor(profile)).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(
+                        null, IngestSchedulerService.Unresolved.NOT_READ));
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE,
+                controller.triggerIngest("p1").getStatusCode(),
+                "a connector that could not be read was reported as a bad request");
+
+        ConnectorDefinitionService connectors = mock(ConnectorDefinitionService.class);
+        try {
+            inject("connectorDefinitionService", connectors);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+        when(schedulerService.resolveConnectorFor(profile)).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(
+                        null, IngestSchedulerService.Unresolved.ABSENT_OR_HIDDEN));
+        when(connectors.existsIndexFree("c1")).thenReturn(true);
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE,
+                controller.triggerIngest("p1").getStatusCode(),
+                "a row the index cannot show was reported as absent");
+        when(connectors.existsIndexFree("c1")).thenReturn(false);
+        assertEquals(HttpStatus.NOT_FOUND,
+                controller.triggerIngest("p1").getStatusCode(),
+                "an absence the walk established was not reported as one");
+
+        when(schedulerService.resolveConnectorFor(profile)).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(
+                        null, IngestSchedulerService.Unresolved.NOT_USABLE));
+        assertEquals(HttpStatus.BAD_REQUEST,
+                controller.triggerIngest("p1").getStatusCode(),
+                "a connector that WAS read and is unusable stopped being a 400");
+    }
+
+    @Test
+    @DisplayName("the dashboard says why a profile is not ready, and whether that is an answer")
+    void theDashboardSaysWhyNotReady() {
+        ImportProfileDefinition profile = scheduledProfile();
+        when(schedulerService.getScheduledProfiles()).thenReturn(java.util.List.of(profile));
+        when(schedulerService.getIdleProfiles()).thenReturn(java.util.List.of());
+        when(schedulerService.resolveConnectorFor(profile)).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(
+                        null, IngestSchedulerService.Unresolved.NOT_READ));
+
+        Map<String, Object> body = controller.getStatus().getBody();
+
+        assertNotNull(body);
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> entries =
+                (java.util.List<Map<String, Object>>) body.get("scheduledProfiles");
+        assertEquals(1, entries.size());
+        assertEquals(Boolean.FALSE, entries.get(0).get("ready"));
+        assertEquals("NOT_READ", entries.get(0).get("notReadyReason"),
+                "'ready: false' alone reads as 'the connector is missing or disabled'");
+        assertEquals(Boolean.FALSE, entries.get(0).get("notReadyIsAnAnswer"));
     }
 }

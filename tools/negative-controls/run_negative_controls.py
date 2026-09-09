@@ -5795,6 +5795,54 @@ CONTROLS = [
         test='ImapIdleMonitorWiringTest',
         expect_fail=['theStatusArmsAreCoupledToTheProductsWording'],
     ),
+    dict(
+        id="RP2",
+        what="the connector resolution stops saying WHY it could not resolve — one null for "
+             "an unwired node, a refused read, an absent row and a disabled row alike",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerService.java',
+        find='            } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused) {\n',
+        replace='            } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused) {\n'
+                '                if (true) return new ConnectorForProfile(null, Unresolved.NOT_USABLE);\n',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['theResolutionSaysWhichReasonItIs'],
+    ),
+    dict(
+        id="RQ2",
+        what="the manual trigger answers 400 'No compatible connector' for every reason again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java',
+        find='        response.put("status", "error");\n'
+             '        switch (resolution.why()) {\n',
+        replace='        response.put("status", "error");\n'
+                '        if (true) {\n'
+                '            response.put("message", "No compatible connector found for profile: "\n'
+                '                    + profile.getProfileId());\n'
+                '            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);\n'
+                '        }\n'
+                '        switch (resolution.why()) {\n',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['theTriggerEndpointSplitsByReason'],
+    ),
+    dict(
+        id="RR2",
+        what="the dashboard says only 'ready: false' again, which reads as 'the connector is "
+             "missing or disabled' for three reasons that say nothing about it",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java',
+        find='                entry.put("notReadyReason", String.valueOf(resolution.why()));\n'
+             '                entry.put("notReadyIsAnAnswer", resolution.answered());\n',
+        replace='',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['theDashboardSaysWhyNotReady'],
+    ),
+    dict(
+        id="RS2",
+        what="the lineage attribution describes a profile row that was never READ as one whose "
+             "schedule configured-by is 'unrecorded'",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='        if (profile == null && !profileRowRead) {\n',
+        replace='        if (false) {\n',
+        test='IngestEvidenceSnapshotTest',
+        expect_fail=['anUnreadProfileRowIsNotAttributedAsUnrecorded'],
+    ),
 ]
 
 

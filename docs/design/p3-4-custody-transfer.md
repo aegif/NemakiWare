@@ -9157,3 +9157,42 @@ QZ2 を実測**。1 巡目で RL2 が「別の理由で発火」、RM2 が「発
 欠陥**で (前者は harness 破壊、後者は別経路を測っていた)、直して **最終的に 6/6 発火**。
 錠は 3 本増。`jp.aegif.nemaki.rest.ingest.**` + `CloudantClientWrapperViewValueTest` の
 **73 クラス 1130 本が green**。
+
+### 36 巡目 (処置のみ — 35 巡目の残件を片付けた) — レビュー未実施
+
+35 巡目に「次の巡の先頭で扱う」と書いた残件、すなわち **`get()` の null 契約の残件として
+3 巡目から記録していた呼び出し元群**を片付けた。レビューはこの後に回す。
+
+- **既定コネクタの解決が、5 つの理由すべてに同じ null を返していた。** 呼び出し元 5 か所が
+  それを事実として述べる: 管理画面の `ready: false`、手動起動の 400、フォルダの 400、
+  フォルダのコネクタ一覧からの黙った除外、poll の黙ったスキップ。5 つのうち **3 つは
+  コネクタについての事実ではない** (未配線 / 行は在るが読めない / null が「不在」と
+  「索引から見えない」を兼ねている)。→ 理由を持つ `ConnectorForProfile` を返す形にし、
+  `answered()` で「事実かどうか」を分けた。呼び出し元はそれぞれ:
+  - 手動起動とフォルダの 2 動詞: 未配線・読み取り失敗は **503**、`ABSENT_OR_HIDDEN` は
+    **索引不要の走査 1 回**で 404 と 503 に分け、行が読めていて使えない場合だけ **400**。
+    走査を入れられるのは 1 リクエスト 1 プロファイルだから。
+  - 管理画面: 走査はせず、`notReadyReason` と `notReadyIsAnAnswer` を添える (一覧なので
+    プロファイル数だけ走査するわけにいかない)。
+  - フォルダのコネクタ一覧: 解決できなかったものを `connectorsUnresolved` に名前で挙げる。
+    従来の黙った除外は、同じ行に対して `run` が 503 を返すのと矛盾していた。
+  - poll: 事実でない理由でスキップしたときに ERROR。従来は「無効化された」と区別不能。
+- **再取込の由来イベントが、読めなかった行について 3 つの断定を書いていた。**
+  `confinedProfile` が型付き拒否を握り潰して null を返し、その null から
+  `folderId = null` と「scheduler: admin profile unknown, schedule configured-by
+  unrecorded」が作られ、**証跡として保存**されていた。`unrecorded` はこの実装では
+  「行にその項目が無い」の意味である。→ 読みの結果 (`answered`) を持ち回し、読めなかった
+  ときは「委譲かどうかもスケジュール設定者も確定していない」と書く。イベント本文にも
+  「この行は読めなかった」を足した。
+
+**測定**: 通しバッチは**未実施**。コントロールは **512 → 516 本**、self-test 38/38。
+**新設 4 本 (RP2 / RQ2 / RR2 / RS2) を実測し 4/4 発火**。錠は 5 本増
+(scheduler 3 / evidence 1 / folder は既存錠の stub 更新のみ)。
+`jp.aegif.nemaki.rest.ingest.**` + `CloudantClientWrapperViewValueTest` の
+**73 クラス 1134 本が green**。
+
+**測っていないもの (明記)**: `confinedProfileRead` の `answered` と由来イベントの**接続**は
+コントロールで測っていない。錠は静的メソッド `resolveExecutionAttribution` を直接呼ぶので、
+`confinedProfileRead` 側を「常に answered=true」に壊しても緑のままである
+(「helper でなく呼び出し側を壊す」原則に照らして不足)。`emitReimportEvent` を通す錠には
+lineage emitter・contentService 等の配線が要るため、この巡では入れていない。

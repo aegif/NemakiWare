@@ -162,6 +162,29 @@ only repository gotchas.
     空の一覧を返していました。「動いていない」と「このノードでは答えられない」は別です)
   - `GET .../status` は、この状態でも **200** のままです。スケジュール一覧は読めているので、
     答え全体を落とさず `idleProfiles` の代わりに `idleProfilesUnavailable` に理由を入れます
+- **「プロファイルにコネクタが無い」と断定するのをやめました。** 既定コネクタの解決は、
+  これまで 5 つの異なる理由すべてに `null` を返し、呼び出し元がそれを事実として述べて
+  いました (管理画面の `ready: false`、手動起動の 400「No compatible connector found」、
+  フォルダの 400「No connector resolved」、フォルダのコネクタ一覧からの黙った除外、
+  スケジューラ poll の黙ったスキップ)。5 つのうち **3 つはコネクタについての事実では
+  ありません** (このノードにコネクタサービスが無い / 行は在るが読めない / 読みが null を
+  返したが「不在」と「索引から見えない」の区別がつかない)。
+  - `POST .../ingest-scheduler/trigger/{profileId}` と
+    `POST .../folders/{folderId}/connectors/{profileId}/run` (および資格情報の設定) は、
+    未配線と読み取り失敗で **503**、索引不要の走査で不在が確かめられたときだけ **404**、
+    行が読めていて無効・不許可・archetype 不一致のときだけ **400** です
+  - `GET .../ingest-scheduler/status` は `ready: false` に `notReadyReason` と
+    `notReadyIsAnAnswer` を添えます (一覧なので走査はしません)
+  - フォルダのコネクタ一覧は、解決できなかったプロファイルを `connectorsUnresolved` に
+    名前で挙げます。従来は黙って落としていたため、「実行できるものは無い」と読めました
+  - スケジューラの poll は、事実でない理由でキャプチャを飛ばしたときに **ERROR** を出します
+    (従来は無効化されたコネクタと区別がつきませんでした)
+- **再取込の由来イベントが、読めなかったプロファイル行について断定しなくなりました。**
+  従来はプロファイルの読みが拒否されると `null` になり、そのまま
+  「scheduler: admin profile unknown, schedule configured-by unrecorded」という実行者記述が
+  **証跡として保存**されていました。「unrecorded」はこの実装では「その項目が行に無い」と
+  いう意味で、読めていない行について言えることではありません。今は「行が読めなかったので
+  委譲かどうかもスケジュール設定者も確定していない」と記録します
 - **チェックポイントの一括リセットが「全部消した」と答えなくなりました。**
   `DELETE /core/api/v1/admin/ingest-scheduler/checkpoint/{profileId}` (scope 無し) が消せるのは、
   そのプロファイルの定義行から鍵を組み立てられた分だけです。定義行が読めなかった場合

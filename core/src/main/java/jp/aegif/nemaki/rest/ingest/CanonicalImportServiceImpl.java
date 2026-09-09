@@ -288,12 +288,35 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     }
 
     private ImportProfileDefinition confinedProfile(ExternalIngestRequest request) {
+        return confinedProfileRead(request).profile();
+    }
+
+    /**
+     * The profile row, and whether the read ANSWERED.
+     *
+     * <p>{@code confinedProfile} answers null for a read that refused and for a profile that
+     * is not there alike, and its caller writes the difference into persisted lineage
+     * evidence: a null profile becomes a null folderId and an attribution reading "admin
+     * profile unknown, schedule configured-by unrecorded" — three statements about a row that
+     * was never read, one of which ("unrecorded") is defined elsewhere in this file as "the
+     * row has no such field". A review found it. The read's outcome now travels with it.
+     */
+    private record ProfileRead(ImportProfileDefinition profile, boolean answered) {}
+
+    private ProfileRead confinedProfileRead(ExternalIngestRequest request) {
         try {
-            return resolveProfileForRepository(request.getProfileId(), request.getRepositoryId());
+            return new ProfileRead(
+                    resolveProfileForRepository(request.getProfileId(), request.getRepositoryId()),
+                    true);
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException
+                | ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException couldNotAsk) {
+            logger.warn("import profile {} for {} could not be read: {}",
+                    request.getProfileId(), request.getRepositoryId(), couldNotAsk.getMessage());
+            return new ProfileRead(null, false);
         } catch (RuntimeException e) {
             logger.debug("could not resolve import profile {} for {}: {}",
                     request.getProfileId(), request.getRepositoryId(), e.getMessage());
-            return null;
+            return new ProfileRead(null, false);
         }
     }
 
@@ -1478,6 +1501,33 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
     static jp.aegif.nemaki.rest.purview.journal.LineageExecutionAttribution
             resolveExecutionAttribution(ImportProfileDefinition profile, CallContext callContext) {
+        return resolveExecutionAttribution(profile, callContext, true, null);
+    }
+
+    /**
+     * As above, with what the caller knows about the READ.
+     *
+     * <p>With {@code profileRowRead == false} the row is not absent — it was not read. The
+     * three-arm string below states that the run was not delegated, that the profile is
+     * "unknown", and that the schedule's configured-by is "unrecorded"; the last is defined
+     * here as "the row carries no such field". None of the three is established when the read
+     * refused, and this attribution is persisted as evidence. A review found it.
+     */
+    static jp.aegif.nemaki.rest.purview.journal.LineageExecutionAttribution
+            resolveExecutionAttribution(ImportProfileDefinition profile, CallContext callContext,
+                    boolean profileRowRead, String askedProfileId) {
+        if (profile == null && !profileRowRead) {
+            String named = askedProfileId == null || askedProfileId.isBlank()
+                    ? "the import profile" : "import profile " + askedProfileId;
+            boolean unattended = callContext == null
+                    || DelegatedCallContextFactory.isSynthetic(callContext);
+            return new jp.aegif.nemaki.rest.purview.journal.LineageExecutionAttribution(
+                    (unattended ? "scheduler: " : callContext.getUsername() + "; ")
+                            + named + " could not be read for this event, so whether the run"
+                            + " was delegated and who configured its schedule are not"
+                            + " established",
+                    null);
+        }
         boolean autonomous = callContext == null
                 || DelegatedCallContextFactory.isSynthetic(callContext);
         boolean delegated = profile != null && profile.isDelegated();
@@ -1528,7 +1578,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (filled.isEmpty() && refused.isEmpty()) return;
         try {
             ConnectorDefinition connector = connectorDefinitionService.get(request.getConnectorId());
-            ImportProfileDefinition profile = confinedProfile(request);
+            ProfileRead profileRead = confinedProfileRead(request);
+            ImportProfileDefinition profile = profileRead.profile();
             if (connector == null) return;
             String repositoryId = request.getRepositoryId();
             // The same resolution execute() uses, not profile.getTargetFolderId(): a profile
@@ -1556,8 +1607,18 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (!refused.isEmpty()) {
                 passOutcome.put(CaptureEvidenceField.REIMPORT_REFUSED, String.join(",", refused));
             }
+            if (!profileRead.answered()) {
+                // Said in the record, not left to be inferred from a null folder and an
+                // attribution built out of nothing.
+                passOutcome.put(CaptureEvidenceField.REIMPORT_OUTCOME,
+                        passOutcome.get(CaptureEvidenceField.REIMPORT_OUTCOME)
+                                + "; the import profile row could not be read for this event,"
+                                + " so the target folder and the execution attribution below"
+                                + " are not established from it");
+            }
             jp.aegif.nemaki.rest.purview.journal.LineageExecutionAttribution reimportAttribution =
-                    resolveExecutionAttribution(profile, callContext);
+                    resolveExecutionAttribution(profile, callContext, profileRead.answered(),
+                            request.getProfileId());
             String eventId = ingestLineageEmitter.emitLineageEvent(repositoryId, result.objectId(),
                     folderId, documentName, java.util.UUID.randomUUID().toString(),
                     connector, request,

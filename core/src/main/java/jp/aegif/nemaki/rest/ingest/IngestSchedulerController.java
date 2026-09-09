@@ -27,6 +27,10 @@ public class IngestSchedulerController {
     @Autowired
     private HttpServletRequest httpRequest;
 
+    /** Only for the index-free existence check behind a 404-versus-503 split. */
+    @Autowired(required = false)
+    private ConnectorDefinitionService connectorDefinitionService;
+
     /**
      * Returns the list of profiles with schedulerEnabled=true and their
      * resolved default connectors.
@@ -41,10 +45,19 @@ public class IngestSchedulerController {
             entry.put("profileId", profile.getProfileId());
             entry.put("repositoryId", profile.getRepositoryId());
             entry.put("displayName", profile.getDisplayName());
-            ConnectorDefinition connector = schedulerService.resolveConnectorForProfile(profile);
+            IngestSchedulerService.ConnectorForProfile resolution =
+                    schedulerService.resolveConnectorFor(profile);
+            ConnectorDefinition connector = resolution.connector();
             entry.put("connectorId", connector != null ? connector.getConnectorId() : null);
             entry.put("connectorSystem", connector != null ? connector.getSourceSystem() : null);
             entry.put("ready", connector != null);
+            if (connector == null) {
+                // "ready: false" alone reads as "the connector is missing or disabled" — a
+                // statement three of the five reasons do not support. The reason travels with
+                // it, and says explicitly when this node could not ask.
+                entry.put("notReadyReason", String.valueOf(resolution.why()));
+                entry.put("notReadyIsAnAnswer", resolution.answered());
+            }
             return entry;
         }).toList();
 
@@ -107,11 +120,13 @@ public class IngestSchedulerController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
         }
 
-        ConnectorDefinition connector = schedulerService.resolveConnectorForProfile(profile);
+        IngestSchedulerService.ConnectorForProfile resolution =
+                schedulerService.resolveConnectorFor(profile);
+        ConnectorDefinition connector = resolution.connector();
         if (connector == null) {
-            response.put("status", "error");
-            response.put("message", "No compatible connector found for profile: " + profileId);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            ResponseEntity<Map<String, Object>> refusal =
+                    unresolvedConnector(profile, resolution, response);
+            if (refusal != null) return refusal;
         }
 
         CallContext callContext = getCallContext();
@@ -211,6 +226,59 @@ public class IngestSchedulerController {
             return HttpStatus.CONFLICT;
         }
         return HttpStatus.BAD_REQUEST;
+    }
+
+    /**
+     * The answer for a profile whose connector did not resolve — 400 only when the store
+     * said so.
+     *
+     * <p>"No compatible connector found" was the answer for all five reasons, three of which
+     * are not statements about the connector. The one that needs a second read is
+     * {@code ABSENT_OR_HIDDEN}: one index-free walk tells "there is no such connector" (404)
+     * from "the index cannot show it" (503). That walk is affordable here because this is one
+     * profile per request; the listing that feeds the dashboard does not do it.
+     */
+    private ResponseEntity<Map<String, Object>> unresolvedConnector(
+            ImportProfileDefinition profile,
+            IngestSchedulerService.ConnectorForProfile resolution,
+            Map<String, Object> response) {
+        response.put("status", "error");
+        switch (resolution.why()) {
+            case NOT_WIRED -> {
+                response.put("message", "the connector service is not wired on this node;"
+                        + " retry shortly against a node that runs it");
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
+            }
+            case NOT_READ -> {
+                response.put("message", "connector " + profile.getDefaultConnectorId()
+                        + " exists but could not be read as that connector; retry shortly");
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
+            }
+            case ABSENT_OR_HIDDEN -> {
+                String id = profile.getDefaultConnectorId();
+                boolean rowIsThere;
+                try {
+                    rowIsThere = connectorDefinitionService != null
+                            && connectorDefinitionService.existsIndexFree(id);
+                } catch (RuntimeException couldNotAsk) {
+                    response.put("message", "whether connector " + id + " exists could not be"
+                            + " established; retry shortly: " + couldNotAsk.getMessage());
+                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
+                }
+                if (rowIsThere) {
+                    response.put("message", "connector " + id + " exists but the index cannot"
+                            + " show it; retry shortly");
+                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
+                }
+                response.put("message", "connector " + id + " does not exist");
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+            }
+            default -> {
+                response.put("message", "No compatible connector found for profile: "
+                        + profile.getProfileId());
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            }
+        }
     }
 
     /** The vocabulary that means "this node could not ask", wherever it appears. */

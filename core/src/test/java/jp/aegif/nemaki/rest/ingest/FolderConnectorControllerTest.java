@@ -142,6 +142,10 @@ class FolderConnectorControllerTest {
         folder();
         when(profileService.listByRepository(REPO)).thenReturn(List.of(profile()));
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
+        // The controller reads the RESOLUTION now, so the reason travels with the
+        // value; the old signature is kept for callers that only need the value.
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(connector(), null));
 
         ResponseEntity<Map<String, Object>> r = controller.list(REPO, FOLDER);
         assertEquals(HttpStatus.OK, r.getStatusCode());
@@ -180,6 +184,10 @@ class FolderConnectorControllerTest {
         // selector leaves the controller at 404.
         when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
+        // The controller reads the RESOLUTION now, so the reason travels with the
+        // value; the old signature is kept for callers that only need the value.
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(connector(), null));
         when(schedulerService.executeFetch(any(), any(), any(), any()))
                 .thenReturn(new FetchResult(5, 3, 1, List.of()));
 
@@ -201,6 +209,10 @@ class FolderConnectorControllerTest {
         // selector leaves the controller at 404.
         when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
+        // The controller reads the RESOLUTION now, so the reason travels with the
+        // value; the old signature is kept for callers that only need the value.
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(connector(), null));
         when(schedulerService.executeFetch(any(), any(), any(), any()))
                 .thenReturn(new FetchResult(0, 0, List.of("No token for Slack connector")));
 
@@ -222,6 +234,10 @@ class FolderConnectorControllerTest {
         // selector leaves the controller at 404.
         when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
+        // The controller reads the RESOLUTION now, so the reason travels with the
+        // value; the old signature is kept for callers that only need the value.
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(connector(), null));
         when(schedulerService.executeFetch(any(), any(), any(), any()))
                 .thenReturn(new FetchResult(2, 1, List.of("channel not found")));
 
@@ -239,6 +255,10 @@ class FolderConnectorControllerTest {
         // selector leaves the controller at 404.
         when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
+        // The controller reads the RESOLUTION now, so the reason travels with the
+        // value; the old signature is kept for callers that only need the value.
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(connector(), null));
         when(schedulerService.executeFetch(any(), any(), any(), any()))
                 .thenReturn(new FetchResult(1, 0, List.of(errorMessage)));
         return (boolean) controller.run(REPO, FOLDER, PROFILE).getBody().get("authError");
@@ -310,6 +330,10 @@ class FolderConnectorControllerTest {
         // selector leaves the controller at 404.
         when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
+        // The controller reads the RESOLUTION now, so the reason travels with the
+        // value; the old signature is kept for callers that only need the value.
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(connector(), null));
         when(authService.canUseConnectorForDelegatedProfile(any(), any(), any(), any()))
                 .thenReturn(false);
 
@@ -329,6 +353,10 @@ class FolderConnectorControllerTest {
         // selector leaves the controller at 404.
         when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
+        // The controller reads the RESOLUTION now, so the reason travels with the
+        // value; the old signature is kept for callers that only need the value.
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(connector(), null));
         when(schedulerService.executeFetch(any(), any(), any(), any()))
                 .thenReturn(new FetchResult(0, 0, List.of("No token for Slack connector")));
 
@@ -364,6 +392,10 @@ class FolderConnectorControllerTest {
         ConnectorDefinition c = connector();
         c.setCredentialRef("INGEST_SLACK_TOKEN");
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(c);
+        // The controller reads the RESOLUTION now, so the reason travels with the
+        // value; the old signature is kept for callers that only need the value.
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(c, null));
 
         ResponseEntity<Map<String, Object>> r =
                 controller.setCredential(REPO, FOLDER, PROFILE, Map.of());
@@ -383,6 +415,10 @@ class FolderConnectorControllerTest {
         when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         // connector() leaves credentialRef null
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
+        // The controller reads the RESOLUTION now, so the reason travels with the
+        // value; the old signature is kept for callers that only need the value.
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(connector(), null));
 
         ResponseEntity<Map<String, Object>> r =
                 controller.setCredential(REPO, FOLDER, PROFILE, Map.of("token", "x"));
@@ -404,6 +440,10 @@ class FolderConnectorControllerTest {
         // Documented credentialRef convention: ingest.* namespace.
         c.setCredentialRef("ingest.slack.sales.token");
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(c);
+        // The controller reads the RESOLUTION now, so the reason travels with the
+        // value; the old signature is kept for callers that only need the value.
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(c, null));
 
         ResponseEntity<Map<String, Object>> r =
                 controller.setCredential(REPO, FOLDER, PROFILE, Map.of("token", "new-token"));
@@ -428,6 +468,10 @@ class FolderConnectorControllerTest {
         // repurposed as a general config writer.
         c.setCredentialRef("couchdb.password");
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(c);
+        // The controller reads the RESOLUTION now, so the reason travels with the
+        // value; the old signature is kept for callers that only need the value.
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(c, null));
 
         ResponseEntity<Map<String, Object>> r =
                 controller.setCredential(REPO, FOLDER, PROFILE, Map.of("token", "x"));
@@ -450,6 +494,10 @@ class FolderConnectorControllerTest {
         // (allowlist, not denylist).
         c.setCredentialRef("myapp.api.secret");
         when(schedulerService.resolveConnectorForProfile(any())).thenReturn(c);
+        // The controller reads the RESOLUTION now, so the reason travels with the
+        // value; the old signature is kept for callers that only need the value.
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(c, null));
 
         ResponseEntity<Map<String, Object>> r =
                 controller.setCredential(REPO, FOLDER, PROFILE, Map.of("token", "x"));
