@@ -1,8 +1,8 @@
 package jp.aegif.nemaki.rest.ingest;
 
 import tools.jackson.databind.ObjectMapper;
-import org.junit.Test;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
 import jp.aegif.nemaki.config.ObjectMapperFactory;
@@ -63,10 +63,11 @@ public class IngestJobRecordTest {
 
     @Test
     public void testStatusEnum() {
-        assertEquals(4, IngestJobRecord.Status.values().length);
-        assertNotNull(IngestJobRecord.Status.valueOf("RUNNING"));
-        assertNotNull(IngestJobRecord.Status.valueOf("COMPLETED"));
-        assertNotNull(IngestJobRecord.Status.valueOf("FAILED"));
-        assertNotNull(IngestJobRecord.Status.valueOf("PARTIAL"));
+        // By NAME, not by count. The count said 4 and the enum has had STUCK for a while;
+        // the class never ran (JUnit 4 with no vintage engine), so the drift was invisible.
+        // A set comparison catches a rename as well as an addition, and says which.
+        assertEquals(java.util.Set.of("RUNNING", "COMPLETED", "FAILED", "PARTIAL", "STUCK"),
+                java.util.Arrays.stream(IngestJobRecord.Status.values())
+                        .map(Enum::name).collect(java.util.stream.Collectors.toSet()));
     }
 }

@@ -160,26 +160,39 @@ public class IngestSchedulerController {
      */
     private static HttpStatus statusOfIdleRefusal(String error) {
         String message = error == null ? "" : error;
+        // PREFIX-matched arms first. Every message here embeds the caller's own profileId, so
+        // a substring test can be satisfied by the id itself: an admin asking to start
+        // "foo retry shortly" produced "Profile not found: foo retry shortly" and got a 503.
+        // A review found it. Anchoring these at the start, and testing them before the
+        // substring arms, takes the id out of the decision for the cases that have a fixed
+        // opening.
+        //
+        // Absence the index-free read ESTABLISHED — not a retry, and not a wrong request.
+        if (message.startsWith("Profile not found")
+                || message.startsWith("import profile ") && message.contains(
+                        " no longer has a row in repository ")) {
+            return HttpStatus.NOT_FOUND;
+        }
+        // A session that is already there is a standing conflict: no retry and no correction
+        // of the request changes it. A review found it on the 400 arm while every other
+        // conflict on this endpoint had moved.
+        if (message.startsWith("IDLE already running")) {
+            return HttpStatus.CONFLICT;
+        }
+        // An authorisation outcome, answered as a malformed request until a review named it.
+        if (message.startsWith("Delegated authorization denied")) {
+            return HttpStatus.FORBIDDEN;
+        }
         if (message.contains("retry shortly")
                 || message.contains("could not be established")
                 || message.contains("could not be read")
                 || message.contains("could not be looked up")) {
             return HttpStatus.SERVICE_UNAVAILABLE;
         }
-        // The twin-pair wording of both services. No retry makes a standing pair go away, so
-        // it is 409 here exactly as it is on the definition APIs and the ingest endpoints.
+        // The twin-pair wording of both services, 409 here exactly as on the definition APIs.
         if (message.contains("more than one definition row")
-                || message.contains("more than one owned definition row")
-                // A session that is already there is a standing conflict too, and no retry
-                // and no correction of the request changes it. A review found it on the 400
-                // arm while every other conflict on this endpoint had moved.
-                || message.startsWith("IDLE already running")) {
+                || message.contains("more than one owned definition row")) {
             return HttpStatus.CONFLICT;
-        }
-        // Absence the index-free read ESTABLISHED — the one case here that is not about the
-        // request being wrong and not about retrying.
-        if (message.startsWith("Profile not found")) {
-            return HttpStatus.NOT_FOUND;
         }
         return HttpStatus.BAD_REQUEST;
     }
@@ -288,11 +301,16 @@ public class IngestSchedulerController {
      * definition APIs have had this floor since the batch began; a review found the scheduler,
      * ingest, DLQ and webhook controllers without it.
      *
-     * <p>Where they come from, corrected: the listing behind {@code GET /status} and
-     * {@code POST /trigger/{id}} ({@code listScheduledIndexFree}). NOT the checkpoint
-     * enumeration, which an earlier version of this note named — that path reads through the
-     * profile {@code get()}, and every arm of that read answers null rather than throwing. A
-     * review found the note describing a route that does not exist.
+     * <p>Where they come from, both types. The PROFILE refusal comes from the listing behind
+     * {@code GET /status} and {@code POST /trigger/{id}} ({@code listScheduledIndexFree}, and
+     * the unwired arm of {@code getScheduledProfiles}). The CONNECTOR refusal comes from the
+     * same two endpoints, per profile, through {@code resolveConnectorForProfile} — its
+     * {@code get()} rethrows when the deterministic id holds another document. NOT the
+     * checkpoint enumeration, which the first version of this note named: that path reads
+     * through the profile {@code get()}, and every arm of that read answers null rather than
+     * throwing. A review found the first error; the next one found that the correction had
+     * described only the profile half — and that the ledger recorded the correction as done
+     * when the file had not been touched.
      */
     @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
             ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})

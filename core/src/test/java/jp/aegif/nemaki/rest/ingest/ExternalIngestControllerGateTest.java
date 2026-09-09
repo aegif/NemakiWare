@@ -715,6 +715,80 @@ class ExternalIngestControllerGateTest {
         assertEquals(HttpStatus.CONFLICT,
                 controller.connectorCannotSayWhatItIs(refused).getStatusCode(),
                 "a row an operator has to fix was answered as a retry");
-        assertEquals(ctx, ctx);
+        assertNotNull(ctx);
+    }
+
+    @Test
+    void anUnwiredConnectorServiceDoesNotPickTheFlowFromTheFileName() throws Exception {
+        // The third arm, found by two reviewers independently after the first two were
+        // closed: an unwired service answered null, and the dispatch reads null as "no
+        // connector context". Latent behind Spring's required wiring, but this class exists
+        // to exercise exactly the "service is null" modes, and the non-admin path already
+        // refuses on this one.
+        adminContext();
+        inject("connectorDefinitionService", null);
+
+        ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused = assertThrows(
+                ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> ingest(messageOnANamedConnector()),
+                "an unwired connector service was answered as 'no connector context'");
+        // On the MESSAGE, because the refusal alone does not discriminate: without the guard
+        // the very next line dereferences the null service, the NullPointerException lands on
+        // the failed-read arm, and the caller still gets a refusal — with a reason that names
+        // a read failure instead of the wiring. The control measured that and did not fire
+        // until this assertion was added.
+        assertTrue(refused.getMessage().contains("not wired on this node"),
+                "an unwired node was reported as a failed read: " + refused.getMessage());
+        verifyNoInteractions(canonicalImportService);
+    }
+
+    @Test
+    void aDelegatedIngestRefusedByAReadIsStillAudited() throws Exception {
+        // A delegated attempt that leaves by exception left NO audit entry, while the same
+        // input was audited before those refusals existed — and the javadoc said the trail
+        // covered every outcome. A review found the gap; the note that followed said closing
+        // it would mean touching the authorisation gate, and the next review showed the
+        // dispatch call site already holds everything the audit needs.
+        CallContext ctx = nonAdminContext();
+        jp.aegif.nemaki.audit.AuditLogger auditLogger =
+                mock(jp.aegif.nemaki.audit.AuditLogger.class);
+        inject("auditLogger", auditLogger);
+        ImportProfileDefinition p = delegatedProfile();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER))
+                .thenReturn(true);
+        when(ingestAuthorizationService.canUseConnectorForDelegatedProfile(
+                any(), any(), any(), any())).thenReturn(true);
+        // The gate reads the connector and does not look at its archetype; the dispatch
+        // reads it and refuses. One row serves both, so the gate passes and the refusal is
+        // raised exactly where the audit used to be lost.
+        ConnectorDefinition noArchetype = delegatedConnector();
+        noArchetype.setSourceArchetype(null);
+        when(connectorDefinitionService.get(CONN)).thenReturn(noArchetype);
+
+        assertThrows(ExternalIngestController.ConnectorArchetypeUnusableException.class,
+                () -> ingest(messageOnANamedConnector()),
+                "the dispatch accepted a connector that does not say what it is");
+
+        verify(auditLogger).logOperation(
+                any(jp.aegif.nemaki.audit.AuditOperation.class), any(), any(), any(),
+                eq(false), any(), any());
+        assertNotNull(ctx);
+    }
+
+    @Test
+    void theRefusalAnswersTheEndpointsOwnDocument() {
+        // The handler returned a bare map while every other answer from this endpoint is an
+        // ExternalIngestResult, so a client parsing requestId / success / errors got a shape
+        // it does not know from the one path that refuses. A review found the undescribed
+        // change.
+        ResponseEntity<ExternalIngestResult> res = controller.definitionRowsCouldNotBeRead(
+                new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException("nope"));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode());
+        assertNotNull(res.getBody(), "the refusal answered no document at all");
+        assertFalse(res.getBody().isSuccess(), "a refusal reported success");
     }
 }

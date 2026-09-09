@@ -162,7 +162,22 @@ public class ExternalIngestController {
         boolean isEml = request.getFileName() != null && request.getFileName().toLowerCase().endsWith(".eml");
 
         // Check connector archetype first — it takes precedence over filename
-        SourceArchetype connectorArchetype = resolveConnectorArchetype(request.getConnectorId());
+        SourceArchetype connectorArchetype;
+        try {
+            connectorArchetype = resolveConnectorArchetype(request.getConnectorId());
+        } catch (RuntimeException refused) {
+            // The refusals raised in there leave this method by exception, and a delegated
+            // attempt that leaves by exception used to leave no audit entry at all — while
+            // the same input was audited before those refusals existed. An earlier note here
+            // said moving the audit would mean touching the authorisation gate; a review
+            // showed the call site knows everything it needs. Audited, then rethrown for the
+            // handler that decides the status.
+            if (delegatedRequest) {
+                auditDelegatedAttempt(callContext, repositoryId, request, false,
+                        refused.getMessage(), DenialReason.SERVICES_UNAVAILABLE);
+            }
+            throw refused;
+        }
 
         if (connectorArchetype != null) {
             // Connector archetype is known — dispatch by archetype, not filename
@@ -207,13 +222,13 @@ public class ExternalIngestController {
      * gives the security review trail for the non-admin code path. Admin ingests continue
      * through the existing AOP audit and don't double-log here.
      *
-     * <p>One outcome does not reach it: a read that refuses (the connector could not be read,
-     * or its row does not say which flow the request belongs to) leaves the ingest by
-     * exception, and the handler answers without an audit entry. Before those refusals
-     * existed the same input was audited, as a result. An earlier version of this note said
-     * "regardless of outcome" without the exception; a review found the gap. Recorded rather
-     * than closed here: the refusals are raised below the point that knows the delegated
-     * context, and moving them would put a read refusal inside the authorisation gate.
+     * <p>That includes the outcomes that leave by EXCEPTION — a connector that could not be
+     * read, or whose row does not say which flow the request belongs to. Those refusals once
+     * left no audit entry, while the same input had been audited before they existed. The
+     * first note about it said "regardless of outcome" and did not mention the gap; the
+     * second recorded the gap as not worth closing, on the ground that the refusals are
+     * raised below the point that knows the delegated context. A review showed that ground
+     * was wrong: the dispatch call site holds both, so it is closed there.
      */
     private void auditDelegatedAttempt(CallContext ctx, String repositoryId,
                                        ExternalIngestRequest request, boolean success, String errorMessage) {
@@ -244,11 +259,12 @@ public class ExternalIngestController {
 
     /**
      * Fallback dispatch for "message" sourceObjectType when no connector archetype was
-     * resolved. That now means one thing only: the caller named NO connector, or the walk
-     * ESTABLISHED that the one it named does not exist. A lookup that failed, a row the index
-     * could not show, and a row without an archetype all refuse before reaching here — an
-     * earlier version of this note listed "lookup failed" among the reasons and a review
-     * found it stale. Defaults to the mail parser, since "message" with no connector context
+     * resolved. That means the caller named NO connector, or the walk ESTABLISHED that the
+     * one it named does not exist. Everything else refuses before reaching here: a lookup
+     * that failed, a row the index could not show, a row without an archetype, and an unwired
+     * connector service. An earlier version of this note listed "lookup failed" among the
+     * reasons, and the version after it still let the unwired case through while claiming
+     * otherwise; two reviews found the two. Defaults to the mail parser, since "message" with no connector context
      * is most likely an email.
      */
     private ExternalIngestResult resolveMessageImport(CallContext callContext, ExternalIngestRequest request) {
@@ -262,10 +278,17 @@ public class ExternalIngestController {
     }
 
     /**
-     * The named connector's archetype; null only when the caller named no connector, or when
-     * the connector is established NOT to exist. A row that was read but carries no archetype
-     * refuses rather than answering null — a review found that arm still open after the
-     * failure arm was closed, and the two reach the same wrong dispatch.
+     * The named connector's archetype. Null means ONE thing: the caller named no connector.
+     * Everything else that could once produce a null here now refuses — a read that failed, a
+     * row the index cannot show, a row that carries no archetype, and this service being
+     * unwired. Each was found by a review AFTER the previous one was closed, three rounds
+     * running, because the dispatch above reads null as "no connector context" and picks the
+     * flow from the file name. The one exception is a connector the index-free walk
+     * ESTABLISHES is absent: that answers null and falls through, as it always has.
+     *
+     * <p>An earlier version of this sentence said "null only when the caller named no
+     * connector, or when the connector is established not to exist" while the unwired arm was
+     * still open. Do not restate this in universal terms without checking every return.
      *
      * <p>It used to answer null for a failed lookup too, and null is what the dispatch above
      * reads as "no connector context" — so a transient read failure sent the request into the
@@ -282,7 +305,19 @@ public class ExternalIngestController {
      * where the ordinary read already failed to produce a connector.
      */
     private SourceArchetype resolveConnectorArchetype(String connectorId) {
-        if (connectorId == null || connectorDefinitionService == null) return null;
+        if (connectorId == null) return null;
+        if (connectorDefinitionService == null) {
+            // The third arm of the same hole, found by two reviewers independently after the
+            // first two were closed. An unwired service answered null, and null is what the
+            // dispatch reads as "no connector context" — so the flow came from the file name
+            // again. Latent (Spring wires this or fails to start), but the class already
+            // refuses on exactly this shape for the non-admin path and for the authorization
+            // service; only the admin dispatch degraded silently.
+            throw new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                    "the connector service is not wired on this node, so which import flow"
+                            + " this request belongs to cannot be established; retry shortly"
+                            + " against a node that runs it");
+        }
         try {
             ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
             if (connector != null) {

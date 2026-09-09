@@ -236,4 +236,51 @@ class IngestSchedulerControllerAnswerTest {
         assertTrue(refused.getMessage().contains("not wired on this node"),
                 "the refusal does not say what is wrong: " + refused.getMessage());
     }
+
+    @Test
+    @DisplayName("the delegated-wiring refusal is a 503, and an authorisation denial is a 403 "
+            + "— neither is a malformed request")
+    void wiringIsA503AndADenialIsA403() {
+        // The 503 half of the previous round's IDLE fix had no lock at all: the message was
+        // rewritten to carry the retry marker and nothing measured it, while the ledger
+        // presented the item as measured. The 403 is the next review's: an authorisation
+        // outcome was answered as a bad request.
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, startIdleAnswering(
+                "delegated IMAP IDLE could not be authorised: the scheduler is not wired on"
+                        + " this node; retry shortly against a node that runs it"),
+                "an unwired scheduler was answered as a malformed request");
+        assertEquals(HttpStatus.FORBIDDEN, startIdleAnswering(
+                "Delegated authorization denied for profile p1 (CREATOR_INACTIVE)"),
+                "an authorisation denial was answered as a malformed request");
+    }
+
+    @Test
+    @DisplayName("a profile that lost its row is a 404, and a hostile profileId cannot buy a "
+            + "different status")
+    void absenceAfterTheFactIsA404AndTheIdCannotSteerTheStatus() {
+        assertEquals(HttpStatus.NOT_FOUND, startIdleAnswering(
+                "import profile p1 no longer has a row in repository bedroom;"
+                        + " IDLE not started"),
+                "an absence established after registration was answered as a bad request");
+        // Every message here embeds the caller's own profileId, and the substring arms were
+        // tested first — so an admin could ask to start a profile NAMED "foo retry shortly"
+        // and be told 503. A review found it. The prefix-anchored arms now decide first.
+        assertEquals(HttpStatus.NOT_FOUND, startIdleAnswering(
+                "Profile not found: foo retry shortly"),
+                "the profileId in the message chose the status");
+    }
+
+    @Test
+    @DisplayName("an unwired node cannot list IDLE sessions either — the verbs beside it "
+            + "already say so")
+    void anUnwiredNodeCannotListSessions() {
+        IngestSchedulerService real = new IngestSchedulerService();
+
+        ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException refused = assertThrows(
+                ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+                real::getIdleProfiles,
+                "a node that cannot run IDLE answered 'no session is running'");
+        assertTrue(refused.getMessage().contains("not wired on this node"),
+                "the refusal does not say what is wrong: " + refused.getMessage());
+    }
 }

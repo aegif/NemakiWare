@@ -199,8 +199,21 @@ public class IngestSchedulerService {
                 : idleNotWired("stopped");
     }
 
+    /**
+     * The profiles with a live IDLE session ON THIS NODE. Empty means none is running here.
+     *
+     * <p>Refuses when the monitor is not wired, rather than answering the empty list: the two
+     * verbs beside it answer 503 for that state, and a listing that says "none" while the
+     * start says "this node cannot" contradicts itself on the same node. A review found the
+     * pair disagreeing.
+     */
     public List<String> getIdleProfiles() {
-        return imapIdleMonitor != null ? imapIdleMonitor.getIdleProfiles() : List.of();
+        if (imapIdleMonitor == null) {
+            throw new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(
+                    "the IMAP IDLE monitor is not wired on this node, so its sessions cannot"
+                            + " be listed; retry shortly against a node that runs it");
+        }
+        return imapIdleMonitor.getIdleProfiles();
     }
 
     /**
@@ -856,7 +869,12 @@ public class IngestSchedulerService {
      * returns the list of eligible profiles. Does NOT execute ingest —
      * that requires a concrete connector adapter.
      *
-     * @return list of profiles eligible for scheduled execution
+     * @return list of profiles eligible for scheduled execution — EMPTY means none is
+     *         configured and enabled, never "the schedule could not be read"
+     * @throws ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException when the
+     *         listing could not be answered, including when this node is not wired for it.
+     *         All three callers depend on this: the poll logs and skips, and the two
+     *         endpoints answer 503 through the controller's handler.
      */
     public List<ImportProfileDefinition> getScheduledProfiles() {
         if (repositoryInfoMap == null || profileService == null) {

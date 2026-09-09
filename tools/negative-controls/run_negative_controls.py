@@ -5553,10 +5553,12 @@ CONTROLS = [
         id="QU2",
         what="QT2's other half — the 404 arm for an absence the read established",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java',
-        find='        if (message.startsWith("Profile not found")) {',
-        replace='        if (false) {',
+        find='        if (message.startsWith("Profile not found")\n',
+        replace='        if (false\n',
         test='IngestSchedulerControllerAnswerTest',
-        expect_fail=['absenceIsA404AndABadSettingIsStillA400'],
+        # The second name is from the measurement: both locks drive the same 404 arm.
+        expect_fail=['absenceIsA404AndABadSettingIsStillA400',
+                     'absenceAfterTheFactIsA404AndTheIdCannotSteerTheStatus'],
     ),
     dict(
         id="QV2",
@@ -5632,8 +5634,8 @@ CONTROLS = [
         what="a session that is already running is a bad request again, where every other "
              "standing conflict on this endpoint answers 409",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java',
-        find='                || message.startsWith("IDLE already running")) {\n',
-        replace='                || false) {\n',
+        find='        if (message.startsWith("IDLE already running")) {\n',
+        replace='        if (false) {\n',
         test='IngestSchedulerControllerAnswerTest',
         expect_fail=['aStandingPairIsA409'],
     ),
@@ -5647,6 +5649,93 @@ CONTROLS = [
                 '            if (true) return List.of();\n',
         test='IngestSchedulerControllerAnswerTest',
         expect_fail=['anUnwiredScheduledListingRefuses'],
+    ),
+    dict(
+        id="RD2",
+        what="an UNWIRED connector service becomes 'no connector context' again — the third "
+             "arm of the archetype hole, found after the first two were closed",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='        if (connectorDefinitionService == null) {\n',
+        replace='        if (false) {\n',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['anUnwiredConnectorServiceDoesNotPickTheFlowFromTheFileName'],
+    ),
+    dict(
+        id="RE2",
+        what="a delegated ingest refused by a read leaves no audit entry again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='            if (delegatedRequest) {\n'
+             '                auditDelegatedAttempt(callContext, repositoryId, request, false,\n'
+             '                        refused.getMessage(), DenialReason.SERVICES_UNAVAILABLE);\n'
+             '            }\n',
+        replace='',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['aDelegatedIngestRefusedByAReadIsStillAudited'],
+    ),
+    dict(
+        id="RF2",
+        what="an authorisation denial on the IDLE endpoint is a malformed request again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java',
+        find='        if (message.startsWith("Delegated authorization denied")) {\n',
+        replace='        if (false) {\n',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['wiringIsA503AndADenialIsA403'],
+    ),
+    dict(
+        id="RG2",
+        what="the delegated-wiring refusal loses its retry marker again, so an unwired "
+             "scheduler is a malformed request",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='                return "delegated IMAP IDLE could not be authorised: the scheduler is"\n'
+             '                        + " not wired on this node; retry shortly against a node that"\n'
+             '                        + " runs it";\n',
+        replace='                return "Delegated IMAP IDLE requires scheduler wiring for authorization";\n',
+        # Measured by the MONITOR's own test: the controller test feeds the message in by
+        # hand, so a control on the product's wording left it green and did not fire.
+        test='ImapIdleMonitorWiringTest',
+        expect_fail=['anUnwiredSchedulerSaysSo'],
+    ),
+    dict(
+        id="RH2",
+        what="a profile that lost its row is a malformed request again, and the substring "
+             "arms decide before the prefix-anchored ones so the profileId steers the status",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java',
+        find='        if (message.startsWith("Profile not found")\n'
+             '                || message.startsWith("import profile ") && message.contains(\n'
+             '                        " no longer has a row in repository ")) {\n',
+        replace='        if (false) {\n',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['absenceAfterTheFactIsA404AndTheIdCannotSteerTheStatus',
+                     'absenceIsA404AndABadSettingIsStillA400'],
+    ),
+    dict(
+        id="RI2",
+        what="an unwired node lists no IDLE session instead of saying it cannot list them",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerService.java',
+        find='        if (imapIdleMonitor == null) {\n'
+             '            throw new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(\n',
+        replace='        if (imapIdleMonitor == null) {\n'
+                '            if (true) return List.of();\n'
+                '            throw new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(\n',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['anUnwiredNodeCannotListSessions'],
+    ),
+    dict(
+        id="RJ2",
+        what="the ingest refusal answers a bare map again, not the endpoint's own document",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)\n'
+             '                .body(ExternalIngestResult.error("unknown", String.valueOf(e.getMessage())));\n'
+             '    }\n'
+             '\n'
+             '    /** A connector whose stored row cannot say which flow the request belongs to. */\n',
+        replace='        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)\n'
+                '                .body(ExternalIngestResult.success("unknown", "unknown", "1.0", false, null));\n'
+                '    }\n'
+                '\n'
+                '    /** A connector whose stored row cannot say which flow the request belongs to. */\n',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['theRefusalAnswersTheEndpointsOwnDocument'],
     ),
 ]
 
