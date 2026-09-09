@@ -38,12 +38,14 @@ its 0 covers only the controls it names. `--self-test` and `--compile-check` mea
 control at all and have their own 0.
 
 A non-zero exit is NOT one thing. It can mean a control did not fire, fired for the wrong
-reason, or removes more protections than its record says; it can equally mean NOTHING WAS
-MEASURED — the pre-flight refused (self-test, a stale expect_fail, a drifted anchor, an
-unknown id), a Maven run produced no reports, a sabotage no longer applies, the tree was
-edited under the run so a restore was refused, or the restored tree did not come back
-green. The last line printed says which; do not read a non-zero exit as "a protection is
-missing" without it.
+reason, removes more protections than its record says, or produced a failure line this
+runner could not read; it can equally mean NOTHING WAS MEASURED — the pre-flight refused
+(self-test, a stale expect_fail, a drifted anchor, an unknown id), a compile-check found a
+sabotage that no longer builds, a Maven run produced no reports, a sabotage no longer
+applies, the tree was edited under the run so a restore was refused, or the restored tree
+did not come back green. Read the OUTPUT, not the code: the four control-verdict outcomes
+are named on the last line, and everything else refuses where it happens, with its own
+message. Do not read a non-zero exit as "a protection is missing" without looking.
 """
 
 import subprocess
@@ -5498,99 +5500,86 @@ PARSE_GAPS: list = []
 
 
 def failed_method_names(failed: str) -> list:
-    """The test method names in surefire's failure lines.
-
-    Surefire 3.x writes "<fully.qualified.Class>.<method> -- Time elapsed: ... <<< FAILURE!";
-    2.x wrote "<method>(<Class>)  Time elapsed ...". The first version of this function knew
-    only the 2.x shape, so it matched NOTHING in this project and the undeclared-lock report
-    it feeds was silently always empty — a mechanism that reads as working while measuring
-    nothing, which is the defect this whole runner exists to catch. Two reviews found it in
-    the same round; both noted that the runner's own rule (a judgement function needs its own
-    self-test) had not been followed. It is followed now.
-
-    Two other line shapes carry the same marker and must NOT yield a lock name: the per-class
-    SUMMARY line ("Tests run: 3, Failures: 1 ... <<< FAILURE! -- in <class>"), whose text
-    before " -- " is not an identifier at all, and a CLASS-LEVEL failure ("<fully.qualified
-    .Class> -- Time elapsed ... <<< ERROR!", written when a lifecycle method fails), whose last
-    dotted segment is the class. The class-level shape is told apart by what precedes the last
-    segment: a method's parent is a class, which is capitalised in this codebase and in Java
-    convention; a class's parent is a package, which is not. A review demonstrated the
-    class-name-as-a-lock reading before this rule existed.
-
-    Names may contain '$' (legal in Java) and may carry a parameterised suffix ("method[1]");
-    the first version accepted neither and dropped such lines in silence — the same shape of
-    defect as the 2.x-only pattern it replaced. Each of these is a self-test case.
-    """
-    names = []
-    for line in failed.splitlines():
-        name = failure_line_method(line)
-        if name:
-            names.append(name)
-    return names
+    """The lock names in surefire's failure lines (see failure_line_kind)."""
+    return [name for name, in
+            ((n,) for kind, n in map(failure_line_kind, failed.splitlines()) if kind == "lock")]
 
 
-def failure_line_method(line: str):
-    """One failure line's method name, or None when the line names no method.
+def failure_line_kind(line: str) -> tuple:
+    """What one collected line is: ("lock", name) / ("not-a-lock", None) / ("unreadable", None).
 
-    Kept separate so the caller can tell "this line has no method in it" (the per-class
-    summary) from "this line has one and we could not read it", which is a defect and is
-    reported rather than dropped — every other judgement in this runner refuses loudly, and
-    four rounds running this one failed silently instead.
+    THREE outcomes, not two, because two different things are not defects. Surefire writes
+    lines that name no method BY CONSTRUCTION — the per-class summary ("Tests run: ...") and a
+    CLASS-LEVEL failure ("<fully.qualified.Class> -- Time elapsed ... <<< ERROR!", written when
+    a lifecycle method fails) — and the collector also picks up any line that merely CONTAINS
+    the marker, an exception message included. None of those is a hole in this reader. What is
+    a hole is a line shaped like a header whose method cannot be read, and only that is
+    reported. A review found the first version calling a class-level line unreadable while a
+    self-test in the same file called it legitimate.
+
+    Shapes this tree's reporter (surefire 3.5.2) writes, all measured against real reports:
+    "<FQCN>.method", "<FQCN>.method(ArgType)" for a method that takes arguments, and
+    "<FQCN>.method(ArgType)[1]" when parameterised. Names may contain '$', and a nested class
+    arrives as "Outer$Nested.method". The 2.x shape ("method(Class)", no dot before the paren)
+    is NOT read: this repository pins 3.5.2, a reader for a shape that cannot occur here could
+    only be measured with an invented fixture, and refusing loudly is what the rest of this
+    runner does with an input it does not know.
     """
     stripped = line.strip()
-    if not stripped:
-        return None
+    if not stripped or stripped.startswith("Tests run:"):
+        # The per-class summary names no method by construction.
+        return ("not-a-lock", None)
+    if "Time elapsed" not in stripped:
+        # Not a header at all: an exception message or a stack frame that happens to carry the
+        # marker. A review pointed out that the collector is line-based over the whole report.
+        # "Time elapsed" is what every header has, in both reporter generations — requiring
+        # " -- " as well would have quietly classified a 2.x header as prose instead of
+        # refusing it.
+        return ("not-a-lock", None)
     head = stripped.split(" -- ")[0].strip()
     if "(" in head:
         before_paren = head.split("(", 1)[0]
-        if "." in before_paren:
-            # Surefire 3.x with a method that TAKES ARGUMENTS: "<FQCN>.method(Type)", and
-            # "<FQCN>.method(Type)[1]" when parameterised. Reading every parenthesised line as
-            # the 2.x shape dropped all of them — this tree has such a class, used by eleven
-            # controls, so the undeclared report was structurally blind there. A review found
-            # it with the reports in hand.
-            parent, name = before_paren.rsplit(".", 2)[-2:]
-        else:
-            # Surefire 2.x: "method(Class)". No dot before the paren is what tells them apart.
-            name, parent = before_paren.strip(), "Class"
+        if "." not in before_paren:
+            return ("unreadable", None)
+        parent, name = before_paren.rsplit(".", 2)[-2:]
     else:
         parts = head.rsplit(".", 1)
         if len(parts) != 2:
-            return None
+            return ("unreadable", None)
         parent, name = parts[0].rsplit(".", 1)[-1], parts[1]
-    # No index to strip: a parameterised invocation's "[1]" follows the ARGUMENT LIST
-    # ("method(String)[1]"), so it is already gone with everything after the paren. A version
-    # of this reader carried a name.split("[") here with a self-test for "method[1]" — a shape
-    # surefire does not emit in this tree, so the strip protected nothing and its case
-    # discriminated nothing. Measured and removed rather than left as decoration.
     if not re.fullmatch(r"[A-Za-z_$][\w$]*", name):
-        return None
+        return ("unreadable", None)
     # A method's parent is a class, a class's parent is a package: the capital tells a
     # CLASS-LEVEL failure line from a method's. A CONVENTION, not a law. Checked against this
     # tree when the rule went in: core/src/test declares no class whose name starts lower-case.
-    # If it is ever broken, the lock drops out of the undeclared report — and because a
-    # dropped line is reported as unreadable (below), that shows up rather than reading as
-    # "nothing undeclared".
     if not re.match(r"[A-Z]", parent):
-        return None
-    return name
+        return ("not-a-lock", None)
+    return ("lock", name)
 
 
 def unreadable_failure_lines(failed: str) -> list:
-    """Failure lines that name a test but whose method this runner could not read.
+    """Header-shaped lines whose method this runner could not read — holes in the reader."""
+    return [line.strip() for line in failed.splitlines()
+            if failure_line_kind(line)[0] == "unreadable"]
 
-    The per-class summary ("Tests run: ...") names no method by construction and is not one.
-    Anything else that carries a failure marker and yields no name is a hole in the reader,
-    and the runner says so instead of counting zero undeclared locks.
+
+def run_exit_message(results: list, undeclared: list, gaps: list):
+    """What a measuring run must exit with, or None when it may exit 0.
+
+    A judgement function with its own cases, because the exit was the one part of this
+    mechanism nobody could measure: a review pointed out that deleting the fatal branch left
+    every self-test green. Order matters — a control that did not fire is the most serious
+    thing a run can find, and it is reported first.
     """
-    gaps = []
-    for line in failed.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("Tests run:"):
-            continue
-        if failure_line_method(stripped) is None:
-            gaps.append(stripped)
-    return gaps
+    if any(not ok for _, ok, _ in results):
+        return "at least one control did not fire; see the summary above"
+    if undeclared:
+        return ("controls whose expect_fail is incomplete (the locks above failed under them "
+                "on their own assertions and are not declared)")
+    if gaps:
+        return ("failure lines this runner could not read; the undeclared-lock report is not "
+                "complete for the controls listed above")
+    return None
 
 
 def run_test(test_class: str) -> tuple[bool, str, str]:
@@ -5727,7 +5716,7 @@ SELF_TEST_CASES = [
     # (name, callable -> actual, expected)
     # failed_method_names had no case at all when it was added, and it matched nothing in this
     # project's surefire output — a judgement function that reads as working while measuring
-    # nothing. These four are the shapes the runner actually meets.
+    # nothing. These are the shapes the runner actually meets, taken from this tree's reports.
     ("a surefire 3.x failure line yields the method name",
      lambda: failed_method_names(
          "jp.aegif.nemaki.rest.ingest.SomeTest.someLock -- Time elapsed: 0.1 s <<< FAILURE!"),
@@ -5736,27 +5725,27 @@ SELF_TEST_CASES = [
      lambda: failed_method_names(
          "jp.aegif.nemaki.rest.ingest.SomeTest.someLock -- Time elapsed: 0.1 s <<< ERROR!"),
      ["someLock"]),
-    # This case used to pass with its protection (a startswith("Tests run:") guard) removed —
-    # the guard was unreachable, because the identifier check rejects the line anyway. A review
-    # measured that and called it what it is: a test that measures nothing. The guard is gone;
-    # what this case now measures is the identifier check.
-    ("the per-class summary line is not a lock",
-     lambda: failed_method_names(
+    # THREE outcomes, so these cases name the outcome rather than just the absence of a name:
+    # a line that names no method by construction is not a hole in the reader, and a review
+    # found the first version treating a class-level line as one.
+    ("the per-class summary line names no method, and is not a hole in the reader",
+     lambda: failure_line_kind(
          "Tests run: 3, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.2 s <<< FAILURE!"
          " -- in jp.aegif.nemaki.rest.ingest.SomeTest"),
-     []),
-    ("a CLASS-LEVEL failure is not a lock",
-     lambda: failed_method_names(
+     ("not-a-lock", None)),
+    ("a CLASS-LEVEL failure names no method, and is not a hole either",
+     lambda: failure_line_kind(
          "jp.aegif.nemaki.rest.ingest.SomeTest -- Time elapsed: 0.1 s <<< ERROR!"),
-     []),
+     ("not-a-lock", None)),
+    ("an exception message carrying the marker is not a header",
+     lambda: failure_line_kind(
+         "org.opentest4j.AssertionFailedError: the report said <<< FAILURE! here"),
+     ("not-a-lock", None)),
     ("a name containing $ is still a lock",
      lambda: failed_method_names(
          "jp.aegif.nemaki.rest.ingest.SomeTest.some$Lock -- Time elapsed: 0.1 s <<< FAILURE!"),
      ["some$Lock"]),
-    # The two shapes below are copied from this tree's own reports, not invented: a method
-    # that TAKES ARGUMENTS is reported with them, and a parameterised one adds the index after
-    # the parens. The first version of this case used "someLock[1]", which surefire does not
-    # emit here — measuring a substitute for the shape it claimed to measure.
+    # Both shapes below are copied from this tree's own reports, package and nesting included.
     ("a method that takes arguments is still a lock (this tree's real shape)",
      lambda: failed_method_names(
          "jp.aegif.nemaki.rest.importexport.ExportsRefuseMissingBytesTest"
@@ -5764,25 +5753,36 @@ SELF_TEST_CASES = [
      ["aRefusedDocumentLeavesNoFile"]),
     ("a parameterised invocation names its method (this tree's real shape)",
      lambda: failed_method_names(
-         "jp.aegif.nemaki.util.UrlValidatorTest"
-         ".testLinkLocalAllowedInSetupOnAllowedPort(String)[1] -- Time elapsed: 0.1 s <<< FAILURE!"),
+         "jp.aegif.nemaki.api.setup.filter.UrlValidatorTest$PrivateAddressMatrix"
+         ".testLinkLocalAllowedInSetupOnAllowedPort(String)[1]"
+         " -- Time elapsed: 0.1 s <<< FAILURE!"),
      ["testLinkLocalAllowedInSetupOnAllowedPort"]),
-    # A POSITIVE control: no protection added here makes it red, and it is not counted among
-    # the ones that do. It guards the shape against a future reader that splits on the first
-    # dot or the last dollar.
+    # A POSITIVE control: no protection here makes it red, and it is not counted among the
+    # ones that do. It guards the shape against a reader that splits on the first dot.
     ("a nested class's method is still a lock (positive control)",
      lambda: failed_method_names(
          "jp.aegif.nemaki.rest.ingest.Outer$Nested.someLock -- Time elapsed: 0.1 s <<< FAILURE!"),
      ["someLock"]),
-    ("a failure line whose method cannot be read is REPORTED, not dropped",
+    ("a header whose method cannot be read IS a hole, and is reported",
      lambda: unreadable_failure_lines(
-         "?? -- Time elapsed: 0.1 s <<< FAILURE!\n"
-         "Tests run: 1, Failures: 1 <<< FAILURE! -- in jp.aegif.SomeTest\n"
-         "jp.aegif.SomeTest.someLock -- Time elapsed: 0.1 s <<< FAILURE!"),
-     ["?? -- Time elapsed: 0.1 s <<< FAILURE!"]),
-    ("the older parenthesised shape still yields the method name",
-     lambda: failed_method_names("someLock(jp.aegif.nemaki.rest.ingest.SomeTest)  Time elapsed"),
-     ["someLock"]),
+         "jp.aegif.SomeTest.2bad -- Time elapsed: 0.1 s <<< FAILURE!\n"
+         "jp.aegif.nemaki.SomeTest.someLock -- Time elapsed: 0.1 s <<< FAILURE!"),
+     ["jp.aegif.SomeTest.2bad -- Time elapsed: 0.1 s <<< FAILURE!"]),
+    ("the 2.x shape this reporter cannot emit is refused, not guessed at",
+     lambda: unreadable_failure_lines(
+         "someLock(jp.aegif.SomeTest)  Time elapsed: 0.1 s <<< FAILURE!"),
+     ["someLock(jp.aegif.SomeTest)  Time elapsed: 0.1 s <<< FAILURE!"]),
+    # The exit decision, which nothing measured until a review said so: deleting the fatal
+    # branch left every case green.
+    ("a clean run may exit 0",
+     lambda: run_exit_message([("A", True, "")], [], []), None),
+    ("a control that did not fire is the most serious finding",
+     lambda: run_exit_message([("A", False, "")], [("A", ["x"])], [("A", ["y"])]),
+     "at least one control did not fire; see the summary above"),
+    ("an undeclared lock alone still fails the run",
+     lambda: run_exit_message([("A", True, "")], [("A", ["x"])], []) is not None, True),
+    ("an unreadable line alone still fails the run",
+     lambda: run_exit_message([("A", True, "")], [], [("A", ["y"])]) is not None, True),
     ("a JUnit assertion is a firing",
      lambda: failed_as_assertion(
          "someTest -- Time elapsed: 0.1 s <<< FAILURE!\n"
@@ -6227,24 +6227,17 @@ def main() -> None:
         print("\n== locks that failed without being declared (complete the expect_fail lists) ==")
         for cid, names in UNDECLARED:
             print(f"  {cid}: {names}")
-    if fired != len(results):
-        sys.exit(1)
     if PARSE_GAPS:
         print("\n== failure lines this runner could not read (the undeclared report above is "
               "incomplete for these controls) ==")
         for cid, lines in PARSE_GAPS:
             print(f"  {cid}: {lines}")
-    if UNDECLARED:
-        # FATAL, after the full measurement is printed. Every control fired, so the
-        # protections are there — but a control whose record says it removes two protections
-        # while it removes nine is a weaker fact reading as a stronger one, which this project
-        # treats as a defect. A review asked for the exit code to say so rather than leaving
-        # the list as a note nobody has to act on.
-        sys.exit("controls whose expect_fail is incomplete (the locks above failed under them "
-                 "on their own assertions and are not declared)")
-    if PARSE_GAPS:
-        sys.exit("failure lines this runner could not read; the undeclared-lock report is not "
-                 "complete for the controls listed above")
+    # Every list is printed BEFORE the decision, so a run that ends non-zero has already said
+    # everything it measured. The decision itself is a judgement function with its own cases:
+    # a review pointed out that deleting the fatal branch left every self-test green.
+    message = run_exit_message(results, UNDECLARED, PARSE_GAPS)
+    if message:
+        sys.exit(message)
 
 
 if __name__ == "__main__":

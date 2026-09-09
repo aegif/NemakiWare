@@ -2118,9 +2118,9 @@ class ImportProfileLegacyIdMigrationTest {
     }
 
     @Test
-    @DisplayName("which VALUES of \"enabled\" count as disabled is the mapper's answer — the "
-            + "three spellings and \"null\" (with or without surrounding spaces), an empty or "
-            + "blank string yes; \"fAlSe\" and a stored number no")
+    @DisplayName("which VALUES of \"enabled\" count as disabled is the mapper's answer — "
+            + "\"false\"/\"False\"/\"FALSE\", \"  false  \", \"null\", \"  null  \", an empty "
+            + "and a blank string yes; \"fAlSe\" and a stored number no")
     void whichValuesOfADisabledFlagCountIsTheMappersAnswer() {
         // The release notes name these values. They are the mapper's answer, not this code's,
         // so they are measured here through the production mapper rather than asserted from
@@ -2182,8 +2182,8 @@ class ImportProfileLegacyIdMigrationTest {
                 owned.uninterpretable().stream()
                         .map(ImportProfileDefinitionService.UninterpretableRow::docId).sorted().toList(),
                 "the mapper's readings are not the ones this code acts on — the rows here are "
-                        + "\"false\"/\"False\"/\"FALSE\" (trimmed), an empty and a blank "
-                        + "string, and \"null\" "
+                        + "\"false\"/\"False\"/\"FALSE\", \"  false  \", an empty and a "
+                        + "blank string, \"null\" and \"  null  \" "
                         + "(trimmed), which must count as disabled, against \"fAlSe\" and a "
                         + "stored NUMBER, which must not: " + owned.uninterpretable());
         assertTrue(owned.profiles().isEmpty(),
