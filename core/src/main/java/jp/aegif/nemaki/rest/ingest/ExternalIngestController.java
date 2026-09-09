@@ -405,7 +405,13 @@ public class ExternalIngestController {
         if (firstError.contains("not allowed") || firstError.contains("scoped to repository")
                 || firstError.contains("repository mismatch")) return HttpStatus.FORBIDDEN;
         if (firstError.contains("disabled") || firstError.contains("is required")
-                || firstError.contains("no resolvable")) return HttpStatus.BAD_REQUEST;
+                || firstError.contains("no resolvable")
+                // A standing profile misconfiguration the read ANSWERED. Making the refusal
+                // permanent (dropping "; retry shortly") took it off the 503 arm and dropped
+                // it onto the 500 fallback below — worse than the 400 the vaguer message
+                // "no resolvable target folder" had always produced. Two reviewers measured
+                // it in the round that made the suffix conditional.
+                || firstError.contains("fix the profile")) return HttpStatus.BAD_REQUEST;
         return HttpStatus.INTERNAL_SERVER_ERROR;
     }
 

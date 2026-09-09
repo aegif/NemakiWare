@@ -4355,9 +4355,11 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 }
                 // The store answered with no object and no exception. That is not "the
                 // profile configured neither field" either.
+                // The suffix is the CALLER's, added from `retryable`. Baking it in here too
+                // produced "...; retry shortly; retry shortly".
                 throw new TargetFolderUnreadableException("the target folder path '" + folderPath
                         + "' of this profile could not be resolved: the store answered with no"
-                        + " object; retry shortly", null);
+                        + " object", null);
             } catch (TargetFolderUnreadableException alreadySaid) {
                 // The two arms above throw from INSIDE this try, and the generic catch below
                 // re-wrapped them: an ANSWERED "this path is a document, fix the profile"

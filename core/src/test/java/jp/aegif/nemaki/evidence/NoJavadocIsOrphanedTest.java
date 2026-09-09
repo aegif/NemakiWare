@@ -98,7 +98,13 @@ class NoJavadocIsOrphanedTest {
             // Tree, in a package the roots did not reach. Four times is not an oversight, it is
             // the method being wrong: the roots are chosen from the last miss instead of from
             // the diff. Whoever touches this next should widen from `git diff --name-only`.
-            "src/main/java/jp/aegif/nemaki/util/cache");
+            "src/main/java/jp/aegif/nemaki/util/cache",
+            // FIFTH widening, and this time from the DIFF rather than from the miss: the two
+            // exporters are the largest files this batch rewrote (+327 and +214 lines) and the
+            // roots did not reach them. A review found two orphans there, both created by this
+            // branch. Whoever touches this next: run `git diff --name-only master...HEAD` and
+            // widen to cover every package it lists, before the review does it for you.
+            "src/main/java/jp/aegif/nemaki/rest/importexport");
 
     /**
      * Whole files excluded from the scan. EMPTY, and it has to stay that way.

@@ -6159,6 +6159,28 @@ CONTROLS = [
         # why this control did not fire until a lock for this arm existed.
         expect_fail=['aLinkWhoseFolderReadRefusesIsNotLinked_notAnEscapingException'],
     ),
+    dict(
+        id="SR2",
+        what="the CALL SITE appends '; retry shortly' unconditionally again, so a standing "
+             "profile misconfiguration is answered as a retry",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='                    + (couldNotResolve.isRetryable() ? "; retry shortly" : ""));\n',
+        replace='                    + "; retry shortly");\n',
+        # The service's own call site, driven through execute(). The endpoint lock stubs
+        # the import service, so it measures the classifier and not this suffix.
+        test='CanonicalImportServiceTest',
+        expect_fail=['aStandingTargetFolderMisconfigurationIsNotToldToRetry'],
+    ),
+    dict(
+        id="SS2",
+        what="the standing-misconfiguration message matches no status arm again, so the "
+             "ingest endpoint answers 500 for it",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='                || firstError.contains("fix the profile")) return HttpStatus.BAD_REQUEST;\n',
+        replace='                ) return HttpStatus.BAD_REQUEST;\n',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['aStandingProfileMisconfigurationIsA400_notARetryAndNotOurBug'],
+    ),
 ]
 
 

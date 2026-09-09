@@ -332,13 +332,6 @@ public class FilesystemExporter {
     }
 
     /**
-     * Resolve {@code safeName} (already passed through
-     * {@link ImportExportUtils#sanitizeExportName}) under {@code targetDir}
-     * and verify the normalized result is still inside {@code targetDir}.
-     * Returns {@code null} if the resolved path would escape the target
-     * directory — a defense-in-depth check on top of name sanitization.
-     */
-    /**
      * Copies {@code is} onto {@code destination}, leaving whatever is already there untouched
      * unless the whole copy succeeds.
      *
@@ -509,6 +502,13 @@ public class FilesystemExporter {
         }
     }
 
+    /**
+     * Resolve {@code safeName} (already passed through
+     * {@link ImportExportUtils#sanitizeExportName}) under {@code targetDir}
+     * and verify the normalized result is still inside {@code targetDir}.
+     * Returns {@code null} if the resolved path would escape the target
+     * directory — a defense-in-depth check on top of name sanitization.
+     */
     private static java.nio.file.Path resolveUnderTarget(java.nio.file.Path targetDir, String safeName) {
         java.nio.file.Path base = targetDir.toAbsolutePath().normalize();
         java.nio.file.Path resolved = base.resolve(safeName).normalize();

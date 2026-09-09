@@ -545,13 +545,6 @@ public class ZipExporter {
     }
 
     /**
-     * Writes one attachment into the archive, or refuses the archive.
-     *
-     * <p>The three call sites — a document inside a folder, a single document, and each
-     * earlier version — used to hold three copies of the same swallow. They are one method
-     * now so that the next reader cannot close two of them and leave the third.
-     */
-    /**
      * The content arm on its own, for tests.
      *
      * <p>The three public entry points all build metadata through the Spring context, so
@@ -562,6 +555,13 @@ public class ZipExporter {
         writeContent(repositoryId, attachmentNodeId, entryPath, zos, cs);
     }
 
+    /**
+     * Writes one attachment into the archive, or refuses the archive.
+     *
+     * <p>The three call sites — a document inside a folder, a single document, and each
+     * earlier version — used to hold three copies of the same swallow. They are one method
+     * now so that the next reader cannot close two of them and leave the third.
+     */
     private void writeContent(String repositoryId, String attachmentNodeId, String entryPath,
             ZipOutputStream zos, ContentService cs) {
         try {

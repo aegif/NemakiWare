@@ -2471,4 +2471,54 @@ class CanonicalImportServiceTest {
         org.junit.jupiter.api.Assertions.assertEquals(Boolean.FALSE, linked.invoke(outcome),
                 "the link was reported as created");
     }
+
+    @Test
+    void aStandingTargetFolderMisconfigurationIsNotToldToRetry() throws Exception {
+        // The CALL SITE. The lock added with this fix asserted `isRetryable` on the exception
+        // the private resolver throws, and the one after that stubbed the import service, so
+        // restoring the unconditional "; retry shortly" here left both green. Two reviewers
+        // named it as the project's own sabotage-the-call-site-not-the-helper shape, in the
+        // round that fixed an instance of it. This one goes through execute().
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p-path");
+        profile.setRepositoryId("bedroom");
+        profile.setEnabled(true);
+        profile.setTargetFolderPath("/a/not-a-folder");
+        when(profileService.get("p-path")).thenReturn(profile);
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("conn1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("conn1")).thenReturn(connector);
+        when(connectorService.countIndexFree("conn1")).thenReturn(1);
+
+        org.apache.chemistry.opencmis.commons.data.ObjectData doc =
+                mock(org.apache.chemistry.opencmis.commons.data.ObjectData.class);
+        when(doc.getId()).thenReturn("obj-1");
+        org.apache.chemistry.opencmis.commons.data.Properties props =
+                mock(org.apache.chemistry.opencmis.commons.data.Properties.class);
+        @SuppressWarnings("rawtypes")
+        org.apache.chemistry.opencmis.commons.data.PropertyData baseType =
+                mock(org.apache.chemistry.opencmis.commons.data.PropertyData.class);
+        when(baseType.getFirstValue()).thenReturn("cmis:document");
+        when(props.getProperties()).thenReturn(java.util.Map.of("cmis:baseTypeId", baseType));
+        when(doc.getProperties()).thenReturn(props);
+        when(objectService.getObjectByPath(any(), anyString(), anyString(), any(), any(),
+                any(), any(), any(), any(), any())).thenReturn(doc);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p-path");
+        req.setConnectorId("conn1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess());
+        String said = String.join(" ", result.errors());
+        assertTrue(said.contains("not a folder"),
+                "the caller did not say what was actually found: " + said);
+        assertFalse(said.contains("retry shortly"),
+                "the caller told the operator to retry a standing misconfiguration: " + said);
+    }
 }

@@ -821,4 +821,49 @@ class ExternalIngestControllerGateTest {
                 any(jp.aegif.nemaki.audit.AuditOperation.class), any(), any(), any(),
                 eq(false), any(), any());
     }
+
+    @Test
+    void aStandingProfileMisconfigurationIsA400_notARetryAndNotOurBug() {
+        // The CALL SITE, not the thrower. The lock added with this fix asserted `isRetryable`
+        // on the exception the private resolver throws, so restoring the unconditional
+        // "; retry shortly" at the caller left the whole suite green — the project's own
+        // sabotage-the-call-site-not-the-helper shape, in the round that fixed an instance of
+        // it. Two reviewers found that, and found that dropping the suffix had moved this
+        // answer from 400 to 500 because the classifier matched no arm.
+        CallContext ctx = adminContext();
+        ExternalIngestRequest req = baseRequest();
+        req.setConnectorId(null);
+        when(canonicalImportService.execute(eq(ctx), any(ExternalIngestRequest.class)))
+                .thenReturn(ExternalIngestResult.error("src-1",
+                        "the target folder path '/a/b' of this profile resolves to a"
+                                + " cmis:document, not a folder; fix the profile"));
+
+        ResponseEntity<ExternalIngestResult> res = ingest(req);
+
+        assertEquals(HttpStatus.BAD_REQUEST, res.getStatusCode(),
+                "a standing profile misconfiguration was answered as our bug (500) or as a "
+                        + "retry (503)");
+        assertNotNull(res.getBody());
+        assertFalse(String.join(" ", res.getBody().errors()).contains("retry shortly"),
+                "the caller told the operator to retry something no retry fixes: "
+                        + res.getBody().errors());
+    }
+
+    @Test
+    void aTargetFolderReadThatCouldNotAnswerIsStillA503() {
+        // The other side of the pair: a read that did not answer keeps its suffix and its
+        // 503, so making the permanent arm permanent did not take the retryable one with it.
+        CallContext ctx = adminContext();
+        ExternalIngestRequest req = baseRequest();
+        req.setConnectorId(null);
+        when(canonicalImportService.execute(eq(ctx), any(ExternalIngestRequest.class)))
+                .thenReturn(ExternalIngestResult.error("src-1",
+                        "the target folder path '/a/b' of this profile could not be resolved:"
+                                + " connection reset; retry shortly"));
+
+        ResponseEntity<ExternalIngestResult> res = ingest(req);
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
+                "a read that could not answer stopped being a retry");
+    }
 }
