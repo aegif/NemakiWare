@@ -231,6 +231,9 @@ public class IngestSchedulerService {
     // RC5 (v2 §12.1) — Scheduled delegated profile helpers
     // ──────────────────────────────────────────────────────────────────
 
+    /** The context, or the reason there is none — the reason the audit already recorded. */
+    private record DelegatedTick(CallContext context, DenialReason why) {}
+
     /**
      * Run the per-tick gate for a delegated profile. Returns a
      * synthesised {@link CallContext} for {@code profile.createdByUserId}
@@ -256,9 +259,6 @@ public class IngestSchedulerService {
      *       folder. Missing → {@code CREATOR_CMIS_ALL_LOST}.</li>
      * </ol>
      */
-    /** The context, or the reason there is none — the reason the audit already recorded. */
-    private record DelegatedTick(CallContext context, DenialReason why) {}
-
     private DelegatedTick prepareDelegatedTick(ImportProfileDefinition profile) {
         String pid = profile.getProfileId();
 

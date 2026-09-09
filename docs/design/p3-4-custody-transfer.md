@@ -9461,3 +9461,24 @@ DLQ の書き込み経路を壊していた。**
 ERROR に錠が無い件、`hasParentContextChanged` の解析失敗が「変化なし」になる件、
 `resetCheckpoints` の scope 付き経路、新しい配線拒否が `[permanent]` に分類される件、
 `emitReimportEvent` がフォルダ読みの拒否でイベントごと出さなくなった件。
+
+### 43 巡目 (処置のみ — 凍結に向けた測定) — レビュー未実施
+
+ユーザーの判断待ちのまま、**「このブランチの変更範囲で凍結する」案で進めた**
+(指示が無ければそうすると伝えてある)。**この巡以降、製品コードの意味は変えていない。**
+
+- **全ユニットスイートを初めて通した。** 生きたサーバを要する TCK 群
+  (`jp.aegif.nemaki.cmis.tck.**`、`MultiThreadTest`、`InheritedFlagTest`)、どの lifecycle でも
+  走らない `*IT`、生きた Atlas を要する `AtlasManualDataLoader` を除いて
+  **6858 本 / 失敗 0 / エラー 0**。取込スコープの 73 クラス 1156 本はその内数である。
+- **既存の錠 `NoJavadocIsOrphanedTest` が赤かった。** 31〜42 巡目に私が新しいメンバを
+  既存の javadoc ブロックの直後に挿入したため、**4 か所で元の javadoc が宣言に届かなく
+  なっていた** (`IngestSchedulerService` の `prepareDelegatedTick`、`IngestJobService` の
+  `loadDlqContent`、`FolderConnectorController` の `list` と `mayRun`)。42 巡目のレビューが
+  `IngestDlqController` の 1 件を指摘し、私は「注記した」で済ませていたが、**リポジトリには
+  それを機械的に検出する錠が既にあった**。→ 挿入したメンバを元のブロックの上へ移し、
+  重複していた 1 行 javadoc は本文に畳んだ。**製品の振る舞いは変えていない。**
+- コントロールの事前検査 538/538、`expect_fail` の stale 0 件を再確認。
+
+**この時点の状態** (凍結候補): ブランチのコミット 80、コントロール **538 本**、
+ユニット **6858 本 green**、通しスイープは**未実施**のまま。

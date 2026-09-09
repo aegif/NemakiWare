@@ -365,7 +365,6 @@ public class IngestJobService {
         return wrapped.getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
 
-    /** Load binary content from a DLQ CouchDB document's attachment. */
     /**
      * Whether the STORED document for this dlqId carries an attachment, read raw.
      *
@@ -399,7 +398,8 @@ public class IngestJobService {
     }
 
     /**
-     * The stored payload, or null when the entry HAS none.
+     * The stored payload, or null when the entry HAS none. Loaded from the DLQ document's
+     * attachment.
      *
      * <p>It used to answer null for a read that failed as well — a rotated encryption key, a
      * ciphertext this node cannot decrypt (the refusal that exists so ciphertext is never fed

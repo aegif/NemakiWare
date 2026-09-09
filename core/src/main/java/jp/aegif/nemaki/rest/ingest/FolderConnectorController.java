@@ -73,11 +73,6 @@ public class FolderConnectorController {
     }
 
     /**
-     * List the runnable connector profiles whose target is {@code folderId}.
-     * Returns only profiles the caller may run (write + delegation/admin),
-     * so an empty list means "don't show the run button".
-     */
-    /**
      * A listing the service could not complete escaped as a Spring 500 (this package is
      * outside {@code GlobalExceptionHandler}); the typed refusals answer 503, "retry".
      */
@@ -90,6 +85,11 @@ public class FolderConnectorController {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
     }
 
+    /**
+     * List the runnable connector profiles whose target is {@code folderId}.
+     * Returns only profiles the caller may run (write + delegation/admin),
+     * so an empty list means "don't show the run button".
+     */
     @GetMapping
     public ResponseEntity<Map<String, Object>> list(
             @PathVariable String repositoryId, @PathVariable String folderId) {
@@ -250,6 +250,64 @@ public class FolderConnectorController {
     }
 
     /**
+     * The answer for a profile whose connector did not resolve — 400 only when the store said
+     * so. The twin of the scheduler controller's; the {@code ABSENT_OR_HIDDEN} arm does the
+     * one index-free walk that separates "no such connector" (404) from "the index cannot
+     * show it" (503), which is affordable because this is one profile per request.
+     */
+    private ResponseEntity<Map<String, Object>> unresolvedConnector(
+            ImportProfileDefinition profile,
+            IngestSchedulerService.ConnectorForProfile resolution,
+            Map<String, Object> body) {
+        body.put("status", "error");
+        String id = profile.getDefaultConnectorId();
+        switch (resolution.why()) {
+            case NOT_WIRED -> {
+                body.put("message", "the connector service is not wired on this node; retry"
+                        + " shortly against a node that runs it");
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+            }
+            case NOT_READ -> {
+                body.put("message", "connector " + id + " exists but could not be read as that"
+                        + " connector; retry shortly");
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+            }
+            case ABSENT_OR_HIDDEN -> {
+                if (connectorDefinitionService == null) {
+                    // Without the walk there is no way to tell absence from a hidden row, and
+                    // the arm below would answer "does not exist" — a claim no read made. A
+                    // review found the short-circuit fabricating absence for an unwired node.
+                    body.put("message", "the connector service is not wired on"
+                            + " this node, so whether connector " + id + " exists cannot be"
+                            + " established; retry shortly against a node that runs it");
+                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                            .body(body);
+                }
+                boolean rowIsThere;
+                try {
+                    rowIsThere = connectorDefinitionService.existsIndexFree(id);
+                } catch (RuntimeException couldNotAsk) {
+                    body.put("message", "whether connector " + id + " exists could not be"
+                            + " established; retry shortly: " + couldNotAsk.getMessage());
+                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+                }
+                if (rowIsThere) {
+                    body.put("message", "connector " + id + " exists but the index cannot show"
+                            + " it; retry shortly");
+                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+                }
+                body.put("message", "connector " + id + " does not exist");
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+            }
+            default -> {
+                body.put("message", "No connector resolved for profile: "
+                        + profile.getProfileId());
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+            }
+        }
+    }
+
+    /**
      * Re-set the connector's credential (the short-lived developer token) for
      * the profile targeting this folder. Admin only: the credential is shared
      * connector infrastructure, so a delegated (non-admin) runner — who may run
@@ -366,64 +424,6 @@ public class FolderConnectorController {
     }
 
     /** write + (admin or connector delegated to caller for this folder). */
-    /**
-     * The answer for a profile whose connector did not resolve — 400 only when the store said
-     * so. The twin of the scheduler controller's; the {@code ABSENT_OR_HIDDEN} arm does the
-     * one index-free walk that separates "no such connector" (404) from "the index cannot
-     * show it" (503), which is affordable because this is one profile per request.
-     */
-    private ResponseEntity<Map<String, Object>> unresolvedConnector(
-            ImportProfileDefinition profile,
-            IngestSchedulerService.ConnectorForProfile resolution,
-            Map<String, Object> body) {
-        body.put("status", "error");
-        String id = profile.getDefaultConnectorId();
-        switch (resolution.why()) {
-            case NOT_WIRED -> {
-                body.put("message", "the connector service is not wired on this node; retry"
-                        + " shortly against a node that runs it");
-                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
-            }
-            case NOT_READ -> {
-                body.put("message", "connector " + id + " exists but could not be read as that"
-                        + " connector; retry shortly");
-                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
-            }
-            case ABSENT_OR_HIDDEN -> {
-                if (connectorDefinitionService == null) {
-                    // Without the walk there is no way to tell absence from a hidden row, and
-                    // the arm below would answer "does not exist" — a claim no read made. A
-                    // review found the short-circuit fabricating absence for an unwired node.
-                    body.put("message", "the connector service is not wired on"
-                            + " this node, so whether connector " + id + " exists cannot be"
-                            + " established; retry shortly against a node that runs it");
-                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                            .body(body);
-                }
-                boolean rowIsThere;
-                try {
-                    rowIsThere = connectorDefinitionService.existsIndexFree(id);
-                } catch (RuntimeException couldNotAsk) {
-                    body.put("message", "whether connector " + id + " exists could not be"
-                            + " established; retry shortly: " + couldNotAsk.getMessage());
-                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
-                }
-                if (rowIsThere) {
-                    body.put("message", "connector " + id + " exists but the index cannot show"
-                            + " it; retry shortly");
-                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
-                }
-                body.put("message", "connector " + id + " does not exist");
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
-            }
-            default -> {
-                body.put("message", "No connector resolved for profile: "
-                        + profile.getProfileId());
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
-            }
-        }
-    }
-
     private boolean mayRun(CallContext ctx, String repositoryId, String folderId,
                            ConnectorDefinition connector, boolean admin) {
         if (admin) return true;

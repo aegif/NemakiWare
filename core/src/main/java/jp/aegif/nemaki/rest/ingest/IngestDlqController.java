@@ -292,13 +292,6 @@ public class IngestDlqController {
     }
 
     /**
-     * The typed "this row could not be read" refusals reach this controller from the
-     * connector and profile services with nothing catching them, and Spring answers 500 —
-     * "our bug" for a condition whose whole point is that a retry fixes it. The definition
-     * APIs have had this floor since the batch began; a review found the DLQ, ingest and
-     * webhook controllers without it. Endpoints that map these themselves keep their mapping.
-     */
-    /**
      * A stored entry this node could not read is a retry, never "there is no such entry".
      *
      * <p>Inserted between the block below and the method it documents, this handler took that
@@ -312,6 +305,13 @@ public class IngestDlqController {
         return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
     }
 
+    /**
+     * The typed "this row could not be read" refusals reach this controller from the
+     * connector and profile services with nothing catching them, and Spring answers 500 —
+     * "our bug" for a condition whose whole point is that a retry fixes it. The definition
+     * APIs have had this floor since the batch began; a review found the DLQ, ingest and
+     * webhook controllers without it. Endpoints that map these themselves keep their mapping.
+     */
     @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
             ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})
     public ResponseEntity<?> definitionRowsCouldNotBeRead(RuntimeException e) {
