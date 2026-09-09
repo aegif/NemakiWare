@@ -498,6 +498,37 @@ class ImportProfileOwnershipTransferTest {
     }
 
     @Test
+    void create_connectorRowCouldNotBeRead_is503NotUnknown_throughTheEndpoint() {
+        // Through the ENDPOINT, not the helper. The first version of this lock invoked
+        // validateDelegatedConnectors by reflection, so if the create path stopped calling it
+        // the lock and its control both stayed green — the project's own
+        // "sabotage the call site, not the helper" trap, inside the fix written to close an
+        // instance of it. A review named it.
+        CallContext ctx = nonAdminCtx();
+        ImportProfileDefinition def = new ImportProfileDefinition();
+        def.setProfileId("p-new");
+        def.setRepositoryId(REPO);
+        def.setTargetFolderId(FOLDER);
+        def.setAllowedConnectorIds(java.util.List.of(CONN));
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER))
+                .thenReturn(true);
+        when(connectorDefinitionService.get(CONN)).thenReturn(null);
+        when(connectorDefinitionService.existsIndexFree(CONN)).thenReturn(true);
+
+        // assertDoesNotThrow: without the scope check the create runs on into the service and
+        // throws, which the control runner scores as "harness broken" rather than a firing.
+        ResponseEntity<Map<String, Object>> res = org.junit.jupiter.api.Assertions
+                .assertDoesNotThrow(() -> controller.create(def),
+                        "the create ran past the connector scope check");
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
+                "a connector row that exists and could not be read was called unknown on the "
+                        + "path that runs for every non-admin create");
+        assertNotEquals("UNKNOWN_CONNECTOR", res.getBody().get("denialReason"));
+    }
+
+    @Test
     void createAndUpdate_connectorRowCouldNotBeRead_is503NotUnknown() throws Exception {
         // The OTHER half of the same split, and the one that runs most: every non-admin
         // create and update goes through validateDelegatedConnectors. The control for the

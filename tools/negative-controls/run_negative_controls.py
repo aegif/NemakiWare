@@ -5980,7 +5980,9 @@ CONTROLS = [
                 '                try {\n'
                 '                    rowIsThere = false && connectorDefinitionService.existsIndexFree(cid);\n',
         test='ImportProfileOwnershipTransferTest',
-        expect_fail=['createAndUpdate_connectorRowCouldNotBeRead_is503NotUnknown'],
+        # The second name is from the measurement: both locks drive the same split.
+        expect_fail=['createAndUpdate_connectorRowCouldNotBeRead_is503NotUnknown',
+                     'create_connectorRowCouldNotBeRead_is503NotUnknown_throughTheEndpoint'],
     ),
     dict(
         id="SD2",
@@ -6090,6 +6092,19 @@ CONTROLS = [
                 '                                + folderPath + "\' of this profile resolves to a " + baseType\n',
         test='IngestEvidenceSnapshotTest',
         expect_fail=['aTargetFolderPathThatIsNotAFolderIsNotAMissingSetting'],
+    ),
+    dict(
+        id="SM2",
+        what="the non-admin CREATE path stops calling the connector scope check, which SC2's "
+             "helper-direct lock could not see",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find='        ResponseEntity<Map<String, Object>> connectorErr = validateDelegatedConnectors(ctx, repositoryId, folderId, def);\n'
+             '        if (connectorErr != null) return connectorErr;\n'
+             '\n'
+             '        // Stamp the safe fields LAST so a misuse can\'t override them via payload.\n',
+        replace='        // Stamp the safe fields LAST so a misuse can\'t override them via payload.\n',
+        test='ImportProfileOwnershipTransferTest',
+        expect_fail=['create_connectorRowCouldNotBeRead_is503NotUnknown_throughTheEndpoint'],
     ),
 ]
 

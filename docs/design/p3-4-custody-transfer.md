@@ -9379,8 +9379,10 @@ DLQ の書き込み経路を壊していた。**
 - **P2 (B) — 39 巡目の SC2 の錠も helper 直叩きだった** (`validateDelegatedConnectors` を
   reflection で呼ぶ)。呼び出し側が helper を呼ばなくなっても緑のまま。**記憶ファイルに
   ある `sabotage-the-call-site-not-the-helper` そのもの**で、しかも同じ罠を閉じるために
-  書いた修正の中で踏んでいる。→ **この巡では直していない** (作成・更新の非管理者経路を
-  通す fixture が要る)。未処置として記録。
+  書いた修正の中で踏んでいる。→ **同じ巡で塞いだ**。非管理者の `create` を実際に通す錠を
+  足し、**呼び出し側 (`enforceDelegationOnCreate` の一行) を壊すコントロール SM2** で発火を
+  確認した。SM2 も 1 度目は「別の理由で発火」で、保護を外すと create が先へ進んで例外に
+  なるためだった (`assertDoesNotThrow` で受けて解消)。
 - **P3 (B) — 40 巡目に挿入した fixture 12 か所のうち 7 か所は無効**だった (後から上書き
   される / そのテストは重複検査に到達しない)。**赤かった集合からではなく
   `new CanonicalImportServiceImpl()` のパターン一致で入れた**ためである。害は無いが、
@@ -9390,9 +9392,9 @@ DLQ の書き込み経路を壊していた。**
 - **P3 (A) — 新しい配線拒否が DLQ で `[permanent]` に分類される** (「retry shortly」と
   書いてあるのに `isTransientError` が拾わない)。未処置。
 
-**この巡の測定**: 通しバッチは**未実施**。コントロールは **533 → 535 本**、self-test 38/38。
-**新設 2 本 (SK2 / SL2) を実測し 2/2 発火**。錠は 1 本増・1 本を恒真から実測に置換。
-**73 クラス 1154 本が green**。
+**この巡の測定**: 通しバッチは**未実施**。コントロールは **533 → 536 本**、self-test 38/38。
+**新設 3 本 (SK2 / SL2 / SM2) を実測し 3/3 発火** (SM2 は 1 度目「別の理由で発火」)。
+錠は 2 本増・1 本を恒真から実測に置換。**73 クラス 1155 本が green**。
 
 **測っていないもの (明記)**: `saveToDlq` の受け止めは**読解のみ**で測っていない。
 書き込み経路は外側で全例外を握り潰すので、外から見た振る舞いが修正の前後で同じになり、
@@ -9400,7 +9402,7 @@ DLQ の書き込み経路を壊していた。**
 `upsertDocument` を可視にする必要があり、この巡では入れていない。
 
 **依然として未処置**: 冪等性とチェックポイントの `PropertyManager` 経由の潰し (39 巡目)、
-`targetFolderPath` が解決できない項目が DLQ に載らない件、SC2 の錠が helper 直叩きである件、
+`targetFolderPath` が解決できない項目が DLQ に載らない件、
 `IngestAuthorizationService.resolveFolderId` の失敗が監査に事実として載る件、DLQ 一覧が
 逆直列化できない行を落とす件、webhook が配送先ゼロでも 200 を返す件、
 `FolderConnectorController.list()` がセレクタ経由である件、poll の per-profile ERROR に錠が
