@@ -3470,7 +3470,11 @@ CONTROLS = [
                    '            return HttpStatus.SERVICE_UNAVAILABLE;\n        }'),
         replace='',
         test='ExternalIngestControllerGateTest',
-        expect_fail=['aRetryableImportRefusal_is503NotAServerError'],
+        # The second name is from a review that traced it: round 45's target-folder
+        # lock asserts 503 for a "; retry shortly" message, so removing this arm
+        # reddens it too. A full sweep would have reported an undeclared firing.
+        expect_fail=['aRetryableImportRefusal_is503NotAServerError',
+                     'aTargetFolderReadThatCouldNotAnswerIsStillA503'],
     ),
     dict(
         id="TO",
@@ -6180,6 +6184,16 @@ CONTROLS = [
         replace='                ) return HttpStatus.BAD_REQUEST;\n',
         test='ExternalIngestControllerGateTest',
         expect_fail=['aStandingProfileMisconfigurationIsA400_notARetryAndNotOurBug'],
+    ),
+    dict(
+        id="ST2",
+        what="the retry marker is dropped from a target-folder read that could not answer, so "
+             "the ingest endpoint falls from 503 to the 500 fallback",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='                    + (couldNotResolve.isRetryable() ? "; retry shortly" : ""));\n',
+        replace='                    );\n',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aTargetFolderReadThatCouldNotAnswerKeepsItsRetryMarker'],
     ),
 ]
 

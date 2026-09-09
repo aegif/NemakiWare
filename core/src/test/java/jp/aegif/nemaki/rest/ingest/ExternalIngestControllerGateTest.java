@@ -848,8 +848,12 @@ class ExternalIngestControllerGateTest {
 
     @Test
     void aTargetFolderReadThatCouldNotAnswerIsStillA503() {
-        // The other side of the pair: a read that did not answer keeps its suffix and its
-        // 503, so making the permanent arm permanent did not take the retryable one with it.
+        // What this measures: the STATUS the classifier gives a message that carries the
+        // retry marker. The service is stubbed, so the marker is the test's own — that the
+        // PRODUCT still emits it is measured in
+        // CanonicalImportServiceTest.aTargetFolderReadThatCouldNotAnswerKeepsItsRetryMarker.
+        // An earlier comment here claimed this lock kept the suffix honest; a review pointed
+        // out the stub makes that unfalsifiable, as its 400 twin had already been corrected.
         CallContext ctx = adminContext();
         ExternalIngestRequest req = baseRequest();
         req.setConnectorId(null);

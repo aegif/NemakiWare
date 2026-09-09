@@ -2526,4 +2526,44 @@ class CanonicalImportServiceTest {
         assertFalse(said.contains("retry shortly"),
                 "the caller told the operator to retry a standing misconfiguration: " + said);
     }
+
+    @Test
+    void aTargetFolderReadThatCouldNotAnswerKeepsItsRetryMarker() {
+        // The OTHER half of the pair. The permanent arm is locked (the suffix must be
+        // absent); nothing locked the retryable arm at the call site, so deleting the true
+        // branch of `isRetryable() ? "; retry shortly" : ""` left all 6862 tests green while
+        // the endpoint fell from 503 to the 500 fallback — the classifier matches no other
+        // arm for that message. Two reviewers found the gap in the round after the 400 half
+        // was closed the same way.
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p-unanswered");
+        profile.setRepositoryId("bedroom");
+        profile.setEnabled(true);
+        profile.setTargetFolderPath("/a/b");
+        when(profileService.get("p-unanswered")).thenReturn(profile);
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("conn1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("conn1")).thenReturn(connector);
+        when(connectorService.countIndexFree("conn1")).thenReturn(1);
+        // getObjectByPath is left unstubbed: the mock answers null, which is the store
+        // answering with no object — a read that did not answer.
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p-unanswered");
+        req.setConnectorId("conn1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess());
+        String said = String.join(" ", result.errors());
+        assertTrue(said.contains("could not be resolved"),
+                "the caller did not say the read could not answer: " + said);
+        assertTrue(said.contains("retry shortly"),
+                "the marker ExternalIngestController.classifyErrorStatus matches to answer "
+                        + "503 is gone, so this falls to the 500 fallback: " + said);
+    }
 }

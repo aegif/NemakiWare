@@ -51,17 +51,18 @@ import static org.junit.jupiter.api.Assertions.fail;
  * <p>It is invisible to review: the source reads correctly top to bottom, and nothing warns. The
  * only way it surfaces is by looking for the adjacency.
  *
- * <p>{@link #KNOWN_UNOWNED} holds 46 orphans that were already in the tree before this work,
- * spread over 28 files — most of them one or two apiece, with the largest clusters in
+ * <p>{@link #KNOWN_UNOWNED} holds 45 opening lines for orphans that were already in the tree
+ * before this work, spread over 24 files at this revision — most of them one or two apiece,
+ * with the largest clusters in
  * {@code ContentServiceImpl} (6), {@code CloudantClientWrapper} (5) and
  * {@code CanonicalImportServiceImpl} (5). They are excluded BY THEIR OPENING LINE rather than by
  * file, so a DIFFERENT orphan added to the same file still fails. One of them describes a
  * {@code /traversals} endpoint that no longer exists, so there is nothing to re-attach it to and
  * guessing would be worse than leaving it.
  *
- * <p>This paragraph said "two known sites", naming two controllers, while the list held 46 across
- * 28 files. An understatement about a lock reads as a stronger lock than there is: the next
- * reader would have believed this test covered forty-four blocks it skips. The counts above were
+ * <p>This paragraph said "two known sites", naming two controllers, while the list held 45 across
+ * 24 files. An understatement about a lock reads as a stronger lock than there is: the next
+ * reader would have believed this test covered forty-three blocks it skips. The counts above were
  * taken by running the exclusion list against the tree, not by eye.
  */
 class NoJavadocIsOrphanedTest {
@@ -183,7 +184,6 @@ class NoJavadocIsOrphanedTest {
             "Apply nemaki:noteMetadata secondary type to a note/page",
             "Emit the lineage fact for an imported document",
             "Finds an existing document in the target folder by source",
-            "Finds the first enabled profile for the given repository",
             "Handle generic webhook",
             "Legacy arity, defaulting {@code createdObject} to false",
             "List messages from a mail folder",
