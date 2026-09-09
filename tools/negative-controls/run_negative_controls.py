@@ -43,9 +43,10 @@ runner could not read; it can equally mean NOTHING WAS MEASURED — the pre-flig
 (self-test, a stale expect_fail, a drifted anchor, an unknown id), a compile-check found a
 sabotage that no longer builds, a Maven run produced no reports, a sabotage no longer
 applies, the tree was edited under the run so a restore was refused, or the restored tree
-did not come back green. Read the OUTPUT, not the code: the four control-verdict outcomes
-are named on the last line, and everything else refuses where it happens, with its own
-message. Do not read a non-zero exit as "a protection is missing" without looking.
+did not come back green. Read the OUTPUT, not the code: the last line names WHICH
+KIND of finding ended the run (a control that did not fire — the summary above says which
+and why — an incomplete expect_fail, or an unreadable failure line), and everything else
+refuses where it happens, with its own message. Do not read a non-zero exit as "a protection is missing" without looking.
 """
 
 import subprocess
@@ -5499,10 +5500,20 @@ UNDECLARED: list = []
 PARSE_GAPS: list = []
 
 
+# A failure header, matched WHOLE: "<fully.qualified.Class>.method -- Time elapsed: 0.1 s
+# <<< FAILURE!" and its variants. The 2.x reporter separated the name from the time with
+# spaces instead of " -- "; that shape is matched too, so it can be REFUSED rather than read
+# (this repository pins surefire 3.5.2).
+HEADER_LINE = re.compile(
+    r"^(?P<head>\S.*?)\s+--\s+Time elapsed:\s.*<<<\s+(FAILURE|ERROR)!$")
+LEGACY_HEADER_LINE = re.compile(
+    r"^(?P<head>\S+)\s+Time elapsed:\s.*<<<\s+(FAILURE|ERROR)!$")
+
+
 def failed_method_names(failed: str) -> list:
     """The lock names in surefire's failure lines (see failure_line_kind)."""
-    return [name for name, in
-            ((n,) for kind, n in map(failure_line_kind, failed.splitlines()) if kind == "lock")]
+    return [name for kind, name in map(failure_line_kind, failed.splitlines())
+            if kind == "lock"]
 
 
 def failure_line_kind(line: str) -> tuple:
@@ -5526,17 +5537,27 @@ def failure_line_kind(line: str) -> tuple:
     runner does with an input it does not know.
     """
     stripped = line.strip()
-    if not stripped or stripped.startswith("Tests run:"):
-        # The per-class summary names no method by construction.
+    # No special case for the per-class summary ("Tests run: ... <<< FAILURE! -- in <class>"):
+    # the anchored match below rejects it, because its marker is not at the end of the line.
+    # A guard for it was carried here for two rounds and was unreachable both times; it is
+    # gone, and the summary case is kept as a POSITIVE control (measured: no ablation of the
+    # rules here turns it red, because the line's structure is what both patterns refuse).
+    header = HEADER_LINE.match(stripped) or LEGACY_HEADER_LINE.match(stripped)
+    if not header:
+        # Not a header: an exception message or a stack frame that happens to carry the
+        # marker — the collector is line-based over the whole report. Matching the WHOLE line
+        # rather than looking for "Time elapsed" anywhere in it is what keeps a message that
+        # quotes a header ("expected 'Time elapsed: 0.2 s <<< FAILURE!'") from being read as
+        # one; a review demonstrated both halves of that (a quoted header read as unreadable,
+        # and an embedded one read as a phantom lock).
         return ("not-a-lock", None)
-    if "Time elapsed" not in stripped:
-        # Not a header at all: an exception message or a stack frame that happens to carry the
-        # marker. A review pointed out that the collector is line-based over the whole report.
-        # "Time elapsed" is what every header has, in both reporter generations — requiring
-        # " -- " as well would have quietly classified a 2.x header as prose instead of
-        # refusing it.
+    head = header.group("head").strip()
+    # What surefire puts before the argument list is one dotted token and nothing else. A
+    # message that ENDS like a header ("AssertionFailedError: jp.aegif.Other.otherLock -- Time
+    # elapsed ...") has spaces and punctuation there, and reading it as a header invented a
+    # lock that never ran — a review demonstrated exactly that line.
+    if not re.fullmatch(r"[\w$.]+", head.split("(", 1)[0]):
         return ("not-a-lock", None)
-    head = stripped.split(" -- ")[0].strip()
     if "(" in head:
         before_paren = head.split("(", 1)[0]
         if "." not in before_paren:
@@ -5545,7 +5566,9 @@ def failure_line_kind(line: str) -> tuple:
     else:
         parts = head.rsplit(".", 1)
         if len(parts) != 2:
-            return ("unreadable", None)
+            # No dot at all: a CLASS-LEVEL failure for a class in the default package. It
+            # names no method, like every other class-level line.
+            return ("not-a-lock", None)
         parent, name = parts[0].rsplit(".", 1)[-1], parts[1]
     if not re.fullmatch(r"[A-Za-z_$][\w$]*", name):
         return ("unreadable", None)
@@ -5561,6 +5584,21 @@ def unreadable_failure_lines(failed: str) -> list:
     """Header-shaped lines whose method this runner could not read — holes in the reader."""
     return [line.strip() for line in failed.splitlines()
             if failure_line_kind(line)[0] == "unreadable"]
+
+
+def exit_decision_is_wired() -> bool:
+    """Whether main() actually exits with what run_exit_message decided.
+
+    The decision has cases; the CALL had none, and deleting it left the suite green — the
+    "sabotage the call site, not the helper" rule applied to this runner itself. Read from
+    source because a self-test cannot run main().
+    """
+    source = Path(__file__).read_text()
+    # The whole BLOCK, not two strings that also occur in this function's own body — the first
+    # version matched itself and stayed True with the wiring deleted. Measured: removing the
+    # block in a scratch copy now turns this case red.
+    return ("\n    message = run_exit_message(results, UNDECLARED, PARSE_GAPS)\n"
+            "    if message:\n        sys.exit(message)\n") in source
 
 
 def run_exit_message(results: list, undeclared: list, gaps: list):
@@ -5728,7 +5766,11 @@ SELF_TEST_CASES = [
     # THREE outcomes, so these cases name the outcome rather than just the absence of a name:
     # a line that names no method by construction is not a hole in the reader, and a review
     # found the first version treating a class-level line as one.
-    ("the per-class summary line names no method, and is not a hole in the reader",
+    # A POSITIVE control, measured as such: neither pattern can match this line's structure
+    # ("Time elapsed" comes BEFORE the " -- in <class>"), so no protection here goes red when
+    # removed. It guards the shape against a looser reader. Two rounds carried a guard for it
+    # that was unreachable both times; this is what replaced the guard.
+    ("the per-class summary line names no method (positive control)",
      lambda: failure_line_kind(
          "Tests run: 3, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.2 s <<< FAILURE!"
          " -- in jp.aegif.nemaki.rest.ingest.SomeTest"),
@@ -5740,6 +5782,22 @@ SELF_TEST_CASES = [
     ("an exception message carrying the marker is not a header",
      lambda: failure_line_kind(
          "org.opentest4j.AssertionFailedError: the report said <<< FAILURE! here"),
+     ("not-a-lock", None)),
+    # Both shapes below were demonstrated by a review against the version that looked for
+    # "Time elapsed" anywhere in the line: one became a fatal "unreadable", the other a
+    # phantom lock. A message is not a header even when it quotes one.
+    ("a message QUOTING a header is not a header",
+     lambda: failure_line_kind(
+         "org.opentest4j.AssertionFailedError: expected the report to say "
+         "'Time elapsed: 0.2 s <<< FAILURE!' but it did not"),
+     ("not-a-lock", None)),
+    ("a message EMBEDDING a header does not name a lock",
+     lambda: failure_line_kind(
+         "org.opentest4j.AssertionFailedError: jp.aegif.nemaki.Other.otherLock"
+         " -- Time elapsed: 0.1 s <<< FAILURE!"),
+     ("not-a-lock", None)),
+    ("a class-level failure in the DEFAULT package names no method either",
+     lambda: failure_line_kind("SomeTest -- Time elapsed: 0.1 s <<< ERROR!"),
      ("not-a-lock", None)),
     ("a name containing $ is still a lock",
      lambda: failed_method_names(
@@ -5774,6 +5832,11 @@ SELF_TEST_CASES = [
      ["someLock(jp.aegif.SomeTest)  Time elapsed: 0.1 s <<< FAILURE!"]),
     # The exit decision, which nothing measured until a review said so: deleting the fatal
     # branch left every case green.
+    # The WIRING, not just the decision: a review pointed out that deleting the sys.exit call
+    # in main() left every case green while undeclared locks and unreadable lines exited 0.
+    # Read from this file's own source, the way the Java locks read a patch's source.
+    ("the exit decision is wired into main()",
+     lambda: exit_decision_is_wired(), True),
     ("a clean run may exit 0",
      lambda: run_exit_message([("A", True, "")], [], []), None),
     ("a control that did not fire is the most serious finding",
@@ -6158,7 +6221,7 @@ def main() -> None:
                         print(f"[{control['id']}] fired: {control['expect_fail']}")
                         # Locks that failed WITHOUT being declared. Not a bad verdict — extra
                         # failures are tolerated by design — but the record of "which
-                        # protections this sabotage removes" is then incomplete, and three
+                        # protections this sabotage removes" is then incomplete, and four
                         # rounds in a row a lock added in the same commit as its control was
                         # left out of an OLDER control's list. Derivation by hand kept missing
                         # them; the run knows the answer, so it says it.
