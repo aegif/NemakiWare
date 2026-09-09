@@ -31,7 +31,11 @@ Rules learned the hard way, encoded here:
 Usage:
     python3 tools/negative-controls/run_negative_controls.py            # all
     python3 tools/negative-controls/run_negative_controls.py FE GG      # subset
-Exit code 0 = every control fired and the tree was restored to green.
+Exit code 0 = every control fired, every control's expect_fail is complete (no lock
+failed undeclared on its own assertion), and the tree was restored to green. A non-zero
+exit therefore means one of THREE things — a control did not fire, a control fired for
+the wrong reason, or a control's record of what it removes is incomplete — and the last
+line of the run says which.
 """
 
 import subprocess
@@ -4304,9 +4308,11 @@ CONTROLS = [
         # a SECOND call site this sabotage does not touch; one isEmpty() lock's row is read as
         # disabled, so nothing was going to be reported; and the other's row names no
         # repository, so the walk drops it before it is deserialised at all. (A review found
-        # the middle reason stated for both.) Completed from a MEASURED run — the runner now
-        # prints the locks that failed undeclared, after three rounds of hand derivation
-        # missing one.
+        # the middle reason stated for both.) These nine were derived by hand over three
+        # rounds; a measured run then CONFIRMED the list is complete (zero undeclared). The
+        # runner prints undeclared locks now, so the next completion comes from a run rather
+        # than from derivation — but this one did not, and a review caught the comment saying
+        # otherwise.
         expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest',
                      'aNumericProfileIdInTheReadPathsOwnShapeStillReadsAsTheMapperReadsIt',
                      'whichValuesOfADisabledFlagCountIsTheMappersAnswer',
@@ -5490,21 +5496,40 @@ def failed_method_names(failed: str) -> list:
     the same round; both noted that the runner's own rule (a judgement function needs its own
     self-test) had not been followed. It is followed now.
 
-    The per-class SUMMARY line ("Tests run: 3, Failures: 1 ... <<< FAILURE! -- in <class>")
-    also carries the marker; taking the token before " -- " there would report the class as a
-    failing lock.
+    Two other line shapes carry the same marker and must NOT yield a lock name: the per-class
+    SUMMARY line ("Tests run: 3, Failures: 1 ... <<< FAILURE! -- in <class>"), whose text
+    before " -- " is not an identifier at all, and a CLASS-LEVEL failure ("<fully.qualified
+    .Class> -- Time elapsed ... <<< ERROR!", written when a lifecycle method fails), whose last
+    dotted segment is the class. The class-level shape is told apart by what precedes the last
+    segment: a method's parent is a class, which is capitalised in this codebase and in Java
+    convention; a class's parent is a package, which is not. A review demonstrated the
+    class-name-as-a-lock reading before this rule existed.
+
+    Names may contain '$' (legal in Java) and may carry a parameterised suffix ("method[1]");
+    the first version accepted neither and dropped such lines in silence — the same shape of
+    defect as the 2.x-only pattern it replaced. Each of these is a self-test case.
     """
     names = []
     for line in failed.splitlines():
         stripped = line.strip()
-        if not stripped or stripped.startswith("Tests run:"):
+        if not stripped:
             continue
-        head = stripped.split(" -- ")[0].split("(")[0].strip()
-        if not head:
+        head = stripped.split(" -- ")[0].strip()
+        if "(" in head:
+            # Surefire 2.x: "method(Class)".
+            name, parent = head.split("(", 1)[0].strip(), "Class"
+        else:
+            parts = head.rsplit(".", 1)
+            if len(parts) != 2:
+                continue
+            parent, name = parts[0].rsplit(".", 1)[-1], parts[1]
+        # A parameterised invocation adds "[1]" or "[1] name"; the lock is the method.
+        name = name.split("[", 1)[0].strip()
+        if not re.fullmatch(r"[A-Za-z_$][\w$]*", name):
             continue
-        name = head.rsplit(".", 1)[-1]
-        if re.fullmatch(r"[A-Za-z_]\w*", name):
-            names.append(name)
+        if not re.match(r"[A-Z]", parent):
+            continue
+        names.append(name)
     return names
 
 
@@ -5651,11 +5676,31 @@ SELF_TEST_CASES = [
      lambda: failed_method_names(
          "jp.aegif.nemaki.rest.ingest.SomeTest.someLock -- Time elapsed: 0.1 s <<< ERROR!"),
      ["someLock"]),
+    # This case used to pass with its protection (a startswith("Tests run:") guard) removed —
+    # the guard was unreachable, because the identifier check rejects the line anyway. A review
+    # measured that and called it what it is: a test that measures nothing. The guard is gone;
+    # what this case now measures is the identifier check.
     ("the per-class summary line is not a lock",
      lambda: failed_method_names(
          "Tests run: 3, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.2 s <<< FAILURE!"
          " -- in jp.aegif.nemaki.rest.ingest.SomeTest"),
      []),
+    ("a CLASS-LEVEL failure is not a lock",
+     lambda: failed_method_names(
+         "jp.aegif.nemaki.rest.ingest.SomeTest -- Time elapsed: 0.1 s <<< ERROR!"),
+     []),
+    ("a name containing $ is still a lock",
+     lambda: failed_method_names(
+         "jp.aegif.nemaki.rest.ingest.SomeTest.some$Lock -- Time elapsed: 0.1 s <<< FAILURE!"),
+     ["some$Lock"]),
+    ("a parameterised invocation names its method",
+     lambda: failed_method_names(
+         "jp.aegif.nemaki.rest.ingest.SomeTest.someLock[1] -- Time elapsed: 0.1 s <<< FAILURE!"),
+     ["someLock"]),
+    ("a nested class's method is still a lock",
+     lambda: failed_method_names(
+         "jp.aegif.nemaki.rest.ingest.Outer$Nested.someLock -- Time elapsed: 0.1 s <<< FAILURE!"),
+     ["someLock"]),
     ("the older parenthesised shape still yields the method name",
      lambda: failed_method_names("someLock(jp.aegif.nemaki.rest.ingest.SomeTest)  Time elapsed"),
      ["someLock"]),
@@ -6091,9 +6136,10 @@ def main() -> None:
     else:
         print(f"{fired}/{len(results)} controls fired")
     if UNDECLARED:
-        # Gathered, not fatal: an extra failing lock does not weaken the verdict, but the
-        # record of what a sabotage removes has to be completed from the run rather than
-        # derived by hand (which missed one three rounds running).
+        # Printed here, and fatal below: an extra failing lock does not weaken the VERDICT on
+        # the protections (they all fired), but the record of what a sabotage removes has to
+        # be completed from the run rather than derived by hand, which missed one four rounds
+        # running.
         print("\n== locks that failed without being declared (complete the expect_fail lists) ==")
         for cid, names in UNDECLARED:
             print(f"  {cid}: {names}")

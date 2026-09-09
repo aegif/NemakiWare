@@ -2119,7 +2119,8 @@ class ImportProfileLegacyIdMigrationTest {
 
     @Test
     @DisplayName("which VALUES of \"enabled\" count as disabled is the mapper's answer — the "
-            + "three spellings, blank, \"null\" yes; \"fAlSe\" and a stored number no")
+            + "three spellings, an empty or blank string and \"null\" yes; \"fAlSe\" and a "
+            + "stored number no")
     void whichValuesOfADisabledFlagCountIsTheMappersAnswer() {
         // The release notes name these values. They are the mapper's answer, not this code's,
         // so they are measured here through the production mapper rather than asserted from
