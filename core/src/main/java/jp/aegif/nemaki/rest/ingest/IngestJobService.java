@@ -241,7 +241,15 @@ public class IngestJobService {
             // attempt's bytes, which were refused, not about whether some older payload is
             // attached. The retry door reads it to refuse rather than import an empty
             // document over an item whose bytes were never kept.
-            dlq.setPayloadDropReason(dropReason);
+            //
+            // It also survives the NEXT save. Setting it from this attempt alone wrote null
+            // over the earlier reason as soon as one byte-less failure arrived for the same
+            // item — and every orchestrator saves with no bytes — so the 409 that protects the
+            // entry lasted exactly until the next failure. A review traced it. Only a payload
+            // that was actually STORED clears it.
+            String carriedForward = existing != null ? existing.getPayloadDropReason() : null;
+            dlq.setPayloadDropReason(payload != null ? null
+                    : (dropReason != null ? dropReason : carriedForward));
             @SuppressWarnings("unchecked")
             Map<String, Object> jsonMap = MAPPER.convertValue(dlq, Map.class);
             String docId = upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE, jsonMap);
@@ -449,16 +457,19 @@ public class IngestJobService {
                         + " whether it carries a payload could not be established", dlqId);
                 return null;
             }
-            if (raw.get(0).getAttachments() == null) {
-                // No attachment BLOCK is not an empty attachment block. Whether a Mango _find
-                // returns attachment stubs at all is a dependency of this class (upsertDocument
-                // carries them forward from the same call) that is NOT measured anywhere here,
-                // so the ambiguous shape is reported as ambiguous rather than as an absence.
-                logger.warn("the stored DLQ row for {} came back without an attachment block,"
-                        + " which does not establish that it carries no payload", dlqId);
-                return null;
-            }
-            return !raw.get(0).getAttachments().isEmpty();
+            // No attachment block IS the answer "there is no attachment": CouchDB omits
+            // _attachments entirely for a document that has none, so a non-null-but-empty map
+            // essentially never occurs. Reporting this shape as unanswerable made FALSE
+            // unreachable and turned the assumption below into a FIXED POINT — a metadata-only
+            // entry (every orchestrator saves with no bytes) became permanently un-retryable
+            // after one blip, with deleting the row the only way out. Two reviewers derived it
+            // independently in the round after it was written.
+            //
+            // The dependency this rests on — that a Mango _find returns attachment stubs — is
+            // shared with loadDlqContent and with upsertDocument's carry-forward, which would
+            // DESTROY payloads on every update if it did not hold. It is not measured here.
+            return raw.get(0).getAttachments() != null
+                    && !raw.get(0).getAttachments().isEmpty();
         } catch (RuntimeException couldNotAsk) {
             logger.warn("whether the stored DLQ row for {} still carries its payload could not"
                     + " be established: {}", dlqId, couldNotAsk.getMessage());
@@ -495,7 +506,15 @@ public class IngestJobService {
 
             List<Document> docs = findRawDocs(cloudant, dbName,
                     Map.of("type", IngestDeadLetterRecord.DOC_TYPE, "dlqId", dlqId));
-            if (docs.isEmpty()) return null;
+            if (docs.isEmpty()) {
+                // The caller has just READ this row. The index not returning it now is not
+                // "the row has no attachment" — and the retry door reads a null from here as
+                // an ANSWER about the payload, which is how it decides whether an assumed
+                // presence has been disproven.
+                throw new DlqContentUnreadableException("the stored row of DLQ entry " + dlqId
+                        + " was not returned by the index, so its payload could not be read",
+                        null);
+            }
 
             Document doc = docs.get(0);
             // Get the first attachment
@@ -619,18 +638,32 @@ public class IngestJobService {
      *
      * @param unreadable rows returned by the store that this node could not turn into records
      */
-    public record DlqPage(List<IngestDeadLetterRecord> entries, int unreadable) {}
+    public record DlqPage(List<IngestDeadLetterRecord> entries, int unreadable,
+            boolean hasMore) {}
 
     public DlqPage listDlqPage(int limit, int offset) {
+        return listDlqPage(limit, offset, false);
+    }
+
+    /**
+     * @param withProbe fetch one row beyond {@code limit} to answer "is there more" without a
+     *        second query. The probe row is NOT decoded into the page: counting it made an
+     *        offset page cover a different span of raw rows than the caller's next offset
+     *        assumes, so entries were repeated or skipped across pages. A review built both.
+     */
+    public DlqPage listDlqPage(int limit, int offset, boolean withProbe) {
         CloudantClientWrapper client = getConfClient();
         String dbName = client.getDatabaseName();
         var cloudant = client.getClient();
+        int pageSize = Math.max(1, limit);
         List<Document> rawDocs = findRawDocs(cloudant, dbName,
                 Map.of("type", IngestDeadLetterRecord.DOC_TYPE),
-                Math.max(1, limit), Math.max(0, offset));
+                withProbe ? pageSize + 1 : pageSize, Math.max(0, offset));
+        boolean more = withProbe && rawDocs.size() > pageSize;
+        List<Document> onThisPage = more ? rawDocs.subList(0, pageSize) : rawDocs;
         List<IngestDeadLetterRecord> results = new ArrayList<>();
         int unreadable = 0;
-        for (Document rawDoc : rawDocs) {
+        for (Document rawDoc : onThisPage) {
             try {
                 Map<String, Object> props = new HashMap<>(rawDoc.getProperties());
                 props.remove("_id");
@@ -645,7 +678,7 @@ public class IngestJobService {
                         + " {}", rawDoc.getId(), e.getMessage());
             }
         }
-        return new DlqPage(results, unreadable);
+        return new DlqPage(results, unreadable, more);
     }
 
     /**
@@ -676,7 +709,12 @@ public class IngestJobService {
                             deleted++;
                         }
                     }
-                } catch (Exception parseErr) {
+                } catch (java.time.format.DateTimeParseException parseErr) {
+                    // ONLY the parse. This catch used to cover deleteDlqEntry as well, so a
+                    // deletion that failed because the store went away was logged as an
+                    // unparseable date, the loop carried on, and the endpoint answered
+                    // "success". A review found the swallow inside the arm that had just been
+                    // added to stop the outer one.
                     logger.warn("DLQ entry {} has an unparseable failedAt ({}); left in place",
                             doc.getId(), ts);
                 }

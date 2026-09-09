@@ -6089,7 +6089,15 @@ CONTROLS = [
                 '            if (true) return null;\n'
                 '            // The selector itself did not answer. Not "there is no such entry".\n',
         test='DlqReplayArchetypeGateTest',
-        expect_fail=['theEntryReadRefusesRatherThanAnsweringNone'],
+        # The three beyond the first are MEASURED. They went short when the round-50 locks were
+        # added to this class: making getDlqEntry answer null instead of refusing takes
+        # saveToDlq down the "the read ANSWERED that there is no row" arm, which is exactly
+        # what those three assert it must not do. A review predicted all three by reading, and
+        # the run confirmed them.
+        expect_fail=['theEntryReadRefusesRatherThanAnsweringNone',
+                     'aProbeThatFoundNoRowIsNotAnAnsweredAbsence',
+                     'aProbeThatThrewIsNotAnAnsweredAbsence',
+                     'anUnreadableRowDoesNotResetTheFailureHistory'],
     ),
     dict(
         id="SJ2",
@@ -6159,7 +6167,12 @@ CONTROLS = [
              '                earlierPayloadIsStillAttached = storedDocumentHasAttachment(dlqId);\n',
         replace='                // document, so it is read from the document rather than assumed absent.\n',
         test='DlqReplayArchetypeGateTest',
-        # The two beyond the first are MEASURED: this call site feeds every arm of the merge.
+        # The two beyond the first ARE measured — but not for the reason first written here.
+        # A review showed why: the fixture answers postFind by CALL INDEX, so deleting this
+        # call shifts upsertDocument's own read onto the throwing index and nothing is written
+        # at all. Both probe outcomes reachable from that fixture already return null, so the
+        # merge input is unchanged by this sabotage. Recorded as a trap: harden the fixture to
+        # answer by selector and SN2 becomes WRONG TEST FIRED while the protection stands.
         expect_fail=['writingOverAnUnreadableRowKeepsTheAttachedPayload',
                      'aProbeThatThrewIsNotAnAnsweredAbsence',
                      'anUnreadableRowDoesNotResetTheFailureHistory'],
@@ -6398,8 +6411,11 @@ CONTROLS = [
         find='        if (firstError.contains("retry shortly") || firstError.contains("temporarily unavailable")\n',
         replace='        if (false\n',
         test='CanonicalImportServiceTest',
+        # The third is MEASURED: the idempotency refusal added in the round after this control
+        # ends in "; retry shortly" and asserts 503 through this very arm.
         expect_fail=['aTargetFolderReadThatCouldNotAnswerKeepsItsRetryMarker',
-                     'aFailedProfileReadWhoseCauseSaysNotFound_isStill503NotA404'],
+                     'aFailedProfileReadWhoseCauseSaysNotFound_isStill503NotA404',
+                     'anIdempotencyRecordThatCouldNotBeReadRefuses_ratherThanReplacing'],
     ),
     dict(
         id="UH2",
@@ -6485,8 +6501,13 @@ CONTROLS = [
         id="UO2",
         what="the page declares the queue finished because the row past it could not be decoded",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
-        find='        boolean hasMore = page.size() + fetched.unreadable() > cappedLimit;',
-        replace='        boolean hasMore = page.size() > cappedLimit;',
+        # Re-anchored: the page no longer contains the probe row at all — the service decodes
+        # exactly the page and answers hasMore separately, because counting the probe row into
+        # the page made an offset page cover a different span of raw rows than the caller's
+        # next offset assumes. The sabotage now re-derives hasMore from the entry count, which
+        # is the same defect in its new home.
+        find='        boolean hasMore = fetched.hasMore();',
+        replace='        boolean hasMore = entries.size() > cappedLimit;',
         test='DlqRetryRefusalStatusTest',
         expect_fail=['aPageWithAnUndecodableRowDoesNotClaimTheEnd'],
     ),
@@ -6569,6 +6590,53 @@ CONTROLS = [
         replace='        } catch (Exception couldNotFinish) {\n        }',
         test='DlqReplayArchetypeGateTest',
         expect_fail=['thePurgeRefusesRatherThanLookingComplete'],
+    ),
+    dict(
+        id="UW2",
+        what="the IMAP checkpoint read goes back to the reading that cannot refuse — the twin "
+             "of UQ2, whose call site had a lock and no control",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CheckpointManager.java',
+        find='        String value = settingsService.readSettingOrRefuse(key);\n        if (value == null || value.isBlank()) return new long[]{0, 0};',
+        replace='        String value = settingsService.readSetting(key);\n        if (value == null || value.isBlank()) return new long[]{0, 0};',
+        test='CheckpointManagerTest',
+        expect_fail=['loadValidity_refusesWhenTheStoreDidNotAnswer'],
+    ),
+    dict(
+        id="UX2",
+        what="an ASSUMED payload that a read has disproven refuses again, making the flag a "
+             "fixed point and DELETE the only way out of a metadata-only entry",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find_span=('                } else if (dlq.isPayloadPresenceAssumed()) {',
+                   '                            + " answered that it carries none, so it was replayed without one");'),
+        replace='                } else if (dlq.isPayloadPresenceAssumed()) {\n'
+                '                    return errorResponse(HttpStatus.CONFLICT, "refused");',
+        test='DlqRetryRefusalStatusTest',
+        expect_fail=['anAssumedPayloadDisprovedByAReadIsReplayed'],
+    ),
+    dict(
+        id="UZ2",
+        what="the record that this item's bytes were never stored is erased by the next "
+             "byte-less failure, so the 409 that protects the entry lasts one save",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='            String carriedForward = existing != null ? existing.getPayloadDropReason() : null;\n'
+             '            dlq.setPayloadDropReason(payload != null ? null\n'
+             '                    : (dropReason != null ? dropReason : carriedForward));',
+        replace='            dlq.setPayloadDropReason(dropReason);',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['theDropReasonSurvivesTheNextFailure'],
+    ),
+    dict(
+        id="VB2",
+        what="a stored row the mapper refused is answered as a retry again — a standing "
+             "condition wearing the transient answer",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java',
+        find_span=('        if (message.contains("could not be read as a profile")\n'
+                   '                || message.contains("could not be read as a connector")) {\n'
+                   '            return HttpStatus.CONFLICT;',
+                   '        }\n        if (couldNotAsk(message) || couldNotAsk(raw)) {'),
+        replace='        if (couldNotAsk(message) || couldNotAsk(raw)) {',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['aRowTheMapperRefusedIsAStandingConflict_notARetry'],
     ),
     dict(
         id="ST2",

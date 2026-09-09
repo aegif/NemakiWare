@@ -237,6 +237,13 @@ public class IngestSchedulerController {
         if (message.startsWith("Delegated authorization denied")) {
             return HttpStatus.FORBIDDEN;
         }
+        // A stored row the mapper REFUSED. It was matching "could not be read" below and
+        // answering 503 "retry" for something no retry repairs — an administrator has to fix
+        // the row. A review found the standing case wearing the transient answer.
+        if (message.contains("could not be read as a profile")
+                || message.contains("could not be read as a connector")) {
+            return HttpStatus.CONFLICT;
+        }
         if (couldNotAsk(message) || couldNotAsk(raw)) {
             return HttpStatus.SERVICE_UNAVAILABLE;
         }
@@ -312,6 +319,13 @@ public class IngestSchedulerController {
 
     /** The vocabulary that means "this node could not ask", wherever it appears. */
     private static boolean couldNotAsk(String message) {
+        // A row the mapper REFUSED is a corrupt stored row: standing, not transient. It was
+        // matching "could not be read" and answering 503 "retry" for something no retry
+        // repairs. A review found it.
+        if (message.contains("could not be read as a profile")
+                || message.contains("could not be read as a connector")) {
+            return false;
+        }
         return message.contains("retry shortly")
                 || message.contains("could not be established")
                 || message.contains("could not be read")

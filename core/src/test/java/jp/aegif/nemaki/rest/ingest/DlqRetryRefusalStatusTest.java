@@ -161,6 +161,35 @@ class DlqRetryRefusalStatusTest {
     }
 
     @Test
+    @DisplayName("an ASSUMED payload that a read disproves stops refusing the entry")
+    void anAssumedPayloadDisprovedByAReadIsReplayed() throws Exception {
+        // The assumption was a FIXED POINT. hasContent=true was set while the store could not
+        // be asked; the retry then found no payload and answered 409; and every later save
+        // re-set the flag, because the probe reported "no attachment block" as unanswerable
+        // too. Every orchestrator saves with no bytes, so a metadata-only entry became
+        // permanently un-retryable after one blip, with DELETE — destroying the only record
+        // of the loss — the sole way out. Codex and a subagent derived it independently.
+        //
+        // loadDlqContent now REFUSES when it cannot see the row at all, so a null from it is
+        // an answer: this entry carries no payload, and the assumption is disproven.
+        CanonicalImportService importService = mock(CanonicalImportService.class);
+        when(importService.execute(any(), any()))
+                .thenReturn(ExternalIngestResult.success("req-1", "obj-9", "1.0", false, null));
+        ResponseEntity<?> res = retryWith(row -> {
+            row.setHasContent(true);
+            row.setPayloadPresenceAssumed(true);
+        }, importService, jobService ->
+                when(jobService.loadDlqContent("dlq-1")).thenReturn(null));
+
+        assertEquals(HttpStatus.OK, res.getStatusCode(),
+                "an assumption the store has now answered still refused the entry, and the "
+                        + "only way out is deleting the only record of the loss");
+        assertEquals(Boolean.TRUE,
+                ((Map<?, ?>) res.getBody()).get("payloadPresenceAssumptionCleared"),
+                "the answer does not say the assumption was settled by a read: " + res.getBody());
+    }
+
+    @Test
     @DisplayName("a reservation that could not be ATTEMPTED is 503, not 'someone else has it'")
     void aReservationThatCouldNotBeAttemptedIsNot429() throws Exception {
         // CouchDB unreachable returned the same false as losing a _rev conflict, and the door
@@ -224,8 +253,10 @@ class DlqRetryRefusalStatusTest {
             r.setDlqId("d-" + i);
             decoded.add(r);
         }
-        when(jobService.listDlqPage(101, 0))
-                .thenReturn(new IngestJobService.DlqPage(decoded, 1));
+        // The service decodes exactly the page and answers hasMore from a probe row it does
+        // NOT return. The controller must not re-derive either from the entry count.
+        when(jobService.listDlqPage(100, 0, true))
+                .thenReturn(new IngestJobService.DlqPage(decoded, 1, true));
         wire(controller, "ingestJobService", jobService);
         wire(controller, "httpRequest", adminRequest());
 
@@ -237,6 +268,10 @@ class DlqRetryRefusalStatusTest {
                         + " decoded");
         assertEquals(1, body.get("unreadableEntries"),
                 "the answer does not say a row is missing from it: " + body);
+        // Paging by 'count' would re-read the undecodable row for ever.
+        assertEquals(100, body.get("nextOffset"),
+                "the next page starts where this one ended, not where its entries ended: "
+                        + body);
     }
 
     @Test

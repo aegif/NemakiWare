@@ -65,27 +65,30 @@ public class IngestDlqController {
         int cappedLimit = Math.min(Math.max(limit, 1), 500);
         int safeOffset = Math.max(offset, 0);
         // Fetch one extra to say whether more exist without a second count query.
-        IngestJobService.DlqPage fetched = ingestJobService.listDlqPage(cappedLimit + 1, safeOffset);
-        List<IngestDeadLetterRecord> page = fetched.entries();
-        // The probe row asks "is there more". A row that could not be DECODED still occupied a
-        // slot the store returned, so counting only decoded rows made a page whose probe row
-        // was the broken one answer "hasMore: false" — the queue looked like it ended there,
-        // and every later entry became unreachable. Ask the question the store answered.
-        boolean hasMore = page.size() + fetched.unreadable() > cappedLimit;
-        List<IngestDeadLetterRecord> entries =
-                page.size() > cappedLimit ? page.subList(0, cappedLimit) : page;
+        // The service decodes exactly this page and answers "is there more" from a probe row
+        // it does NOT put in the page. Counting the probe row into the page made a page cover
+        // a different span of raw rows than the caller's next offset assumes, so entries were
+        // repeated or skipped across pages; and counting only DECODED rows made a page whose
+        // probe row was the broken one answer "hasMore: false", which told the operator the
+        // queue ended there. Two reviewers built both halves.
+        IngestJobService.DlqPage fetched = ingestJobService.listDlqPage(cappedLimit, safeOffset, true);
+        List<IngestDeadLetterRecord> entries = fetched.entries();
+        boolean hasMore = fetched.hasMore();
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("count", entries.size());
         response.put("limit", cappedLimit);
         response.put("offset", safeOffset);
         response.put("hasMore", hasMore);
+        // Advance by the PAGE, not by the number of entries returned: some rows on this page
+        // may not have decoded, and paging by count would re-read them for ever.
+        response.put("nextOffset", safeOffset + cappedLimit);
         if (fetched.unreadable() > 0) {
             // Or "count" reads as the whole page. Each of these is the only record that a
             // source item was lost, so their absence has to be said, not left in the log.
             response.put("unreadableEntries", fetched.unreadable());
             response.put("unreadableNote", "rows this node could not decode are not in"
                     + " 'entries' and are not counted in 'count'; they are named in the server"
-                    + " log by document id");
+                    + " log by document id. Page with 'nextOffset', not with 'count'");
         }
         response.put("entries", entries);
         return ResponseEntity.ok(response);
@@ -171,6 +174,10 @@ public class IngestDlqController {
             ExternalIngestRequest request = MAPPER.readValue(
                     dlq.getOriginalRequestJson(), ExternalIngestRequest.class);
 
+            // Declared here rather than after the dispatch: the payload-restore block below
+            // has something to say about how it resolved the entry's recorded state.
+            Map<String, Object> response = new LinkedHashMap<>();
+
             // Bytes this entry HAD but that were never stored are not "this item has no
             // content". Replaying without them creates an empty document, reports success and
             // DELETES the row — the only record that the source item was lost. payloadDropReason
@@ -203,16 +210,17 @@ public class IngestDlqController {
                 } else if (dlq.isPayloadPresenceAssumed()) {
                     // hasContent on this row was ASSUMED, not read — set while writing over a
                     // row this node could not decode, when the attachment probe could not
-                    // answer either. Saying "recorded as carrying content" here would report
-                    // the assumption as the record's own claim. Still a refusal, because the
-                    // read that just came back empty is answered by the same index the probe
-                    // could not get an answer from. The next failure of this item re-probes
-                    // and settles the flag.
-                    return errorResponse(HttpStatus.CONFLICT, "whether DLQ entry " + dlqId
-                            + " carries a payload was never established — it was assumed while"
-                            + " writing over a row this node could not read — and no stored"
-                            + " payload came back now either; the entry is kept and nothing"
-                            + " was imported");
+                    // answer either. loadDlqContent has now READ the row and found no
+                    // attachment (it refuses instead of answering null when it cannot see the
+                    // row at all), so the assumption is disproven and this entry genuinely has
+                    // no payload. Refusing here made the flag a fixed point: a metadata-only
+                    // entry — which is every orchestrator's shape — could never be retried
+                    // again, and deleting the row was the only way out. Two reviewers derived
+                    // it. Replay it, and say the flag was cleared by an answer.
+                    response.put("payloadPresenceAssumptionCleared", true);
+                    response.put("payloadPresenceNote", "this entry was recorded as carrying a"
+                            + " payload while the store could not be asked; the store has now"
+                            + " answered that it carries none, so it was replayed without one");
                 } else {
                     // The record says it HAS content and the store says there is none. Not a
                     // retry: importing without it would record an empty document as the
@@ -226,7 +234,6 @@ public class IngestDlqController {
             // Route through the correct archetype-specific flow
             ExternalIngestResult result = dispatchByArchetype(callContext, request);
 
-            Map<String, Object> response = new LinkedHashMap<>();
             if (dlq.getRequestBinaryStrippedCount() > 0) {
                 // The stored request is byte-free by rule; say so, or a "success" here reads as
                 // "everything came back" when the attachments did not.

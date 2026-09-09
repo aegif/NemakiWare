@@ -453,6 +453,83 @@ class DlqReplayArchetypeGateTest {
                 doc.get("failureCount")};
     }
 
+    @Test
+    @DisplayName("a later byte-less failure does not erase that this item's bytes were dropped")
+    void theDropReasonSurvivesTheNextFailure() throws Exception {
+        // payloadDropReason is written when encryption refused the bytes, and the retry door
+        // reads it to refuse rather than import an empty document over the item. Setting it
+        // from THIS attempt alone wrote null over the earlier reason as soon as one byte-less
+        // failure arrived for the same item — and every orchestrator saves with no bytes. The
+        // protection lasted exactly until the next failure. Codex traced it.
+        IngestJobService jobs = new IngestJobService();
+        com.ibm.cloud.cloudant.v1.Cloudant cloudant =
+                mock(com.ibm.cloud.cloudant.v1.Cloudant.class);
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper wrapper =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+        when(wrapper.getClient()).thenReturn(cloudant);
+        when(wrapper.getDatabaseName()).thenReturn("nemaki_conf");
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool pool =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);
+        when(pool.getClient(org.mockito.ArgumentMatchers.anyString())).thenReturn(wrapper);
+        jobs.setConnectorPool(pool);
+
+        // A readable row that already records the drop.
+        com.ibm.cloud.cloudant.v1.model.Document stored =
+                new com.ibm.cloud.cloudant.v1.model.Document();
+        stored.setId("ingest_dlq:z");
+        stored.setRev("1-a");
+        stored.put("type", "ingest_dead_letter");
+        stored.put("dlqId", "z");
+        stored.put("hasContent", Boolean.FALSE);
+        stored.put("payloadDropReason", "payload not stored: NEMAKI_ENCRYPTION_KEY is not set");
+        com.ibm.cloud.cloudant.v1.model.FindResult found =
+                mock(com.ibm.cloud.cloudant.v1.model.FindResult.class);
+        when(found.getDocs()).thenReturn(java.util.List.of(stored));
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> call =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.FindResult> resp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(resp.getResult()).thenReturn(found);
+        when(call.execute()).thenReturn(resp);
+        when(cloudant.postFind(org.mockito.ArgumentMatchers.any())).thenReturn(call);
+
+        com.ibm.cloud.cloudant.v1.model.DocumentResult ok =
+                mock(com.ibm.cloud.cloudant.v1.model.DocumentResult.class);
+        when(ok.isOk()).thenReturn(Boolean.TRUE);
+        when(ok.getId()).thenReturn("ingest_dlq:z");
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.DocumentResult> post =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.DocumentResult> postResp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(postResp.getResult()).thenReturn(ok);
+        when(post.execute()).thenReturn(postResp);
+        when(cloudant.postDocument(org.mockito.ArgumentMatchers.any())).thenReturn(post);
+
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setRepositoryId("bedroom");
+        request.setConnectorId("c1");
+        request.setSourceObjectId("m-3");
+
+        // No bytes — the shape every orchestrator saves with.
+        jobs.saveToDlq(request, "boom again", null);
+
+        org.mockito.ArgumentCaptor<com.ibm.cloud.cloudant.v1.model.PostDocumentOptions> written =
+                org.mockito.ArgumentCaptor.forClass(
+                        com.ibm.cloud.cloudant.v1.model.PostDocumentOptions.class);
+        org.mockito.Mockito.verify(cloudant, org.mockito.Mockito.atLeastOnce())
+                .postDocument(written.capture());
+        Object reason = written.getAllValues().get(written.getAllValues().size() - 1)
+                .document().get("payloadDropReason");
+        org.junit.jupiter.api.Assertions.assertNotNull(reason,
+                "the record that this item's bytes were never stored was erased by the next"
+                        + " failure, so the retry will import an empty document and delete the"
+                        + " row");
+    }
+
     /** A service wired to a store that answers nothing at all. */
     private IngestJobService jobsWithADeadStore() {
         IngestJobService jobs = new IngestJobService();

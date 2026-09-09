@@ -162,6 +162,23 @@ public class ImapIdleMonitor {
                                 session.repositoryId(), connector.getConnectorId(), mailbox,
                                 session.startedDelegated(), session.connectionIdentity());
                         if (!now.ok()) {
+                            // A refusal that could not ASK does not tear the session down. The
+                            // re-read is an authorisation check, so this message is NOT
+                            // captured either way — but stopping IDLE is permanent here:
+                            // startIdle has exactly one caller, the admin endpoint, and
+                            // nothing re-arms it. One CouchDB blip while a mail arrived
+                            // silently ended capture for that mailbox until a human noticed,
+                            // and each of these refusals is a full nemaki_conf walk run per
+                            // message. A review traced it. A SETTLED refusal ("no longer
+                            // delegated", "not found") still stops: that answer will not
+                            // change on the next message.
+                            if (couldNotAsk(now.refusal())) {
+                                logger.warn("IDLE: skipping a message on profile {} — the"
+                                        + " authorisation could not be re-checked, and IDLE is"
+                                        + " left running so the next message re-asks: {}",
+                                        profileId, now.refusal());
+                                return;
+                            }
                             logger.warn("IDLE: stopping profile {}: {}", profileId, now.refusal());
                             imap.stopIdle();
                             return;
@@ -286,6 +303,29 @@ public class ImapIdleMonitor {
         boolean ok() {
             return refusal == null && profile != null && connector != null;
         }
+    }
+
+    /**
+     * True when a refusal means "this node could not ask", as opposed to a settled answer.
+     *
+     * <p>Only the first kind may leave IDLE running: the next message re-asks and the session
+     * survives a blip. A settled answer — the profile is gone, the delegation was revoked, the
+     * connector is not IMAP — will say the same thing on every message, so it tears down.
+     *
+     * <p>"could not be read as a profile/connector" is deliberately EXCLUDED: that is a
+     * corrupt stored row, which is standing, not transient. A review found the same phrase
+     * being read as retryable elsewhere.
+     */
+    private static boolean couldNotAsk(String refusal) {
+        if (refusal == null) return false;
+        if (refusal.contains("could not be read as a profile")
+                || refusal.contains("could not be read as a connector")) {
+            return false;
+        }
+        return refusal.contains("retry shortly")
+                || refusal.contains("could not be established")
+                || refusal.contains("could not be read")
+                || refusal.contains("could not be looked up");
     }
 
     /**

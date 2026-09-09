@@ -570,4 +570,16 @@ class IngestSchedulerControllerAnswerTest {
         assertTrue(refused.getMessage().contains("not wired on this node"),
                 "the refusal does not say what is wrong: " + refused.getMessage());
     }
+
+    @org.junit.jupiter.api.Test
+    void aRowTheMapperRefusedIsAStandingConflict_notARetry() {
+        // "could not be read as a profile" is a CORRUPT STORED ROW: standing, not transient.
+        // It was matching the "could not be read" token that means "this node could not ask",
+        // so the endpoint told the operator to retry something only they can repair. A review
+        // found the standing case wearing the transient answer.
+        assertEquals(HttpStatus.CONFLICT, startIdleAnswering(
+                "import profile p1 could not be started: row ingest_profile:p1 could not be"
+                        + " read as a profile (Unrecognized field \"foo\")"),
+                "a corrupt stored row was answered as a retry");
+    }
 }
