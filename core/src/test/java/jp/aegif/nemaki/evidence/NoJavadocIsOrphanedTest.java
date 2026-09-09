@@ -99,11 +99,18 @@ class NoJavadocIsOrphanedTest {
             // the method being wrong: the roots are chosen from the last miss instead of from
             // the diff. Whoever touches this next should widen from `git diff --name-only`.
             "src/main/java/jp/aegif/nemaki/util/cache",
-            // FIFTH widening, and this time from the DIFF rather than from the miss: the two
-            // exporters are the largest files this batch rewrote (+327 and +214 lines) and the
-            // roots did not reach them. A review found two orphans there, both created by this
-            // branch. Whoever touches this next: run `git diff --name-only master...HEAD` and
-            // widen to cover every package it lists, before the review does it for you.
+            // FIFTH widening — and, said plainly, made from the MISS again, not from the
+            // diff. A review found two branch-created orphans in rest/importexport and this
+            // root was added for them. The claim that it came from
+            // `git diff --name-only master...HEAD` was wrong twice over: that diff names
+            // about a dozen packages these roots still do not reach (cmis/servlet,
+            // cmis/aspect/type/impl, cmis/service/impl, the top-level rest package and more),
+            // and the two exporters are not the largest files this batch rewrote.
+            //
+            // Why the roots were NOT widened to the whole diff: those packages hold roughly
+            // sixteen orphans that predate this branch, so covering them turns this lock red
+            // for work no one has agreed to do. That is a real reason and it is recorded as
+            // an untreated item, which is different from claiming the derivation was done.
             "src/main/java/jp/aegif/nemaki/rest/importexport");
 
     /**

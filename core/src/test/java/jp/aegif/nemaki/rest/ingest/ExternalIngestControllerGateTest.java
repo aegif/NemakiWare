@@ -824,12 +824,12 @@ class ExternalIngestControllerGateTest {
 
     @Test
     void aStandingProfileMisconfigurationIsA400_notARetryAndNotOurBug() {
-        // The CALL SITE, not the thrower. The lock added with this fix asserted `isRetryable`
-        // on the exception the private resolver throws, so restoring the unconditional
-        // "; retry shortly" at the caller left the whole suite green — the project's own
-        // sabotage-the-call-site-not-the-helper shape, in the round that fixed an instance of
-        // it. Two reviewers found that, and found that dropping the suffix had moved this
-        // answer from 400 to 500 because the classifier matched no arm.
+        // What this measures: the STATUS the classifier gives that message. The service is
+        // stubbed here, so the message itself is the test's own — the producer's side is
+        // measured in CanonicalImportServiceTest and IngestEvidenceSnapshotTest, which assert
+        // that the product emits the token this arm keys on. An earlier version of this
+        // comment claimed it measured the caller's suffix; a review pointed out that the
+        // stub makes that unfalsifiable.
         CallContext ctx = adminContext();
         ExternalIngestRequest req = baseRequest();
         req.setConnectorId(null);
@@ -844,9 +844,6 @@ class ExternalIngestControllerGateTest {
                 "a standing profile misconfiguration was answered as our bug (500) or as a "
                         + "retry (503)");
         assertNotNull(res.getBody());
-        assertFalse(String.join(" ", res.getBody().errors()).contains("retry shortly"),
-                "the caller told the operator to retry something no retry fixes: "
-                        + res.getBody().errors());
     }
 
     @Test

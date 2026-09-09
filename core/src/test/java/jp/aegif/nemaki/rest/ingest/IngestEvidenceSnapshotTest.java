@@ -1664,6 +1664,12 @@ class IngestEvidenceSnapshotTest {
                         "a path that resolves to a document answered 'there is no folder'");
         assertTrue(wrapped.getCause().getMessage().contains("not a folder"),
                 "the refusal does not say what was found: " + wrapped.getCause().getMessage());
+        // The token the STATUS CLASSIFIER keys on, asserted here because it is a contract
+        // between two files and nothing else joined them: drop it from this message and the
+        // endpoint falls back to 500 while every test stays green. A review found the gap.
+        assertTrue(wrapped.getCause().getMessage().contains("fix the profile"),
+                "the message lost the token ExternalIngestController.classifyErrorStatus "
+                        + "matches to answer 400: " + wrapped.getCause().getMessage());
         // And NOT in the vocabulary of a failed read. Both new arms throw from inside the
         // method's own try, and its generic catch re-wrapped them as "could not be resolved" —
         // so an ANSWERED "this path is a document, fix the profile" was delivered as a retry,

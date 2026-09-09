@@ -2518,6 +2518,11 @@ class CanonicalImportServiceTest {
         String said = String.join(" ", result.errors());
         assertTrue(said.contains("not a folder"),
                 "the caller did not say what was actually found: " + said);
+        // The token the status classifier keys on. It is a contract between this file and
+        // ExternalIngestController, and nothing joined the two: dropping it here answers 500
+        // at the endpoint with every test green. A review found the gap.
+        assertTrue(said.contains("fix the profile"),
+                "the message lost the token the endpoint matches to answer 400: " + said);
         assertFalse(said.contains("retry shortly"),
                 "the caller told the operator to retry a standing misconfiguration: " + said);
     }
