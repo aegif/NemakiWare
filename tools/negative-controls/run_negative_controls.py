@@ -5557,7 +5557,13 @@ def failing_methods_in_reports(xml_texts: list) -> tuple:
                 body.append(child.get("type") or "")
                 body.append(child.get("message") or "")
                 body.append(child.text or "")
-            texts[name] = "\n".join(part for part in body if part)
+            # APPEND, not assign: a parameterised method's invocations all normalise to the
+            # same name, and keeping only the last made the assertion judgement depend on the
+            # order surefire happened to write them — one invocation breaking the harness and
+            # another firing the assertion gave opposite answers. Joined, harness breakage
+            # wins, which is the fail-closed reading. A review found the overwrite.
+            texts[name] = "\n".join(
+                part for part in ([texts.get(name, "")] + body) if part)
     return failed, unreadable, texts
 
 
@@ -5606,14 +5612,15 @@ def run_exit_message(results: list, undeclared: list, gaps: list):
 
 
 def run_test(test_class: str) -> tuple:
-    """Run one test class; return (all_green, failed_methods, unreadable_names, report_text).
+    """Run one class; return (all_green, failed_methods, unreadable_names, failure_texts).
 
-    The failing METHOD NAMES come from surefire's XML, where they are an attribute; the .txt
-    text comes back too, because the "did it fail on its own assertion" judgement reads the
-    stanza. Four review rounds running found a hole in reading the names out of the .txt
-    prose instead — a class-level line taken for a lock, a message quoting a header taken for
-    one, a message embedding one taken for a phantom lock — each time in a reader that looked
-    like it worked. An attribute cannot be confused with prose, so that family is closed.
+    Everything comes from surefire's XML: the failing method NAMES (an attribute) and each
+    failing testcase's failure TEXT (its own element). The .txt reports are not read at all.
+    Taking either out of that prose is what five review rounds kept finding holes in — a
+    class-level line taken for a lock, a message quoting a header taken for one, a message
+    embedding one taken for a phantom lock, and, for the assertion judgement, a stanza that
+    ran into another test's message in both directions. An attribute and an element cannot be
+    confused with prose.
     """
     for old in REPORTS.glob("*.txt"):
         old.unlink()
@@ -5650,15 +5657,15 @@ def run_test(test_class: str) -> tuple:
     return (not failed_methods and not unreadable, failed_methods, unreadable, failure_texts)
 
 
-def _harness_broke(stanza: str) -> bool:
+def _harness_broke(failure_text: str) -> bool:
     """Was HarnessBroken RAISED here, or merely named?
 
-    "Anywhere in the stanza" was too blunt: a lock whose whole subject is HarnessBroken —
+    "Anywhere in the failure text" was too blunt: a lock whose whole subject is HarnessBroken —
     `assertThrows(HarnessBroken.class, ...)` — names it in its failure message, and that lock
     firing was scored as harness breakage. A raised exception appears as a type prefix at the
     start of a line, or after "Caused by: "; a mention appears inside a message.
     """
-    for line in stanza.splitlines():
+    for line in failure_text.splitlines():
         text = line.strip()
         if text.startswith("Caused by: "):
             text = text[len("Caused by: "):]
@@ -5743,6 +5750,47 @@ SELF_TEST_CASES = [
      (set(), ["(a failing testcase with no name)"], {})),
     # The whole point of reading the XML: prose cannot be mistaken for a name. Both shapes
     # below were demonstrated as misreadings of the previous, line-based reader.
+    # A parameterised method's invocations normalise to one name. Keeping only the last made
+    # the answer depend on the order surefire wrote them; joined, the harness break wins, which
+    # is the fail-closed reading. The assertion is placed LAST here on purpose: with the
+    # overwrite, that order answered "fired".
+    ("one invocation breaking the harness outweighs another's assertion",
+     lambda: failure_is_assertion(failing_methods_in_reports([
+         '<testsuite>'
+         '<testcase name="someLock(String)[1]" classname="jp.aegif.SomeTest">'
+         '<error type="jp.aegif.nemaki.util.test.HarnessBroken">renamed</error></testcase>'
+         '<testcase name="someLock(String)[2]" classname="jp.aegif.SomeTest">'
+         '<failure type="org.opentest4j.AssertionFailedError">expected true</failure></testcase>'
+         '</testsuite>'])[2]["someLock"]),
+     False),
+    # The sibling <system-out>/<system-err> elements are NOT read. This tree's reports really
+    # carry them (57 of 115 testcases in one class), and a review demonstrated both misreadings
+    # that including them allows: captured output naming AssertionError turning a harness
+    # break into a "firing", and captured output naming HarnessBroken turning a real firing
+    # into a "harness break". Two cases, one per direction.
+    ("captured output naming an assertion does not make a harness break a firing",
+     lambda: failure_is_assertion(failing_methods_in_reports([
+         '<testsuite><testcase name="someLock" classname="jp.aegif.SomeTest">'
+         '<error type="java.lang.NullPointerException">at jp.aegif</error>'
+         '<system-out>java.lang.AssertionError: printed, not thrown</system-out>'
+         '</testcase></testsuite>'])[2]["someLock"]),
+     False),
+    ("captured output naming HarnessBroken does not unmake a real firing",
+     lambda: failure_is_assertion(failing_methods_in_reports([
+         '<testsuite><testcase name="someLock" classname="jp.aegif.SomeTest">'
+         '<failure type="org.opentest4j.AssertionFailedError">expected true</failure>'
+         '<system-out>jp.aegif.nemaki.util.test.HarnessBroken: printed, not thrown</system-out>'
+         '</testcase></testsuite>'])[2]["someLock"]),
+     True),
+    # The marker list has two halves — Mockito's exception CLASS names and its printed MESSAGE
+    # forms — and every earlier case carried both, so neither half was measured. One case per
+    # half. (The message forms are what a .txt stanza starting at the message needed; with the
+    # XML's type attribute they are close to dead weight, and this is where that would show.)
+    ("a Mockito failure known only by its class name is a firing",
+     lambda: failure_is_assertion(
+         "org.mockito.exceptions.verification.WantedButNotInvoked\nsee the log"), True),
+    ("a Mockito failure known only by its message is a firing",
+     lambda: failure_is_assertion("Wanted but not invoked: connector.get()"), True),
     # A POSITIVE control, and the point of reading the XML: a failure MESSAGE shaped like
     # another test's header names nothing, and its text stays attached to the testcase it
     # belongs to. No rule in this reader has to be removed for that — the structure gives it.
