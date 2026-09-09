@@ -298,7 +298,15 @@ public class IngestDlqController {
      * APIs have had this floor since the batch began; a review found the DLQ, ingest and
      * webhook controllers without it. Endpoints that map these themselves keep their mapping.
      */
-    /** A stored entry this node could not read is a retry, never "there is no such entry". */
+    /**
+     * A stored entry this node could not read is a retry, never "there is no such entry".
+     *
+     * <p>Inserted between the block below and the method it documents, this handler took that
+     * block's javadoc and left {@code definitionRowsCouldNotBeRead} with none — Java attaches
+     * the last preceding doc comment. A review caught it in the round that added this method,
+     * and the sibling paragraph in the scheduler controller carries the same warning: if you
+     * insert a method here, check which comment its neighbour ends up with.
+     */
     @ExceptionHandler(IngestJobService.DlqEntryUnreadableException.class)
     public ResponseEntity<?> dlqEntryCouldNotBeRead(IngestJobService.DlqEntryUnreadableException e) {
         return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());

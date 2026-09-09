@@ -4322,14 +4322,25 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     String baseType = baseTypeId instanceof org.apache.chemistry.opencmis.commons.data.PropertyData<?> pd
                             ? String.valueOf(pd.getFirstValue()) : null;
                     if (baseType != null && !"cmis:folder".equals(baseType)) {
+                        // The read ANSWERED, and answered something that is neither "no such
+                        // path" nor a failure. Returning null made the caller say the profile
+                        // configured neither field — the sentence the other arm of this method
+                        // was just corrected for. A review found the two arms left behind.
                         logger.warn("targetFolderPath '{}' resolved to a {} ({}), not a folder",
                                 folderPath, baseType, objectData.getId());
-                        return null;
+                        throw new TargetFolderUnreadableException("the target folder path '"
+                                + folderPath + "' of this profile resolves to a " + baseType
+                                + ", not a folder; fix the profile", null);
                     }
                     logger.debug("Resolved targetFolderPath '{}' to folderId '{}'", folderPath, objectData.getId());
                     folderPathCache.put(cacheKey, new CachedFolderId(objectData.getId(), System.currentTimeMillis()));
                     return objectData.getId();
                 }
+                // The store answered with no object and no exception. That is not "the
+                // profile configured neither field" either.
+                throw new TargetFolderUnreadableException("the target folder path '" + folderPath
+                        + "' of this profile could not be resolved: the store answered with no"
+                        + " object; retry shortly", null);
             } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException absent) {
                 // The store ANSWERED: there is no such path. That is the one outcome the
                 // caller's "the profile configured neither field" message may stand for.

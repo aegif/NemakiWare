@@ -6063,6 +6063,34 @@ CONTROLS = [
         test='IngestEvidenceSnapshotTest',
         expect_fail=['anUnresolvableTargetFolderPathIsNotAMissingSetting'],
     ),
+    dict(
+        id="SK2",
+        what="the DLQ endpoint swallows the stored-but-unreadable refusal again, so the "
+             "handler that answers 503 becomes dead code and the caller sees 404 or 500",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find='        IngestDeadLetterRecord dlq = ingestJobService.getDlqEntry(dlqId);\n',
+        replace='        IngestDeadLetterRecord dlq;\n'
+                '        try {\n'
+                '            dlq = ingestJobService.getDlqEntry(dlqId);\n'
+                '        } catch (IngestJobService.DlqEntryUnreadableException swallowed) {\n'
+                '            dlq = null;\n'
+                '        }\n',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['aStoredButUnreadableEntryIsNotReportedAsAbsent'],
+    ),
+    dict(
+        id="SL2",
+        what="the path that resolves to a DOCUMENT is answered as 'the profile configured "
+             "neither field' again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='                        throw new TargetFolderUnreadableException("the target folder path \'"\n'
+             '                                + folderPath + "\' of this profile resolves to a " + baseType\n',
+        replace='                        if (true) return null;\n'
+                '                        throw new TargetFolderUnreadableException("the target folder path \'"\n'
+                '                                + folderPath + "\' of this profile resolves to a " + baseType\n',
+        test='IngestEvidenceSnapshotTest',
+        expect_fail=['aTargetFolderPathThatIsNotAFolderIsNotAMissingSetting'],
+    ),
 ]
 
 

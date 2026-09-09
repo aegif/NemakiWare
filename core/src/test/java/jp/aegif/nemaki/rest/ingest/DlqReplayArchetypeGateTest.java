@@ -221,25 +221,47 @@ class DlqReplayArchetypeGateTest {
     }
 
     @Test
-    @DisplayName("a stored DLQ entry that cannot be read is 503, not 'not found'")
-    void aStoredButUnreadableEntryIsNotReportedAsAbsent() {
+    @DisplayName("a stored DLQ entry that cannot be read is 503 from the ENDPOINT, not 404")
+    void aStoredButUnreadableEntryIsNotReportedAsAbsent() throws Exception {
         // The listing skips such rows on purpose — one broken row must not hide the queue —
-        // but the single-entry read answered null, and the endpoint turned that into
+        // but the single-entry read answered null and the endpoint turned that into
         // 404 "DLQ entry not found". This class says three times that the entry is the only
-        // record a source item was lost. A review found the answer.
+        // record a source item was lost.
+        //
+        // Driven through the ENDPOINT, not the handler. The first version called
+        // dlqEntryCouldNotBeRead directly, which is a tautology over a three-line method: it
+        // could not tell whether the refusal reaches the handler at all, and this same file
+        // already records a round where a catch-all made a handler dead code. Two reviewers
+        // named it.
         IngestDlqController controller = new IngestDlqController();
         IngestJobService jobs = mock(IngestJobService.class);
         when(jobs.getDlqEntry("d-1")).thenThrow(
                 new IngestJobService.DlqEntryUnreadableException(
                         "DLQ entry d-1 is stored but could not be read"));
-        org.springframework.http.ResponseEntity<?> res =
-                controller.dlqEntryCouldNotBeRead(
-                        new IngestJobService.DlqEntryUnreadableException(
-                                "DLQ entry d-1 is stored but could not be read"));
 
-        org.junit.jupiter.api.Assertions.assertEquals(503, res.getStatusCode().value(),
-                "a stored entry that could not be read was answered as absent");
-        org.junit.jupiter.api.Assertions.assertNotNull(jobs);
+        jakarta.servlet.http.HttpServletRequest request =
+                mock(jakarta.servlet.http.HttpServletRequest.class);
+        org.apache.chemistry.opencmis.commons.server.CallContext ctx =
+                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        when(ctx.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN))
+                .thenReturn(Boolean.TRUE);
+        when(request.getAttribute("CallContext")).thenReturn(ctx);
+        for (Object[] wire : new Object[][]{
+                {"ingestJobService", jobs}, {"httpRequest", request}}) {
+            Field f = IngestDlqController.class.getDeclaredField((String) wire[0]);
+            f.setAccessible(true);
+            f.set(controller, wire[1]);
+        }
+
+        IngestJobService.DlqEntryUnreadableException escaped =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        IngestJobService.DlqEntryUnreadableException.class,
+                        () -> controller.retryDlqEntry("d-1"),
+                        "the endpoint swallowed the refusal instead of letting the handler"
+                                + " answer 503");
+        org.junit.jupiter.api.Assertions.assertEquals(503,
+                controller.dlqEntryCouldNotBeRead(escaped).getStatusCode().value(),
+                "the handler answered something other than a retry");
     }
 
     @Test

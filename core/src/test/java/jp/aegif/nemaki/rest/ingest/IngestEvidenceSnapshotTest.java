@@ -1612,4 +1612,53 @@ class IngestEvidenceSnapshotTest {
         assertTrue(wrapped.getCause().getMessage().contains("could not be resolved"),
                 "the refusal does not say what happened: " + wrapped.getCause().getMessage());
     }
+
+    @Test
+    @DisplayName("a target folder path that resolves to a DOCUMENT is not 'the profile has "
+            + "neither field' either")
+    void aTargetFolderPathThatIsNotAFolderIsNotAMissingSetting() throws Exception {
+        // The read ANSWERED, with something that is neither "no such path" nor a failure.
+        // Returning null made the caller say the profile configured neither field — the
+        // sentence the failure arm had just been corrected for. Two reviewers found the two
+        // arms left behind in the same round.
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        jp.aegif.nemaki.cmis.service.ObjectService objects =
+                mock(jp.aegif.nemaki.cmis.service.ObjectService.class);
+        org.apache.chemistry.opencmis.commons.data.ObjectData doc =
+                mock(org.apache.chemistry.opencmis.commons.data.ObjectData.class);
+        when(doc.getId()).thenReturn("obj-1");
+        org.apache.chemistry.opencmis.commons.data.Properties props =
+                mock(org.apache.chemistry.opencmis.commons.data.Properties.class);
+        @SuppressWarnings("rawtypes")
+        org.apache.chemistry.opencmis.commons.data.PropertyData baseType =
+                mock(org.apache.chemistry.opencmis.commons.data.PropertyData.class);
+        when(baseType.getFirstValue()).thenReturn("cmis:document");
+        when(props.getProperties()).thenReturn(java.util.Map.of("cmis:baseTypeId", baseType));
+        when(doc.getProperties()).thenReturn(props);
+        when(objects.getObjectByPath(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(doc);
+        inject(service, "objectService", objects);
+
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setRepositoryId("bedroom");
+        profile.setTargetFolderPath("/a/not-a-folder");
+
+        java.lang.reflect.Method resolve = CanonicalImportServiceImpl.class.getDeclaredMethod(
+                "resolveTargetFolderId", ImportProfileDefinition.class, String.class,
+                org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        resolve.setAccessible(true);
+
+        java.lang.reflect.InvocationTargetException wrapped =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        java.lang.reflect.InvocationTargetException.class,
+                        () -> resolve.invoke(service, profile, "bedroom", null),
+                        "a path that resolves to a document answered 'there is no folder'");
+        assertTrue(wrapped.getCause().getMessage().contains("not a folder"),
+                "the refusal does not say what was found: " + wrapped.getCause().getMessage());
+    }
 }

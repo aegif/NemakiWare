@@ -160,7 +160,22 @@ public class IngestJobService {
     public void saveToDlq(ExternalIngestRequest request, String errorMessage, byte[] contentBytes) {
         try {
             String dlqId = deadLetterIdFor(request);
-            IngestDeadLetterRecord existing = getDlqEntry(dlqId);
+            // The WRITE path must not inherit the read path's refusal. getDlqEntry refuses a
+            // stored row it cannot decode so the endpoint stops answering 404 for it — but
+            // here the refusal aborted the save, and the id is deterministic, so EVERY later
+            // failure of the same item refused too. Nothing was recorded, and the row this
+            // class calls the only record of a lost item was never repaired: before, the
+            // undecodable row was simply overwritten by the raw upsert below. Two reviewers
+            // found the regression in the round that introduced it. Merging with "no previous
+            // entry" is the same thing the old swallow did, and the upsert repairs the row.
+            IngestDeadLetterRecord existing;
+            try {
+                existing = getDlqEntry(dlqId);
+            } catch (DlqEntryUnreadableException couldNotRead) {
+                logger.warn("the existing DLQ row for {} could not be read ({}); this failure"
+                        + " is being written over it", dlqId, couldNotRead.getMessage());
+                existing = null;
+            }
 
             IngestDeadLetterRecord dlq = buildDlqRecord(request, errorMessage, existing,
                     Instant.now().toString());
