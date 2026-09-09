@@ -169,7 +169,11 @@ public class IngestSchedulerController {
         // The twin-pair wording of both services. No retry makes a standing pair go away, so
         // it is 409 here exactly as it is on the definition APIs and the ingest endpoints.
         if (message.contains("more than one definition row")
-                || message.contains("more than one owned definition row")) {
+                || message.contains("more than one owned definition row")
+                // A session that is already there is a standing conflict too, and no retry
+                // and no correction of the request changes it. A review found it on the 400
+                // arm while every other conflict on this endpoint had moved.
+                || message.startsWith("IDLE already running")) {
             return HttpStatus.CONFLICT;
         }
         // Absence the index-free read ESTABLISHED — the one case here that is not about the

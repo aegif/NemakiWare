@@ -182,16 +182,21 @@ public class IngestSchedulerService {
     // text, and "ImapIdleMonitor not available" carried no marker, so an unwired node answered
     // 400 — the request blamed for the deployment. A review found it one layer above the same
     // shape the monitor's own null check had just been corrected for.
-    private static final String IDLE_NOT_WIRED =
-            "the IMAP IDLE monitor is not wired on this node, so IDLE could not be started;"
-                    + " retry shortly against a node that runs it";
+    private static String idleNotWired(String verb) {
+        return "the IMAP IDLE monitor is not wired on this node, so IDLE could not be " + verb
+                + "; retry shortly against a node that runs it";
+    }
 
     public String startIdle(String profileId) {
-        return imapIdleMonitor != null ? imapIdleMonitor.startIdle(profileId) : IDLE_NOT_WIRED;
+        // One message per verb: the first version reused the start's wording for the stop, so
+        // a stop on an unwired node answered "could not be started". A review found it.
+        return imapIdleMonitor != null ? imapIdleMonitor.startIdle(profileId)
+                : idleNotWired("started");
     }
 
     public String stopIdle(String profileId) {
-        return imapIdleMonitor != null ? imapIdleMonitor.stopIdle(profileId) : IDLE_NOT_WIRED;
+        return imapIdleMonitor != null ? imapIdleMonitor.stopIdle(profileId)
+                : idleNotWired("stopped");
     }
 
     public List<String> getIdleProfiles() {
@@ -855,7 +860,16 @@ public class IngestSchedulerService {
      */
     public List<ImportProfileDefinition> getScheduledProfiles() {
         if (repositoryInfoMap == null || profileService == null) {
-            return List.of();
+            // "not wired on this node", not "no profile is scheduled". The empty list below
+            // is documented as GENUINELY empty — the walk throws rather than reporting a
+            // failure as absence — and this arm quietly broke that: the poll skipped every
+            // capture and GET /status answered count 0. A review found the one arm the
+            // sentence above does not cover.
+            throw new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(
+                    "the scheduled-profile listing is not wired on this node"
+                            + (repositoryInfoMap == null ? " (no repository map)" : "")
+                            + (profileService == null ? " (no profile service)" : "")
+                            + "; retry shortly against a node that runs it");
         }
         // ONE index-free walk, not a Mango selector per repository. The selector answers
         // empty while it rebuilds, and this method's empty list is indistinguishable from a

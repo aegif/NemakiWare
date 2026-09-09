@@ -5515,9 +5515,11 @@ CONTROLS = [
         what="the multipart door swallows a typed read refusal as 400 'Invalid request' again",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
         find='        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException\n'
-             '                | ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused) {\n',
+             '                | ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException\n'
+             '                | ConnectorArchetypeUnusableException refused) {\n',
         replace='        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException\n'
-                '                | ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused) {\n'
+                '                | ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException\n'
+                '                | ConnectorArchetypeUnusableException refused) {\n'
                 '            if (true) return ResponseEntity.status(HttpStatus.BAD_REQUEST)\n'
                 '                    .body(ExternalIngestResult.error("unknown", "Invalid request"));\n',
         test='ExternalIngestControllerGateTest',
@@ -5587,6 +5589,64 @@ CONTROLS = [
         replace='                    continue;\n',
         test='ImportProfileLegacyIdMigrationTest',
         expect_fail=['legacyRowsInDifferentRepositoriesLeaveTheDeterministicRowAlone'],
+    ),
+    dict(
+        id="QY2",
+        what="a connector row that was READ but says no archetype becomes 'no connector "
+             "context' again — the other arm of QP2's hole",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='                if (connector.getSourceArchetype() == null) {\n',
+        replace='                if (false) {\n',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['aConnectorRowWithNoArchetypeDoesNotPickTheFlowFromTheFileName'],
+    ),
+    dict(
+        id="QZ2",
+        what="the IDLE STOP endpoint goes back to a fixed 400, so an unwired node is a bad "
+             "request again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java',
+        find='            // Same classifier as the start: an unwired node is not a bad request here either.\n'
+             '            return ResponseEntity.status(statusOfIdleRefusal(error)).body(response);\n',
+        replace='            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);\n',
+        test='IngestSchedulerControllerAnswerTest',
+        # The second name is from the measurement: that lock drives the stop endpoint too.
+        expect_fail=['stopClassifiesLikeStart', 'anUnwiredNodeSaysSoPerVerb'],
+    ),
+    dict(
+        id="RA2",
+        what="the unwired IDLE monitor answers 'ImapIdleMonitor not available' again — a "
+             "deployment fault with no marker, which the endpoint reads as a bad request",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerService.java',
+        find='    private static String idleNotWired(String verb) {\n'
+             '        return "the IMAP IDLE monitor is not wired on this node, so IDLE could not be " + verb\n'
+             '                + "; retry shortly against a node that runs it";\n',
+        replace='    private static String idleNotWired(String verb) {\n'
+                '        if (true) return "ImapIdleMonitor not available";\n'
+                '        return "the IMAP IDLE monitor is not wired on this node, so IDLE could not be " + verb\n'
+                '                + "; retry shortly against a node that runs it";\n',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['anUnwiredNodeSaysSoPerVerb'],
+    ),
+    dict(
+        id="RB2",
+        what="a session that is already running is a bad request again, where every other "
+             "standing conflict on this endpoint answers 409",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java',
+        find='                || message.startsWith("IDLE already running")) {\n',
+        replace='                || false) {\n',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['aStandingPairIsA409'],
+    ),
+    dict(
+        id="RC2",
+        what="an unwired scheduled listing answers 'nothing is scheduled' again, which the "
+             "poll's own comment says cannot happen",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerService.java',
+        find='        if (repositoryInfoMap == null || profileService == null) {\n',
+        replace='        if (repositoryInfoMap == null || profileService == null) {\n'
+                '            if (true) return List.of();\n',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['anUnwiredScheduledListingRefuses'],
     ),
 ]
 

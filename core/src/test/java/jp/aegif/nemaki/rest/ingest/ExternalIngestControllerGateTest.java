@@ -690,4 +690,31 @@ class ExternalIngestControllerGateTest {
                 "the multipart door swallowed a read refusal as \"Invalid request\" (400)");
         verifyNoInteractions(canonicalImportService);
     }
+
+    @Test
+    void aConnectorRowWithNoArchetypeDoesNotPickTheFlowFromTheFileName() {
+        // The other arm of the same hole: the row READS, and says nothing about what it is.
+        // Returning null there reaches the identical wrong dispatch — an audit of the first
+        // fix found the arm still open, and the sibling DLQ replay refuses this same input
+        // with the same reasoning.
+        CallContext ctx = adminContext();
+        ConnectorDefinition noArchetype = new ConnectorDefinition();
+        noArchetype.setConnectorId(CONN);
+        noArchetype.setEnabled(true);
+        when(connectorDefinitionService.get(CONN)).thenReturn(noArchetype);
+
+        ExternalIngestController.ConnectorArchetypeUnusableException refused = assertThrows(
+                ExternalIngestController.ConnectorArchetypeUnusableException.class,
+                () -> ingest(messageOnANamedConnector()),
+                "a connector that does not say what it is was answered as 'no connector'");
+        assertTrue(refused.getMessage().contains("sourceArchetype"),
+                "the refusal does not tell the operator what to fix: " + refused.getMessage());
+        verifyNoInteractions(canonicalImportService);
+        // Not a retry: the walk is not even consulted, because the row was read.
+        verify(connectorDefinitionService, never()).existsIndexFree(CONN);
+        assertEquals(HttpStatus.CONFLICT,
+                controller.connectorCannotSayWhatItIs(refused).getStatusCode(),
+                "a row an operator has to fix was answered as a retry");
+        assertEquals(ctx, ctx);
+    }
 }

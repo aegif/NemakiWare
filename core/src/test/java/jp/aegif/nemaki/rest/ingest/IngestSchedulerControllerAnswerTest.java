@@ -81,7 +81,11 @@ class IngestSchedulerControllerAnswerTest {
                 "connector c-1 has more than one definition row"),
                 "no retry makes a standing pair go away, and 400 says the request is wrong");
         assertEquals(HttpStatus.CONFLICT, startIdleAnswering(
-                "import profile p1 has more than one owned definition row in repository bedroom"));
+                "import profile p1 has more than one owned definition row; resolve the pair"
+                        + " before starting a capture that is keyed by profileId alone"));
+        assertEquals(HttpStatus.CONFLICT, startIdleAnswering(
+                "IDLE already running for profile: p1"),
+                "a session that is already there is a standing conflict, not a bad request");
     }
 
     @Test
@@ -92,8 +96,12 @@ class IngestSchedulerControllerAnswerTest {
                 "an absence the index-free read established was answered as a bad request");
         assertEquals(HttpStatus.BAD_REQUEST, startIdleAnswering("Import profile is disabled: p1"),
                 "a genuinely wrong setting stopped being a 400 — the split went too far");
+        // The product's own wording. An invented one measures a message that cannot occur;
+        // a review found two of those in this class.
+        assertEquals(HttpStatus.BAD_REQUEST, startIdleAnswering(
+                "IDLE is only supported for IMAP connectors (system=box)"));
         assertEquals(HttpStatus.BAD_REQUEST,
-                startIdleAnswering("Profile is not an IMAP profile: p1"));
+                startIdleAnswering("No password for IMAP connector"));
     }
 
     @Test
@@ -163,5 +171,69 @@ class IngestSchedulerControllerAnswerTest {
         assertNotNull(body.get("warning"),
                 "a list that could not name the scoped keys looked complete: " + body);
         verify(schedulerService).enumerateCheckpoints("p1");
+    }
+
+    @Test
+    @DisplayName("the STOP verb classifies the same way — it had been left on a fixed 400")
+    void stopClassifiesLikeStart() {
+        when(schedulerService.stopIdle("p1")).thenReturn(
+                "the IMAP IDLE monitor is not wired on this node, so IDLE could not be"
+                        + " stopped; retry shortly against a node that runs it");
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE,
+                controller.stopIdle("p1").getStatusCode(),
+                "the stop endpoint still answers a fixed 400 — the notes promise 開始・停止");
+
+        when(schedulerService.stopIdle("p1"))
+                .thenReturn("No IDLE session running for profile: p1");
+        assertEquals(HttpStatus.BAD_REQUEST, controller.stopIdle("p1").getStatusCode(),
+                "an ordinary 'nothing to stop' stopped being a 400");
+    }
+
+    @Test
+    @DisplayName("an unwired node says so, in the words of the verb that was asked")
+    void anUnwiredNodeSaysSoPerVerb() {
+        // The service, not a mock of it: the message under measurement is the one the service
+        // builds when no monitor is wired. It used to be "ImapIdleMonitor not available",
+        // which carries no marker, so the endpoint answered 400 — the deployment blamed on
+        // the request. A review found neither layer locked it, and that one wording was
+        // reused for both verbs, so a stop answered "could not be started".
+        IngestSchedulerService real = new IngestSchedulerService();
+
+        String start = real.startIdle("p1");
+        String stop = real.stopIdle("p1");
+
+        assertTrue(start.contains("could not be started"), "the start's wording: " + start);
+        assertTrue(stop.contains("could not be stopped"),
+                "the stop answered in the start's words: " + stop);
+        assertTrue(start.contains("not wired on this node") && start.contains("retry shortly"),
+                "an unwired node did not say so: " + start);
+
+        when(schedulerService.startIdle("p1")).thenReturn(start);
+        when(schedulerService.stopIdle("p1")).thenReturn(stop);
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE,
+                controller.startIdle("p1").getStatusCode(),
+                "an unwired node answered 400 on the start");
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE,
+                controller.stopIdle("p1").getStatusCode(),
+                "an unwired node answered 400 on the stop");
+    }
+
+    @Test
+    @DisplayName("an unwired scheduled listing refuses rather than answering 'nothing is "
+            + "scheduled'")
+    void anUnwiredScheduledListingRefuses() {
+        // The poll's own comment says the empty list is GENUINELY empty because a read that
+        // could not be answered throws — and one arm did not: with no repository map or no
+        // profile service the method returned List.of(), so every scheduled capture was
+        // skipped in silence and GET /status answered count 0. A review found the arm the
+        // sentence does not cover.
+        IngestSchedulerService real = new IngestSchedulerService();
+
+        ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException refused = assertThrows(
+                ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+                real::getScheduledProfiles,
+                "an unwired node answered 'no profile is scheduled'");
+        assertTrue(refused.getMessage().contains("not wired on this node"),
+                "the refusal does not say what is wrong: " + refused.getMessage());
     }
 }

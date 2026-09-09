@@ -100,7 +100,8 @@ public class ExternalIngestController {
             }
             return doIngest(repositoryId, request);
         } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException
-                | ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused) {
+                | ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException
+                | ConnectorArchetypeUnusableException refused) {
             // NOT "Invalid request". This arm exists for a malformed multipart body, and it
             // was swallowing the typed "this row could not be read" refusals raised deep
             // inside doIngest — so the same ingest answered 503 as JSON and 400 as multipart,
@@ -202,9 +203,17 @@ public class ExternalIngestController {
     }
 
     /**
-     * Records a delegated ingest attempt regardless of outcome — gives the
-     * security review trail for the new non-admin code path. Admin ingests
-     * continue through the existing AOP audit and don't double-log here.
+     * Records a delegated ingest attempt for every outcome this method is REACHED for —
+     * gives the security review trail for the non-admin code path. Admin ingests continue
+     * through the existing AOP audit and don't double-log here.
+     *
+     * <p>One outcome does not reach it: a read that refuses (the connector could not be read,
+     * or its row does not say which flow the request belongs to) leaves the ingest by
+     * exception, and the handler answers without an audit entry. Before those refusals
+     * existed the same input was audited, as a result. An earlier version of this note said
+     * "regardless of outcome" without the exception; a review found the gap. Recorded rather
+     * than closed here: the refusals are raised below the point that knows the delegated
+     * context, and moving them would put a read refusal inside the authorisation gate.
      */
     private void auditDelegatedAttempt(CallContext ctx, String repositoryId,
                                        ExternalIngestRequest request, boolean success, String errorMessage) {
@@ -234,20 +243,29 @@ public class ExternalIngestController {
     }
 
     /**
-     * Fallback dispatch for "message" sourceObjectType when connector archetype
-     * was not resolved by the primary dispatch (connectorId absent or lookup failed).
-     * Defaults to mail parser since "message" without archetype context is most
-     * likely an email.
+     * Fallback dispatch for "message" sourceObjectType when no connector archetype was
+     * resolved. That now means one thing only: the caller named NO connector, or the walk
+     * ESTABLISHED that the one it named does not exist. A lookup that failed, a row the index
+     * could not show, and a row without an archetype all refuse before reaching here — an
+     * earlier version of this note listed "lookup failed" among the reasons and a review
+     * found it stale. Defaults to the mail parser, since "message" with no connector context
+     * is most likely an email.
      */
     private ExternalIngestResult resolveMessageImport(CallContext callContext, ExternalIngestRequest request) {
-        // connectorArchetype was already checked in doIngest() and returned null,
-        // so no point re-looking up — default to mail
         return canonicalImportService.executeMailImport(callContext, request);
+    }
+
+    /** A connector row that was READ and does not say which import flow it belongs to. */
+    public static class ConnectorArchetypeUnusableException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        public ConnectorArchetypeUnusableException(String message) { super(message); }
     }
 
     /**
      * The named connector's archetype; null only when the caller named no connector, or when
-     * the connector is established NOT to exist.
+     * the connector is established NOT to exist. A row that was read but carries no archetype
+     * refuses rather than answering null — a review found that arm still open after the
+     * failure arm was closed, and the two reach the same wrong dispatch.
      *
      * <p>It used to answer null for a failed lookup too, and null is what the dispatch above
      * reads as "no connector context" — so a transient read failure sent the request into the
@@ -267,7 +285,24 @@ public class ExternalIngestController {
         if (connectorId == null || connectorDefinitionService == null) return null;
         try {
             ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
-            if (connector != null) return connector.getSourceArchetype();
+            if (connector != null) {
+                if (connector.getSourceArchetype() == null) {
+                    // The row READ, and it does not say what it is. Returning null here was
+                    // the same hole through its other arm: the dispatch reads null as "no
+                    // connector context" and picks the flow from the file name. The API's
+                    // create and update reject a null archetype, so this is a row written
+                    // before that check, by hand, or by a half-run migration — the DLQ
+                    // replay refuses exactly this input with the same reasoning. Not a
+                    // retry: no read makes the field appear.
+                    throw new ConnectorArchetypeUnusableException("connector " + connectorId
+                            + " has no sourceArchetype, so which import flow this request"
+                            + " belongs to cannot be established; set the connector's"
+                            + " sourceArchetype and submit again");
+                }
+                return connector.getSourceArchetype();
+            }
+        } catch (ConnectorArchetypeUnusableException unusable) {
+            throw unusable;
         } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused) {
             throw refused;
         } catch (RuntimeException lookupFailed) {
@@ -593,9 +628,21 @@ public class ExternalIngestController {
      */
     @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
             ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})
-    public ResponseEntity<?> definitionRowsCouldNotBeRead(RuntimeException e) {
+    public ResponseEntity<ExternalIngestResult> definitionRowsCouldNotBeRead(RuntimeException e) {
+        // The endpoint's own document, not a different one. The first version answered a
+        // bare map, so a caller parsing requestId / success / errors got a shape it does not
+        // know from the one path that refuses; a review found the undescribed change.
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                .body(java.util.Map.of("status", "error",
-                        "message", String.valueOf(e.getMessage())));
+                .body(ExternalIngestResult.error("unknown", String.valueOf(e.getMessage())));
+    }
+
+    /** A connector whose stored row cannot say which flow the request belongs to. */
+    @ExceptionHandler(ConnectorArchetypeUnusableException.class)
+    public ResponseEntity<ExternalIngestResult> connectorCannotSayWhatItIs(
+            ConnectorArchetypeUnusableException e) {
+        // 409, not 503: no retry makes the field appear, and not 400 either — the request is
+        // well formed and names a connector that exists. The operator has to fix the row.
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ExternalIngestResult.error("unknown", String.valueOf(e.getMessage())));
     }
 }

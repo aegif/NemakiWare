@@ -90,7 +90,12 @@ public class ImapIdleMonitor {
         // the authorization wiring is missing.
         if (profile.isDelegated()) {
             if (schedulerService == null) {
-                return "Delegated IMAP IDLE requires scheduler wiring for authorization";
+                // "not wired on this node", not a bad request — the same shape the
+                // service's own null monitor and this class's null profile service
+                // were corrected for. The endpoint classifies by this text.
+                return "delegated IMAP IDLE could not be authorised: the scheduler is"
+                        + " not wired on this node; retry shortly against a node that"
+                        + " runs it";
             }
             IngestSchedulerService.DelegatedAuthorization auth =
                     schedulerService.authorizeDelegatedFetch(profile, connector);
