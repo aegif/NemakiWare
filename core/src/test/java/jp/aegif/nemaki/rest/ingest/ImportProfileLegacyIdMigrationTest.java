@@ -2211,8 +2211,15 @@ class ImportProfileLegacyIdMigrationTest {
                 service.migrateLegacyGeneratedIds();
 
         verify(cloudant, never()).postDocument(any(PostDocumentOptions.class));
-        assertTrue(result.failures.stream().anyMatch(f -> f.contains("import_profile_definition:42")),
-                "the row was left alone without saying so: " + result.failures);
+        // The REASON, not just the doc id. Matching the id alone, this lock stays green when
+        // the walk's identity read is replaced by a raw one: the row is then filed as "no
+        // usable profileId", a failure carrying the same id is recorded, nothing throws, and
+        // the attachment arm is never entered. An audit of these locks found the gap — the
+        // runner's ledger had it as an exclusion on two controls for the same reason.
+        assertTrue(result.failures.stream().anyMatch(f -> f.contains("import_profile_definition:42")
+                        && f.contains("carries attachments")),
+                "the row was left alone without saying so, or for another reason: "
+                        + result.failures);
         assertTrue(!result.clean(), "a pass that could not repair the row reported clean");
     }
 
@@ -2261,9 +2268,76 @@ class ImportProfileLegacyIdMigrationTest {
                 assertDoesNotThrow(() -> service.migrateLegacyGeneratedIds(),
                         "a refused rewrite took the whole pass down");
 
-        assertTrue(result.failures.stream().anyMatch(f -> f.contains("import_profile_definition:42")),
-                "the refused rewrite was swallowed: " + result.failures);
+        // The REASON, not just the doc id — see the attachment lock above: a raw identity read
+        // in the walk files the same id under a different reason and this stays green.
+        assertTrue(result.failures.stream().anyMatch(f -> f.contains("import_profile_definition:42")
+                        && f.contains("rewriting it failed")),
+                "the refused rewrite was swallowed, or reported as something else: "
+                        + result.failures);
         assertTrue(!result.clean(), "a pass with a refused rewrite reported clean");
+    }
+
+    @Test
+    @DisplayName("a DIVERGENT pair's deterministic row is not rewritten by the normalising "
+            + "pass — 'neither row is touched' includes it")
+    void aDivergentPairsDeterministicRowIsNotNormalised() {
+        // The walk collects rows to normalise before it knows which profiles diverge, and the
+        // normalising pass then ran over all of them — so a divergent pair whose deterministic
+        // row stores its identity as a number had that row rewritten, while the ERROR message
+        // and the release notes both say neither row is touched. A review found the pass
+        // undoing the promise.
+        wire();
+        Map<String, Object> legacy = profileProps("42", "Mine");
+        legacy.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
+        Map<String, Object> standing = profileProps("42", "Theirs");
+        standing.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
+        listingAnswers(List.of(row("legacy-42", legacy, "1-a"),
+                row("import_profile_definition:42", standing, "3-c")));
+        Document standingRow = mock(Document.class);
+        when(standingRow.getProperties()).thenReturn(standing);
+        when(standingRow.getRev()).thenReturn("3-c");
+        deterministicReadAnswers("42", standingRow);
+        writesSucceed();
+
+        ConnectorDefinitionService.LegacyIdMigrationResult result =
+                service.migrateLegacyGeneratedIds();
+
+        assertTrue(result.divergent.stream().anyMatch(d -> d.contains("42")),
+                "the pair was not reported as divergent: " + result.divergent);
+        verify(cloudant, never()).postDocument(any(PostDocumentOptions.class));
+        assertEquals(0, result.normalised,
+                "one member of a pair the operator is being asked to compare was rewritten: "
+                        + result);
+        assertTrue(deletedIds.isEmpty(), "a row of a divergent pair was retired: " + deletedIds);
+    }
+
+    @Test
+    @DisplayName("with TWO legacy rows, the deterministic row is not rewritten either — the "
+            + "second way a pair is reported as divergent")
+    void twoLegacyRowsLeaveTheDeterministicRowAlone() {
+        // The divergence that is decided before migrateOneLegacyRow is ever called. Its arm
+        // has its own skip of the normalising pass, and one lock cannot cover both. (The
+        // repositories-differ arm above it has a third; it is the same skip.)
+        wire();
+        Map<String, Object> a = profileProps("42", "A");
+        a.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
+        Map<String, Object> b = profileProps("42", "B");
+        b.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
+        Map<String, Object> standing = profileProps("42", "Standing");
+        standing.put("profileId", new com.google.gson.internal.LazilyParsedNumber("42"));
+        listingAnswers(List.of(row("legacy-a", a, "1-a"), row("legacy-b", b, "1-b"),
+                row("import_profile_definition:42", standing, "3-c")));
+        writesSucceed();
+
+        ConnectorDefinitionService.LegacyIdMigrationResult result =
+                service.migrateLegacyGeneratedIds();
+
+        assertTrue(result.divergent.stream().anyMatch(d -> d.contains("legacy-a")
+                        && d.contains("legacy-b")),
+                "the two legacy rows were not reported together: " + result.divergent);
+        verify(cloudant, never()).postDocument(any(PostDocumentOptions.class));
+        assertEquals(0, result.normalised,
+                "the deterministic row of a divergent set was rewritten: " + result);
     }
 
     @Test

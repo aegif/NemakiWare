@@ -1121,4 +1121,25 @@ public class IngestWebhookController {
     private ResponseEntity<?> badRequest(String msg) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", msg));
     }
+
+    /**
+     * The typed "this row could not be read" refusals reach the subscription endpoints (and
+     * any other verb here that resolves a definition) with nothing catching them, and Spring
+     * answers 500 — "our bug" for a condition whose whole point is that a retry fixes it. The
+     * definition APIs have had this floor since the batch began; a review found the webhook,
+     * DLQ and ingest controllers without it. The receiver's own POST and GET keep their
+     * mapping: they catch the refusal themselves and answer 503 with nothing about the row.
+     */
+    @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+            ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})
+    public ResponseEntity<?> definitionRowsCouldNotBeRead(RuntimeException e) {
+        // The reason is logged, not sent. This controller's front door is unauthenticated,
+        // and the refusal texts say whether a row exists at the id — the one thing the
+        // receiver's disclosure analysis (see ConnectorDefinitionService#getOrRefuse) keeps
+        // out of the answer. A blanket handler that echoed getMessage() would put it back.
+        logger.warn("a definition row could not be read while serving a webhook request: {}",
+                e.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(Map.of("error", "temporarily unavailable"));
+    }
 }

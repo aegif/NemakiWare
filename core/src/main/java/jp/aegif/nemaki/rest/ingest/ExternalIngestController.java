@@ -542,4 +542,20 @@ public class ExternalIngestController {
         }
         return null;
     }
+
+    /**
+     * The typed "this row could not be read" refusals reach the ingest endpoints from the
+     * connector and profile services — {@code get()} rethrows them for a deterministic id
+     * holding another document — with nothing catching them, and Spring answers 500: "our
+     * bug" for a condition whose whole point is that a retry fixes it. The definition APIs
+     * have had this floor since the batch began; a review found the ingest, DLQ and webhook
+     * controllers without it. Endpoints that map these themselves keep their own mapping.
+     */
+    @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+            ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})
+    public ResponseEntity<?> definitionRowsCouldNotBeRead(RuntimeException e) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(java.util.Map.of("status", "error",
+                        "message", String.valueOf(e.getMessage())));
+    }
 }

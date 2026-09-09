@@ -81,10 +81,29 @@ public class CheckpointManager {
 
     // ── Admin operations ──
 
+    /**
+     * One enumeration pass, and whether the profile's own row took part in it.
+     *
+     * <p>The scoped checkpoint keys can only be rebuilt from the profile's
+     * {@code schedulerParams}, so without that row this enumeration covers the static scopes
+     * ALONE. {@code profileRowRead} says which of the two happened. It exists because the
+     * caller cannot tell from the map: a profile with no scoped checkpoints and a profile
+     * whose row could not be read both come back with only the static ones.
+     */
+    public record Enumeration(Map<String, Object> checkpoints, boolean profileRowRead) {}
+
+    /** What one reset pass actually managed to do — see {@link Enumeration}. */
+    public record ResetSummary(int keysReset, boolean profileRowRead) {}
+
     /** Get all checkpoints for a profile (admin diagnostic). */
     public Map<String, Object> getCheckpoints(String profileId) {
+        return enumerateCheckpoints(profileId).checkpoints();
+    }
+
+    /** As {@link #getCheckpoints}, saying whether the profile row was part of the answer. */
+    public Enumeration enumerateCheckpoints(String profileId) {
         Map<String, Object> result = new LinkedHashMap<>();
-        if (settingsService == null) return result;
+        if (settingsService == null) return new Enumeration(result, false);
         // Static scopes (single-value adapters):
         for (String scope : List.of("gmail", "notion", "salesforce", "dropbox", "INBOX")) {
             String key = "ingest.checkpoint." + profileId + "." + scope;
@@ -93,6 +112,7 @@ public class CheckpointManager {
         }
         // Scoped checkpoints: reconstruct the exact key from profile's schedulerParams
         ImportProfileDefinition profile = (profileService != null) ? profileService.get(profileId) : null;
+        boolean profileRowRead = profile != null;
         if (profile != null && profile.getSchedulerParams() != null) {
             Map<String, String> sp = profile.getSchedulerParams();
             tryCheckpoint(result, profileId, "slack." + sp.getOrDefault("channelId", ""));
@@ -106,26 +126,44 @@ public class CheckpointManager {
             tryCheckpoint(result, profileId, "m365mail." + sp.getOrDefault("folderId", "inbox"));
             tryCheckpoint(result, profileId, "box." + sp.getOrDefault("folderId", "0"));
         }
-        return result;
+        return new Enumeration(result, profileRowRead);
     }
 
-    /** Reset checkpoint for a profile (admin operation). */
-    public void resetCheckpoint(String profileId, String scope) {
-        if (settingsService == null) return;
+    /**
+     * Reset checkpoint for a profile (admin operation).
+     *
+     * <p>Returns what the pass did rather than nothing. Without a scope the pass can only
+     * reset what {@link #enumerateCheckpoints} could name, and that depends on reading the
+     * profile's row — which answers null for a read that FAILED and for a profile that is not
+     * there alike. It used to log "All checkpoints reset for profile X" either way, and the
+     * endpoint answered an unqualified success; a review found an incomplete reset reported as
+     * a complete one. The caller now has the fact and says so.
+     */
+    public ResetSummary resetCheckpoint(String profileId, String scope) {
+        if (settingsService == null) return new ResetSummary(0, false);
         if (scope != null && !scope.isBlank()) {
             String key = "ingest.checkpoint." + profileId + "." + scope;
             settingsService.writeSetting(key, "");
             logger.info("Checkpoint reset: {}", key);
-        } else {
-            // Reset all checkpoints for this profile
-            Map<String, Object> allCp = getCheckpoints(profileId);
-            int count = 0;
-            for (String cpScope : allCp.keySet()) {
-                settingsService.writeSetting("ingest.checkpoint." + profileId + "." + cpScope, "");
-                count++;
-            }
-            logger.info("All checkpoints reset for profile {} ({} keys)", profileId, count);
+            // One named key: the profile row has no part in reaching it.
+            return new ResetSummary(1, true);
         }
+        // Reset all checkpoints for this profile
+        Enumeration enumerated = enumerateCheckpoints(profileId);
+        int count = 0;
+        for (String cpScope : enumerated.checkpoints().keySet()) {
+            settingsService.writeSetting("ingest.checkpoint." + profileId + "." + cpScope, "");
+            count++;
+        }
+        if (enumerated.profileRowRead()) {
+            logger.info("All checkpoints reset for profile {} ({} keys)", profileId, count);
+        } else {
+            logger.warn("Reset {} static checkpoint keys of profile {}, but its definition row"
+                    + " was not read, so any scoped checkpoints (slack/teams/mattermost/"
+                    + "chatwork/m365mail/box) could not be named and still hold their"
+                    + " position", count, profileId);
+        }
+        return new ResetSummary(count, enumerated.profileRowRead());
     }
 
     /** Try to read a checkpoint and add to result map if found. */

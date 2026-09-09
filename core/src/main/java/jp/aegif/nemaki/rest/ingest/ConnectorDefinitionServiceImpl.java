@@ -1086,12 +1086,27 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
                 logger.error("Connector {} has {} legacy rows {}; none is migrated — delete"
                         + " the unwanted ones with DELETE .../admin/connectors/{id}?docId=...",
                         connectorId, rows.size(), rows.keySet());
+                // "None is touched" has to include the normalising pass below. The walk
+                // collected the deterministic row before the divergence was known; leaving it
+                // in would rewrite one member of a pair the operator is being asked to
+                // compare, and both the message above and the release notes say neither row
+                // is touched. A review found the pass undoing the promise. Nothing is lost by
+                // waiting: every write verb answers 409 while the pair stands (the count is
+                // index-free), so an unmatchable row changes no answer, and the next startup
+                // normalises it once the unwanted row is gone.
+                unnormalised.remove(deterministicId);
                 continue;
             }
             Map.Entry<String, com.ibm.cloud.cloudant.v1.model.Document> only =
                     rows.entrySet().iterator().next();
+            int divergentBefore = result.divergent.size();
             migrateOneLegacyRow(client, cloudant, dbName, only.getValue(), only.getKey(),
                     connectorId, deterministicId, result);
+            if (result.divergent.size() > divergentBefore) {
+                // The legacy row and the deterministic row disagree. Same rule as above: the
+                // pass below must not rewrite the row the operator is comparing.
+                unnormalised.remove(deterministicId);
+            }
         }
         for (Map.Entry<String, com.ibm.cloud.cloudant.v1.model.Document> entry
                 : unnormalised.entrySet()) {

@@ -5134,14 +5134,21 @@ CONTROLS = [
         replace='            Object pid = props.get("profileId");\n'
                 '            String profileId = pid instanceof String ? (String) pid : null;',
         test='ImportProfileLegacyIdMigrationTest',
-        # NOT aRowWithAttachmentsIsNotRewrittenInPlace / aRefusedRewriteIsReported: under the
-        # raw read those rows are reported as "no usable profileId" with the same id in the
-        # failure, which is what both locks assert, so they stay green. A review caught the
-        # over-declaration, which the runner scores as WRONG TEST FIRED.
+        # aRowWithAttachmentsIsNotRewrittenInPlace / aRefusedRewriteIsReported were EXCLUDED
+        # here: under the raw read those rows are reported as "no usable profileId" with the
+        # same id in the failure, which was all both locks asserted, so they stayed green. A
+        # review caught that over-declaration (the runner scores it WRONG TEST FIRED); an
+        # audit then caught the locks themselves — asserting an id and not a reason, they
+        # could not tell their own branch from an unrelated one. Both now assert the reason,
+        # so both belong here.
         expect_fail=['theMigrationNormalisesAProfileIdTheMapperCoerces',
                      'anInterruptedNormalisingMigrationRetiresTheLegacyRowOnTheNextPass',
                      'aRowAlreadyAtItsDeterministicIdIsNormalisedInPlace',
-                     'aForeignRowOnTheDeterministicIdIsStillDivergent'],
+                     'aForeignRowOnTheDeterministicIdIsStillDivergent',
+                     'aRowWithAttachmentsIsNotRewrittenInPlace',
+                     'aRefusedRewriteIsReported',
+                     'aDivergentPairsDeterministicRowIsNotNormalised',
+                     'twoLegacyRowsLeaveTheDeterministicRowAlone'],
     ),
     dict(
         id="ZC",
@@ -5189,13 +5196,16 @@ CONTROLS = [
         replace='            Object cid = props.get("connectorId");\n'
                 '            String connectorId = cid instanceof String ? (String) cid : null;',
         test='ConnectorLegacyIdMigrationTest',
-        # NOT aRowWithAttachmentsIsNotRewrittenInPlace / aRefusedRewriteIsReported:
-        # ZB's reasoning, connector side (the connector twin of the second lock was
-        # added in the same commit as this comment, and the comment named only one).
+        # ZB's reasoning, connector side: the two locks that asserted only a doc id were
+        # excluded here and now assert their reason, so they belong in the list.
         expect_fail=['theMigrationNormalisesAConnectorIdTheMapperCoerces',
                      'anInterruptedNormalisingMigrationRetiresTheLegacyRowOnTheNextPass',
                      'aRowAlreadyAtItsDeterministicIdIsNormalisedInPlace',
-                     'aForeignRowOnTheDeterministicIdIsStillDivergent'],
+                     'aForeignRowOnTheDeterministicIdIsStillDivergent',
+                     'aRowWithAttachmentsIsNotRewrittenInPlace',
+                     'aRefusedRewriteIsReported',
+                     'aDivergentPairsDeterministicRowIsNotNormalised',
+                     'twoLegacyRowsLeaveTheDeterministicRowAlone'],
     ),
     dict(
         id="ZG",
@@ -5413,6 +5423,64 @@ CONTROLS = [
         replace="if (folder != null) {",
         test="DeleteTreeDfsKeepsFoldersOverInvisibleChildrenTest",
         expect_fail=["aRetainedFolderStaysFindable"],
+    ),
+    dict(
+        id="QJ",
+        what="the normalising pass runs over a divergent pair's deterministic row again — "
+             "'neither row is touched' stops being true for the connector migration",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='            if (result.divergent.size() > divergentBefore) {\n'
+             '                // The legacy row and the deterministic row disagree. Same rule as above: the\n'
+             '                // pass below must not rewrite the row the operator is comparing.\n'
+             '                unnormalised.remove(deterministicId);\n'
+             '            }\n',
+        replace='',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aDivergentPairsDeterministicRowIsNotNormalised'],
+    ),
+    dict(
+        id="QM",
+        what="the same, for the arm that reports TWO legacy rows — the divergence decided "
+             "before the copy step is ever reached",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='                unnormalised.remove(deterministicId);\n'
+             '                continue;\n',
+        replace='                continue;\n',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['twoLegacyRowsLeaveTheDeterministicRowAlone'],
+    ),
+    dict(
+        id="QN",
+        what="QJ's profile twin — the normalising pass rewrites one member of a divergent pair",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='            if (result.divergent.size() > divergentBefore) {\n'
+             '                // The legacy row and the deterministic row disagree. Same rule as above: the\n'
+             '                // pass below must not rewrite the row the operator is comparing.\n'
+             '                unnormalised.remove(deterministicId);\n'
+             '            }\n',
+        replace='',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['aDivergentPairsDeterministicRowIsNotNormalised'],
+    ),
+    dict(
+        id="QO",
+        what="QM's profile twin — the TWO-legacy-rows arm stops skipping the normalising pass",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionServiceImpl.java',
+        find='                unnormalised.remove(deterministicId);\n'
+             '                continue;\n',
+        replace='                continue;\n',
+        test='ImportProfileLegacyIdMigrationTest',
+        expect_fail=['twoLegacyRowsLeaveTheDeterministicRowAlone'],
+    ),
+    dict(
+        id="QZ",
+        what="the checkpoint reset calls a pass complete again — the profile row that names "
+             "the scoped keys was never read, and 'All checkpoints reset' was the answer",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CheckpointManager.java',
+        find='        boolean profileRowRead = profile != null;',
+        replace='        boolean profileRowRead = true;',
+        test='CheckpointManagerTest',
+        expect_fail=['aResetThatCouldNotNameTheScopedKeysDoesNotReportAll'],
     ),
 ]
 

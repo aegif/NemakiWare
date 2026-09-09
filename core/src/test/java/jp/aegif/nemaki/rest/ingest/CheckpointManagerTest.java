@@ -9,6 +9,8 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for CheckpointManager with a mock IntegrationSettingsService.
@@ -113,6 +115,49 @@ class CheckpointManagerTest {
         manager.resetCheckpoint("p1", null);
         assertEquals("", mockSettings.store.get("ingest.checkpoint.p1.gmail"));
         assertEquals("", mockSettings.store.get("ingest.checkpoint.p1.notion"));
+    }
+
+    @Test
+    void aResetThatCouldNotNameTheScopedKeysDoesNotReportAll() {
+        // The scoped keys are rebuilt from the profile's schedulerParams, and get() answers
+        // null for a read that FAILED and for an absent profile alike. The pass then reset
+        // the static scopes only — and logged "All checkpoints reset for profile p1", with
+        // the endpoint answering an unqualified success. A review found the incomplete reset
+        // reported as a complete one.
+        ImportProfileDefinitionService couldNotRead = mock(ImportProfileDefinitionService.class);
+        when(couldNotRead.get("p1")).thenReturn(null);
+        manager.setProfileService(couldNotRead);
+        mockSettings.store.put("ingest.checkpoint.p1.gmail", "val1");
+        mockSettings.store.put("ingest.checkpoint.p1.slack.C123", "1700000000.1");
+
+        CheckpointManager.ResetSummary summary = manager.resetCheckpoint("p1", null);
+
+        assertFalse(summary.profileRowRead(),
+                "a pass that never read the profile row reported that it had");
+        assertEquals(1, summary.keysReset(), "the count is of keys this pass could name");
+        assertEquals("1700000000.1", mockSettings.store.get("ingest.checkpoint.p1.slack.C123"),
+                "a scoped checkpoint was reset without the row that names it — the fixture "
+                        + "no longer measures what it means to");
+    }
+
+    @Test
+    void aResetThatReadTheProfileRowSaysSoAndReachesTheScopedKeys() {
+        // The other side of the pair: with the row read, the scoped key IS named and reset,
+        // and the summary says the answer is complete.
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setSchedulerParams(new HashMap<>(Map.of("channelId", "C123")));
+        ImportProfileDefinitionService readable = mock(ImportProfileDefinitionService.class);
+        when(readable.get("p1")).thenReturn(profile);
+        manager.setProfileService(readable);
+        mockSettings.store.put("ingest.checkpoint.p1.gmail", "val1");
+        mockSettings.store.put("ingest.checkpoint.p1.slack.C123", "1700000000.1");
+
+        CheckpointManager.ResetSummary summary = manager.resetCheckpoint("p1", null);
+
+        assertTrue(summary.profileRowRead(), "the row was read and the summary denied it");
+        assertEquals(2, summary.keysReset(), "the scoped key was not reset: " + mockSettings.store);
+        assertEquals("", mockSettings.store.get("ingest.checkpoint.p1.slack.C123"));
     }
 
     // ── getCheckpoints ──

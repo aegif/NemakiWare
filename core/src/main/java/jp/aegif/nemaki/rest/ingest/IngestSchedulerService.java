@@ -914,8 +914,16 @@ public class IngestSchedulerService {
         return checkpointManager != null ? checkpointManager.getCheckpoints(profileId) : new LinkedHashMap<>();
     }
 
-    public void resetCheckpoint(String profileId, String scope) {
-        if (checkpointManager != null) checkpointManager.resetCheckpoint(profileId, scope);
+    /** As {@link #getCheckpoints}, carrying whether the profile row took part — see
+     *  {@link CheckpointManager.Enumeration}. */
+    public CheckpointManager.Enumeration enumerateCheckpoints(String profileId) {
+        return checkpointManager != null ? checkpointManager.enumerateCheckpoints(profileId)
+                : new CheckpointManager.Enumeration(new LinkedHashMap<>(), false);
+    }
+
+    public CheckpointManager.ResetSummary resetCheckpoint(String profileId, String scope) {
+        if (checkpointManager == null) return new CheckpointManager.ResetSummary(0, false);
+        return checkpointManager.resetCheckpoint(profileId, scope);
     }
 
     // ── Delegated authorization (shared by scheduler + webhook) ─────

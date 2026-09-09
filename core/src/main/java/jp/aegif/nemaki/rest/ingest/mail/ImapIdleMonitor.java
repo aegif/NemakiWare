@@ -303,7 +303,12 @@ public class ImapIdleMonitor {
             String startedConnectorId, String startedMailbox, Boolean startedDelegated,
             ConnectionIdentity startedConnectionIdentity) {
         if (profileService == null) {
-            return new LiveLoad(null, null, "Profile not found: " + profileId);
+            // "Not wired", not "not found". An absent collaborator is a question this node
+            // could not ASK; answering it as the store's "no such profile" is the same
+            // substitution this batch closed at the webhook receiver's profile lookup and at
+            // the re-import relationship lookup. A review found the third one here.
+            return new LiveLoad(null, null, "import profile " + profileId + " could not be"
+                    + " looked up: no profile service is wired on this node; IDLE not started");
         }
         ImportProfileDefinition current;
         try {

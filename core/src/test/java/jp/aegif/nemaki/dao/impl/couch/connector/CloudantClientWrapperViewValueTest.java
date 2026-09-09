@@ -66,10 +66,16 @@ import jp.aegif.nemaki.model.couch.CouchDocument;
  * <h2>Why a number is in the fixture</h2>
  *
  * <p>Reading the value means the fields arrive as the Cloudant SDK's Gson parsed them, so numbers
- * are {@code LazilyParsedNumber}. Jackson treats that as an unknown bean rather than a number, and
- * <b>it does not throw</b> — it produces a document whose dates are quietly wrong. That is the one
- * way this change can fail without anything looking broken, so the fixture carries a real
- * {@code LazilyParsedNumber} and the assertion is on the converted value.
+ * are {@code LazilyParsedNumber} and not the boxed types a Java fixture would carry. A conversion
+ * that mishandles that type does not have to throw — it can produce a document whose dates are
+ * quietly wrong, which is the one way this change can fail without anything looking broken. So the
+ * fixture carries a real {@code LazilyParsedNumber} and the assertion is on the converted value.
+ * With the mapper this test wires ({@code ObjectMapperFactory.createDefaultObjectMapper}, the
+ * production one) the value converts correctly — that is what the assertion measures, and an
+ * earlier version of this note asserted the opposite as if it were the mapper's behaviour. What
+ * IS measured about this type elsewhere: the ingest migration locks read a {@code
+ * LazilyParsedNumber} into a String field as its digits, and a primitive {@code boolean} refuses
+ * it. Neither is the same question as this one; do not carry one answer over to the other.
  */
 public class CloudantClientWrapperViewValueTest {
 

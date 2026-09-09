@@ -481,6 +481,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                             + " that should give it up, remove its rows with DELETE"
                             + " .../admin/import-profiles/{} (no docId).",
                             profileId, rows.keySet(), repositories, profileId);
+                    unnormalised.remove(deterministicId);
                     continue;
                 }
                 result.divergent.add(profileId + " (" + rows.size() + " legacy rows "
@@ -490,12 +491,27 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
                         + " delete the unwanted ones with DELETE"
                         + " .../admin/import-profiles/{}?docId=...", profileId, rows.size(),
                         rows.keySet(), profileId);
+                // "None is touched" has to include the normalising pass below. The walk
+                // collected the deterministic row before the divergence was known; leaving it
+                // in would rewrite one member of a pair the operator is being asked to
+                // compare, against both the message above and the release notes. A review
+                // found the pass undoing the promise. Nothing is lost by waiting: every write
+                // verb answers 409 while the pair stands (the count is index-free), so an
+                // unmatchable row changes no answer, and the next startup normalises it once
+                // the unwanted row is gone.
+                unnormalised.remove(deterministicId);
                 continue;
             }
             Map.Entry<String, com.ibm.cloud.cloudant.v1.model.Document> only =
                     rows.entrySet().iterator().next();
+            int divergentBefore = result.divergent.size();
             migrateOneLegacyRow(client, cloudant, dbName, only.getValue(), only.getKey(),
                     profileId, deterministicId, result);
+            if (result.divergent.size() > divergentBefore) {
+                // The legacy row and the deterministic row disagree. Same rule as above: the
+                // pass below must not rewrite the row the operator is comparing.
+                unnormalised.remove(deterministicId);
+            }
         }
         for (Map.Entry<String, com.ibm.cloud.cloudant.v1.model.Document> entry
                 : unnormalised.entrySet()) {
@@ -1292,6 +1308,26 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         if (connectorDefinitionService != null) {
             ConnectorDefinition connector = connectorDefinitionService.get(defaultConnectorId);
             if (connector == null) {
+                // get() answers null for a read that FAILED and for a connector that is not
+                // there alike. Telling the administrator "does not exist" is this service
+                // stating a fact about the database that its own read never established — the
+                // 400 then says the request is wrong when the truth is that the question could
+                // not be asked. One index-free check separates them, the same one the GET
+                // endpoint uses; the walk is the config database, and every admin write here
+                // already pays for one.
+                boolean rowIsThere;
+                try {
+                    rowIsThere = connectorDefinitionService.existsIndexFree(defaultConnectorId);
+                } catch (RuntimeException couldNotAsk) {
+                    throw new ProfileIndexNotReadyException("whether the connector '"
+                            + defaultConnectorId + "' exists could not be established;"
+                            + " retry shortly: " + couldNotAsk.getMessage());
+                }
+                if (rowIsThere) {
+                    throw new ProfileIndexNotReadyException("defaultConnectorId '"
+                            + defaultConnectorId + "' exists but could not be read;"
+                            + " retry shortly");
+                }
                 throw new IllegalArgumentException(
                         "defaultConnectorId '" + defaultConnectorId + "' does not exist");
             }

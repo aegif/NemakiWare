@@ -27,6 +27,21 @@ public interface ConnectorDefinitionService {
      * older node's, during a rolling upgrade) is not reported until the next one, and whether
      * a rebuilding index leaves an existing row out is not measured. This read does not walk.
      *
+     * <p>The pair refusal is OPPORTUNISTIC, and the failing selector is where that shows.
+     * Two rows the selector SHOWS are refused. A pair of which the selector shows one row, or
+     * shows none because it failed, is not seen: a readable row at the deterministic id is
+     * then answered with a legacy twin unexcluded, so the receiver can run with the canonical
+     * row's secret and enabled state while a twin holds others. That is the same value this
+     * read gives when the selector ANSWERS that no twin exists, and it is a decision, not an
+     * oversight — a review named it and it was kept. Refusing instead would 503 every webhook
+     * for the length of an index rebuild, which at scale is measured in hours (see the v3.3.0
+     * upgrade runbook), and past a provider's retry window that is lost events for every
+     * installation. What bounds the other side: an event signed with the twin's secret still
+     * fails verification, an operator's edit during the window is refused because the write
+     * path counts rows index-free, and the twin only exists on an installation upgraded past
+     * a row the migration has not yet retired. Excluding it here is not affordable — the only
+     * way to find a legacy id is a walk, and this read serves unauthenticated callers.
+     *
      * <p>What THIS READ's answer — 503 or not — discloses to an unauthenticated caller,
      * stated as the classes it actually separates. A 503 means one of: a row this read
      * refuses exists at the id (unreadable — deterministic or legacy, as the selector shows
