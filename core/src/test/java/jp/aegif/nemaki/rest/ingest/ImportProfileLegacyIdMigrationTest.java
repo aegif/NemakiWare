@@ -2181,7 +2181,8 @@ class ImportProfileLegacyIdMigrationTest {
                 owned.uninterpretable().stream()
                         .map(ImportProfileDefinitionService.UninterpretableRow::docId).sorted().toList(),
                 "the mapper's readings are not the ones this code acts on — the rows here are "
-                        + "\"false\"/\"False\"/\"FALSE\" (trimmed), a blank string and \"null\" "
+                        + "\"false\"/\"False\"/\"FALSE\" (trimmed), an empty and a blank "
+                        + "string, and \"null\" "
                         + "(trimmed), which must count as disabled, against \"fAlSe\" and a "
                         + "stored NUMBER, which must not: " + owned.uninterpretable());
         assertTrue(owned.profiles().isEmpty(),

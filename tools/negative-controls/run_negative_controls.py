@@ -2935,7 +2935,15 @@ CONTROLS = [
                    '        for (String system : sourceSystems) {'),
         replace='        List<ConnectorDefinition> all = new ArrayList<>();\n        for (String s : sourceSystems) {\n            all.addAll(findBySelector(Map.of("type", ConnectorDefinition.DOC_TYPE,\n                    "sourceSystem", s, "sourceArchetype", archetype.name(), "enabled", true)));\n        }\n        for (String system : sourceSystems) {',
         test='ConnectorLegacyIdMigrationTest',
-        expect_fail=['theConnectorResolverSeesAHiddenConnector'],
+        # Completed from a MEASURED run (the runner now prints the locks that failed
+        # undeclared); the derivation by hand had missed these.
+        expect_fail=['theConnectorResolverSeesAHiddenConnector',
+                     'aDisabledByNullRowTheResolverCannotReadDoesNotRefuseTheResolution',
+                     'aMatchingRowWhoseEnabledIsAStoredNumberStillRefusesTheResolution',
+                     'aMatchingUnreadableConnectorStillRefuses',
+                     'anUnrelatedUnreadableConnectorDoesNotStopTheResolution',
+                     'theConnectorResolverRefusesAnAmbiguousMatch',
+                     'theConnectorResolverRefusesAnUnreadableRow'],
     ),
     dict(
         id="RS",
@@ -2955,7 +2963,11 @@ CONTROLS = [
                    '        return results;'),
         replace='        } catch (IllegalStateException unprovable) {\n            throw unprovable;\n        }\n        return results;',
         test='ConnectorLegacyIdMigrationTest',
-        expect_fail=['theConnectorResolverRefusesAnUnreadableRow'],
+        # Completed from a MEASURED run (the runner now prints the locks that failed
+        # undeclared); the derivation by hand had missed these.
+        expect_fail=['theConnectorResolverRefusesAnUnreadableRow',
+                     'aMatchingRowWhoseEnabledIsAStoredNumberStillRefusesTheResolution',
+                     'aMatchingUnreadableConnectorStillRefuses'],
     ),
     dict(
         id="RW",
@@ -4288,11 +4300,13 @@ CONTROLS = [
         replace='',
         test='ImportProfileLegacyIdMigrationTest',
         # The locks that read uninterpretable() for a row broken by DESERIALISATION. The
-        # three that stay green do so for two different reasons: the nameless-row report is a
-        # SECOND call site this sabotage does not touch, and the two isEmpty() locks use rows
-        # the walk reads as disabled, so nothing was going to be reported anyway. Completed
-        # from a run rather than by hand after three rounds of missing one; the runner now
-        # prints the locks that failed undeclared.
+        # three that stay green do so for three different reasons: the nameless-row report is
+        # a SECOND call site this sabotage does not touch; one isEmpty() lock's row is read as
+        # disabled, so nothing was going to be reported; and the other's row names no
+        # repository, so the walk drops it before it is deserialised at all. (A review found
+        # the middle reason stated for both.) Completed from a MEASURED run — the runner now
+        # prints the locks that failed undeclared, after three rounds of hand derivation
+        # missing one.
         expect_fail=['theOwnedListingSeesEveryOwnedRowAndReportsTheRest',
                      'aNumericProfileIdInTheReadPathsOwnShapeStillReadsAsTheMapperReadsIt',
                      'whichValuesOfADisabledFlagCountIsTheMappersAnswer',
@@ -5466,12 +5480,31 @@ UNDECLARED: list = []
 
 
 def failed_method_names(failed: str) -> list:
-    """The test method names in surefire's failure lines ("name(Class)  Time elapsed ...")."""
+    """The test method names in surefire's failure lines.
+
+    Surefire 3.x writes "<fully.qualified.Class>.<method> -- Time elapsed: ... <<< FAILURE!";
+    2.x wrote "<method>(<Class>)  Time elapsed ...". The first version of this function knew
+    only the 2.x shape, so it matched NOTHING in this project and the undeclared-lock report
+    it feeds was silently always empty — a mechanism that reads as working while measuring
+    nothing, which is the defect this whole runner exists to catch. Two reviews found it in
+    the same round; both noted that the runner's own rule (a judgement function needs its own
+    self-test) had not been followed. It is followed now.
+
+    The per-class SUMMARY line ("Tests run: 3, Failures: 1 ... <<< FAILURE! -- in <class>")
+    also carries the marker; taking the token before " -- " there would report the class as a
+    failing lock.
+    """
     names = []
     for line in failed.splitlines():
-        match = re.match(r"\s*(\w+)\(", line)
-        if match:
-            names.append(match.group(1))
+        stripped = line.strip()
+        if not stripped or stripped.startswith("Tests run:"):
+            continue
+        head = stripped.split(" -- ")[0].split("(")[0].strip()
+        if not head:
+            continue
+        name = head.rsplit(".", 1)[-1]
+        if re.fullmatch(r"[A-Za-z_]\w*", name):
+            names.append(name)
     return names
 
 
@@ -5607,6 +5640,25 @@ def failed_as_assertion(report_text: str, method: str) -> bool:
 # in the runner while 149 controls reported green.
 SELF_TEST_CASES = [
     # (name, callable -> actual, expected)
+    # failed_method_names had no case at all when it was added, and it matched nothing in this
+    # project's surefire output — a judgement function that reads as working while measuring
+    # nothing. These four are the shapes the runner actually meets.
+    ("a surefire 3.x failure line yields the method name",
+     lambda: failed_method_names(
+         "jp.aegif.nemaki.rest.ingest.SomeTest.someLock -- Time elapsed: 0.1 s <<< FAILURE!"),
+     ["someLock"]),
+    ("an ERROR line yields it too",
+     lambda: failed_method_names(
+         "jp.aegif.nemaki.rest.ingest.SomeTest.someLock -- Time elapsed: 0.1 s <<< ERROR!"),
+     ["someLock"]),
+    ("the per-class summary line is not a lock",
+     lambda: failed_method_names(
+         "Tests run: 3, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.2 s <<< FAILURE!"
+         " -- in jp.aegif.nemaki.rest.ingest.SomeTest"),
+     []),
+    ("the older parenthesised shape still yields the method name",
+     lambda: failed_method_names("someLock(jp.aegif.nemaki.rest.ingest.SomeTest)  Time elapsed"),
+     ["someLock"]),
     ("a JUnit assertion is a firing",
      lambda: failed_as_assertion(
          "someTest -- Time elapsed: 0.1 s <<< FAILURE!\n"
@@ -5986,8 +6038,14 @@ def main() -> None:
                         # rounds in a row a lock added in the same commit as its control was
                         # left out of an OLDER control's list. Derivation by hand kept missing
                         # them; the run knows the answer, so it says it.
-                        undeclared = sorted(set(failed_method_names(failed))
-                                            - set(control["expect_fail"]))
+                        # Only locks that failed on their own assertion: a test that died
+                        # with an exception under the sabotage lost its harness, which says
+                        # nothing about a protection being removed. A review asked for the
+                        # distinction before this list is acted on.
+                        undeclared = sorted(
+                            name for name in set(failed_method_names(failed))
+                            if name not in control["expect_fail"]
+                            and failed_as_assertion(report_text, name))
                         if undeclared:
                             UNDECLARED.append((control["id"], undeclared))
                             print(f"[{control['id']}] also failed, undeclared: {undeclared}")
@@ -6041,6 +6099,14 @@ def main() -> None:
             print(f"  {cid}: {names}")
     if fired != len(results):
         sys.exit(1)
+    if UNDECLARED:
+        # FATAL, after the full measurement is printed. Every control fired, so the
+        # protections are there — but a control whose record says it removes two protections
+        # while it removes nine is a weaker fact reading as a stronger one, which this project
+        # treats as a defect. A review asked for the exit code to say so rather than leaving
+        # the list as a note nobody has to act on.
+        sys.exit("controls whose expect_fail is incomplete (the locks above failed under them "
+                 "on their own assertions and are not declared)")
 
 
 if __name__ == "__main__":
