@@ -110,6 +110,24 @@ public class IngestDeadLetterRecord {
     public String getFirstFailedAt() { return firstFailedAt; }
     public void setFirstFailedAt(String firstFailedAt) { this.firstFailedAt = firstFailedAt; }
 
+    /**
+     * True when {@code hasContent} was ASSUMED rather than read.
+     *
+     * <p>It is set when the row was being written over one this node could not decode AND the
+     * raw attachment probe could not answer either. {@code hasContent} is then true on the
+     * safe side — a retry that finds nothing refuses and KEEPS the row, where a false "no
+     * payload" imports content-less and deletes it. This flag is what keeps the assumption
+     * from laundering into an assertion: the next save re-probes instead of inheriting it,
+     * and the retry door explains itself with it. A review found the assumption becoming a
+     * settled fact one save later.
+     */
+    private boolean payloadPresenceAssumed;
+
+    public boolean isPayloadPresenceAssumed() { return payloadPresenceAssumed; }
+    public void setPayloadPresenceAssumed(boolean payloadPresenceAssumed) {
+        this.payloadPresenceAssumed = payloadPresenceAssumed;
+    }
+
     public String getPayloadDropReason() { return payloadDropReason; }
     public void setPayloadDropReason(String payloadDropReason) {
         this.payloadDropReason = payloadDropReason;

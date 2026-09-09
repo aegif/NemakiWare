@@ -65,14 +65,28 @@ public class IngestDlqController {
         int cappedLimit = Math.min(Math.max(limit, 1), 500);
         int safeOffset = Math.max(offset, 0);
         // Fetch one extra to say whether more exist without a second count query.
-        List<IngestDeadLetterRecord> page = ingestJobService.listDlq(cappedLimit + 1, safeOffset);
-        boolean hasMore = page.size() > cappedLimit;
-        List<IngestDeadLetterRecord> entries = hasMore ? page.subList(0, cappedLimit) : page;
+        IngestJobService.DlqPage fetched = ingestJobService.listDlqPage(cappedLimit + 1, safeOffset);
+        List<IngestDeadLetterRecord> page = fetched.entries();
+        // The probe row asks "is there more". A row that could not be DECODED still occupied a
+        // slot the store returned, so counting only decoded rows made a page whose probe row
+        // was the broken one answer "hasMore: false" — the queue looked like it ended there,
+        // and every later entry became unreachable. Ask the question the store answered.
+        boolean hasMore = page.size() + fetched.unreadable() > cappedLimit;
+        List<IngestDeadLetterRecord> entries =
+                page.size() > cappedLimit ? page.subList(0, cappedLimit) : page;
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("count", entries.size());
         response.put("limit", cappedLimit);
         response.put("offset", safeOffset);
         response.put("hasMore", hasMore);
+        if (fetched.unreadable() > 0) {
+            // Or "count" reads as the whole page. Each of these is the only record that a
+            // source item was lost, so their absence has to be said, not left in the log.
+            response.put("unreadableEntries", fetched.unreadable());
+            response.put("unreadableNote", "rows this node could not decode are not in"
+                    + " 'entries' and are not counted in 'count'; they are named in the server"
+                    + " log by document id");
+        }
         response.put("entries", entries);
         return ResponseEntity.ok(response);
     }
@@ -94,7 +108,17 @@ public class IngestDlqController {
         }
         java.time.Instant cutoff = java.time.Instant.now()
                 .minus(java.time.Duration.ofDays(olderThanDays));
-        int deleted = ingestJobService.purgeDlqOlderThan(cutoff);
+        int deleted;
+        try {
+            deleted = ingestJobService.purgeDlqOlderThan(cutoff);
+        } catch (IngestJobService.DlqPurgeIncompleteException stopped) {
+            Map<String, Object> partial = new LinkedHashMap<>();
+            partial.put("status", "error");
+            partial.put("message", stopped.getMessage());
+            partial.put("deleted", stopped.getDeletedBeforeStopping());
+            partial.put("cutoff", cutoff.toString());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(partial);
+        }
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", "success");
         response.put("deleted", deleted);
@@ -126,9 +150,15 @@ public class IngestDlqController {
         // lastRetryAt in CouchDB using _rev as an optimistic lock.
         // If two concurrent retries race, only one wins the write;
         // the loser gets a 409 and returns 429 to the caller.
-        if (!ingestJobService.reserveDlqRetry(dlq)) {
-            return errorResponse(HttpStatus.TOO_MANY_REQUESTS,
-                    "Retry already in progress for this entry (concurrent request)");
+        try {
+            if (!ingestJobService.reserveDlqRetry(dlq)) {
+                return errorResponse(HttpStatus.TOO_MANY_REQUESTS,
+                        "Retry already in progress for this entry (concurrent request)");
+            }
+        } catch (IngestJobService.DlqRetryNotReservableException couldNotAsk) {
+            // "Could not attempt the reservation" is not "someone else holds it".
+            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, couldNotAsk.getMessage()
+                    + "; the entry is kept and nothing was imported");
         }
 
         CallContext callContext = getCallContext();
@@ -140,6 +170,21 @@ public class IngestDlqController {
             // Reconstruct request from stored JSON
             ExternalIngestRequest request = MAPPER.readValue(
                     dlq.getOriginalRequestJson(), ExternalIngestRequest.class);
+
+            // Bytes this entry HAD but that were never stored are not "this item has no
+            // content". Replaying without them creates an empty document, reports success and
+            // DELETES the row — the only record that the source item was lost. payloadDropReason
+            // is written when encryption refused the bytes (a missing NEMAKI_ENCRYPTION_KEY does
+            // exactly this), and nothing read it: the whole codebase had no reader for the field.
+            // The item has to come back through the connector, not through here. A review traced
+            // the chain end to end.
+            if (!dlq.isHasContent() && dlq.getPayloadDropReason() != null) {
+                return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId
+                        + " had content that was never stored (" + dlq.getPayloadDropReason()
+                        + "), so replaying it would import an empty document in place of the"
+                        + " original; the entry is kept and nothing was imported. Re-fetch the"
+                        + " source item through its connector instead");
+            }
 
             // Restore content stream from CouchDB attachment if available
             if (dlq.isHasContent()) {
@@ -155,6 +200,19 @@ public class IngestDlqController {
                 }
                 if (content != null) {
                     request.setContentStream(new java.io.ByteArrayInputStream(content));
+                } else if (dlq.isPayloadPresenceAssumed()) {
+                    // hasContent on this row was ASSUMED, not read — set while writing over a
+                    // row this node could not decode, when the attachment probe could not
+                    // answer either. Saying "recorded as carrying content" here would report
+                    // the assumption as the record's own claim. Still a refusal, because the
+                    // read that just came back empty is answered by the same index the probe
+                    // could not get an answer from. The next failure of this item re-probes
+                    // and settles the flag.
+                    return errorResponse(HttpStatus.CONFLICT, "whether DLQ entry " + dlqId
+                            + " carries a payload was never established — it was assumed while"
+                            + " writing over a row this node could not read — and no stored"
+                            + " payload came back now either; the entry is kept and nothing"
+                            + " was imported");
                 } else {
                     // The record says it HAS content and the store says there is none. Not a
                     // retry: importing without it would record an empty document as the
@@ -205,7 +263,10 @@ public class IngestDlqController {
                 }
                 response.put("status", "failed");
                 response.put("errors", result.errors());
-                response.put("retryCount", dlq.getRetryCount() + 1);
+                // reserveDlqRetry already incremented this object AND persisted it, so adding
+                // one again reported N+2 for a row that stores N+1 — the answer was stronger
+                // than the stored fact. Two reviewers found it.
+                response.put("retryCount", dlq.getRetryCount());
             }
             return ResponseEntity.ok(response);
         } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException

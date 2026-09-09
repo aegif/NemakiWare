@@ -2802,6 +2802,121 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void aDenialWhoseTextHappensToCarry503_isStill403() {
+        plainProfileReachingTheWrite();
+        // isTransientError tests "503" against the RAW message BEFORE it tests "403", and the
+        // CMIS denial interpolates the repository id, the object id and the object NAME. So a
+        // folder called "err-503" made a denial come back marked "[transient]", and the
+        // classifier's retryable arm answered 503 for it. A denial is never a retry, so the
+        // denial arm has to be asked FIRST. A review found it in the round that added the
+        // transient arm.
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                isNull(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenThrow(new org.apache.chemistry.opencmis.commons.exceptions
+                        .CmisPermissionDeniedException(
+                                "Permission Denied! repositoryId=bedroom key=cmis:all acl=null"
+                                        + "  content={id:d1, name:err-503} "));
+
+        ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
+
+        assertFalse(result.isSuccess(), "the denied write reported success");
+        assertTrue(result.errors().get(0).contains("[transient]"),
+                "this lock needs the product to still MIS-mark the denial for the ordering to "
+                        + "be what is measured: " + result.errors());
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
+                ExternalIngestController.classifyErrorStatus(result),
+                "a denial was answered as a retry because its text carried '503': "
+                        + result.errors());
+    }
+
+    @Test
+    void aTopLevelFolderDenial_is403NotAServerError() {
+        plainProfileReachingTheWrite();
+        // ExceptionServiceImpl builds TWO denial formats. Matching only the first left every
+        // top-level-folder denial on 500 — the one a delegated profile targeting the
+        // repository root produces on every single import.
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                isNull(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenThrow(new org.apache.chemistry.opencmis.commons.exceptions
+                        .CmisPermissionDeniedException(
+                                "Permission Denied to top level folders for non-admin user!"
+                                        + " repositoryId=bedroom key=cmis:all userId=u1"
+                                        + " content={id:d1, name:root} "));
+
+        ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
+
+        assertFalse(result.isSuccess());
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
+                ExternalIngestController.classifyErrorStatus(result),
+                "the second denial format was answered as our bug: " + result.errors());
+    }
+
+    @Test
+    void aTransientFailureInAnArchetypePath_alsoCarriesTheVerdictIntoTheAnswer() {
+        plainProfileReachingTheWrite();
+        // failedAfterEntry is the failure exit of mail, note, business-record and chat — four
+        // of the five entry points. It put the transient/permanent verdict in the DLQ ROW and
+        // not in the ANSWER, so those four answered 500 for a condition the product had just
+        // called retryable, while execute()'s own catch answered 503. The lock that measured
+        // the marker only ever drove execute(). A review found the other four.
+        // The failure has to ESCAPE the internal method. A createDocument that throws does
+        // not: execute() catches it and puts its OWN marker on the message, so the first
+        // version of this lock measured execute()'s catch a second time and stayed green when
+        // failedAfterEntry's answer lost the verdict. The control said so.
+        //
+        // A stream that fails while the mail parser drains it does escape, and "Read timed
+        // out" is what isTransientError calls retryable.
+        ExternalIngestRequest req = requestForReCheck();
+        req.setFileName("m.eml");
+        req.setContentStream(new java.io.InputStream() {
+            @Override public int read() throws java.io.IOException {
+                throw new java.io.IOException("Read timed out");
+            }
+        });
+        ExternalIngestResult result = service.executeMailImport(testContext(), req);
+
+        assertFalse(result.isSuccess(), "the mail import reported success");
+        assertTrue(result.errors().get(0).contains("[transient]"),
+                "the archetype path dropped the verdict from its answer: " + result.errors());
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                ExternalIngestController.classifyErrorStatus(result),
+                "a retryable failure on an archetype path was answered as our bug: "
+                        + result.errors());
+    }
+
+    @Test
+    void anIdempotencyRecordThatCouldNotBeReadRefuses_ratherThanReplacing() {
+        // The policy lives on the PROFILE, not the request.
+        plainProfileReachingTheWrite().setDedupePolicy("replace");
+        // "No such record" is what lets a dedupePolicy=replace request DELETE the document a
+        // previous run of the SAME request committed. A failed configuration read used to
+        // arrive here with exactly that value, because ContentDaoServiceImpl answers a failed
+        // nemaki_conf read with an EMPTY Configuration carrying loadFailed=true and
+        // PropertyManager drops the flag. Three reviews reported it; the first two rounds
+        // recorded it as a residual.
+        jp.aegif.nemaki.rest.controller.IntegrationSettingsService settings =
+                mock(jp.aegif.nemaki.rest.controller.IntegrationSettingsService.class);
+        when(settings.readSettingOrRefuse(anyString())).thenThrow(
+                new jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                        .SettingUnreadableException("the configuration database did not answer"));
+        service.setIntegrationSettingsService(settings);
+
+        ExternalIngestRequest req = requestForReCheck();
+        req.setIdempotencyKey("k-1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(), "an unreadable idempotency record let the write run");
+        assertTrue(result.errors().get(0).contains("could not be established"),
+                "the refusal does not say the read failed: " + result.errors());
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                ExternalIngestController.classifyErrorStatus(result),
+                "a read that could not answer was reported as our bug: " + result.errors());
+        verify(objectService, never()).deleteObject(any(), anyString(), anyString(),
+                anyBoolean(), any());
+    }
+
+    @Test
     void aMetadataPayloadOverTheCap_is400NotAServerError() {
         plainProfileReachingTheWrite();
         ExternalIngestRequest req = requestForReCheck();

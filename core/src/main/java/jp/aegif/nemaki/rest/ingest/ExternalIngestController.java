@@ -393,6 +393,25 @@ public class ExternalIngestController {
         // status the admin controller's own comment calls "what opens tickets for a condition
         // a retry resolves". The same twin pair was 409 through the non-admin gate and 500
         // here. A review measured the split.
+        // The THIRD checkpoint, and it has to be asked FIRST. The gate refuses at the door,
+        // the write point re-asks, and the CMIS ACL evaluation inside the write refuses last —
+        // CmisPermissionDeniedException, wrapped as "[permanent] Permission Denied!
+        // repositoryId=... content={id:..., name:...}". Only that last one answered 500.
+        //
+        // Above the retryable block because isTransientError() tests "503" against the RAW
+        // message before it tests "403"/"Forbidden", and that message interpolates the
+        // repository id, the object id and the object NAME — so a folder called "err-503"
+        // made a denial come back marked "[transient]" and answer 503. A denial is never a
+        // retry. The token carries the bang and is matched against the product's own format,
+        // not the bare words, so an id or name containing "permission denied" does not land
+        // here. A review found both halves.
+        // ExceptionServiceImpl builds TWO denial formats and both have to be here; matching
+        // only the first left every top-level-folder denial on 500, which is the one a
+        // delegated profile targeting the repository root produces on EVERY import.
+        if (firstError.contains("permission denied! repositoryid=")
+                || firstError.contains("permission denied to top level folders")) {
+            return HttpStatus.FORBIDDEN;
+        }
         if (firstError.contains("retry shortly") || firstError.contains("temporarily unavailable")
                 // The import's own re-check of the delegation cannot ASK when the
                 // authorization service is not wired. The gate one frame up answers 503 for
@@ -434,13 +453,7 @@ public class ExternalIngestController {
                 // third one. A review found the split.
                 || firstError.contains("not the repository this caller authenticated")
                 || firstError.contains("was not held when this import ran")
-                || firstError.contains("no longer delegated")
-                // The THIRD checkpoint. The gate refuses at the door, the write point
-                // re-asks, and the CMIS ACL evaluation inside the write refuses last —
-                // CmisPermissionDeniedException, wrapped as "[permanent] Permission Denied!
-                // ...". Only that last one still answered 500, so revoking cmis:all one
-                // millisecond later than the re-check turned a 403 into "our bug".
-                || firstError.contains("permission denied")) return HttpStatus.FORBIDDEN;
+                || firstError.contains("no longer delegated")) return HttpStatus.FORBIDDEN;
         if (firstError.contains("disabled") || firstError.contains("is required")
                 || firstError.contains("no resolvable")
                 // A standing profile misconfiguration the read ANSWERED. Making the refusal

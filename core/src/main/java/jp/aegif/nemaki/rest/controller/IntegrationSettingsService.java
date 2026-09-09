@@ -44,6 +44,52 @@ public class IntegrationSettingsService {
 	}
 
 	/**
+	 * A stored setting this node could not read is never the same answer as "no such setting".
+	 *
+	 * <p>{@code readSetting} returns {@code null} for both, because {@code
+	 * ContentDaoServiceImpl} answers a failed {@code nemaki_conf} read with an EMPTY
+	 * {@code Configuration} carrying {@code loadFailed=true}, and {@code PropertyManager}
+	 * ignores that flag. Two callers then state a fact the read never established: the ingest
+	 * idempotency record ("this request has not been completed before" — after which a
+	 * {@code dedupePolicy=replace} request DELETES the document a previous run committed) and
+	 * the connector checkpoints ("this profile has never polled" — after which the poll takes
+	 * only the first page, treats every item as new, and advances the checkpoint past the
+	 * older items it never listed, filtering them out for good). Three reviews reported the
+	 * pair; the first two rounds recorded it as a residual for a later batch.
+	 *
+	 * <p>The flag is consulted ONLY when the value could not be resolved at all. A key
+	 * satisfied by a system property, an environment variable or the properties file is
+	 * answered from there and never reaches the store, so an outage must not refuse it.
+	 *
+	 * @throws SettingUnreadableException when the key resolved nowhere AND the configuration
+	 *         database did not answer. Callers that would otherwise assert an absence must let
+	 *         it out.
+	 */
+	public String readSettingOrRefuse(String key) {
+		// Through readSetting, not straight to the PropertyManager: test doubles and any
+		// future subclass override the one read path, and going around it made seven test
+		// classes NPE on a manager they never needed.
+		String value = readSetting(key);
+		if (value != null) return value;
+		if (propertyManager == null) return null;
+		jp.aegif.nemaki.model.Configuration conf =
+				propertyManager.getConfiguration(SystemConst.NEMAKI_CONF_DB);
+		if (conf != null && conf.isLoadFailed()) {
+			throw new SettingUnreadableException("the stored value of '" + key
+					+ "' could not be read: the configuration database did not answer");
+		}
+		return value;
+	}
+
+	/** A setting this node could not read — never the same answer as "there is none". */
+	public static class SettingUnreadableException extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+		public SettingUnreadableException(String message) {
+			super(message);
+		}
+	}
+
+	/**
 	 * Determines the source of the current effective value for a given key.
 	 *
 	 * @return one of "system_property", "environment", "couchdb", "properties_file", or "none"

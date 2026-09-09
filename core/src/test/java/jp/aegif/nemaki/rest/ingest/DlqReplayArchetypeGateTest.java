@@ -364,5 +364,178 @@ class DlqReplayArchetypeGateTest {
         org.junit.jupiter.api.Assertions.assertEquals(Boolean.TRUE, hasContent,
                 "the row was rewritten saying it has no payload while its attachment is still"
                         + " attached; the next retry imports empty and deletes it");
+        // The discriminator. TRUE here is an ANSWER — the probe saw the attachment — and the
+        // arm below produces the same TRUE from an ASSUMPTION. Asserting hasContent alone let
+        // the whole assumed arm be deleted with the suite green; three reviewers said so in
+        // the same round.
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.FALSE,
+                written.getAllValues().get(written.getAllValues().size() - 1)
+                        .document().get("payloadPresenceAssumed"),
+                "an ANSWERED payload presence was recorded as an assumption");
+    }
+
+    /**
+     * The probe itself could not answer. Three shapes reach this: the raw read threw, the
+     * index returned no row for a document the typed read had just called stored, and the
+     * response carried no attachment block at all. None of them is "there is no attachment",
+     * and returning false for them reopened the loss chain one line below the arm that had
+     * just been fixed to avoid it.
+     */
+    private Object[] saveOverAnUnreadableRow(boolean probeThrows) throws Exception {
+        IngestJobService jobs = new IngestJobService();
+        com.ibm.cloud.cloudant.v1.Cloudant cloudant =
+                mock(com.ibm.cloud.cloudant.v1.Cloudant.class);
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper wrapper =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+        when(wrapper.getClient()).thenReturn(cloudant);
+        when(wrapper.getDatabaseName()).thenReturn("nemaki_conf");
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool pool =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);
+        when(pool.getClient(org.mockito.ArgumentMatchers.anyString())).thenReturn(wrapper);
+        jobs.setConnectorPool(pool);
+
+        com.ibm.cloud.cloudant.v1.model.FindResult empty =
+                mock(com.ibm.cloud.cloudant.v1.model.FindResult.class);
+        when(empty.getDocs()).thenReturn(java.util.List.of());
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> emptyCall =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.FindResult> emptyResp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(emptyResp.getResult()).thenReturn(empty);
+        when(emptyCall.execute()).thenReturn(emptyResp);
+
+        // Call 1 is getDlqEntry's selector: it throws, so the typed read refuses with "could
+        // not be established". Call 2 is the attachment probe — either it throws too, or it
+        // comes back with no row for a document the store was just unable to speak about.
+        // Call 3 onward is upsertDocument's own probe, which must succeed so the write lands
+        // and this test can read what was written.
+        java.util.concurrent.atomic.AtomicInteger calls =
+                new java.util.concurrent.atomic.AtomicInteger();
+        when(cloudant.postFind(org.mockito.ArgumentMatchers.any())).thenAnswer(inv -> {
+            int n = calls.incrementAndGet();
+            if (n == 1 || (n == 2 && probeThrows)) {
+                throw new RuntimeException("the configuration database did not answer");
+            }
+            return emptyCall;
+        });
+
+        com.ibm.cloud.cloudant.v1.model.DocumentResult ok =
+                mock(com.ibm.cloud.cloudant.v1.model.DocumentResult.class);
+        when(ok.isOk()).thenReturn(Boolean.TRUE);
+        when(ok.getId()).thenReturn("ingest_dlq:y");
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.DocumentResult> post =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.DocumentResult> postResp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(postResp.getResult()).thenReturn(ok);
+        when(post.execute()).thenReturn(postResp);
+        when(cloudant.postDocument(org.mockito.ArgumentMatchers.any())).thenReturn(post);
+
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setRepositoryId("bedroom");
+        request.setConnectorId("c1");
+        request.setSourceObjectId("m-2");
+
+        jobs.saveToDlq(request, "boom again", null);
+
+        org.mockito.ArgumentCaptor<com.ibm.cloud.cloudant.v1.model.PostDocumentOptions> written =
+                org.mockito.ArgumentCaptor.forClass(
+                        com.ibm.cloud.cloudant.v1.model.PostDocumentOptions.class);
+        org.mockito.Mockito.verify(cloudant, org.mockito.Mockito.atLeastOnce())
+                .postDocument(written.capture());
+        com.ibm.cloud.cloudant.v1.model.Document doc =
+                written.getAllValues().get(written.getAllValues().size() - 1).document();
+        return new Object[]{doc.get("hasContent"), doc.get("payloadPresenceAssumed"),
+                doc.get("failureCount")};
+    }
+
+    /** A service wired to a store that answers nothing at all. */
+    private IngestJobService jobsWithADeadStore() {
+        IngestJobService jobs = new IngestJobService();
+        com.ibm.cloud.cloudant.v1.Cloudant cloudant =
+                mock(com.ibm.cloud.cloudant.v1.Cloudant.class);
+        when(cloudant.postFind(org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new RuntimeException("no route to host"));
+        when(cloudant.postDocument(org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new RuntimeException("no route to host"));
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper wrapper =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+        when(wrapper.getClient()).thenReturn(cloudant);
+        when(wrapper.getDatabaseName()).thenReturn("nemaki_conf");
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool pool =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);
+        when(pool.getClient(org.mockito.ArgumentMatchers.anyString())).thenReturn(wrapper);
+        jobs.setConnectorPool(pool);
+        return jobs;
+    }
+
+    @Test
+    @DisplayName("a reservation that could not be attempted refuses instead of returning false")
+    void theReservationRefusesRatherThanLookingLost() {
+        // false is what a lost _rev conflict returns, and the door turns it into 429 "another
+        // retry is already in progress" — a fact about a concurrent request that nothing
+        // established. The endpoint lock for this stubs the service, so it measures the
+        // CONTROLLER; this measures the service that has to raise it.
+        IngestDeadLetterRecord row = new IngestDeadLetterRecord();
+        row.setDlqId("d-9");
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IngestJobService.DlqRetryNotReservableException.class,
+                () -> jobsWithADeadStore().reserveDlqRetry(row),
+                "a store that never answered was reported as a rival holding the reservation");
+    }
+
+    @Test
+    @DisplayName("a purge that could not read refuses instead of returning its partial count")
+    void thePurgeRefusesRatherThanLookingComplete() {
+        // Returning the count made the door answer {"status":"success","deleted":0} — the same
+        // answer as a completed purge that found nothing older than the cutoff.
+        IngestJobService.DlqPurgeIncompleteException stopped =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        IngestJobService.DlqPurgeIncompleteException.class,
+                        () -> jobsWithADeadStore().purgeDlqOlderThan(java.time.Instant.EPOCH),
+                        "a read that never ran was reported as a completed purge");
+        org.junit.jupiter.api.Assertions.assertEquals(0, stopped.getDeletedBeforeStopping(),
+                "the refusal does not carry what was actually deleted");
+    }
+
+    @Test
+    @DisplayName("a probe that THREW is not 'there is no attachment'")
+    void aProbeThatThrewIsNotAnAnsweredAbsence() throws Exception {
+        Object[] written = saveOverAnUnreadableRow(true);
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.TRUE, written[0],
+                "the row was written saying it has no payload, from a probe that never"
+                        + " answered; the next retry imports empty and deletes it");
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.TRUE, written[1],
+                "the row asserts a payload as an established fact when it was assumed");
+    }
+
+    @Test
+    @DisplayName("a probe that found NO ROW is not 'there is no attachment' either")
+    void aProbeThatFoundNoRowIsNotAnAnsweredAbsence() throws Exception {
+        // The typed read has just refused because the store could not speak about this row.
+        // The index then returning nothing contradicts that or means nothing; either way it
+        // does not establish that the document carries no payload. This arm answered FALSE,
+        // one line below the arm the previous round had fixed for the same reason.
+        Object[] written = saveOverAnUnreadableRow(false);
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.TRUE, written[0],
+                "an index that returned no row was read as 'the payload is gone'");
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.TRUE, written[1],
+                "the row asserts a payload as an established fact when it was assumed");
+    }
+
+    @Test
+    @DisplayName("writing over an unreadable row does not restate its history as a first failure")
+    void anUnreadableRowDoesNotResetTheFailureHistory() throws Exception {
+        // existing == null is the ANSWERED-nothing value here too, and buildDlqRecord read it
+        // as "this item has never failed before": failureCount=1, firstFailedAt=now,
+        // retryCount=0. A month-long outage was rewritten as a first failure, on the field
+        // IngestDeadLetterRecord itself calls the one that "does not move".
+        Object[] written = saveOverAnUnreadableRow(true);
+        org.junit.jupiter.api.Assertions.assertEquals(0, written[2],
+                "an unreadable row was restated as the item's first failure");
     }
 }

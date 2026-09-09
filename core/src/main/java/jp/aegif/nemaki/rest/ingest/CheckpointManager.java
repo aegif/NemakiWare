@@ -33,11 +33,22 @@ public class CheckpointManager {
 
     // ── Simple checkpoint (string value) ──
 
-    /** Load a simple string checkpoint for non-IMAP adapters. */
+    /**
+     * Load a simple string checkpoint for non-IMAP adapters.
+     *
+     * <p>{@code null} means "this profile has never polled". A read that FAILED is not that:
+     * the poll would then take only the first page, treat every item as new, and write the
+     * newest returned timestamp as the checkpoint — moving it PAST the older items it never
+     * listed, which are filtered out on every later poll. The refusal is allowed out so the
+     * tick fails instead. Three reviews reported it.
+     *
+     * @throws IntegrationSettingsService.SettingUnreadableException when the store did not
+     *         answer.
+     */
     public String loadSimpleCheckpoint(String profileId, String scope) {
         if (settingsService == null) return null;
         String key = "ingest.checkpoint." + profileId + "." + scope;
-        String value = settingsService.readSetting(key);
+        String value = settingsService.readSettingOrRefuse(key);
         return (value != null && !value.isBlank()) ? value : null;
     }
 
@@ -57,7 +68,9 @@ public class CheckpointManager {
     public long[] loadCheckpointWithValidity(String profileId, String mailboxFolder) {
         if (settingsService == null) return new long[]{0, 0};
         String key = "ingest.checkpoint." + profileId + "." + mailboxFolder;
-        String value = settingsService.readSetting(key);
+        // {0, 0} means "never polled" and makes the next poll start from the beginning. A
+        // read that FAILED must not produce it — see loadSimpleCheckpoint.
+        String value = settingsService.readSettingOrRefuse(key);
         if (value == null || value.isBlank()) return new long[]{0, 0};
         try {
             String[] parts = value.split(":");

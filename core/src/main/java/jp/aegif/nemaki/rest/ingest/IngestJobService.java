@@ -171,13 +171,28 @@ public class IngestJobService {
             IngestDeadLetterRecord existing;
             // Tri-state on purpose: TRUE = the stored row carries a payload, FALSE = it was
             // read and carries none, null = the question could not be asked.
-            Boolean earlierPayloadIsStillAttached = Boolean.FALSE;
+            Boolean earlierPayloadIsStillAttached = null;
+            boolean rowWasUnreadable = false;
             try {
                 existing = getDlqEntry(dlqId);
+                if (existing != null && existing.isHasContent()
+                        && existing.isPayloadPresenceAssumed()) {
+                    // The row we can now read says it HAS a payload, but that flag was
+                    // assumed, not read. Inheriting it made an assumption into a settled fact
+                    // one save later — and the row lost the caveat with it. The row is
+                    // readable now, so re-ask; the answer settles it either way.
+                    earlierPayloadIsStillAttached = storedDocumentHasAttachment(dlqId);
+                } else if (existing != null) {
+                    earlierPayloadIsStillAttached = existing.isHasContent();
+                } else {
+                    // The read ANSWERED that there is no row. Nothing is attached.
+                    earlierPayloadIsStillAttached = Boolean.FALSE;
+                }
             } catch (DlqEntryUnreadableException couldNotRead) {
                 logger.warn("the existing DLQ row for {} could not be read ({}); this failure"
                         + " is being written over it", dlqId, couldNotRead.getMessage());
                 existing = null;
+                rowWasUnreadable = true;
                 // null is the ANSWERED-nothing value, and it decides hasContent below — so
                 // writing over an unreadable row set "no payload" on a row whose attachment
                 // the upsert carries forward, and the next retry then imported content-less
@@ -189,7 +204,7 @@ public class IngestJobService {
             }
 
             IngestDeadLetterRecord dlq = buildDlqRecord(request, errorMessage, existing,
-                    Instant.now().toString());
+                    Instant.now().toString(), rowWasUnreadable);
 
             // The payload is encrypted or it is not written. Storing ingested bytes in the
             // clear in nemaki_conf — no ACL of its own, no retention — is not an acceptable
@@ -211,24 +226,22 @@ public class IngestJobService {
             // retry needs.
             boolean presenceCouldNotBeEstablished = earlierPayloadIsStillAttached == null;
             boolean keptEarlierPayload = payload == null
-                    && ((existing != null && existing.isHasContent())
-                            || Boolean.TRUE.equals(earlierPayloadIsStillAttached)
+                    && (Boolean.TRUE.equals(earlierPayloadIsStillAttached)
                             // Could not ask -> assume there IS one. Wrong in this direction
                             // costs a retry that refuses (409/CONFLICT) and keeps the row;
                             // wrong in the other direction loses the payload silently.
                             || presenceCouldNotBeEstablished);
             dlq.setHasContent(payload != null || keptEarlierPayload);
-            String whyNoPayload = payload == null && !keptEarlierPayload ? dropReason : null;
-            if (payload == null && presenceCouldNotBeEstablished) {
-                // hasContent is TRUE above, and it may be wrong. Say that it is an assumption
-                // rather than something a read established, or the row asserts a payload
-                // nothing checked — and the reason this attempt stored no bytes would be
-                // dropped along with it.
-                whyNoPayload = (dropReason == null ? "" : dropReason + "; ")
-                        + "whether the stored entry still carries its payload could not be"
-                        + " established, so this row assumes it does";
-            }
-            dlq.setPayloadDropReason(whyNoPayload);
+            // The assumption is recorded as an assumption, in its own field. It used to be
+            // smuggled into payloadDropReason, which meant the next save could not tell an
+            // assumed presence from an established one, and a genuine drop reason was
+            // DISCARDED whenever a payload was assumed or inherited. Both were reviewed.
+            dlq.setPayloadPresenceAssumed(payload == null && presenceCouldNotBeEstablished);
+            // The drop reason survives whatever hasContent ends up saying: it is about THIS
+            // attempt's bytes, which were refused, not about whether some older payload is
+            // attached. The retry door reads it to refuse rather than import an empty
+            // document over an item whose bytes were never kept.
+            dlq.setPayloadDropReason(dropReason);
             @SuppressWarnings("unchecked")
             Map<String, Object> jsonMap = MAPPER.convertValue(dlq, Map.class);
             String docId = upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE, jsonMap);
@@ -255,6 +268,17 @@ public class IngestJobService {
      */
     static IngestDeadLetterRecord buildDlqRecord(ExternalIngestRequest request,
             String errorMessage, IngestDeadLetterRecord existing, String now) {
+        return buildDlqRecord(request, errorMessage, existing, now, false);
+    }
+
+    /**
+     * @param historyUnknown true when {@code existing} is null because the stored row could
+     *        not be READ. The counters are then left unclaimed rather than reset to "this is
+     *        the first failure".
+     */
+    static IngestDeadLetterRecord buildDlqRecord(ExternalIngestRequest request,
+            String errorMessage, IngestDeadLetterRecord existing, String now,
+            boolean historyUnknown) {
         IngestDeadLetterRecord dlq = new IngestDeadLetterRecord();
         dlq.setDlqId(deadLetterIdFor(request));
         dlq.setProfileId(request.getProfileId());
@@ -275,6 +299,16 @@ public class IngestJobService {
                     ? existing.getFirstFailedAt() : existing.getFailedAt());
             dlq.setRetryCount(existing.getRetryCount());
             dlq.setLastRetryAt(existing.getLastRetryAt());
+        } else if (historyUnknown) {
+            // existing == null because the row could not be READ, not because there is none.
+            // Claiming failureCount=1 and firstFailedAt=now rewrites a long-running outage as
+            // a first failure — and IngestDeadLetterRecord calls firstFailedAt the field that
+            // "does not move". The head of this class fixed exactly this shape for hasContent
+            // and left the four fields beside it; a review found them. Nothing is claimed:
+            // the counters stay at their defaults and firstFailedAt is left null, which the
+            // listing already renders as "unknown" rather than as a date.
+            dlq.setFailureCount(0);
+            dlq.setRetryCount(0);
         } else {
             dlq.setFailureCount(1);
             dlq.setFirstFailedAt(now);
@@ -403,8 +437,28 @@ public class IngestJobService {
             CloudantClientWrapper client = getConfClient();
             List<Document> raw = findRawDocs(client.getClient(), client.getDatabaseName(),
                     Map.of("type", IngestDeadLetterRecord.DOC_TYPE, "dlqId", dlqId), 1, 0);
-            return !raw.isEmpty() && raw.get(0).getAttachments() != null
-                    && !raw.get(0).getAttachments().isEmpty();
+            // Three outcomes, and only the last is an ANSWER. The first version collapsed all
+            // three into false, which is the same value as "read it, there is no attachment" —
+            // the very defect the null arm below was added to close, one line down. A review
+            // found it in the round that added the null arm.
+            if (raw.isEmpty()) {
+                // The caller reached here because the typed read said "stored but undecodable"
+                // or "the selector itself failed". Seeing no row now contradicts the first and
+                // means nothing under the second. It is not "the row has no attachment".
+                logger.warn("the stored DLQ row for {} was not returned by the index, so"
+                        + " whether it carries a payload could not be established", dlqId);
+                return null;
+            }
+            if (raw.get(0).getAttachments() == null) {
+                // No attachment BLOCK is not an empty attachment block. Whether a Mango _find
+                // returns attachment stubs at all is a dependency of this class (upsertDocument
+                // carries them forward from the same call) that is NOT measured anywhere here,
+                // so the ambiguous shape is reported as ambiguous rather than as an absence.
+                logger.warn("the stored DLQ row for {} came back without an attachment block,"
+                        + " which does not establish that it carries no payload", dlqId);
+                return null;
+            }
+            return !raw.get(0).getAttachments().isEmpty();
         } catch (RuntimeException couldNotAsk) {
             logger.warn("whether the stored DLQ row for {} still carries its payload could not"
                     + " be established: {}", dlqId, couldNotAsk.getMessage());
@@ -551,6 +605,23 @@ public class IngestJobService {
      * ordering — so past that point entries could not be seen, retried or deleted.
      */
     public List<IngestDeadLetterRecord> listDlq(int limit, int offset) {
+        return listDlqPage(limit, offset).entries();
+    }
+
+    /**
+     * A page, plus how many rows on it could not be decoded.
+     *
+     * <p>The skip itself stays — one broken row must not hide the queue. What could not stay is
+     * the SILENCE: the caller derived {@code count} and {@code hasMore} from the shortened list,
+     * so a page whose extra probe row was the undecodable one answered "hasMore: false" and told
+     * the operator the queue ended there. Two reviewers traced it. The count travels out so the
+     * answer can say the page is incomplete instead of asserting it is whole.
+     *
+     * @param unreadable rows returned by the store that this node could not turn into records
+     */
+    public record DlqPage(List<IngestDeadLetterRecord> entries, int unreadable) {}
+
+    public DlqPage listDlqPage(int limit, int offset) {
         CloudantClientWrapper client = getConfClient();
         String dbName = client.getDatabaseName();
         var cloudant = client.getClient();
@@ -558,6 +629,7 @@ public class IngestJobService {
                 Map.of("type", IngestDeadLetterRecord.DOC_TYPE),
                 Math.max(1, limit), Math.max(0, offset));
         List<IngestDeadLetterRecord> results = new ArrayList<>();
+        int unreadable = 0;
         for (Document rawDoc : rawDocs) {
             try {
                 Map<String, Object> props = new HashMap<>(rawDoc.getProperties());
@@ -566,10 +638,14 @@ public class IngestJobService {
                 props.remove("type");
                 results.add(MAPPER.convertValue(props, IngestDeadLetterRecord.class));
             } catch (Exception e) {
-                logger.warn("Failed to deserialize DLQ entry: {}", e.getMessage());
+                // Name the row. The old line said only what went wrong, so the one entry an
+                // operator most needs to look at by hand could not be found.
+                unreadable++;
+                logger.warn("DLQ entry {} could not be decoded and is missing from this page:"
+                        + " {}", rawDoc.getId(), e.getMessage());
             }
         }
-        return results;
+        return new DlqPage(results, unreadable);
     }
 
     /**
@@ -605,10 +681,29 @@ public class IngestJobService {
                             doc.getId(), ts);
                 }
             }
-        } catch (Exception e) {
-            logger.error("DLQ purge failed: {}", e.getMessage(), e);
+        } catch (Exception couldNotFinish) {
+            // Returning the partial count made the caller answer {"status":"success",
+            // "deleted":0} for a read that never ran — indistinguishable from a completed
+            // purge that found nothing older than the cutoff. Two reviewers found it. What was
+            // already deleted is real, so the count travels with the refusal.
+            logger.error("DLQ purge failed: {}", couldNotFinish.getMessage(), couldNotFinish);
+            throw new DlqPurgeIncompleteException("the dead-letter purge did not complete ("
+                    + couldNotFinish.getMessage() + "); " + deleted + " entries were deleted"
+                    + " before it stopped", deleted, couldNotFinish);
         }
         return deleted;
+    }
+
+    /** The purge stopped part-way — never the same answer as "nothing was old enough". */
+    public static class DlqPurgeIncompleteException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        private final int deletedBeforeStopping;
+        public DlqPurgeIncompleteException(String message, int deletedBeforeStopping,
+                Throwable cause) {
+            super(message, cause);
+            this.deletedBeforeStopping = deletedBeforeStopping;
+        }
+        public int getDeletedBeforeStopping() { return deletedBeforeStopping; }
     }
 
     /**
@@ -678,9 +773,23 @@ public class IngestJobService {
                 return false;
             }
             return true;
-        } catch (Exception e) {
-            logger.debug("DLQ retry reservation failed (concurrent retry?): {}", e.getMessage());
-            return false;
+        } catch (Exception couldNotAsk) {
+            // NOT the same as losing a write conflict. CouchDB being unreachable used to
+            // return the same false, and the caller then told the operator "another retry is
+            // already in progress" — a fact about a concurrent request that nothing
+            // established, with a status telling them to slow down. Two reviewers found it.
+            logger.warn("the retry of DLQ entry {} could not be reserved: {}",
+                    dlq.getDlqId(), couldNotAsk.getMessage());
+            throw new DlqRetryNotReservableException("the retry of DLQ entry " + dlq.getDlqId()
+                    + " could not be reserved: " + couldNotAsk.getMessage(), couldNotAsk);
+        }
+    }
+
+    /** The reservation could not be attempted — never the same as losing it to a rival. */
+    public static class DlqRetryNotReservableException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        public DlqRetryNotReservableException(String message, Throwable cause) {
+            super(message, cause);
         }
     }
 

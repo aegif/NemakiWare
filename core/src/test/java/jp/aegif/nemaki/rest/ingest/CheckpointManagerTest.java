@@ -46,6 +46,45 @@ class CheckpointManagerTest {
         assertNull(manager.loadSimpleCheckpoint("p1", "gmail"));
     }
 
+    @Test
+    void loadSimple_refusesWhenTheStoreDidNotAnswer() {
+        // null means "this profile has never polled", and the poll then takes only the first
+        // page, treats every item as new, and writes the newest returned timestamp as the
+        // checkpoint — moving it PAST the older items it never listed, which are filtered out
+        // on every later poll. A failed configuration read used to produce exactly that null,
+        // because ContentDaoServiceImpl answers a failed nemaki_conf read with an EMPTY
+        // Configuration carrying loadFailed=true and PropertyManager drops the flag. Three
+        // reviews reported it.
+        IntegrationSettingsService refusing = mock(IntegrationSettingsService.class);
+        when(refusing.readSettingOrRefuse("ingest.checkpoint.p1.gmail")).thenThrow(
+                new IntegrationSettingsService.SettingUnreadableException(
+                        "the configuration database did not answer"));
+        CheckpointManager m = new CheckpointManager();
+        m.setSettingsService(refusing);
+
+        IntegrationSettingsService.SettingUnreadableException out = assertThrows(
+                IntegrationSettingsService.SettingUnreadableException.class,
+                () -> m.loadSimpleCheckpoint("p1", "gmail"),
+                "a checkpoint read that FAILED was answered as 'this profile has never polled'");
+        assertTrue(out.getMessage().contains("did not answer"),
+                "the refusal does not say what happened: " + out.getMessage());
+    }
+
+    @Test
+    void loadValidity_refusesWhenTheStoreDidNotAnswer() {
+        // {0, 0} is the IMAP twin of the null above: it restarts the mailbox from UID 0.
+        IntegrationSettingsService refusing = mock(IntegrationSettingsService.class);
+        when(refusing.readSettingOrRefuse("ingest.checkpoint.p1.INBOX")).thenThrow(
+                new IntegrationSettingsService.SettingUnreadableException(
+                        "the configuration database did not answer"));
+        CheckpointManager m = new CheckpointManager();
+        m.setSettingsService(refusing);
+
+        assertThrows(IntegrationSettingsService.SettingUnreadableException.class,
+                () -> m.loadCheckpointWithValidity("p1", "INBOX"),
+                "a checkpoint read that FAILED was answered as 'never polled'");
+    }
+
     // ── saveSimpleCheckpoint ──
 
     @Test

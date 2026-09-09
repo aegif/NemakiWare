@@ -6153,10 +6153,16 @@ CONTROLS = [
         what="writing over an unreadable DLQ row clears its payload flag again, so the next "
              "retry imports content-less and deletes the row",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
-        find='                earlierPayloadIsStillAttached = storedDocumentHasAttachment(dlqId);\n',
-        replace='',
+        # Re-anchored: a second call site was added (the re-probe of an INHERITED assumption),
+        # so the bare call now matches twice. The preceding comment line pins the catch arm.
+        find='                // document, so it is read from the document rather than assumed absent.\n'
+             '                earlierPayloadIsStillAttached = storedDocumentHasAttachment(dlqId);\n',
+        replace='                // document, so it is read from the document rather than assumed absent.\n',
         test='DlqReplayArchetypeGateTest',
-        expect_fail=['writingOverAnUnreadableRowKeepsTheAttachedPayload'],
+        # The two beyond the first are MEASURED: this call site feeds every arm of the merge.
+        expect_fail=['writingOverAnUnreadableRowKeepsTheAttachedPayload',
+                     'aProbeThatThrewIsNotAnAnsweredAbsence',
+                     'anUnreadableRowDoesNotResetTheFailureHistory'],
     ),
     dict(
         id="SO2",
@@ -6260,10 +6266,11 @@ CONTROLS = [
         id="TW2",
         what="the revoked-connector refusal at the write point matches no status arm again",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
-        # Re-anchored: the 403 arm gained the permission-denied token, so this token is no
-        # longer the last one in the arm. Narrowed to its own line.
-        find='                || firstError.contains("no longer delegated")\n',
-        replace='',
+        # Neutralised IN PLACE rather than deleted. Twice now these controls have drifted
+        # because their anchor held the LAST token of an arm and a token was appended after
+        # it; a `false &&` in front of the same token does not care what follows.
+        find='|| firstError.contains("no longer delegated")',
+        replace='|| (false && firstError.contains("no longer delegated"))',
         test='CanonicalImportServiceTest',
         expect_fail=['aWriteWithARevokedConnectorDelegation_is403NotAServerError'],
     ),
@@ -6312,20 +6319,28 @@ CONTROLS = [
         what="the import\'s own [transient] verdict is thrown away at the door again, so a "
              "condition the product classified as retryable answers 500",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
-        find='                || firstError.contains("[transient] ")) {\n',
-        replace='                ) {\n',
+        # Neutralised IN PLACE — see TW2. Round 49 recorded that four controls drifted for
+        # holding the last token of an arm, and this one was written in that same round with
+        # the same shape; a review caught the repeat.
+        find='|| firstError.contains("[transient] ")',
+        replace='|| (false && firstError.contains("[transient] "))',
         test='CanonicalImportServiceTest',
-        expect_fail=['aTransientStoreFailureDuringTheWrite_is503NotAServerError'],
+        # Measured: the archetype-path lock asserts the same arm.
+        expect_fail=['aTransientStoreFailureDuringTheWrite_is503NotAServerError',
+                     'aTransientFailureInAnArchetypePath_alsoCarriesTheVerdictIntoTheAnswer'],
     ),
     dict(
         id="UC2",
         what="the write\'s own ACL denial answers 500 again — the third checkpoint disagreeing "
              "with the two before it",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
-        find='                || firstError.contains("permission denied")) return HttpStatus.FORBIDDEN;',
-        replace='                ) return HttpStatus.FORBIDDEN;',
+        # The arm moved above the retryable block and gained the second denial format.
+        find='        if (firstError.contains("permission denied! repositoryid=")\n',
+        replace='        if (false\n',
         test='CanonicalImportServiceTest',
-        expect_fail=['aPermissionDeniedDuringTheWrite_is403NotAServerError'],
+        # Measured: the ordering lock asserts the same arm from the other side.
+        expect_fail=['aPermissionDeniedDuringTheWrite_is403NotAServerError',
+                     'aDenialWhoseTextHappensToCarry503_isStill403'],
     ),
     dict(
         id="UD2",
@@ -6385,6 +6400,175 @@ CONTROLS = [
         test='CanonicalImportServiceTest',
         expect_fail=['aTargetFolderReadThatCouldNotAnswerKeepsItsRetryMarker',
                      'aFailedProfileReadWhoseCauseSaysNotFound_isStill503NotA404'],
+    ),
+    dict(
+        id="UH2",
+        what="the attachment probe answers FALSE again when it threw — 'could not ask' told "
+             "apart from 'there is none' only in the javadoc",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find_span=('        } catch (RuntimeException couldNotAsk) {\n'
+                   '            logger.warn("whether the stored DLQ row for {} still carries its payload could not"',
+                   '            return null;\n        }'),
+        replace='        } catch (RuntimeException couldNotAsk) {\n            return false;\n        }',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['aProbeThatThrewIsNotAnAnsweredAbsence'],
+    ),
+    dict(
+        id="UI2",
+        what="an index that returned NO ROW is read as 'the payload is gone' again — the same "
+             "collapse one line below the arm the previous round fixed",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find_span=('            if (raw.isEmpty()) {',
+                   '                return null;\n            }'),
+        replace='            if (raw.isEmpty()) {\n                return false;\n            }',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['aProbeThatFoundNoRowIsNotAnAnsweredAbsence'],
+    ),
+    dict(
+        id="UJ2",
+        what="a row that could not be READ is restated as the item's first failure again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find_span=('        } else if (historyUnknown) {',
+                   '            dlq.setRetryCount(0);\n        } else {'),
+        replace='        } else {',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['anUnreadableRowDoesNotResetTheFailureHistory'],
+    ),
+    dict(
+        id="UK2",
+        what="an entry whose bytes were never stored is replayed content-less again, then "
+             "reported as success and DELETED",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find_span=('            if (!dlq.isHasContent() && dlq.getPayloadDropReason() != null) {',
+                   '                        + " source item through its connector instead");\n            }'),
+        replace='',
+        test='DlqRetryRefusalStatusTest',
+        expect_fail=['anEntryWhoseBytesWereDroppedIsNotReplayed'],
+    ),
+    dict(
+        id="UL2",
+        what="the retry answer reports one more than the row stores",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find='                response.put("retryCount", dlq.getRetryCount());',
+        replace='                response.put("retryCount", dlq.getRetryCount() + 1);',
+        test='DlqRetryRefusalStatusTest',
+        expect_fail=['anOrdinaryFailureIsStill200'],
+    ),
+    dict(
+        id="UM2",
+        what="a reservation that could not be ATTEMPTED is reported as a rival holding it",
+        # Retargeted at the CONTROLLER. The endpoint lock stubs the service, so sabotaging
+        # the service's throw left it green — the runner said DID NOT FIRE. UU2 measures the
+        # service half against a lock that drives the real one.
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find_span=('        } catch (IngestJobService.DlqRetryNotReservableException couldNotAsk) {',
+                   '                    + "; the entry is kept and nothing was imported");\n        }'),
+        replace='        } catch (IngestJobService.DlqRetryNotReservableException couldNotAsk) {\n'
+                '            throw couldNotAsk;\n        }',
+        test='DlqRetryRefusalStatusTest',
+        expect_fail=['aReservationThatCouldNotBeAttemptedIsNot429'],
+    ),
+    dict(
+        id="UN2",
+        what="a purge that stopped part-way returns its partial count again, so the endpoint "
+             "answers 'success, 0 deleted' for a read that never ran",
+        # Retargeted at the CONTROLLER — see UM2. UV2 measures the service half.
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find_span=('        } catch (IngestJobService.DlqPurgeIncompleteException stopped) {',
+                   '            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(partial);\n        }'),
+        replace='        } catch (IngestJobService.DlqPurgeIncompleteException stopped) {\n'
+                '            throw stopped;\n        }',
+        test='DlqRetryRefusalStatusTest',
+        expect_fail=['aPurgeThatStoppedIsNotSuccess'],
+    ),
+    dict(
+        id="UO2",
+        what="the page declares the queue finished because the row past it could not be decoded",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find='        boolean hasMore = page.size() + fetched.unreadable() > cappedLimit;',
+        replace='        boolean hasMore = page.size() > cappedLimit;',
+        test='DlqRetryRefusalStatusTest',
+        expect_fail=['aPageWithAnUndecodableRowDoesNotClaimTheEnd'],
+    ),
+    dict(
+        id="UP2",
+        # The CALL SITE, not the helper. A control that broke readSettingOrRefuse itself would
+        # leave this lock green, because the lock stubs the settings service — what it measures
+        # is that the import ASKS the refusing way.
+        what="the idempotency read goes back to the reading that cannot refuse, so a failed "
+             "configuration read is 'no such record' and a replace DELETES the earlier document",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='                        String existing = integrationSettingsService.readSettingOrRefuse(idempKey);',
+        replace='                        String existing = integrationSettingsService.readSetting(idempKey);',
+        test='CanonicalImportServiceTest',
+        expect_fail=['anIdempotencyRecordThatCouldNotBeReadRefuses_ratherThanReplacing'],
+    ),
+    dict(
+        id="UQ2",
+        what="the checkpoint read goes back to the reading that cannot refuse, so a failed "
+             "configuration read restarts the connector from the beginning and then advances "
+             "the checkpoint past everything it did not list",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CheckpointManager.java',
+        find='        String value = settingsService.readSettingOrRefuse(key);\n        return (value != null && !value.isBlank()) ? value : null;',
+        replace='        String value = settingsService.readSetting(key);\n        return (value != null && !value.isBlank()) ? value : null;',
+        test='CheckpointManagerTest',
+        expect_fail=['loadSimple_refusesWhenTheStoreDidNotAnswer'],
+    ),
+    dict(
+        id="UR2",
+        what="the four archetype paths drop the transient verdict from their ANSWER again, "
+             "keeping it only in the DLQ row",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='        return ExternalIngestResult.error(requestId, committedObjectId,\n                verdict + prefix + e.getMessage(), warnings);',
+        replace='        return ExternalIngestResult.error(requestId, committedObjectId,\n                prefix + e.getMessage(), warnings);',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aTransientFailureInAnArchetypePath_alsoCarriesTheVerdictIntoTheAnswer'],
+    ),
+    dict(
+        id="US2",
+        what="the denial arm drops back BELOW the retryable arm, so a denial whose interpolated "
+             "folder name carries '503' is answered as a retry",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find_span=('        if (firstError.contains("permission denied! repositoryid=")',
+                   '            return HttpStatus.FORBIDDEN;\n        }'),
+        replace='',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aDenialWhoseTextHappensToCarry503_isStill403',
+                     'aPermissionDeniedDuringTheWrite_is403NotAServerError',
+                     'aTopLevelFolderDenial_is403NotAServerError'],
+    ),
+    dict(
+        id="UT2",
+        what="the SECOND denial format is dropped, so every top-level-folder denial is 500",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='                || firstError.contains("permission denied to top level folders")) {',
+        replace='                ) {',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aTopLevelFolderDenial_is403NotAServerError'],
+    ),
+    dict(
+        id="UU2",
+        what="the reservation returns false for a store that never answered — the SERVICE half "
+             "of UM2, measured against a lock that drives the real service",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find_span=('        } catch (Exception couldNotAsk) {\n'
+                   '            // NOT the same as losing a write conflict.',
+                   '                    + " could not be reserved: " + couldNotAsk.getMessage(), couldNotAsk);\n        }'),
+        replace='        } catch (Exception couldNotAsk) {\n            return false;\n        }',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['theReservationRefusesRatherThanLookingLost'],
+    ),
+    dict(
+        id="UV2",
+        what="the purge returns its partial count for a read that never ran — the SERVICE half "
+             "of UN2",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find_span=('        } catch (Exception couldNotFinish) {\n'
+                   '            // Returning the partial count made the caller answer',
+                   '                    + " before it stopped", deleted, couldNotFinish);\n        }'),
+        replace='        } catch (Exception couldNotFinish) {\n        }',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['thePurgeRefusesRatherThanLookingComplete'],
     ),
     dict(
         id="ST2",

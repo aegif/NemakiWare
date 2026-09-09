@@ -3457,7 +3457,12 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         + "." + request.getIdempotencyKey();
                 try {
                     if (integrationSettingsService != null) {
-                        String existing = integrationSettingsService.readSetting(idempKey);
+                        // readSettingOrRefuse, not readSetting: a failed configuration read
+                        // used to arrive here as "no such record", and idempSkip stayed false.
+                        // With dedupePolicy=replace the request then DELETED the document a
+                        // previous run of the SAME request had committed. The refusal is
+                        // caught below and turned into a retry, not into a decision.
+                        String existing = integrationSettingsService.readSettingOrRefuse(idempKey);
                         if (existing != null && !existing.isBlank()) {
                             idempExistingObjectId = existing;
                             int sep = existing.indexOf('|');
@@ -3481,6 +3486,18 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                             }
                         }
                     }
+                } catch (jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                        .SettingUnreadableException couldNotAsk) {
+                    // Whether this request already completed could not be established. Every
+                    // continuation from here asserts that it did not — and one of them
+                    // deletes. Answer the caller instead. "; retry shortly" puts it on the
+                    // 503 arm rather than the 500 fallback.
+                    logger.warn("the idempotency record for {} could not be read: {}",
+                            request.getIdempotencyKey(), couldNotAsk.getMessage());
+                    return ExternalIngestResult.error(requestId,
+                            "whether request '" + request.getIdempotencyKey()
+                                    + "' has already been completed could not be established"
+                                    + " (" + couldNotAsk.getMessage() + "); retry shortly");
                 } catch (Exception e) {
                     logger.debug("Idempotency check failed: {}", e.getMessage());
                 }
@@ -3846,22 +3863,29 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         private final List<String> warnings = new ArrayList<>();
     }
 
+    /**
+     * The failure exit of every archetype entry point except FILE_SHARE.
+     *
+     * <p>The transient/permanent verdict goes into the ANSWER as well as into the DLQ row. It
+     * used to go only into the row, so the four archetype paths — mail, note, business record,
+     * chat — answered 500 for a condition {@link #isTransientError} had just called retryable,
+     * while {@code execute()}'s own catch answered 503 for the same cause. A review found the
+     * marker measured on that one path and absent from the other four.
+     */
     private ExternalIngestResult failedAfterEntry(CallContext callContext,
             ExternalIngestRequest request, String requestId,
             String committedObjectId, List<String> warnings, String prefix, Exception e) {
+        String verdict = isTransientError(e) ? "[transient] " : "[permanent] ";
         if (ingestJobService != null && autonomousExecution(callContext)
                 && !request.isDryRun()) {
             try {
-                ingestJobService.saveToDlq(request,
-                        (isTransientError(e) ? "[transient] " : "[permanent] ") + prefix
-                                + e.getMessage(),
-                        null);
+                ingestJobService.saveToDlq(request, verdict + prefix + e.getMessage(), null);
             } catch (Exception dlqErr) {
                 logger.warn("Failed to save to DLQ — item may be lost: {}", dlqErr.getMessage());
             }
         }
-        return ExternalIngestResult.error(requestId, committedObjectId, prefix + e.getMessage(),
-                warnings);
+        return ExternalIngestResult.error(requestId, committedObjectId,
+                verdict + prefix + e.getMessage(), warnings);
     }
 
     /**
