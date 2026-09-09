@@ -5843,6 +5843,17 @@ CONTROLS = [
         test='IngestEvidenceSnapshotTest',
         expect_fail=['anUnreadProfileRowIsNotAttributedAsUnrecorded'],
     ),
+    dict(
+        id="RT2",
+        what="the re-import emit stops passing the READ's outcome, so a profile row that "
+             "refused is attributed as one with no configured-by — the CALL SITE, not the "
+             "helper the other lock drives directly",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='                    resolveExecutionAttribution(profile, callContext, profileRead.answered(),\n',
+        replace='                    resolveExecutionAttribution(profile, callContext, true,\n',
+        test='IngestEvidenceSnapshotTest',
+        expect_fail=['theReimportEventSaysTheProfileRowCouldNotBeRead'],
+    ),
 ]
 
 

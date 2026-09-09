@@ -34,6 +34,8 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * What the provenance event actually records about the thing that was captured.
@@ -1363,5 +1365,70 @@ class IngestEvidenceSnapshotTest {
         var read = CanonicalImportServiceImpl.resolveExecutionAttribution(null, null, true, "p1");
         assertTrue(read.executedBy().contains("unrecorded"),
                 "an established absence stopped being reported as one: " + read.executedBy());
+    }
+
+    @Test
+    @DisplayName("the re-import event carries the read's outcome, not just the static "
+            + "attribution — the wiring, not the helper")
+    void theReimportEventSaysTheProfileRowCouldNotBeRead() throws Exception {
+        // The lock above calls the static attribution directly, so making confinedProfileRead
+        // answer "read" for everything would leave it green: the helper is measured and the
+        // CALL SITE is not. This drives the emit itself.
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        IngestLineageEmitter emitter = mock(IngestLineageEmitter.class);
+        ConnectorDefinitionService connectors = mock(ConnectorDefinitionService.class);
+        ImportProfileDefinitionService profiles = mock(ImportProfileDefinitionService.class);
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setSourceArchetype(SourceArchetype.MESSAGE_CONTEXT);
+        when(connectors.get("c1")).thenReturn(connector);
+        when(profiles.getForRepository("p1", "bedroom")).thenThrow(
+                new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(
+                        "the profile row could not be read"));
+        inject(service, "ingestLineageEmitter", emitter);
+        inject(service, "connectorDefinitionService", connectors);
+        inject(service, "importProfileDefinitionService", profiles);
+        inject(service, "contentService", mock(jp.aegif.nemaki.businesslogic.ContentService.class));
+
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setProfileId("p1");
+        request.setConnectorId("c1");
+        request.setRepositoryId("bedroom");
+        request.setSourceObjectId("src-1");
+        // objectId must be present: the emit returns early without one.
+        ExternalIngestResult result =
+                ExternalIngestResult.success("src-1", "obj-1", "1.0", false, null);
+
+        java.lang.reflect.Method emit = CanonicalImportServiceImpl.class.getDeclaredMethod(
+                "emitReimportEvent",
+                org.apache.chemistry.opencmis.commons.server.CallContext.class,
+                ExternalIngestRequest.class,
+                ExternalIngestResult.class, java.util.List.class, java.util.List.class,
+                java.util.List.class);
+        emit.setAccessible(true);
+        emit.invoke(service, (Object) null, request, result, java.util.List.of("subject"),
+                java.util.List.of(), new java.util.ArrayList<String>());
+
+        org.mockito.ArgumentCaptor<String> executedBy =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(emitter).emitLineageEvent(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                executedBy.capture(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+        assertTrue(executedBy.getValue().contains("could not be read"),
+                "the event attributed a run from a profile row that was never read: "
+                        + executedBy.getValue());
+        assertFalse(executedBy.getValue().contains("unrecorded"),
+                "a read that refused was written into evidence as a row with no such field: "
+                        + executedBy.getValue());
+    }
+
+    private static void inject(Object target, String field, Object value) throws Exception {
+        java.lang.reflect.Field f = CanonicalImportServiceImpl.class.getDeclaredField(field);
+        f.setAccessible(true);
+        f.set(target, value);
     }
 }

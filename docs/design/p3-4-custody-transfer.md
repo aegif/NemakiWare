@@ -9189,10 +9189,12 @@ QZ2 を実測**。1 巡目で RL2 が「別の理由で発火」、RM2 が「発
 **新設 4 本 (RP2 / RQ2 / RR2 / RS2) を実測し 4/4 発火**。錠は 5 本増
 (scheduler 3 / evidence 1 / folder は既存錠の stub 更新のみ)。
 `jp.aegif.nemaki.rest.ingest.**` + `CloudantClientWrapperViewValueTest` の
-**73 クラス 1134 本が green**。
+**73 クラス 1135 本が green**。
 
-**測っていないもの (明記)**: `confinedProfileRead` の `answered` と由来イベントの**接続**は
-コントロールで測っていない。錠は静的メソッド `resolveExecutionAttribution` を直接呼ぶので、
-`confinedProfileRead` 側を「常に answered=true」に壊しても緑のままである
-(「helper でなく呼び出し側を壊す」原則に照らして不足)。`emitReimportEvent` を通す錠には
-lineage emitter・contentService 等の配線が要るため、この巡では入れていない。
+**接続の測定 (同じ巡の中で塞いだ)**: 最初、`confinedProfileRead` の `answered` と由来
+イベントの**接続**はコントロールで測れていなかった。錠が静的メソッド
+`resolveExecutionAttribution` を直接呼ぶので、呼び出し側を壊しても緑のままだったからで、
+これは「helper でなく呼び出し側を壊す」原則そのままの不足である。→ `emitReimportEvent` を
+実際に通す錠 (`theReimportEventSaysTheProfileRowCouldNotBeRead`、lineage emitter を mock して
+`executedBy` を捕捉) を足し、**呼び出し側を壊すコントロール RT2** を新設して発火を確認した。
+コントロールは 516 → **517 本**、この巡の実測は **5/5 発火**。
