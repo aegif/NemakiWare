@@ -1670,6 +1670,14 @@ class IngestEvidenceSnapshotTest {
         assertTrue(wrapped.getCause().getMessage().contains("fix the profile"),
                 "the message lost the token ExternalIngestController.classifyErrorStatus "
                         + "matches to answer 400: " + wrapped.getCause().getMessage());
+        // Asserting the token measures one end of the contract. Delete the arm from
+        // classifyErrorStatus and the token is still there, so this stayed green while the
+        // endpoint went back to 500. Run the real message through the real classifier.
+        assertEquals(org.springframework.http.HttpStatus.BAD_REQUEST,
+                ExternalIngestController.classifyErrorStatus(ExternalIngestResult.error(
+                        "req", wrapped.getCause().getMessage())),
+                "an answered profile misconfiguration was delivered as a server fault: "
+                        + wrapped.getCause().getMessage());
         // And NOT in the vocabulary of a failed read. Both new arms throw from inside the
         // method's own try, and its generic catch re-wrapped them as "could not be resolved" —
         // so an ANSWERED "this path is a document, fix the profile" was delivered as a retry,

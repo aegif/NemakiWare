@@ -2565,5 +2565,120 @@ class CanonicalImportServiceTest {
         assertTrue(said.contains("retry shortly"),
                 "the marker ExternalIngestController.classifyErrorStatus matches to answer "
                         + "503 is gone, so this falls to the 500 fallback: " + said);
+        // Asserting the token alone leaves the OTHER half of the contract unmeasured: delete
+        // the arm from classifyErrorStatus and this stayed green. Run the real message
+        // through the real classifier instead.
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                ExternalIngestController.classifyErrorStatus(result),
+                "a read that could not answer was delivered as a server fault: " + said);
+    }
+
+    // ---- the write-point re-check of the delegation, and the status the door gives it ----
+    //
+    // refuseIfDelegationNoLongerAuthorizes re-asks at the write point what the controller's
+    // gate asked before the fetch. The two must AGREE about what kind of answer a refusal is:
+    // the gate answers 403 for a repository mismatch, for cmis:all not held and for a
+    // connector no longer delegated, and 503 when the authorization service is not wired.
+    // This door answered 500 for three of those and 400 for the fourth, by the accident of
+    // its wording containing "is required" — so a denial arrived as a server fault, and a
+    // denial arrived as the caller's bad request. A review found the split.
+    //
+    // Each of these drives the REAL refusal out of execute() and feeds it to the REAL
+    // classifier. Asserting the message text alone would not measure the classifier at all.
+
+    private ImportProfileDefinition delegatedProfileForReCheck() {
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+        return delegated;
+    }
+
+    private ExternalIngestRequest requestForReCheck() {
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+        return req;
+    }
+
+    @Test
+    void aWriteInAnotherRepositoryThanTheCallerAuthenticatedIn_is403NotAServerError() {
+        delegatedProfileForReCheck();
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(false);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
+
+        assertFalse(result.isSuccess(), "the confinement did not refuse");
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
+                ExternalIngestController.classifyErrorStatus(result),
+                "the gate answers 403 (PROFILE_REPO_MISMATCH) for this state; this door said "
+                        + "something else: " + result.errors());
+    }
+
+    @Test
+    void aWriteWithoutCmisAllOnTheTargetFolder_is403NotABadRequest() {
+        delegatedProfileForReCheck();
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.isAdmin(any())).thenReturn(false);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(false);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
+
+        assertFalse(result.isSuccess(), "the cmis:all re-check did not refuse");
+        // This one landed on 400 rather than 500, purely because the sentence contains
+        // "is required". The 403 arm has to stay ABOVE that arm for it to stay 403.
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
+                ExternalIngestController.classifyErrorStatus(result),
+                "the gate answers 403 (CMIS_ALL_REQUIRED) for this state; this door said "
+                        + "something else: " + result.errors());
+    }
+
+    @Test
+    void aWriteWithARevokedConnectorDelegation_is403NotAServerError() {
+        delegatedProfileForReCheck();
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.isAdmin(any())).thenReturn(false);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(true);
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(false);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
+
+        assertFalse(result.isSuccess(), "the connector re-check did not refuse");
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
+                ExternalIngestController.classifyErrorStatus(result),
+                "the gate answers 403 (CONNECTOR_NOT_DELEGATED) for this state; this door "
+                        + "said something else: " + result.errors());
+    }
+
+    @Test
+    void aWriteWhoseAuthorizationServiceIsNotWired_is503NotAServerError() {
+        delegatedProfileForReCheck();
+        // Left unwired on purpose. This is "could not ask", not "asked and was told no".
+        service.setIngestAuthorizationService(null);
+
+        ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
+
+        assertFalse(result.isSuccess(), "an unwired authorization service let the write run");
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                ExternalIngestController.classifyErrorStatus(result),
+                "the gate answers 503 (SERVICES_UNAVAILABLE) for this state; this door said "
+                        + "something else: " + result.errors());
     }
 }

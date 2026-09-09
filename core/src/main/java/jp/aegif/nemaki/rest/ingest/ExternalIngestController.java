@@ -375,7 +375,11 @@ public class ExternalIngestController {
         return null;
     }
 
-    private static HttpStatus classifyErrorStatus(ExternalIngestResult result) {
+    // Package-private, not private: the locks that measure this join two files. They used to
+    // assert only that the import's message still CARRIED the token this method keys on,
+    // which stays green when an arm here is deleted. They now run the real message through
+    // the real classifier.
+    static HttpStatus classifyErrorStatus(ExternalIngestResult result) {
         if (result.errors() == null || result.errors().isEmpty()) {
             return HttpStatus.INTERNAL_SERVER_ERROR;
         }
@@ -389,7 +393,14 @@ public class ExternalIngestController {
         // status the admin controller's own comment calls "what opens tickets for a condition
         // a retry resolves". The same twin pair was 409 through the non-admin gate and 500
         // here. A review measured the split.
-        if (firstError.contains("retry shortly") || firstError.contains("temporarily unavailable")) {
+        if (firstError.contains("retry shortly") || firstError.contains("temporarily unavailable")
+                // The import's own re-check of the delegation cannot ASK when the
+                // authorization service is not wired. The gate one frame up answers 503 for
+                // the same state (SERVICES_UNAVAILABLE); this door answered 500. The sibling
+                // message "no caller to authorise" is deliberately not listed: doIngest
+                // answers 401 before dispatching without a CallContext, so that refusal
+                // cannot arrive here, and if it ever did the 500 would be the true answer.
+                || firstError.contains("the authorization service is not available")) {
             return HttpStatus.SERVICE_UNAVAILABLE;
         }
         if (firstError.contains("definition rows")
@@ -403,7 +414,18 @@ public class ExternalIngestController {
         }
         if (firstError.contains("not found")) return HttpStatus.NOT_FOUND;
         if (firstError.contains("not allowed") || firstError.contains("scoped to repository")
-                || firstError.contains("repository mismatch")) return HttpStatus.FORBIDDEN;
+                || firstError.contains("repository mismatch")
+                // The three authorisation refusals the import raises when it re-asks the
+                // delegation at the write point. The gate one frame up answers 403 for each
+                // of the same states — PROFILE_REPO_MISMATCH, CMIS_ALL_REQUIRED and
+                // CONNECTOR_NOT_DELEGATED — while this door answered 500 for two of them and
+                // 400 for the third, by the accident of its wording containing "is required".
+                // A denial read as a server fault, and a denial read as the caller's bad
+                // request. This arm must stay ABOVE the "is required" arm below for that
+                // third one. A review found the split.
+                || firstError.contains("not the repository this caller authenticated")
+                || firstError.contains("was not held when this import ran")
+                || firstError.contains("no longer delegated")) return HttpStatus.FORBIDDEN;
         if (firstError.contains("disabled") || firstError.contains("is required")
                 || firstError.contains("no resolvable")
                 // A standing profile misconfiguration the read ANSWERED. Making the refusal

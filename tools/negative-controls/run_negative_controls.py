@@ -3466,9 +3466,11 @@ CONTROLS = [
         what="a retryable import refusal falls through to 500 again — the status that opens a "
              "ticket for a condition a retry resolves",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
-        find_span=('        if (firstError.contains("retry shortly") || firstError.contains("temporarily unavailable")) {',
-                   '            return HttpStatus.SERVICE_UNAVAILABLE;\n        }'),
-        replace='',
+        # Re-anchored: the arm gained the unwired-authorization-service token, so the old
+        # one-line start no longer matched. Narrowed to the two tokens this control is about,
+        # which also keeps it from measuring TX2's token by accident.
+        find='        if (firstError.contains("retry shortly") || firstError.contains("temporarily unavailable")\n',
+        replace='        if (false\n',
         test='ExternalIngestControllerGateTest',
         # The second name is from a review that traced it: round 45's target-folder
         # lock asserts 503 for a "; retry shortly" message, so removing this arm
@@ -3485,7 +3487,11 @@ CONTROLS = [
                    '            return HttpStatus.CONFLICT;\n        }'),
         replace='',
         test='ExternalIngestControllerGateTest',
-        expect_fail=['aStandingTwinPairFromTheImport_is409NotAServerError'],
+        # The second name is from the measurement. Both locks assert 409 through the arm
+        # this sabotage removes, and the declaration has been short since the commit that
+        # wrote all three — a full sweep would have exited non-zero on it.
+        expect_fail=['aStandingTwinPairFromTheImport_is409NotAServerError',
+                     'aGetForRepositoryTwinMessage_is409NotAServerError'],
     ),
     dict(
         id="TP",
@@ -3533,8 +3539,10 @@ CONTROLS = [
         id="TW",
         what="a mail-path repository mismatch falls through to 500 again",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
-        find='        if (firstError.contains("not allowed") || firstError.contains("scoped to repository")\n                || firstError.contains("repository mismatch")) return HttpStatus.FORBIDDEN;',
-        replace='        if (firstError.contains("not allowed") || firstError.contains("scoped to repository")) return HttpStatus.FORBIDDEN;',
+        # Re-anchored: the arm gained the three delegated re-check tokens, so the old
+        # whole-arm find no longer matched. Narrowed to the one token this control is about.
+        find='                || firstError.contains("repository mismatch")\n',
+        replace='',
         test='ExternalIngestControllerGateTest',
         expect_fail=['aMailRepositoryMismatch_is403NotAServerError'],
     ),
@@ -4072,7 +4080,11 @@ CONTROLS = [
                    '                            + revokedHere.errors().get(0));\n                }\n            }'),
         replace='',
         test='CanonicalImportServiceTest',
-        expect_fail=['testARevokedDelegationStopsTheRelationshipCreation'],
+        # The second name is from the measurement, not from reading: removing the re-check
+        # leaves the round-44 lock's assertDoesNotThrow reddening as well. The declaration
+        # has been short since that lock was added and was never re-measured.
+        expect_fail=['testARevokedDelegationStopsTheRelationshipCreation',
+                     'aLinkWhoseFolderReadRefusesIsNotLinked_notAnEscapingException'],
     ),
     dict(
         id="VU",
@@ -6184,6 +6196,78 @@ CONTROLS = [
         replace='                ) return HttpStatus.BAD_REQUEST;\n',
         test='ExternalIngestControllerGateTest',
         expect_fail=['aStandingProfileMisconfigurationIsA400_notARetryAndNotOurBug'],
+    ),
+    dict(
+        id="SU2",
+        # Same sabotage as SS2, different class on purpose. SS2's lock hands the classifier a
+        # message the test wrote itself, because the service is stubbed there; the snapshot's
+        # lock hands it the message the PRODUCT built. Without this control the second half of
+        # that join is a claim nothing measures.
+        what="the standing-misconfiguration arm is deleted, measured against the message the "
+             "product actually emits rather than one the test wrote",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='                || firstError.contains("fix the profile")) return HttpStatus.BAD_REQUEST;\n',
+        replace='                ) return HttpStatus.BAD_REQUEST;\n',
+        test='IngestEvidenceSnapshotTest',
+        expect_fail=['aTargetFolderPathThatIsNotAFolderIsNotAMissingSetting'],
+    ),
+    dict(
+        id="TU2",
+        what="the write-point repository-confinement refusal matches no status arm again, so "
+             "a denial is answered as a server fault",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='                || firstError.contains("not the repository this caller authenticated")\n',
+        replace='',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aWriteInAnotherRepositoryThanTheCallerAuthenticatedIn_is403NotAServerError'],
+    ),
+    dict(
+        id="TV2",
+        what="the write-point cmis:all refusal loses its 403 arm, falling back onto the 400 "
+             "arm it only ever matched by the accident of saying \"is required\"",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='                || firstError.contains("was not held when this import ran")\n',
+        replace='',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aWriteWithoutCmisAllOnTheTargetFolder_is403NotABadRequest'],
+    ),
+    dict(
+        id="TW2",
+        what="the revoked-connector refusal at the write point matches no status arm again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='                || firstError.contains("no longer delegated")) return HttpStatus.FORBIDDEN;',
+        replace='                ) return HttpStatus.FORBIDDEN;',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aWriteWithARevokedConnectorDelegation_is403NotAServerError'],
+    ),
+    dict(
+        id="TX2",
+        what="an unwired authorization service at the write point is answered as a server "
+             "fault instead of \"could not ask, retry\"",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='                || firstError.contains("the authorization service is not available")) {\n',
+        replace='                ) {\n',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aWriteWhoseAuthorizationServiceIsNotWired_is503NotAServerError'],
+    ),
+    dict(
+        id="TY2",
+        what="the 400 arm is moved above the 403 arm — the cmis:all refusal says \"is "
+             "required\", so a denial becomes the caller\'s bad request without any message "
+             "changing. The ordering is a claim the comment makes; this measures it.",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find_span=('        if (firstError.contains("not allowed") || firstError.contains("scoped to repository")',
+                   '                || firstError.contains("fix the profile")) return HttpStatus.BAD_REQUEST;'),
+        replace='        if (firstError.contains("disabled") || firstError.contains("is required")\n'
+                '                || firstError.contains("no resolvable")\n'
+                '                || firstError.contains("fix the profile")) return HttpStatus.BAD_REQUEST;\n'
+                '        if (firstError.contains("not allowed") || firstError.contains("scoped to repository")\n'
+                '                || firstError.contains("repository mismatch")\n'
+                '                || firstError.contains("not the repository this caller authenticated")\n'
+                '                || firstError.contains("was not held when this import ran")\n'
+                '                || firstError.contains("no longer delegated")) return HttpStatus.FORBIDDEN;',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aWriteWithoutCmisAllOnTheTargetFolder_is403NotABadRequest'],
     ),
     dict(
         id="ST2",
