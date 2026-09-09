@@ -2428,4 +2428,47 @@ class CanonicalImportServiceTest {
         f.setAccessible(true);
         f.set(target, value);
     }
+
+    @Test
+    void aLinkWhoseFolderReadRefusesIsNotLinked_notAnEscapingException() throws Exception {
+        // The guard added for the relationship-type fallback rethrew the folder refusal, and
+        // that escaped createLink into the import's top-level catch — so ONE unauthorisable
+        // link turned a document that was already committed into an error result and a DLQ
+        // row. That is the over-throw this class's own
+        // testAProfileGoneDuringTheImportIsAWarningNotA500 and control VW forbid, reopened
+        // through a different arm; a review found it, and the control did not fire until
+        // this lock existed because the older one drives the other arm.
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolderDao =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolderDao.getChildren(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolderDao);
+        // objectService deliberately unwired: the delegated re-check's folder read refuses.
+
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setRepositoryId("bedroom");
+        delegated.setDelegated(true);
+        delegated.setTargetFolderPath("/a/b");
+
+        java.lang.reflect.Method createLink = CanonicalImportServiceImpl.class
+                .getDeclaredMethod("createLink",
+                        org.apache.chemistry.opencmis.commons.server.CallContext.class,
+                        String.class, String.class, String.class, String.class,
+                        jp.aegif.nemaki.rest.ingest.capture.CaptureScope.class,
+                        ImportProfileDefinition.class, ConnectorDefinition.class);
+        createLink.setAccessible(true);
+
+        Object outcome = org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> createLink.invoke(service, null, "bedroom", "src-1", "tgt-1",
+                        "nemaki:relationship", null, delegated, null),
+                "a link whose folder read refused escaped the method, so the whole import "
+                        + "fails after the object was committed");
+        java.lang.reflect.Method linked = outcome.getClass().getDeclaredMethod("linked");
+        linked.setAccessible(true);
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.FALSE, linked.invoke(outcome),
+                "the link was reported as created");
+    }
 }

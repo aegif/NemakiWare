@@ -2235,12 +2235,17 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // nd created the replacement anyway (external review).
             throw failClosed;
         } catch (TargetFolderUnreadableException folderRefused) {
-            // NOT the custom-type fallback. The folder read refused; the relationship TYPE
-            // never failed. Recursing would create the edge with the generic type and report
-            // success, and on a permanent refusal the arm below would record INDETERMINATE
-            // for a createRelationship that provably never ran (the intent is opened after
-            // this point). A review found both. Same shape as the guard above it.
-            throw folderRefused;
+            // NOT the custom-type fallback: the folder read refused, the relationship TYPE
+            // never failed, and recursing would ask the same question again. NOT a throw
+            // either — a review found that rethrowing escaped this method into the import's
+            // top-level catch, so one unauthorisable LINK turned a document that was already
+            // committed into an error result and a DLQ row. That is the over-throw the
+            // wrapper's own javadoc and control VW forbid. The shape three lines up is the
+            // right one: report it as not linked.
+            logger.warn("Relationship {} → {} was not created: {}", sourceId, targetId,
+                    folderRefused.getMessage());
+            return LinkOutcome.notLinked("Relationship not authorised: "
+                    + folderRefused.getMessage());
         } catch (Exception e) {
             // Fallback to generic cmis:relationship if custom type fails
             if (!"cmis:relationship".equals(relationshipTypeId)) {
@@ -3264,8 +3269,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         } catch (TargetFolderUnreadableException couldNotResolve) {
             // Not "the profile configured neither field". Said as what it is, and said in a
             // way the caller can retry.
+            // "; retry shortly" ONLY when a retry can help. It was appended to every
+            // refusal, so "this path resolves to a document; fix the profile" — a standing
+            // misconfiguration the read ANSWERED — came back as a retry, and the status
+            // classifier two layers up turned that substring into a 503. Two reviewers found
+            // the caller still doing it after the exception's own wording was corrected.
             return ExternalIngestResult.error(requestId, couldNotResolve.getMessage()
-                    + "; retry shortly");
+                    + (couldNotResolve.isRetryable() ? "; retry shortly" : ""));
         }
         if (targetFolderId == null || targetFolderId.isBlank()) {
             return ExternalIngestResult.error(requestId,
@@ -4337,7 +4347,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                                 folderPath, baseType, objectData.getId());
                         throw new TargetFolderUnreadableException("the target folder path '"
                                 + folderPath + "' of this profile resolves to a " + baseType
-                                + ", not a folder; fix the profile", null);
+                                + ", not a folder; fix the profile", null, false);
                     }
                     logger.debug("Resolved targetFolderPath '{}' to folderId '{}'", folderPath, objectData.getId());
                     folderPathCache.put(cacheKey, new CachedFolderId(objectData.getId(), System.currentTimeMillis()));
@@ -4378,12 +4388,27 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         return null;
     }
 
-    /** A target folder path this node could not resolve — not "the profile has no folder". */
+    /**
+     * A target folder path this node could not resolve — not "the profile has no folder".
+     *
+     * <p>{@code retryable} separates the two kinds. A read that did not answer is a retry; a
+     * path that ANSWERED with a document is a standing misconfiguration, and the caller used
+     * to append "; retry shortly" to both — telling an operator to retry something no retry
+     * fixes, and making the endpoint answer 503 for it. Two reviewers found the caller still
+     * doing that after the wording of the exception itself had been corrected.
+     */
     public static class TargetFolderUnreadableException extends RuntimeException {
         private static final long serialVersionUID = 1L;
+        private final boolean retryable;
         public TargetFolderUnreadableException(String message, Throwable cause) {
-            super(message, cause);
+            this(message, cause, true);
         }
+        public TargetFolderUnreadableException(String message, Throwable cause,
+                boolean retryable) {
+            super(message, cause);
+            this.retryable = retryable;
+        }
+        public boolean isRetryable() { return retryable; }
     }
 
     // buildCanonicalSourceUri, isAttachmentObjectType, resolveProcessType

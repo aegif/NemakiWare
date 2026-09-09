@@ -6134,6 +6134,31 @@ CONTROLS = [
         test='IngestEvidenceSnapshotTest',
         expect_fail=['aTargetFolderPathThatIsNotAFolderIsNotAMissingSetting'],
     ),
+    dict(
+        id="SP2",
+        what="a standing misconfiguration is marked retryable again, so the caller appends "
+             "'; retry shortly' and the ingest endpoint answers 503 for it",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='                                + ", not a folder; fix the profile", null, false);\n',
+        replace='                                + ", not a folder; fix the profile", null, true);\n',
+        test='IngestEvidenceSnapshotTest',
+        expect_fail=['aTargetFolderPathThatIsNotAFolderIsNotAMissingSetting'],
+    ),
+    dict(
+        id="SQ2",
+        what="a link that cannot be authorised escapes createLink again, so one relationship "
+             "turns a document that was already committed into an error result and a DLQ row",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='            logger.warn("Relationship {} → {} was not created: {}", sourceId, targetId,\n'
+             '                    folderRefused.getMessage());\n'
+             '            return LinkOutcome.notLinked("Relationship not authorised: "\n'
+             '                    + folderRefused.getMessage());\n',
+        replace='            throw folderRefused;\n',
+        test='CanonicalImportServiceTest',
+        # The older lock drives the OTHER arm (the wrapper's own resolution), which is
+        # why this control did not fire until a lock for this arm existed.
+        expect_fail=['aLinkWhoseFolderReadRefusesIsNotLinked_notAnEscapingException'],
+    ),
 ]
 
 

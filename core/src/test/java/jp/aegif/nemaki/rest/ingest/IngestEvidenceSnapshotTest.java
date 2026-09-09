@@ -1611,6 +1611,10 @@ class IngestEvidenceSnapshotTest {
                 "the refusal is not the typed one: " + wrapped.getCause());
         assertTrue(wrapped.getCause().getMessage().contains("could not be resolved"),
                 "the refusal does not say what happened: " + wrapped.getCause().getMessage());
+        // The control for the pair: a read that did not answer IS a retry.
+        assertTrue(((CanonicalImportServiceImpl.TargetFolderUnreadableException)
+                        wrapped.getCause()).isRetryable(),
+                "a read that could not answer stopped being retryable");
     }
 
     @Test
@@ -1668,5 +1672,13 @@ class IngestEvidenceSnapshotTest {
         assertFalse(wrapped.getCause().getMessage().contains("could not be resolved"),
                 "an answered read was reported in the words of a failed one: "
                         + wrapped.getCause().getMessage());
+        // And the CALLER must not append "; retry shortly" to it. Asserting only on this
+        // method's own message measured the wording while the classification happened two
+        // layers up, where the suffix turned a standing misconfiguration into a 503. Two
+        // reviewers found that gap.
+        assertFalse(((CanonicalImportServiceImpl.TargetFolderUnreadableException)
+                        wrapped.getCause()).isRetryable(),
+                "a standing misconfiguration was marked retryable, so the caller appends "
+                        + "'; retry shortly' and the endpoint answers 503");
     }
 }
