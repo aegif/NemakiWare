@@ -943,6 +943,12 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
     }
 
     @Override
+    public OwnedProfiles listScheduledIndexFreeWithUnreadable() {
+        return listOwnedRowsIndexFree("the scheduled profiles", "scheduled-profile enumeration",
+                "is not being scheduled", def -> def.isEnabled() && def.isSchedulerEnabled());
+    }
+
+    @Override
     public List<ImportProfileDefinition> listScheduledIndexFree() {
         // The rows the walk could not read are logged by it and not reported further here:
         // the scheduler has no caller to answer, and refusing the poll would let one broken

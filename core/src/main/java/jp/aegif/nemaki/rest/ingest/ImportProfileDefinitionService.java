@@ -97,6 +97,19 @@ public interface ImportProfileDefinitionService {
     List<ImportProfileDefinition> listScheduledIndexFree();
 
     /**
+     * As {@link #listScheduledIndexFree}, carrying the rows the walk could not read.
+     *
+     * <p>The list-only form drops them, on the ground that the poll has no caller to answer
+     * and that one broken row must not stop every capture. That ground does not hold for the
+     * two endpoints that now read through it: {@code POST /trigger/{id}} answers
+     * "Profile not found or not scheduler-enabled" — two statements, neither established —
+     * for a profile whose row this walk refused, and {@code GET /status} answers a count that
+     * is short by one with nothing saying so. A review found the asymmetry against the owned
+     * listing, which has carried its unreadable rows since the webhook receiver needed them.
+     */
+    OwnedProfiles listScheduledIndexFreeWithUnreadable();
+
+    /**
      * A row of the owned listing that could not be interpreted as a profile, with the
      * addressing fields a caller needs to tell whether the row was addressed to it. The webhook
      * receiver asks {@link #addressedTo(String, SourceArchetype)}: a row that was addressed

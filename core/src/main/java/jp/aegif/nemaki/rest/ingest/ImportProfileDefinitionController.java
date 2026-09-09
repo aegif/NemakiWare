@@ -586,6 +586,28 @@ public class ImportProfileDefinitionController {
                 }
                 ConnectorDefinition c = connectorDefinitionService.get(cid);
                 if (c == null) {
+                    // The twin of the check in validateDelegatedConnectors: "unknown" is a
+                    // statement about the database, recorded in the audit trail, from a read
+                    // that answers null for a row it could not show as readily as for one
+                    // that is not there.
+                    boolean rowIsThere;
+                    try {
+                        rowIsThere = connectorDefinitionService.existsIndexFree(cid);
+                    } catch (RuntimeException couldNotAsk) {
+                        return denyTransfer(ctx, existing, newOwner, folderId,
+                                HttpStatus.SERVICE_UNAVAILABLE,
+                                DenialReason.SERVICES_UNAVAILABLE,
+                                "whether connector " + cid + " exists could not be"
+                                        + " established; retry shortly: "
+                                        + couldNotAsk.getMessage());
+                    }
+                    if (rowIsThere) {
+                        return denyTransfer(ctx, existing, newOwner, folderId,
+                                HttpStatus.SERVICE_UNAVAILABLE,
+                                DenialReason.SERVICES_UNAVAILABLE,
+                                "connector " + cid + " exists but could not be read;"
+                                        + " retry shortly");
+                    }
                     return denyTransfer(ctx, existing, newOwner, folderId,
                             HttpStatus.BAD_REQUEST, DenialReason.UNKNOWN_CONNECTOR,
                             "Unknown connector: " + cid);
@@ -881,6 +903,25 @@ public class ImportProfileDefinitionController {
             }
             ConnectorDefinition c = connectorDefinitionService.get(cid);
             if (c == null) {
+                // "Unknown connector" is a statement about the database, written into the
+                // audit trail, from a read that answers null for a row it could not show as
+                // readily as for one that is not there. The sibling in this same batch
+                // (validateSchedulerParams) already splits the two; a review found this one
+                // left behind, and it runs on every non-admin create and update.
+                boolean rowIsThere;
+                try {
+                    rowIsThere = connectorDefinitionService.existsIndexFree(cid);
+                } catch (RuntimeException couldNotAsk) {
+                    return denied(HttpStatus.SERVICE_UNAVAILABLE,
+                            DenialReason.SERVICES_UNAVAILABLE,
+                            "whether connector " + cid + " exists could not be established;"
+                                    + " retry shortly: " + couldNotAsk.getMessage());
+                }
+                if (rowIsThere) {
+                    return denied(HttpStatus.SERVICE_UNAVAILABLE,
+                            DenialReason.SERVICES_UNAVAILABLE,
+                            "connector " + cid + " exists but could not be read; retry shortly");
+                }
                 return denied(HttpStatus.BAD_REQUEST, DenialReason.UNKNOWN_CONNECTOR,
                         "Unknown connector: " + cid);
             }

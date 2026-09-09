@@ -171,14 +171,36 @@ only repository gotchas.
   返したが「不在」と「索引から見えない」の区別がつかない)。
   - `POST .../ingest-scheduler/trigger/{profileId}` と
     `POST .../folders/{folderId}/connectors/{profileId}/run` (および資格情報の設定) は、
-    未配線と読み取り失敗で **503**、索引不要の走査で不在が確かめられたときだけ **404**、
-    行が読めていて無効・不許可・archetype 不一致のときだけ **400** です
+    未配線と読み取り失敗で **503**、索引不要の走査で不在が確かめられたときだけ **404** です。
+    **400** は「行が読めていて無効・不許可・archetype 不一致」の場合と、「既定コネクタが
+    未指定で、許可された archetype にも候補が無い」場合です (後者の候補探索は Mango 索引を
+    読むので、索引が再構築中で短く返っている間は候補を見落とすことがあります)
+  - この分割は**スケジュール対象でないプロファイルにも効きます**。当初は
+    `schedulerEnabled` のプロファイルだけで、フォルダの 2 動詞が対象とする「スケジュールに
+    載っていないプロファイル」には届いていませんでした
+  - 走査を行うサービスがこのノードに配線されていない場合は **503** です (「存在しない」とは
+    答えません)
   - `GET .../ingest-scheduler/status` は `ready: false` に `notReadyReason` と
     `notReadyIsAnAnswer` を添えます (一覧なので走査はしません)
   - フォルダのコネクタ一覧は、解決できなかったプロファイルを `connectorsUnresolved` に
     名前で挙げます。従来は黙って落としていたため、「実行できるものは無い」と読めました
   - スケジューラの poll は、事実でない理由でキャプチャを飛ばしたときに **ERROR** を出します
     (従来は無効化されたコネクタと区別がつきませんでした)
+- **委譲の拒否理由が、実際の理由になりました。** webhook と IMAP IDLE が使う委譲の認可は、
+  7 通りの拒否すべてを「作成者が対象フォルダの `cmis:all` を失った」
+  (`CREATOR_CMIS_ALL_LOST`) として返していました。**未配線のノード**も、**作成者の照会が
+  失敗した場合** (この区別のために `CREATOR_LOOKUP_FAILED` を用意してあります) も同じです。
+  IDLE の 403 の本文と webhook の WARN がこの理由を表示するため、管理者は権限が剥奪されたと
+  読むことになります。今はそれぞれの理由を返します
+- **コネクタの行が読めないことを「Unknown connector」と呼ばなくなりました。** 委譲
+  プロファイルの作成・更新・所有権移転で `allowedConnectorIds` を検査するとき、読みが
+  null を返すと **400「Unknown connector」**として監査ログに記録していました。索引不要の
+  走査で分け、行が在って読めない場合は **503** です (本当に存在しない場合は従来どおり 400)
+- **スケジュール一覧で読めなかった行が、無いものとして扱われなくなりました。**
+  `POST .../ingest-scheduler/trigger/{profileId}` は、その行を走査が読めなかった場合に
+  **404「Profile not found or not scheduler-enabled」** (2 つの断定) ではなく **503** を
+  返します。`GET .../ingest-scheduler/status` は `count` に加えて `profilesUnreadable` を
+  返します (従来は件数が黙って 1 つ少なくなっていました)
 - **再取込の由来イベントが、読めなかったプロファイル行について断定しなくなりました。**
   従来はプロファイルの読みが拒否されると `null` になり、そのまま
   「scheduler: admin profile unknown, schedule configured-by unrecorded」という実行者記述が

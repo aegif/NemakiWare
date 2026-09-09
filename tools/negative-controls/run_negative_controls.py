@@ -3862,7 +3862,7 @@ CONTROLS = [
         what="the scheduler enumerates through the Mango selector again — a rebuilding index "
              "reads as 'nothing scheduled' and every scheduled capture is skipped in silence",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerService.java',
-        find_span=('        java.util.Set<String> known = new java.util.HashSet<>(repositoryInfoMap.keys());',
+        find_span=('        java.util.Set<String> knownForPoll = new java.util.HashSet<>(repositoryInfoMap.keys());',
                    '                .toList();'),
         replace='        return repositoryInfoMap.keys().stream()\n'
                 '                .flatMap(repoId -> profileService.listByRepository(repoId).stream())\n'
@@ -3870,7 +3870,17 @@ CONTROLS = [
                 '                .filter(ImportProfileDefinition::isSchedulerEnabled)\n'
                 '                .toList();',
         test='IngestSchedulerDelegatedRunTest',
-        expect_fail=['anUnreadableScheduleIsNotAnEmptyOne'],
+        # The other eight are from the measurement: the selector-based enumeration this
+        # sabotage restores makes the whole delegated-run fixture stop reaching the gate.
+        expect_fail=['anUnreadableScheduleIsNotAnEmptyOne',
+                     'autoDisable_writesMarkerFields_whenInactiveCreatorStreakExceedsThreshold',
+                     'optInOff_warnsOncePerProfile_evenAcrossMultiplePolls',
+                     'optInOn_butCreatorInactive_skipsAndDoesNotFetch',
+                     'optInOn_creatorActiveAndAuthorised_progressesPastGate',
+                     'optInOn_creatorLostCmisAll_skipsAndDoesNotFetch',
+                     'optInOn_inactiveCreator_doesNotEmitLegacyOptOutWarn',
+                     'targetFolderDisappearsBetweenTicks_emitsTargetFolderUnresolvable_notConnectorNotDelegated',
+                     'targetFolderResolves_butConnectorNoLongerDelegated_stillEmitsConnectorNotDelegated'],
     ),
     dict(
         id="VE",
@@ -5644,11 +5654,14 @@ CONTROLS = [
         what="an unwired scheduled listing answers 'nothing is scheduled' again, which the "
              "poll's own comment says cannot happen",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerService.java',
-        find='        if (repositoryInfoMap == null || profileService == null) {\n',
-        replace='        if (repositoryInfoMap == null || profileService == null) {\n'
-                '            if (true) return List.of();\n',
+        find='    public ImportProfileDefinitionService.OwnedProfiles scheduledProfilesWithUnreadable() {\n'
+             '        if (repositoryInfoMap == null || profileService == null) {\n',
+        replace='    public ImportProfileDefinitionService.OwnedProfiles scheduledProfilesWithUnreadable() {\n'
+                '        if (repositoryInfoMap == null || profileService == null) {\n'
+                '            if (true) return new ImportProfileDefinitionService.OwnedProfiles(\n'
+                '                    List.of(), List.of());\n',
         test='IngestSchedulerControllerAnswerTest',
-        expect_fail=['anUnwiredScheduledListingRefuses'],
+        expect_fail=['theEndpointListingRefusesWhenUnwired'],
     ),
     dict(
         id="RD2",
@@ -5853,6 +5866,107 @@ CONTROLS = [
         replace='                    resolveExecutionAttribution(profile, callContext, true,\n',
         test='IngestEvidenceSnapshotTest',
         expect_fail=['theReimportEventSaysTheProfileRowCouldNotBeRead'],
+    ),
+    dict(
+        id="RU2",
+        what="the named default's reason is discarded again for a profile that is not on a "
+             "schedule, so an unreadable connector becomes 'no candidate' — a fact",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerService.java',
+        find='        return new ConnectorForProfile(null,\n'
+             '                fromTheNamedDefault != null ? fromTheNamedDefault : Unresolved.NO_CANDIDATE);\n',
+        replace='        return new ConnectorForProfile(null, Unresolved.NO_CANDIDATE);\n',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['aNonSchedulerProfileKeepsTheReason'],
+    ),
+    dict(
+        id="RV2",
+        what="a delegated denial reports a revoked cmis:all again, whatever the real reason "
+             "the audit recorded",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerService.java',
+        find='            return new DelegatedAuthorization(false, null, tick.why());\n',
+        replace='            return new DelegatedAuthorization(false, null,\n'
+                '                    DenialReason.CREATOR_CMIS_ALL_LOST);\n',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['aDelegatedDenialCarriesItsOwnReason'],
+    ),
+    dict(
+        id="RW2",
+        what="the ownership transfer calls a connector row it could not read 'unknown' again, "
+             "in the audit trail",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ImportProfileDefinitionController.java',
+        find='                    boolean rowIsThere;\n'
+             '                    try {\n'
+             '                        rowIsThere = connectorDefinitionService.existsIndexFree(cid);\n',
+        replace='                    boolean rowIsThere = false;\n'
+                '                    try {\n'
+                '                        rowIsThere = false && connectorDefinitionService.existsIndexFree(cid);\n',
+        test='ImportProfileOwnershipTransferTest',
+        expect_fail=['adminToDelegated_connectorRowCouldNotBeRead_is503NotUnknown'],
+    ),
+    dict(
+        id="RX2",
+        what="an unwired walk service answers 'connector does not exist' again — absence "
+             "fabricated by a node with nothing to ask",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java',
+        find='                if (connectorDefinitionService == null) {\n',
+        replace='                if (false) {\n',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['anUnwiredWalkServiceDoesNotFabricateAbsence'],
+    ),
+    dict(
+        id="RY2",
+        what="a scheduled row the walk could not read is answered 'not found or not "
+             "scheduler-enabled' again — two statements, neither established",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java',
+        find='            if (walked.uninterpretable().stream()\n'
+             '                    .anyMatch(row -> profileId.equals(row.profileId()))) {\n',
+        replace='            if (false) {\n',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['anUnreadableScheduledRowIsNotReportedAsAbsent'],
+    ),
+    dict(
+        id="RZ2",
+        what="the folder verbs answer 400 'No connector resolved' for every reason again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/FolderConnectorController.java',
+        find='        body.put("status", "error");\n'
+             '        String id = profile.getDefaultConnectorId();\n'
+             '        switch (resolution.why()) {\n',
+        replace='        body.put("status", "error");\n'
+                '        String id = profile.getDefaultConnectorId();\n'
+                '        if (true) {\n'
+                '            body.put("message", "No connector resolved for profile: "\n'
+                '                    + profile.getProfileId());\n'
+                '            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);\n'
+                '        }\n'
+                '        switch (resolution.why()) {\n',
+        test='FolderConnectorControllerTest',
+        expect_fail=['run_connectorCouldNotBeRead_is503NotBadRequest',
+                     'run_connectorEstablishedAbsent_is404_andHidden_is503'],
+    ),
+    dict(
+        id="SA2",
+        what="a profile whose connector could not be resolved vanishes from the folder again, "
+             "so the UI reads 'there is nothing to run here'",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/FolderConnectorController.java',
+        find='                    if (!resolution.answered()) {\n'
+             '                        unresolved.add(profile.getProfileId());\n',
+        replace='                    if (false) {\n'
+                '                        unresolved.add(profile.getProfileId());\n',
+        test='FolderConnectorControllerTest',
+        expect_fail=['list_namesTheProfilesWhoseConnectorCouldNotBeResolved'],
+    ),
+    dict(
+        id="SB2",
+        what="the POLL's listing answers 'nothing is scheduled' on an unwired node again — "
+             "RC2's twin, for the other of the two methods that carry this guard",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerService.java',
+        find='    public List<ImportProfileDefinition> getScheduledProfiles() {\n'
+             '        if (repositoryInfoMap == null || profileService == null) {\n',
+        replace='    public List<ImportProfileDefinition> getScheduledProfiles() {\n'
+                '        if (repositoryInfoMap == null || profileService == null) {\n'
+                '            if (true) return List.of();\n',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['anUnwiredScheduledListingRefuses'],
     ),
 ]
 

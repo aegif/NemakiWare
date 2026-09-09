@@ -281,6 +281,30 @@ class ImportProfileOwnershipTransferTest {
     }
 
     @Test
+    void adminToDelegated_connectorRowCouldNotBeRead_is503NotUnknown() {
+        // "Unknown connector" is a statement about the database, written into the audit
+        // trail, from a read that answers null for a row it could not show as readily as for
+        // one that is not there. The sibling check in the same service (validateSchedulerParams)
+        // already split the two; a review found this one left behind, on a path that runs for
+        // every non-admin create and update.
+        adminCtx();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(adminOwnedProfile());
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolderAsUser(NEW_OWNER, REPO, FOLDER))
+                .thenReturn(true);
+        when(connectorDefinitionService.get(CONN)).thenReturn(null);
+        when(connectorDefinitionService.existsIndexFree(CONN)).thenReturn(true);
+
+        ResponseEntity<Map<String, Object>> res = controller.transferOwnership(
+                PROF, Map.of("mode", "delegated", "createdByUserId", NEW_OWNER));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
+                "a connector row that exists but could not be read was called unknown");
+        assertNotEquals("UNKNOWN_CONNECTOR", res.getBody().get("denialReason"),
+                "the audit trail recorded a fact the read never established");
+    }
+
+    @Test
     void adminToDelegated_emptyAllowedConnectorIds_isRefused() {
         adminCtx();
         ImportProfileDefinition p = adminOwnedProfile();

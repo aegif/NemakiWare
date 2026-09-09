@@ -387,10 +387,19 @@ public class FolderConnectorController {
                 return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
             }
             case ABSENT_OR_HIDDEN -> {
+                if (connectorDefinitionService == null) {
+                    // Without the walk there is no way to tell absence from a hidden row, and
+                    // the arm below would answer "does not exist" — a claim no read made. A
+                    // review found the short-circuit fabricating absence for an unwired node.
+                    body.put("message", "the connector service is not wired on"
+                            + " this node, so whether connector " + id + " exists cannot be"
+                            + " established; retry shortly against a node that runs it");
+                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                            .body(body);
+                }
                 boolean rowIsThere;
                 try {
-                    rowIsThere = connectorDefinitionService != null
-                            && connectorDefinitionService.existsIndexFree(id);
+                    rowIsThere = connectorDefinitionService.existsIndexFree(id);
                 } catch (RuntimeException couldNotAsk) {
                     body.put("message", "whether connector " + id + " exists could not be"
                             + " established; retry shortly: " + couldNotAsk.getMessage());

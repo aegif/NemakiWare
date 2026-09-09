@@ -310,6 +310,10 @@ class IngestSchedulerControllerAnswerTest {
         profile.setProfileId("p1");
         profile.setRepositoryId("bedroom");
         when(schedulerService.getScheduledProfiles()).thenReturn(java.util.List.of(profile));
+        // Both endpoints read the walk that carries the unreadable rows now.
+        when(schedulerService.scheduledProfilesWithUnreadable()).thenReturn(
+                new ImportProfileDefinitionService.OwnedProfiles(
+                        java.util.List.of(profile), java.util.List.of()));
         when(schedulerService.resolveConnectorFor(profile)).thenReturn(
                 new IngestSchedulerService.ConnectorForProfile(
                         null, IngestSchedulerService.Unresolved.NOT_USABLE));
@@ -393,6 +397,10 @@ class IngestSchedulerControllerAnswerTest {
     void theTriggerEndpointSplitsByReason() {
         ImportProfileDefinition profile = scheduledProfile();
         when(schedulerService.getScheduledProfiles()).thenReturn(java.util.List.of(profile));
+        // Both endpoints read the walk that carries the unreadable rows now.
+        when(schedulerService.scheduledProfilesWithUnreadable()).thenReturn(
+                new ImportProfileDefinitionService.OwnedProfiles(
+                        java.util.List.of(profile), java.util.List.of()));
 
         when(schedulerService.resolveConnectorFor(profile)).thenReturn(
                 new IngestSchedulerService.ConnectorForProfile(
@@ -432,6 +440,10 @@ class IngestSchedulerControllerAnswerTest {
     void theDashboardSaysWhyNotReady() {
         ImportProfileDefinition profile = scheduledProfile();
         when(schedulerService.getScheduledProfiles()).thenReturn(java.util.List.of(profile));
+        // Both endpoints read the walk that carries the unreadable rows now.
+        when(schedulerService.scheduledProfilesWithUnreadable()).thenReturn(
+                new ImportProfileDefinitionService.OwnedProfiles(
+                        java.util.List.of(profile), java.util.List.of()));
         when(schedulerService.getIdleProfiles()).thenReturn(java.util.List.of());
         when(schedulerService.resolveConnectorFor(profile)).thenReturn(
                 new IngestSchedulerService.ConnectorForProfile(
@@ -448,5 +460,120 @@ class IngestSchedulerControllerAnswerTest {
         assertEquals("NOT_READ", entries.get(0).get("notReadyReason"),
                 "'ready: false' alone reads as 'the connector is missing or disabled'");
         assertEquals(Boolean.FALSE, entries.get(0).get("notReadyIsAnAnswer"));
+    }
+
+    @Test
+    @DisplayName("a profile that is NOT on a schedule keeps the reason its named default gave")
+    void aNonSchedulerProfileKeepsTheReason() {
+        // Both reasons were returned only behind isSchedulerEnabled(); every other profile
+        // fell through to NO_CANDIDATE, which answered() calls a fact. The folder verbs serve
+        // exactly the profiles that are not on a schedule, so the round before reached none
+        // of them. Two reviewers found it independently.
+        IngestSchedulerService service = new IngestSchedulerService();
+        ConnectorDefinitionService connectors = mock(ConnectorDefinitionService.class);
+        service.setConnectorService(connectors);
+        ImportProfileDefinition manual = scheduledProfile();
+        manual.setSchedulerEnabled(false);
+        org.mockito.Mockito.doReturn(null).when(connectors).get("c1");
+
+        IngestSchedulerService.ConnectorForProfile resolution =
+                service.resolveConnectorFor(manual);
+
+        assertEquals(IngestSchedulerService.Unresolved.ABSENT_OR_HIDDEN, resolution.why(),
+                "a manual profile's unreadable connector was reported as 'no candidate'");
+        assertFalse(resolution.answered(),
+                "a row that was never read was reported as a fact about the connector");
+    }
+
+    @Test
+    @DisplayName("an unwired walk service refuses instead of answering 'does not exist'")
+    void anUnwiredWalkServiceDoesNotFabricateAbsence() {
+        ImportProfileDefinition profile = scheduledProfile();
+        when(schedulerService.getScheduledProfiles()).thenReturn(java.util.List.of(profile));
+        when(schedulerService.scheduledProfilesWithUnreadable()).thenReturn(
+                new ImportProfileDefinitionService.OwnedProfiles(
+                        java.util.List.of(profile), java.util.List.of()));
+        when(schedulerService.resolveConnectorFor(profile)).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(
+                        null, IngestSchedulerService.Unresolved.ABSENT_OR_HIDDEN));
+        // connectorDefinitionService deliberately left unwired.
+
+        ResponseEntity<Map<String, Object>> res = controller.triggerIngest("p1");
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
+                "a node with nothing to ask answered 'connector does not exist'");
+        // On the MESSAGE: without the guard the next line dereferences the null service, the
+        // NullPointerException lands on the catch below it, and the caller still gets a 503 —
+        // with a reason that names a failed walk instead of the wiring. The control measured
+        // that and did not fire until this assertion was added. Second time this exact shape
+        // has been caught, after the connector-service arm in ExternalIngestController.
+        assertNotNull(res.getBody());
+        assertTrue(String.valueOf(res.getBody().get("message")).contains("not wired on"),
+                "an unwired node was reported as a failed walk: " + res.getBody());
+    }
+
+    @Test
+    @DisplayName("a scheduled row the walk could not read is 503, not 'not found or not "
+            + "scheduler-enabled'")
+    void anUnreadableScheduledRowIsNotReportedAsAbsent() {
+        // The listing behind this endpoint dropped the rows it could not read, because it was
+        // written for the poll, which has no caller to answer. The endpoint then made two
+        // statements about such a row, neither established.
+        jp.aegif.nemaki.rest.ingest.ImportProfileDefinitionService.UninterpretableRow row =
+                new jp.aegif.nemaki.rest.ingest.ImportProfileDefinitionService
+                        .UninterpretableRow("doc-1", "p1", null, java.util.List.of(),
+                        java.util.List.of(), false, "the row could not be read");
+        when(schedulerService.scheduledProfilesWithUnreadable()).thenReturn(
+                new ImportProfileDefinitionService.OwnedProfiles(
+                        java.util.List.of(), java.util.List.of(row)));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE,
+                controller.triggerIngest("p1").getStatusCode(),
+                "a row that could not be read was answered as absent or unscheduled");
+
+        Map<String, Object> status = controller.getStatus().getBody();
+        assertNotNull(status);
+        assertNotNull(status.get("profilesUnreadable"),
+                "the dashboard's count was short with nothing saying so: " + status);
+    }
+
+    @Test
+    @DisplayName("a delegated denial carries the reason the audit recorded, not a fixed one")
+    void aDelegatedDenialCarriesItsOwnReason() {
+        // authorizeDelegatedFetch answered CREATOR_CMIS_ALL_LOST for all seven of the
+        // preparation's denials — so an unwired node, and a creator lookup that FAILED (the
+        // reason CREATOR_LOOKUP_FAILED exists to prevent exactly this substitution), were
+        // both reported to an administrator as a revoked cmis:all. The IDLE endpoint's 403
+        // and the webhook receiver's WARN both state it.
+        IngestSchedulerService service = new IngestSchedulerService();
+        ImportProfileDefinition delegated = scheduledProfile();
+        delegated.setDelegated(true);
+        delegated.setCreatedByUserId("alice");
+        // delegatedCallContextFactory / ingestAuthorizationService deliberately unwired, and
+        // the opt-in property defaults to false, so the FIRST arm answers.
+        IngestSchedulerService.DelegatedAuthorization denial =
+                service.authorizeDelegatedFetch(delegated, null);
+
+        assertFalse(denial.isAllowed());
+        assertEquals(DenialReason.DELEGATED_SCHEDULING_DISABLED, denial.getDenialReason(),
+                "the denial reported a revoked cmis:all for a profile the operator never "
+                        + "opted in for");
+    }
+
+    @Test
+    @DisplayName("the endpoints' listing refuses when unwired, as the poll's does")
+    void theEndpointListingRefusesWhenUnwired() {
+        // Two methods carry this guard: the poll's list-only walk and the endpoints' walk
+        // that also carries the unreadable rows. A control on one of them left the other
+        // unmeasured — the lock drove the poll's method while the control sabotaged the
+        // endpoints'. The runner said DID NOT FIRE, which is how the pair was found.
+        IngestSchedulerService real = new IngestSchedulerService();
+
+        ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException refused = assertThrows(
+                ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+                real::scheduledProfilesWithUnreadable,
+                "an unwired node answered 'no profile is scheduled' to the endpoints");
+        assertTrue(refused.getMessage().contains("not wired on this node"),
+                "the refusal does not say what is wrong: " + refused.getMessage());
     }
 }

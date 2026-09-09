@@ -39,7 +39,9 @@ public class IngestSchedulerController {
     public ResponseEntity<Map<String, Object>> getStatus() {
         if (!isAdmin()) return forbidden();
 
-        List<ImportProfileDefinition> scheduled = schedulerService.getScheduledProfiles();
+        ImportProfileDefinitionService.OwnedProfiles walked =
+                schedulerService.scheduledProfilesWithUnreadable();
+        List<ImportProfileDefinition> scheduled = walked.profiles();
         List<Map<String, Object>> entries = scheduled.stream().map(profile -> {
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("profileId", profile.getProfileId());
@@ -64,6 +66,13 @@ public class IngestSchedulerController {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("scheduledProfiles", entries);
         response.put("count", entries.size());
+        if (!walked.uninterpretable().isEmpty()) {
+            // The count is of what this walk COULD read. Saying so costs a field; leaving it
+            // out made a short list look like the whole schedule.
+            response.put("profilesUnreadable", walked.uninterpretable().stream()
+                    .map(row -> row.profileId() == null ? "(no profileId)" : row.profileId())
+                    .toList());
+        }
         // The scheduled list IS established by this point. Letting the idle listing's refusal
         // take the whole answer down discards it — over-throwing, which this batch counts as
         // a defect of the same weight. The part that could not be answered says so in its own
@@ -111,10 +120,24 @@ public class IngestSchedulerController {
         if (!isAdmin()) return forbidden();
 
         Map<String, Object> response = new LinkedHashMap<>();
-        ImportProfileDefinition profile = schedulerService.getScheduledProfiles().stream()
+        ImportProfileDefinitionService.OwnedProfiles walked =
+                schedulerService.scheduledProfilesWithUnreadable();
+        ImportProfileDefinition profile = walked.profiles().stream()
                 .filter(p -> profileId.equals(p.getProfileId()))
                 .findFirst().orElse(null);
         if (profile == null) {
+            // The walk reports the rows it could not read. Answering "not found or not
+            // scheduler-enabled" for one of THOSE is two statements, neither established —
+            // and the listing behind this endpoint had been dropping them since it was
+            // written for the poll, which has no caller to answer. A review found it.
+            if (walked.uninterpretable().stream()
+                    .anyMatch(row -> profileId.equals(row.profileId()))) {
+                response.put("status", "error");
+                response.put("message", "import profile " + profileId + " has a row this node"
+                        + " could not read, so whether it is scheduled cannot be established;"
+                        + " retry shortly");
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
+            }
             response.put("status", "error");
             response.put("message", "Profile not found or not scheduler-enabled: " + profileId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
@@ -256,10 +279,19 @@ public class IngestSchedulerController {
             }
             case ABSENT_OR_HIDDEN -> {
                 String id = profile.getDefaultConnectorId();
+                if (connectorDefinitionService == null) {
+                    // Without the walk there is no way to tell absence from a hidden row, and
+                    // the arm below would answer "does not exist" — a claim no read made. A
+                    // review found the short-circuit fabricating absence for an unwired node.
+                    response.put("message", "the connector service is not wired on"
+                            + " this node, so whether connector " + id + " exists cannot be"
+                            + " established; retry shortly against a node that runs it");
+                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                            .body(response);
+                }
                 boolean rowIsThere;
                 try {
-                    rowIsThere = connectorDefinitionService != null
-                            && connectorDefinitionService.existsIndexFree(id);
+                    rowIsThere = connectorDefinitionService.existsIndexFree(id);
                 } catch (RuntimeException couldNotAsk) {
                     response.put("message", "whether connector " + id + " exists could not be"
                             + " established; retry shortly: " + couldNotAsk.getMessage());
@@ -393,16 +425,19 @@ public class IngestSchedulerController {
      * definition APIs have had this floor since the batch began; a review found the scheduler,
      * ingest, DLQ and webhook controllers without it.
      *
-     * <p>Where they come from, both types. The PROFILE refusal comes from the listing behind
-     * {@code GET /status} and {@code POST /trigger/{id}} ({@code listScheduledIndexFree}, and
-     * the unwired arm of {@code getScheduledProfiles}). The CONNECTOR refusal comes from the
-     * same two endpoints, per profile, through {@code resolveConnectorForProfile} — its
-     * {@code get()} rethrows when the deterministic id holds another document. NOT the
-     * checkpoint enumeration, which the first version of this note named: that path reads
-     * through the profile {@code get()}, and every arm of that read answers null rather than
-     * throwing. A review found the first error; the next one found that the correction had
-     * described only the profile half — and that the ledger recorded the correction as done
-     * when the file had not been touched.
+     * <p>Where they come from, as of this revision. The PROFILE refusal comes from the
+     * listing behind {@code GET /status} and {@code POST /trigger/{id}}
+     * ({@code listScheduledIndexFree}), from the unwired arm of {@code getScheduledProfiles},
+     * and from {@code getIdleProfiles} on {@code GET /idle/status}. The CONNECTOR refusal no
+     * longer arrives through the per-profile resolution — {@code resolveConnectorFor} catches
+     * it and answers {@code NOT_READ} — so what remains is the archetype fallback's
+     * {@code listByArchetype}. NOT the checkpoint enumeration, which the first version of
+     * this note named: that path reads through the profile {@code get()}, and every arm of
+     * that read answers null rather than throwing.
+     *
+     * <p>This paragraph has now been wrong three times, twice because the code moved under it
+     * and once because the ledger recorded a correction that was never made. Check every
+     * throw site before editing it.
      */
     @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
             ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})

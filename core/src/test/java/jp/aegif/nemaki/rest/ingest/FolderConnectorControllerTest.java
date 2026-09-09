@@ -532,4 +532,65 @@ class FolderConnectorControllerTest {
         assertEquals(HttpStatus.NOT_FOUND, r.getStatusCode());
         verifyNoInteractions(integrationSettingsService);
     }
+
+    @Test
+    void run_connectorCouldNotBeRead_is503NotBadRequest() {
+        // "No connector resolved for profile" (400) was the answer for all five reasons,
+        // three of which say nothing about the connector. A review found the family across
+        // five callers; these two verbs are the ones this controller owns.
+        adminCtx();
+        folder();
+        when(profileService.get(PROFILE)).thenReturn(profile());
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(
+                        null, IngestSchedulerService.Unresolved.NOT_READ));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE,
+                controller.run(REPO, FOLDER, PROFILE).getStatusCode(),
+                "a connector that could not be read was reported as a bad request");
+    }
+
+    @Test
+    void run_connectorEstablishedAbsent_is404_andHidden_is503() {
+        adminCtx();
+        folder();
+        when(profileService.get(PROFILE)).thenReturn(profile());
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(
+                        null, IngestSchedulerService.Unresolved.ABSENT_OR_HIDDEN));
+
+        when(connectorService.existsIndexFree(any())).thenReturn(true);
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE,
+                controller.run(REPO, FOLDER, PROFILE).getStatusCode(),
+                "a row the index cannot show was reported as absent");
+
+        when(connectorService.existsIndexFree(any())).thenReturn(false);
+        assertEquals(HttpStatus.NOT_FOUND,
+                controller.run(REPO, FOLDER, PROFILE).getStatusCode(),
+                "an absence the walk established was not reported as one");
+    }
+
+    @Test
+    void list_namesTheProfilesWhoseConnectorCouldNotBeResolved() {
+        // Dropping them made an empty list, and the endpoint's own javadoc turns an empty
+        // list into an instruction to the UI ("do not show the run button") — while run() for
+        // the same profile answers 503. One controller said both.
+        adminCtx();
+        folder();
+        when(profileService.listByRepository(REPO))
+                .thenReturn(java.util.List.of(profile()));
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(
+                        null, IngestSchedulerService.Unresolved.NOT_READ));
+
+        Map<String, Object> body = controller.list(REPO, FOLDER).getBody();
+
+        assertNotNull(body);
+        assertTrue(((java.util.List<?>) body.get("connectors")).isEmpty());
+        assertNotNull(body.get("connectorsUnresolved"),
+                "a profile whose connector could not be read vanished from the folder: " + body);
+        assertTrue(body.get("connectorsUnresolved").toString().contains(PROFILE));
+    }
 }

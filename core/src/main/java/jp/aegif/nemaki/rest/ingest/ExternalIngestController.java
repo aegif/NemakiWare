@@ -291,17 +291,18 @@ public class ExternalIngestController {
     }
 
     /**
-     * The named connector's archetype. Null means ONE thing: the caller named no connector.
-     * Everything else that could once produce a null here now refuses — a read that failed, a
-     * row the index cannot show, a row that carries no archetype, and this service being
-     * unwired. Each was found by a review AFTER the previous one was closed, three rounds
-     * running, because the dispatch above reads null as "no connector context" and picks the
-     * flow from the file name. The one exception is a connector the index-free walk
-     * ESTABLISHES is absent: that answers null and falls through, as it always has.
+     * The named connector's archetype. There are TWO {@code return null} statements below,
+     * and they are the whole of it: the caller named no connector, and a connector the
+     * index-free walk ESTABLISHES is absent. Everything else that could once produce a null
+     * here now refuses — a read that failed, a row the index cannot show, a row that carries
+     * no archetype, and this service being unwired. Each was found by a review AFTER the
+     * previous one was closed, three rounds running, because the dispatch above reads null as
+     * "no connector context" and picks the flow from the file name.
      *
-     * <p>An earlier version of this sentence said "null only when the caller named no
-     * connector, or when the connector is established not to exist" while the unwired arm was
-     * still open. Do not restate this in universal terms without checking every return.
+     * <p>Two earlier versions of this paragraph opened in universal terms ("null ONLY when…",
+     * then "Null means ONE thing…") while a contradicting return was open or, the second
+     * time, while the exception was named six lines below. Both were found by review. Count
+     * the returns before rewriting this.
      *
      * <p>It used to answer null for a failed lookup too, and null is what the dispatch above
      * reads as "no connector context" — so a transient read failure sent the request into the
