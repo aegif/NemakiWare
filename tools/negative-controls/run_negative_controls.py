@@ -32,20 +32,21 @@ Usage:
     python3 tools/negative-controls/run_negative_controls.py            # all
     python3 tools/negative-controls/run_negative_controls.py FE GG      # subset
 Exit code 0 from a measuring run = every control IT RAN fired, each on its own
-assertion; no lock failed under a control without being declared; every failure line was
-readable; and the tree was restored to green. A subset run says so in its own summary, and
+assertion; no lock failed under a control without being declared; every failing testcase was
+attributable; and the tree was restored to green. A subset run says so in its own summary, and
 its 0 covers only the controls it names. `--self-test` and `--compile-check` measure no
 control at all and have their own 0.
 
 A non-zero exit is NOT one thing. It can mean a control did not fire, fired for the wrong
-reason, removes more protections than its record says, or produced a failure line this
-runner could not read; it can equally mean NOTHING WAS MEASURED — the pre-flight refused
+reason, removes more protections than its record says, or produced a failing testcase this
+runner could not attribute; it can equally mean NOTHING WAS MEASURED — the pre-flight refused
 (self-test, a stale expect_fail, a drifted anchor, an unknown id), a compile-check found a
 sabotage that no longer builds, a Maven run produced no reports, a sabotage no longer
 applies, the tree was edited under the run so a restore was refused, or the restored tree
 did not come back green. Read the OUTPUT, not the code: the last line names WHICH
 KIND of finding ended the run (a control that did not fire — the summary above says which
-and why — an incomplete expect_fail, or an unreadable failure line), and everything else
+and why — an incomplete expect_fail, or a failing testcase that could not be attributed),
+and everything else
 refuses where it happens, with its own message. Do not read a non-zero exit as "a protection is missing" without looking.
 """
 
@@ -5495,7 +5496,7 @@ def _delimiter_delta(span: str) -> tuple:
 # Printed at the end of a run; see the call site for why the run reports this rather than a
 # reviewer deriving it.
 UNDECLARED: list = []
-# [control id, [lines]] for failure lines whose method this runner could not read. A hole in
+# [control id, [names]] for failing testcases this runner could not attribute. A hole in
 # the reader, not in the protections — but it makes the undeclared report incomplete without
 # saying so, which is the shape of defect that took four rounds to find last time.
 PARSE_GAPS: list = []
@@ -5516,12 +5517,24 @@ def failing_methods_in_reports(xml_texts: list) -> tuple:
     than narrowed.
 
     A <testcase> counts as failed when it carries a <failure> or an <error>. Its name is the
-    method, with the argument list and any parameterised index dropped ("someLock(Path)[1]").
-    A CONTAINER-level entry (surefire writes name="" or a class name for a lifecycle failure)
-    names no method: it is returned in the second list, not silently dropped, because a run
-    whose failures this reader cannot attribute must say so.
+    method with the argument list dropped ("someLock(Path)"); a parameterised invocation's
+    index sits after that list, so it goes with it.
+
+    A CONTAINER-level entry — surefire writes name="" when a lifecycle method fails, because
+    its adapter passes a null method for a ClassSource — names no method: it is returned in
+    the second list, not silently dropped, because a run whose failures this reader cannot
+    attribute must say so. A name that IS a simple class name WOULD be read as a method here;
+    a review disassembled the adapter and established that surefire does not write that shape,
+    so there is nothing to measure a guard against. This paragraph is the record of that, not
+    a claim that the code checks it.
+
+    The third return is each failing testcase's failure TEXT, keyed by method name. It is what
+    the "did it fail on its own assertion" judgement reads. Taking that text out of the .txt
+    instead meant finding a stanza in prose, and a review measured both misreadings that
+    allows: a real firing scored as harness breakage, and harness breakage scored as a firing.
+    An element's own text cannot run into the next test's.
     """
-    failed, unreadable = set(), []
+    failed, unreadable, texts = set(), [], {}
     for text in xml_texts:
         try:
             root = ElementTree.fromstring(text)
@@ -5529,15 +5542,33 @@ def failing_methods_in_reports(xml_texts: list) -> tuple:
             unreadable.append(f"(a report could not be parsed: {broken})")
             continue
         for case in root.iter("testcase"):
-            if case.find("failure") is None and case.find("error") is None:
+            problems = [child for child in case
+                        if child.tag in ("failure", "error")]
+            if not problems:
                 continue
             raw = (case.get("name") or "").strip()
-            name = raw.split("(", 1)[0].split("[", 1)[0].strip()
-            if re.fullmatch(r"[A-Za-z_$][\w$]*", name):
-                failed.add(name)
-            else:
+            name = raw.split("(", 1)[0].strip()
+            if not re.fullmatch(r"[A-Za-z_$][\w$]*", name):
                 unreadable.append(raw or "(a failing testcase with no name)")
-    return failed, unreadable
+                continue
+            failed.add(name)
+            body = []
+            for child in problems:
+                body.append(child.get("type") or "")
+                body.append(child.get("message") or "")
+                body.append(child.text or "")
+            texts[name] = "\n".join(part for part in body if part)
+    return failed, unreadable, texts
+
+
+def missing_locks(expect_fail: list, failed_methods: set) -> list:
+    """The declared locks that did NOT fail — the "WRONG TEST FIRED" input.
+
+    Exact membership, not a substring of the report text. The substring form reads a longer
+    method name as though a shorter declared one had failed; this tree has no such pair inside
+    one class today (a review checked), and the runner does not have to depend on that.
+    """
+    return [m for m in expect_fail if m not in failed_methods]
 
 
 def exit_decision_is_wired() -> bool:
@@ -5569,7 +5600,7 @@ def run_exit_message(results: list, undeclared: list, gaps: list):
         return ("controls whose expect_fail is incomplete (the locks above failed under them "
                 "on their own assertions and are not declared)")
     if gaps:
-        return ("failure lines this runner could not read; the undeclared-lock report is not "
+        return ("failing testcases this runner could not attribute; the undeclared-lock report is not "
                 "complete for the controls listed above")
     return None
 
@@ -5595,35 +5626,28 @@ def run_test(test_class: str) -> tuple:
     proc = subprocess.run(
         ["mvn", "-o", "-q", "-pl", "core", "test", f"-Dtest={test_class}"],
         cwd=REPO, capture_output=True, text=True, timeout=900)
-    report_text = []
-    for report in REPORTS.glob("*.txt"):
-        # -output.txt is captured STDOUT, not a report: a test that PRINTS "<<< FAILURE!"
-        # would read as a failure line.
-        if report.name.endswith("-output.txt"):
-            continue
-        report_text.append(report.read_text(errors="replace"))
-    failed_methods, unreadable = failing_methods_in_reports(
+    failed_methods, unreadable, failure_texts = failing_methods_in_reports(
         [x.read_text(errors="replace") for x in REPORTS.glob("TEST-*.xml")])
     # Two ways a run measures nothing, both hit by hand before this runner existed:
     # the literal marker, and — sturdier — a nonzero exit with NO reports at all
     # (a broken build writes none; a red test writes them and also exits nonzero).
     output = proc.stdout + proc.stderr
-    if "COMPILATION ERROR" in output or (proc.returncode != 0 and not report_text):
+    reports_exist = any(REPORTS.glob("TEST-*.xml"))
+    if "COMPILATION ERROR" in output or (proc.returncode != 0 and not reports_exist):
         raise SystemExit(
             f"nothing was measured (exit {proc.returncode}, no reports): either the sabotage "
             f"broke the build — the failure mode two hand-run controls (FF, GC) hit — or the "
             f"test class no longer exists under that name:\n" + output[-2000:])
     if proc.returncode != 0 and not failed_methods and not unreadable:
-        # Reports exist but none carries a failure line, and Maven still exited nonzero: a
+        # Reports exist but none carries a failure, and Maven still exited nonzero: a
         # surefire fork crash or a mid-run death. This environment has produced exactly that
         # (four dumpstream files on 2026-08-30). It is neither green nor a fired lock — it is
         # an unmeasured run, and calling it either would be the substitution this whole tool
         # exists to end.
         raise SystemExit(
-            f"maven exited {proc.returncode} with reports but no failure lines — the run "
+            f"maven exited {proc.returncode} with reports but no failures — the run "
             f"died without measuring anything:\n" + output[-2000:])
-    return (not failed_methods and not unreadable, failed_methods, unreadable,
-            "\n".join(report_text))
+    return (not failed_methods and not unreadable, failed_methods, unreadable, failure_texts)
 
 
 def _harness_broke(stanza: str) -> bool:
@@ -5644,74 +5668,42 @@ def _harness_broke(stanza: str) -> bool:
     return False
 
 
-def failed_as_assertion(report_text: str, method: str) -> bool:
-    """Whether METHOD failed on the lock's own assertion, not on an unrelated error.
+def failure_is_assertion(failure_text: str) -> bool:
+    """Whether THIS testcase's failure is the lock's own assertion, not an unrelated error.
 
-    A control that "fires" because the expected method died of an NPE or a broken
-    fixture is not the lock firing — it is the sabotage breaking the harness, which
-    proves nothing about the protection. The lock's refusals are all JUnit
-    assertions, so the stanza after the method's failure line must name one.
+    A control that "fires" because the expected method died of an NPE or a broken fixture is
+    not the lock firing — it is the sabotage breaking the harness, which proves nothing about
+    the protection. The lock's refusals are all JUnit assertions, so the failure has to name
+    one.
+
+    The text is ONE testcase's <failure>/<error> element, so there is no stanza to find and no
+    window to size. The previous version searched the .txt for a line naming the method and
+    read forward to the next failure marker; a review measured both ways that misreads when a
+    failure MESSAGE contains a header-shaped line — a real firing scored as harness breakage,
+    and harness breakage scored as a firing.
     """
-    lines = report_text.splitlines()
-    for i, line in enumerate(lines):
-        if method in line and ("<<< FAILURE!" in line or "<<< ERROR!" in line):
-            # 6 lines was too narrow: surefire prints the assertion, then the stack, then
-            # "Caused by:" — so a HarnessBroken wrapped inside an assertion fell outside the
-            # window and the control counted as fired.
-            #
-            # A fixed 40 was too WIDE, which a second review caught: surefire does not pad a
-            # short stanza, so the window ran into the NEXT test's failure and a real firing
-            # followed by another test's HarnessBroken was scored as harness breakage. The
-            # stanza ends where the next one begins.
-            stanza_lines = []
-            for line in lines[i:]:
-                if stanza_lines and ("<<< FAILURE!" in line or "<<< ERROR!" in line):
-                    break
-                stanza_lines.append(line)
-            stanza = "\n".join(stanza_lines)
-            # HARNESS BREAKAGE FIRST, and it wins. JavaSource.methodBody and the reflection
-            # helpers that report a renamed method used to throw AssertionError, so the one
-            # case this function exists to exclude walked straight through the check below:
-            # rename the method a control sabotages and the control reported FIRED while
-            # measuring nothing. They now throw HarnessBroken, which is deliberately not an
-            # AssertionError, and this is where it is rejected.
-            if _harness_broke(stanza):
-                return False
-            # Mockito's verify() failures extend AssertionError but print their own class
-            # names; a verify(never()) lock firing IS the assertion firing. And surefire's
-            # .txt often starts the stanza with the MESSAGE, not the class name — "Wanted
-            # but not invoked:" with spaces — which is how two real firings (HT, HV) were
-            # misread as harness breakage until the message forms were added here.
-            #
-            # The count and ordering verifications were missing until a review pointed at
-            # HG and HT, which use atLeast(): a lock that fires by "wanted 2 times but was 1"
-            # printed TooFewActualInvocations, matched nothing here, and was read as harness
-            # breakage — a real firing scored as "protects nothing".
-            if ("AssertionFailedError" in stanza or "AssertionError" in stanza
-                    or "NeverWantedButInvoked" in stanza or "WantedButNotInvoked" in stanza
-                    or "MockitoAssertionError" in stanza
-                    or "ArgumentsAreDifferent" in stanza
-                    or "TooFewActualInvocations" in stanza
-                    or "TooManyActualInvocations" in stanza
-                    or "NoInteractionsWanted" in stanza
-                    or "VerificationInOrderFailure" in stanza
-                    or "Wanted but not invoked" in stanza
-                    or "Never wanted here" in stanza
-                    or "Argument(s) are different" in stanza
-                    or "No interactions wanted here" in stanza
-                    or "Verification in order failure" in stanza
-                    or "Wanted at least" in stanza
-                    or "Wanted 1 time" in stanza
-                    or "Wanted 2 times" in stanza
-                    or "Wanted 3 times" in stanza):
-                return True
-    return False
+    if _harness_broke(failure_text):
+        # HARNESS BREAKAGE FIRST, and it wins. JavaSource.methodBody and the reflection
+        # helpers that report a renamed method used to throw AssertionError, so the one case
+        # this function exists to exclude walked straight through the check below: rename the
+        # method a control sabotages and the control reported FIRED while measuring nothing.
+        # They now throw HarnessBroken, which is deliberately not an AssertionError.
+        return False
+    # Mockito's verify() failures extend AssertionError but print their own class names; a
+    # verify(never()) lock firing IS the assertion firing. The message forms are here because
+    # two real firings (HT, HV) were misread as harness breakage without them, and the count
+    # and ordering verifications because a lock firing by "wanted 2 times but was 1" printed
+    # TooFewActualInvocations and was read the same way.
+    return any(marker in failure_text for marker in (
+        "AssertionFailedError", "AssertionError",
+        "NeverWantedButInvoked", "WantedButNotInvoked", "MockitoAssertionError",
+        "ArgumentsAreDifferent", "TooFewActualInvocations", "TooManyActualInvocations",
+        "NoInteractionsWanted", "VerificationInOrderFailure",
+        "Wanted but not invoked", "Never wanted here", "Argument(s) are different",
+        "No interactions wanted here", "Verification in order failure",
+        "Wanted at least", "Wanted 1 time", "Wanted 2 times", "Wanted 3 times"))
 
 
-# The judgement functions above decide what every control REPORTS, so they need controls of
-# their own. Each case below is a pair: an input the function must accept and an input it must
-# reject. A one-sided check ("it accepts a real firing") is what let three of these defects sit
-# in the runner while 149 controls reported green.
 SELF_TEST_CASES = [
     # (name, callable -> actual, expected)
     # The reader had no case at all when it was added, and then four rounds of holes while it
@@ -5721,40 +5713,44 @@ SELF_TEST_CASES = [
      lambda: failing_methods_in_reports([
          '<testsuite><testcase name="someLock" classname="jp.aegif.SomeTest">'
          '<failure>boom</failure></testcase></testsuite>']),
-     ({"someLock"}, [])),
+     ({"someLock"}, [], {"someLock": "boom"})),
     ("an errored testcase counts too",
      lambda: failing_methods_in_reports([
          '<testsuite><testcase name="someLock" classname="jp.aegif.SomeTest">'
          '<error>boom</error></testcase></testsuite>']),
-     ({"someLock"}, [])),
+     ({"someLock"}, [], {"someLock": "boom"})),
     ("a PASSING testcase is not a failure",
      lambda: failing_methods_in_reports([
          '<testsuite><testcase name="someLock" classname="jp.aegif.SomeTest"/></testsuite>']),
-     (set(), [])),
+     (set(), [], {})),
     ("a method that takes arguments (this tree's real shape)",
      lambda: failing_methods_in_reports([
          '<testsuite><testcase name="aRefusedDocumentLeavesNoFile(Path)"'
          ' classname="jp.aegif.nemaki.rest.importexport.ExportsRefuseMissingBytesTest">'
          '<failure>boom</failure></testcase></testsuite>']),
-     ({"aRefusedDocumentLeavesNoFile"}, [])),
+     ({"aRefusedDocumentLeavesNoFile"}, [], {"aRefusedDocumentLeavesNoFile": "boom"})),
     ("a parameterised invocation (this tree's real shape)",
      lambda: failing_methods_in_reports([
          '<testsuite><testcase name="testLinkLocalAllowedInSetupOnAllowedPort(String)[1]"'
          ' classname="jp.aegif.nemaki.api.setup.filter.UrlValidatorTest$PrivateAddressMatrix">'
          '<failure>boom</failure></testcase></testsuite>']),
-     ({"testLinkLocalAllowedInSetupOnAllowedPort"}, [])),
+     ({"testLinkLocalAllowedInSetupOnAllowedPort"}, [],
+      {"testLinkLocalAllowedInSetupOnAllowedPort": "boom"})),
     ("a CONTAINER-level failure names no method, and is REPORTED rather than dropped",
      lambda: failing_methods_in_reports([
          '<testsuite><testcase name="" classname="jp.aegif.SomeTest">'
          '<error>lifecycle</error></testcase></testsuite>']),
-     (set(), ["(a failing testcase with no name)"])),
+     (set(), ["(a failing testcase with no name)"], {})),
     # The whole point of reading the XML: prose cannot be mistaken for a name. Both shapes
     # below were demonstrated as misreadings of the previous, line-based reader.
-    ("a failure MESSAGE that looks like a header names nothing",
+    # A POSITIVE control, and the point of reading the XML: a failure MESSAGE shaped like
+    # another test's header names nothing, and its text stays attached to the testcase it
+    # belongs to. No rule in this reader has to be removed for that — the structure gives it.
+    ("a failure MESSAGE that looks like a header names nothing (positive control)",
      lambda: failing_methods_in_reports([
          '<testsuite><testcase name="someLock" classname="jp.aegif.SomeTest"><failure>'
          'jp.aegif.nemaki.Other.otherLock -- Time elapsed: 0.1 s &lt;&lt;&lt; FAILURE!'
-         '</failure></testcase></testsuite>']),
+         '</failure></testcase></testsuite>'])[:2],
      ({"someLock"}, [])),
     ("a report that cannot be parsed is reported, not counted as green",
      lambda: failing_methods_in_reports(["<testsuite><testcase"])[1] != [],
@@ -5764,6 +5760,17 @@ SELF_TEST_CASES = [
     # Read from this file's own source, the way the Java locks read a patch's source.
     ("the exit decision is wired into main()",
      lambda: exit_decision_is_wired(), True),
+    # A declared lock whose name is a PREFIX of another test's: with a substring search over
+    # the report text (what this used to do), the longer one failing would read as the shorter
+    # one having failed. The pair is real — anUpdateRefusesRetryably and
+    # anUpdateRefusesRetryablyWhenTheDeterministicRowIsHidden both exist in this tree, in two
+    # different classes, which is why nothing has misread yet.
+    ("a declared lock is missing when only a LONGER name failed",
+     lambda: missing_locks(["anUpdateRefusesRetryably"],
+                           {"anUpdateRefusesRetryablyWhenTheDeterministicRowIsHidden"}),
+     ["anUpdateRefusesRetryably"]),
+    ("a declared lock that failed is not missing",
+     lambda: missing_locks(["anUpdateRefusesRetryably"], {"anUpdateRefusesRetryably"}), []),
     ("a clean run may exit 0",
      lambda: run_exit_message([("A", True, "")], [], []), None),
     ("a control that did not fire is the most serious finding",
@@ -5773,62 +5780,39 @@ SELF_TEST_CASES = [
      lambda: run_exit_message([("A", True, "")], [("A", ["x"])], []) is not None, True),
     ("an unreadable line alone still fails the run",
      lambda: run_exit_message([("A", True, "")], [], [("A", ["y"])]) is not None, True),
+    # The assertion judgement reads ONE testcase's failure element now, so these cases are
+    # failure bodies, not report stanzas. What they measure is unchanged: harness breakage
+    # wins over any assertion name, and Mockito's own verification failures count as firings.
     ("a JUnit assertion is a firing",
-     lambda: failed_as_assertion(
-         "someTest -- Time elapsed: 0.1 s <<< FAILURE!\n"
-         "org.opentest4j.AssertionFailedError: expected true", "someTest"), True),
-    # The first version of this case used a stanza naming ONLY HarnessBroken — which the
-    # matcher below rejects anyway, since it names no assertion. Reverting the rejection left
-    # it green: it measured nothing. The shape that has to be refused is the one surefire
-    # actually prints when a lock's helper breaks inside an assertion — BOTH names in the
-    # stanza — because that is what walked through when these helpers threw AssertionError.
-    ("harness breakage wins over an assertion name in the same stanza",
-     lambda: failed_as_assertion(
-         "someTest -- Time elapsed: 0.1 s <<< ERROR!\n"
-         "org.opentest4j.AssertionFailedError: the lock could not read the method\n"
-         "\tCaused by: jp.aegif.nemaki.util.test.HarnessBroken: method not found",
-         "someTest"), False),
+     lambda: failure_is_assertion(
+         "org.opentest4j.AssertionFailedError\nexpected true"), True),
+    ("harness breakage wins over an assertion name in the same failure",
+     lambda: failure_is_assertion(
+         "org.opentest4j.AssertionFailedError\nassertion text\n"
+         "Caused by: jp.aegif.nemaki.util.test.HarnessBroken: the method was renamed"), False),
     ("a lock ABOUT HarnessBroken firing is still a firing",
-     lambda: failed_as_assertion(
-         "someTest -- Time elapsed: 0.1 s <<< FAILURE!\n"
-         "org.opentest4j.AssertionFailedError: Unexpected exception type thrown, "
-         "expected: <jp.aegif.nemaki.util.test.HarnessBroken> "
-         "but was: <java.lang.AssertionError>", "someTest"), True),
-    # A case that asserted "an AssertionError whose MESSAGE mentions HarnessBroken is not a
-    # firing" was removed rather than kept: it contradicts the line above it. Mention is not
-    # raising, and treating it as raising makes a lock whose subject IS HarnessBroken unable
-    # to fire — which the runner demonstrated by scoring MS as harness breakage. The Java
-    # side is what stops the old shape: no test may throw AssertionError for breakage, and
-    # HarnessBreakageIsNotAFiringTest sweeps for it.
+     lambda: failure_is_assertion(
+         "org.opentest4j.AssertionFailedError\nexpected HarnessBroken to be thrown"), True),
     ("an NPE is NOT a firing",
-     lambda: failed_as_assertion(
-         "someTest -- Time elapsed: 0.1 s <<< ERROR!\n"
-         "java.lang.NullPointerException: Cannot invoke", "someTest"), False),
+     lambda: failure_is_assertion("java.lang.NullPointerException\nat jp.aegif"), False),
     ("verify(never()) firing is a firing",
-     lambda: failed_as_assertion(
-         "someTest -- Time elapsed: 0.1 s <<< FAILURE!\n"
-         "org.mockito.exceptions.verification.NeverWantedButInvoked: \nNever wanted here",
-         "someTest"), True),
+     lambda: failure_is_assertion(
+         "org.mockito.exceptions.verification.NeverWantedButInvoked\nNever wanted here"), True),
     ("atLeast() falling short is a firing",
-     lambda: failed_as_assertion(
-         "someTest -- Time elapsed: 0.1 s <<< FAILURE!\n"
-         "org.mockito.exceptions.verification.TooFewActualInvocations: \n"
-         "Wanted at least 2 times but was 1", "someTest"), True),
+     lambda: failure_is_assertion(
+         "org.mockito.exceptions.verification.TooFewActualInvocations\nWanted at least 2"),
+     True),
     ("too many invocations is a firing",
-     lambda: failed_as_assertion(
-         "someTest -- Time elapsed: 0.1 s <<< FAILURE!\n"
-         "org.mockito.exceptions.verification.TooManyActualInvocations: \n"
-         "Wanted 1 time but was 3", "someTest"), True),
+     lambda: failure_is_assertion(
+         "org.mockito.exceptions.verification.TooManyActualInvocations\nWanted 1 time"), True),
     ("verifyNoMoreInteractions firing is a firing",
-     lambda: failed_as_assertion(
-         "someTest -- Time elapsed: 0.1 s <<< FAILURE!\n"
-         "org.mockito.exceptions.verification.NoInteractionsWanted: \n"
-         "No interactions wanted here", "someTest"), True),
+     lambda: failure_is_assertion(
+         "org.mockito.exceptions.verification.NoInteractionsWanted\n"
+         "No interactions wanted here"), True),
     ("inOrder firing is a firing",
-     lambda: failed_as_assertion(
-         "someTest -- Time elapsed: 0.1 s <<< FAILURE!\n"
-         "org.mockito.exceptions.verification.VerificationInOrderFailure: \n"
-         "Verification in order failure", "someTest"), True),
+     lambda: failure_is_assertion(
+         "org.mockito.exceptions.verification.VerificationInOrderFailure\n"
+         "Verification in order failure"), True),
     ("a balanced fragment has a zero delta",
      lambda: _delimiter_delta("if (x > 0) {\n\tthrow new E(\"}\");\n}"), (0, 0)),
     ("a fragment ending mid-block does not",
@@ -5847,36 +5831,21 @@ SELF_TEST_CASES = [
      lambda: _self_test_span_refusal(), "refused"),
     ("a well-formed span is still applied by sabotage_text",
      lambda: _self_test_span_applied(), "if (b) {\n\tSOMETHING;\n}\ntail();\n"),
-    # A HarnessBroken that appears deeper in a real surefire stack than the first few lines.
-    # A LONG stack: the nested cause sits past any fixed window. The first fix used 40
-    # lines and the second 60, and a review pointed out that both are guesses — the stanza
-    # ends where the next one begins, and nowhere else.
-    ("harness breakage past any fixed window still wins",
-     lambda: failed_as_assertion(
-         "someTest -- Time elapsed: 0.1 s <<< ERROR!\n"
+    # A HarnessBroken deeper in a real stack than the first few lines. The .txt version of
+    # this judgement needed a window for that, and two guesses at its size were wrong; an
+    # element's own text has no window to size, so what remains to measure is that the cause
+    # still wins however deep it sits.
+    ("harness breakage past any depth still wins",
+     lambda: failure_is_assertion(
          "org.opentest4j.AssertionFailedError: the lock could not read the method\n"
          + "\tat jp.aegif.nemaki.Frame.method(Frame.java:1)\n" * 80
-         + "Caused by: jp.aegif.nemaki.util.test.HarnessBroken: method not found",
-         "someTest"), False),
-    ("a real firing is not stolen by the NEXT test's harness breakage",
-     lambda: failed_as_assertion(
-         "firstTest -- Time elapsed: 0.1 s <<< FAILURE!\n"
-         "org.opentest4j.AssertionFailedError: the guard did not fire\n"
-         "\tat jp.aegif.nemaki.SomeLock.firstTest(SomeLock.java:3)\n"
-         "secondTest -- Time elapsed: 0.1 s <<< ERROR!\n"
-         "jp.aegif.nemaki.util.test.HarnessBroken: method not found",
-         "firstTest"), True),
-    ("harness breakage deeper in the stanza still wins",
-     lambda: failed_as_assertion(
-         "someTest -- Time elapsed: 0.1 s <<< ERROR!\n"
+         + "Caused by: jp.aegif.nemaki.util.test.HarnessBroken: method not found"), False),
+    ("harness breakage under an assertion still wins",
+     lambda: failure_is_assertion(
          "org.opentest4j.AssertionFailedError: the lock could not read the method\n"
          "\tat org.junit.jupiter.api.Assertions.fail(Assertions.java:1)\n"
          "\tat jp.aegif.nemaki.SomeLock.check(SomeLock.java:2)\n"
-         "\tat jp.aegif.nemaki.SomeLock.aTest(SomeLock.java:3)\n"
-         "\tat java.base/java.lang.reflect.Method.invoke(Method.java:4)\n"
-         "\tat org.junit.platform.Runner.run(Runner.java:5)\n"
-         "Caused by: jp.aegif.nemaki.util.test.HarnessBroken: method not found",
-         "someTest"), False),
+         "Caused by: jp.aegif.nemaki.util.test.HarnessBroken: method not found"), False),
 ]
 
 
@@ -6118,7 +6087,7 @@ def main() -> None:
             sabotaged = sabotage_text(original, control)
             try:
                 path.write_text(sabotaged)
-                green, failed_methods, unreadable, report_text = run_test(control["test"])
+                green, failed_methods, unreadable, failure_texts = run_test(control["test"])
                 if green:
                     # The finally below still restores, and the green-after re-verification after
                     # it still runs — the first version `continue`d past both, leaving the restore
@@ -6128,13 +6097,10 @@ def main() -> None:
                                     "nothing"))
                     print(f"[{control['id']}] DID NOT FIRE")
                 else:
-                    # Exact names now, not a substring of the report text: a lock whose name
-                    # contains another's ("aRowIsReported" inside "aRowIsReportedTwice") read
-                    # as present when only the longer one had failed.
-                    missing = [m for m in control["expect_fail"] if m not in failed_methods]
+                    missing = missing_locks(control["expect_fail"], failed_methods)
                     not_assertions = [m for m in control["expect_fail"]
                                       if m not in missing
-                                      and not failed_as_assertion(report_text, m)]
+                                      and not failure_is_assertion(failure_texts.get(m, ""))]
                     if missing:
                         results.append((control["id"], False,
                                         f"something failed, but not the expected lock(s) "
@@ -6162,12 +6128,12 @@ def main() -> None:
                         gaps = unreadable
                         if gaps:
                             PARSE_GAPS.append((control["id"], gaps))
-                            print(f"[{control['id']}] failure lines this runner could not read"
+                            print(f"[{control['id']}] failing testcases this runner could not attribute"
                                   f" (the undeclared report is incomplete here): {gaps}")
                         undeclared = sorted(
                             name for name in failed_methods
                             if name not in control["expect_fail"]
-                            and failed_as_assertion(report_text, name))
+                            and failure_is_assertion(failure_texts.get(name, "")))
                         if undeclared:
                             UNDECLARED.append((control["id"], undeclared))
                             print(f"[{control['id']}] also failed, undeclared: {undeclared}")
@@ -6221,7 +6187,7 @@ def main() -> None:
         for cid, names in UNDECLARED:
             print(f"  {cid}: {names}")
     if PARSE_GAPS:
-        print("\n== failure lines this runner could not read (the undeclared report above is "
+        print("\n== failing testcases this runner could not attribute (the undeclared report above is "
               "incomplete for these controls) ==")
         for cid, lines in PARSE_GAPS:
             print(f"  {cid}: {lines}")
