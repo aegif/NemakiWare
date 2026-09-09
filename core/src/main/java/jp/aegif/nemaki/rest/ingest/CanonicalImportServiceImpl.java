@@ -2234,6 +2234,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             //  it became a warning, and on the replace path the code then fell through a
             // nd created the replacement anyway (external review).
             throw failClosed;
+        } catch (TargetFolderUnreadableException folderRefused) {
+            // NOT the custom-type fallback. The folder read refused; the relationship TYPE
+            // never failed. Recursing would create the edge with the generic type and report
+            // success, and on a permanent refusal the arm below would record INDETERMINATE
+            // for a createRelationship that provably never ran (the intent is opened after
+            // this point). A review found both. Same shape as the guard above it.
+            throw folderRefused;
         } catch (Exception e) {
             // Fallback to generic cmis:relationship if custom type fails
             if (!"cmis:relationship".equals(relationshipTypeId)) {
@@ -4341,6 +4348,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 throw new TargetFolderUnreadableException("the target folder path '" + folderPath
                         + "' of this profile could not be resolved: the store answered with no"
                         + " object; retry shortly", null);
+            } catch (TargetFolderUnreadableException alreadySaid) {
+                // The two arms above throw from INSIDE this try, and the generic catch below
+                // re-wrapped them: an ANSWERED "this path is a document, fix the profile"
+                // came out as "could not be resolved", and execute() then appended "retry
+                // shortly" to a permanent misconfiguration. The sibling written in the same
+                // batch (getDlqEntry) has this guard; this method did not. Two reviewers
+                // found it in the round that added the arms.
+                throw alreadySaid;
             } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException absent) {
                 // The store ANSWERED: there is no such path. That is the one outcome the
                 // caller's "the profile configured neither field" message may stand for.

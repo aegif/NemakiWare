@@ -6063,6 +6063,11 @@ CONTROLS = [
              '                        + "\' of this profile could not be resolved: " + e.getMessage(), e);\n',
         replace='                if (true) return null;\n',
         test='IngestEvidenceSnapshotTest',
+        # ONE name again. A review traced that both target-folder locks funnelled through
+        # this catch and predicted an undeclared firing — true of the code as it stood. The
+        # rethrow guard added in the same round takes the answered arms out of this catch, so
+        # only the failure arm reddens now. Measured, not reasoned: declaring both made the
+        # runner report WRONG TEST FIRED.
         expect_fail=['anUnresolvableTargetFolderPathIsNotAMissingSetting'],
     ),
     dict(
@@ -6105,6 +6110,29 @@ CONTROLS = [
         replace='        // Stamp the safe fields LAST so a misuse can\'t override them via payload.\n',
         test='ImportProfileOwnershipTransferTest',
         expect_fail=['create_connectorRowCouldNotBeRead_is503NotUnknown_throughTheEndpoint'],
+    ),
+    dict(
+        id="SN2",
+        what="writing over an unreadable DLQ row clears its payload flag again, so the next "
+             "retry imports content-less and deletes the row",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='                earlierPayloadIsStillAttached = storedDocumentHasAttachment(dlqId);\n',
+        replace='',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['writingOverAnUnreadableRowKeepsTheAttachedPayload'],
+    ),
+    dict(
+        id="SO2",
+        what="the target-folder refusals are re-wrapped by the method's own generic catch "
+             "again, so an ANSWERED 'this path is a document' is reported as a retry",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='            } catch (TargetFolderUnreadableException alreadySaid) {\n',
+        replace='            } catch (TargetFolderUnreadableException alreadySaid) {\n'
+                '                if (true) throw new TargetFolderUnreadableException(\n'
+                '                        "the target folder path could not be resolved: "\n'
+                '                                + alreadySaid.getMessage(), alreadySaid);\n',
+        test='IngestEvidenceSnapshotTest',
+        expect_fail=['aTargetFolderPathThatIsNotAFolderIsNotAMissingSetting'],
     ),
 ]
 

@@ -1660,5 +1660,13 @@ class IngestEvidenceSnapshotTest {
                         "a path that resolves to a document answered 'there is no folder'");
         assertTrue(wrapped.getCause().getMessage().contains("not a folder"),
                 "the refusal does not say what was found: " + wrapped.getCause().getMessage());
+        // And NOT in the vocabulary of a failed read. Both new arms throw from inside the
+        // method's own try, and its generic catch re-wrapped them as "could not be resolved" —
+        // so an ANSWERED "this path is a document, fix the profile" was delivered as a retry,
+        // and execute() appended "; retry shortly". Asserting only the substring above let
+        // that through; two reviewers found it.
+        assertFalse(wrapped.getCause().getMessage().contains("could not be resolved"),
+                "an answered read was reported in the words of a failed one: "
+                        + wrapped.getCause().getMessage());
     }
 }

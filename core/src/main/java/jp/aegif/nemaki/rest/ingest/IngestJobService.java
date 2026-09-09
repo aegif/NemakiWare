@@ -169,12 +169,21 @@ public class IngestJobService {
             // found the regression in the round that introduced it. Merging with "no previous
             // entry" is the same thing the old swallow did, and the upsert repairs the row.
             IngestDeadLetterRecord existing;
+            boolean earlierPayloadIsStillAttached = false;
             try {
                 existing = getDlqEntry(dlqId);
             } catch (DlqEntryUnreadableException couldNotRead) {
                 logger.warn("the existing DLQ row for {} could not be read ({}); this failure"
                         + " is being written over it", dlqId, couldNotRead.getMessage());
                 existing = null;
+                // null is the ANSWERED-nothing value, and it decides hasContent below — so
+                // writing over an unreadable row set "no payload" on a row whose attachment
+                // the upsert carries forward, and the next retry then imported content-less
+                // and DELETED the row. That is the loss chain this class exists to prevent,
+                // reopened through the flag instead of the loader. Two reviewers found it in
+                // the round that added this catch. The attachment is a property of the stored
+                // document, so it is read from the document rather than assumed absent.
+                earlierPayloadIsStillAttached = storedDocumentHasAttachment(dlqId);
             }
 
             IngestDeadLetterRecord dlq = buildDlqRecord(request, errorMessage, existing,
@@ -198,8 +207,9 @@ public class IngestJobService {
             // by the import that has already run). That must not be read as "this item has no
             // payload" — the earlier attempt's payload is still attached and still the thing a
             // retry needs.
-            boolean keptEarlierPayload = payload == null && existing != null
-                    && existing.isHasContent();
+            boolean keptEarlierPayload = payload == null
+                    && ((existing != null && existing.isHasContent())
+                            || earlierPayloadIsStillAttached);
             dlq.setHasContent(payload != null || keptEarlierPayload);
             dlq.setPayloadDropReason(payload == null && !keptEarlierPayload ? dropReason : null);
             @SuppressWarnings("unchecked")
@@ -356,6 +366,30 @@ public class IngestJobService {
     }
 
     /** Load binary content from a DLQ CouchDB document's attachment. */
+    /**
+     * Whether the STORED document for this dlqId carries an attachment, read raw.
+     *
+     * <p>Used only when the typed read refused: the merge below must not conclude "this item
+     * has no payload" from a row it could not decode, because the upsert carries the
+     * attachment forward and the retry then imports content-less and deletes the row.
+     * Answers false when the question itself cannot be asked, which is the same value as
+     * "no attachment" — that is a known limit of this arm, and the loud one (clearing a
+     * payload that IS there) is the one it removes.
+     */
+    private boolean storedDocumentHasAttachment(String dlqId) {
+        try {
+            CloudantClientWrapper client = getConfClient();
+            List<Document> raw = findRawDocs(client.getClient(), client.getDatabaseName(),
+                    Map.of("type", IngestDeadLetterRecord.DOC_TYPE, "dlqId", dlqId), 1, 0);
+            return !raw.isEmpty() && raw.get(0).getAttachments() != null
+                    && !raw.get(0).getAttachments().isEmpty();
+        } catch (RuntimeException couldNotAsk) {
+            logger.warn("whether the stored DLQ row for {} still carries its payload could not"
+                    + " be established: {}", dlqId, couldNotAsk.getMessage());
+            return false;
+        }
+    }
+
     /** A payload this node could not read — never the same answer as "there is none". */
     public static class DlqContentUnreadableException extends RuntimeException {
         private static final long serialVersionUID = 1L;

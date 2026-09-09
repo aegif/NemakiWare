@@ -283,4 +283,86 @@ class DlqReplayArchetypeGateTest {
                         || refused.getMessage().contains("could not be read"),
                 "the refusal does not say what happened: " + refused.getMessage());
     }
+
+    @Test
+    @DisplayName("writing over an unreadable DLQ row does not clear its payload flag")
+    void writingOverAnUnreadableRowKeepsTheAttachedPayload() throws Exception {
+        // The catch that keeps the WRITE path alive sets `existing = null`, and null is the
+        // answered-nothing value that decides hasContent. So the row was rewritten saying
+        // "no payload" while the upsert carried its attachment forward, and the next retry
+        // then imported content-less and DELETED the row — the loss chain this class exists
+        // to prevent, reopened through the flag. Two reviewers found it in the round that
+        // added the catch.
+        IngestJobService jobs = new IngestJobService();
+
+        com.ibm.cloud.cloudant.v1.Cloudant cloudant =
+                mock(com.ibm.cloud.cloudant.v1.Cloudant.class);
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper wrapper =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+        when(wrapper.getClient()).thenReturn(cloudant);
+        when(wrapper.getDatabaseName()).thenReturn("nemaki_conf");
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool pool =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);
+        when(pool.getClient(org.mockito.ArgumentMatchers.anyString())).thenReturn(wrapper);
+        jobs.setConnectorPool(pool);
+
+        // The stored row: it carries an attachment and a field the record cannot decode, so
+        // the typed read refuses and the raw read finds it.
+        com.ibm.cloud.cloudant.v1.model.Document stored =
+                new com.ibm.cloud.cloudant.v1.model.Document();
+        stored.setId("ingest_dlq:x");
+        stored.setRev("1-a");
+        stored.put("type", "ingest_dead_letter");
+        stored.put("dlqId", "x");
+        // A TYPE the record cannot take, so the typed read genuinely refuses. An unknown
+        // FIELD is not enough: the mapper tolerates those here.
+        stored.put("failureCount", "not-a-number");
+        stored.setAttachments(java.util.Map.of("payload",
+                mock(com.ibm.cloud.cloudant.v1.model.Attachment.class)));
+
+        com.ibm.cloud.cloudant.v1.model.FindResult found =
+                mock(com.ibm.cloud.cloudant.v1.model.FindResult.class);
+        when(found.getDocs()).thenReturn(java.util.List.of(stored));
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> call =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.FindResult> resp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(resp.getResult()).thenReturn(found);
+        when(call.execute()).thenReturn(resp);
+        when(cloudant.postFind(org.mockito.ArgumentMatchers.any())).thenReturn(call);
+
+        com.ibm.cloud.cloudant.v1.model.DocumentResult ok =
+                mock(com.ibm.cloud.cloudant.v1.model.DocumentResult.class);
+        when(ok.isOk()).thenReturn(Boolean.TRUE);
+        when(ok.getId()).thenReturn("ingest_dlq:x");
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.DocumentResult> post =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.DocumentResult> postResp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(postResp.getResult()).thenReturn(ok);
+        when(post.execute()).thenReturn(postResp);
+        when(cloudant.postDocument(org.mockito.ArgumentMatchers.any())).thenReturn(post);
+
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setRepositoryId("bedroom");
+        request.setConnectorId("c1");
+        request.setSourceObjectId("m-1");
+
+        jobs.saveToDlq(request, "boom again", null);
+
+        org.mockito.ArgumentCaptor<com.ibm.cloud.cloudant.v1.model.PostDocumentOptions> written =
+                org.mockito.ArgumentCaptor.forClass(
+                        com.ibm.cloud.cloudant.v1.model.PostDocumentOptions.class);
+        org.mockito.Mockito.verify(cloudant, org.mockito.Mockito.atLeastOnce())
+                .postDocument(written.capture());
+        Object hasContent = written.getAllValues().get(written.getAllValues().size() - 1)
+                .document().get("hasContent");
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.TRUE, hasContent,
+                "the row was rewritten saying it has no payload while its attachment is still"
+                        + " attached; the next retry imports empty and deletes it");
+    }
 }
