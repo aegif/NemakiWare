@@ -54,6 +54,7 @@ import re
 import sys
 import time
 from pathlib import Path
+from xml.etree import ElementTree
 
 REPO = Path(__file__).resolve().parents[2]
 REPORTS = REPO / "core" / "target" / "surefire-reports"
@@ -5504,86 +5505,39 @@ PARSE_GAPS: list = []
 # <<< FAILURE!" and its variants. The 2.x reporter separated the name from the time with
 # spaces instead of " -- "; that shape is matched too, so it can be REFUSED rather than read
 # (this repository pins surefire 3.5.2).
-HEADER_LINE = re.compile(
-    r"^(?P<head>\S.*?)\s+--\s+Time elapsed:\s.*<<<\s+(FAILURE|ERROR)!$")
-LEGACY_HEADER_LINE = re.compile(
-    r"^(?P<head>\S+)\s+Time elapsed:\s.*<<<\s+(FAILURE|ERROR)!$")
+def failing_methods_in_reports(xml_texts: list) -> tuple:
+    """(method names that FAILED, testcase names that could not be read as a method).
 
+    Read from surefire's XML, where the name is an ATTRIBUTE. Four review rounds running found
+    a hole in reading these names out of the .txt prose instead — a class-level line taken for
+    a lock, a message quoting a header taken for one, a message embedding a header taken for a
+    phantom lock — each time in a reader that looked like it worked, and each time closed by
+    one more rule. An attribute cannot be confused with prose, so the family is closed rather
+    than narrowed.
 
-def failed_method_names(failed: str) -> list:
-    """The lock names in surefire's failure lines (see failure_line_kind)."""
-    return [name for kind, name in map(failure_line_kind, failed.splitlines())
-            if kind == "lock"]
-
-
-def failure_line_kind(line: str) -> tuple:
-    """What one collected line is: ("lock", name) / ("not-a-lock", None) / ("unreadable", None).
-
-    THREE outcomes, not two, because two different things are not defects. Surefire writes
-    lines that name no method BY CONSTRUCTION — the per-class summary ("Tests run: ...") and a
-    CLASS-LEVEL failure ("<fully.qualified.Class> -- Time elapsed ... <<< ERROR!", written when
-    a lifecycle method fails) — and the collector also picks up any line that merely CONTAINS
-    the marker, an exception message included. None of those is a hole in this reader. What is
-    a hole is a line shaped like a header whose method cannot be read, and only that is
-    reported. A review found the first version calling a class-level line unreadable while a
-    self-test in the same file called it legitimate.
-
-    Shapes this tree's reporter (surefire 3.5.2) writes, all measured against real reports:
-    "<FQCN>.method", "<FQCN>.method(ArgType)" for a method that takes arguments, and
-    "<FQCN>.method(ArgType)[1]" when parameterised. Names may contain '$', and a nested class
-    arrives as "Outer$Nested.method". The 2.x shape ("method(Class)", no dot before the paren)
-    is NOT read: this repository pins 3.5.2, a reader for a shape that cannot occur here could
-    only be measured with an invented fixture, and refusing loudly is what the rest of this
-    runner does with an input it does not know.
+    A <testcase> counts as failed when it carries a <failure> or an <error>. Its name is the
+    method, with the argument list and any parameterised index dropped ("someLock(Path)[1]").
+    A CONTAINER-level entry (surefire writes name="" or a class name for a lifecycle failure)
+    names no method: it is returned in the second list, not silently dropped, because a run
+    whose failures this reader cannot attribute must say so.
     """
-    stripped = line.strip()
-    # No special case for the per-class summary ("Tests run: ... <<< FAILURE! -- in <class>"):
-    # the anchored match below rejects it, because its marker is not at the end of the line.
-    # A guard for it was carried here for two rounds and was unreachable both times; it is
-    # gone, and the summary case is kept as a POSITIVE control (measured: no ablation of the
-    # rules here turns it red, because the line's structure is what both patterns refuse).
-    header = HEADER_LINE.match(stripped) or LEGACY_HEADER_LINE.match(stripped)
-    if not header:
-        # Not a header: an exception message or a stack frame that happens to carry the
-        # marker — the collector is line-based over the whole report. Matching the WHOLE line
-        # rather than looking for "Time elapsed" anywhere in it is what keeps a message that
-        # quotes a header ("expected 'Time elapsed: 0.2 s <<< FAILURE!'") from being read as
-        # one; a review demonstrated both halves of that (a quoted header read as unreadable,
-        # and an embedded one read as a phantom lock).
-        return ("not-a-lock", None)
-    head = header.group("head").strip()
-    # What surefire puts before the argument list is one dotted token and nothing else. A
-    # message that ENDS like a header ("AssertionFailedError: jp.aegif.Other.otherLock -- Time
-    # elapsed ...") has spaces and punctuation there, and reading it as a header invented a
-    # lock that never ran — a review demonstrated exactly that line.
-    if not re.fullmatch(r"[\w$.]+", head.split("(", 1)[0]):
-        return ("not-a-lock", None)
-    if "(" in head:
-        before_paren = head.split("(", 1)[0]
-        if "." not in before_paren:
-            return ("unreadable", None)
-        parent, name = before_paren.rsplit(".", 2)[-2:]
-    else:
-        parts = head.rsplit(".", 1)
-        if len(parts) != 2:
-            # No dot at all: a CLASS-LEVEL failure for a class in the default package. It
-            # names no method, like every other class-level line.
-            return ("not-a-lock", None)
-        parent, name = parts[0].rsplit(".", 1)[-1], parts[1]
-    if not re.fullmatch(r"[A-Za-z_$][\w$]*", name):
-        return ("unreadable", None)
-    # A method's parent is a class, a class's parent is a package: the capital tells a
-    # CLASS-LEVEL failure line from a method's. A CONVENTION, not a law. Checked against this
-    # tree when the rule went in: core/src/test declares no class whose name starts lower-case.
-    if not re.match(r"[A-Z]", parent):
-        return ("not-a-lock", None)
-    return ("lock", name)
-
-
-def unreadable_failure_lines(failed: str) -> list:
-    """Header-shaped lines whose method this runner could not read — holes in the reader."""
-    return [line.strip() for line in failed.splitlines()
-            if failure_line_kind(line)[0] == "unreadable"]
+    failed, unreadable = set(), []
+    for text in xml_texts:
+        try:
+            root = ElementTree.fromstring(text)
+        except ElementTree.ParseError as broken:
+            unreadable.append(f"(a report could not be parsed: {broken})")
+            continue
+        for case in root.iter("testcase"):
+            if case.find("failure") is None and case.find("error") is None:
+                continue
+            raw = (case.get("name") or "").strip()
+            name = raw.split("(", 1)[0].split("[", 1)[0].strip()
+            if re.fullmatch(r"[A-Za-z_$][\w$]*", name):
+                failed.add(name)
+            else:
+                unreadable.append(raw or "(a failing testcase with no name)")
+    return failed, unreadable
 
 
 def exit_decision_is_wired() -> bool:
@@ -5620,9 +5574,19 @@ def run_exit_message(results: list, undeclared: list, gaps: list):
     return None
 
 
-def run_test(test_class: str) -> tuple[bool, str, str]:
-    """Run one test class; return (all_green, failure_lines, full_report_text)."""
+def run_test(test_class: str) -> tuple:
+    """Run one test class; return (all_green, failed_methods, unreadable_names, report_text).
+
+    The failing METHOD NAMES come from surefire's XML, where they are an attribute; the .txt
+    text comes back too, because the "did it fail on its own assertion" judgement reads the
+    stanza. Four review rounds running found a hole in reading the names out of the .txt
+    prose instead — a class-level line taken for a lock, a message quoting a header taken for
+    one, a message embedding one taken for a phantom lock — each time in a reader that looked
+    like it worked. An attribute cannot be confused with prose, so that family is closed.
+    """
     for old in REPORTS.glob("*.txt"):
+        old.unlink()
+    for old in REPORTS.glob("*.xml"):
         old.unlink()
     # No -DfailIfNoTests=false: with it, a renamed or moved test class became a zero-test
     # green — the sabotage phase would then misread the silence as "protects nothing" and the
@@ -5631,18 +5595,15 @@ def run_test(test_class: str) -> tuple[bool, str, str]:
     proc = subprocess.run(
         ["mvn", "-o", "-q", "-pl", "core", "test", f"-Dtest={test_class}"],
         cwd=REPO, capture_output=True, text=True, timeout=900)
-    failures = []
     report_text = []
     for report in REPORTS.glob("*.txt"):
         # -output.txt is captured STDOUT, not a report: a test that PRINTS "<<< FAILURE!"
         # would read as a failure line.
         if report.name.endswith("-output.txt"):
             continue
-        body = report.read_text(errors="replace")
-        report_text.append(body)
-        for line in body.splitlines():
-            if "<<< FAILURE!" in line or "<<< ERROR!" in line:
-                failures.append(line.strip())
+        report_text.append(report.read_text(errors="replace"))
+    failed_methods, unreadable = failing_methods_in_reports(
+        [x.read_text(errors="replace") for x in REPORTS.glob("TEST-*.xml")])
     # Two ways a run measures nothing, both hit by hand before this runner existed:
     # the literal marker, and — sturdier — a nonzero exit with NO reports at all
     # (a broken build writes none; a red test writes them and also exits nonzero).
@@ -5652,7 +5613,7 @@ def run_test(test_class: str) -> tuple[bool, str, str]:
             f"nothing was measured (exit {proc.returncode}, no reports): either the sabotage "
             f"broke the build — the failure mode two hand-run controls (FF, GC) hit — or the "
             f"test class no longer exists under that name:\n" + output[-2000:])
-    if proc.returncode != 0 and not failures:
+    if proc.returncode != 0 and not failed_methods and not unreadable:
         # Reports exist but none carries a failure line, and Maven still exited nonzero: a
         # surefire fork crash or a mid-run death. This environment has produced exactly that
         # (four dumpstream files on 2026-08-30). It is neither green nor a fired lock — it is
@@ -5661,7 +5622,8 @@ def run_test(test_class: str) -> tuple[bool, str, str]:
         raise SystemExit(
             f"maven exited {proc.returncode} with reports but no failure lines — the run "
             f"died without measuring anything:\n" + output[-2000:])
-    return (len(failures) == 0, "\n".join(failures), "\n".join(report_text))
+    return (not failed_methods and not unreadable, failed_methods, unreadable,
+            "\n".join(report_text))
 
 
 def _harness_broke(stanza: str) -> bool:
@@ -5752,86 +5714,51 @@ def failed_as_assertion(report_text: str, method: str) -> bool:
 # in the runner while 149 controls reported green.
 SELF_TEST_CASES = [
     # (name, callable -> actual, expected)
-    # failed_method_names had no case at all when it was added, and it matched nothing in this
-    # project's surefire output — a judgement function that reads as working while measuring
-    # nothing. These are the shapes the runner actually meets, taken from this tree's reports.
-    ("a surefire 3.x failure line yields the method name",
-     lambda: failed_method_names(
-         "jp.aegif.nemaki.rest.ingest.SomeTest.someLock -- Time elapsed: 0.1 s <<< FAILURE!"),
-     ["someLock"]),
-    ("an ERROR line yields it too",
-     lambda: failed_method_names(
-         "jp.aegif.nemaki.rest.ingest.SomeTest.someLock -- Time elapsed: 0.1 s <<< ERROR!"),
-     ["someLock"]),
-    # THREE outcomes, so these cases name the outcome rather than just the absence of a name:
-    # a line that names no method by construction is not a hole in the reader, and a review
-    # found the first version treating a class-level line as one.
-    # A POSITIVE control, measured as such: neither pattern can match this line's structure
-    # ("Time elapsed" comes BEFORE the " -- in <class>"), so no protection here goes red when
-    # removed. It guards the shape against a looser reader. Two rounds carried a guard for it
-    # that was unreachable both times; this is what replaced the guard.
-    ("the per-class summary line names no method (positive control)",
-     lambda: failure_line_kind(
-         "Tests run: 3, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.2 s <<< FAILURE!"
-         " -- in jp.aegif.nemaki.rest.ingest.SomeTest"),
-     ("not-a-lock", None)),
-    ("a CLASS-LEVEL failure names no method, and is not a hole either",
-     lambda: failure_line_kind(
-         "jp.aegif.nemaki.rest.ingest.SomeTest -- Time elapsed: 0.1 s <<< ERROR!"),
-     ("not-a-lock", None)),
-    ("an exception message carrying the marker is not a header",
-     lambda: failure_line_kind(
-         "org.opentest4j.AssertionFailedError: the report said <<< FAILURE! here"),
-     ("not-a-lock", None)),
-    # Both shapes below were demonstrated by a review against the version that looked for
-    # "Time elapsed" anywhere in the line: one became a fatal "unreadable", the other a
-    # phantom lock. A message is not a header even when it quotes one.
-    ("a message QUOTING a header is not a header",
-     lambda: failure_line_kind(
-         "org.opentest4j.AssertionFailedError: expected the report to say "
-         "'Time elapsed: 0.2 s <<< FAILURE!' but it did not"),
-     ("not-a-lock", None)),
-    ("a message EMBEDDING a header does not name a lock",
-     lambda: failure_line_kind(
-         "org.opentest4j.AssertionFailedError: jp.aegif.nemaki.Other.otherLock"
-         " -- Time elapsed: 0.1 s <<< FAILURE!"),
-     ("not-a-lock", None)),
-    ("a class-level failure in the DEFAULT package names no method either",
-     lambda: failure_line_kind("SomeTest -- Time elapsed: 0.1 s <<< ERROR!"),
-     ("not-a-lock", None)),
-    ("a name containing $ is still a lock",
-     lambda: failed_method_names(
-         "jp.aegif.nemaki.rest.ingest.SomeTest.some$Lock -- Time elapsed: 0.1 s <<< FAILURE!"),
-     ["some$Lock"]),
-    # Both shapes below are copied from this tree's own reports, package and nesting included.
-    ("a method that takes arguments is still a lock (this tree's real shape)",
-     lambda: failed_method_names(
-         "jp.aegif.nemaki.rest.importexport.ExportsRefuseMissingBytesTest"
-         ".aRefusedDocumentLeavesNoFile(Path) -- Time elapsed: 0.1 s <<< FAILURE!"),
-     ["aRefusedDocumentLeavesNoFile"]),
-    ("a parameterised invocation names its method (this tree's real shape)",
-     lambda: failed_method_names(
-         "jp.aegif.nemaki.api.setup.filter.UrlValidatorTest$PrivateAddressMatrix"
-         ".testLinkLocalAllowedInSetupOnAllowedPort(String)[1]"
-         " -- Time elapsed: 0.1 s <<< FAILURE!"),
-     ["testLinkLocalAllowedInSetupOnAllowedPort"]),
-    # A POSITIVE control: no protection here makes it red, and it is not counted among the
-    # ones that do. It guards the shape against a reader that splits on the first dot.
-    ("a nested class's method is still a lock (positive control)",
-     lambda: failed_method_names(
-         "jp.aegif.nemaki.rest.ingest.Outer$Nested.someLock -- Time elapsed: 0.1 s <<< FAILURE!"),
-     ["someLock"]),
-    ("a header whose method cannot be read IS a hole, and is reported",
-     lambda: unreadable_failure_lines(
-         "jp.aegif.SomeTest.2bad -- Time elapsed: 0.1 s <<< FAILURE!\n"
-         "jp.aegif.nemaki.SomeTest.someLock -- Time elapsed: 0.1 s <<< FAILURE!"),
-     ["jp.aegif.SomeTest.2bad -- Time elapsed: 0.1 s <<< FAILURE!"]),
-    ("the 2.x shape this reporter cannot emit is refused, not guessed at",
-     lambda: unreadable_failure_lines(
-         "someLock(jp.aegif.SomeTest)  Time elapsed: 0.1 s <<< FAILURE!"),
-     ["someLock(jp.aegif.SomeTest)  Time elapsed: 0.1 s <<< FAILURE!"]),
-    # The exit decision, which nothing measured until a review said so: deleting the fatal
-    # branch left every case green.
+    # The reader had no case at all when it was added, and then four rounds of holes while it
+    # parsed prose. It reads the XML now; these cases are the shapes this tree's reports
+    # actually contain, taken from core/target/surefire-reports.
+    ("a failing testcase names its method",
+     lambda: failing_methods_in_reports([
+         '<testsuite><testcase name="someLock" classname="jp.aegif.SomeTest">'
+         '<failure>boom</failure></testcase></testsuite>']),
+     ({"someLock"}, [])),
+    ("an errored testcase counts too",
+     lambda: failing_methods_in_reports([
+         '<testsuite><testcase name="someLock" classname="jp.aegif.SomeTest">'
+         '<error>boom</error></testcase></testsuite>']),
+     ({"someLock"}, [])),
+    ("a PASSING testcase is not a failure",
+     lambda: failing_methods_in_reports([
+         '<testsuite><testcase name="someLock" classname="jp.aegif.SomeTest"/></testsuite>']),
+     (set(), [])),
+    ("a method that takes arguments (this tree's real shape)",
+     lambda: failing_methods_in_reports([
+         '<testsuite><testcase name="aRefusedDocumentLeavesNoFile(Path)"'
+         ' classname="jp.aegif.nemaki.rest.importexport.ExportsRefuseMissingBytesTest">'
+         '<failure>boom</failure></testcase></testsuite>']),
+     ({"aRefusedDocumentLeavesNoFile"}, [])),
+    ("a parameterised invocation (this tree's real shape)",
+     lambda: failing_methods_in_reports([
+         '<testsuite><testcase name="testLinkLocalAllowedInSetupOnAllowedPort(String)[1]"'
+         ' classname="jp.aegif.nemaki.api.setup.filter.UrlValidatorTest$PrivateAddressMatrix">'
+         '<failure>boom</failure></testcase></testsuite>']),
+     ({"testLinkLocalAllowedInSetupOnAllowedPort"}, [])),
+    ("a CONTAINER-level failure names no method, and is REPORTED rather than dropped",
+     lambda: failing_methods_in_reports([
+         '<testsuite><testcase name="" classname="jp.aegif.SomeTest">'
+         '<error>lifecycle</error></testcase></testsuite>']),
+     (set(), ["(a failing testcase with no name)"])),
+    # The whole point of reading the XML: prose cannot be mistaken for a name. Both shapes
+    # below were demonstrated as misreadings of the previous, line-based reader.
+    ("a failure MESSAGE that looks like a header names nothing",
+     lambda: failing_methods_in_reports([
+         '<testsuite><testcase name="someLock" classname="jp.aegif.SomeTest"><failure>'
+         'jp.aegif.nemaki.Other.otherLock -- Time elapsed: 0.1 s &lt;&lt;&lt; FAILURE!'
+         '</failure></testcase></testsuite>']),
+     ({"someLock"}, [])),
+    ("a report that cannot be parsed is reported, not counted as green",
+     lambda: failing_methods_in_reports(["<testsuite><testcase"])[1] != [],
+     True),
     # The WIRING, not just the decision: a review pointed out that deleting the sys.exit call
     # in main() left every case green while undeclared locks and unreadable lines exited 0.
     # Read from this file's own source, the way the Java locks read a patch's source.
@@ -6191,7 +6118,7 @@ def main() -> None:
             sabotaged = sabotage_text(original, control)
             try:
                 path.write_text(sabotaged)
-                green, failed, report_text = run_test(control["test"])
+                green, failed_methods, unreadable, report_text = run_test(control["test"])
                 if green:
                     # The finally below still restores, and the green-after re-verification after
                     # it still runs — the first version `continue`d past both, leaving the restore
@@ -6201,14 +6128,17 @@ def main() -> None:
                                     "nothing"))
                     print(f"[{control['id']}] DID NOT FIRE")
                 else:
-                    missing = [m for m in control["expect_fail"] if m not in failed]
+                    # Exact names now, not a substring of the report text: a lock whose name
+                    # contains another's ("aRowIsReported" inside "aRowIsReportedTwice") read
+                    # as present when only the longer one had failed.
+                    missing = [m for m in control["expect_fail"] if m not in failed_methods]
                     not_assertions = [m for m in control["expect_fail"]
                                       if m not in missing
                                       and not failed_as_assertion(report_text, m)]
                     if missing:
                         results.append((control["id"], False,
                                         f"something failed, but not the expected lock(s) "
-                                        f"{missing}; actual:\n{failed}"))
+                                        f"{missing}; actual: {sorted(failed_methods)}"))
                         print(f"[{control['id']}] WRONG TEST FIRED")
                     elif not_assertions:
                         results.append((control["id"], False,
@@ -6217,7 +6147,7 @@ def main() -> None:
                                         f"proves nothing about the protection"))
                         print(f"[{control['id']}] FIRED FOR THE WRONG REASON")
                     else:
-                        results.append((control["id"], True, failed.splitlines()[0]))
+                        results.append((control["id"], True, ", ".join(sorted(failed_methods))))
                         print(f"[{control['id']}] fired: {control['expect_fail']}")
                         # Locks that failed WITHOUT being declared. Not a bad verdict — extra
                         # failures are tolerated by design — but the record of "which
@@ -6229,13 +6159,13 @@ def main() -> None:
                         # with an exception under the sabotage lost its harness, which says
                         # nothing about a protection being removed. A review asked for the
                         # distinction before this list is acted on.
-                        gaps = unreadable_failure_lines(failed)
+                        gaps = unreadable
                         if gaps:
                             PARSE_GAPS.append((control["id"], gaps))
                             print(f"[{control['id']}] failure lines this runner could not read"
                                   f" (the undeclared report is incomplete here): {gaps}")
                         undeclared = sorted(
-                            name for name in set(failed_method_names(failed))
+                            name for name in failed_methods
                             if name not in control["expect_fail"]
                             and failed_as_assertion(report_text, name))
                         if undeclared:
@@ -6255,11 +6185,11 @@ def main() -> None:
                         f"{backup}")
                 path.write_text(original)
                 backup.unlink(missing_ok=True)
-            green_after, failed_after, _ = run_test(control["test"])
+            green_after, failed_after, unreadable_after, _ = run_test(control["test"])
             if not green_after:
                 raise SystemExit(
-                    f"[{control['id']}] the tree is NOT green after restore — stop and look:\n"
-                    + failed_after)
+                    f"[{control['id']}] the tree is NOT green after restore — stop and look: "
+                    + ", ".join(sorted(failed_after) + unreadable_after))
             completed_ids.add(control["id"])
         sweep_completed = True
     finally:
