@@ -52,9 +52,14 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
                         && page.lastEditedTime().compareTo(lastEditedCheckpoint) <= 0) {
                     skipped++; continue;
                 }
+                // Declared OUTSIDE the try so the catch can dead-letter the page. Everything
+                // that throws before executeNoteImport — fetchPageAsHtml, extractFiles —
+                // happens above the import service's own DLQ net, so this arm was the only
+                // place that could record the loss, and it recorded nothing.
+                ExternalIngestRequest req = null;
                 try {
                     boolean importBody = "files_and_body".equals(profile.getImportPolicy());
-                    ExternalIngestRequest req = new ExternalIngestRequest();
+                    req = new ExternalIngestRequest();
                     req.setProfileId(profile.getProfileId());
                     req.setConnectorId(connector.getConnectorId());
                     req.setRepositoryId(profile.getRepositoryId());
@@ -163,6 +168,16 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
                     }
                 } catch (Exception e) {
                     FetchSupport.addError(errors, "Notion page " + page.id() + ": " + e.getMessage());
+                    // DLQ before the checkpoint can move past this page. A LATER page
+                    // succeeding in the same batch raises the high-water mark past this one,
+                    // and every later poll then filters it out — permanently uncaptured, with
+                    // no row saying so. The identical arm was closed for Chatwork, Salesforce,
+                    // Dropbox, Box and Slack, and for this file's own attachment arm four
+                    // lines above; a review found the page arm still open.
+                    if (req != null) {
+                        fetchSupport.saveToDlq(req,
+                                "Notion page " + page.id() + ": " + e.getMessage(), null);
+                    }
                 }
             }
             if (highWaterEditedTime != null && !highWaterEditedTime.equals(lastEditedCheckpoint)) {

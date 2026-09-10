@@ -37,16 +37,31 @@ public class IngestDlqController {
 
     // ── Job History ────────────────────────────────────────────────
 
+    // A row the mapper refuses is dropped from the listing. Returning the list bare made a
+    // PARTIAL or FAILED run written by a newer node look like it never happened. The DLQ
+    // listing in this same controller says how many rows it could not decode; a review found
+    // the job listing silent. The shape stays an array when nothing was dropped, so existing
+    // clients are unaffected.
     @GetMapping("/jobs")
     public ResponseEntity<?> listJobs(@RequestParam(defaultValue = "50") int limit) {
         if (!isAdmin()) return forbidden();
-        return ResponseEntity.ok(ingestJobService.listJobs(limit));
+        return jobsOrEnvelope(ingestJobService.listJobsPage(limit));
     }
 
     @GetMapping("/jobs/profile/{profileId}")
     public ResponseEntity<?> listJobsByProfile(@PathVariable String profileId) {
         if (!isAdmin()) return forbidden();
-        return ResponseEntity.ok(ingestJobService.listJobsByProfile(profileId));
+        return jobsOrEnvelope(ingestJobService.listJobsByProfilePage(profileId));
+    }
+
+    private ResponseEntity<?> jobsOrEnvelope(IngestJobService.JobPage page) {
+        if (page.unreadable() == 0) return ResponseEntity.ok(page.entries());
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("jobs", page.entries());
+        response.put("unreadableEntries", page.unreadable());
+        response.put("unreadableNote", "rows this node could not decode are not in 'jobs';"
+                + " they are named in the server log by document id");
+        return ResponseEntity.ok(response);
     }
 
     // ── Dead-Letter Queue ──────────────────────────────────────────
@@ -80,8 +95,10 @@ public class IngestDlqController {
         response.put("offset", safeOffset);
         response.put("hasMore", hasMore);
         // Advance by the PAGE, not by the number of entries returned: some rows on this page
-        // may not have decoded, and paging by count would re-read them for ever.
-        response.put("nextOffset", safeOffset + cappedLimit);
+        // may not have decoded, and paging by count would re-read them for ever. Only when
+        // there IS a next page — a continuation token on the last page walks a client through
+        // an endless run of empty ones. A review found it.
+        if (hasMore) response.put("nextOffset", safeOffset + cappedLimit);
         if (fetched.unreadable() > 0) {
             // Or "count" reads as the whole page. Each of these is the only record that a
             // source item was lost, so their absence has to be said, not left in the log.
@@ -185,12 +202,24 @@ public class IngestDlqController {
             // exactly this), and nothing read it: the whole codebase had no reader for the field.
             // The item has to come back through the connector, not through here. A review traced
             // the chain end to end.
-            if (!dlq.isHasContent() && dlq.getPayloadDropReason() != null) {
+            if (dlq.getPayloadDropReason() != null) {
+                // NOT gated on hasContent. A row can carry an OLDER attempt's attachment
+                // (hasContent=true) while THIS attempt's bytes were refused — the request JSON
+                // on the row is the newer attempt's, so replaying pairs the old payload with
+                // the new metadata and calls the hybrid the recovered item. Codex named that
+                // inverse in the round after the first version of this guard, which tested
+                // !hasContent and let it through.
                 return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId
-                        + " had content that was never stored (" + dlq.getPayloadDropReason()
-                        + "), so replaying it would import an empty document in place of the"
-                        + " original; the entry is kept and nothing was imported. Re-fetch the"
-                        + " source item through its connector instead");
+                        + " describes an attempt whose content was never stored ("
+                        + dlq.getPayloadDropReason() + ")"
+                        + (dlq.isHasContent()
+                                ? ", and the payload on this row is from an EARLIER attempt, so"
+                                        + " replaying would pair those bytes with this"
+                                        + " attempt's metadata"
+                                : ", so replaying it would import an empty document in place of"
+                                        + " the original")
+                        + "; the entry is kept and nothing was imported. Re-fetch the source"
+                        + " item through its connector instead");
             }
 
             // Restore content stream from CouchDB attachment if available
@@ -292,9 +321,20 @@ public class IngestDlqController {
     @DeleteMapping("/dlq/{dlqId}")
     public ResponseEntity<?> deleteDlqEntry(@PathVariable String dlqId) {
         if (!isAdmin()) return forbidden();
-        ingestJobService.deleteDlqEntry(dlqId);
+        // "success" used to be unconditional. The delete walks a Mango selector, so an index
+        // that is rebuilding returns no row, nothing is deleted, and the operator is told the
+        // entry is gone — while it is still there and will be back in the next listing. The
+        // purge sibling was given this exact distinction a round earlier; a review found the
+        // single delete still asserting it.
+        int deleted = ingestJobService.deleteDlqEntry(dlqId);
         Map<String, Object> response = new LinkedHashMap<>();
+        if (deleted == 0) {
+            return errorResponse(HttpStatus.NOT_FOUND, "no stored row of DLQ entry " + dlqId
+                    + " was returned to delete. If the entry is listed, the index has not"
+                    + " caught up — nothing was deleted, so retry");
+        }
         response.put("status", "success");
+        response.put("deleted", deleted);
         return ResponseEntity.ok(response);
     }
 

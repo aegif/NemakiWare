@@ -85,6 +85,24 @@ class CheckpointManagerTest {
                 "a checkpoint read that FAILED was answered as 'never polled'");
     }
 
+    @Test
+    void enumeration_refusesWhenTheStoreDidNotAnswer() {
+        // The endpoint answers "checkpoints: {}" and "All checkpoints reset for X (0 keys)"
+        // from this enumeration. Both are statements that the profile has never polled, and a
+        // store that simply did not answer produced them. The round that converted the two
+        // LOADS left the enumeration and tryCheckpoint behind; a review found the pair.
+        IntegrationSettingsService refusing = mock(IntegrationSettingsService.class);
+        when(refusing.readSettingOrRefuse(org.mockito.ArgumentMatchers.anyString())).thenThrow(
+                new IntegrationSettingsService.SettingUnreadableException(
+                        "the configuration database did not answer"));
+        CheckpointManager m = new CheckpointManager();
+        m.setSettingsService(refusing);
+
+        assertThrows(IntegrationSettingsService.SettingUnreadableException.class,
+                () -> m.getCheckpoints("p1"),
+                "an enumeration that could not read answered 'this profile has never polled'");
+    }
+
     // ── saveSimpleCheckpoint ──
 
     @Test

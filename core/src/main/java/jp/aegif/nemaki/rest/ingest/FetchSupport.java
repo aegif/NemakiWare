@@ -124,6 +124,41 @@ public class FetchSupport {
     }
 
     /**
+     * The same read, but a configuration database that did not ANSWER is not "no token".
+     *
+     * <p>{@link #resolvePassword} returns {@code null} for three different things: the
+     * connector names no credential, the named credential has no stored value, and the store
+     * could not be asked. Callers state the first two as facts — "No token for X", which the
+     * folder-connector endpoint turns into {@code authError: true} and an offer to overwrite a
+     * credential that was never wrong, and which the scheduler counts towards opening the
+     * connector's circuit breaker. The IMAP IDLE monitor compares the resolved password with
+     * the one the session started on, so a failed read made it report "connector connection
+     * changed" — a fact about the connector that nothing established — and tear the session
+     * down permanently. A review traced both.
+     *
+     * @throws IntegrationSettingsService.SettingUnreadableException when the connector names a
+     *         credential, nothing resolved it, AND the configuration database did not answer.
+     */
+    public String resolvePasswordOrRefuse(ConnectorDefinition connector) {
+        String credentialRef = connector.getCredentialRef();
+        if (credentialRef == null || credentialRef.isBlank()) return null;
+        String value = resolvePassword(connector);
+        if (value != null) return value;
+        if (propertyManager != null) {
+            jp.aegif.nemaki.model.Configuration conf = propertyManager.getConfiguration(
+                    jp.aegif.nemaki.util.constant.SystemConst.NEMAKI_CONF_DB);
+            if (conf != null && conf.isLoadFailed()) {
+                throw new jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                        .SettingUnreadableException("the credential '" + credentialRef
+                                + "' of connector " + connector.getConnectorId()
+                                + " could not be read: the configuration database did not"
+                                + " answer; retry shortly");
+            }
+        }
+        return null;
+    }
+
+    /**
      * ThreadLocal carrying the current job record for progress-based heartbeat.
      * Set by pollScheduledProfiles before executeFetch, read by throttle() on every item.
      */

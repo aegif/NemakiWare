@@ -30,6 +30,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -187,6 +188,108 @@ class DlqRetryRefusalStatusTest {
         assertEquals(Boolean.TRUE,
                 ((Map<?, ?>) res.getBody()).get("payloadPresenceAssumptionCleared"),
                 "the answer does not say the assumption was settled by a read: " + res.getBody());
+    }
+
+    @Test
+    @DisplayName("a row holding an EARLIER attempt's payload is not replayed with newer metadata")
+    void anOlderPayloadIsNotPairedWithNewerMetadata() throws Exception {
+        // The first version of this guard tested !hasContent, so it missed the inverse: the
+        // row keeps attempt A's attachment (hasContent=true) while attempt B's bytes were
+        // refused — and originalRequestJson on the row is B's. Replaying pairs A's bytes with
+        // B's metadata and calls the hybrid the recovered item, then deletes the evidence row.
+        // Codex named it in the round after the guard was written.
+        CanonicalImportService importService = mock(CanonicalImportService.class);
+        ResponseEntity<?> res = retryWith(row -> {
+            row.setHasContent(true);
+            row.setPayloadDropReason("payload not stored: NEMAKI_ENCRYPTION_KEY is not set");
+        }, importService, null);
+
+        assertEquals(HttpStatus.CONFLICT, res.getStatusCode(),
+                "a payload from an earlier attempt was replayed under this attempt's metadata");
+        assertTrue(String.valueOf(((Map<?, ?>) res.getBody()).get("message"))
+                        .contains("EARLIER attempt"),
+                "the answer does not say the payload is not this attempt's: " + res.getBody());
+        org.mockito.Mockito.verify(importService, org.mockito.Mockito.never())
+                .execute(any(), any());
+    }
+
+    @Test
+    @DisplayName("the last page carries no continuation token")
+    void theLastPageHasNoNextOffset() throws Exception {
+        // A client following nextOffset rather than reading hasMore walked an endless run of
+        // empty pages. A review found it in the round that added the token.
+        IngestDlqController controller = new IngestDlqController();
+        IngestJobService jobService = mock(IngestJobService.class);
+        when(jobService.listDlqPage(100, 0, true)).thenReturn(
+                new IngestJobService.DlqPage(java.util.List.of(), 0, false));
+        wire(controller, "ingestJobService", jobService);
+        wire(controller, "httpRequest", adminRequest());
+
+        Map<?, ?> body = (Map<?, ?>) ((ResponseEntity<?>) controller.listDlq(100, 0)).getBody();
+
+        assertEquals(Boolean.FALSE, body.get("hasMore"));
+        assertNull(body.get("nextOffset"),
+                "the last page still offered a continuation: " + body);
+    }
+
+    @Test
+    @DisplayName("a delete the selector could not see is not answered as success")
+    void aDeleteThatRemovedNothingIsNotSuccess() throws Exception {
+        // deleteDlqEntry walks a Mango selector. A rebuilding index returns no row, nothing is
+        // deleted, and the operator was told the entry is gone — while it is still there and
+        // will be back in the next listing. The purge sibling was given this distinction a
+        // round earlier; a review found the single delete still asserting it.
+        IngestDlqController controller = new IngestDlqController();
+        IngestJobService jobService = mock(IngestJobService.class);
+        when(jobService.deleteDlqEntry("dlq-1")).thenReturn(0);
+        wire(controller, "ingestJobService", jobService);
+        wire(controller, "httpRequest", adminRequest());
+
+        ResponseEntity<?> res = (ResponseEntity<?>) controller.deleteDlqEntry("dlq-1");
+
+        assertEquals(HttpStatus.NOT_FOUND, res.getStatusCode(),
+                "a delete that removed nothing was answered as success");
+        assertTrue(String.valueOf(((Map<?, ?>) res.getBody()).get("message"))
+                        .contains("nothing was deleted"),
+                "the answer does not say the row survived: " + res.getBody());
+    }
+
+    @Test
+    @DisplayName("a job listing that dropped a row says so")
+    void aJobListingThatDroppedARowSaysSo() throws Exception {
+        // A PARTIAL or FAILED run written by a newer node looked like it never happened. The
+        // DLQ listing in the same controller says how many rows it could not decode; a review
+        // found the job listing silent.
+        IngestDlqController controller = new IngestDlqController();
+        IngestJobService jobService = mock(IngestJobService.class);
+        when(jobService.listJobsPage(50)).thenReturn(
+                new IngestJobService.JobPage(java.util.List.of(), 2));
+        wire(controller, "ingestJobService", jobService);
+        wire(controller, "httpRequest", adminRequest());
+
+        Object body = ((ResponseEntity<?>) controller.listJobs(50)).getBody();
+
+        assertInstanceOf(Map.class, body,
+                "a listing that dropped rows still answered a bare array: " + body);
+        assertEquals(2, ((Map<?, ?>) body).get("unreadableEntries"),
+                "the answer does not say rows are missing from it: " + body);
+    }
+
+    @Test
+    @DisplayName("a job listing that dropped nothing keeps its array shape")
+    void aCleanJobListingIsStillAnArray() throws Exception {
+        // The other direction: existing clients read an array. Wrapping every response would
+        // break them for a condition that is not happening.
+        IngestDlqController controller = new IngestDlqController();
+        IngestJobService jobService = mock(IngestJobService.class);
+        when(jobService.listJobsPage(50)).thenReturn(
+                new IngestJobService.JobPage(java.util.List.of(), 0));
+        wire(controller, "ingestJobService", jobService);
+        wire(controller, "httpRequest", adminRequest());
+
+        assertInstanceOf(java.util.List.class,
+                ((ResponseEntity<?>) controller.listJobs(50)).getBody(),
+                "a clean listing stopped answering an array");
     }
 
     @Test

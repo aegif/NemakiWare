@@ -530,6 +530,77 @@ class DlqReplayArchetypeGateTest {
                         + " row");
     }
 
+    @Test
+    @DisplayName("a payload the store would not take does not leave the row claiming it has one")
+    void anAttachmentThatFailedIsNotClaimedAsStored() throws Exception {
+        // The row is written with hasContent=true BEFORE the attach is attempted, and the
+        // encrypted bytes exist only in that frame. Swallowing the attach failure left a row
+        // that says it holds a payload, holds none, and re-derives the same claim on every
+        // later save — a fixed point whose retry answers 409 for ever and whose only exit is
+        // deleting the loss record. A review traced it.
+        IngestJobService jobs = new IngestJobService();
+        com.ibm.cloud.cloudant.v1.Cloudant cloudant =
+                mock(com.ibm.cloud.cloudant.v1.Cloudant.class);
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper wrapper =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+        when(wrapper.getClient()).thenReturn(cloudant);
+        when(wrapper.getDatabaseName()).thenReturn("nemaki_conf");
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool pool =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);
+        when(pool.getClient(org.mockito.ArgumentMatchers.anyString())).thenReturn(wrapper);
+        jobs.setConnectorPool(pool);
+
+        com.ibm.cloud.cloudant.v1.model.FindResult empty =
+                mock(com.ibm.cloud.cloudant.v1.model.FindResult.class);
+        when(empty.getDocs()).thenReturn(java.util.List.of());
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> call =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.FindResult> resp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(resp.getResult()).thenReturn(empty);
+        when(call.execute()).thenReturn(resp);
+        when(cloudant.postFind(org.mockito.ArgumentMatchers.any())).thenReturn(call);
+
+        com.ibm.cloud.cloudant.v1.model.DocumentResult ok =
+                mock(com.ibm.cloud.cloudant.v1.model.DocumentResult.class);
+        when(ok.isOk()).thenReturn(Boolean.TRUE);
+        when(ok.getId()).thenReturn("ingest_dlq:w");
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.DocumentResult> post =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.DocumentResult> postResp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(postResp.getResult()).thenReturn(ok);
+        when(post.execute()).thenReturn(postResp);
+        when(cloudant.postDocument(org.mockito.ArgumentMatchers.any())).thenReturn(post);
+        // The store will not take the attachment.
+        when(cloudant.getDocument(org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new RuntimeException("no route to host"));
+
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setRepositoryId("bedroom");
+        request.setConnectorId("c1");
+        request.setSourceObjectId("m-4");
+        request.setFileName("a.pdf");
+
+        jobs.saveToDlq(request, "boom", "hello".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        org.mockito.ArgumentCaptor<com.ibm.cloud.cloudant.v1.model.PostDocumentOptions> written =
+                org.mockito.ArgumentCaptor.forClass(
+                        com.ibm.cloud.cloudant.v1.model.PostDocumentOptions.class);
+        org.mockito.Mockito.verify(cloudant, org.mockito.Mockito.atLeastOnce())
+                .postDocument(written.capture());
+        com.ibm.cloud.cloudant.v1.model.Document last =
+                written.getAllValues().get(written.getAllValues().size() - 1).document();
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.FALSE, last.get("hasContent"),
+                "the row still claims a payload the store never took");
+        org.junit.jupiter.api.Assertions.assertNotNull(last.get("payloadDropReason"),
+                "the row does not say why it carries no payload");
+    }
+
     /** A service wired to a store that answers nothing at all. */
     private IngestJobService jobsWithADeadStore() {
         IngestJobService jobs = new IngestJobService();

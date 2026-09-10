@@ -126,7 +126,12 @@ public class CheckpointManager {
         // Static scopes (single-value adapters):
         for (String scope : List.of("gmail", "notion", "salesforce", "dropbox", "INBOX")) {
             String key = "ingest.checkpoint." + profileId + "." + scope;
-            String value = settingsService.readSetting(key);
+            // readSettingOrRefuse, like the two loads above. This enumeration answers the
+            // admin endpoint, which reports "checkpoints: {}" and "All checkpoints reset for X
+            // (0 keys)" — both statements that the profile has never polled — from a store
+            // that simply did not answer. A review found the two call sites the earlier round
+            // left behind.
+            String value = settingsService.readSettingOrRefuse(key);
             if (value != null && !value.isBlank()) result.put(scope, value);
         }
         // Scoped checkpoints: reconstruct the exact key from profile's schedulerParams
@@ -192,7 +197,7 @@ public class CheckpointManager {
     private void tryCheckpoint(Map<String, Object> result, String profileId, String scope) {
         if (scope.endsWith(".")) return; // Skip invalid scope
         String key = "ingest.checkpoint." + profileId + "." + scope;
-        String val = settingsService.readSetting(key);
+        String val = settingsService.readSettingOrRefuse(key);
         if (val != null && !val.isBlank()) result.put(scope, val);
     }
 }

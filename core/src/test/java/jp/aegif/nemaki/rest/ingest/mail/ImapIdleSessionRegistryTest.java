@@ -396,6 +396,77 @@ class ImapIdleSessionRegistryTest {
     }
 
     @Test
+    @DisplayName("a credential the store could not answer is not 'the connection changed'")
+    void aCredentialReadThatFailedIsNotAConnectionChange() {
+        // resolvePassword answers null for "no credential", "no stored value" and "the store
+        // did not answer" alike. The third made the identity comparison fail and this method
+        // report that the CONNECTION CHANGED — a fact about the connector that nothing
+        // established — after which the caller tore the session down permanently, since
+        // startIdle has exactly one caller and nothing re-arms it. A review traced it, and
+        // noted that the locks here stub resolvePassword to succeed, so the arm was never
+        // measured at all.
+        ImapIdleMonitor monitor = new ImapIdleMonitor();
+        ImportProfileDefinition liveProfile = new ImportProfileDefinition();
+        liveProfile.setProfileId(PROF);
+        liveProfile.setRepositoryId("bedroom");
+        liveProfile.setDefaultConnectorId("conn-1");
+        ConnectorDefinition live = new ConnectorDefinition();
+        live.setConnectorId("conn-1");
+        live.setEndpoint("imap.example:993");
+        live.setTenantId("user@example.com");
+        live.setCredentialRef("secret.imap");
+        ImportProfileDefinitionService profiles = mock(ImportProfileDefinitionService.class);
+        when(profiles.getOwnedRowIndexFree(PROF)).thenReturn(liveProfile);
+        ConnectorDefinitionService connectors = mock(ConnectorDefinitionService.class);
+        when(connectors.get("conn-1")).thenReturn(live);
+        when(connectors.countIndexFree("conn-1")).thenReturn(1);
+        FetchSupport fetch = mock(FetchSupport.class);
+        when(fetch.resolvePasswordOrRefuse(live)).thenThrow(
+                new jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                        .SettingUnreadableException("the credential 'secret.imap' of connector"
+                                + " conn-1 could not be read: the configuration database did"
+                                + " not answer; retry shortly"));
+        monitor.setProfileService(profiles);
+        monitor.setConnectorService(connectors);
+        monitor.setFetchSupport(fetch);
+
+        ImapIdleMonitor.LiveLoad load = monitor.loadLiveConfig(
+                PROF, "bedroom", "conn-1", "INBOX", false,
+                ImapIdleMonitor.connectionIdentity(live, "pw"));
+
+        assertTrue(load.refusal() != null,
+                "a credential that could not be read was admitted as the same connection");
+        assertFalse(load.refusal().contains("connection changed"),
+                "a read that could not answer was stated as a change to the connector: "
+                        + load.refusal());
+        assertTrue(load.refusal().contains("could not be read"),
+                "the refusal does not say the read failed: " + load.refusal());
+        // And it must land on the arm the caller reads as "could not ask", or the session is
+        // torn down for good on a blip.
+        assertTrue(ImapIdleMonitor.refusalCouldNotAsk(load.refusal()),
+                "the refusal is classified as a settled answer, so IDLE stops permanently: "
+                        + load.refusal());
+    }
+
+    @Test
+    @DisplayName("a corrupt stored row is NOT 'could not ask' — IDLE must stop, not spin")
+    void aCorruptRowIsASettledRefusal() {
+        // The predicate the per-message path keys on. It had no test and no control anywhere,
+        // so a future edit to its token list would be silent. A review found that.
+        assertTrue(ImapIdleMonitor.refusalCouldNotAsk(
+                "connector conn-1 exists but could not be read; retry shortly"));
+        assertTrue(ImapIdleMonitor.refusalCouldNotAsk(
+                "whether import profile p1 exists could not be established"));
+        assertFalse(ImapIdleMonitor.refusalCouldNotAsk(
+                "row ingest_profile:p1 could not be read as a profile (bad field)"),
+                "a corrupt stored row is standing, not transient — leaving IDLE running on it "
+                        + "spins a full nemaki_conf walk on every message for ever");
+        assertFalse(ImapIdleMonitor.refusalCouldNotAsk(
+                "import profile p1 is no longer delegated; IDLE stopping"),
+                "a settled revoke must stop the session");
+    }
+
+    @Test
     @DisplayName("a newline-crossing tenantId and authType pair is not the same connection")
     void aNewlineCrossingTenantAndAuthTypeIsNotTheSameConnection() {
         ConnectorDefinition started = new ConnectorDefinition();

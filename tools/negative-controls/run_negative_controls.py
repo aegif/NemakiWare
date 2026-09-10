@@ -3647,10 +3647,17 @@ CONTROLS = [
         what="per-message IDLE admission ignores a later endpoint or secret change and "
              "keeps fetching through the start-time socket",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
-        find='            String livePassword = fetchSupport.resolvePassword(conn);\n            if (!startedConnectionIdentity.equals(connectionIdentity(conn, livePassword))) {\n                return new LiveLoad(null, null, "import profile " + profileId\n                        + " connector connection changed; IDLE stopping");\n            }',
-        replace='            String livePassword = fetchSupport.resolvePassword(conn);\n            if (false) {\n                return new LiveLoad(null, null, "import profile " + profileId\n                        + " connector connection changed; IDLE stopping");\n            }',
+        # Re-anchored: the password read is now the refusing one, wrapped in a try. Narrowed to
+        # the comparison itself, which is what this control is about.
+        find='            if (!startedConnectionIdentity.equals(connectionIdentity(conn, livePassword))) {',
+        replace='            if (false) {',
         test='ImapIdleSessionRegistryTest',
-        expect_fail=['aLaterConnectorEndpointChangeStopsLiveAdmission'],
+        # Completed from MEASUREMENT, not from reading. These locks were added to the
+        # same test class AFTER this control was written, and a full sweep would have
+        # exited non-zero listing them. A review enumerated the whole suite for this
+        # shape rather than one round at a time.
+        expect_fail=['aLaterConnectorEndpointChangeStopsLiveAdmission',
+                     'aNewlineCrossingIdentityChangeStopsLiveAdmission'],
     ),
     dict(
         id="UK",
@@ -3796,7 +3803,13 @@ CONTROLS = [
         replace='        ImportProfileDefinition walked =\n                importProfileDefinitionService.getForRepository(profileId, repositoryId);\n'
                 '        return walked != null ? walked : importProfileDefinitionService.get(profileId);',
         test='CanonicalImportServiceTest',
-        expect_fail=['testExecuteRefusesAProfileBoundToNoRepository'],
+        # Completed from MEASUREMENT, not from reading. These locks were added to the
+        # same test class AFTER this control was written, and a full sweep would have
+        # exited non-zero listing them. A review enumerated the whole suite for this
+        # shape rather than one round at a time.
+        expect_fail=['testExecuteRefusesAProfileBoundToNoRepository',
+                     'aWalkMissDoesNotResurrectASelectorRow',
+                     'testExecuteProfileRepositoryMismatch'],
     ),
     dict(
         id="UX",
@@ -3830,7 +3843,12 @@ CONTROLS = [
         find='        if (authorized.equals(authorizationFingerprint(resolved))) {',
         replace='        if (false) {',
         test='CanonicalImportServiceTest',
-        expect_fail=['testExecuteRunsWhenTheRowIsStillTheAuthorizedOne'],
+        # Completed from MEASUREMENT, not from reading. These locks were added to the
+        # same test class AFTER this control was written, and a full sweep would have
+        # exited non-zero listing them. A review enumerated the whole suite for this
+        # shape rather than one round at a time.
+        expect_fail=['testExecuteRunsWhenTheRowIsStillTheAuthorizedOne',
+                     'testExecuteRefusesWhenTheAuthorizedFolderIsNotTheOneResolved'],
     ),
     dict(
         id="VA",
@@ -4039,9 +4057,14 @@ CONTROLS = [
                    '            if (revoked != null) return revoked;'),
         replace='',
         test='CanonicalImportServiceTest',
+        # Completed from MEASUREMENT, not from reading. These locks were added to the
+        # same test class AFTER this control was written, and a full sweep would have
+        # exited non-zero listing them. A review enumerated the whole suite for this
+        # shape rather than one round at a time.
         expect_fail=['testTheDelegationIsReAskedAfterTheContentIsRead',
                      'testAnImportWithNoContentStreamIsAlsoReChecked',
-                     'testARevokeDuringTheDedupeReadStillStopsTheWrite'],
+                     'testARevokeDuringTheDedupeReadStillStopsTheWrite',
+                     'testARevokeDuringTheRelationshipListingStillStopsTheWrite'],
     ),
     dict(
         id="VP",
@@ -4052,7 +4075,12 @@ CONTROLS = [
                    '                    + " against");\n        }'),
         replace='',
         test='CanonicalImportServiceTest',
-        expect_fail=['testAnAdministratorOfAnotherRepositoryIsStillRefused'],
+        # Completed from MEASUREMENT, not from reading. These locks were added to the
+        # same test class AFTER this control was written, and a full sweep would have
+        # exited non-zero listing them. A review enumerated the whole suite for this
+        # shape rather than one round at a time.
+        expect_fail=['testAnAdministratorOfAnotherRepositoryIsStillRefused',
+                     'aWriteInAnotherRepositoryThanTheCallerAuthenticatedIn_is403NotAServerError'],
     ),
         dict(
         id="VQ",
@@ -4115,7 +4143,13 @@ CONTROLS = [
                    '        return current;'),
         replace='        return null;',
         test='CanonicalImportServiceTest',
-        expect_fail=['testARevokedDelegationStopsTheRelationshipCreation'],
+        # Completed from MEASUREMENT, not from reading. These locks were added to the
+        # same test class AFTER this control was written, and a full sweep would have
+        # exited non-zero listing them. A review enumerated the whole suite for this
+        # shape rather than one round at a time.
+        expect_fail=['testARevokedDelegationStopsTheRelationshipCreation',
+                     'testAProfileGoneDuringTheImportIsAWarningNotA500',
+                     'testAnUnresolvableConnectorRefusesTheLinkInsteadOfSkippingTheCheck'],
     ),
     dict(
         id="VV",
@@ -4228,7 +4262,12 @@ CONTROLS = [
         find='            return EdgeLookup.unanswered(e.getMessage());',
         replace='            return EdgeLookup.absent();',
         test='CanonicalImportServiceTest',
-        expect_fail=['createDirectRelationship_createsAndSaysSo_whenExistenceCheckThrows'],
+        # Completed from MEASUREMENT, not from reading. These locks were added to the
+        # same test class AFTER this control was written, and a full sweep would have
+        # exited non-zero listing them. A review enumerated the whole suite for this
+        # shape rather than one round at a time.
+        expect_fail=['createDirectRelationship_createsAndSaysSo_whenExistenceCheckThrows',
+                     'theCaptureRecordCarriesTheUnansweredCheck'],
     ),
     dict(
         id="WE",
@@ -4254,7 +4293,14 @@ CONTROLS = [
                 '                    return LinkOutcome.notLinked("the relationship was not created: " + edge.failure());\n'
                 '                }',
         test='CanonicalImportServiceTest',
-        expect_fail=['createDirectRelationship_createsAndSaysSo_whenExistenceCheckThrows'],
+        # Completed from MEASUREMENT, not from reading. These locks were added to the
+        # same test class AFTER this control was written, and a full sweep would have
+        # exited non-zero listing them. A review enumerated the whole suite for this
+        # shape rather than one round at a time.
+        expect_fail=['createDirectRelationship_createsAndSaysSo_whenExistenceCheckThrows',
+                     'aMissingContentServiceIsAnUnansweredCheckNotAnAbsentEdge',
+                     'theCaptureRecordCarriesTheUnansweredCheck',
+                     'thePublicEntryPointAnswersNullForALinkCreatedWithoutItsCheck'],
     ),
     dict(
         id="WG",
@@ -4322,7 +4368,13 @@ CONTROLS = [
         find='                if (!edge.answered()) {',
         replace='                if (false) {',
         test='CanonicalImportServiceTest',
-        expect_fail=['createDirectRelationship_createsAndSaysSo_whenExistenceCheckThrows'],
+        # Completed from MEASUREMENT, not from reading. These locks were added to the
+        # same test class AFTER this control was written, and a full sweep would have
+        # exited non-zero listing them. A review enumerated the whole suite for this
+        # shape rather than one round at a time.
+        expect_fail=['createDirectRelationship_createsAndSaysSo_whenExistenceCheckThrows',
+                     'aMissingContentServiceIsAnUnansweredCheckNotAnAbsentEdge',
+                     'theCaptureRecordCarriesTheUnansweredCheck'],
     ),
     # WL (the receiver's index-free existence check) was withdrawn in round 3 together with
     # the protection it measured: a walk of the configuration database per unauthenticated
@@ -5647,7 +5699,12 @@ CONTROLS = [
         find='                if (connector.getSourceArchetype() == null) {\n',
         replace='                if (false) {\n',
         test='ExternalIngestControllerGateTest',
-        expect_fail=['aConnectorRowWithNoArchetypeDoesNotPickTheFlowFromTheFileName'],
+        # Completed from MEASUREMENT, not from reading. These locks were added to the
+        # same test class AFTER this control was written, and a full sweep would have
+        # exited non-zero listing them. A review enumerated the whole suite for this
+        # shape rather than one round at a time.
+        expect_fail=['aConnectorRowWithNoArchetypeDoesNotPickTheFlowFromTheFileName',
+                     'aDelegatedIngestRefusedByAReadIsStillAudited'],
     ),
     dict(
         id="QZ2",
@@ -5870,7 +5927,12 @@ CONTROLS = [
                 '        }\n'
                 '        switch (resolution.why()) {\n',
         test='IngestSchedulerControllerAnswerTest',
-        expect_fail=['theTriggerEndpointSplitsByReason'],
+        # Completed from MEASUREMENT, not from reading. These locks were added to the
+        # same test class AFTER this control was written, and a full sweep would have
+        # exited non-zero listing them. A review enumerated the whole suite for this
+        # shape rather than one round at a time.
+        expect_fail=['theTriggerEndpointSplitsByReason',
+                     'anUnwiredWalkServiceDoesNotFabricateAbsence'],
     ),
     dict(
         id="RR2",
@@ -5891,7 +5953,12 @@ CONTROLS = [
         find='        if (profile == null && !profileRowRead) {\n',
         replace='        if (false) {\n',
         test='IngestEvidenceSnapshotTest',
-        expect_fail=['anUnreadProfileRowIsNotAttributedAsUnrecorded'],
+        # Completed from MEASUREMENT, not from reading. These locks were added to the
+        # same test class AFTER this control was written, and a full sweep would have
+        # exited non-zero listing them. A review enumerated the whole suite for this
+        # shape rather than one round at a time.
+        expect_fail=['anUnreadProfileRowIsNotAttributedAsUnrecorded',
+                     'theReimportEventSaysTheProfileRowCouldNotBeRead'],
     ),
     dict(
         id="RT2",
@@ -6455,11 +6522,19 @@ CONTROLS = [
         what="an entry whose bytes were never stored is replayed content-less again, then "
              "reported as success and DELETED",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
-        find_span=('            if (!dlq.isHasContent() && dlq.getPayloadDropReason() != null) {',
-                   '                        + " source item through its connector instead");\n            }'),
+        # Re-anchored: the guard no longer tests !hasContent — a row can carry an EARLIER
+        # attempt's payload while THIS attempt's bytes were refused, and that inverse was
+        # getting through. VE2 measures the inverse; this control still measures the guard.
+        find_span=('            if (dlq.getPayloadDropReason() != null) {',
+                   '                        + " item through its connector instead");\n            }'),
         replace='',
         test='DlqRetryRefusalStatusTest',
-        expect_fail=['anEntryWhoseBytesWereDroppedIsNotReplayed'],
+        # Completed from MEASUREMENT, not from reading. These locks were added to the
+        # same test class AFTER this control was written, and a full sweep would have
+        # exited non-zero listing them. A review enumerated the whole suite for this
+        # shape rather than one round at a time.
+        expect_fail=['anEntryWhoseBytesWereDroppedIsNotReplayed',
+                     'anOlderPayloadIsNotPairedWithNewerMetadata'],
     ),
     dict(
         id="UL2",
@@ -6637,6 +6712,95 @@ CONTROLS = [
         replace='        if (couldNotAsk(message) || couldNotAsk(raw)) {',
         test='IngestSchedulerControllerAnswerTest',
         expect_fail=['aRowTheMapperRefusedIsAStandingConflict_notARetry'],
+    ),
+    dict(
+        id="VC2",
+        what="a credential the store could not answer is reported as 'the connection changed' "
+             "again, and the IDLE session is torn down for a fact nothing established",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find_span=('            String livePassword;\n            try {',
+                   '                return new LiveLoad(null, null, couldNotAsk.getMessage());\n            }'),
+        replace='            String livePassword = fetchSupport.resolvePassword(conn);',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['aCredentialReadThatFailedIsNotAConnectionChange'],
+    ),
+    dict(
+        id="VD2",
+        what="a corrupt stored row is classified as 'could not ask' again, so IDLE spins a "
+             "full nemaki_conf walk per message for ever instead of stopping",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find_span=('        if (refusal.contains("could not be read as a profile")\n'
+                   '                || refusal.contains("could not be read as a connector")) {',
+                   '            return false;\n        }\n        return refusal.contains("retry shortly")'),
+        replace='        return refusal.contains("retry shortly")',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['aCorruptRowIsASettledRefusal'],
+    ),
+    dict(
+        id="VE2",
+        what="a row holding an EARLIER attempt's payload is replayed under this attempt's "
+             "metadata again — the guard drops back to testing !hasContent",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find='            if (dlq.getPayloadDropReason() != null) {',
+        replace='            if (!dlq.isHasContent() && dlq.getPayloadDropReason() != null) {',
+        test='DlqRetryRefusalStatusTest',
+        expect_fail=['anOlderPayloadIsNotPairedWithNewerMetadata'],
+    ),
+    dict(
+        id="VF2",
+        what="the last page offers a continuation token again, walking a client through an "
+             "endless run of empty pages",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find='        if (hasMore) response.put("nextOffset", safeOffset + cappedLimit);',
+        replace='        response.put("nextOffset", safeOffset + cappedLimit);',
+        test='DlqRetryRefusalStatusTest',
+        expect_fail=['theLastPageHasNoNextOffset'],
+    ),
+    dict(
+        id="VG2",
+        what="a delete the selector could not see is answered as success again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find_span=('        int deleted = ingestJobService.deleteDlqEntry(dlqId);',
+                   '                    + " caught up — nothing was deleted, so retry");\n        }'),
+        # The variable stays: dropping it broke compilation, and the runner correctly refused
+        # to score that as a firing. What this control removes is the arm that REFUSES.
+        replace='        int deleted = ingestJobService.deleteDlqEntry(dlqId);\n'
+                '        Map<String, Object> response = new LinkedHashMap<>();',
+        test='DlqRetryRefusalStatusTest',
+        expect_fail=['aDeleteThatRemovedNothingIsNotSuccess'],
+    ),
+    dict(
+        id="VH2",
+        what="the job listing goes back to answering a bare array, so a run whose row cannot "
+             "be decoded looks like it never happened",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find_span=('    private ResponseEntity<?> jobsOrEnvelope(IngestJobService.JobPage page) {',
+                   '        return ResponseEntity.ok(response);\n    }'),
+        replace='    private ResponseEntity<?> jobsOrEnvelope(IngestJobService.JobPage page) {\n'
+                '        return ResponseEntity.ok(page.entries());\n    }',
+        test='DlqRetryRefusalStatusTest',
+        expect_fail=['aJobListingThatDroppedARowSaysSo'],
+    ),
+    dict(
+        id="VI2",
+        what="the checkpoint ENUMERATION goes back to the reading that cannot refuse, so the "
+             "admin endpoint answers 'never polled' from a store that did not answer",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CheckpointManager.java',
+        find='            String value = settingsService.readSettingOrRefuse(key);\n            if (value != null && !value.isBlank()) result.put(scope, value);',
+        replace='            String value = settingsService.readSetting(key);\n            if (value != null && !value.isBlank()) result.put(scope, value);',
+        test='CheckpointManagerTest',
+        expect_fail=['enumeration_refusesWhenTheStoreDidNotAnswer'],
+    ),
+    dict(
+        id="VJ2",
+        what="a payload the store would not take leaves the row claiming it holds one — a "
+             "fixed point whose retry answers 409 for ever",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find_span=('                } catch (DlqPayloadNotStoredException notStored) {',
+                   '                    upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE, corrected);\n                }'),
+        replace='                } catch (DlqPayloadNotStoredException notStored) {\n                }',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['anAttachmentThatFailedIsNotClaimedAsStored'],
     ),
     dict(
         id="ST2",

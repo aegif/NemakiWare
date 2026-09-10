@@ -173,10 +173,33 @@ public class ImapIdleMonitor {
                             // delegated", "not found") still stops: that answer will not
                             // change on the next message.
                             if (couldNotAsk(now.refusal())) {
-                                logger.warn("IDLE: skipping a message on profile {} — the"
-                                        + " authorisation could not be re-checked, and IDLE is"
-                                        + " left running so the next message re-asks: {}",
-                                        profileId, now.refusal());
+                                // The message is NOT captured — the re-read is an
+                                // authorisation check and it did not pass. But it must not be
+                                // dropped in silence either: IMAP does not re-deliver the
+                                // "added" event, so the round that stopped tearing the session
+                                // down traded a permanent stop for a permanently missing mail.
+                                // A review caught the trade. Record it where every other lost
+                                // source item is recorded, so it can be replayed.
+                                logger.warn("IDLE: not capturing a message on profile {} — the"
+                                        + " authorisation could not be re-checked. IDLE is left"
+                                        + " running so the next message re-asks, and this one"
+                                        + " is dead-lettered: {}", profileId, now.refusal());
+                                if (fetchSupport != null) {
+                                    ExternalIngestRequest missed = new ExternalIngestRequest();
+                                    missed.setProfileId(profileId);
+                                    missed.setConnectorId(connector.getConnectorId());
+                                    missed.setRepositoryId(session.repositoryId());
+                                    missed.setSourceObjectId(msg.stableKey());
+                                    missed.setSourceObjectType("message");
+                                    missed.setExecutionMode("idle");
+                                    Map<String, Object> missedMeta = new LinkedHashMap<>();
+                                    missedMeta.put("mailboxId", mailbox);
+                                    missedMeta.put("messageStableId", msg.stableKey());
+                                    missed.setMetadata(missedMeta);
+                                    fetchSupport.saveToDlq(missed, "[transient] the message was"
+                                            + " not captured because the authorisation could"
+                                            + " not be re-checked: " + now.refusal(), null);
+                                }
                                 return;
                             }
                             logger.warn("IDLE: stopping profile {}: {}", profileId, now.refusal());
@@ -316,6 +339,10 @@ public class ImapIdleMonitor {
      * corrupt stored row, which is standing, not transient. A review found the same phrase
      * being read as retryable elsewhere.
      */
+    static boolean refusalCouldNotAsk(String refusal) {
+        return couldNotAsk(refusal);
+    }
+
     private static boolean couldNotAsk(String refusal) {
         if (refusal == null) return false;
         if (refusal.contains("could not be read as a profile")
@@ -429,7 +456,18 @@ public class ImapIdleMonitor {
                 return new LiveLoad(null, null, "import profile " + profileId
                         + " connector connection could not be re-checked; IDLE stopping");
             }
-            String livePassword = fetchSupport.resolvePassword(conn);
+            String livePassword;
+            try {
+                // resolvePassword answers null for "no credential", "no stored value" and
+                // "the store did not answer" alike. The third made the comparison below fail
+                // and this method report that the CONNECTION CHANGED — a fact about the
+                // connector that nothing established — after which the caller tore the
+                // session down for good. A review traced it.
+                livePassword = fetchSupport.resolvePasswordOrRefuse(conn);
+            } catch (jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                    .SettingUnreadableException couldNotAsk) {
+                return new LiveLoad(null, null, couldNotAsk.getMessage());
+            }
             if (!startedConnectionIdentity.equals(connectionIdentity(conn, livePassword))) {
                 return new LiveLoad(null, null, "import profile " + profileId
                         + " connector connection changed; IDLE stopping");

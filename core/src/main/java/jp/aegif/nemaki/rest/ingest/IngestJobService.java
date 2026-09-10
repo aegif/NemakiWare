@@ -141,14 +141,41 @@ public class IngestJobService {
     }
 
     public List<IngestJobRecord> listJobs(int limit) {
-        return findByType(IngestJobRecord.DOC_TYPE, IngestJobRecord.class, limit);
+        return listJobsPage(limit).entries();
+    }
+
+    public JobPage listJobsPage(int limit) {
+        return decodeJobs(Map.of("type", IngestJobRecord.DOC_TYPE), Math.max(1, limit));
     }
 
     public List<IngestJobRecord> listJobsByProfile(String profileId) {
-        Map<String, Object> selector = Map.of(
-                "type", IngestJobRecord.DOC_TYPE,
-                "profileId", profileId);
-        return findBySelector(selector, IngestJobRecord.class, 50);
+        return listJobsByProfilePage(profileId).entries();
+    }
+
+    public JobPage listJobsByProfilePage(String profileId) {
+        return decodeJobs(Map.of("type", IngestJobRecord.DOC_TYPE, "profileId", profileId), 50);
+    }
+
+    private JobPage decodeJobs(Map<String, Object> selector, int limit) {
+        CloudantClientWrapper client = getConfClient();
+        List<Document> raw = findRawDocs(client.getClient(), client.getDatabaseName(),
+                selector, limit, 0);
+        List<IngestJobRecord> results = new ArrayList<>();
+        int unreadable = 0;
+        for (Document doc : raw) {
+            try {
+                Map<String, Object> props = new HashMap<>(doc.getProperties());
+                props.remove("_id");
+                props.remove("_rev");
+                props.remove("type");
+                results.add(MAPPER.convertValue(props, IngestJobRecord.class));
+            } catch (Exception couldNotDecode) {
+                unreadable++;
+                logger.warn("job row {} could not be decoded and is missing from this listing:"
+                        + " {}", doc.getId(), couldNotDecode.getMessage());
+            }
+        }
+        return new JobPage(results, unreadable);
     }
 
     // ── Dead-Letter Queue ──────────────────────────────────────────
@@ -256,7 +283,21 @@ public class IngestJobService {
 
             // Attach binary content to CouchDB document if available
             if (payload != null && docId != null) {
-                attachContentToDlq(docId, request.getFileName(), request.getMimeType(), payload);
+                try {
+                    attachContentToDlq(docId, request.getFileName(), request.getMimeType(), payload);
+                } catch (DlqPayloadNotStoredException notStored) {
+                    // Put the row back in step with the store: it says it carries a payload
+                    // and it does not. Written a second time rather than left wrong, because
+                    // the first write is what the retry door reads.
+                    logger.warn("DLQ row {} claimed a payload that was not stored; correcting"
+                            + " the row", dlq.getDlqId());
+                    dlq.setHasContent(false);
+                    dlq.setPayloadPresenceAssumed(false);
+                    dlq.setPayloadDropReason(notStored.getMessage());
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> corrected = MAPPER.convertValue(dlq, Map.class);
+                    upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE, corrected);
+                }
             }
 
             logger.info("Saved to DLQ: {} (source={}, failures={}, contentSize={})",
@@ -607,10 +648,37 @@ public class IngestJobService {
                     .attachment(new java.io.ByteArrayInputStream(content))
                     .build();
             cloudant.putAttachment(putAttOpts).execute();
-        } catch (Exception e) {
-            logger.warn("Failed to attach content to DLQ {}: {}", docId, e.getMessage());
+        } catch (Exception couldNotStore) {
+            // The row above has ALREADY been written with hasContent=true and no drop reason,
+            // and the encrypted bytes exist only in this frame. Swallowing left a row that
+            // says it holds a payload, holds none, and re-derives the same claim on every
+            // later save — a fixed point whose retry answers 409 for ever and whose only exit
+            // is deleting the loss record. A review traced it. Reported so the caller can put
+            // the row back in step with what is actually stored.
+            logger.error("the payload of DLQ entry {} could not be attached: {}",
+                    docId, couldNotStore.getMessage());
+            throw new DlqPayloadNotStoredException("the payload was encrypted but could not be"
+                    + " stored on the dead-letter row: " + couldNotStore.getMessage(),
+                    couldNotStore);
         }
     }
+
+    /** The bytes were produced but the store did not take them. Never "there are none". */
+    public static class DlqPayloadNotStoredException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        public DlqPayloadNotStoredException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
+    /**
+     * A page of job records, plus how many rows on it could not be decoded.
+     *
+     * <p>The DLQ listing 250 lines below was given this a round earlier; the job history was
+     * left silently dropping rows, so a PARTIAL or FAILED run written by a newer node looks
+     * like it never happened. A review found the pair disagreeing.
+     */
+    public record JobPage(List<IngestJobRecord> entries, int unreadable) {}
 
     public List<IngestDeadLetterRecord> listDlq(int limit) {
         return listDlq(limit, 0);
@@ -837,16 +905,20 @@ public class IngestJobService {
         reserveDlqRetry(dlq);
     }
 
-    public void deleteDlqEntry(String dlqId) {
+    /** @return how many stored rows were actually deleted — 0 is not "it was already gone". */
+    public int deleteDlqEntry(String dlqId) {
         CloudantClientWrapper client = getConfClient();
         String dbName = client.getDatabaseName();
         var cloudant = client.getClient();
         List<Document> docs = findRawDocs(cloudant, dbName,
                 Map.of("type", IngestDeadLetterRecord.DOC_TYPE, "dlqId", dlqId));
+        int deleted = 0;
         for (Document doc : docs) {
             cloudant.deleteDocument(new com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions.Builder()
                     .db(dbName).docId(doc.getId()).rev(doc.getRev()).build()).execute();
+            deleted++;
         }
+        return deleted;
     }
 
     // ── Internal ───────────────────────────────────────────────────
