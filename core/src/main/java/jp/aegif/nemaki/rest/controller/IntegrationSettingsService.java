@@ -61,14 +61,12 @@ public class IntegrationSettingsService {
 	 * satisfied by a system property, an environment variable or the properties file is
 	 * answered from there and never reaches the store, so an outage must not refuse it.
 	 *
-	 * <p>SCOPE, measured rather than assumed: {@code PropertyManager.readValue} consults
-	 * {@code nemaki_conf} only for the five admin-managed prefixes
-	 * ({@code cloud.auth.} / {@code cloud.drive.} / {@code sso.} / {@code oidc.} /
-	 * {@code saml.} — see {@code PropertyManager.isAdminManagedDynamicKey}). For any other key
-	 * the store is never asked, so {@code loadFailed} says nothing about THAT key and this
-	 * method's second arm can only fire for a key that is absent everywhere during an unrelated
-	 * outage. The refusal is still the safer answer there, but it is not evidence that the
-	 * key's own read failed. The thrown-read arm above is the one that covers every key.
+	 * <p>SCOPE. A previous version of this note said {@code readValue} consults
+	 * {@code nemaki_conf} only for the five admin-managed prefixes. THAT IS FALSE, and a review
+	 * caught it: the admin-managed check is only the FIRST of two dynamic reads, and the second
+	 * runs for every key that no system property or environment variable answered. So
+	 * {@code loadFailed} is about this key's own read after all — which is what the second arm
+	 * below assumes. The note was written from reading the top of the method and not the rest.
 	 *
 	 * @throws SettingUnreadableException when the key resolved nowhere AND the configuration
 	 *         database did not answer. Callers that would otherwise assert an absence must let

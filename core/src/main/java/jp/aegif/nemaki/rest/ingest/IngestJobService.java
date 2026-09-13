@@ -952,12 +952,18 @@ public class IngestJobService {
                     if (java.time.Instant.parse(ts).isBefore(cutoff)) {
                         Object dlqId = doc.getProperties().get("dlqId");
                         if (dlqId instanceof String id) {
-                            // The COUNT, not the intent. deleteDlqEntry answers how many rows
-                            // it removed — a rebuilding index removes none — and incrementing
-                            // regardless told the operator entries were cleared that are still
-                            // there and will be back in the next listing. A review found the
-                            // count claim in the release notes unsupported here.
-                            deleted += deleteDlqEntry(id);
+                            // Deleted by the revision this walk SAW, not by re-querying the id.
+                            // Re-querying took whatever is there now, so a failure recorded
+                            // since the walk began — the same deterministic id, a current
+                            // failedAt — was deleted as an old entry, and the purge reported it
+                            // as such. That destroys the only record of a fresh loss. Codex
+                            // built it. A conflict here means the row moved and is no longer
+                            // the old one, so it is left alone.
+                            //
+                            // The COUNT is what came back, not the intent: a rebuilding index
+                            // removes nothing, and incrementing regardless told the operator
+                            // entries were cleared that are still there.
+                            deleted += deleteExactRevision(cloudant, dbName, doc, id);
                         }
                     }
                 } catch (java.time.format.DateTimeParseException parseErr) {
@@ -1086,6 +1092,25 @@ public class IngestJobService {
     @Deprecated
     public void updateDlqRetry(IngestDeadLetterRecord dlq) {
         reserveDlqRetry(dlq);
+    }
+
+    /**
+     * Delete exactly the revision a walk saw. A conflict means the row changed since — a newer
+     * failure for the same source item — and the caller must not treat that as the old entry.
+     */
+    private int deleteExactRevision(com.ibm.cloud.cloudant.v1.Cloudant cloudant, String dbName,
+            Document seen, String dlqId) {
+        try {
+            cloudant.deleteDocument(new com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions
+                    .Builder().db(dbName).docId(seen.getId()).rev(seen.getRev()).build())
+                    .execute();
+            return 1;
+        } catch (RuntimeException movedOrGone) {
+            logger.warn("DLQ entry {} was not purged: the row changed since the walk saw it"
+                    + " ({}). If it failed again it is no longer an old entry", dlqId,
+                    movedOrGone.getMessage());
+            return 0;
+        }
     }
 
     /** @return how many stored rows were actually deleted — 0 is not "it was already gone". */

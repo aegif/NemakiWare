@@ -142,11 +142,42 @@ public class FetchSupport {
     public String resolvePasswordOrRefuse(ConnectorDefinition connector) {
         String credentialRef = connector.getCredentialRef();
         if (credentialRef == null || credentialRef.isBlank()) return null;
-        String value = resolvePassword(connector);
+        if (propertyManager == null) {
+            // Not "this connector has no token". The reader is not wired on this node, and the
+            // callers state the null as a fact — "No token for X" — which opens the connector's
+            // circuit breaker and invites an admin to overwrite a credential that is fine. A
+            // review found this arm still fail-open after the rest of the method was converted.
+            throw new jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                    .SettingUnreadableException("the credential '" + credentialRef + "' of"
+                            + " connector " + connector.getConnectorId() + " cannot be read on"
+                            + " this node: no property manager is wired; retry shortly against"
+                            + " a node that has one");
+        }
+        String value;
+        try {
+            value = resolvePassword(connector);
+        } catch (RuntimeException couldNotRead) {
+            // A read that THREW is a failed read. It used to leave this method as a raw
+            // exception, which the scheduler counts against the connector's circuit breaker
+            // and the folder door answers 500 for.
+            throw new jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                    .SettingUnreadableException("the credential '" + credentialRef + "' of"
+                            + " connector " + connector.getConnectorId() + " could not be read: "
+                            + couldNotRead.getMessage() + "; retry shortly");
+        }
         if (value != null) return value;
-        if (propertyManager != null) {
-            jp.aegif.nemaki.model.Configuration conf = propertyManager.getConfiguration(
-                    jp.aegif.nemaki.util.constant.SystemConst.NEMAKI_CONF_DB);
+        {
+            jp.aegif.nemaki.model.Configuration conf;
+            try {
+                conf = propertyManager.getConfiguration(
+                        jp.aegif.nemaki.util.constant.SystemConst.NEMAKI_CONF_DB);
+            } catch (RuntimeException couldNotAsk) {
+                throw new jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                        .SettingUnreadableException("whether the credential '" + credentialRef
+                                + "' of connector " + connector.getConnectorId() + " is stored"
+                                + " could not be established: " + couldNotAsk.getMessage()
+                                + "; retry shortly");
+            }
             if (conf != null && conf.isLoadFailed()) {
                 throw new jp.aegif.nemaki.rest.controller.IntegrationSettingsService
                         .SettingUnreadableException("the credential '" + credentialRef

@@ -70,7 +70,19 @@ public class PropertyManager{
 			return envValue;
 		}
 
-		Object configVal = getDynamicValue(key);
+		// The dynamic read comes BEFORE the properties file, so letting it throw lost a value
+		// the file could have answered — and the refusing wrapper in IntegrationSettingsService
+		// then reported a key as unreadable although it is configured. A review traced the
+		// ordering. The file still gets its turn; a wrapper that needs to know the store failed
+		// asks Configuration.isLoadFailed, which this leaves set.
+		Object configVal;
+		try {
+			configVal = getDynamicValue(key);
+		} catch (RuntimeException couldNotAsk) {
+			log.warn("the configuration database did not answer for '" + key
+					+ "'; falling back to the properties file: " + couldNotAsk.getMessage());
+			configVal = null;
+		}
 		if(configVal == null){
 			return propertyConfigurer.getValue(key);
 		}else{

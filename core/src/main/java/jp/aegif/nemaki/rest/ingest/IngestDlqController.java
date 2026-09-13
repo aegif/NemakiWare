@@ -194,8 +194,6 @@ public class IngestDlqController {
             // Declared here rather than after the dispatch: the payload-restore block below
             // has something to say about how it resolved the entry's recorded state.
             Map<String, Object> response = new LinkedHashMap<>();
-            // Set when an unconfirmed payload write was settled by reading the store below.
-            boolean payloadAlreadyRestored = false;
 
             // Bytes this entry HAD but that were never stored are not "this item has no
             // content". Replaying without them creates an empty document, reports success and
@@ -232,28 +230,29 @@ public class IngestDlqController {
                 // unrelated save removes it. Codex found the stuck state. So ask the store
                 // instead of refusing blind — if the payload is there, the write did land and
                 // this entry is replayable now.
-                byte[] settled = null;
-                try {
-                    settled = ingestJobService.loadDlqContent(dlqId);
-                } catch (IngestJobService.DlqContentUnreadableException stillUnknown) {
+                // A previous round read the payload here and, if bytes came back, replayed with
+                // them — "the write must have landed". That was wrong: the row may carry an
+                // EARLIER attempt's attachment which the in-flight write has not replaced yet,
+                // so the replay paired old bytes with new metadata. Codex built it. Reading
+                // cannot establish that the pending write landed, so this does not try.
+                //
+                // What it does instead is bound the wait. A token is a lease: past it, the save
+                // that took it is gone (its JVM died, or its confirming write threw), and the
+                // row must not refuse for ever. Past the lease the token is abandoned and the
+                // entry falls through to the ordinary payload path, which refuses on its own
+                // terms if no payload comes back.
+                boolean abandoned = dlq.getFailedAt() != null && ageExceeds(
+                        dlq.getFailedAt(), PAYLOAD_WRITE_LEASE_MINUTES);
+                if (!abandoned) {
                     return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, "a payload write for"
-                            + " DLQ entry " + dlqId + " has not been confirmed and the stored"
-                            + " payload could not be read (" + stillUnknown.getMessage()
-                            + "); the entry is kept and nothing was imported. Retry shortly");
+                            + " DLQ entry " + dlqId + " has not been confirmed; the entry is"
+                            + " kept and nothing was imported. Retry shortly");
                 }
-                if (settled == null) {
-                    return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, "a payload write for"
-                            + " DLQ entry " + dlqId + " has not been confirmed and no stored"
-                            + " payload came back; the entry is kept and nothing was imported."
-                            + " Retry shortly");
-                }
-                // The bytes ARE there. The row's token is stale; replay with them.
-                request.setContentStream(new java.io.ByteArrayInputStream(settled));
-                payloadAlreadyRestored = true;
-                response.put("payloadWriteSettledByRead", true);
-                response.put("payloadWriteNote", "this entry's payload write was never"
-                        + " confirmed, but the stored payload came back, so it was replayed"
-                        + " with it");
+                response.put("payloadWriteAbandoned", true);
+                response.put("payloadWriteNote", "a payload write for this entry was never"
+                        + " confirmed and is older than " + PAYLOAD_WRITE_LEASE_MINUTES
+                        + " minutes, so it was treated as abandoned. Whether those bytes are"
+                        + " stored was NOT established");
             }
             if (dlq.getPayloadDropReason() != null) {
                 // NOT gated on hasContent. A row can carry an OLDER attempt's attachment
@@ -276,7 +275,7 @@ public class IngestDlqController {
             }
 
             // Restore content stream from CouchDB attachment if available
-            if (!payloadAlreadyRestored && dlq.isHasContent()) {
+            if (dlq.isHasContent()) {
                 // A read that could not answer must not become "this entry had nothing to
                 // restore": the retry would import a content-less document, report success,
                 // and DELETE the row that is the only record the source item was lost.
@@ -490,6 +489,23 @@ public class IngestDlqController {
     private ResponseEntity<?> forbidden() {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(Map.of("status", "error", "message", "Admin access required"));
+    }
+
+    /**
+     * How long an unconfirmed payload write may hold an entry before it is treated as
+     * abandoned. Long enough that a slow attachment is not stolen from, short enough that a
+     * save whose JVM died does not refuse the entry for ever.
+     */
+    private static final int PAYLOAD_WRITE_LEASE_MINUTES = 15;
+
+    private static boolean ageExceeds(String isoTimestamp, int minutes) {
+        try {
+            return java.time.Instant.parse(isoTimestamp)
+                    .isBefore(java.time.Instant.now().minus(java.time.Duration.ofMinutes(minutes)));
+        } catch (Exception unparsable) {
+            // An unparsable stamp is not evidence that the lease expired.
+            return false;
+        }
     }
 
     private ResponseEntity<?> errorResponse(HttpStatus status, String message) {

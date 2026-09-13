@@ -665,7 +665,13 @@ CONTROLS = [
                    'does not exist", e);'),
         replace="\t\t\treturn null;",
         test="CachedLookupFailuresAreNotAbsenceTest",
-        expect_fail=["aCacheMissOverAFailureThrows"],
+        # Completed from MEASUREMENT. Found by the FOURTH suite-wide pass, the first done
+        # from the TEST side (enumerate every @Test, work out what product code its
+        # fixture reaches, then ask which controls sabotage that set). Three earlier
+        # control-side passes missed these. Every one is a control written BEFORE the
+        # narrower sibling lock that now shares its span.
+        expect_fail=["aCacheMissOverAFailureThrows",
+                     'getFolderPropagatesTheRefusal'],
     ),
     dict(
         id="JD",
@@ -1875,7 +1881,13 @@ CONTROLS = [
         find='        com.ibm.cloud.cloudant.v1.model.Document deterministic = existing.isEmpty()\n                ? readByDeterministicId(cloudant, dbName, def.getConnectorId())\n                : null;',
         replace='        com.ibm.cloud.cloudant.v1.model.Document deterministic = null;',
         test="ConnectorCreationRefusesAnIndexDisagreementTest",
-        expect_fail=["theWriteConsultsTheDeterministicId"],
+        # Completed from MEASUREMENT. Found by the FOURTH suite-wide pass, the first done
+        # from the TEST side (enumerate every @Test, work out what product code its
+        # fixture reaches, then ask which controls sabotage that set). Three earlier
+        # control-side passes missed these. Every one is a control written BEFORE the
+        # narrower sibling lock that now shares its span.
+        expect_fail=["theWriteConsultsTheDeterministicId",
+                     'anUpdateRefusesRetryably'],
     ),
     dict(
         id="OB",
@@ -1951,7 +1963,13 @@ CONTROLS = [
                    '                            + " written. Retry, or send the real values.");\n        }'),
         replace='',
         test='ConnectorDefinitionControllerPartialPutTest',
-        expect_fail=['aMaskedSecretIsNotWrittenWhenTheStoredRowCouldNotBeReadBack'],
+        # Completed from MEASUREMENT. Found by the FOURTH suite-wide pass, the first done
+        # from the TEST side (enumerate every @Test, work out what product code its
+        # fixture reaches, then ask which controls sabotage that set). Three earlier
+        # control-side passes missed these. Every one is a control written BEFORE the
+        # narrower sibling lock that now shares its span.
+        expect_fail=['aMaskedSecretIsNotWrittenWhenTheStoredRowCouldNotBeReadBack',
+                     'aMaskedWebhookSecretIsNotWrittenEither'],
     ),
     dict(
         id="OG",
@@ -2062,7 +2080,13 @@ CONTROLS = [
                    '+ " secret to keep; send the real credentialRef/webhookSecret.");\n        }'),
         replace='',
         test='ConnectorDefinitionControllerPartialPutTest',
-        expect_fail=['aCreateCarryingTheMaskIsRefused'],
+        # Completed from MEASUREMENT. Found by the FOURTH suite-wide pass, the first done
+        # from the TEST side (enumerate every @Test, work out what product code its
+        # fixture reaches, then ask which controls sabotage that set). Three earlier
+        # control-side passes missed these. Every one is a control written BEFORE the
+        # narrower sibling lock that now shares its span.
+        expect_fail=['aCreateCarryingTheMaskIsRefused',
+                     'aCreateCarryingAMaskedWebhookSecretIsRefusedToo'],
     ),
     dict(
         id="OO",
@@ -2491,7 +2515,14 @@ CONTROLS = [
         find='        if (!definesProfile(props, profileId)\n                || repositoryId == null\n                || !(unowned || repositoryId.equals(props.get("repositoryId")))) {',
         replace='        if (props == null) {',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['theOneRowDeleteRefusesAMismatchedRow'],
+        # Completed from MEASUREMENT. Found by the FOURTH suite-wide pass, the first done
+        # from the TEST side (enumerate every @Test, work out what product code its
+        # fixture reaches, then ask which controls sabotage that set). Three earlier
+        # control-side passes missed these. Every one is a control written BEFORE the
+        # narrower sibling lock that now shares its span.
+        expect_fail=['theOneRowDeleteRefusesAMismatchedRow',
+                     'anotherRepositorysRowIsStillRefused',
+                     'theOneRowDeleteRefusesAnotherRepositorysRow'],
     ),
     dict(
         id="PT",
@@ -2532,7 +2563,13 @@ CONTROLS = [
         find='        if (!definesProfile(props, profileId)\n                || repositoryId == null\n                || !(unowned || repositoryId.equals(props.get("repositoryId")))) {',
         replace='        if (!definesProfile(props, profileId)) {',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['theOneRowDeleteRefusesAnotherRepositorysRow'],
+        # Completed from MEASUREMENT. Found by the FOURTH suite-wide pass, the first done
+        # from the TEST side (enumerate every @Test, work out what product code its
+        # fixture reaches, then ask which controls sabotage that set). Three earlier
+        # control-side passes missed these. Every one is a control written BEFORE the
+        # narrower sibling lock that now shares its span.
+        expect_fail=['theOneRowDeleteRefusesAnotherRepositorysRow',
+                     'anotherRepositorysRowIsStillRefused'],
     ),
     dict(
         id="PW",
@@ -2686,7 +2723,14 @@ CONTROLS = [
                    '            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, partly.getMessage());\n        }'),
         replace='        int elsewhere = importProfileDefinitionService.delete(profileId, authRepository(ctx));',
         test='ImportProfileHiddenIsNotAbsentTest',
-        expect_fail=['thePlainDeleteCarriesTheRepositoryAndRefusesRetryably'],
+        # Completed from MEASUREMENT. Found by the FOURTH suite-wide pass, the first done
+        # from the TEST side (enumerate every @Test, work out what product code its
+        # fixture reaches, then ask which controls sabotage that set). Three earlier
+        # control-side passes missed these. Every one is a control written BEFORE the
+        # narrower sibling lock that now shares its span.
+        expect_fail=['thePlainDeleteCarriesTheRepositoryAndRefusesRetryably',
+                     'aPartlyFailedDeleteIsAuditedAndRetryable',
+                     'aRefusedDeleteLeavesImapIdleRunning'],
     ),
     dict(
         id="QI",
@@ -3083,7 +3127,14 @@ CONTROLS = [
                    '                    + " remove the profile.");\n        }'),
         replace='',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['theRowResolverRefusesTheOnlyRow'],
+        # Completed from MEASUREMENT. Found by the FOURTH suite-wide pass, the first done
+        # from the TEST side (enumerate every @Test, work out what product code its
+        # fixture reaches, then ask which controls sabotage that set). Three earlier
+        # control-side passes missed these. Every one is a control written BEFORE the
+        # narrower sibling lock that now shares its span.
+        expect_fail=['theRowResolverRefusesTheOnlyRow',
+                     'aCountOfZeroIsADisagreementNotTheOnlyRow',
+                     'aProfilePostDeleteCountThatCannotAnswerReportsMinusOne'],
     ),
     dict(
         id="SD",
@@ -3093,7 +3144,14 @@ CONTROLS = [
                    '                    + " pair. Use DELETE without docId to remove the connector.");\n        }'),
         replace='',
         test='ConnectorLegacyIdMigrationTest',
-        expect_fail=['theRowResolverRefusesTheOnlyRow'],
+        # Completed from MEASUREMENT. Found by the FOURTH suite-wide pass, the first done
+        # from the TEST side (enumerate every @Test, work out what product code its
+        # fixture reaches, then ask which controls sabotage that set). Three earlier
+        # control-side passes missed these. Every one is a control written BEFORE the
+        # narrower sibling lock that now shares its span.
+        expect_fail=['theRowResolverRefusesTheOnlyRow',
+                     'aCountOfZeroIsADisagreementNotTheOnlyRow',
+                     'aPostDeleteCountThatCannotAnswerReportsMinusOne'],
     ),
     dict(
         id="SE",
@@ -3123,7 +3181,14 @@ CONTROLS = [
                    '            return -1;\n        }'),
         replace='        return 1;',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['theRowDeleteReportsTheSurvivors'],
+        # Completed from MEASUREMENT. Found by the FOURTH suite-wide pass, the first done
+        # from the TEST side (enumerate every @Test, work out what product code its
+        # fixture reaches, then ask which controls sabotage that set). Three earlier
+        # control-side passes missed these. Every one is a control written BEFORE the
+        # narrower sibling lock that now shares its span.
+        expect_fail=['theRowDeleteReportsTheSurvivors',
+                     'aProfilePostDeleteCountThatCannotAnswerReportsMinusOne',
+                     'anUnownedRowIsReachable'],
     ),
     dict(
         id="SH",
@@ -3133,7 +3198,13 @@ CONTROLS = [
                    '            return -1;\n        }'),
         replace='        return 1;',
         test='ConnectorLegacyIdMigrationTest',
-        expect_fail=['theRowDeleteReportsTheSurvivors'],
+        # Completed from MEASUREMENT. Found by the FOURTH suite-wide pass, the first done
+        # from the TEST side (enumerate every @Test, work out what product code its
+        # fixture reaches, then ask which controls sabotage that set). Three earlier
+        # control-side passes missed these. Every one is a control written BEFORE the
+        # narrower sibling lock that now shares its span.
+        expect_fail=['theRowDeleteReportsTheSurvivors',
+                     'aPostDeleteCountThatCannotAnswerReportsMinusOne'],
     ),
     dict(
         id="SI",
@@ -3143,7 +3214,18 @@ CONTROLS = [
                    '        if (existing == null) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");'),
         replace='        ImportProfileDefinition existing = importProfileDefinitionService.get(profileId);\n        if (existing == null || !belongsToAuthRepository(ctx, existing)) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");',
         test='ImportProfileHiddenIsNotAbsentTest',
-        expect_fail=['aSharedProfileIdDoesNotLockThisRepositoryOut'],
+        # Completed from MEASUREMENT. Found by the FOURTH suite-wide pass, the first done
+        # from the TEST side (enumerate every @Test, work out what product code its
+        # fixture reaches, then ask which controls sabotage that set). Three earlier
+        # control-side passes missed these. Every one is a control written BEFORE the
+        # narrower sibling lock that now shares its span.
+        expect_fail=['aSharedProfileIdDoesNotLockThisRepositoryOut',
+                     'aHiddenProfileIsA503OnDelete',
+                     'aPairInThisRepositoryIsA409NotAChoice',
+                     'aSessionServingAnotherRepositoryIsLeftAlone',
+                     'aSessionServingThisRepositoryIsStopped',
+                     'aSharedProfileIdBranchStopsTheSchedulerWhenNothingRemains',
+                     'anUnattributableSessionIsStopped'],
     ),
     dict(
         id="SJ",
@@ -3590,7 +3672,15 @@ CONTROLS = [
                    '            results = List.of();\n            selectorAnswered = false;\n        }'),
         replace='        List<ConnectorDefinition> results = findBySelector(Map.of(\n                "type", ConnectorDefinition.DOC_TYPE,\n                "connectorId", connectorId), refuseUnanswered);\n        boolean selectorAnswered = true;',
         test='ConnectorLegacyIdMigrationTest',
-        expect_fail=['aFailingSelectorDoesNotEscape'],
+        # Completed from MEASUREMENT. Found by the FOURTH suite-wide pass, the first done
+        # from the TEST side (enumerate every @Test, work out what product code its
+        # fixture reaches, then ask which controls sabotage that set). Three earlier
+        # control-side passes missed these. Every one is a control written BEFORE the
+        # narrower sibling lock that now shares its span.
+        expect_fail=['aFailingSelectorDoesNotEscape',
+                     'aMissingConfClientOnTheIdFallbackDoesNotEscape',
+                     'getFallsBackToTheDeterministicRowWhenTheSelectorListingIsIncomplete',
+                     'getOrRefuseFallsBackToTheDeterministicRowWhenTheSelectorListingIsIncomplete'],
     ),
     dict(
         id="TY",
@@ -3829,7 +3919,13 @@ CONTROLS = [
         find='            ImportProfileDefinition mailProfile;\n            try {\n                mailProfile = resolveProfileForRepository(\n                        request.getProfileId(), request.getRepositoryId());\n            } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException\n                    | ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {\n                warnings.add("Raw .eml preservation could not be decided; retry shortly: "\n                        + e.getMessage());\n                mailProfile = null;\n            }',
         replace='            ImportProfileDefinition mailProfile = request.getProfileId() != null\n                    ? importProfileDefinitionService.get(request.getProfileId()) : null;',
         test='IngestCreatedObjectPropagationTest',
-        expect_fail=['anUnownedPreserveFlagDoesNotCreateARawEmlChild'],
+        # Completed from MEASUREMENT. Found by the FOURTH suite-wide pass, the first done
+        # from the TEST side (enumerate every @Test, work out what product code its
+        # fixture reaches, then ask which controls sabotage that set). Three earlier
+        # control-side passes missed these. Every one is a control written BEFORE the
+        # narrower sibling lock that now shares its span.
+        expect_fail=['anUnownedPreserveFlagDoesNotCreateARawEmlChild',
+                     'aLaterUnreadableProfileDoesNotSilentlySkipRawEml'],
     ),
     dict(
         id="UB",
@@ -4049,7 +4145,13 @@ CONTROLS = [
                    '                return;\n            }'),
         replace='',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['anIdentitylessRowIsNotScheduled'],
+        # Completed from MEASUREMENT. Found by the FOURTH suite-wide pass, the first done
+        # from the TEST side (enumerate every @Test, work out what product code its
+        # fixture reaches, then ask which controls sabotage that set). Three earlier
+        # control-side passes missed these. Every one is a control written BEFORE the
+        # narrower sibling lock that now shares its span.
+        expect_fail=['anIdentitylessRowIsNotScheduled',
+                     'theOwnedListingReportsANamelessRowToo'],
     ),
     dict(
         id="VJ",
@@ -4788,7 +4890,13 @@ CONTROLS = [
                    '        }'),
         replace='        }',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['theSelectorListingRefusesATransportFailureWithTheTypedRefusal'],
+        # Completed from MEASUREMENT. Found by the FOURTH suite-wide pass, the first done
+        # from the TEST side (enumerate every @Test, work out what product code its
+        # fixture reaches, then ask which controls sabotage that set). Three earlier
+        # control-side passes missed these. Every one is a control written BEFORE the
+        # narrower sibling lock that now shares its span.
+        expect_fail=['theSelectorListingRefusesATransportFailureWithTheTypedRefusal',
+                     'theSelectorTransportFailureIsLoggedWithItsCause'],
     ),
     dict(
         id="XP",
@@ -4802,7 +4910,13 @@ CONTROLS = [
                    '        }'),
         replace='        }',
         test='ConnectorLegacyIdMigrationTest',
-        expect_fail=['theSelectorListingRefusesATransportFailureWithTheTypedRefusal'],
+        # Completed from MEASUREMENT. Found by the FOURTH suite-wide pass, the first done
+        # from the TEST side (enumerate every @Test, work out what product code its
+        # fixture reaches, then ask which controls sabotage that set). Three earlier
+        # control-side passes missed these. Every one is a control written BEFORE the
+        # narrower sibling lock that now shares its span.
+        expect_fail=['theSelectorListingRefusesATransportFailureWithTheTypedRefusal',
+                     'theSelectorTransportFailureIsLoggedWithItsCause'],
     ),
     dict(
         id="XQ",
