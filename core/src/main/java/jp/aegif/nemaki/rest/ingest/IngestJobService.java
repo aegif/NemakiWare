@@ -184,7 +184,20 @@ public class IngestJobService {
         saveToDlq(request, errorMessage, null);
     }
 
+    /**
+     * For a failure raised BEFORE the import service was reached — the source was never read.
+     * The row is marked so a replay that reports "nothing to import" does not delete it.
+     */
+    public void saveSourceNeverReadToDlq(ExternalIngestRequest request, String errorMessage) {
+        saveToDlq(request, errorMessage, null, true);
+    }
+
     public void saveToDlq(ExternalIngestRequest request, String errorMessage, byte[] contentBytes) {
+        saveToDlq(request, errorMessage, contentBytes, false);
+    }
+
+    public void saveToDlq(ExternalIngestRequest request, String errorMessage, byte[] contentBytes,
+            boolean sourceNeverRead) {
         try {
             String dlqId = deadLetterIdFor(request);
             // The WRITE path must not inherit the read path's refusal. getDlqEntry refuses a
@@ -232,6 +245,11 @@ public class IngestJobService {
 
             IngestDeadLetterRecord dlq = buildDlqRecord(request, errorMessage, existing,
                     Instant.now().toString(), rowWasUnreadable);
+            // Sticky: once an attempt recorded that the source was never read, a later attempt
+            // that also never read it must not clear the mark, and neither must one that did.
+            // Only a replay that actually resolves the row removes it.
+            dlq.setSourceNeverRead(sourceNeverRead
+                    || (existing != null && existing.isSourceNeverRead()));
 
             // The payload is encrypted or it is not written. Storing ingested bytes in the
             // clear in nemaki_conf — no ACL of its own, no retention — is not an acceptable
@@ -289,14 +307,41 @@ public class IngestJobService {
                     // Put the row back in step with the store: it says it carries a payload
                     // and it does not. Written a second time rather than left wrong, because
                     // the first write is what the retry door reads.
-                    logger.warn("DLQ row {} claimed a payload that was not stored; correcting"
-                            + " the row", dlq.getDlqId());
-                    dlq.setHasContent(false);
-                    dlq.setPayloadPresenceAssumed(false);
-                    dlq.setPayloadDropReason(notStored.getMessage());
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> corrected = MAPPER.convertValue(dlq, Map.class);
-                    upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE, corrected);
+                    //
+                    // FIRST re-read, because putAttachment can COMMIT and then throw — a lost
+                    // response is the commonest shape of this failure. Recording a drop reason
+                    // for a payload that is actually stored would refuse a legitimate replay
+                    // for ever. A review named that inverse.
+                    Boolean reallyThere = storedDocumentHasAttachment(dlq.getDlqId());
+                    if (Boolean.TRUE.equals(reallyThere)) {
+                        logger.warn("the attachment write of DLQ entry {} reported a failure but"
+                                + " the payload IS stored; the row is left as written",
+                                dlq.getDlqId());
+                    } else {
+                        dlq.setHasContent(false);
+                        // null from the re-read means the store could not be asked either. The
+                        // row then says it carries none AND records that as an assumption, so
+                        // the next save re-probes instead of inheriting it.
+                        dlq.setPayloadPresenceAssumed(reallyThere == null);
+                        dlq.setPayloadDropReason(notStored.getMessage());
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> corrected = MAPPER.convertValue(dlq, Map.class);
+                        // The correction's own result is CHECKED. upsertDocument answers null
+                        // on a _rev race and the first version ignored it, while the log line
+                        // above — emitted before the write — already claimed the row had been
+                        // corrected. A review found both halves.
+                        String correctedId = upsertDocument(dlq.getDlqId(),
+                                IngestDeadLetterRecord.DOC_TYPE, corrected);
+                        if (correctedId == null) {
+                            logger.error("DLQ row {} still claims a payload that was not"
+                                    + " stored: the correcting write did not land. The retry"
+                                    + " door will refuse this entry on the stored-payload arm"
+                                    + " instead of naming the drop", dlq.getDlqId());
+                        } else {
+                            logger.warn("DLQ row {} claimed a payload that was not stored;"
+                                    + " corrected", dlq.getDlqId());
+                        }
+                    }
                 }
             }
 

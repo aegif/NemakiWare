@@ -6705,8 +6705,9 @@ CONTROLS = [
         what="a stored row the mapper refused is answered as a retry again — a standing "
              "condition wearing the transient answer",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java',
-        find_span=('        if (message.contains("could not be read as a profile")\n'
-                   '                || message.contains("could not be read as a connector")) {\n'
+        # Re-anchored: the arm was narrowed to one prefix test after a review found the
+        # two-item list missing "as THAT connector".
+        find_span=('        if (message.contains("could not be read as ")) {\n'
                    '            return HttpStatus.CONFLICT;',
                    '        }\n        if (couldNotAsk(message) || couldNotAsk(raw)) {'),
         replace='        if (couldNotAsk(message) || couldNotAsk(raw)) {',
@@ -6729,12 +6730,15 @@ CONTROLS = [
         what="a corrupt stored row is classified as 'could not ask' again, so IDLE spins a "
              "full nemaki_conf walk per message for ever instead of stopping",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
-        find_span=('        if (refusal.contains("could not be read as a profile")\n'
-                   '                || refusal.contains("could not be read as a connector")) {',
+        # Re-anchored: one prefix test now — see VB2.
+        find_span=('        if (refusal.contains("could not be read as ")) {',
                    '            return false;\n        }\n        return refusal.contains("retry shortly")'),
         replace='        return refusal.contains("retry shortly")',
         test='ImapIdleSessionRegistryTest',
-        expect_fail=['aCorruptRowIsASettledRefusal'],
+        # The second is MEASURED: both locks assert that a corrupt/ambiguous stored row is a
+        # settled refusal, and this sabotage removes the arm both of them rest on.
+        expect_fail=['aCorruptRowIsASettledRefusal',
+                     'theDeterministicIdMismatchIsSettled'],
     ),
     dict(
         id="VE2",
@@ -6796,11 +6800,57 @@ CONTROLS = [
         what="a payload the store would not take leaves the row claiming it holds one — a "
              "fixed point whose retry answers 409 for ever",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
-        find_span=('                } catch (DlqPayloadNotStoredException notStored) {',
-                   '                    upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE, corrected);\n                }'),
-        replace='                } catch (DlqPayloadNotStoredException notStored) {\n                }',
+        # Re-anchored: the block gained a re-read (putAttachment can commit and then throw) and
+        # a check of the correcting write's own result, so the old span no longer balances.
+        # Neutralised at the branch instead: taking the "the payload IS stored" arm skips the
+        # correction entirely, which is exactly the defect — the row keeps hasContent=true with
+        # no attachment.
+        find='                    if (Boolean.TRUE.equals(reallyThere)) {',
+        replace='                    if (true) {',
         test='DlqReplayArchetypeGateTest',
         expect_fail=['anAttachmentThatFailedIsNotClaimedAsStored'],
+    ),
+    dict(
+        id="VK2",
+        what="the exclusion drops back to a two-item list, so the deterministic-id mismatch "
+             "('as THAT connector') is read as transient and IDLE never tears down",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='        if (refusal.contains("could not be read as ")) {',
+        replace='        if (refusal.contains("could not be read as a profile")\n'
+                '                || refusal.contains("could not be read as a connector")) {',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['theDeterministicIdMismatchIsSettled'],
+    ),
+    dict(
+        id="VL2",
+        what="a checkpoint read that could not answer escapes the endpoint as a Spring 500 — "
+             "'our bug' for the one condition this batch converts to 503",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java',
+        find='            jp.aegif.nemaki.rest.controller.IntegrationSettingsService\n'
+             '                    .SettingUnreadableException.class})',
+        replace='            })',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['aCheckpointReadThatCouldNotAnswerIs503_notOurBug'],
+    ),
+    dict(
+        id="VM2",
+        what="a skip on a row whose source was never READ deletes it again, destroying the "
+             "only record of the loss with the tool that exists to recover it",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find='            if (result.skipped() && dlq.isSourceNeverRead()) {',
+        replace='            if (false) {',
+        test='DlqRetryRefusalStatusTest',
+        expect_fail=['aSkipDoesNotResolveARowWhoseSourceWasNeverRead'],
+    ),
+    dict(
+        id="VN2",
+        what="the retry path ignores the delete's return value again, so a row the index could "
+             "not show is reported resolved and reappears in the next listing",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find='                response.put("status", removed > 0 ? "resolved" : "resolved-entry-kept");',
+        replace='                response.put("status", "resolved");',
+        test='DlqRetryRefusalStatusTest',
+        expect_fail=['aResolvedRetryWhoseDeleteRemovedNothingSaysSo'],
     ),
     dict(
         id="ST2",

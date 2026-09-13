@@ -270,15 +270,44 @@ public class IngestDlqController {
                 response.put("strippedBinaryNote", "attachment bytes were not stored with this "
                         + "entry and were not replayed; the next connector poll re-fetches them");
             }
+            if (result.skipped() && dlq.isSourceNeverRead()) {
+                // A skip is an idempotent RESOLUTION only when the item is actually in the
+                // repository. On a row whose source was never read, the replay can report
+                // "nothing to import" — the Notion page arm does exactly this under the
+                // default files_only policy when the attachment list was never fetched — and
+                // deleting on that destroys the only record that the item was lost, using the
+                // tool that exists to recover it. A review traced the chain. The row stays.
+                response.put("status", "skipped");
+                response.put("entryKept", true);
+                response.put("skipReason", result.skipReason());
+                response.put("entryKeptNote", "this entry records a source item that was never"
+                        + " read, so 'nothing to import' is not evidence that it was recovered."
+                        + " The entry is kept. Re-fetch through the connector, then delete this"
+                        + " entry if the item is confirmed present");
+                return ResponseEntity.ok(response);
+            }
             if (result.skipped()) {
                 // Idempotent outcome — object already exists, remove from DLQ
-                ingestJobService.deleteDlqEntry(dlqId);
-                response.put("status", "resolved");
+                int removed = ingestJobService.deleteDlqEntry(dlqId);
+                response.put("status", removed > 0 ? "resolved" : "resolved-entry-kept");
+                if (removed == 0) {
+                    // The delete walks a Mango selector; a rebuilding index removes nothing.
+                    // Saying "resolved" alone left the row to reappear in the next listing
+                    // with no hint of why. A review found the return value ignored here.
+                    response.put("entryKeptNote", "the import was resolved but no stored row"
+                            + " was returned to delete; the entry may reappear until the index"
+                            + " catches up");
+                }
                 if (result.objectId() != null) response.put("objectId", result.objectId());
                 response.put("skipReason", result.skipReason());
             } else if (result.isSuccess()) {
-                ingestJobService.deleteDlqEntry(dlqId);
-                response.put("status", "success");
+                int removed = ingestJobService.deleteDlqEntry(dlqId);
+                response.put("status", removed > 0 ? "success" : "success-entry-kept");
+                if (removed == 0) {
+                    response.put("entryKeptNote", "the import succeeded but no stored row was"
+                            + " returned to delete; the entry may reappear until the index"
+                            + " catches up");
+                }
                 response.put("objectId", result.objectId());
             } else {
                 // A PERMANENT refusal must not read as a failed attempt. "200 + failed +

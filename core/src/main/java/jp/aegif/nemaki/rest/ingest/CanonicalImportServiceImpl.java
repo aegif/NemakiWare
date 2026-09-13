@@ -497,7 +497,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 if (conn != null && !request.getConnectorId().equals(conn.getConnectorId())) {
                     return ExternalIngestResult.error(requestId, "connector "
                             + request.getConnectorId()
-                            + " exists but could not be read as that connector; retry shortly");
+                            + " exists but could not be read as that connector");
                 }
                 if (conn != null) {
                     try {
@@ -3179,7 +3179,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 && !request.getConnectorId().equals(connector.getConnectorId())) {
             return ExternalIngestResult.error(requestId, "connector "
                     + request.getConnectorId()
-                    + " exists but could not be read as that connector; retry shortly");
+                    + " exists but could not be read as that connector");
         }
         if (connector != null) {
             // get() returns the selector's first row. A pair was run by index order; a

@@ -103,7 +103,7 @@ class ImapIdleSessionRegistryTest {
         when(connectors.get("conn-1")).thenReturn(connector);
         when(connectors.countIndexFree("conn-1")).thenReturn(1);
         FetchSupport fetch = mock(FetchSupport.class);
-        when(fetch.resolvePassword(connector)).thenReturn("pw");
+        when(fetch.resolvePasswordOrRefuse(connector)).thenReturn("pw");
         monitor.setProfileService(profiles);
         monitor.setConnectorService(connectors);
         monitor.setFetchSupport(fetch);
@@ -138,7 +138,7 @@ class ImapIdleSessionRegistryTest {
         when(connectors.get("conn-1")).thenReturn(connector);
         when(connectors.countIndexFree("conn-1")).thenReturn(1);
         FetchSupport fetch = mock(FetchSupport.class);
-        when(fetch.resolvePassword(connector)).thenReturn("pw");
+        when(fetch.resolvePasswordOrRefuse(connector)).thenReturn("pw");
         monitor.setProfileService(profiles);
         monitor.setConnectorService(connectors);
         monitor.setFetchSupport(fetch);
@@ -192,7 +192,7 @@ class ImapIdleSessionRegistryTest {
         when(connectors.get("conn-1")).thenReturn(connector);
         when(connectors.countIndexFree("conn-1")).thenReturn(1);
         FetchSupport fetch = mock(FetchSupport.class);
-        when(fetch.resolvePassword(connector)).thenReturn("pw");
+        when(fetch.resolvePasswordOrRefuse(connector)).thenReturn("pw");
         monitor.setProfileService(profiles);
         monitor.setConnectorService(connectors);
         monitor.setFetchSupport(fetch);
@@ -240,7 +240,7 @@ class ImapIdleSessionRegistryTest {
         when(connectors.get("conn-1")).thenReturn(connector);
         when(connectors.countIndexFree("conn-1")).thenReturn(1);
         FetchSupport fetch = mock(FetchSupport.class);
-        when(fetch.resolvePassword(connector)).thenReturn("pw");
+        when(fetch.resolvePasswordOrRefuse(connector)).thenReturn("pw");
         monitor.setProfileService(profiles);
         monitor.setConnectorService(connectors);
         monitor.setFetchSupport(fetch);
@@ -382,7 +382,7 @@ class ImapIdleSessionRegistryTest {
         when(connectors.get("conn-1")).thenReturn(live);
         when(connectors.countIndexFree("conn-1")).thenReturn(1);
         FetchSupport fetch = mock(FetchSupport.class);
-        when(fetch.resolvePassword(live)).thenReturn("pw");
+        when(fetch.resolvePasswordOrRefuse(live)).thenReturn("pw");
         monitor.setProfileService(profiles);
         monitor.setConnectorService(connectors);
         monitor.setFetchSupport(fetch);
@@ -449,6 +449,25 @@ class ImapIdleSessionRegistryTest {
     }
 
     @Test
+    @DisplayName("the deterministic-id mismatch is a settled refusal too")
+    void theDeterministicIdMismatchIsSettled() {
+        // ConnectorDefinitionServiceImpl says "could not be read as THAT connector" when the
+        // document at the deterministic id names a different connector — a standing condition
+        // an administrator repairs. The first exclusion list held "as a profile" and "as a
+        // connector" and missed this phrasing, so the session NEVER tore down: every arriving
+        // message took the transient arm, captured nothing, wrote a DLQ row, and ran a full
+        // nemaki_conf walk, for ever. A review found it.
+        assertFalse(ImapIdleMonitor.refusalCouldNotAsk(
+                "connector conn-1 exists but could not be read as that connector"),
+                "the deterministic-id mismatch is standing, not transient");
+        assertFalse(ImapIdleMonitor.refusalCouldNotAsk(
+                "connector conn-1 could not be read; retry shortly: connector conn-1 exists but"
+                        + " could not be read as that connector"),
+                "the WRAPPED form is still standing — the wrapper's own 'retry shortly' must "
+                        + "not win over what it wrapped");
+    }
+
+    @Test
     @DisplayName("a corrupt stored row is NOT 'could not ask' — IDLE must stop, not spin")
     void aCorruptRowIsASettledRefusal() {
         // The predicate the per-message path keys on. It had no test and no control anywhere,
@@ -503,7 +522,7 @@ class ImapIdleSessionRegistryTest {
         when(connectors.get("conn-1")).thenReturn(live);
         when(connectors.countIndexFree("conn-1")).thenReturn(1);
         FetchSupport fetch = mock(FetchSupport.class);
-        when(fetch.resolvePassword(live)).thenReturn("pw");
+        when(fetch.resolvePasswordOrRefuse(live)).thenReturn("pw");
         monitor.setProfileService(profiles);
         monitor.setConnectorService(connectors);
         monitor.setFetchSupport(fetch);

@@ -237,11 +237,13 @@ public class IngestSchedulerController {
         if (message.startsWith("Delegated authorization denied")) {
             return HttpStatus.FORBIDDEN;
         }
-        // A stored row the mapper REFUSED. It was matching "could not be read" below and
-        // answering 503 "retry" for something no retry repairs — an administrator has to fix
-        // the row. A review found the standing case wearing the transient answer.
-        if (message.contains("could not be read as a profile")
-                || message.contains("could not be read as a connector")) {
+        // A stored row the mapper REFUSED, or one whose document names a different id. It was
+        // matching "could not be read" below and answering 503 "retry" for something no retry
+        // repairs — an administrator has to fix the row. A review found the standing case
+        // wearing the transient answer, and the round after found the exclusion written for
+        // "as a connector" missing "as THAT connector", which is the deterministic-id
+        // mismatch. Matched on the common prefix so a fourth phrasing cannot slip past.
+        if (message.contains("could not be read as ")) {
             return HttpStatus.CONFLICT;
         }
         if (couldNotAsk(message) || couldNotAsk(raw)) {
@@ -278,7 +280,7 @@ public class IngestSchedulerController {
             }
             case NOT_READ -> {
                 response.put("message", "connector " + profile.getDefaultConnectorId()
-                        + " exists but could not be read as that connector; retry shortly");
+                        + " exists but could not be read as that connector");
                 return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
             }
             case ABSENT_OR_HIDDEN -> {
@@ -321,9 +323,10 @@ public class IngestSchedulerController {
     private static boolean couldNotAsk(String message) {
         // A row the mapper REFUSED is a corrupt stored row: standing, not transient. It was
         // matching "could not be read" and answering 503 "retry" for something no retry
-        // repairs. A review found it.
-        if (message.contains("could not be read as a profile")
-                || message.contains("could not be read as a connector")) {
+        // repairs. Matched on the common prefix of all three phrasings ("as a profile", "as a
+        // connector", "as THAT connector") — the first version listed two of them and a review
+        // found the third slipping past.
+        if (message.contains("could not be read as ")) {
             return false;
         }
         return message.contains("retry shortly")
@@ -444,17 +447,24 @@ public class IngestSchedulerController {
      * moved off it, its only caller is the poll, which catches the refusal itself. The
      * CONNECTOR refusal does not arrive through the per-profile resolution either —
      * {@code resolveConnectorFor} catches it and answers {@code NOT_READ} — so what remains
-     * is the archetype fallback's {@code listByArchetype}. NOT the checkpoint enumeration,
-     * which the first version of this note named: that path reads through the profile
-     * {@code get()}, and every arm of that read answers null rather than throwing.
+     * is the archetype fallback's {@code listByArchetype}.
      *
-     * <p>This paragraph has now been wrong FOUR times: three because the code moved under it
-     * and once because the ledger recorded a correction that was never made. The fourth was
-     * the very commit that added the warning below. If you move a throw, edit this in the
-     * same commit.
+     * <p>AND the checkpoint enumeration, as of the round that gave it a refusing settings
+     * read. Two earlier versions of this note said the opposite — "every arm of that read
+     * answers null rather than throwing" — and that stopped being true in the commit that
+     * converted {@code CheckpointManager}; the refusal then escaped {@code GET}/{@code DELETE
+     * .../checkpoint/{id}} as a Spring 500, because {@code GlobalExceptionHandler} is scoped
+     * to {@code rest.controller} and does not cover this package. A review found it.
+     *
+     * <p>This paragraph has now been wrong FIVE times: three because the code moved under it,
+     * once because the ledger recorded a correction that was never made, and once because a
+     * throw was ADDED to a path this note had just finished excluding. If you move or add a
+     * throw, edit this in the same commit.
      */
     @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
-            ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})
+            ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+            jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                    .SettingUnreadableException.class})
     public ResponseEntity<Map<String, Object>> definitionRowsCouldNotBeRead(RuntimeException e) {
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("status", "error");

@@ -105,7 +105,17 @@ public class ImapIdleMonitor {
             }
         }
 
-        String password = fetchSupport.resolvePassword(connector);
+        // The STARTUP read, not just the per-message one. "No password for IMAP connector" is
+        // classified 400 by the endpoint — the request blamed for a configuration database that
+        // did not answer — while the documented answer for that state is 503. A review found
+        // startup still on the reading that cannot refuse.
+        String password;
+        try {
+            password = fetchSupport.resolvePasswordOrRefuse(connector);
+        } catch (jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                .SettingUnreadableException couldNotAsk) {
+            return couldNotAsk.getMessage();
+        }
         if (password == null) return "No password for IMAP connector";
 
         String mailbox = profile.getSchedulerParams() != null
@@ -180,10 +190,13 @@ public class ImapIdleMonitor {
                                 // down traded a permanent stop for a permanently missing mail.
                                 // A review caught the trade. Record it where every other lost
                                 // source item is recorded, so it can be replayed.
-                                logger.warn("IDLE: not capturing a message on profile {} — the"
-                                        + " authorisation could not be re-checked. IDLE is left"
-                                        + " running so the next message re-asks, and this one"
-                                        + " is dead-lettered: {}", profileId, now.refusal());
+                                // The record is claimed AFTER it is written, not before. The
+                                // usual trigger for this branch is nemaki_conf being
+                                // unreachable, and that is the database the row goes into — so
+                                // the first version announced a dead-letter that the same
+                                // outage had just prevented. A review found the claim preceding
+                                // the fact.
+                                boolean recorded = false;
                                 if (fetchSupport != null) {
                                     ExternalIngestRequest missed = new ExternalIngestRequest();
                                     missed.setProfileId(profileId);
@@ -196,10 +209,31 @@ public class ImapIdleMonitor {
                                     missedMeta.put("mailboxId", mailbox);
                                     missedMeta.put("messageStableId", msg.stableKey());
                                     missed.setMetadata(missedMeta);
-                                    fetchSupport.saveToDlq(missed, "[transient] the message was"
-                                            + " not captured because the authorisation could"
-                                            + " not be re-checked: " + now.refusal(), null);
+                                    recorded = fetchSupport.saveSourceNeverReadToDlq(missed,
+                                            "[transient] the message was not captured because"
+                                            + " the authorisation could not be re-checked: "
+                                            + now.refusal());
                                 }
+                                if (recorded) {
+                                    logger.warn("IDLE: did not capture a message on profile {}"
+                                            + " — the authorisation could not be re-checked."
+                                            + " IDLE is left running so the next message"
+                                            + " re-asks, and this message is recorded in the"
+                                            + " dead-letter queue (it carries no .eml, so it is"
+                                            + " a RECORD of the miss, not a replayable item —"
+                                            + " recover by re-fetching the mailbox): {}",
+                                            profileId, now.refusal());
+                                    return;
+                                }
+                                // Nothing could be recorded. A silently skipped message is
+                                // invisible; a stopped session is not, and the UID checkpoint
+                                // has not moved, so a poll or a manual trigger re-fetches it.
+                                logger.error("IDLE: stopping profile {} — a message was not"
+                                        + " captured because the authorisation could not be"
+                                        + " re-checked, AND the miss could not be recorded."
+                                        + " The mailbox must be re-fetched: {}",
+                                        profileId, now.refusal());
+                                imap.stopIdle();
                                 return;
                             }
                             logger.warn("IDLE: stopping profile {}: {}", profileId, now.refusal());
@@ -345,8 +379,12 @@ public class ImapIdleMonitor {
 
     private static boolean couldNotAsk(String refusal) {
         if (refusal == null) return false;
-        if (refusal.contains("could not be read as a profile")
-                || refusal.contains("could not be read as a connector")) {
+        // Matched on the common prefix of all three phrasings: "as a profile", "as a
+        // connector", and "as THAT connector" — the deterministic-id mismatch, which the first
+        // version's two-item list missed. That omission left the session NEVER tearing down:
+        // every arriving message took the transient arm, captured nothing, and wrote a DLQ row,
+        // for ever, with no signal that the condition was standing. A review found it.
+        if (refusal.contains("could not be read as ")) {
             return false;
         }
         return refusal.contains("retry shortly")

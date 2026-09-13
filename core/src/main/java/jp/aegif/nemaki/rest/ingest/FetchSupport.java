@@ -198,6 +198,27 @@ public class FetchSupport {
     }
 
     /**
+     * As {@link #saveToDlq}, for a failure raised before the import service was reached.
+     *
+     * @return whether the row was written. Callers that have ALREADY told the operator the
+     *         item was recorded must check this: the usual trigger for dead-lettering is the
+     *         configuration database being unreachable, and that is the same database the row
+     *         goes into. A review found the IDLE monitor claiming the record before the fact.
+     */
+    public boolean saveSourceNeverReadToDlq(ExternalIngestRequest request, String errorMessage) {
+        if (ingestJobService == null) {
+            return false;
+        }
+        try {
+            ingestJobService.saveSourceNeverReadToDlq(request, errorMessage);
+            return true;
+        } catch (Exception e) {
+            logger.warn("Failed to save to DLQ — item may be lost: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Sleep for the throttle delay, if configured. Also sends a progress-based
      * heartbeat at most once per 5 minutes.
      */

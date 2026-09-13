@@ -34,7 +34,14 @@ public class ImapFetchOrchestrator implements FetchOrchestrator {
         if (canonicalImportService == null)
             return new FetchResult(0, 0, List.of("CanonicalImportService not available"));
 
-        String password = fetchSupport.resolvePassword(connector);
+        // resolvePasswordOrRefuse: a configuration read that FAILED used to arrive here as
+        // "no token", which this method states as a fact. The scheduler counts that towards
+        // opening the connector's circuit breaker and the folder endpoint turns it into
+        // authError=true, prompting an admin to overwrite a credential that was never
+        // wrong. The refusal lands in this orchestrator's outer catch, where the tick
+        // reports an error and advances no checkpoint. A review found the split after only
+        // the live IDLE re-check had been converted.
+        String password = fetchSupport.resolvePasswordOrRefuse(connector);
         if (password == null)
             return new FetchResult(0, 0, List.of("Could not resolve IMAP password for connector: " + connector.getConnectorId()));
 

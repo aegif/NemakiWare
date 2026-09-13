@@ -214,6 +214,49 @@ class DlqRetryRefusalStatusTest {
     }
 
     @Test
+    @DisplayName("a skip does not delete a row whose source was never read")
+    void aSkipDoesNotResolveARowWhoseSourceWasNeverRead() throws Exception {
+        // A skip is an idempotent RESOLUTION only when the item is actually in the repository.
+        // On a row whose fetch threw before the import service was reached, the replay can
+        // report "nothing to import" — the Notion page arm does this under the default
+        // files_only policy when the attachment list was never fetched — and deleting on that
+        // destroys the only record that the item was lost, with the tool that exists to
+        // recover it. A review traced it through the arm added one round earlier to stop that
+        // page being dropped in the first place.
+        CanonicalImportService importService = mock(CanonicalImportService.class);
+        when(importService.execute(any(), any())).thenReturn(
+                ExternalIngestResult.skipped("req-1", null, "page has no attachments"));
+        IngestJobService[] captured = new IngestJobService[1];
+        ResponseEntity<?> res = retryWith(row -> row.setSourceNeverRead(true), importService,
+                jobService -> captured[0] = jobService);
+
+        assertEquals(HttpStatus.OK, res.getStatusCode());
+        assertEquals("skipped", ((Map<?, ?>) res.getBody()).get("status"),
+                "a skip on a never-read row was reported as a resolution: " + res.getBody());
+        assertEquals(Boolean.TRUE, ((Map<?, ?>) res.getBody()).get("entryKept"),
+                "the answer does not say the entry survived: " + res.getBody());
+        org.mockito.Mockito.verify(captured[0], org.mockito.Mockito.never())
+                .deleteDlqEntry(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    @DisplayName("a resolved retry whose row survived the delete says so")
+    void aResolvedRetryWhoseDeleteRemovedNothingSaysSo() throws Exception {
+        // The retry path ignored deleteDlqEntry's return value, so a rebuilding index left the
+        // row in place while the answer said "resolved" — and the entry reappeared in the next
+        // listing with no hint of why. A review found the single DELETE endpoint given this
+        // distinction and the retry path not.
+        CanonicalImportService importService = mock(CanonicalImportService.class);
+        when(importService.execute(any(), any())).thenReturn(
+                ExternalIngestResult.skipped("req-1", "obj-1", "object already exists"));
+        ResponseEntity<?> res = retryWith(row -> { }, importService,
+                jobService -> when(jobService.deleteDlqEntry("dlq-1")).thenReturn(0));
+
+        assertEquals("resolved-entry-kept", ((Map<?, ?>) res.getBody()).get("status"),
+                "a row that was not deleted was reported as plainly resolved: " + res.getBody());
+    }
+
+    @Test
     @DisplayName("the last page carries no continuation token")
     void theLastPageHasNoNextOffset() throws Exception {
         // A client following nextOffset rather than reading hasMore walked an endless run of

@@ -123,6 +123,23 @@ public class IngestDeadLetterRecord {
      */
     private boolean payloadPresenceAssumed;
 
+    /**
+     * True when this row records a source item that was never successfully READ.
+     *
+     * <p>The fetch threw before the import service was reached, so the row carries the request
+     * but no content and — for the connectors that pass the attachment list in metadata — not
+     * even the list. Replaying such a row can report "nothing to import", which the retry door
+     * used to treat as an idempotent RESOLUTION and delete the row with: the only record that
+     * the item was lost, destroyed by the tool that exists to recover it. A review traced it
+     * through the Notion page arm. A skip on a row with this flag keeps the row.
+     */
+    private boolean sourceNeverRead;
+
+    public boolean isSourceNeverRead() { return sourceNeverRead; }
+    public void setSourceNeverRead(boolean sourceNeverRead) {
+        this.sourceNeverRead = sourceNeverRead;
+    }
+
     public boolean isPayloadPresenceAssumed() { return payloadPresenceAssumed; }
     public void setPayloadPresenceAssumed(boolean payloadPresenceAssumed) {
         this.payloadPresenceAssumed = payloadPresenceAssumed;

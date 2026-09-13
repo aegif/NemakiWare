@@ -582,4 +582,49 @@ class IngestSchedulerControllerAnswerTest {
                         + " read as a profile (Unrecognized field \"foo\")"),
                 "a corrupt stored row was answered as a retry");
     }
+
+    @org.junit.jupiter.api.Test
+    void aCheckpointReadThatCouldNotAnswerIs503_notOurBug() {
+        // The round that gave CheckpointManager a refusing settings read added a throw to a
+        // path this controller's handler javadoc had just finished EXCLUDING, and nothing
+        // caught it: GlobalExceptionHandler is scoped to rest.controller and does not cover
+        // this package, so the operator got a Spring 500 — "our bug" — for the one condition
+        // this whole batch has been converting to 503. A review found it.
+        when(schedulerService.enumerateCheckpoints("p1")).thenThrow(
+                new jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                        .SettingUnreadableException("the stored value of"
+                                + " 'ingest.checkpoint.p1.gmail' could not be read: the"
+                                + " configuration database did not answer; retry shortly"));
+
+        jp.aegif.nemaki.rest.controller.IntegrationSettingsService.SettingUnreadableException
+                escaped = assertThrows(
+                        jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                                .SettingUnreadableException.class,
+                        () -> controller.getCheckpoints("p1"),
+                        "the endpoint answered a checkpoint read that FAILED as 'this profile"
+                                + " has never polled'");
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE,
+                controller.definitionRowsCouldNotBeRead(escaped).getStatusCode(),
+                "the handler does not answer a retry for a read that could not be made");
+        // The two assertions above are about the HANDLER. The WIRING is a separate fact and
+        // the control proved it: removing the type from @ExceptionHandler left both of them
+        // green, because this test calls the handler method directly while Spring dispatches
+        // by the annotation. So assert the annotation itself — that is what a reader of
+        // "answers 503" is relying on.
+        // Scanned rather than looked up by name, and with no exception path: an AssertionError
+        // raised from a reflection failure is harness BREAKAGE, which the control runner scores
+        // as a firing — this repo locks against that shape in HarnessBreakageIsNotAFiringTest,
+        // and the first version of these lines tripped it.
+        java.util.List<Class<?>> handled = new java.util.ArrayList<>();
+        for (java.lang.reflect.Method m : IngestSchedulerController.class.getDeclaredMethods()) {
+            org.springframework.web.bind.annotation.ExceptionHandler a =
+                    m.getAnnotation(org.springframework.web.bind.annotation.ExceptionHandler.class);
+            if (a != null) handled.addAll(java.util.Arrays.asList(a.value()));
+        }
+        assertTrue(handled.contains(jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                        .SettingUnreadableException.class),
+                "Spring dispatches by @ExceptionHandler, and the settings refusal is not in any"
+                        + " of this controller's — so the endpoint answers a Spring 500, whatever"
+                        + " the handler body would have said: " + handled);
+    }
 }

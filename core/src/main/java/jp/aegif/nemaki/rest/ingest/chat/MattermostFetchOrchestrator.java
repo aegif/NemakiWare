@@ -33,7 +33,14 @@ public class MattermostFetchOrchestrator implements FetchOrchestrator {
     public FetchResult execute(CallContext callContext, ImportProfileDefinition profile,
                                ConnectorDefinition connector, Map<String, String> params, int limit) {
         String channelId = params.getOrDefault("channelId", "");
-        String token = fetchSupport.resolvePassword(connector);
+        // resolvePasswordOrRefuse: a configuration read that FAILED used to arrive here as
+        // "no token", which this method states as a fact. The scheduler counts that towards
+        // opening the connector's circuit breaker and the folder endpoint turns it into
+        // authError=true, prompting an admin to overwrite a credential that was never
+        // wrong. The refusal lands in this orchestrator's outer catch, where the tick
+        // reports an error and advances no checkpoint. A review found the split after only
+        // the live IDLE re-check had been converted.
+        String token = fetchSupport.resolvePasswordOrRefuse(connector);
         if (token == null) return new FetchResult(0, 0, List.of("No token for Mattermost connector"));
 
         List<String> errors = new ArrayList<>();
