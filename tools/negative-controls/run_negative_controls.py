@@ -6805,8 +6805,11 @@ CONTROLS = [
         # Neutralised at the branch instead: taking the "the payload IS stored" arm skips the
         # correction entirely, which is exactly the defect — the row keeps hasContent=true with
         # no attachment.
-        find='                    if (Boolean.TRUE.equals(reallyThere)) {',
-        replace='                    if (true) {',
+        # Re-anchored: the branch was inverted when the probe's three outcomes were split into
+        # "answered absent" and "not known". Skipping the correction entirely is still the
+        # defect — the row keeps hasContent=true with nothing recorded about the write.
+        find='                    if (Boolean.FALSE.equals(reallyThere)) {',
+        replace='                    if (false) {',
         test='DlqReplayArchetypeGateTest',
         expect_fail=['anAttachmentThatFailedIsNotClaimedAsStored'],
     ),
@@ -6851,6 +6854,59 @@ CONTROLS = [
         replace='                response.put("status", "resolved");',
         test='DlqRetryRefusalStatusTest',
         expect_fail=['aResolvedRetryWhoseDeleteRemovedNothingSaysSo'],
+    ),
+    dict(
+        id="VP2",
+        what="an ANSWERED absence is recorded as an assumption again — the probe's three "
+             "outcomes collapse back to two",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='                    if (Boolean.FALSE.equals(reallyThere)) {',
+        replace='                    if (!Boolean.TRUE.equals(reallyThere)) {',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['anAttachmentWriteOfUnknownOutcomeIsNotAssertedEitherWay'],
+    ),
+    dict(
+        id="VQ2",
+        what="a save that wrote nothing reports that it wrote a row, so the IMAP monitor "
+             "announces a dead-letter the same outage prevented",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='            return docId != null;',
+        replace='            return true;',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['aSaveWhoseWriteDidNotLandSaysSo'],
+    ),
+    dict(
+        id="VR2",
+        what="the helper reports 'did not throw' instead of the service's answer — the claim "
+             "the previous round moved one frame down",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/FetchSupport.java',
+        find='            return ingestJobService.saveSourceNeverReadToDlq(request, errorMessage);',
+        replace='            ingestJobService.saveSourceNeverReadToDlq(request, errorMessage);\n            return true;',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['aFetchSupportSaveThatWroteNothingSaysSo'],
+    ),
+    dict(
+        id="VS2",
+        what="the never-read mark is inherited even by an attempt that DID read the source, so "
+             "a replayable row can never be resolved",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='            dlq.setSourceNeverRead(sourceNeverRead\n'
+             '                    || (!sourceWasRead && existing != null && existing.isSourceNeverRead()));',
+        replace='            dlq.setSourceNeverRead(sourceNeverRead\n'
+                '                    || (existing != null && existing.isSourceNeverRead()));',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['aLaterAttemptThatReadTheSourceClearsTheMark'],
+    ),
+    dict(
+        id="VT2",
+        what="a configuration-store outage is counted against the connector's circuit breaker "
+             "again — the connector was never asked",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerService.java',
+        find='                    if (settings instanceof jp.aegif.nemaki.rest.controller\n'
+             '                            .IntegrationSettingsService.SettingUnreadableException) {',
+        replace='                    if (false) {',
+        test='SchedulerConfigOutageBreakerTest',
+        expect_fail=['aConfigurationOutageDoesNotOpenTheConnectorsBreaker'],
     ),
     dict(
         id="ST2",

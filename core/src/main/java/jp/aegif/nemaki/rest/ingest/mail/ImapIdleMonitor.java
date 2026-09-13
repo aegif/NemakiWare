@@ -52,6 +52,25 @@ public class ImapIdleMonitor {
 
     private final Map<String, IdleSession> idleSessions = new java.util.concurrent.ConcurrentHashMap<>();
 
+    /**
+     * Messages this monitor did not capture AND could not record, per profile.
+     *
+     * <p>In memory on purpose: the condition that produces one is the configuration database
+     * being unreachable, so there is nowhere durable to put it. Counted rather than dropped,
+     * and surfaced on the IDLE status endpoint, because the alternative the previous round
+     * chose — stopping the session — permanently ended capture for a transient fault, with
+     * nothing to re-arm it. Lost on restart; the UID checkpoint has not moved, so a re-fetch
+     * of the mailbox is the recovery either way.
+     */
+    private final Map<String, java.util.concurrent.atomic.AtomicInteger> undurableMisses =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** How many messages this profile missed without being able to record the miss. */
+    public int undurableMissCount(String profileId) {
+        java.util.concurrent.atomic.AtomicInteger n = undurableMisses.get(profileId);
+        return n == null ? 0 : n.get();
+    }
+
     private ImportProfileDefinitionService profileService;
     private ConnectorDefinitionService connectorService;
     private FetchSupport fetchSupport;
@@ -225,15 +244,26 @@ public class ImapIdleMonitor {
                                             profileId, now.refusal());
                                     return;
                                 }
-                                // Nothing could be recorded. A silently skipped message is
-                                // invisible; a stopped session is not, and the UID checkpoint
-                                // has not moved, so a poll or a manual trigger re-fetches it.
-                                logger.error("IDLE: stopping profile {} — a message was not"
-                                        + " captured because the authorisation could not be"
-                                        + " re-checked, AND the miss could not be recorded."
-                                        + " The mailbox must be re-fetched: {}",
-                                        profileId, now.refusal());
-                                imap.stopIdle();
+                                // Nothing could be recorded. The previous round stopped IDLE
+                                // here, on the ground that a stopped session is visible while
+                                // a skipped message is not — but nothing re-arms IDLE except
+                                // the admin endpoint, so a config blip permanently ended
+                                // capture. That is the same over-throw a review raised two
+                                // rounds earlier for the opposite behaviour. Removing the
+                                // FALSE claim of a durable record does not require disabling
+                                // the session.
+                                //
+                                // So the session stays and the miss is counted where the
+                                // status endpoint can show it: undurable, in memory, lost if
+                                // this JVM restarts — which is exactly what it is.
+                                int missed = undurableMisses
+                                        .computeIfAbsent(profileId, k -> new java.util.concurrent.atomic.AtomicInteger())
+                                        .incrementAndGet();
+                                logger.error("IDLE: profile {} did not capture a message and"
+                                        + " could NOT record the miss ({} undurable misses this"
+                                        + " session). IDLE stays up; the UID checkpoint has not"
+                                        + " moved, so re-fetch the mailbox to recover: {}",
+                                        profileId, missed, now.refusal());
                                 return;
                             }
                             logger.warn("IDLE: stopping profile {}: {}", profileId, now.refusal());
@@ -465,7 +495,7 @@ public class ImapIdleMonitor {
         if (conn != null && askedConnectorId != null
                 && !askedConnectorId.equals(conn.getConnectorId())) {
             return new LiveLoad(null, null, "connector " + askedConnectorId
-                    + " exists but could not be read as that connector; retry shortly");
+                    + " exists but could not be read as that connector");
         }
         if (conn == null) {
             String connId = current.getDefaultConnectorId();

@@ -550,16 +550,26 @@ class DlqReplayArchetypeGateTest {
         when(pool.getClient(org.mockito.ArgumentMatchers.anyString())).thenReturn(wrapper);
         jobs.setConnectorPool(pool);
 
-        com.ibm.cloud.cloudant.v1.model.FindResult empty =
+        // The probe must ANSWER. A row that comes back with no attachment block is CouchDB
+        // saying "there is none"; an empty find is the store not answering at all, and those
+        // two now take different arms. The first version of this lock used an empty find and
+        // therefore measured the unanswered arm while claiming to measure the answered one.
+        com.ibm.cloud.cloudant.v1.model.Document stored =
+                new com.ibm.cloud.cloudant.v1.model.Document();
+        stored.setId("ingest_dlq:w");
+        stored.setRev("1-a");
+        stored.put("type", "ingest_dead_letter");
+        stored.put("dlqId", "w");
+        com.ibm.cloud.cloudant.v1.model.FindResult found =
                 mock(com.ibm.cloud.cloudant.v1.model.FindResult.class);
-        when(empty.getDocs()).thenReturn(java.util.List.of());
+        when(found.getDocs()).thenReturn(java.util.List.of(stored));
         @SuppressWarnings("unchecked")
         com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> call =
                 mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
         @SuppressWarnings("unchecked")
         com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.FindResult> resp =
                 mock(com.ibm.cloud.sdk.core.http.Response.class);
-        when(resp.getResult()).thenReturn(empty);
+        when(resp.getResult()).thenReturn(found);
         when(call.execute()).thenReturn(resp);
         when(cloudant.postFind(org.mockito.ArgumentMatchers.any())).thenReturn(call);
 
@@ -599,6 +609,170 @@ class DlqReplayArchetypeGateTest {
                 "the row still claims a payload the store never took");
         org.junit.jupiter.api.Assertions.assertNotNull(last.get("payloadDropReason"),
                 "the row does not say why it carries no payload");
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.FALSE,
+                last.get("payloadPresenceAssumed"),
+                "an ANSWERED absence was recorded as an assumption");
+    }
+
+    @Test
+    @DisplayName("an attachment write whose outcome is unknown is recorded as unknown")
+    void anAttachmentWriteOfUnknownOutcomeIsNotAssertedEitherWay() throws Exception {
+        // putAttachment can COMMIT and then lose its response, and the verification read can
+        // fail too. Two arms were wrong here: TRUE was read as proof that THIS payload landed,
+        // although upsertDocument deliberately carries an EARLIER attempt's attachment
+        // forward, so the probe cannot tell them apart; and the unanswered arm wrote
+        // hasContent=false, which the next save's re-probe gate never revisits — it requires
+        // hasContent — so an unanswered read settled into a fact one save later. Codex and a
+        // subagent found the two halves independently.
+        // The row must be WRITTEN, and the probe must come back UNABLE TO ANSWER — an empty
+        // find, not a row with no attachments. The first version of this lock used a store
+        // where everything failed, so it never reached either line it was declared against;
+        // the controls said so.
+        Object[] written = saveWithAFailingAttachment(false);
+
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.TRUE, written[0],
+                "an attachment write whose outcome is unknown was recorded as 'there is no"
+                        + " payload' — which the next save's re-probe gate never revisits");
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.TRUE, written[1],
+                "the row states as a fact something no read established");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                String.valueOf(written[2]).contains("could not be established"),
+                "the reason claims the payload was not stored, which is not known: " + written[2]);
+    }
+
+    @Test
+    @DisplayName("a save whose write did not land does not report that it wrote a row")
+    void aSaveWhoseWriteDidNotLandSaysSo() throws Exception {
+        // upsertDocument answers null when its own write did not land (a _rev race), and the
+        // "Saved to DLQ" line was printed for that too. The IMAP monitor checks this boolean
+        // before announcing that a missed message was recorded.
+        IngestJobService jobs = new IngestJobService();
+        com.ibm.cloud.cloudant.v1.Cloudant cloudant =
+                mock(com.ibm.cloud.cloudant.v1.Cloudant.class);
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper wrapper =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+        when(wrapper.getClient()).thenReturn(cloudant);
+        when(wrapper.getDatabaseName()).thenReturn("nemaki_conf");
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool pool =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);
+        when(pool.getClient(org.mockito.ArgumentMatchers.anyString())).thenReturn(wrapper);
+        jobs.setConnectorPool(pool);
+
+        com.ibm.cloud.cloudant.v1.model.FindResult empty =
+                mock(com.ibm.cloud.cloudant.v1.model.FindResult.class);
+        when(empty.getDocs()).thenReturn(java.util.List.of());
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> call =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.FindResult> resp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(resp.getResult()).thenReturn(empty);
+        when(call.execute()).thenReturn(resp);
+        when(cloudant.postFind(org.mockito.ArgumentMatchers.any())).thenReturn(call);
+
+        // The write is REFUSED rather than throwing — a _rev conflict.
+        com.ibm.cloud.cloudant.v1.model.DocumentResult refused =
+                mock(com.ibm.cloud.cloudant.v1.model.DocumentResult.class);
+        when(refused.isOk()).thenReturn(Boolean.FALSE);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.DocumentResult> post =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.DocumentResult> postResp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(postResp.getResult()).thenReturn(refused);
+        when(post.execute()).thenReturn(postResp);
+        when(cloudant.postDocument(org.mockito.ArgumentMatchers.any())).thenReturn(post);
+
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setRepositoryId("bedroom");
+        request.setConnectorId("c1");
+        request.setSourceObjectId("m-8");
+
+        org.junit.jupiter.api.Assertions.assertFalse(
+                jobs.saveToDlqReporting(request, "boom", null, true, false),
+                "a save whose write was refused reported that it had recorded the item");
+    }
+
+    /**
+     * Drives saveToDlq with bytes whose ATTACHMENT write fails.
+     *
+     * @param probeAnswers true = the row comes back (so the probe answers "no attachment"),
+     *        false = the index returns nothing (so the probe cannot answer)
+     * @return {hasContent, payloadPresenceAssumed, payloadDropReason} as written
+     */
+    private Object[] saveWithAFailingAttachment(boolean probeAnswers) throws Exception {
+        IngestJobService jobs = new IngestJobService();
+        com.ibm.cloud.cloudant.v1.Cloudant cloudant =
+                mock(com.ibm.cloud.cloudant.v1.Cloudant.class);
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper wrapper =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+        when(wrapper.getClient()).thenReturn(cloudant);
+        when(wrapper.getDatabaseName()).thenReturn("nemaki_conf");
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool pool =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);
+        when(pool.getClient(org.mockito.ArgumentMatchers.anyString())).thenReturn(wrapper);
+        jobs.setConnectorPool(pool);
+
+        com.ibm.cloud.cloudant.v1.model.FindResult result =
+                mock(com.ibm.cloud.cloudant.v1.model.FindResult.class);
+        if (probeAnswers) {
+            com.ibm.cloud.cloudant.v1.model.Document stored =
+                    new com.ibm.cloud.cloudant.v1.model.Document();
+            stored.setId("ingest_dlq:u");
+            stored.setRev("1-a");
+            stored.put("type", "ingest_dead_letter");
+            stored.put("dlqId", "u");
+            when(result.getDocs()).thenReturn(java.util.List.of(stored));
+        } else {
+            when(result.getDocs()).thenReturn(java.util.List.of());
+        }
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> call =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.FindResult> resp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(resp.getResult()).thenReturn(result);
+        when(call.execute()).thenReturn(resp);
+        when(cloudant.postFind(org.mockito.ArgumentMatchers.any())).thenReturn(call);
+
+        com.ibm.cloud.cloudant.v1.model.DocumentResult ok =
+                mock(com.ibm.cloud.cloudant.v1.model.DocumentResult.class);
+        when(ok.isOk()).thenReturn(Boolean.TRUE);
+        when(ok.getId()).thenReturn("ingest_dlq:u");
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.DocumentResult> post =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.DocumentResult> postResp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(postResp.getResult()).thenReturn(ok);
+        when(post.execute()).thenReturn(postResp);
+        when(cloudant.postDocument(org.mockito.ArgumentMatchers.any())).thenReturn(post);
+        // The attachment write cannot even read the revision it needs.
+        when(cloudant.getDocument(org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new RuntimeException("no route to host"));
+
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setRepositoryId("bedroom");
+        request.setConnectorId("c1");
+        request.setSourceObjectId("m-9");
+        request.setFileName("a.pdf");
+
+        jobs.saveToDlq(request, "boom",
+                "hello".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        org.mockito.ArgumentCaptor<com.ibm.cloud.cloudant.v1.model.PostDocumentOptions> written =
+                org.mockito.ArgumentCaptor.forClass(
+                        com.ibm.cloud.cloudant.v1.model.PostDocumentOptions.class);
+        org.mockito.Mockito.verify(cloudant, org.mockito.Mockito.atLeastOnce())
+                .postDocument(written.capture());
+        com.ibm.cloud.cloudant.v1.model.Document last =
+                written.getAllValues().get(written.getAllValues().size() - 1).document();
+        return new Object[]{last.get("hasContent"), last.get("payloadPresenceAssumed"),
+                last.get("payloadDropReason")};
     }
 
     /** A service wired to a store that answers nothing at all. */
@@ -648,6 +822,98 @@ class DlqReplayArchetypeGateTest {
                         "a read that never ran was reported as a completed purge");
         org.junit.jupiter.api.Assertions.assertEquals(0, stopped.getDeletedBeforeStopping(),
                 "the refusal does not carry what was actually deleted");
+    }
+
+    @Test
+    @DisplayName("the FetchSupport helper reports the service's answer, not 'did not throw'")
+    void aFetchSupportSaveThatWroteNothingSaysSo() {
+        // saveToDlq swallows every persistence failure by design, so "the call returned" said
+        // nothing about whether a row exists. The helper returned true on that, and the IMAP
+        // monitor announced a dead-letter the same outage had just prevented. Two reviewers
+        // found the claim one frame below where the previous round had moved it.
+        FetchSupport fetch = new FetchSupport();
+        fetch.setIngestJobService(jobsWithADeadStore());
+
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setRepositoryId("bedroom");
+        request.setConnectorId("c1");
+        request.setSourceObjectId("m-6");
+
+        org.junit.jupiter.api.Assertions.assertFalse(
+                fetch.saveSourceNeverReadToDlq(request, "the authorisation could not be"
+                        + " re-checked"),
+                "a save that wrote nothing reported that it had recorded the miss");
+    }
+
+    @Test
+    @DisplayName("a later attempt that DID read the source clears the never-read mark")
+    void aLaterAttemptThatReadTheSourceClearsTheMark() throws Exception {
+        // The mark was inherited unconditionally, so a row whose later attempt read the page
+        // fully and failed during the import — a complete, replayable request — could never be
+        // resolved by a replay. Over-throwing is a defect here too. Codex found it.
+        IngestJobService jobs = new IngestJobService();
+        com.ibm.cloud.cloudant.v1.Cloudant cloudant =
+                mock(com.ibm.cloud.cloudant.v1.Cloudant.class);
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper wrapper =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+        when(wrapper.getClient()).thenReturn(cloudant);
+        when(wrapper.getDatabaseName()).thenReturn("nemaki_conf");
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool pool =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);
+        when(pool.getClient(org.mockito.ArgumentMatchers.anyString())).thenReturn(wrapper);
+        jobs.setConnectorPool(pool);
+
+        com.ibm.cloud.cloudant.v1.model.Document stored =
+                new com.ibm.cloud.cloudant.v1.model.Document();
+        stored.setId("ingest_dlq:v");
+        stored.setRev("1-a");
+        stored.put("type", "ingest_dead_letter");
+        stored.put("dlqId", "v");
+        stored.put("sourceNeverRead", Boolean.TRUE);
+        com.ibm.cloud.cloudant.v1.model.FindResult found =
+                mock(com.ibm.cloud.cloudant.v1.model.FindResult.class);
+        when(found.getDocs()).thenReturn(java.util.List.of(stored));
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> call =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.FindResult> resp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(resp.getResult()).thenReturn(found);
+        when(call.execute()).thenReturn(resp);
+        when(cloudant.postFind(org.mockito.ArgumentMatchers.any())).thenReturn(call);
+
+        com.ibm.cloud.cloudant.v1.model.DocumentResult ok =
+                mock(com.ibm.cloud.cloudant.v1.model.DocumentResult.class);
+        when(ok.isOk()).thenReturn(Boolean.TRUE);
+        when(ok.getId()).thenReturn("ingest_dlq:v");
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.DocumentResult> post =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.DocumentResult> postResp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(postResp.getResult()).thenReturn(ok);
+        when(post.execute()).thenReturn(postResp);
+        when(cloudant.postDocument(org.mockito.ArgumentMatchers.any())).thenReturn(post);
+
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setRepositoryId("bedroom");
+        request.setConnectorId("c1");
+        request.setSourceObjectId("m-7");
+
+        // A save from a caller that DID read the source.
+        jobs.saveToDlq(request, "import failed after the page was read", null);
+
+        org.mockito.ArgumentCaptor<com.ibm.cloud.cloudant.v1.model.PostDocumentOptions> written =
+                org.mockito.ArgumentCaptor.forClass(
+                        com.ibm.cloud.cloudant.v1.model.PostDocumentOptions.class);
+        org.mockito.Mockito.verify(cloudant, org.mockito.Mockito.atLeastOnce())
+                .postDocument(written.capture());
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.FALSE,
+                written.getAllValues().get(written.getAllValues().size() - 1)
+                        .document().get("sourceNeverRead"),
+                "a row whose source has now been read still refuses to be resolved by a replay");
     }
 
     @Test

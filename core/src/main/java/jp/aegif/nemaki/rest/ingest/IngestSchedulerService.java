@@ -691,6 +691,29 @@ public class IngestSchedulerService {
                     }
                     // else: fetched=0, imported=0, no errors → empty fetch, neutral (no change)
                 } catch (Exception e) {
+                    // A configuration-store outage is not the CONNECTOR's failure. The
+                    // credential read refuses from before each orchestrator's own try, so it
+                    // arrives here — and counting it opened the breaker for a connector that
+                    // was never asked. The tick still reports the error and still advances no
+                    // checkpoint. A review found the source comments claiming the refusal
+                    // landed in the orchestrator's outer catch, which it does not.
+                    Throwable settings = e instanceof java.util.concurrent.ExecutionException
+                            ? e.getCause() : e;
+                    if (settings instanceof jp.aegif.nemaki.rest.controller
+                            .IntegrationSettingsService.SettingUnreadableException) {
+                        logger.error("Scheduled fetch for {} could not read its configuration;"
+                                + " NOT counted against connector '{}': {}",
+                                profile.getProfileId(), connectorKey, settings.getMessage());
+                        if (job != null && ingestJobService != null) {
+                            try {
+                                ingestJobService.completeJob(job, new FetchResult(0, 0,
+                                        List.of(settings.getMessage())));
+                            } catch (Exception je) {
+                                logger.debug("Failed to record job failure: {}", je.getMessage());
+                            }
+                        }
+                        continue;
+                    }
                     int newCount = consecutiveFailures.merge(connectorKey, 1, Integer::sum);
                     logger.warn("Connector '{}' exception failure #{}/{}", connectorKey, newCount, circuitBreakerThreshold);
 

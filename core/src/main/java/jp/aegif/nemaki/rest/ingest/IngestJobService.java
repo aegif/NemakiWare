@@ -188,8 +188,8 @@ public class IngestJobService {
      * For a failure raised BEFORE the import service was reached — the source was never read.
      * The row is marked so a replay that reports "nothing to import" does not delete it.
      */
-    public void saveSourceNeverReadToDlq(ExternalIngestRequest request, String errorMessage) {
-        saveToDlq(request, errorMessage, null, true);
+    public boolean saveSourceNeverReadToDlq(ExternalIngestRequest request, String errorMessage) {
+        return saveToDlqReporting(request, errorMessage, null, true, false);
     }
 
     public void saveToDlq(ExternalIngestRequest request, String errorMessage, byte[] contentBytes) {
@@ -198,6 +198,20 @@ public class IngestJobService {
 
     public void saveToDlq(ExternalIngestRequest request, String errorMessage, byte[] contentBytes,
             boolean sourceNeverRead) {
+        saveToDlqReporting(request, errorMessage, contentBytes, sourceNeverRead, !sourceNeverRead);
+    }
+
+    /**
+     * @param sourceWasRead whether THIS attempt read the source item. Only a caller that did
+     *        may clear an earlier attempt's "never read" mark.
+     * @return whether a row was written. {@code saveToDlq} swallows every persistence failure
+     *         — it is the last-resort record and must not take its caller down — which made
+     *         the boolean the IMAP monitor checks meaningless: the helper returned true
+     *         whenever the void call returned, and the call could not fail. Two reviewers
+     *         found the claim one frame below where the previous round had moved it.
+     */
+    public boolean saveToDlqReporting(ExternalIngestRequest request, String errorMessage,
+            byte[] contentBytes, boolean sourceNeverRead, boolean sourceWasRead) {
         try {
             String dlqId = deadLetterIdFor(request);
             // The WRITE path must not inherit the read path's refusal. getDlqEntry refuses a
@@ -245,11 +259,13 @@ public class IngestJobService {
 
             IngestDeadLetterRecord dlq = buildDlqRecord(request, errorMessage, existing,
                     Instant.now().toString(), rowWasUnreadable);
-            // Sticky: once an attempt recorded that the source was never read, a later attempt
-            // that also never read it must not clear the mark, and neither must one that did.
-            // Only a replay that actually resolves the row removes it.
+            // Inherited only while the source STILL has not been read. The first version kept
+            // the mark even when a later attempt read the page fully and failed during the
+            // import — the row's request is then complete and replayable, so refusing to
+            // resolve it for ever was an over-throw. A review found it. A save that read the
+            // source clears the mark; one that did not, keeps it.
             dlq.setSourceNeverRead(sourceNeverRead
-                    || (existing != null && existing.isSourceNeverRead()));
+                    || (!sourceWasRead && existing != null && existing.isSourceNeverRead()));
 
             // The payload is encrypted or it is not written. Storing ingested bytes in the
             // clear in nemaki_conf — no ACL of its own, no retention — is not an acceptable
@@ -313,16 +329,11 @@ public class IngestJobService {
                     // for a payload that is actually stored would refuse a legitimate replay
                     // for ever. A review named that inverse.
                     Boolean reallyThere = storedDocumentHasAttachment(dlq.getDlqId());
-                    if (Boolean.TRUE.equals(reallyThere)) {
-                        logger.warn("the attachment write of DLQ entry {} reported a failure but"
-                                + " the payload IS stored; the row is left as written",
-                                dlq.getDlqId());
-                    } else {
+                    if (Boolean.FALSE.equals(reallyThere)) {
+                        // The ONLY arm that knows something: the row was read and carries no
+                        // attachment at all, so these bytes are certainly not stored.
                         dlq.setHasContent(false);
-                        // null from the re-read means the store could not be asked either. The
-                        // row then says it carries none AND records that as an assumption, so
-                        // the next save re-probes instead of inheriting it.
-                        dlq.setPayloadPresenceAssumed(reallyThere == null);
+                        dlq.setPayloadPresenceAssumed(false);
                         dlq.setPayloadDropReason(notStored.getMessage());
                         @SuppressWarnings("unchecked")
                         Map<String, Object> corrected = MAPPER.convertValue(dlq, Map.class);
@@ -341,6 +352,32 @@ public class IngestJobService {
                             logger.warn("DLQ row {} claimed a payload that was not stored;"
                                     + " corrected", dlq.getDlqId());
                         }
+                    } else {
+                        // TRUE and null are BOTH "we do not know". TRUE was read as proof that
+                        // this payload landed — but upsertDocument deliberately carries an
+                        // EARLIER attempt's attachment forward, so the probe cannot tell one
+                        // from the other, and the row was left claiming a payload that may be
+                        // the wrong one. null was written as hasContent=false, which the
+                        // re-probe gate below never revisits (it requires hasContent), so an
+                        // unanswered read settled into a fact one save later. Codex and a
+                        // subagent found the two halves independently.
+                        //
+                        // So: say we do not know. hasContent stays true (the retry refuses
+                        // rather than importing an empty document), the assumption is marked
+                        // so the NEXT save re-probes, and the reason says what is unknown.
+                        dlq.setHasContent(true);
+                        dlq.setPayloadPresenceAssumed(true);
+                        dlq.setPayloadDropReason("the payload was encrypted, and whether the"
+                                + " store took it could not be established: "
+                                + notStored.getMessage());
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> unknown = MAPPER.convertValue(dlq, Map.class);
+                        if (upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE,
+                                unknown) == null) {
+                            logger.error("DLQ row {} does not record that its payload's"
+                                    + " presence is unestablished: the correcting write did"
+                                    + " not land", dlq.getDlqId());
+                        }
                     }
                 }
             }
@@ -348,8 +385,12 @@ public class IngestJobService {
             logger.info("Saved to DLQ: {} (source={}, failures={}, contentSize={})",
                     dlq.getDlqId(), request.getSourceObjectId(), dlq.getFailureCount(),
                     payload != null ? payload.length : 0);
+            // docId is null when upsertDocument's own write did not land (a _rev race), and
+            // the "Saved to DLQ" line above used to be printed for that too.
+            return docId != null;
         } catch (Exception e) {
             logger.error("Failed to save to DLQ: {}", e.getMessage(), e);
+            return false;
         }
     }
 

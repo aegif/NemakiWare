@@ -210,8 +210,11 @@ public class FetchSupport {
             return false;
         }
         try {
-            ingestJobService.saveSourceNeverReadToDlq(request, errorMessage);
-            return true;
+            // The service's ANSWER, not "the call returned". saveToDlq swallows every
+            // persistence failure by design — it is the last-resort record and must not take
+            // its caller down — so "did not throw" said nothing about whether a row exists.
+            // Two reviewers found the previous round's fix resting on exactly that.
+            return ingestJobService.saveSourceNeverReadToDlq(request, errorMessage);
         } catch (Exception e) {
             logger.warn("Failed to save to DLQ — item may be lost: {}", e.getMessage());
             return false;
