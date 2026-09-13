@@ -198,7 +198,20 @@ public class IngestJobService {
 
     public void saveToDlq(ExternalIngestRequest request, String errorMessage, byte[] contentBytes,
             boolean sourceNeverRead) {
-        saveToDlqReporting(request, errorMessage, contentBytes, sourceNeverRead, !sourceNeverRead);
+        // sourceWasRead is FALSE here, not !sourceNeverRead. "read", "not read" and "partially
+        // read" are three states, and inferring the first from the negation of the second let
+        // a partial fetch — a Notion page whose attachment list was read but whose download
+        // failed — clear a mark that says the row is not evidence of a recovery. The replay
+        // then answered "nothing to import", took it for an idempotent resolution, and DELETED
+        // the row. Codex and a subagent found the two halves in the same round. Only a caller
+        // that can say it read the source clears the mark, and it says so explicitly.
+        saveToDlqReporting(request, errorMessage, contentBytes, sourceNeverRead, false);
+    }
+
+    /** For a failure raised AFTER the source item was fully read — the import itself failed. */
+    public void saveSourceReadToDlq(ExternalIngestRequest request, String errorMessage,
+            byte[] contentBytes) {
+        saveToDlqReporting(request, errorMessage, contentBytes, false, true);
     }
 
     /**
@@ -297,7 +310,15 @@ public class IngestJobService {
             // smuggled into payloadDropReason, which meant the next save could not tell an
             // assumed presence from an established one, and a genuine drop reason was
             // DISCARDED whenever a payload was assumed or inherited. Both were reviewed.
-            dlq.setPayloadPresenceAssumed(payload == null && presenceCouldNotBeEstablished);
+            // A payload that has been ENCRYPTED is not a payload that has been STORED: the
+            // attachment write happens after this row lands, and if it fails — or if the
+            // correcting write below loses a revision race — the row was left claiming a
+            // payload outright, with no marker and no reason. Codex enumerated the whole state
+            // machine and named that as the one state nothing can repair. So the row says
+            // "assumed" until the attachment is confirmed; the confirmation is a second write,
+            // and if THAT is the one that fails, "assumed" is still true.
+            dlq.setPayloadPresenceAssumed(payload != null
+                    || (payload == null && presenceCouldNotBeEstablished));
             // The drop reason survives whatever hasContent ends up saying: it is about THIS
             // attempt's bytes, which were refused, not about whether some older payload is
             // attached. The retry door reads it to refuse rather than import an empty
@@ -319,6 +340,18 @@ public class IngestJobService {
             if (payload != null && docId != null) {
                 try {
                     attachContentToDlq(docId, request.getFileName(), request.getMimeType(), payload);
+                    // Confirmed. Only now does the row stop saying "assumed".
+                    dlq.setPayloadPresenceAssumed(false);
+                    dlq.setPayloadDropReason(null);
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> confirmed = MAPPER.convertValue(dlq, Map.class);
+                    if (upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE,
+                            confirmed) == null) {
+                        logger.warn("the payload of DLQ entry {} is stored, but the row still"
+                                + " says its presence is assumed: the confirming write did not"
+                                + " land. A replay will refuse until the next save",
+                                dlq.getDlqId());
+                    }
                 } catch (DlqPayloadNotStoredException notStored) {
                     // Put the row back in step with the store: it says it carries a payload
                     // and it does not. Written a second time rather than left wrong, because
@@ -646,7 +679,10 @@ public class IngestJobService {
             Document doc = docs.get(0);
             // Get the first attachment
             if (doc.getAttachments() == null || doc.getAttachments().isEmpty()) return null;
-            String attName = doc.getAttachments().keySet().iterator().next();
+            // Prefer the stable name. Rows written before it exists can carry more than one
+            // attachment, and taking whichever key came first meant an older attempt's bytes.
+            String attName = doc.getAttachments().containsKey("payload") ? "payload"
+                    : doc.getAttachments().keySet().iterator().next();
 
             // Check attachment size before loading to prevent OOM
             var attMeta = doc.getAttachments().get(attName);
@@ -726,7 +762,14 @@ public class IngestJobService {
                             .db(dbName).docId(docId).build()).execute().getResult();
             String rev = docResponse.getRev();
 
-            String attName = fileName != null ? fileName : "content";
+            // A FIXED name, not the filename. upsertDocument carries an earlier attempt's
+            // attachment forward, so a later attempt with a different filename left TWO
+            // attachments on the row — and loadDlqContent takes the first key, which is the
+            // older one. A replay then paired old bytes with new metadata and called the
+            // hybrid the recovered item. CouchDB replaces an attachment of the same name, so a
+            // stable name makes the row carry exactly one payload: this attempt's. The
+            // original filename is on the record itself. Codex traced it.
+            String attName = "payload";
             String attMime = mimeType != null ? mimeType : "application/octet-stream";
             var putAttOpts = new com.ibm.cloud.cloudant.v1.model.PutAttachmentOptions.Builder()
                     .db(dbName).docId(docId).rev(rev)

@@ -77,7 +77,12 @@ public class FolderConnectorController {
      * outside {@code GlobalExceptionHandler}); the typed refusals answer 503, "retry".
      */
     @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
-            ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})
+            ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+            // The "Run now" door answered 500 for the configuration refusal while its sibling
+            // POST .../scheduler/trigger/{id} answered 503 for the same condition — one
+            // outage, two doors, two kinds of answer. A review found the pair.
+            jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                    .SettingUnreadableException.class})
     public ResponseEntity<Map<String, Object>> definitionRowsCouldNotBeRead(RuntimeException e) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", "error");

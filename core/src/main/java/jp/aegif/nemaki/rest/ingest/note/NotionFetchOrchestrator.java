@@ -36,10 +36,13 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
         // resolvePasswordOrRefuse: a configuration read that FAILED used to arrive here as
         // "no token", which this method states as a fact. The scheduler counts that towards
         // opening the connector's circuit breaker and the folder endpoint turns it into
-        // authError=true, prompting an admin to overwrite a credential that was never
-        // wrong. The refusal lands in this orchestrator's outer catch, where the tick
-        // reports an error and advances no checkpoint. A review found the split after only
-        // the live IDLE re-check had been converted.
+        // authError=true, prompting an admin to overwrite a credential that was never wrong.
+        //
+        // The refusal is NOT caught here. An earlier version of this comment said it lands in
+        // this orchestrator's outer catch — it does not, this call is above the try — and a
+        // review found the sentence false in all eleven copies. The outer catch below rethrows
+        // it explicitly, so the scheduler can tell a configuration outage from the connector
+        // failing and leave the circuit breaker alone.
         String token = fetchSupport.resolvePasswordOrRefuse(connector);
         if (token == null) return new FetchResult(0, 0, List.of("No token for Notion connector"));
 
@@ -170,8 +173,16 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
                     // batch would advance the checkpoint past this page and strand
                     // its attachment. DLQ the page so the attachment stays retryable.
                     if (attachmentDownloadFailed) {
-                        fetchSupport.saveToDlq(req, "Notion page " + page.id()
-                                + ": attachment download failed", null);
+                        // saveSourceNeverReadToDlq, like the page arm below. The attachment
+                        // list was read but its BYTES were not, so the stored request carries
+                        // descriptors with no content: a replay imports nothing, reports
+                        // "files_only: page has no attachments", and — while this row was
+                        // written as an ordinary save — the retry door took that for an
+                        // idempotent resolution and DELETED the row. A review traced the chain
+                        // through the arm four lines above, which round 53 had just closed for
+                        // the page while leaving this one open.
+                        fetchSupport.saveSourceNeverReadToDlq(req, "Notion page " + page.id()
+                                + ": attachment download failed");
                     }
                 } catch (Exception e) {
                     FetchSupport.addError(errors, "Notion page " + page.id() + ": " + e.getMessage());
@@ -197,6 +208,16 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
             if (highWaterEditedTime != null && !highWaterEditedTime.equals(lastEditedCheckpoint)) {
                 checkpointManager.saveSimpleCheckpoint(profile.getProfileId(), "notion", highWaterEditedTime);
             }
+        } catch (jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                .SettingUnreadableException couldNotAsk) {
+            // NOT the connector's failure. The checkpoint read refuses from INSIDE this try,
+            // so swallowing it here turned a configuration-store outage into
+            // "<connector> connection failed" — an error the scheduler counts towards opening
+            // that connector's circuit breaker, and which the folder and trigger endpoints
+            // repeat back as the connector being in trouble. The credential half was exempted
+            // a round earlier by catching it in the scheduler; a review found the checkpoint
+            // half never reaching there because this catch stood in the way.
+            throw couldNotAsk;
         } catch (Exception e) {
             FetchSupport.addError(errors, "Notion connection failed: " + e.getMessage());
         }

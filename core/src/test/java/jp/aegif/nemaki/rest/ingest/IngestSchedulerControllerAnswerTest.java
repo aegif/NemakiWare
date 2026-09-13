@@ -627,4 +627,21 @@ class IngestSchedulerControllerAnswerTest {
                         + " of this controller's — so the endpoint answers a Spring 500, whatever"
                         + " the handler body would have said: " + handled);
     }
+
+    @org.junit.jupiter.api.Test
+    void theIdleStatusReportsMessagesThatWereNeitherCapturedNorRecorded() {
+        // The decision to keep an IDLE session running instead of stopping it when a miss
+        // cannot be dead-lettered rests on the miss being VISIBLE. It was not: the counter had
+        // no reader anywhere, while its javadoc said it was surfaced here. Two reviewers found
+        // the claim in the same round.
+        when(schedulerService.getIdleProfiles()).thenReturn(java.util.List.of("p1"));
+        when(schedulerService.idleUndurableMisses()).thenReturn(java.util.Map.of("p1", 3));
+
+        Map<String, Object> body = controller.getIdleStatus().getBody();
+
+        assertEquals(java.util.Map.of("p1", 3), body.get("undurableMisses"),
+                "a session that missed messages it could not record looked healthy: " + body);
+        assertTrue(String.valueOf(body.get("undurableMissNote")).contains("re-fetch"),
+                "the answer does not say how to recover: " + body);
+    }
 }

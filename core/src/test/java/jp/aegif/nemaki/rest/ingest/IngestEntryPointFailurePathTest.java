@@ -166,7 +166,10 @@ class IngestEntryPointFailurePathTest {
         assertEquals(expectedObjectId, result.objectId(),
                 "the document IS committed; reporting objectId=null tells the caller the "
                         + "opposite of the truth and leaves nothing to clean up by");
-        verify(jobService).saveToDlq(any(), any(), any());
+        // saveSourceReadToDlq: these paths are past the import service, so the source WAS
+        // read and their rows may clear an earlier attempt's "never read" mark. The
+        // 3-arg saveToDlq no longer clears it.
+        verify(jobService).saveSourceReadToDlq(any(), any(), any());
     }
 
     @Test
@@ -233,7 +236,10 @@ class IngestEntryPointFailurePathTest {
         assertFalse(result.isSuccess(), "control");
         assertEquals("mail-obj", result.objectId(),
                 "the existing message was decorated, so the caller must be told which object");
-        verify(jobService).saveToDlq(any(), any(), any());
+        // saveSourceReadToDlq: these paths are past the import service, so the source WAS
+        // read and their rows may clear an earlier attempt's "never read" mark. The
+        // 3-arg saveToDlq no longer clears it.
+        verify(jobService).saveSourceReadToDlq(any(), any(), any());
     }
 
     @Test
@@ -336,6 +342,9 @@ class IngestEntryPointFailurePathTest {
         assertEquals("new-obj-id", result.objectId(),
                 "the document was created before the failure; the catch reported null because "
                         + "objectId was declared inside the try");
-        verify(jobService).saveToDlq(any(), any(), any());
+        // saveSourceReadToDlq: these paths are past the import service, so the source WAS
+        // read and their rows may clear an earlier attempt's "never read" mark. The
+        // 3-arg saveToDlq no longer clears it.
+        verify(jobService).saveSourceReadToDlq(any(), any(), any());
     }
 }

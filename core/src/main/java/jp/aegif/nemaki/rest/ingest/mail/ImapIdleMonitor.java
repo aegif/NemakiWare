@@ -71,6 +71,15 @@ public class ImapIdleMonitor {
         return n == null ? 0 : n.get();
     }
 
+    /** The same counts for every profile that has one, for the IDLE status endpoint. */
+    public Map<String, Integer> undurableMisses() {
+        Map<String, Integer> out = new LinkedHashMap<>();
+        undurableMisses.forEach((profileId, n) -> {
+            if (n.get() > 0) out.put(profileId, n.get());
+        });
+        return out;
+    }
+
     private ImportProfileDefinitionService profileService;
     private ConnectorDefinitionService connectorService;
     private FetchSupport fetchSupport;
@@ -281,6 +290,45 @@ public class ImapIdleMonitor {
                                     schedulerService.authorizeDelegatedFetch(
                                             now.profile(), now.connector());
                             if (!auth.isAllowed()) {
+                                // "Revoked" is a settled answer. CREATOR_LOOKUP_FAILED and
+                                // SERVICES_UNAVAILABLE are not — they mean this node could not
+                                // ASK — and this arm printed both as a revocation and then
+                                // tore the session down for good, with the message dropped and
+                                // not even counted. The arm forty lines above already treats
+                                // that distinction correctly; a review found this one ignoring
+                                // the very DenialReason this branch added to carry it.
+                                DenialReason why = auth.getDenialReason();
+                                if (denialCouldNotAsk(why)) {
+                                    boolean kept = false;
+                                    if (fetchSupport != null) {
+                                        ExternalIngestRequest missedItem = new ExternalIngestRequest();
+                                        missedItem.setProfileId(profileId);
+                                        missedItem.setConnectorId(connector.getConnectorId());
+                                        missedItem.setRepositoryId(session.repositoryId());
+                                        missedItem.setSourceObjectId(msg.stableKey());
+                                        missedItem.setSourceObjectType("message");
+                                        missedItem.setExecutionMode("idle");
+                                        Map<String, Object> meta = new LinkedHashMap<>();
+                                        meta.put("mailboxId", mailbox);
+                                        meta.put("messageStableId", msg.stableKey());
+                                        missedItem.setMetadata(meta);
+                                        kept = fetchSupport.saveSourceNeverReadToDlq(missedItem,
+                                                "[transient] the message was not captured because"
+                                                + " the delegated authorisation could not be"
+                                                + " established (" + why + ")");
+                                    }
+                                    if (!kept) {
+                                        undurableMisses.computeIfAbsent(profileId,
+                                                k -> new java.util.concurrent.atomic.AtomicInteger())
+                                                .incrementAndGet();
+                                    }
+                                    logger.error("IDLE: profile {} did not capture a message —"
+                                            + " the delegated authorisation could not be"
+                                            + " ESTABLISHED ({}), which is not a revocation."
+                                            + " IDLE stays up; the miss {} recorded",
+                                            profileId, why, kept ? "was" : "could NOT be");
+                                    return;
+                                }
                                 logger.warn("IDLE: delegated authorization revoked for profile {} ({}); stopping session",
                                         profileId, auth.getDenialReason());
                                 imap.stopIdle();
@@ -405,6 +453,19 @@ public class ImapIdleMonitor {
      */
     static boolean refusalCouldNotAsk(String refusal) {
         return couldNotAsk(refusal);
+    }
+
+    /**
+     * True when a delegated denial means "this node could not ASK", not "the answer is no".
+     *
+     * <p>The per-message arm printed every denial as a revocation and stopped the session for
+     * good. {@code CREATOR_LOOKUP_FAILED} exists in this branch precisely to carry the
+     * distinction, and that consumer ignored it. Package-visible so the predicate is locked;
+     * the arm that uses it needs a live IMAP session and is recorded as unmeasured.
+     */
+    static boolean denialCouldNotAsk(DenialReason why) {
+        return why == DenialReason.CREATOR_LOOKUP_FAILED
+                || why == DenialReason.SERVICES_UNAVAILABLE;
     }
 
     private static boolean couldNotAsk(String refusal) {

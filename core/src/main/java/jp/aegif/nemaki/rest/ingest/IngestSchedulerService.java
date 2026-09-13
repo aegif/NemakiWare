@@ -217,6 +217,24 @@ public class IngestSchedulerService {
     }
 
     /**
+     * Messages an IDLE session did not capture AND could not record, per profile.
+     *
+     * <p>Empty when there are none. The count is in memory — the condition that produces one
+     * is the configuration database being unreachable, so there is nowhere durable to put it —
+     * and the decision to keep the session running instead of stopping it rests on this being
+     * VISIBLE. It was not: the counter had no reader anywhere, while its javadoc said it was
+     * surfaced here. Two reviewers found the claim in the same round.
+     */
+    public Map<String, Integer> idleUndurableMisses() {
+        if (imapIdleMonitor == null) {
+            throw new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(
+                    "the IMAP IDLE monitor is not wired on this node, so its missed-message"
+                            + " counts cannot be read; retry shortly against a node that runs it");
+        }
+        return imapIdleMonitor.undurableMisses();
+    }
+
+    /**
      * The repository a live IMAP IDLE session for {@code profileId} imports into, or
      * {@code null} when there is no session, the session's row carried no repositoryId, or
      * the monitor is not wired. Callers deciding whether a deletion must stop the session

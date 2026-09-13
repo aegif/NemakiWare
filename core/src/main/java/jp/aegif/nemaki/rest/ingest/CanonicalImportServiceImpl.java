@@ -3817,7 +3817,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (ingestJobService != null && autonomousExecution(callContext)
                     && !request.isDryRun()) {
                 try {
-                    ingestJobService.saveToDlq(request,
+                    ingestJobService.saveSourceReadToDlq(request,
                             (isTransient ? "[transient] " : "[permanent] ") + e.getMessage(),
                             bufferedContent);
                 } catch (Exception dlqErr) {
@@ -3879,7 +3879,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (ingestJobService != null && autonomousExecution(callContext)
                 && !request.isDryRun()) {
             try {
-                ingestJobService.saveToDlq(request, verdict + prefix + e.getMessage(), null);
+                ingestJobService.saveSourceReadToDlq(request, verdict + prefix + e.getMessage(), null);
             } catch (Exception dlqErr) {
                 logger.warn("Failed to save to DLQ — item may be lost: {}", dlqErr.getMessage());
             }

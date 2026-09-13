@@ -3759,8 +3759,11 @@ CONTROLS = [
         id="UV",
         what="IDLE admits a get() hit whose body names a different connectorId",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
-        find='        String askedConnectorId = current.getDefaultConnectorId();\n        if (conn != null && askedConnectorId != null\n                && !askedConnectorId.equals(conn.getConnectorId())) {\n            return new LiveLoad(null, null, "connector " + askedConnectorId\n                    + " exists but could not be read as that connector; retry shortly");\n        }',
-        replace='        String askedConnectorId = current.getDefaultConnectorId();',
+        # Re-anchored: the message stopped appending "; retry shortly" — it is a standing
+        # condition, and this file was the fourth site still adding the suffix.
+        find='        if (conn != null && askedConnectorId != null\n'
+             '                && !askedConnectorId.equals(conn.getConnectorId())) {',
+        replace='        if (false) {',
         test='ImapIdleSessionRegistryTest',
         expect_fail=['aConnectorBodyThatNamesAnotherIdIsNotAdmitted'],
     ),
@@ -4649,12 +4652,12 @@ CONTROLS = [
         id="XH",
         what="the folder connector listing lets the typed refusal escape as a Spring 500 again",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/FolderConnectorController.java',
-        find='    @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,\n'
-             '            ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})\n'
-             '    public ResponseEntity<Map<String, Object>> definitionRowsCouldNotBeRead(RuntimeException e) {\n'
-             '        Map<String, Object> body',
-        replace='    public ResponseEntity<Map<String, Object>> definitionRowsCouldNotBeRead(RuntimeException e) {\n'
-                '        Map<String, Object> body',
+        # Re-anchored TWICE. The handler gained the settings refusal, so the annotation is no
+        # longer two lines; and the first re-anchor replaced the type list with
+        # RuntimeException.class, which catches MORE, so the control did not fire at all. The
+        # lock drives MockMvc, so what has to go is the ANNOTATION — Spring dispatches by it.
+        find='    @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,',
+        replace='    @ExceptionHandler({IllegalMonitorStateException.class,',
         test='FolderConnectorControllerTest',
         expect_fail=['theListAnswers503WhenTheListingCannotBeCompleted'],
     ),
@@ -5819,11 +5822,11 @@ CONTROLS = [
         id="RI2",
         what="an unwired node lists no IDLE session instead of saying it cannot list them",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerService.java',
-        find='        if (imapIdleMonitor == null) {\n'
-             '            throw new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(\n',
-        replace='        if (imapIdleMonitor == null) {\n'
-                '            if (true) return List.of();\n'
-                '            throw new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(\n',
+        # Re-anchored: idleUndurableMisses added a second identical unwired guard, so the bare
+        # shape now matches twice. Pinned to the method itself, and the sabotage still does what
+        # this control is about — answer the empty list instead of refusing.
+        find='    public List<String> getIdleProfiles() {',
+        replace='    public List<String> getIdleProfiles() {\n        if (true) return List.of();',
         test='IngestSchedulerControllerAnswerTest',
         expect_fail=['anUnwiredNodeCannotListSessions'],
     ),
@@ -6907,6 +6910,76 @@ CONTROLS = [
         replace='                    if (false) {',
         test='SchedulerConfigOutageBreakerTest',
         expect_fail=['aConfigurationOutageDoesNotOpenTheConnectorsBreaker'],
+    ),
+    dict(
+        id="VU2",
+        what="an ordinary save clears the never-read mark again, so a partial fetch's row is "
+             "deleted by a replay that imported nothing",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='        saveToDlqReporting(request, errorMessage, contentBytes, sourceNeverRead, false);',
+        replace='        saveToDlqReporting(request, errorMessage, contentBytes, sourceNeverRead, !sourceNeverRead);',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['anOrdinarySaveDoesNotClearTheMark'],
+    ),
+    dict(
+        id="VV2",
+        what="the row claims a payload before the attachment has been stored, so a failed "
+             "corrective write leaves an unqualified claim nothing can repair",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='            dlq.setPayloadPresenceAssumed(payload != null\n'
+             '                    || (payload == null && presenceCouldNotBeEstablished));',
+        replace='            dlq.setPayloadPresenceAssumed(payload == null && presenceCouldNotBeEstablished);',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['aPayloadIsNotClaimedBeforeItIsStored'],
+    ),
+    dict(
+        id="VW2",
+        what="the attachment goes back to a filename-derived name, so a later attempt's "
+             "payload lands ALONGSIDE the earlier one and the replay picks the wrong bytes",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='            String attName = "payload";',
+        replace='            String attName = fileName != null ? fileName : "content";',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['aSecondPayloadReplacesTheFirstRatherThanJoiningIt'],
+    ),
+    dict(
+        id="VX2",
+        what="the IDLE callback calls a delegated authorisation it could not ASK a revocation "
+             "again, drops the message and tears the session down for good",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        # The PREDICATE, which is what the lock can reach: the arm's own wiring needs a live
+        # IMAP session and is recorded as unmeasured.
+        find='        return why == DenialReason.CREATOR_LOOKUP_FAILED\n'
+             '                || why == DenialReason.SERVICES_UNAVAILABLE;',
+        replace='        return false;',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['aDelegatedAuthorisationThatCouldNotBeAskedIsNotARevocation'],
+    ),
+    dict(
+        id="VY2",
+        what="the orchestrators swallow the configuration refusal again, so a store outage is "
+             "reported as the connector failing and opens its circuit breaker",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/note/NotionFetchOrchestrator.java',
+        find_span=('        } catch (jp.aegif.nemaki.rest.controller.IntegrationSettingsService\n'
+                   '                .SettingUnreadableException couldNotAsk) {',
+                   '            throw couldNotAsk;'),
+        replace='        } catch (jp.aegif.nemaki.rest.controller.IntegrationSettingsService\n'
+                '                .SettingUnreadableException couldNotAsk) {\n'
+                '            FetchSupport.addError(errors, "Notion connection failed: "\n'
+                '                    + couldNotAsk.getMessage());',
+        test='NotionOrchestratorRefusalTest',
+        expect_fail=['aCheckpointOutageIsNotReportedAsTheConnectorFailing'],
+    ),
+    dict(
+        id="VZ2",
+        what="the IDLE status endpoint stops reporting the messages that were neither captured "
+             "nor recorded, so a half-capturing session looks healthy",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerController.java',
+        find_span=('        Map<String, Integer> missed = schedulerService.idleUndurableMisses();',
+                   '                    + " UID checkpoint has not moved, so re-fetch the mailbox to recover");\n        }'),
+        replace='',
+        test='IngestSchedulerControllerAnswerTest',
+        expect_fail=['theIdleStatusReportsMessagesThatWereNeitherCapturedNorRecorded'],
     ),
     dict(
         id="ST2",

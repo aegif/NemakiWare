@@ -697,4 +697,25 @@ class ImapIdleSessionRegistryTest {
                 "a disallowed connector was started: " + refusal);
         assertEquals(List.of(), monitor.getIdleProfiles());
     }
+
+    @Test
+    @DisplayName("a delegated authorisation that could not be ASKED is not a revocation")
+    void aDelegatedAuthorisationThatCouldNotBeAskedIsNotARevocation() {
+        // The per-message arm printed every denial as "delegated authorization revoked" and
+        // tore the session down for good — including CREATOR_LOOKUP_FAILED and
+        // SERVICES_UNAVAILABLE, which mean this node could not ASK. This branch added
+        // CREATOR_LOOKUP_FAILED precisely to carry that distinction, and this consumer ignored
+        // it. A review found the arm forty lines above already handling the same split.
+        //
+        // The callback itself needs a live IMAP session, so what is locked here is the
+        // PREDICATE the arm keys on. The arm's own wiring is recorded as unmeasured.
+        assertTrue(ImapIdleMonitor.denialCouldNotAsk(jp.aegif.nemaki.rest.ingest.DenialReason.CREATOR_LOOKUP_FAILED),
+                "a creator lookup that failed is not a revocation");
+        assertTrue(ImapIdleMonitor.denialCouldNotAsk(jp.aegif.nemaki.rest.ingest.DenialReason.SERVICES_UNAVAILABLE),
+                "an unavailable authorisation service is not a revocation");
+        assertFalse(ImapIdleMonitor.denialCouldNotAsk(jp.aegif.nemaki.rest.ingest.DenialReason.CMIS_ALL_REQUIRED),
+                "a settled denial must still stop the session");
+        assertFalse(ImapIdleMonitor.denialCouldNotAsk(jp.aegif.nemaki.rest.ingest.DenialReason.CONNECTOR_NOT_DELEGATED),
+                "a settled revocation must still stop the session");
+    }
 }

@@ -902,8 +902,11 @@ class DlqReplayArchetypeGateTest {
         request.setConnectorId("c1");
         request.setSourceObjectId("m-7");
 
-        // A save from a caller that DID read the source.
-        jobs.saveToDlq(request, "import failed after the page was read", null);
+        // A save from a caller that SAYS it read the source. The first version of this lock
+        // called the 3-arg saveToDlq, which inferred "read" from the negation of "never read"
+        // — so it asserted the value the DEFECTIVE path produced, and was satisfied by the
+        // bug. A review found it. Only an explicit caller clears the mark now.
+        jobs.saveSourceReadToDlq(request, "import failed after the page was read", null);
 
         org.mockito.ArgumentCaptor<com.ibm.cloud.cloudant.v1.model.PostDocumentOptions> written =
                 org.mockito.ArgumentCaptor.forClass(
@@ -914,6 +917,122 @@ class DlqReplayArchetypeGateTest {
                 written.getAllValues().get(written.getAllValues().size() - 1)
                         .document().get("sourceNeverRead"),
                 "a row whose source has now been read still refuses to be resolved by a replay");
+    }
+
+    @Test
+    @DisplayName("a payload is not claimed before it has been stored")
+    void aPayloadIsNotClaimedBeforeItIsStored() throws Exception {
+        // The attachment write happens AFTER the row lands. Claiming the payload on that first
+        // write left the row asserting it outright whenever the attachment failed and the
+        // correcting write then lost a revision race — the one state in the whole machine that
+        // nothing repairs, because later byte-less saves trust the stored flag without
+        // probing. Codex enumerated the machine and named it. The row says "assumed" until a
+        // second write confirms the attachment.
+        Object[] rows = saveWithAWorkingAttachment();
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.TRUE, rows[0],
+                "the FIRST write claimed a payload that had not been attached yet");
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.FALSE, rows[1],
+                "the confirming write did not clear the assumption after the attachment landed");
+    }
+
+    @Test
+    @DisplayName("a second payload replaces the first rather than joining it")
+    void aSecondPayloadReplacesTheFirstRatherThanJoiningIt() throws Exception {
+        // upsertDocument carries an earlier attempt's attachment forward, so a later attempt
+        // whose filename differs left TWO attachments on the row — and loadDlqContent took the
+        // first key, which is the older one. A replay then paired old bytes with new metadata.
+        // A fixed attachment name makes CouchDB replace instead of add. Codex traced it.
+        org.mockito.ArgumentCaptor<com.ibm.cloud.cloudant.v1.model.PutAttachmentOptions> put =
+                org.mockito.ArgumentCaptor.forClass(
+                        com.ibm.cloud.cloudant.v1.model.PutAttachmentOptions.class);
+        attachmentNameUsedFor("some-new-name.pdf", put);
+        org.junit.jupiter.api.Assertions.assertEquals("payload",
+                put.getValue().attachmentName(),
+                "the attachment is keyed by the filename again, so a later attempt's payload "
+                        + "lands beside the earlier one instead of replacing it");
+    }
+
+    @Test
+    @DisplayName("an ordinary save does NOT clear the never-read mark")
+    void anOrdinarySaveDoesNotClearTheMark() throws Exception {
+        // The other direction, and the one the bug satisfied: a partial fetch — the Notion
+        // attachment arm, whose list was read but whose bytes were not — must not clear a mark
+        // that says this row is not evidence of a recovery.
+        Object[] written = saveOverAReadableRowMarkedNeverRead(false);
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.TRUE, written[0],
+                "a save that did not say it read the source cleared the mark, so a replay that"
+                        + " imports nothing will delete the only record of the loss");
+    }
+
+    /**
+     * @param sourceRead whether the caller asserts it read the source item
+     * @return {sourceNeverRead} as written
+     */
+    private Object[] saveOverAReadableRowMarkedNeverRead(boolean sourceRead) throws Exception {
+        IngestJobService jobs = new IngestJobService();
+        com.ibm.cloud.cloudant.v1.Cloudant cloudant =
+                mock(com.ibm.cloud.cloudant.v1.Cloudant.class);
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper wrapper =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+        when(wrapper.getClient()).thenReturn(cloudant);
+        when(wrapper.getDatabaseName()).thenReturn("nemaki_conf");
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool pool =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);
+        when(pool.getClient(org.mockito.ArgumentMatchers.anyString())).thenReturn(wrapper);
+        jobs.setConnectorPool(pool);
+
+        com.ibm.cloud.cloudant.v1.model.Document stored =
+                new com.ibm.cloud.cloudant.v1.model.Document();
+        stored.setId("ingest_dlq:t");
+        stored.setRev("1-a");
+        stored.put("type", "ingest_dead_letter");
+        stored.put("dlqId", "t");
+        stored.put("sourceNeverRead", Boolean.TRUE);
+        com.ibm.cloud.cloudant.v1.model.FindResult found =
+                mock(com.ibm.cloud.cloudant.v1.model.FindResult.class);
+        when(found.getDocs()).thenReturn(java.util.List.of(stored));
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> call =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.FindResult> resp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(resp.getResult()).thenReturn(found);
+        when(call.execute()).thenReturn(resp);
+        when(cloudant.postFind(org.mockito.ArgumentMatchers.any())).thenReturn(call);
+
+        com.ibm.cloud.cloudant.v1.model.DocumentResult ok =
+                mock(com.ibm.cloud.cloudant.v1.model.DocumentResult.class);
+        when(ok.isOk()).thenReturn(Boolean.TRUE);
+        when(ok.getId()).thenReturn("ingest_dlq:t");
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.DocumentResult> post =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.DocumentResult> postResp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(postResp.getResult()).thenReturn(ok);
+        when(post.execute()).thenReturn(postResp);
+        when(cloudant.postDocument(org.mockito.ArgumentMatchers.any())).thenReturn(post);
+
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setRepositoryId("bedroom");
+        request.setConnectorId("c1");
+        request.setSourceObjectId("m-10");
+
+        if (sourceRead) {
+            jobs.saveSourceReadToDlq(request, "import failed after the source was read", null);
+        } else {
+            jobs.saveToDlq(request, "attachment download failed", null);
+        }
+
+        org.mockito.ArgumentCaptor<com.ibm.cloud.cloudant.v1.model.PostDocumentOptions> written =
+                org.mockito.ArgumentCaptor.forClass(
+                        com.ibm.cloud.cloudant.v1.model.PostDocumentOptions.class);
+        org.mockito.Mockito.verify(cloudant, org.mockito.Mockito.atLeastOnce())
+                .postDocument(written.capture());
+        return new Object[]{written.getAllValues().get(written.getAllValues().size() - 1)
+                .document().get("sourceNeverRead")};
     }
 
     @Test
@@ -951,5 +1070,109 @@ class DlqReplayArchetypeGateTest {
         Object[] written = saveOverAnUnreadableRow(true);
         org.junit.jupiter.api.Assertions.assertEquals(0, written[2],
                 "an unreadable row was restated as the item's first failure");
+    }
+
+    /** Drives a save whose attachment write SUCCEEDS; returns the two writes' assumed flags. */
+    private Object[] saveWithAWorkingAttachment() throws Exception {
+        com.ibm.cloud.cloudant.v1.Cloudant cloudant = workingStore();
+        IngestJobService jobs = jobsOn(cloudant);
+
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setRepositoryId("bedroom");
+        request.setConnectorId("c1");
+        request.setSourceObjectId("m-11");
+        request.setFileName("a.pdf");
+        jobs.saveToDlq(request, "boom",
+                "hello".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        org.mockito.ArgumentCaptor<com.ibm.cloud.cloudant.v1.model.PostDocumentOptions> written =
+                org.mockito.ArgumentCaptor.forClass(
+                        com.ibm.cloud.cloudant.v1.model.PostDocumentOptions.class);
+        org.mockito.Mockito.verify(cloudant, org.mockito.Mockito.atLeast(2))
+                .postDocument(written.capture());
+        java.util.List<com.ibm.cloud.cloudant.v1.model.PostDocumentOptions> all =
+                written.getAllValues();
+        return new Object[]{all.get(0).document().get("payloadPresenceAssumed"),
+                all.get(all.size() - 1).document().get("payloadPresenceAssumed")};
+    }
+
+    private void attachmentNameUsedFor(String fileName,
+            org.mockito.ArgumentCaptor<com.ibm.cloud.cloudant.v1.model.PutAttachmentOptions> put)
+            throws Exception {
+        com.ibm.cloud.cloudant.v1.Cloudant cloudant = workingStore();
+        IngestJobService jobs = jobsOn(cloudant);
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setRepositoryId("bedroom");
+        request.setConnectorId("c1");
+        request.setSourceObjectId("m-12");
+        request.setFileName(fileName);
+        jobs.saveToDlq(request, "boom",
+                "hello".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        org.mockito.Mockito.verify(cloudant).putAttachment(put.capture());
+    }
+
+    private IngestJobService jobsOn(com.ibm.cloud.cloudant.v1.Cloudant cloudant) {
+        IngestJobService jobs = new IngestJobService();
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper wrapper =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+        when(wrapper.getClient()).thenReturn(cloudant);
+        when(wrapper.getDatabaseName()).thenReturn("nemaki_conf");
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool pool =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);
+        when(pool.getClient(org.mockito.ArgumentMatchers.anyString())).thenReturn(wrapper);
+        jobs.setConnectorPool(pool);
+        return jobs;
+    }
+
+    @SuppressWarnings("unchecked")
+    private com.ibm.cloud.cloudant.v1.Cloudant workingStore() {
+        com.ibm.cloud.cloudant.v1.Cloudant cloudant =
+                mock(com.ibm.cloud.cloudant.v1.Cloudant.class);
+        com.ibm.cloud.cloudant.v1.model.FindResult empty =
+                mock(com.ibm.cloud.cloudant.v1.model.FindResult.class);
+        when(empty.getDocs()).thenReturn(java.util.List.of());
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> call =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.FindResult> resp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(resp.getResult()).thenReturn(empty);
+        when(call.execute()).thenReturn(resp);
+        when(cloudant.postFind(org.mockito.ArgumentMatchers.any())).thenReturn(call);
+
+        com.ibm.cloud.cloudant.v1.model.DocumentResult ok =
+                mock(com.ibm.cloud.cloudant.v1.model.DocumentResult.class);
+        when(ok.isOk()).thenReturn(Boolean.TRUE);
+        when(ok.getId()).thenReturn("ingest_dlq:s");
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.DocumentResult> post =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.DocumentResult> postResp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(postResp.getResult()).thenReturn(ok);
+        when(post.execute()).thenReturn(postResp);
+        when(cloudant.postDocument(org.mockito.ArgumentMatchers.any())).thenReturn(post);
+
+        com.ibm.cloud.cloudant.v1.model.Document revDoc =
+                new com.ibm.cloud.cloudant.v1.model.Document();
+        revDoc.setId("ingest_dlq:s");
+        revDoc.setRev("1-a");
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.Document> getCall =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.Document> getResp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(getResp.getResult()).thenReturn(revDoc);
+        when(getCall.execute()).thenReturn(getResp);
+        when(cloudant.getDocument(org.mockito.ArgumentMatchers.any())).thenReturn(getCall);
+
+        com.ibm.cloud.cloudant.v1.model.DocumentResult attOk =
+                mock(com.ibm.cloud.cloudant.v1.model.DocumentResult.class);
+        when(attOk.isOk()).thenReturn(Boolean.TRUE);
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.DocumentResult> putCall =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.DocumentResult> putResp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(putResp.getResult()).thenReturn(attOk);
+        when(putCall.execute()).thenReturn(putResp);
+        when(cloudant.putAttachment(org.mockito.ArgumentMatchers.any())).thenReturn(putCall);
+        return cloudant;
     }
 }

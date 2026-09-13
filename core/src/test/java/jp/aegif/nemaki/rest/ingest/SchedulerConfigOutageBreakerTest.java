@@ -108,6 +108,27 @@ class SchedulerConfigOutageBreakerTest {
     }
 
     @Test
+    @DisplayName("a CHECKPOINT outage does not open the connector's breaker either")
+    void aCheckpointOutageDoesNotOpenTheConnectorsBreaker() throws Exception {
+        // The credential read refuses from ABOVE each orchestrator's try, so it escapes and
+        // the scheduler can exempt it. The CHECKPOINT read refuses from INSIDE that try — and
+        // every orchestrator's outer catch turned it into "<connector> connection failed", an
+        // error the scheduler counts. The exemption added a round earlier therefore covered
+        // only half the class its own headline named. A review found the other half, so the
+        // orchestrators rethrow it now.
+        IngestSchedulerService scheduler = schedulerWhoseFetchThrows(
+                new IntegrationSettingsService.SettingUnreadableException(
+                        "the stored value of 'ingest.checkpoint.p1.slack' could not be read:"
+                                + " the configuration database did not answer; retry shortly"));
+
+        scheduler.pollScheduledProfiles();
+
+        assertTrue(breakerCounts(scheduler).isEmpty(),
+                "a checkpoint read that never answered was counted as the connector failing: "
+                        + breakerCounts(scheduler));
+    }
+
+    @Test
     @DisplayName("an ordinary connector failure still opens it")
     void anOrdinaryFailureStillCountsAgainstTheBreaker() throws Exception {
         // The other direction. Exempting too much would leave a genuinely broken connector

@@ -356,6 +356,17 @@ public class IngestSchedulerController {
         if (!isAdmin()) return forbidden();
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("idleProfiles", schedulerService.getIdleProfiles());
+        // A session that is running is not the same as a session that has captured
+        // everything. When the authorisation cannot be re-checked AND the miss cannot be
+        // dead-lettered, the message is gone and only this count says so — the decision to
+        // keep the session up instead of stopping it rests on the count being readable.
+        Map<String, Integer> missed = schedulerService.idleUndurableMisses();
+        if (!missed.isEmpty()) {
+            response.put("undurableMisses", missed);
+            response.put("undurableMissNote", "messages these profiles did not capture and"
+                    + " could not record. The count is in memory and is lost on restart; the"
+                    + " UID checkpoint has not moved, so re-fetch the mailbox to recover");
+        }
         return ResponseEntity.ok(response);
     }
 
