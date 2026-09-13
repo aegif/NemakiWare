@@ -24,6 +24,14 @@ public class IngestSchedulerController {
     @Autowired
     private IngestSchedulerService schedulerService;
 
+    /**
+     * Optional: only to read its undelivered-webhook counts for {@code GET /idle/status}.
+     * Without it that section is absent rather than empty, which is the honest answer for a
+     * node that does not run the receiver.
+     */
+    @Autowired(required = false)
+    private IngestWebhookController webhookController;
+
     @Autowired
     private HttpServletRequest httpRequest;
 
@@ -360,6 +368,18 @@ public class IngestSchedulerController {
         // everything. When the authorisation cannot be re-checked AND the miss cannot be
         // dead-lettered, the message is gone and only this count says so — the decision to
         // keep the session up instead of stopping it rests on the count being readable.
+        // Webhook deliveries the node accepted, did not fetch, and could not record. The IMAP
+        // twin was surfaced a round earlier and the webhook counter was added with a javadoc
+        // saying it appears here — two reviewers found it had no reader at all.
+        if (webhookController != null) {
+            Map<String, Integer> undelivered = webhookController.undeliveredWebhookCounts();
+            if (!undelivered.isEmpty()) {
+                response.put("undeliveredWebhooks", undelivered);
+                response.put("undeliveredWebhookNote", "webhook deliveries these profiles"
+                        + " accepted but could neither fetch nor record. In memory and lost on"
+                        + " restart; re-fetch through the connector");
+            }
+        }
         Map<String, Integer> missed = schedulerService.idleUndurableMisses();
         if (!missed.isEmpty()) {
             response.put("undurableMisses", missed);

@@ -194,6 +194,8 @@ public class IngestDlqController {
             // Declared here rather than after the dispatch: the payload-restore block below
             // has something to say about how it resolved the entry's recorded state.
             Map<String, Object> response = new LinkedHashMap<>();
+            // Set when an unconfirmed payload write was settled by reading the store below.
+            boolean payloadAlreadyRestored = false;
 
             // Bytes this entry HAD but that were never stored are not "this item has no
             // content". Replaying without them creates an empty document, reports success and
@@ -202,7 +204,12 @@ public class IngestDlqController {
             // exactly this), and nothing read it: the whole codebase had no reader for the field.
             // The item has to come back through the connector, not through here. A review traced
             // the chain end to end.
-            if ("webhook_event".equals(dlq.getSourceObjectType())) {
+            // Keyed on the RESERVED source id this controller writes, not on
+            // sourceObjectType — that is an unrestricted caller-supplied string, so a genuine
+            // item whose type happened to be "webhook_event" was refused for ever as if it
+            // were the synthetic marker. Codex found the over-throw.
+            if (dlq.getSourceObjectId() != null
+                    && dlq.getSourceObjectId().startsWith("webhook-deliveries:")) {
                 // This row RECORDS that deliveries were accepted and not fetched. It carries no
                 // delivery — the webhook body and the event scope were never stored — so
                 // dispatching it would create an empty "imported-webhook:..." document and,
@@ -218,10 +225,35 @@ public class IngestDlqController {
                 // way the attachment may be landing right now, so this is a RETRY, not the
                 // permanent refusal below — the first version of this window wrote its
                 // explanation into payloadDropReason and a lost confirming write then bricked
-                // the entry for ever. Any later save clears the token.
-                return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, "a payload write for DLQ"
-                        + " entry " + dlqId + " has not been confirmed; the entry is kept and"
-                        + " nothing was imported. Retry shortly");
+                // the entry for ever.
+                //
+                // But "a later save clears it" is not a recovery when no later failure comes:
+                // a confirming write that THREW leaves the token, and only DELETE or an
+                // unrelated save removes it. Codex found the stuck state. So ask the store
+                // instead of refusing blind — if the payload is there, the write did land and
+                // this entry is replayable now.
+                byte[] settled = null;
+                try {
+                    settled = ingestJobService.loadDlqContent(dlqId);
+                } catch (IngestJobService.DlqContentUnreadableException stillUnknown) {
+                    return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, "a payload write for"
+                            + " DLQ entry " + dlqId + " has not been confirmed and the stored"
+                            + " payload could not be read (" + stillUnknown.getMessage()
+                            + "); the entry is kept and nothing was imported. Retry shortly");
+                }
+                if (settled == null) {
+                    return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, "a payload write for"
+                            + " DLQ entry " + dlqId + " has not been confirmed and no stored"
+                            + " payload came back; the entry is kept and nothing was imported."
+                            + " Retry shortly");
+                }
+                // The bytes ARE there. The row's token is stale; replay with them.
+                request.setContentStream(new java.io.ByteArrayInputStream(settled));
+                payloadAlreadyRestored = true;
+                response.put("payloadWriteSettledByRead", true);
+                response.put("payloadWriteNote", "this entry's payload write was never"
+                        + " confirmed, but the stored payload came back, so it was replayed"
+                        + " with it");
             }
             if (dlq.getPayloadDropReason() != null) {
                 // NOT gated on hasContent. A row can carry an OLDER attempt's attachment
@@ -244,7 +276,7 @@ public class IngestDlqController {
             }
 
             // Restore content stream from CouchDB attachment if available
-            if (dlq.isHasContent()) {
+            if (!payloadAlreadyRestored && dlq.isHasContent()) {
                 // A read that could not answer must not become "this entry had nothing to
                 // restore": the retry would import a content-less document, report success,
                 // and DELETE the row that is the only record the source item was lost.

@@ -347,6 +347,17 @@ public class IngestJobService {
             // Attach binary content to CouchDB document if available
             if (payload != null && docId != null) {
                 try {
+                    // A review asked for the ownership check to run BEFORE the bytes as well,
+                    // to stop this save replacing the fixed payload attachment on a row another
+                    // save now owns. It was written and then withdrawn: the check cannot tell
+                    // "another save owns this row" from "the row I have just written is not
+                    // visible to the index yet", and on the second reading it SKIPS the
+                    // attachment — dropping a payload that was encrypted and never stored, with
+                    // the row left saying "assumed". The existing lock caught it. The
+                    // interleaving it was meant to close is part of the upsertDocument
+                    // lost-update class, which is recorded as a residual: upsertDocument adopts
+                    // the current revision instead of conditioning on the one this save read,
+                    // and nothing short of a compare-and-swap closes it.
                     attachContentToDlq(docId, request.getFileName(), request.getMimeType(), payload);
                     // Confirmed. Only now does the row stop saying "assumed".
                     //
@@ -941,8 +952,12 @@ public class IngestJobService {
                     if (java.time.Instant.parse(ts).isBefore(cutoff)) {
                         Object dlqId = doc.getProperties().get("dlqId");
                         if (dlqId instanceof String id) {
-                            deleteDlqEntry(id);
-                            deleted++;
+                            // The COUNT, not the intent. deleteDlqEntry answers how many rows
+                            // it removed — a rebuilding index removes none — and incrementing
+                            // regardless told the operator entries were cleared that are still
+                            // there and will be back in the next listing. A review found the
+                            // count claim in the release notes unsupported here.
+                            deleted += deleteDlqEntry(id);
                         }
                     }
                 } catch (java.time.format.DateTimeParseException parseErr) {

@@ -2254,7 +2254,16 @@ CONTROLS = [
                    '                    + " create never overwrites one)");\n        }'),
         replace='',
         test='ConnectorLegacyIdMigrationTest',
-        expect_fail=['aCreateRefusesWhenTheScanFindsALegacyRow', 'anUpdateOverAnInvisibleLegacyRowRefusesRetryably', 'anUpdateWithTwoVisibleTwinsDoesNotWrite', 'anUpdateWithAHiddenTwinIsAStandingPairNotARetry', 'aCreateNeverAdoptsARowTheScanFound', 'theSelectorMustNotOutReportTheWalk'],
+        # Completed from MEASUREMENT. A THIRD suite-wide pass found these: the span deletes
+        # the whole index-free scan block, which is the only walk consumer on the write
+        # path, so every refusal derived from it disappears — including the locks of the
+        # narrower controls that sit INSIDE this span. Round 52's pass and round 57's
+        # both missed them; the reviewer's reading matched the run exactly.
+        expect_fail=['aCreateRefusesWhenTheScanFindsALegacyRow', 'anUpdateOverAnInvisibleLegacyRowRefusesRetryably', 'anUpdateWithTwoVisibleTwinsDoesNotWrite', 'anUpdateWithAHiddenTwinIsAStandingPairNotARetry', 'aCreateNeverAdoptsARowTheScanFound', 'theSelectorMustNotOutReportTheWalk',
+                     'aCreateRefusesWhenTheScanCannotRead',
+                     'aCreateWhoseSelectorOutReportsTheWalkRefuses',
+                     'aNumericLegacyRowIsCountedByTheCreateOfItsStringId',
+                     'anUpdateWhoseScanCannotReadRefusesRetryablyToo'],
     ),
     dict(
         id="PB",
@@ -2360,7 +2369,17 @@ CONTROLS = [
                    '                    + " create never overwrites one)");\n        }'),
         replace='',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['aCreateRefusesWhenTheScanFindsALegacyRow', 'anUpdateOverAnInvisibleLegacyRowRefusesRetryably', 'anUpdateWithTwoVisibleTwinsDoesNotWrite', 'anUpdateWithAHiddenTwinIsAStandingPairNotARetry', 'aCreateNeverAdoptsARowTheScanFound', 'theSelectorMustNotOutReportTheWalk'],
+        # Completed from MEASUREMENT. A THIRD suite-wide pass found these: the span deletes
+        # the whole index-free scan block, which is the only walk consumer on the write
+        # path, so every refusal derived from it disappears — including the locks of the
+        # narrower controls that sit INSIDE this span. Round 52's pass and round 57's
+        # both missed them; the reviewer's reading matched the run exactly.
+        expect_fail=['aCreateRefusesWhenTheScanFindsALegacyRow', 'anUpdateOverAnInvisibleLegacyRowRefusesRetryably', 'anUpdateWithTwoVisibleTwinsDoesNotWrite', 'anUpdateWithAHiddenTwinIsAStandingPairNotARetry', 'aCreateNeverAdoptsARowTheScanFound', 'theSelectorMustNotOutReportTheWalk',
+                     'aCreateRefusesWhenTheScanCannotRead',
+                     'aCreateWhoseSelectorOutReportsTheWalkRefuses',
+                     'aNumericLegacyRowIsATwinForTheCreateOfItsStringId',
+                     'anUpdateWhoseScanCannotReadRefusesRetryablyToo',
+                     'theTwinRefusalNamesAReachableRepair'],
     ),
     dict(
         id="PJ",
@@ -2588,7 +2607,13 @@ CONTROLS = [
         find='        if (rowsDefiningThisProfile > 1) {',
         replace='        if (rowsDefiningThisProfile > 1 && rowsDefiningThisProfile == existing.size()) {',
         test='ImportProfileLegacyIdMigrationTest',
-        expect_fail=['anUpdateWithAHiddenTwinIsAStandingPairNotARetry'],
+        # Completed from MEASUREMENT. A THIRD suite-wide pass found these: the span deletes
+        # the whole index-free scan block, which is the only walk consumer on the write
+        # path, so every refusal derived from it disappears — including the locks of the
+        # narrower controls that sit INSIDE this span. Round 52's pass and round 57's
+        # both missed them; the reviewer's reading matched the run exactly.
+        expect_fail=['anUpdateWithAHiddenTwinIsAStandingPairNotARetry',
+                     'theTwinRefusalNamesAReachableRepair'],
     ),
     dict(
         id="QB",
@@ -7098,9 +7123,11 @@ CONTROLS = [
         what="an unfinished payload write is answered as a permanent refusal again, so an "
              "entry whose content IS stored refuses every replay for ever",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
-        find_span=('            if (dlq.getPayloadWriteToken() != null) {',
-                   '                        + " nothing was imported. Retry shortly");\n            }'),
-        replace='',
+        # Re-anchored: the arm gained a self-heal (ask the store before refusing), so the span
+        # grew. Neutralised at the branch instead — the defect is answering the window as a
+        # PERMANENT refusal, which is what skipping this whole arm restores.
+        find='            if (dlq.getPayloadWriteToken() != null) {',
+        replace='            if (false) {',
         test='DlqRetryRefusalStatusTest',
         expect_fail=['aPayloadWriteThatDidNotFinishIsARetry'],
     ),

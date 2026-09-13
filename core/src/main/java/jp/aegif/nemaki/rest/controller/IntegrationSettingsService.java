@@ -61,6 +61,15 @@ public class IntegrationSettingsService {
 	 * satisfied by a system property, an environment variable or the properties file is
 	 * answered from there and never reaches the store, so an outage must not refuse it.
 	 *
+	 * <p>SCOPE, measured rather than assumed: {@code PropertyManager.readValue} consults
+	 * {@code nemaki_conf} only for the five admin-managed prefixes
+	 * ({@code cloud.auth.} / {@code cloud.drive.} / {@code sso.} / {@code oidc.} /
+	 * {@code saml.} — see {@code PropertyManager.isAdminManagedDynamicKey}). For any other key
+	 * the store is never asked, so {@code loadFailed} says nothing about THAT key and this
+	 * method's second arm can only fire for a key that is absent everywhere during an unrelated
+	 * outage. The refusal is still the safer answer there, but it is not evidence that the
+	 * key's own read failed. The thrown-read arm above is the one that covers every key.
+	 *
 	 * @throws SettingUnreadableException when the key resolved nowhere AND the configuration
 	 *         database did not answer. Callers that would otherwise assert an absence must let
 	 *         it out.
@@ -69,11 +78,27 @@ public class IntegrationSettingsService {
 		// Through readSetting, not straight to the PropertyManager: test doubles and any
 		// future subclass override the one read path, and going around it made seven test
 		// classes NPE on a manager they never needed.
-		String value = readSetting(key);
+		String value;
+		try {
+			value = readSetting(key);
+		} catch (RuntimeException couldNotRead) {
+			// A read that THREW is a failed read. Only the loadFailed sentinel was converted,
+			// so an exception fell through to the caller's generic catch — and the idempotency
+			// caller's catch leaves idempSkip=false, after which a dedupePolicy=replace request
+			// DELETES the document a previous run committed. That is the batch's own headline
+			// defect, reached through the arm added to close it. Codex found it.
+			throw new SettingUnreadableException("the stored value of '" + key
+					+ "' could not be read: " + couldNotRead.getMessage() + "; retry shortly");
+		}
 		if (value != null) return value;
 		if (propertyManager == null) return null;
-		jp.aegif.nemaki.model.Configuration conf =
-				propertyManager.getConfiguration(SystemConst.NEMAKI_CONF_DB);
+		jp.aegif.nemaki.model.Configuration conf;
+		try {
+			conf = propertyManager.getConfiguration(SystemConst.NEMAKI_CONF_DB);
+		} catch (RuntimeException couldNotAsk) {
+			throw new SettingUnreadableException("whether '" + key + "' is stored could not be"
+					+ " established: " + couldNotAsk.getMessage() + "; retry shortly");
+		}
 		if (conf != null && conf.isLoadFailed()) {
 			throw new SettingUnreadableException("the stored value of '" + key
 					+ "' could not be read: the configuration database did not answer");
