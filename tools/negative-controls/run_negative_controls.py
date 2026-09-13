@@ -6696,10 +6696,11 @@ CONTROLS = [
         what="the record that this item's bytes were never stored is erased by the next "
              "byte-less failure, so the 409 that protects the entry lasts one save",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
-        find='            String carriedForward = existing != null ? existing.getPayloadDropReason() : null;\n'
-             '            dlq.setPayloadDropReason(payload != null ? null\n'
-             '                    : (dropReason != null ? dropReason : carriedForward));',
-        replace='            dlq.setPayloadDropReason(dropReason);',
+        # Re-anchored: the payload-bearing arm stopped writing null while the attachment is
+        # still being stored, so the expression grew. Narrowed to the carry-forward itself,
+        # which is what this control is about.
+        find='            String carriedForward = existing != null ? existing.getPayloadDropReason() : null;',
+        replace='            String carriedForward = null;',
         test='DlqReplayArchetypeGateTest',
         expect_fail=['theDropReasonSurvivesTheNextFailure'],
     ),
@@ -6946,9 +6947,11 @@ CONTROLS = [
         id="VX2",
         what="the IDLE callback calls a delegated authorisation it could not ASK a revocation "
              "again, drops the message and tears the session down for good",
-        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
         # The PREDICATE, which is what the lock can reach: the arm's own wiring needs a live
         # IMAP session and is recorded as unmeasured.
+        # Re-anchored: the predicate moved to IngestSchedulerService (two more consumers
+        # needed it) and the monitor now delegates.
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestSchedulerService.java',
         find='        return why == DenialReason.CREATOR_LOOKUP_FAILED\n'
              '                || why == DenialReason.SERVICES_UNAVAILABLE;',
         replace='        return false;',
@@ -6980,6 +6983,53 @@ CONTROLS = [
         replace='',
         test='IngestSchedulerControllerAnswerTest',
         expect_fail=['theIdleStatusReportsMessagesThatWereNeitherCapturedNorRecorded'],
+    ),
+    dict(
+        id="WA2",
+        what="an EMPTY Graph notification array verifies again, so an unauthenticated caller "
+             "reaches the connector's rate limiter and locks out genuine deliveries",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find_span=('            if (notifications.isEmpty()) {',
+                   '                return false;\n            }'),
+        replace='',
+        test='WebhookFrontDoorRefusalTest',
+        expect_fail=['anEmptyNotificationArrayDoesNotVerify'],
+    ),
+    dict(
+        id="WB2",
+        what="the window between the row write and the attachment write goes silent again, so "
+             "a concurrent replay reads the missing attachment as proof there is none",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find_span=("            dlq.setPayloadDropReason(payload != null",
+                   '                    : (dropReason != null ? dropReason : carriedForward));'),
+        replace='            dlq.setPayloadDropReason(payload != null ? null\n'
+                '                    : (dropReason != null ? dropReason : carriedForward));',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['thePreAttachmentWindowRefusesAConcurrentReplay'],
+    ),
+    dict(
+        id="WC2",
+        what="the IDLE start arm answers 403 for an authorisation it could not ASK again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find_span=('                if (denialCouldNotAsk(auth.getDenialReason())) {',
+                   '                            + auth.getDenialReason() + "); retry shortly";\n                }'),
+        replace='',
+        # Pointed at a lock that drives the real monitor. The first version named the
+        # controller lock, which stubs schedulerService.startIdle to return a fixed string —
+        # so the monitor's message could not reach it and the control did not fire.
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['aStartWhoseDelegatedAuthorisationCouldNotBeAskedIsNotADenial'],
+    ),
+    dict(
+        id="WD2",
+        what="the relationship enumeration answers 'there are none' on an unwired node again, "
+             "so replace_relationships_on_resync reports success without replacing anything",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find_span=('        if (relationshipService == null) {',
+                   '                    + " shortly against a node that runs it");\n        }'),
+        replace='        if (relationshipService == null) {\n            return ids;\n        }',
+        test='IngestDedupeFailuresReachCallerTest',
+        expect_fail=['anUnwiredRelationshipServiceIsNotAnEmptyEdgeList'],
     ),
     dict(
         id="ST2",

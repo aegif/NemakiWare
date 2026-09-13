@@ -235,4 +235,30 @@ class IngestDedupeFailuresReachCallerTest {
                         + "stale edges surviving is not something to keep to the log. Got: "
                         + result.warnings());
     }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("an unwired relationship service is not an empty edge list")
+    void anUnwiredRelationshipServiceIsNotAnEmptyEdgeList() throws Exception {
+        // An empty list is "this object has no relationships", and the caller acts on it:
+        // replace_relationships_on_resync deletes nothing, warns about nothing, and reports
+        // success — while its promise is that the object ends up with ONLY the incoming edges.
+        // This file's own subject closed the identical arm twice before, in lookUpRelationship
+        // and findExistingDocument, whose comments name each other. A review found the third.
+        CanonicalImportServiceImpl bare = new CanonicalImportServiceImpl();
+        java.lang.reflect.Method collect = CanonicalImportServiceImpl.class.getDeclaredMethod(
+                "collectExistingRelationshipIds",
+                org.apache.chemistry.opencmis.commons.server.CallContext.class,
+                String.class, String.class);
+        collect.setAccessible(true);
+
+        java.lang.reflect.InvocationTargetException wrapped =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        java.lang.reflect.InvocationTargetException.class,
+                        () -> collect.invoke(bare, null, "bedroom", "doc-1"),
+                        "an unwired relationship service answered 'this object has no edges',"
+                                + " and the resync then reported success without replacing any");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                wrapped.getCause().getMessage().contains("not wired"),
+                "the refusal does not say what happened: " + wrapped.getCause().getMessage());
+    }
 }

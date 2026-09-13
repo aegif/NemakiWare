@@ -2625,7 +2625,17 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     private java.util.List<String> collectExistingRelationshipIds(
             CallContext callContext, String repositoryId, String objectId) {
         java.util.List<String> ids = new ArrayList<>();
-        if (relationshipService == null) return ids;
+        if (relationshipService == null) {
+            // An empty list is "this object has no relationships", and the caller acts on it:
+            // replace_relationships_on_resync deletes nothing, adds no warning, and reports
+            // success — while its promise is that the object ends up with ONLY the incoming
+            // edges. This same file closed the identical arm twice before (lookUpRelationship
+            // and findExistingDocument), and their comments name each other; the split of
+            // enumeration from deletion carried this one through. A review found the third.
+            throw new IllegalStateException("the relationships of " + objectId + " could not be"
+                    + " listed: the relationship service is not wired on this node; retry"
+                    + " shortly against a node that runs it");
+        }
         java.math.BigInteger batchSize = java.math.BigInteger.valueOf(100);
         java.math.BigInteger skipCount = java.math.BigInteger.ZERO;
         while (true) {

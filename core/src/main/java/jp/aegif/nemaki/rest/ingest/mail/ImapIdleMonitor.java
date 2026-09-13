@@ -128,6 +128,17 @@ public class ImapIdleMonitor {
             IngestSchedulerService.DelegatedAuthorization auth =
                     schedulerService.authorizeDelegatedFetch(profile, connector);
             if (!auth.isAllowed()) {
+                // The per-message arm 170 lines below was given this distinction a round ago;
+                // this one still answered every reason the same way, and the endpoint maps
+                // "Delegated authorization denied" to 403 BEFORE it tests "could not ask" — so
+                // a CouchDB blip in the creator lookup told an administrator the creator is not
+                // authorised, and they went off revoking and regranting. A review found the
+                // startIdle arm ignoring the very reason this branch added to carry it.
+                if (denialCouldNotAsk(auth.getDenialReason())) {
+                    return "delegated IMAP IDLE could not be authorised for profile "
+                            + profileId + ": the authorisation could not be established ("
+                            + auth.getDenialReason() + "); retry shortly";
+                }
                 return "Delegated authorization denied for profile " + profileId
                         + " (" + auth.getDenialReason() + ")";
             }
@@ -464,8 +475,7 @@ public class ImapIdleMonitor {
      * the arm that uses it needs a live IMAP session and is recorded as unmeasured.
      */
     static boolean denialCouldNotAsk(DenialReason why) {
-        return why == DenialReason.CREATOR_LOOKUP_FAILED
-                || why == DenialReason.SERVICES_UNAVAILABLE;
+        return IngestSchedulerService.denialCouldNotAsk(why);
     }
 
     private static boolean couldNotAsk(String refusal) {

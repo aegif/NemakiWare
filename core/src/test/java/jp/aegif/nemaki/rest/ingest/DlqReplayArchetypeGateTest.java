@@ -953,6 +953,25 @@ class DlqReplayArchetypeGateTest {
     }
 
     @Test
+    @DisplayName("the pre-attachment window refuses a concurrent replay")
+    void thePreAttachmentWindowRefusesAConcurrentReplay() throws Exception {
+        // Between the first write and the confirming one there is no attachment yet, so a
+        // concurrent retry saw "assumed presence, no payload came back", read that as an
+        // assumption the store had DISPROVEN, and imported the item content-less — possibly
+        // deleting the row this save was still writing. Codex built the interleaving. The
+        // retry door already refuses any row carrying a reason, so the window says what it is.
+        Object[] rows = saveWithAWorkingAttachment();
+        org.junit.jupiter.api.Assertions.assertNotNull(rows[2],
+                "the first write left the window silent, so a replay landing inside it treats "
+                        + "the missing attachment as proof that there is none");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                String.valueOf(rows[2]).contains("being stored"),
+                "the window does not say what it is: " + rows[2]);
+        org.junit.jupiter.api.Assertions.assertNull(rows[3],
+                "the confirming write did not clear the window's reason");
+    }
+
+    @Test
     @DisplayName("an ordinary save does NOT clear the never-read mark")
     void anOrdinarySaveDoesNotClearTheMark() throws Exception {
         // The other direction, and the one the bug satisfied: a partial fetch — the Notion
@@ -1093,7 +1112,9 @@ class DlqReplayArchetypeGateTest {
         java.util.List<com.ibm.cloud.cloudant.v1.model.PostDocumentOptions> all =
                 written.getAllValues();
         return new Object[]{all.get(0).document().get("payloadPresenceAssumed"),
-                all.get(all.size() - 1).document().get("payloadPresenceAssumed")};
+                all.get(all.size() - 1).document().get("payloadPresenceAssumed"),
+                all.get(0).document().get("payloadDropReason"),
+                all.get(all.size() - 1).document().get("payloadDropReason")};
     }
 
     private void attachmentNameUsedFor(String fileName,

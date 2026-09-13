@@ -104,6 +104,14 @@ public class IngestWebhookController {
     private jp.aegif.nemaki.util.PropertyManager propertyManager;
 
     /**
+     * Optional: without it an unfetched delivery cannot be recorded, only logged. The sender
+     * has already been told "accepted" by then, so the row is the only thing that can carry
+     * the delivery forward.
+     */
+    @Autowired(required = false)
+    private FetchSupport fetchSupport;
+
+    /**
      * Receive webhook from external source.
      * Handles Slack url_verification, Graph validationToken, and actual event payloads.
      */
@@ -163,9 +171,20 @@ public class IngestWebhookController {
         // Graph sends validationToken during subscription creation — server must echo it back.
         // Only Graph-backed connectors use this handshake; Slack/Chatwork/generic must not bypass verifySignature.
         if (isMicrosoftGraphSubscriptionValidation(system, validationToken)) {
+            // Bounded and nosniff, like the Dropbox challenge eighty lines below — this is the
+            // same thing: an unauthenticated echo of caller-controlled text. Only one of the
+            // two was bounded, and a review found the pair. Graph's own token is a short
+            // opaque string; anything longer is not one.
+            if (validationToken.length() > 1024) {
+                logger.warn("Graph validation token for connector {} was {} characters;"
+                        + " refusing to echo it", connectorId, validationToken.length());
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(Map.of("error", "validationToken too long"));
+            }
             logger.info("Graph subscription validation for connector {}", connectorId);
             return ResponseEntity.ok()
                     .contentType(MediaType.TEXT_PLAIN)
+                    .header("X-Content-Type-Options", "nosniff")
                     .body(validationToken);
         }
 
@@ -724,6 +743,32 @@ public class IngestWebhookController {
         IngestSchedulerService.DelegatedAuthorization auth =
                 schedulerService.authorizeDelegatedFetch(profile, connector);
         if (!auth.isAllowed()) {
+            // The sender has already been told "accepted". A SETTLED denial is the profile's
+            // answer and the event is genuinely not for it; a denial this node could not ASK is
+            // not, and dropping it there loses the delivery — the sender does not retry a 200.
+            // The IMAP twin was given a dead-letter row and a miss counter for exactly this a
+            // round ago; a review found the two arms diverged again.
+            if (IngestSchedulerService.denialCouldNotAsk(auth.getDenialReason())
+                    && fetchSupport != null) {
+                ExternalIngestRequest missed = new ExternalIngestRequest();
+                missed.setProfileId(profile.getProfileId());
+                missed.setConnectorId(connector.getConnectorId());
+                missed.setRepositoryId(profile.getRepositoryId());
+                missed.setSourceObjectId("webhook:" + profile.getProfileId() + ":"
+                        + java.time.Instant.now().toEpochMilli());
+                missed.setSourceObjectType("webhook_event");
+                missed.setExecutionMode("webhook");
+                boolean recorded = fetchSupport.saveSourceNeverReadToDlq(missed,
+                        "[transient] a webhook delivery was accepted but not fetched: the"
+                                + " delegated authorisation could not be established ("
+                                + auth.getDenialReason() + ")");
+                logger.error("Webhook-triggered fetch for delegated profile {} (connector {})"
+                        + " could not be AUTHORISED ({}), which is not a denial. The sender was"
+                        + " told 'accepted'; the delivery {} recorded",
+                        profile.getProfileId(), connector.getConnectorId(),
+                        auth.getDenialReason(), recorded ? "was" : "could NOT be");
+                return;
+            }
             logger.warn("Webhook-triggered fetch refused for delegated profile {} (connector {}): {}",
                     profile.getProfileId(), connector.getConnectorId(), auth.getDenialReason());
             return;
@@ -812,6 +857,17 @@ public class IngestWebhookController {
             JsonNode payload = MAPPER.readTree(rawBody);
             JsonNode notifications = payload.path("value");
             if (!notifications.isArray()) return false;
+            if (notifications.isEmpty()) {
+                // An empty array verified NOTHING: the loop below never ran and the method
+                // answered true, so {"value":[]} reached this connector's rate limiter without
+                // presenting a secret. The comment at the call site says the limiter is
+                // "AFTER signature verification to prevent unauthenticated exhaustion" — for
+                // Graph connectors that was false, and a hundred empty posts locked out a
+                // minute of genuine change notifications. A review found the pair.
+                logger.warn("Graph notification carried no entries, so its clientState could"
+                        + " not be verified; refusing");
+                return false;
+            }
             for (JsonNode notification : notifications) {
                 String clientState = notification.path("clientState").asText(null);
                 if (clientState == null || !java.security.MessageDigest.isEqual(
@@ -973,7 +1029,12 @@ public class IngestWebhookController {
     public ResponseEntity<?> createSubscription(@PathVariable String connectorId,
                                                  @RequestBody Map<String, String> params) {
         if (!isAdmin()) return forbidden();
-        ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
+        // getOrRefuse, not get(): get() answers null for a failed selector, a failed
+        // deterministic-id read AND a genuine absence alike, so a CouchDB outage during a
+        // subscription change was answered "Connector not found" — 404, a settled claim about
+        // the catalogue made from an outage. The release notes already say unreadable rows
+        // become 503 here. Recorded as a residual since round 3; two reviewers raised it again.
+        ConnectorDefinition connector = connectorDefinitionService.getOrRefuse(connectorId);
         if (connector == null) return notFound("Connector not found: " + connectorId);
 
         String system = connector.getSourceSystem();
@@ -1067,7 +1128,8 @@ public class IngestWebhookController {
     public ResponseEntity<?> deleteSubscription(@PathVariable String connectorId,
                                                  @RequestParam String subscriptionId) {
         if (!isAdmin()) return forbidden();
-        ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
+        // getOrRefuse: see createSubscription. A failed read is not "not found".
+        ConnectorDefinition connector = connectorDefinitionService.getOrRefuse(connectorId);
         if (connector == null) return notFound("Connector not found");
 
         String token = resolveToken(connector);
@@ -1093,11 +1155,33 @@ public class IngestWebhookController {
         }
     }
 
+    /**
+     * @throws jp.aegif.nemaki.rest.controller.IntegrationSettingsService.SettingUnreadableException when the connector names a
+     *         credential, nothing resolved it, and the configuration database did not answer.
+     *         The callers state the null as "No access token for connector" and answer 400 —
+     *         the request blamed for a store outage, and an admin invited to overwrite a
+     *         credential that was never wrong. This is the one credential read in the ingest
+     *         tree that the conversion missed; a review found it.
+     */
     private String resolveToken(ConnectorDefinition connector) {
-        if (connector.getCredentialRef() == null) return null;
+        String ref = connector.getCredentialRef();
+        if (ref == null) return null;
         if (propertyManager != null) {
-            try { return propertyManager.readValue(connector.getCredentialRef()); }
-            catch (Exception e) { /* ignore */ }
+            try {
+                String value = propertyManager.readValue(ref);
+                if (value != null) return value;
+            } catch (Exception couldNotRead) {
+                logger.warn("the credential '{}' of connector {} could not be read: {}",
+                        ref, connector.getConnectorId(), couldNotRead.getMessage());
+            }
+            jp.aegif.nemaki.model.Configuration conf = propertyManager.getConfiguration(
+                    jp.aegif.nemaki.util.constant.SystemConst.NEMAKI_CONF_DB);
+            if (conf != null && conf.isLoadFailed()) {
+                throw new jp.aegif.nemaki.rest.controller.IntegrationSettingsService.SettingUnreadableException(
+                        "the credential '" + ref + "' of connector "
+                                + connector.getConnectorId() + " could not be read: the"
+                                + " configuration database did not answer; retry shortly");
+            }
         }
         return null;
     }
@@ -1131,7 +1215,9 @@ public class IngestWebhookController {
      * mapping: they catch the refusal themselves and answer 503 with nothing about the row.
      */
     @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
-            ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})
+            ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+            jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                    .SettingUnreadableException.class})
     public ResponseEntity<?> definitionRowsCouldNotBeRead(RuntimeException e) {
         // The reason is logged, not sent. This is a CLASS-level handler and this class has an
         // unauthenticated front door (the receiver's POST and GET), whose refusal texts say

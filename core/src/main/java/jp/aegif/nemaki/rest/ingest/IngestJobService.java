@@ -330,7 +330,16 @@ public class IngestJobService {
             // entry lasted exactly until the next failure. A review traced it. Only a payload
             // that was actually STORED clears it.
             String carriedForward = existing != null ? existing.getPayloadDropReason() : null;
-            dlq.setPayloadDropReason(payload != null ? null
+            dlq.setPayloadDropReason(payload != null
+                    // NOT null while the attachment is still being written. Between this row
+                    // and the confirming write there is no attachment yet, so a concurrent
+                    // retry saw "assumed presence, no payload came back", read that as an
+                    // assumption the store had disproven, and imported the item content-less —
+                    // possibly deleting the row the save was still writing. The retry door
+                    // already refuses any row carrying a reason, so the window says what it is.
+                    // A review found the interleaving.
+                    ? "the payload is being stored; this entry is not replayable until that"
+                            + " write is confirmed"
                     : (dropReason != null ? dropReason : carriedForward));
             @SuppressWarnings("unchecked")
             Map<String, Object> jsonMap = MAPPER.convertValue(dlq, Map.class);
@@ -341,10 +350,28 @@ public class IngestJobService {
                 try {
                     attachContentToDlq(docId, request.getFileName(), request.getMimeType(), payload);
                     // Confirmed. Only now does the row stop saying "assumed".
-                    dlq.setPayloadPresenceAssumed(false);
-                    dlq.setPayloadDropReason(null);
+                    //
+                    // Re-read first, and flip only the two fields on whatever is stored NOW.
+                    // Writing this save's whole record back would revert a concurrent save's
+                    // metadata while keeping the attachment the other save had just replaced —
+                    // one attempt's metadata with another attempt's bytes, marked confirmed.
+                    // A review built the interleaving. This does not make the write atomic;
+                    // the general lost-update shape of upsertDocument is recorded as a
+                    // residual. It does stop THIS write from being the one that loses it.
+                    IngestDeadLetterRecord current = dlq;
+                    try {
+                        IngestDeadLetterRecord stored = getDlqEntry(dlq.getDlqId());
+                        if (stored != null) current = stored;
+                    } catch (DlqEntryUnreadableException couldNotRead) {
+                        logger.warn("the DLQ row of {} could not be re-read before confirming"
+                                + " its payload; confirming this attempt's own record: {}",
+                                dlq.getDlqId(), couldNotRead.getMessage());
+                    }
+                    current.setPayloadPresenceAssumed(false);
+                    current.setPayloadDropReason(null);
+                    current.setHasContent(true);
                     @SuppressWarnings("unchecked")
-                    Map<String, Object> confirmed = MAPPER.convertValue(dlq, Map.class);
+                    Map<String, Object> confirmed = MAPPER.convertValue(current, Map.class);
                     if (upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE,
                             confirmed) == null) {
                         logger.warn("the payload of DLQ entry {} is stored, but the row still"

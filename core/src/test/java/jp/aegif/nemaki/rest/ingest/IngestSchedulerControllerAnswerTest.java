@@ -644,4 +644,19 @@ class IngestSchedulerControllerAnswerTest {
         assertTrue(String.valueOf(body.get("undurableMissNote")).contains("re-fetch"),
                 "the answer does not say how to recover: " + body);
     }
+
+    @org.junit.jupiter.api.Test
+    void anIdleStartWhoseAuthorisationCouldNotBeAskedIs503_notADenial() {
+        // The endpoint maps "Delegated authorization denied" to 403 BEFORE it tests
+        // "could not ask", so a CouchDB blip in the creator lookup told an administrator the
+        // creator is not authorised, and they went off revoking and regranting. Round 55 gave
+        // the per-message arm this distinction; the START arm 170 lines above kept answering
+        // every reason the same way. A review found it, and noted that the existing lock here
+        // covers CREATOR_USER_INACTIVE — a settled answer, correct either way — so a fix that
+        // changed only the unaskable reasons would have left it green.
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, startIdleAnswering(
+                "delegated IMAP IDLE could not be authorised for profile p1: the authorisation"
+                        + " could not be established (CREATOR_LOOKUP_FAILED); retry shortly"),
+                "an authorisation that could not be ASKED was answered as a denial");
+    }
 }

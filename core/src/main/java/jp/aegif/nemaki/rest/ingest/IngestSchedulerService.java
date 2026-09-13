@@ -217,6 +217,18 @@ public class IngestSchedulerService {
     }
 
     /**
+     * True when a delegated denial means "this node could not ASK", not "the answer is no".
+     *
+     * <p>Lives here because this class produces the reasons. Two consumers had to be corrected
+     * one round apart for treating the whole enum alike — the IMAP per-message arm, then the
+     * IMAP start arm and the webhook dispatch — so the predicate is one place now.
+     */
+    public static boolean denialCouldNotAsk(DenialReason why) {
+        return why == DenialReason.CREATOR_LOOKUP_FAILED
+                || why == DenialReason.SERVICES_UNAVAILABLE;
+    }
+
+    /**
      * Messages an IDLE session did not capture AND could not record, per profile.
      *
      * <p>Empty when there are none. The count is in memory — the condition that produces one

@@ -718,4 +718,50 @@ class ImapIdleSessionRegistryTest {
         assertFalse(ImapIdleMonitor.denialCouldNotAsk(jp.aegif.nemaki.rest.ingest.DenialReason.CONNECTOR_NOT_DELEGATED),
                 "a settled revocation must still stop the session");
     }
+
+    @Test
+    @DisplayName("a start whose delegated authorisation could not be ASKED does not say 'denied'")
+    void aStartWhoseDelegatedAuthorisationCouldNotBeAskedIsNotADenial() {
+        // The endpoint maps "Delegated authorization denied" to 403 before it tests "could not
+        // ask", so a CouchDB blip in the creator lookup told an administrator the creator is
+        // not authorised. Round 55 gave the per-message arm this distinction; the START arm
+        // kept answering every reason the same way. A review found it.
+        ImapIdleMonitor monitor = new ImapIdleMonitor();
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId(PROF);
+        profile.setRepositoryId("bedroom");
+        profile.setDefaultConnectorId("conn-1");
+        profile.setDelegated(true);
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("conn-1");
+        connector.setSourceSystem("imap");
+
+        ImportProfileDefinitionService profiles = mock(ImportProfileDefinitionService.class);
+        when(profiles.getOwnedRowIndexFree(PROF)).thenReturn(profile);
+        when(profiles.getForRepository(PROF, "bedroom")).thenReturn(profile);
+        ConnectorDefinitionService connectors = mock(ConnectorDefinitionService.class);
+        when(connectors.get("conn-1")).thenReturn(connector);
+        when(connectors.countIndexFree("conn-1")).thenReturn(1);
+        jp.aegif.nemaki.rest.ingest.IngestSchedulerService scheduler =
+                mock(jp.aegif.nemaki.rest.ingest.IngestSchedulerService.class);
+        jp.aegif.nemaki.rest.ingest.IngestSchedulerService.DelegatedAuthorization denied =
+                mock(jp.aegif.nemaki.rest.ingest.IngestSchedulerService.DelegatedAuthorization.class);
+        when(denied.isAllowed()).thenReturn(false);
+        when(denied.getDenialReason())
+                .thenReturn(jp.aegif.nemaki.rest.ingest.DenialReason.CREATOR_LOOKUP_FAILED);
+        when(scheduler.authorizeDelegatedFetch(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(denied);
+        monitor.setProfileService(profiles);
+        monitor.setConnectorService(connectors);
+        monitor.setSchedulerService(scheduler);
+
+        String refusal = monitor.startIdle(PROF);
+
+        assertTrue(refusal != null, "the start was allowed on an authorisation nobody gave");
+        assertFalse(refusal.startsWith("Delegated authorization denied"),
+                "an authorisation that could not be ASKED was worded as a denial, which the "
+                        + "endpoint answers 403 for: " + refusal);
+        assertTrue(ImapIdleMonitor.refusalCouldNotAsk(refusal),
+                "the refusal does not land on the arm that answers 503: " + refusal);
+    }
 }

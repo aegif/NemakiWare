@@ -228,6 +228,14 @@ public class FolderConnectorController {
         FetchResult result;
         try {
             result = schedulerService.executeFetch(ctx, profile, connector, params);
+        } catch (jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                .SettingUnreadableException couldNotAsk) {
+            // Adding the type to this class's @ExceptionHandler was not enough: THIS catch runs
+            // first and turns the refusal into 500, so the handler was unreachable for the one
+            // call that can raise it. The sibling POST .../scheduler/trigger/{id} answers 503
+            // for the same condition. Two reviewers found the pair in the round after the
+            // handler was extended. Let it out.
+            throw couldNotAsk;
         } catch (Exception e) {
             logger.warn("Manual connector run failed for profile {}: {}", profileId, e.getMessage());
             body.put("status", "error");
