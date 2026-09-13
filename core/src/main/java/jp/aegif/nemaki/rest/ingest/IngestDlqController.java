@@ -202,6 +202,27 @@ public class IngestDlqController {
             // exactly this), and nothing read it: the whole codebase had no reader for the field.
             // The item has to come back through the connector, not through here. A review traced
             // the chain end to end.
+            if ("webhook_event".equals(dlq.getSourceObjectType())) {
+                // This row RECORDS that deliveries were accepted and not fetched. It carries no
+                // delivery — the webhook body and the event scope were never stored — so
+                // dispatching it would create an empty "imported-webhook:..." document and,
+                // depending on the archetype, report success and delete the record. A review
+                // traced the replay path. Recovery is a connector re-fetch.
+                return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId + " records"
+                        + " webhook deliveries that were accepted but never fetched. It carries"
+                        + " no delivery and cannot be replayed; re-fetch through the connector,"
+                        + " then delete this entry");
+            }
+            if (dlq.getPayloadWriteToken() != null) {
+                // A payload write for this entry is in flight, or one did not finish. Either
+                // way the attachment may be landing right now, so this is a RETRY, not the
+                // permanent refusal below — the first version of this window wrote its
+                // explanation into payloadDropReason and a lost confirming write then bricked
+                // the entry for ever. Any later save clears the token.
+                return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, "a payload write for DLQ"
+                        + " entry " + dlqId + " has not been confirmed; the entry is kept and"
+                        + " nothing was imported. Retry shortly");
+            }
             if (dlq.getPayloadDropReason() != null) {
                 // NOT gated on hasContent. A row can carry an OLDER attempt's attachment
                 // (hasContent=true) while THIS attempt's bytes were refused — the request JSON

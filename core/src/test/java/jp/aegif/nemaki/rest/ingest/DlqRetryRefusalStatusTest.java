@@ -257,6 +257,29 @@ class DlqRetryRefusalStatusTest {
     }
 
     @Test
+    @DisplayName("a payload write that did not finish is a retry, not a permanent refusal")
+    void aPayloadWriteThatDidNotFinishIsARetry() throws Exception {
+        // The window between the row write and the attachment write was first recorded in
+        // payloadDropReason, which this door reads as "the bytes were deliberately not
+        // written" — permanent, 409, "re-fetch through the connector". A confirming write that
+        // lost a revision race then refused every replay for ever for an entry whose content
+        // WAS stored, and DELETE was the only exit. Two reviewers found it in the round after.
+        CanonicalImportService importService = mock(CanonicalImportService.class);
+        ResponseEntity<?> res = retryWith(row -> {
+            row.setHasContent(true);
+            row.setPayloadWriteToken("tok-1");
+        }, importService, null);
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
+                "an unfinished payload write was answered as a permanent refusal");
+        assertTrue(String.valueOf(((Map<?, ?>) res.getBody()).get("message"))
+                        .contains("Retry shortly"),
+                "the answer does not say it is worth retrying: " + res.getBody());
+        org.mockito.Mockito.verify(importService, org.mockito.Mockito.never())
+                .execute(any(), any());
+    }
+
+    @Test
     @DisplayName("the last page carries no continuation token")
     void theLastPageHasNoNextOffset() throws Exception {
         // A client following nextOffset rather than reading hasMore walked an endless run of

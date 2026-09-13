@@ -55,10 +55,22 @@ public class IngestDeadLetterRecord {
     /**
      * Why the payload is absent even though the item had one.
      *
-     * <p>Null when there was no payload or when it was stored. Non-null means the bytes were
-     * deliberately NOT written — the only current reason is that no encryption key is
-     * configured, and writing them in the clear into the configuration database is not an
-     * acceptable fallback for a system whose subject is evidence.
+     * <p>Null when there was no payload or when it was stored. Non-null means the bytes of the
+     * attempt this row describes are NOT on it, and the retry door refuses a replay on that
+     * alone. Three things write it, and the first is the only one that is a decision:
+     *
+     * <ul>
+     *   <li>no encryption key is configured, so the bytes were deliberately not written —
+     *       storing them in the clear in the configuration database is not an acceptable
+     *       fallback for a system whose subject is evidence;</li>
+     *   <li>the attachment write was refused and a read established that nothing is there;</li>
+     *   <li>the attachment write's outcome could not be established at all (paired with
+     *       {@code payloadPresenceAssumed}).</li>
+     * </ul>
+     *
+     * <p>It does NOT mean "a write is in flight" — that is {@link #payloadWriteToken}. A round
+     * that put the window's explanation here made the refusal permanent, because this field is
+     * read as a settled fact.
      */
     private String payloadDropReason;
 
@@ -134,6 +146,25 @@ public class IngestDeadLetterRecord {
      * through the Notion page arm. A skip on a row with this flag keeps the row.
      */
     private boolean sourceNeverRead;
+
+    /**
+     * Non-null while a payload write for ONE attempt is in flight, carrying that attempt's id.
+     *
+     * <p>A payload-bearing save publishes the row before it attaches the bytes, so between the
+     * two writes there is no attachment — and a concurrent replay read that as proof there is
+     * none. The first fix wrote the explanation into {@code payloadDropReason}, which the
+     * retry door treats as PERMANENT: if the confirming write then lost a revision race, the
+     * row refused every replay for ever for an entry whose content was in fact stored, and
+     * DELETE was the only way out. Two reviewers found that in the round after. So the window
+     * has its own field: the retry answers "retry shortly" for it, any later save clears it,
+     * and the confirming write only acts when the token is still its own.
+     */
+    private String payloadWriteToken;
+
+    public String getPayloadWriteToken() { return payloadWriteToken; }
+    public void setPayloadWriteToken(String payloadWriteToken) {
+        this.payloadWriteToken = payloadWriteToken;
+    }
 
     public boolean isSourceNeverRead() { return sourceNeverRead; }
     public void setSourceNeverRead(boolean sourceNeverRead) {

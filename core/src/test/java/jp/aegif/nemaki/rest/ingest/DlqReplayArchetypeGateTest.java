@@ -964,11 +964,15 @@ class DlqReplayArchetypeGateTest {
         org.junit.jupiter.api.Assertions.assertNotNull(rows[2],
                 "the first write left the window silent, so a replay landing inside it treats "
                         + "the missing attachment as proof that there is none");
-        org.junit.jupiter.api.Assertions.assertTrue(
-                String.valueOf(rows[2]).contains("being stored"),
-                "the window does not say what it is: " + rows[2]);
         org.junit.jupiter.api.Assertions.assertNull(rows[3],
-                "the confirming write did not clear the window's reason");
+                "the confirming write did not clear the window's token, so the entry answers "
+                        + "'a write did not finish' for ever");
+        // The window has its OWN field. Writing it into payloadDropReason made it PERMANENT:
+        // the retry door reads that field as "the bytes were deliberately not written", so a
+        // confirming write that lost a revision race bricked an entry whose content WAS
+        // stored, with DELETE the only exit. Two reviewers found it in the round after.
+        org.junit.jupiter.api.Assertions.assertNull(rows[4],
+                "the window was recorded as a permanent drop reason again: " + rows[4]);
     }
 
     @Test
@@ -1091,6 +1095,85 @@ class DlqReplayArchetypeGateTest {
                 "an unreadable row was restated as the item's first failure");
     }
 
+    @Test
+    @DisplayName("the confirming write does not take over a row another save now owns")
+    void aConfirmingWriteDoesNotTakeOverAnotherSavesRow() throws Exception {
+        // Attempt A publishes its window, attaches, and confirms. Between those, attempt B
+        // wrote its own metadata for the same deterministic id — perhaps with a genuine drop
+        // reason of its own. A's confirming write re-reads and, without the token check,
+        // cleared B's reason and marked the row confirmed: B's metadata, A's bytes, called the
+        // recovered item. Codex built the interleaving.
+        com.ibm.cloud.cloudant.v1.Cloudant cloudant = workingStore();
+        IngestJobService jobs = jobsOn(cloudant);
+
+        // The re-read inside the confirming write sees a row owned by ANOTHER save.
+        com.ibm.cloud.cloudant.v1.model.Document otherSave =
+                new com.ibm.cloud.cloudant.v1.model.Document();
+        otherSave.setId("ingest_dlq:s");
+        otherSave.setRev("2-b");
+        otherSave.put("type", "ingest_dead_letter");
+        otherSave.put("dlqId", "s");
+        otherSave.put("hasContent", Boolean.FALSE);
+        otherSave.put("payloadWriteToken", "someone-elses-token");
+        otherSave.put("payloadDropReason", "payload not stored: NEMAKI_ENCRYPTION_KEY is not set");
+        com.ibm.cloud.cloudant.v1.model.FindResult owned =
+                mock(com.ibm.cloud.cloudant.v1.model.FindResult.class);
+        when(owned.getDocs()).thenReturn(java.util.List.of(otherSave));
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> ownedCall =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.FindResult> ownedResp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(ownedResp.getResult()).thenReturn(owned);
+        when(ownedCall.execute()).thenReturn(ownedResp);
+        // Calls 1-2 are this save's own reads; from the third the row belongs to the other save.
+        java.util.concurrent.atomic.AtomicInteger finds =
+                new java.util.concurrent.atomic.AtomicInteger();
+        com.ibm.cloud.cloudant.v1.model.FindResult empty =
+                mock(com.ibm.cloud.cloudant.v1.model.FindResult.class);
+        when(empty.getDocs()).thenReturn(java.util.List.of());
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> emptyCall =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.FindResult> emptyResp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(emptyResp.getResult()).thenReturn(empty);
+        when(emptyCall.execute()).thenReturn(emptyResp);
+        when(cloudant.postFind(org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> finds.incrementAndGet() <= 2 ? emptyCall : ownedCall);
+
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setRepositoryId("bedroom");
+        request.setConnectorId("c1");
+        request.setSourceObjectId("m-13");
+        request.setFileName("a.pdf");
+        jobs.saveToDlq(request, "boom",
+                "hello".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        org.mockito.ArgumentCaptor<com.ibm.cloud.cloudant.v1.model.PostDocumentOptions> written =
+                org.mockito.ArgumentCaptor.forClass(
+                        com.ibm.cloud.cloudant.v1.model.PostDocumentOptions.class);
+        org.mockito.Mockito.verify(cloudant, org.mockito.Mockito.atLeastOnce())
+                .postDocument(written.capture());
+        for (com.ibm.cloud.cloudant.v1.model.PostDocumentOptions o : written.getAllValues()) {
+            org.junit.jupiter.api.Assertions.assertNotEquals("someone-elses-token",
+                    o.document().get("payloadWriteToken"),
+                    "this save wrote back a row it does not own");
+            if ("someone-elses-token".equals(o.document().get("payloadWriteToken"))) continue;
+        }
+        // The decisive one: the other save's drop reason must still be there.
+        long clearedAnothersReason = written.getAllValues().stream()
+                .filter(o -> o.document().get("payloadDropReason") == null
+                        && Boolean.TRUE.equals(o.document().get("hasContent"))
+                        && o.document().get("payloadWriteToken") == null)
+                .count();
+        org.junit.jupiter.api.Assertions.assertEquals(0, clearedAnothersReason,
+                "the confirming write cleared a drop reason another save had just recorded,"
+                        + " and marked the row confirmed with this save's bytes");
+    }
+
     /** Drives a save whose attachment write SUCCEEDS; returns the two writes' assumed flags. */
     private Object[] saveWithAWorkingAttachment() throws Exception {
         com.ibm.cloud.cloudant.v1.Cloudant cloudant = workingStore();
@@ -1113,8 +1196,9 @@ class DlqReplayArchetypeGateTest {
                 written.getAllValues();
         return new Object[]{all.get(0).document().get("payloadPresenceAssumed"),
                 all.get(all.size() - 1).document().get("payloadPresenceAssumed"),
-                all.get(0).document().get("payloadDropReason"),
-                all.get(all.size() - 1).document().get("payloadDropReason")};
+                all.get(0).document().get("payloadWriteToken"),
+                all.get(all.size() - 1).document().get("payloadWriteToken"),
+                all.get(0).document().get("payloadDropReason")};
     }
 
     private void attachmentNameUsedFor(String fileName,

@@ -3450,7 +3450,15 @@ CONTROLS = [
                    '                    + home + "; IDLE not started";\n        }'),
         replace='',
         test='ImapIdleSessionRegistryTest',
-        expect_fail=['aStartLosesToADeleteThatFinishedFirst', 'aStartWhoseCheckCannotAnswerIsRefused'],
+        # Completed from MEASUREMENT. A review enumerated the whole suite for undeclared
+        # collateral a SECOND time — round 52's pass had missed these — and its reading
+        # matched the run exactly, TZ's fifteen included. TZ is the extreme case: it
+        # replaces the ONE profile read in loadLiveConfig, so every lock in the class
+        # that stubs only getOwnedRowIndexFree gets "Profile not found" instead of its
+        # own refusal.
+        expect_fail=['aStartLosesToADeleteThatFinishedFirst', 'aStartWhoseCheckCannotAnswerIsRefused',
+                     'aDeleteDuringExistenceCheckDoesNotPublishAnInvisibleSession',
+                     'aHiddenOwnedRowReachesTheConfinedRecheck'],
     ),
     dict(
         id="TM",
@@ -3579,8 +3587,29 @@ CONTROLS = [
         find='            current = profileService.getOwnedRowIndexFree(profileId);',
         replace='            current = profileService.get(profileId);',
         test='ImapIdleSessionRegistryTest',
+        # Completed from MEASUREMENT. A review enumerated the whole suite for undeclared
+        # collateral a SECOND time — round 52's pass had missed these — and its reading
+        # matched the run exactly, TZ's fifteen included. TZ is the extreme case: it
+        # replaces the ONE profile read in loadLiveConfig, so every lock in the class
+        # that stubs only getOwnedRowIndexFree gets "Profile not found" instead of its
+        # own refusal.
         expect_fail=['aHiddenOwnedRowReachesTheConfinedRecheck',
-                     'anOwnedSelectorHitStillRefusesATwinPair'],
+                     'anOwnedSelectorHitStillRefusesATwinPair',
+                     'aConnectorBodyThatNamesAnotherIdIsNotAdmitted',
+                     'aConnectorSelectorHitWithWalkMissIsRetry',
+                     'aCredentialReadThatFailedIsNotAConnectionChange',
+                     'aDeleteDuringExistenceCheckDoesNotPublishAnInvisibleSession',
+                     'aDisabledProfileIsRefusedAtIdleStart',
+                     'aDisallowedConnectorIsRefusedAtIdleStart',
+                     'aHiddenConnectorIsNotReportedAsAbsence',
+                     'aLaterConnectorDisableStopsLiveAdmission',
+                     'aLaterConnectorEndpointChangeStopsLiveAdmission',
+                     'aLaterDelegationRevokeStopsLiveAdmission',
+                     'aLaterRepositoryChangeStopsLiveAdmission',
+                     'aNewlineCrossingIdentityChangeStopsLiveAdmission',
+                     'aStartLosesToADeleteThatFinishedFirst',
+                     'aStartWhoseCheckCannotAnswerIsRefused',
+                     'aStartWhoseDelegatedAuthorisationCouldNotBeAskedIsNotADenial'],
     ),
     dict(
         id="UD",
@@ -6508,7 +6537,14 @@ CONTROLS = [
                    '                return null;\n            }'),
         replace='            if (raw.isEmpty()) {\n                return false;\n            }',
         test='DlqReplayArchetypeGateTest',
-        expect_fail=['aProbeThatFoundNoRowIsNotAnAnsweredAbsence'],
+        # Completed from MEASUREMENT. A review enumerated the whole suite for undeclared
+        # collateral a SECOND time — round 52's pass had missed these — and its reading
+        # matched the run exactly, TZ's fifteen included. TZ is the extreme case: it
+        # replaces the ONE profile read in loadLiveConfig, so every lock in the class
+        # that stubs only getOwnedRowIndexFree gets "Profile not found" instead of its
+        # own refusal.
+        expect_fail=['aProbeThatFoundNoRowIsNotAnAnsweredAbsence',
+                     'anAttachmentWriteOfUnknownOutcomeIsNotAssertedEitherWay'],
     ),
     dict(
         id="UJ2",
@@ -6874,7 +6910,11 @@ CONTROLS = [
         what="a save that wrote nothing reports that it wrote a row, so the IMAP monitor "
              "announces a dead-letter the same outage prevented",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
-        find='            return docId != null;',
+        # Re-anchored: the confirming write's ownership check added a second `return docId !=
+        # null;`. Pinned by the comment that precedes the tail one.
+        find='            // docId is null when upsertDocument\'s own write did not land (a _rev race), and\n'
+             '            // the "Saved to DLQ" line above used to be printed for that too.\n'
+             '            return docId != null;',
         replace='            return true;',
         test='DlqReplayArchetypeGateTest',
         expect_fail=['aSaveWhoseWriteDidNotLandSaysSo'],
@@ -6910,7 +6950,14 @@ CONTROLS = [
              '                            .IntegrationSettingsService.SettingUnreadableException) {',
         replace='                    if (false) {',
         test='SchedulerConfigOutageBreakerTest',
-        expect_fail=['aConfigurationOutageDoesNotOpenTheConnectorsBreaker'],
+        # Completed from MEASUREMENT. A review enumerated the whole suite for undeclared
+        # collateral a SECOND time — round 52's pass had missed these — and its reading
+        # matched the run exactly, TZ's fifteen included. TZ is the extreme case: it
+        # replaces the ONE profile read in loadLiveConfig, so every lock in the class
+        # that stubs only getOwnedRowIndexFree gets "Profile not found" instead of its
+        # own refusal.
+        expect_fail=['aConfigurationOutageDoesNotOpenTheConnectorsBreaker',
+                     'aCheckpointOutageDoesNotOpenTheConnectorsBreaker'],
     ),
     dict(
         id="VU2",
@@ -6956,7 +7003,14 @@ CONTROLS = [
              '                || why == DenialReason.SERVICES_UNAVAILABLE;',
         replace='        return false;',
         test='ImapIdleSessionRegistryTest',
-        expect_fail=['aDelegatedAuthorisationThatCouldNotBeAskedIsNotARevocation'],
+        # Completed from MEASUREMENT. A review enumerated the whole suite for undeclared
+        # collateral a SECOND time — round 52's pass had missed these — and its reading
+        # matched the run exactly, TZ's fifteen included. TZ is the extreme case: it
+        # replaces the ONE profile read in loadLiveConfig, so every lock in the class
+        # that stubs only getOwnedRowIndexFree gets "Profile not found" instead of its
+        # own refusal.
+        expect_fail=['aDelegatedAuthorisationThatCouldNotBeAskedIsNotARevocation',
+                     'aStartWhoseDelegatedAuthorisationCouldNotBeAskedIsNotADenial'],
     ),
     dict(
         id="VY2",
@@ -7000,12 +7054,20 @@ CONTROLS = [
         what="the window between the row write and the attachment write goes silent again, so "
              "a concurrent replay reads the missing attachment as proof there is none",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
-        find_span=("            dlq.setPayloadDropReason(payload != null",
-                   '                    : (dropReason != null ? dropReason : carriedForward));'),
-        replace='            dlq.setPayloadDropReason(payload != null ? null\n'
-                '                    : (dropReason != null ? dropReason : carriedForward));',
+        # Re-anchored: the window moved to its own field after a review showed that writing it
+        # into payloadDropReason made it PERMANENT — a lost confirming write then bricked an
+        # entry whose content was stored.
+        find='            String writeToken = payload != null ? java.util.UUID.randomUUID().toString() : null;',
+        replace='            String writeToken = null;',
         test='DlqReplayArchetypeGateTest',
-        expect_fail=['thePreAttachmentWindowRefusesAConcurrentReplay'],
+        # Completed from MEASUREMENT. A review enumerated the whole suite for undeclared
+        # collateral a SECOND time — round 52's pass had missed these — and its reading
+        # matched the run exactly, TZ's fifteen included. TZ is the extreme case: it
+        # replaces the ONE profile read in loadLiveConfig, so every lock in the class
+        # that stubs only getOwnedRowIndexFree gets "Profile not found" instead of its
+        # own refusal.
+        expect_fail=['thePreAttachmentWindowRefusesAConcurrentReplay',
+                     'aConfirmingWriteDoesNotTakeOverAnotherSavesRow'],
     ),
     dict(
         id="WC2",
@@ -7030,6 +7092,27 @@ CONTROLS = [
         replace='        if (relationshipService == null) {\n            return ids;\n        }',
         test='IngestDedupeFailuresReachCallerTest',
         expect_fail=['anUnwiredRelationshipServiceIsNotAnEmptyEdgeList'],
+    ),
+    dict(
+        id="WE2",
+        what="an unfinished payload write is answered as a permanent refusal again, so an "
+             "entry whose content IS stored refuses every replay for ever",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find_span=('            if (dlq.getPayloadWriteToken() != null) {',
+                   '                        + " nothing was imported. Retry shortly");\n            }'),
+        replace='',
+        test='DlqRetryRefusalStatusTest',
+        expect_fail=['aPayloadWriteThatDidNotFinishIsARetry'],
+    ),
+    dict(
+        id="WF2",
+        what="the confirming write acts on a row another save now owns, handing that save's "
+             "metadata these bytes and wiping the drop reason it had just recorded",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='                    if (current != dlq && !writeToken.equals(current.getPayloadWriteToken())) {',
+        replace='                    if (false) {',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['aConfirmingWriteDoesNotTakeOverAnotherSavesRow'],
     ),
     dict(
         id="ST2",

@@ -112,6 +112,26 @@ public class IngestWebhookController {
     private FetchSupport fetchSupport;
 
     /**
+     * Deliveries this node accepted, did not fetch, and could not record, per profile.
+     *
+     * <p>In memory, like the IMAP twin's counter and for the same reason: what produces one is
+     * the configuration database being unreachable. The sender has already had its 200 and
+     * will not retry, so without this the state is a log line. A review found the two arms
+     * diverged again — the IMAP one was given a counter and a status field a round earlier.
+     */
+    private final java.util.Map<String, java.util.concurrent.atomic.AtomicInteger>
+            undeliveredWebhooks = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Deliveries accepted but neither fetched nor recorded, for the admin status endpoint. */
+    public java.util.Map<String, Integer> undeliveredWebhookCounts() {
+        java.util.Map<String, Integer> out = new LinkedHashMap<>();
+        undeliveredWebhooks.forEach((profileId, n) -> {
+            if (n.get() > 0) out.put(profileId, n.get());
+        });
+        return out;
+    }
+
+    /**
      * Receive webhook from external source.
      * Handles Slack url_verification, Graph validationToken, and actual event payloads.
      */
@@ -748,20 +768,38 @@ public class IngestWebhookController {
             // not, and dropping it there loses the delivery — the sender does not retry a 200.
             // The IMAP twin was given a dead-letter row and a miss counter for exactly this a
             // round ago; a review found the two arms diverged again.
-            if (IngestSchedulerService.denialCouldNotAsk(auth.getDenialReason())
-                    && fetchSupport != null) {
-                ExternalIngestRequest missed = new ExternalIngestRequest();
-                missed.setProfileId(profile.getProfileId());
-                missed.setConnectorId(connector.getConnectorId());
-                missed.setRepositoryId(profile.getRepositoryId());
-                missed.setSourceObjectId("webhook:" + profile.getProfileId() + ":"
-                        + java.time.Instant.now().toEpochMilli());
-                missed.setSourceObjectType("webhook_event");
-                missed.setExecutionMode("webhook");
-                boolean recorded = fetchSupport.saveSourceNeverReadToDlq(missed,
-                        "[transient] a webhook delivery was accepted but not fetched: the"
-                                + " delegated authorisation could not be established ("
-                                + auth.getDenialReason() + ")");
+            // The null check is on the RECORDING, not on the classification. Folding them
+            // together sent an unwired node's could-not-ask down the "refused" log line below —
+            // the exact mis-statement this arm exists to remove. A review found it.
+            if (IngestSchedulerService.denialCouldNotAsk(auth.getDenialReason())) {
+                boolean recorded = false;
+                if (fetchSupport != null) {
+                    ExternalIngestRequest missed = new ExternalIngestRequest();
+                    missed.setProfileId(profile.getProfileId());
+                    missed.setConnectorId(connector.getConnectorId());
+                    missed.setRepositoryId(profile.getRepositoryId());
+                    // DETERMINISTIC, like the IMAP twin's msg.stableKey(). A timestamp made the
+                    // dead-letter id new on every delivery, and this method runs once per
+                    // notification per matching profile behind a 100/minute limiter — thousands
+                    // of unresolvable rows a minute into nemaki_conf during one outage. This
+                    // class's own comment records that shape as an external-review finding for
+                    // the item path; a review found it reintroduced here.
+                    missed.setSourceObjectId("webhook-deliveries:" + profile.getProfileId()
+                            + ":" + connector.getConnectorId());
+                    missed.setSourceObjectType("webhook_event");
+                    missed.setExecutionMode("webhook");
+                    recorded = fetchSupport.saveSourceNeverReadToDlq(missed,
+                            "[transient] webhook deliveries were accepted but not fetched: the"
+                                    + " delegated authorisation could not be established ("
+                                    + auth.getDenialReason() + "). This row RECORDS the misses;"
+                                    + " it carries no delivery and is not replayable — re-fetch"
+                                    + " through the connector");
+                }
+                if (!recorded) {
+                    undeliveredWebhooks.computeIfAbsent(profile.getProfileId(),
+                            k -> new java.util.concurrent.atomic.AtomicInteger())
+                            .incrementAndGet();
+                }
                 logger.error("Webhook-triggered fetch for delegated profile {} (connector {})"
                         + " could not be AUTHORISED ({}), which is not a denial. The sender was"
                         + " told 'accepted'; the delivery {} recorded",
@@ -1171,11 +1209,26 @@ public class IngestWebhookController {
                 String value = propertyManager.readValue(ref);
                 if (value != null) return value;
             } catch (Exception couldNotRead) {
-                logger.warn("the credential '{}' of connector {} could not be read: {}",
-                        ref, connector.getConnectorId(), couldNotRead.getMessage());
+                // A read that THREW is a failed read, whatever a later getConfiguration says.
+                // Discarding it and relying on the loadFailed sentinel left a cached-but-stale
+                // configuration answering "no access token" for an exception. A review found it.
+                throw new jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                        .SettingUnreadableException("the credential '" + ref + "' of connector "
+                                + connector.getConnectorId() + " could not be read: "
+                                + couldNotRead.getMessage() + "; retry shortly");
             }
-            jp.aegif.nemaki.model.Configuration conf = propertyManager.getConfiguration(
-                    jp.aegif.nemaki.util.constant.SystemConst.NEMAKI_CONF_DB);
+            jp.aegif.nemaki.model.Configuration conf;
+            try {
+                conf = propertyManager.getConfiguration(
+                        jp.aegif.nemaki.util.constant.SystemConst.NEMAKI_CONF_DB);
+            } catch (Exception couldNotAsk) {
+                // Raw, this became a Spring 500 — the class handler does not list it.
+                throw new jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                        .SettingUnreadableException("whether the credential '" + ref + "' of"
+                                + " connector " + connector.getConnectorId() + " is stored could"
+                                + " not be established: " + couldNotAsk.getMessage()
+                                + "; retry shortly");
+            }
             if (conf != null && conf.isLoadFailed()) {
                 throw new jp.aegif.nemaki.rest.controller.IntegrationSettingsService.SettingUnreadableException(
                         "the credential '" + ref + "' of connector "

@@ -330,17 +330,16 @@ public class IngestJobService {
             // entry lasted exactly until the next failure. A review traced it. Only a payload
             // that was actually STORED clears it.
             String carriedForward = existing != null ? existing.getPayloadDropReason() : null;
-            dlq.setPayloadDropReason(payload != null
-                    // NOT null while the attachment is still being written. Between this row
-                    // and the confirming write there is no attachment yet, so a concurrent
-                    // retry saw "assumed presence, no payload came back", read that as an
-                    // assumption the store had disproven, and imported the item content-less —
-                    // possibly deleting the row the save was still writing. The retry door
-                    // already refuses any row carrying a reason, so the window says what it is.
-                    // A review found the interleaving.
-                    ? "the payload is being stored; this entry is not replayable until that"
-                            + " write is confirmed"
+            dlq.setPayloadDropReason(payload != null ? null
                     : (dropReason != null ? dropReason : carriedForward));
+            // The window between this row and the attachment has its OWN field. Writing it
+            // into payloadDropReason made it permanent: the retry door reads that field as
+            // "the bytes were deliberately not written", so a confirming write that lost a
+            // revision race left the entry refusing every replay for ever — for content that
+            // WAS stored, with DELETE the only exit. Two reviewers found it in the round
+            // after. A token is cleared by any later save and answers "retry shortly".
+            String writeToken = payload != null ? java.util.UUID.randomUUID().toString() : null;
+            dlq.setPayloadWriteToken(writeToken);
             @SuppressWarnings("unchecked")
             Map<String, Object> jsonMap = MAPPER.convertValue(dlq, Map.class);
             String docId = upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE, jsonMap);
@@ -367,8 +366,19 @@ public class IngestJobService {
                                 + " its payload; confirming this attempt's own record: {}",
                                 dlq.getDlqId(), couldNotRead.getMessage());
                     }
+                    if (current != dlq && !writeToken.equals(current.getPayloadWriteToken())) {
+                        // Another save has written this row since. Clearing the payload fields
+                        // now would hand ITS metadata our bytes and call the pair confirmed —
+                        // and would wipe a genuine drop reason that save had just recorded. A
+                        // review built both interleavings. Leave the row to its owner: it
+                        // carries its own token, so it refuses replays until it finishes.
+                        logger.warn("the payload of DLQ entry {} was stored, but another save"
+                                + " now owns the row; leaving its state alone", dlq.getDlqId());
+                        return docId != null;
+                    }
                     current.setPayloadPresenceAssumed(false);
                     current.setPayloadDropReason(null);
+                    current.setPayloadWriteToken(null);
                     current.setHasContent(true);
                     @SuppressWarnings("unchecked")
                     Map<String, Object> confirmed = MAPPER.convertValue(current, Map.class);
@@ -395,6 +405,7 @@ public class IngestJobService {
                         dlq.setHasContent(false);
                         dlq.setPayloadPresenceAssumed(false);
                         dlq.setPayloadDropReason(notStored.getMessage());
+                        dlq.setPayloadWriteToken(null);
                         @SuppressWarnings("unchecked")
                         Map<String, Object> corrected = MAPPER.convertValue(dlq, Map.class);
                         // The correction's own result is CHECKED. upsertDocument answers null
@@ -430,6 +441,7 @@ public class IngestJobService {
                         dlq.setPayloadDropReason("the payload was encrypted, and whether the"
                                 + " store took it could not be established: "
                                 + notStored.getMessage());
+                        dlq.setPayloadWriteToken(null);
                         @SuppressWarnings("unchecked")
                         Map<String, Object> unknown = MAPPER.convertValue(dlq, Map.class);
                         if (upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE,
