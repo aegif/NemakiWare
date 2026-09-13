@@ -7196,8 +7196,12 @@ CONTROLS = [
         # Re-anchored: the window moved to its own field after a review showed that writing it
         # into payloadDropReason made it PERMANENT — a lost confirming write then bricked an
         # entry whose content was stored.
-        find='            String writeToken = payload != null ? java.util.UUID.randomUUID().toString() : null;',
-        replace='            String writeToken = null;',
+        # Re-anchored: a byte-less save now INHERITS an unfinished token instead of clearing
+        # it, so the expression grew. The sabotage still removes the window marker for a
+        # payload-bearing save, which is what this control is about.
+        find='            String writeToken = payload != null ? java.util.UUID.randomUUID().toString()\n'
+             '                    : (existing != null ? existing.getPayloadWriteToken() : null);',
+        replace='            String writeToken = existing != null ? existing.getPayloadWriteToken() : null;',
         test='DlqReplayArchetypeGateTest',
         # Completed from MEASUREMENT. A review enumerated the whole suite for undeclared
         # collateral a SECOND time — round 52's pass had missed these — and its reading
@@ -7234,8 +7238,8 @@ CONTROLS = [
     ),
     dict(
         id="WE2",
-        what="an unfinished payload write is answered as a permanent refusal again, so an "
-             "entry whose content IS stored refuses every replay for ever",
+        what="an unfinished payload write lets the replay use the stored attachment again — "
+             "which may be the PREVIOUS attempt's bytes, replayed under this attempt's metadata",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
         # Re-anchored: the arm gained a self-heal (ask the store before refusing), so the span
         # grew. Neutralised at the branch instead — the defect is answering the window as a
@@ -7254,6 +7258,17 @@ CONTROLS = [
         replace='                    if (false) {',
         test='DlqReplayArchetypeGateTest',
         expect_fail=['aConfirmingWriteDoesNotTakeOverAnotherSavesRow'],
+    ),
+    dict(
+        id="WG2",
+        what="a byte-less save clears an unfinished token on the strength of a TRUE probe — the "
+             "previous attempt's attachment becomes this attempt's confirmed payload",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='            String writeToken = payload != null ? java.util.UUID.randomUUID().toString()\n'
+             '                    : (existing != null ? existing.getPayloadWriteToken() : null);',
+        replace='            String writeToken = payload != null ? java.util.UUID.randomUUID().toString() : null;',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['aByteLessSaveInheritsAnUnfinishedToken'],
     ),
     dict(
         id="ST2",

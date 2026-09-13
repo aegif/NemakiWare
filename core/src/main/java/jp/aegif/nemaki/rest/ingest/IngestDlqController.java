@@ -219,40 +219,25 @@ public class IngestDlqController {
                         + " then delete this entry");
             }
             if (dlq.getPayloadWriteToken() != null) {
-                // A payload write for this entry is in flight, or one did not finish. Either
-                // way the attachment may be landing right now, so this is a RETRY, not the
-                // permanent refusal below — the first version of this window wrote its
-                // explanation into payloadDropReason and a lost confirming write then bricked
-                // the entry for ever.
+                // A payload write for this attempt was started and never confirmed. The row's
+                // attachment — if any — cannot be attributed to THIS attempt: it may be the
+                // previous attempt's bytes, which the unfinished write never replaced.
                 //
-                // But "a later save clears it" is not a recovery when no later failure comes:
-                // a confirming write that THREW leaves the token, and only DELETE or an
-                // unrelated save removes it. Codex found the stuck state. So ask the store
-                // instead of refusing blind — if the payload is there, the write did land and
-                // this entry is replayable now.
-                // A previous round read the payload here and, if bytes came back, replayed with
-                // them — "the write must have landed". That was wrong: the row may carry an
-                // EARLIER attempt's attachment which the in-flight write has not replaced yet,
-                // so the replay paired old bytes with new metadata. Codex built it. Reading
-                // cannot establish that the pending write landed, so this does not try.
-                //
-                // What it does instead is bound the wait. A token is a lease: past it, the save
-                // that took it is gone (its JVM died, or its confirming write threw), and the
-                // row must not refuse for ever. Past the lease the token is abandoned and the
-                // entry falls through to the ordinary payload path, which refuses on its own
-                // terms if no payload comes back.
-                boolean abandoned = dlq.getFailedAt() != null && ageExceeds(
-                        dlq.getFailedAt(), PAYLOAD_WRITE_LEASE_MINUTES);
-                if (!abandoned) {
-                    return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, "a payload write for"
-                            + " DLQ entry " + dlqId + " has not been confirmed; the entry is"
-                            + " kept and nothing was imported. Retry shortly");
-                }
-                response.put("payloadWriteAbandoned", true);
-                response.put("payloadWriteNote", "a payload write for this entry was never"
-                        + " confirmed and is older than " + PAYLOAD_WRITE_LEASE_MINUTES
-                        + " minutes, so it was treated as abandoned. Whether those bytes are"
-                        + " stored was NOT established");
+                // Three rounds tried to do better than refuse here and each reopened the same
+                // hybrid — old bytes replayed under new metadata: a self-heal that read the
+                // attachment as proof the write landed (it is not), then a lease that fell
+                // through to the ordinary payload path after 15 minutes (the same replay, on
+                // a timer). A parallel review named the timer for what it was. This is the
+                // second time a fix of a fix in this area was a P1, so it is FROZEN at the
+                // simplest safe state: refuse, and say what to do. A later save with bytes
+                // overwrites the token with its own and attaches fresh bytes, which resolves
+                // it; nothing else does, and that is recorded.
+                return errorResponse(HttpStatus.CONFLICT, "a payload write for DLQ entry "
+                        + dlqId + " was started and never confirmed, so the stored payload"
+                        + " cannot be attributed to the attempt this entry describes; the"
+                        + " entry is kept and nothing was imported. Re-fetch the source item"
+                        + " through its connector (a fresh failure with bytes replaces this"
+                        + " entry), then delete this entry if the item is confirmed present");
             }
             if (dlq.getPayloadDropReason() != null) {
                 // NOT gated on hasContent. A row can carry an OLDER attempt's attachment
@@ -489,23 +474,6 @@ public class IngestDlqController {
     private ResponseEntity<?> forbidden() {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(Map.of("status", "error", "message", "Admin access required"));
-    }
-
-    /**
-     * How long an unconfirmed payload write may hold an entry before it is treated as
-     * abandoned. Long enough that a slow attachment is not stolen from, short enough that a
-     * save whose JVM died does not refuse the entry for ever.
-     */
-    private static final int PAYLOAD_WRITE_LEASE_MINUTES = 15;
-
-    private static boolean ageExceeds(String isoTimestamp, int minutes) {
-        try {
-            return java.time.Instant.parse(isoTimestamp)
-                    .isBefore(java.time.Instant.now().minus(java.time.Duration.ofMinutes(minutes)));
-        } catch (Exception unparsable) {
-            // An unparsable stamp is not evidence that the lease expired.
-            return false;
-        }
     }
 
     private ResponseEntity<?> errorResponse(HttpStatus status, String message) {

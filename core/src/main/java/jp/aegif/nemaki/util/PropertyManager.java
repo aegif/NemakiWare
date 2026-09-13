@@ -39,7 +39,18 @@ public class PropertyManager{
 		// value is treated as "not set" and falls through to the bootstrap
 		// sources below (deploy default), so clearing reverts to the default.
 		if (isAdminManagedDynamicKey(key)) {
-			Object dyn = getDynamicValue(key);
+			// Same fall-through as the second dynamic read below: a store that THREW must not
+			// stop -D / ENV / the properties file from answering. Only the second read was
+			// wrapped at first; a parallel review found this one still letting the exception
+			// out, so "could not ask" had two answers depending on null versus throw.
+			Object dyn;
+			try {
+				dyn = getDynamicValue(key);
+			} catch (RuntimeException couldNotAsk) {
+				log.warn("the configuration database did not answer for admin-managed '" + key
+						+ "'; falling back to the bootstrap sources: " + couldNotAsk.getMessage());
+				dyn = null;
+			}
 			if (dyn != null && !dyn.toString().isBlank()) {
 				return dyn.toString();
 			}

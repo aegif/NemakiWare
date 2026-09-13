@@ -257,24 +257,31 @@ class DlqRetryRefusalStatusTest {
     }
 
     @Test
-    @DisplayName("a payload write that did not finish is a retry, not a permanent refusal")
+    @DisplayName("a payload write that did not finish refuses — the attachment is not this attempt's")
     void aPayloadWriteThatDidNotFinishIsARetry() throws Exception {
-        // The window between the row write and the attachment write was first recorded in
-        // payloadDropReason, which this door reads as "the bytes were deliberately not
-        // written" — permanent, 409, "re-fetch through the connector". A confirming write that
-        // lost a revision race then refused every replay for ever for an entry whose content
-        // WAS stored, and DELETE was the only exit. Two reviewers found it in the round after.
+        // FROZEN at the simplest safe state. Three rounds tried to do better than refuse here
+        // and each reopened the same hybrid — old bytes replayed under new metadata: first the
+        // window's explanation went into payloadDropReason (permanent by accident), then a
+        // self-heal read the attachment as proof the write landed (it is not: it may be the
+        // previous attempt's), then a lease fell through to the ordinary payload path after
+        // 15 minutes (the same replay, on a timer). A parallel review named the timer. The
+        // stored payload cannot be attributed to this attempt until token and attachment are
+        // bound, so the door refuses and says what resolves it: a fresh failure with bytes.
         CanonicalImportService importService = mock(CanonicalImportService.class);
         ResponseEntity<?> res = retryWith(row -> {
             row.setHasContent(true);
             row.setPayloadWriteToken("tok-1");
         }, importService, null);
 
-        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
-                "an unfinished payload write was answered as a permanent refusal");
+        assertEquals(HttpStatus.CONFLICT, res.getStatusCode(),
+                "an unconfirmed payload write let the replay use an attachment that cannot be"
+                        + " attributed to this attempt");
         assertTrue(String.valueOf(((Map<?, ?>) res.getBody()).get("message"))
-                        .contains("Retry shortly"),
-                "the answer does not say it is worth retrying: " + res.getBody());
+                        .contains("cannot be attributed"),
+                "the answer does not say why: " + res.getBody());
+        assertTrue(String.valueOf(((Map<?, ?>) res.getBody()).get("message"))
+                        .contains("Re-fetch"),
+                "the answer does not say what resolves it: " + res.getBody());
         org.mockito.Mockito.verify(importService, org.mockito.Mockito.never())
                 .execute(any(), any());
     }

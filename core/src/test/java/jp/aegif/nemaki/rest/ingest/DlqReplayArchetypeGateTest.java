@@ -976,6 +976,88 @@ class DlqReplayArchetypeGateTest {
     }
 
     @Test
+    @DisplayName("a byte-less save inherits an unfinished payload token rather than clearing it")
+    void aByteLessSaveInheritsAnUnfinishedToken() throws Exception {
+        // Clearing rested on the re-probe answering TRUE. But TRUE may be the PREVIOUS
+        // attempt's attachment — exactly the payload the unfinished write never replaced —
+        // and clearing turned it into "confirmed": the retry then paired old bytes with new
+        // metadata without waiting for any lease. A parallel review found the path. Only a
+        // save that brings its own bytes takes the row over.
+        Object[] written = saveByteLessOverATokenBearingRow();
+        org.junit.jupiter.api.Assertions.assertEquals("tok-in-flight", written[0],
+                "a byte-less save cleared a token it does not own, so the previous attempt's"
+                        + " attachment became this attempt's confirmed payload");
+    }
+
+    /** @return {payloadWriteToken} as written by a byte-less save over a row carrying one. */
+    private Object[] saveByteLessOverATokenBearingRow() throws Exception {
+        IngestJobService jobs = new IngestJobService();
+        com.ibm.cloud.cloudant.v1.Cloudant cloudant =
+                mock(com.ibm.cloud.cloudant.v1.Cloudant.class);
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper wrapper =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+        when(wrapper.getClient()).thenReturn(cloudant);
+        when(wrapper.getDatabaseName()).thenReturn("nemaki_conf");
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool pool =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);
+        when(pool.getClient(org.mockito.ArgumentMatchers.anyString())).thenReturn(wrapper);
+        jobs.setConnectorPool(pool);
+
+        // The stored row: a write in flight, and the PREVIOUS attempt's attachment still on it.
+        com.ibm.cloud.cloudant.v1.model.Document stored =
+                new com.ibm.cloud.cloudant.v1.model.Document();
+        stored.setId("ingest_dlq:r");
+        stored.setRev("1-a");
+        stored.put("type", "ingest_dead_letter");
+        stored.put("dlqId", "r");
+        stored.put("hasContent", Boolean.TRUE);
+        stored.put("payloadPresenceAssumed", Boolean.TRUE);
+        stored.put("payloadWriteToken", "tok-in-flight");
+        stored.setAttachments(java.util.Map.of("payload",
+                mock(com.ibm.cloud.cloudant.v1.model.Attachment.class)));
+        com.ibm.cloud.cloudant.v1.model.FindResult found =
+                mock(com.ibm.cloud.cloudant.v1.model.FindResult.class);
+        when(found.getDocs()).thenReturn(java.util.List.of(stored));
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.FindResult> call =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.FindResult> resp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(resp.getResult()).thenReturn(found);
+        when(call.execute()).thenReturn(resp);
+        when(cloudant.postFind(org.mockito.ArgumentMatchers.any())).thenReturn(call);
+
+        com.ibm.cloud.cloudant.v1.model.DocumentResult ok =
+                mock(com.ibm.cloud.cloudant.v1.model.DocumentResult.class);
+        when(ok.isOk()).thenReturn(Boolean.TRUE);
+        when(ok.getId()).thenReturn("ingest_dlq:r");
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.DocumentResult> post =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        @SuppressWarnings("unchecked")
+        com.ibm.cloud.sdk.core.http.Response<com.ibm.cloud.cloudant.v1.model.DocumentResult> postResp =
+                mock(com.ibm.cloud.sdk.core.http.Response.class);
+        when(postResp.getResult()).thenReturn(ok);
+        when(post.execute()).thenReturn(postResp);
+        when(cloudant.postDocument(org.mockito.ArgumentMatchers.any())).thenReturn(post);
+
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setRepositoryId("bedroom");
+        request.setConnectorId("c1");
+        request.setSourceObjectId("m-14");
+        jobs.saveToDlq(request, "failed again, no bytes this time", null);
+
+        org.mockito.ArgumentCaptor<com.ibm.cloud.cloudant.v1.model.PostDocumentOptions> written =
+                org.mockito.ArgumentCaptor.forClass(
+                        com.ibm.cloud.cloudant.v1.model.PostDocumentOptions.class);
+        org.mockito.Mockito.verify(cloudant, org.mockito.Mockito.atLeastOnce())
+                .postDocument(written.capture());
+        return new Object[]{written.getAllValues().get(written.getAllValues().size() - 1)
+                .document().get("payloadWriteToken")};
+    }
+
+    @Test
     @DisplayName("an ordinary save does NOT clear the never-read mark")
     void anOrdinarySaveDoesNotClearTheMark() throws Exception {
         // The other direction, and the one the bug satisfied: a partial fetch — the Notion

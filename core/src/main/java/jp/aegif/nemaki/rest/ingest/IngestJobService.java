@@ -338,7 +338,14 @@ public class IngestJobService {
             // revision race left the entry refusing every replay for ever — for content that
             // WAS stored, with DELETE the only exit. Two reviewers found it in the round
             // after. A token is cleared by any later save and answers "retry shortly".
-            String writeToken = payload != null ? java.util.UUID.randomUUID().toString() : null;
+            // A byte-less save INHERITS an unfinished token rather than clearing it. Clearing
+            // it rested on the re-probe answering TRUE — but TRUE may be the previous
+            // attempt's attachment, which is exactly the payload the unfinished write never
+            // replaced, and clearing turned it into "confirmed". A parallel review found that
+            // path reaching the same hybrid without waiting for any lease. Only a save that
+            // brings its own bytes takes the row over.
+            String writeToken = payload != null ? java.util.UUID.randomUUID().toString()
+                    : (existing != null ? existing.getPayloadWriteToken() : null);
             dlq.setPayloadWriteToken(writeToken);
             @SuppressWarnings("unchecked")
             Map<String, Object> jsonMap = MAPPER.convertValue(dlq, Map.class);
