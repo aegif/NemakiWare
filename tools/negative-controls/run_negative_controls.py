@@ -3,7 +3,8 @@
 
 Why this file exists
 --------------------
-The design ledger (docs/design/p3-4-custody-transfer.md, §36-§42) claims dozens of
+The design ledger (docs/history/fail-closed-review-rounds.md, §36-§42; moved out of
+docs/design/p3-4-custody-transfer.md on 2026-09-14) claims dozens of
 negative controls "fired". Until this file, every one of those was a hand edit:
 sabotage, run, read the failing test name, revert — honest at the time, and
 unrepeatable afterwards. A reviewer could not distinguish "fired" from "was said

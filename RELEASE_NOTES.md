@@ -841,7 +841,7 @@ CouchDB の view が答えなかった、行は返ったが文書が付いてこ
   こちらは RAG 側にも入れました (下記)
 - **全部の読み取りを直したとは言いません。** 直したのは、答えが
   「無い」という**断定として使われる**経路です。一覧の見た目が空になるだけの箇所は
-  残っています ([`docs/design/p3-4-custody-transfer.md`](docs/design/p3-4-custody-transfer.md) §24〜§29)
+  残っています ([`docs/design/fail-closed-reads.md`](docs/design/fail-closed-reads.md) の残件表「一覧が空に見えるだけの経路」)
 
 ## RAG の全再索引が、索引を消す前に「消してよいか」を見るようになりました (**挙動変更**)
 
