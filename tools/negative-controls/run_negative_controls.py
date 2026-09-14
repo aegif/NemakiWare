@@ -6944,14 +6944,16 @@ CONTROLS = [
         id="VG2",
         what="a delete the selector could not see is answered as success again",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
-        find_span=('        int deleted = ingestJobService.deleteDlqEntry(dlqId);',
+        find_span=('        IngestJobService.DlqDeletion deleted = ingestJobService.deleteDlqEntry(dlqId);',
                    '                    + " caught up — nothing was deleted, so retry");\n        }'),
         # The variable stays: dropping it broke compilation, and the runner correctly refused
-        # to score that as a firing. What this control removes is the arm that REFUSES.
-        replace='        int deleted = ingestJobService.deleteDlqEntry(dlqId);\n'
+        # to score that as a firing. What this control removes is BOTH arms that REFUSE — the
+        # 503 for rows the store did not confirm and the 404 for no row — so both locks fail.
+        replace='        IngestJobService.DlqDeletion deleted = ingestJobService.deleteDlqEntry(dlqId);\n'
                 '        Map<String, Object> response = new LinkedHashMap<>();',
         test='DlqRetryRefusalStatusTest',
-        expect_fail=['aDeleteThatRemovedNothingIsNotSuccess'],
+        expect_fail=['aDeleteThatRemovedNothingIsNotSuccess',
+                     'aDeleteTheStoreDidNotConfirmIsNotSuccess'],
     ),
     dict(
         id="VH2",
@@ -7030,10 +7032,12 @@ CONTROLS = [
         what="the retry path ignores the delete's return value again, so a row the index could "
              "not show is reported resolved and reappears in the next listing",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
-        find='                response.put("status", removed > 0 ? "resolved" : "resolved-entry-kept");',
+        find='                response.put("status", fullyGone(removed) ? "resolved" : "resolved-entry-kept");',
         replace='                response.put("status", "resolved");',
         test='DlqRetryRefusalStatusTest',
-        expect_fail=['aResolvedRetryWhoseDeleteRemovedNothingSaysSo'],
+        # Hard-coding "resolved" also hides a partly confirmed delete — measured 2026-09-14.
+        expect_fail=['aResolvedRetryWhoseDeleteRemovedNothingSaysSo',
+                     'aPartiallyConfirmedDeleteIsNotResolved'],
     ),
     dict(
         id="VP2",
@@ -7200,9 +7204,12 @@ CONTROLS = [
         # Re-anchored: a byte-less save now INHERITS an unfinished token instead of clearing
         # it, so the expression grew. The sabotage still removes the window marker for a
         # payload-bearing save, which is what this control is about.
-        find='            String writeToken = payload != null ? java.util.UUID.randomUUID().toString()\n'
-             '                    : (existing != null ? existing.getPayloadWriteToken() : null);',
-        replace='            String writeToken = existing != null ? existing.getPayloadWriteToken() : null;',
+        find='            if (payload != null) {\n'
+             '                writeToken = java.util.UUID.randomUUID().toString();\n'
+             '            } else if (existing != null) {',
+        replace='            if (payload != null) {\n'
+                '                writeToken = existing != null ? existing.getPayloadWriteToken() : null;\n'
+                '            } else if (existing != null) {',
         test='DlqReplayArchetypeGateTest',
         # Completed from MEASUREMENT. A review enumerated the whole suite for undeclared
         # collateral a SECOND time — round 52's pass had missed these — and its reading
@@ -7265,9 +7272,10 @@ CONTROLS = [
         what="a byte-less save clears an unfinished token on the strength of a TRUE probe — the "
              "previous attempt's attachment becomes this attempt's confirmed payload",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
-        find='            String writeToken = payload != null ? java.util.UUID.randomUUID().toString()\n'
-             '                    : (existing != null ? existing.getPayloadWriteToken() : null);',
-        replace='            String writeToken = payload != null ? java.util.UUID.randomUUID().toString() : null;',
+        find='            } else if (existing != null) {\n'
+             '                writeToken = existing.getPayloadWriteToken();',
+        replace='            } else if (existing != null) {\n'
+                '                writeToken = null;',
         test='DlqReplayArchetypeGateTest',
         expect_fail=['aByteLessSaveInheritsAnUnfinishedToken'],
     ),
@@ -7280,6 +7288,177 @@ CONTROLS = [
         replace='                    );\n',
         test='CanonicalImportServiceTest',
         expect_fail=['aTargetFolderReadThatCouldNotAnswerKeepsItsRetryMarker'],
+    ),
+    dict(
+        id="XI2",
+        what="a _find response without a document list is collapsed into 'no rows' — an empty "
+             "DLQ listing, a 404 on retry, a purge that deleted nothing and said success",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='        if (docs == null) {',
+        replace='        if (docs == null) { docs = List.of(); }\n        if (false) {',
+        test='IngestStoreAnswersAreNotAbsenceTest',
+        expect_fail=['aFindWithoutADocumentListIsNotAnEmptyListing'],
+    ),
+    dict(
+        id="XJ2",
+        what="the purge reads every delete failure as 'the row moved' (0) instead of only the "
+             "conflict, so a timeout or 5xx leaves old entries and the purge answers success",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='        } catch (com.ibm.cloud.sdk.core.service.exception.ConflictException moved) {',
+        replace='        } catch (RuntimeException moved) {',
+        test='IngestStoreAnswersAreNotAbsenceTest',
+        # Widening the conflict catch to RuntimeException also swallows the unconfirmed-delete
+        # refusal thrown inside the try and the 404 that must propagate — measured 2026-09-14.
+        expect_fail=['aPurgeDeleteThatFailedIsNotAMovedRow',
+                     'aPurgeDeleteThatWasNotConfirmedIsNotCounted',
+                     'aPurgeDeleteThatAnswered404IsNotCounted'],
+    ),
+    dict(
+        id="XK2",
+        what="the reservation's conflict arm is bypassed, so a lost _rev race falls into the "
+             "could-not-ask catch and answers 503 for a settled 'someone else holds it'",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='        } catch (com.ibm.cloud.sdk.core.service.exception.ConflictException lostTheRace) {',
+        replace='        } catch (ArithmeticException lostTheRace) {',
+        test='IngestStoreAnswersAreNotAbsenceTest',
+        expect_fail=['aLostReservationRaceIsNotCouldNotAsk'],
+    ),
+    dict(
+        id="XL2",
+        what="IMAP IDLE treats every import result as success — a refusal returned as a result "
+             "is logged 'imported' and reaches neither the DLQ nor the miss counter",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='                        } else if (outcome.isSuccess()) {',
+        replace='                        } else if (true) {',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['anIdleImportThatAnsweredNoIsRecorded',
+                     'anIdleRefusalThatCouldNotBeRecordedIsCounted'],
+    ),
+    dict(
+        id="XM2",
+        what="an IDLE refusal the DLQ could not take is not counted as an undurable miss",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='        if (!missRecorded) {',
+        replace='        if (false) {',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['anIdleRefusalThatCouldNotBeRecordedIsCounted'],
+    ),
+    dict(
+        id="XN2",
+        what="the DLQ controller's 503 handler no longer covers the store not answering, so "
+             "Spring answers 500 for it",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find='    @ExceptionHandler({IngestJobService.DlqEntryUnreadableException.class,\n'
+             '            IngestJobService.IngestStoreDidNotAnswerException.class})',
+        replace='    @ExceptionHandler(IngestJobService.DlqEntryUnreadableException.class)',
+        test='IngestStoreAnswersAreNotAbsenceTest',
+        expect_fail=['theDlqControllerAnswers503WhenTheStoreDidNotAnswer'],
+    ),
+    dict(
+        id="XO2",
+        what="the source-read DLQ helper claims a record whenever the call returned, so the IDLE "
+             "monitor's 'the miss was recorded' becomes unconditional",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/FetchSupport.java',
+        find='            return ingestJobService.saveToDlqReporting(request, errorMessage, null, false, true);',
+        replace='            ingestJobService.saveToDlqReporting(request, errorMessage, null, false, true);\n'
+                '            return true;',
+        test='FetchSupportDlqTest',
+        expect_fail=['saveSourceReadToDlqReportsTheServicesAnswer'],
+    ),
+    dict(
+        id="XP2",
+        what="the admin-managed dynamic read lets the store's exception out, so a store that "
+             "threw stops -D / ENV / the properties file from answering",
+        file='core/src/main/java/jp/aegif/nemaki/util/PropertyManager.java',
+        find='\t\t\ttry {\n\t\t\t\tdyn = getDynamicValue(key);\n\t\t\t} catch (RuntimeException couldNotAsk) {',
+        replace='\t\t\ttry {\n\t\t\t\tdyn = getDynamicValue(key);\n\t\t\t} catch (ArithmeticException couldNotAsk) {',
+        test='PropertyManagerConfigTest',
+        expect_fail=['testAdminManagedKey_storeThatThrowsFallsThroughToSystemProperty'],
+    ),
+    dict(
+        id="XQ2",
+        what="the second dynamic read (every key, before the properties file) lets the store's "
+             "exception out, so a value the file could answer is lost",
+        file='core/src/main/java/jp/aegif/nemaki/util/PropertyManager.java',
+        find='\t\ttry {\n\t\t\tconfigVal = getDynamicValue(key);\n\t\t} catch (RuntimeException couldNotAsk) {',
+        replace='\t\ttry {\n\t\t\tconfigVal = getDynamicValue(key);\n\t\t} catch (ArithmeticException couldNotAsk) {',
+        test='PropertyManagerConfigTest',
+        expect_fail=['testOrdinaryKey_storeThatThrowsFallsThroughToPropertiesFile'],
+    ),
+    dict(
+        id="XR2",
+        what="a reservation write the store answered ok=false is reported as losing to a rival "
+             "(429), not as a write this node could not vouch for (503)",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='            throw new DlqRetryNotReservableException("the retry of DLQ entry " + dlq.getDlqId()\n'
+             '                    + " could not be reserved: the store did not accept the reservation write",\n'
+             '                    null);',
+        replace='            return false;',
+        test='IngestStoreAnswersAreNotAbsenceTest',
+        expect_fail=['aReservationTheStoreDidNotAcceptIsNotARival'],
+    ),
+    dict(
+        id="XS2",
+        what="the purge counts a delete because execute() returned, without the store's "
+             "affirmative answer",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='            if (answer == null || !Boolean.TRUE.equals(answer.isOk())) {',
+        replace='            if (false) {',
+        test='IngestStoreAnswersAreNotAbsenceTest',
+        expect_fail=['aPurgeDeleteThatWasNotConfirmedIsNotCounted'],
+    ),
+    dict(
+        id="XT2",
+        what="the purge reads any 404 on a delete as 'the row was already gone' — a missing "
+             "database included — and answers success",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='        } catch (com.ibm.cloud.sdk.core.service.exception.ConflictException moved) {',
+        replace='        } catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException gone) {\n'
+                '            return 0;\n'
+                '        } catch (com.ibm.cloud.sdk.core.service.exception.ConflictException moved) {',
+        test='IngestStoreAnswersAreNotAbsenceTest',
+        expect_fail=['aPurgeDeleteThatAnswered404IsNotCounted'],
+    ),
+    dict(
+        id="XU2",
+        what="the single DLQ delete counts a row because execute() returned, without the "
+             "store's affirmative answer, so the endpoint says success over a row still there",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='            if (answer != null && Boolean.TRUE.equals(answer.isOk())) {',
+        replace='            if (true) {',
+        test='IngestStoreAnswersAreNotAbsenceTest',
+        expect_fail=['aSingleDeleteTheStoreDidNotConfirmIsNotCounted',
+                     'aTwinRowDeleteReportsTheUnconfirmedHalf'],
+    ),
+    dict(
+        id="XV2",
+        what="a byte-less save over a row this node could not read writes 'no token in flight' "
+             "again, so the replay door opens on whatever attachment the unreadable row holds",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='            } else if (rowWasUnreadable) {',
+        replace='            } else if (false) {',
+        test='DlqReplayArchetypeGateTest',
+        expect_fail=['aByteLessSaveOverAnUnreadableRowKeepsTheDoorShut'],
+    ),
+    dict(
+        id="XX2",
+        what="the retry door reads a partly confirmed delete as 'gone', so a twin row the "
+             "store did not confirm is reported resolved and reappears",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find='        return removed.confirmed() > 0 && removed.complete();',
+        replace='        return removed.confirmed() > 0;',
+        test='DlqRetryRefusalStatusTest',
+        expect_fail=['aPartiallyConfirmedDeleteIsNotResolved'],
+    ),
+    dict(
+        id="XY2",
+        what="the single DELETE answers success while a row the store did not confirm is "
+             "still there",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find='        if (!deleted.complete()) {',
+        replace='        if (false) {',
+        test='DlqRetryRefusalStatusTest',
+        expect_fail=['aDeleteTheStoreDidNotConfirmIsNotSuccess'],
     ),
 ]
 
