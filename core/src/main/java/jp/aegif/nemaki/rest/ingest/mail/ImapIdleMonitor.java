@@ -93,6 +93,13 @@ public class ImapIdleMonitor {
     public void setSchedulerService(IngestSchedulerService schedulerService) { this.schedulerService = schedulerService; }
 
     /**
+     * How the adapter is built. A field so a test can drive the per-message listener without a
+     * mail server; until it existed nothing inside that listener had ever been measured.
+     */
+    java.util.function.BiFunction<ConnectorDefinition, String, ImapConnectorAdapter> adapterFactory =
+            ImapConnectorAdapter::new;
+
+    /**
      * Start IMAP IDLE monitoring for a specific profile.
      * @return error message, or null on success
      */
@@ -160,7 +167,7 @@ public class ImapIdleMonitor {
         String mailbox = profile.getSchedulerParams() != null
                 ? profile.getSchedulerParams().getOrDefault("mailbox", "INBOX") : "INBOX";
 
-        ImapConnectorAdapter imap = new ImapConnectorAdapter(connector, password);
+        ImapConnectorAdapter imap = adapterFactory.apply(connector, password);
         IdleSession session = new IdleSession(imap, profile.getRepositoryId(),
                 profile.isDelegated(), connectionIdentity(connector, password));
         if (!registerSession(profileId, session)) {
@@ -363,8 +370,16 @@ public class ImapIdleMonitor {
                         metadata.put("messageStableId", msg.stableKey());
                         if (msg.messageId() != null) metadata.put("internetMessageId", msg.messageId());
                         req.setMetadata(metadata);
-                        canonicalImportService.executeMailImport(idleCtx, req);
-                        logger.info("IDLE: imported message {} from {}", msg.stableKey(), mailbox);
+                        ExternalIngestResult outcome =
+                                canonicalImportService.executeMailImport(idleCtx, req);
+                        if (outcome.skipped()) {
+                            logger.info("IDLE: message {} from {} was skipped: {}",
+                                    msg.stableKey(), mailbox, outcome.skipReason());
+                        } else if (outcome.isSuccess()) {
+                            logger.info("IDLE: imported message {} from {}", msg.stableKey(), mailbox);
+                        } else {
+                            recordRefusedIdleImport(profileId, mailbox, msg, req, outcome);
+                        }
                     } catch (Exception e) {
                         logger.error("IDLE: failed to import message {}: {}", msg.uid(), e.getMessage());
                     }
@@ -392,6 +407,34 @@ public class ImapIdleMonitor {
         idle.start();
         logger.info("IMAP IDLE monitoring started for profile {}", profileId);
         return null;
+    }
+
+    /**
+     * The import ANSWERED that it did not import this message.
+     *
+     * <p>The line this replaces logged "imported" regardless of the result and dropped it, so
+     * the refusals that arrive as results rather than exceptions — a target folder that could
+     * not be read, a profile the index could not show — reached nothing: not the dead-letter
+     * queue, not the miss counter, and IMAP does not re-deliver the event. The two arms above
+     * record the same class for a refused authorisation; a review found this one asserting
+     * success. An exception inside the import is dead-lettered by the import itself before it
+     * becomes a result, so such a row is written twice and its failure count is one high —
+     * a metadata-only row is a RECORD of the miss either way, not a replayable item.
+     */
+    private void recordRefusedIdleImport(String profileId, String mailbox,
+            ImapConnectorAdapter.MessageSummary msg, ExternalIngestRequest req,
+            ExternalIngestResult outcome) {
+        String why = outcome.errors() == null || outcome.errors().isEmpty()
+                ? "no reason given" : String.join("; ", outcome.errors());
+        boolean missRecorded = fetchSupport != null
+                && fetchSupport.saveSourceReadToDlq(req, "IDLE: the message was not imported: " + why);
+        if (!missRecorded) {
+            undurableMisses.computeIfAbsent(profileId,
+                    k -> new java.util.concurrent.atomic.AtomicInteger()).incrementAndGet();
+        }
+        logger.error("IDLE: message {} from {} was NOT imported ({}); the miss {} recorded."
+                + " The UID checkpoint has not moved, so re-fetch the mailbox to recover",
+                msg.stableKey(), mailbox, why, missRecorded ? "was" : "could NOT be");
     }
 
     /**

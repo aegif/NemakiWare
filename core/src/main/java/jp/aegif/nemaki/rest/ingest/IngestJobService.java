@@ -344,8 +344,25 @@ public class IngestJobService {
             // replaced, and clearing turned it into "confirmed". A parallel review found that
             // path reaching the same hybrid without waiting for any lease. Only a save that
             // brings its own bytes takes the row over.
-            String writeToken = payload != null ? java.util.UUID.randomUUID().toString()
-                    : (existing != null ? existing.getPayloadWriteToken() : null);
+            String writeToken;
+            if (payload != null) {
+                writeToken = java.util.UUID.randomUUID().toString();
+            } else if (existing != null) {
+                writeToken = existing.getPayloadWriteToken();
+            } else if (rowWasUnreadable) {
+                // The stored row could not be read, so whether it carries an unfinished token
+                // is UNKNOWN — and null is the answer "it carries none". Writing null here let
+                // the next replay use whatever attachment the unreadable row still holds (the
+                // previous attempt's): the hybrid the freeze closed. hasContent is written as
+                // "unknown" in the same catch; the token was the one field left answering.
+                // A Phase 2 review found it. A fresh token puts the row on the existing 409
+                // door — no new field, no lease, no self-heal, no re-read of the attachment —
+                // and the next save WITH bytes resolves it, as for any unfinished write.
+                writeToken = java.util.UUID.randomUUID().toString();
+            } else {
+                // The read ANSWERED that there is no row: nothing to inherit, nothing in flight.
+                writeToken = null;
+            }
             dlq.setPayloadWriteToken(writeToken);
             @SuppressWarnings("unchecked")
             Map<String, Object> jsonMap = MAPPER.convertValue(dlq, Map.class);
@@ -1065,16 +1082,19 @@ public class IngestJobService {
     public boolean reserveDlqRetry(IngestDeadLetterRecord dlq) {
         dlq.setRetryCount(dlq.getRetryCount() + 1);
         dlq.setLastRetryAt(Instant.now().toString());
+        String savedId;
         try {
-            String savedId = upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE,
+            savedId = upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE,
                     MAPPER.convertValue(dlq, Map.class));
-            if (savedId == null) {
-                // upsertDocument returns null on !result.isOk() (e.g. _rev conflict)
-                // without throwing — treat as failed reservation
-                logger.debug("DLQ retry reservation failed (write conflict): dlqId={}", dlq.getDlqId());
-                return false;
-            }
-            return true;
+        } catch (com.ibm.cloud.sdk.core.service.exception.ConflictException lostTheRace) {
+            // The 409 the javadoc describes. It never reached the arm above — the SDK throws
+            // on a conflict rather than answering ok=false — so the loser of a race landed in
+            // the catch below and was told the reservation could not be ATTEMPTED (503): a
+            // settled answer, "someone else holds it", reported as could-not-ask, with the 429
+            // the notes promise unreachable. A review found the arm dead in the round after
+            // the catch below was added.
+            logger.debug("DLQ retry reservation lost a write race: dlqId={}", dlq.getDlqId());
+            return false;
         } catch (Exception couldNotAsk) {
             // NOT the same as losing a write conflict. CouchDB being unreachable used to
             // return the same false, and the caller then told the operator "another retry is
@@ -1085,6 +1105,16 @@ public class IngestJobService {
             throw new DlqRetryNotReservableException("the retry of DLQ entry " + dlq.getDlqId()
                     + " could not be reserved: " + couldNotAsk.getMessage(), couldNotAsk);
         }
+        if (savedId == null) {
+            // The store answered ok=false without throwing: a write this node cannot vouch
+            // for. Not "someone else holds it" — a _rev race is raised as ConflictException —
+            // so it must not become the 429 the controller reserves for a rival. Codex found
+            // the arm still answering false after the conflict arm was split out.
+            throw new DlqRetryNotReservableException("the retry of DLQ entry " + dlq.getDlqId()
+                    + " could not be reserved: the store did not accept the reservation write",
+                    null);
+        }
+        return true;
     }
 
     /** The reservation could not be attempted — never the same as losing it to a rival. */
@@ -1108,32 +1138,73 @@ public class IngestJobService {
     private int deleteExactRevision(com.ibm.cloud.cloudant.v1.Cloudant cloudant, String dbName,
             Document seen, String dlqId) {
         try {
-            cloudant.deleteDocument(new com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions
-                    .Builder().db(dbName).docId(seen.getId()).rev(seen.getRev()).build())
-                    .execute();
+            DocumentResult answer = cloudant.deleteDocument(
+                    new com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions.Builder()
+                            .db(dbName).docId(seen.getId()).rev(seen.getRev()).build())
+                    .execute().getResult();
+            // Counted only on the store's affirmative answer: "execute() returned" counted a
+            // deletion nothing confirmed. A 404 is NOT caught as "already gone" — the SDK's
+            // NotFoundException is any 404, a missing database included — so it propagates to
+            // the outer refusal like every other non-conflict failure. A row someone else
+            // deleted first then costs one re-run, which is recoverable; a success reported
+            // over a vanished database is not. Codex found both in the same review.
+            if (answer == null || !Boolean.TRUE.equals(answer.isOk())) {
+                throw new IllegalStateException("the store did not confirm the delete of DLQ"
+                        + " entry " + dlqId);
+            }
             return 1;
-        } catch (RuntimeException movedOrGone) {
+        } catch (com.ibm.cloud.sdk.core.service.exception.ConflictException moved) {
+            // ONLY the conflict is "the row changed". This arm caught every RuntimeException,
+            // so a timeout or a 5xx on one delete counted as a row that had moved, the loop
+            // went on, and the purge answered 200 success with old entries still there — the
+            // outer refusal existed for exactly that and was never reached. Codex found it in
+            // the round after the revision-pinned delete was added. Anything else propagates
+            // to that refusal, with the count so far.
             logger.warn("DLQ entry {} was not purged: the row changed since the walk saw it"
                     + " ({}). If it failed again it is no longer an old entry", dlqId,
-                    movedOrGone.getMessage());
+                    moved.getMessage());
             return 0;
         }
     }
 
-    /** @return how many stored rows were actually deleted — 0 is not "it was already gone". */
-    public int deleteDlqEntry(String dlqId) {
+    /** What a delete walk established: rows the store confirmed gone, and rows it did not. */
+    public record DlqDeletion(int confirmed, int unconfirmed) {
+        /** True only when no row is left that the store did not confirm. */
+        public boolean complete() { return unconfirmed == 0; }
+    }
+
+    /**
+     * The store's answers, row by row. 0 confirmed is not "it was already gone", and a walk
+     * over twin rows (the same dlqId stored twice — a recorded residual) that confirmed one
+     * and not the other is not "gone" either: Codex found the sum reported as success.
+     */
+    public DlqDeletion deleteDlqEntry(String dlqId) {
         CloudantClientWrapper client = getConfClient();
         String dbName = client.getDatabaseName();
         var cloudant = client.getClient();
         List<Document> docs = findRawDocs(cloudant, dbName,
                 Map.of("type", IngestDeadLetterRecord.DOC_TYPE, "dlqId", dlqId));
-        int deleted = 0;
+        int confirmed = 0;
+        int unconfirmed = 0;
         for (Document doc : docs) {
-            cloudant.deleteDocument(new com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions.Builder()
-                    .db(dbName).docId(doc.getId()).rev(doc.getRev()).build()).execute();
-            deleted++;
+            DocumentResult answer = cloudant.deleteDocument(
+                    new com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions.Builder()
+                            .db(dbName).docId(doc.getId()).rev(doc.getRev()).build())
+                    .execute().getResult();
+            // Counted only on the store's affirmative answer, as the purge does: "execute()
+            // returned" counted a deletion nothing confirmed, and the endpoint said success
+            // over a row still there. Codex found it in the pass that fixed the purge. NOT
+            // thrown — the retry door calls this after a successful import, and a throw
+            // there reported that import as failed; 0 already reads as "entry kept".
+            if (answer != null && Boolean.TRUE.equals(answer.isOk())) {
+                confirmed++;
+            } else {
+                unconfirmed++;
+                logger.warn("the store did not confirm the delete of DLQ entry {} (row {});"
+                        + " it is reported as kept", dlqId, doc.getId());
+            }
         }
-        return deleted;
+        return new DlqDeletion(confirmed, unconfirmed);
     }
 
     // ── Internal ───────────────────────────────────────────────────
@@ -1234,8 +1305,24 @@ public class IngestJobService {
             builder.skip((long) skip);
         }
         FindResult findResult = cloudant.postFind(builder.build()).execute().getResult();
-        List<Document> docs = findResult.getDocs();
-        return docs != null ? docs : List.of();
+        List<Document> docs = findResult == null ? null : findResult.getDocs();
+        // A response without a document list is the store NOT ANSWERING — NemakiConfFind
+        // defines the same shape that way and refuses. Here it was collapsed into "there are
+        // no rows": an empty DLQ listing, a 404 on retry, a purge that deleted nothing and
+        // said success. Codex read the two definitions side by side. Every caller already
+        // handles a RuntimeException from this read (the transport throws here too), so this
+        // joins that class rather than adding a new one.
+        if (docs == null) {
+            throw new IngestStoreDidNotAnswerException("the ingest store returned no document"
+                    + " list for " + selector.keySet() + "; retry shortly");
+        }
+        return docs;
+    }
+
+    /** A _find that came back without a document list — never the same answer as "no rows". */
+    public static class IngestStoreDidNotAnswerException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        public IngestStoreDidNotAnswerException(String message) { super(message); }
     }
 
     private CloudantClientWrapper getConfClient() {

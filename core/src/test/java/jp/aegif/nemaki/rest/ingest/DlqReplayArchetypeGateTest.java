@@ -450,7 +450,8 @@ class DlqReplayArchetypeGateTest {
         com.ibm.cloud.cloudant.v1.model.Document doc =
                 written.getAllValues().get(written.getAllValues().size() - 1).document();
         return new Object[]{doc.get("hasContent"), doc.get("payloadPresenceAssumed"),
-                doc.get("failureCount")};
+                doc.get("failureCount"), doc.get("payloadWriteToken"), doc.get("dlqId"),
+                doc.get("originalRequestJson")};
     }
 
     @Test
@@ -1361,5 +1362,56 @@ class DlqReplayArchetypeGateTest {
         when(putCall.execute()).thenReturn(putResp);
         when(cloudant.putAttachment(org.mockito.ArgumentMatchers.any())).thenReturn(putCall);
         return cloudant;
+    }
+
+    @Test
+    @DisplayName("a byte-less save over a row it could not read keeps the replay door shut")
+    void aByteLessSaveOverAnUnreadableRowKeepsTheDoorShut() throws Exception {
+        // existing == null has two meanings — "there is no row" and "the row could not be
+        // read" — and the token took the first for both. Under the second the row may still
+        // carry an unfinished token and the previous attempt's attachment, so writing null
+        // let the next replay pair those bytes with this attempt's metadata: the hybrid the
+        // freeze closed. hasContent is written "unknown" in the same catch; the token was the
+        // one field left answering. A Phase 2 review found it. No new field: the row gets a
+        // fresh token and the EXISTING door refuses it, before any attachment is read.
+        Object[] written = saveOverAnUnreadableRow(true);
+        org.junit.jupiter.api.Assertions.assertNotNull(written[3],
+                "the save over an unreadable row wrote 'no payload write in flight'");
+
+        IngestDlqController controller = new IngestDlqController();
+        IngestJobService jobs = mock(IngestJobService.class);
+        jp.aegif.nemaki.rest.ingest.IngestDeadLetterRecord stored =
+                new jp.aegif.nemaki.rest.ingest.IngestDeadLetterRecord();
+        stored.setDlqId((String) written[4]);
+        stored.setOriginalRequestJson((String) written[5]);
+        stored.setHasContent(Boolean.TRUE.equals(written[0]));
+        stored.setPayloadPresenceAssumed(Boolean.TRUE.equals(written[1]));
+        stored.setPayloadWriteToken((String) written[3]);
+        when(jobs.getDlqEntry(stored.getDlqId())).thenReturn(stored);
+        when(jobs.reserveDlqRetry(stored)).thenReturn(true);
+        jakarta.servlet.http.HttpServletRequest request =
+                mock(jakarta.servlet.http.HttpServletRequest.class);
+        org.apache.chemistry.opencmis.commons.server.CallContext ctx =
+                mock(org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        when(ctx.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN))
+                .thenReturn(Boolean.TRUE);
+        when(request.getAttribute("CallContext")).thenReturn(ctx);
+        CanonicalImportService importService = mock(CanonicalImportService.class);
+        for (Object[] wire : new Object[][]{
+                {"ingestJobService", jobs},
+                {"connectorDefinitionService", mock(ConnectorDefinitionService.class)},
+                {"canonicalImportService", importService},
+                {"httpRequest", request}}) {
+            Field f = IngestDlqController.class.getDeclaredField((String) wire[0]);
+            f.setAccessible(true);
+            f.set(controller, wire[1]);
+        }
+
+        org.springframework.http.ResponseEntity<?> res =
+                controller.retryDlqEntry(stored.getDlqId());
+
+        org.junit.jupiter.api.Assertions.assertEquals(409, res.getStatusCode().value(),
+                "a row written over one this node could not read was replayed: " + res.getBody());
+        verify(importService, never()).execute(any(), any());
     }
 }

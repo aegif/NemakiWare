@@ -233,7 +233,8 @@ public class IngestDlqController {
                 // overwrites the token with its own and attaches fresh bytes, which resolves
                 // it; nothing else does, and that is recorded.
                 return errorResponse(HttpStatus.CONFLICT, "a payload write for DLQ entry "
-                        + dlqId + " was started and never confirmed, so the stored payload"
+                        + dlqId + " was started and never confirmed, or this entry was written"
+                        + " over a row this node could not read, so the stored payload"
                         + " cannot be attributed to the attempt this entry describes; the"
                         + " entry is kept and nothing was imported. Re-fetch the source item"
                         + " through its connector (a fresh failure with bytes replaces this"
@@ -325,25 +326,25 @@ public class IngestDlqController {
             }
             if (result.skipped()) {
                 // Idempotent outcome — object already exists, remove from DLQ
-                int removed = ingestJobService.deleteDlqEntry(dlqId);
-                response.put("status", removed > 0 ? "resolved" : "resolved-entry-kept");
-                if (removed == 0) {
+                IngestJobService.DlqDeletion removed = ingestJobService.deleteDlqEntry(dlqId);
+                response.put("status", fullyGone(removed) ? "resolved" : "resolved-entry-kept");
+                if (!fullyGone(removed)) {
                     // The delete walks a Mango selector; a rebuilding index removes nothing.
                     // Saying "resolved" alone left the row to reappear in the next listing
                     // with no hint of why. A review found the return value ignored here.
                     response.put("entryKeptNote", "the import was resolved but no stored row"
-                            + " was returned to delete; the entry may reappear until the index"
-                            + " catches up");
+                            + " was returned to delete, or the store did not confirm the"
+                            + " delete; the entry may reappear until the index catches up");
                 }
                 if (result.objectId() != null) response.put("objectId", result.objectId());
                 response.put("skipReason", result.skipReason());
             } else if (result.isSuccess()) {
-                int removed = ingestJobService.deleteDlqEntry(dlqId);
-                response.put("status", removed > 0 ? "success" : "success-entry-kept");
-                if (removed == 0) {
+                IngestJobService.DlqDeletion removed = ingestJobService.deleteDlqEntry(dlqId);
+                response.put("status", fullyGone(removed) ? "success" : "success-entry-kept");
+                if (!fullyGone(removed)) {
                     response.put("entryKeptNote", "the import succeeded but no stored row was"
-                            + " returned to delete; the entry may reappear until the index"
-                            + " catches up");
+                            + " returned to delete, or the store did not confirm the delete;"
+                            + " the entry may reappear until the index catches up");
                 }
                 response.put("objectId", result.objectId());
             } else {
@@ -392,15 +393,24 @@ public class IngestDlqController {
         // entry is gone — while it is still there and will be back in the next listing. The
         // purge sibling was given this exact distinction a round earlier; a review found the
         // single delete still asserting it.
-        int deleted = ingestJobService.deleteDlqEntry(dlqId);
+        IngestJobService.DlqDeletion deleted = ingestJobService.deleteDlqEntry(dlqId);
         Map<String, Object> response = new LinkedHashMap<>();
-        if (deleted == 0) {
+        if (!deleted.complete()) {
+            // Rows the store did not confirm gone are still there. Not success, and not "no
+            // such row": a retry settles it. Codex found the twin-row case still answering
+            // success after single rows were fixed.
+            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, "the store did not confirm the"
+                    + " delete of " + deleted.unconfirmed() + " row(s) of DLQ entry " + dlqId
+                    + " (" + deleted.confirmed() + " confirmed); the entry is not gone, retry"
+                    + " shortly");
+        }
+        if (deleted.confirmed() == 0) {
             return errorResponse(HttpStatus.NOT_FOUND, "no stored row of DLQ entry " + dlqId
                     + " was returned to delete. If the entry is listed, the index has not"
                     + " caught up — nothing was deleted, so retry");
         }
         response.put("status", "success");
-        response.put("deleted", deleted);
+        response.put("deleted", deleted.confirmed());
         return ResponseEntity.ok(response);
     }
 
@@ -481,8 +491,15 @@ public class IngestDlqController {
                 .body(Map.of("status", "error", "message", message));
     }
 
+    /** Gone only when at least one row was confirmed deleted and none was left unconfirmed. */
+    private static boolean fullyGone(IngestJobService.DlqDeletion removed) {
+        return removed.confirmed() > 0 && removed.complete();
+    }
+
     /**
-     * A stored entry this node could not read is a retry, never "there is no such entry".
+     * A stored entry this node could not read is a retry, never "there is no such entry" —
+     * and so is a store that answered without a document list (the listings, the jobs
+     * endpoints and the single delete all read through {@code findRawDocs}).
      *
      * <p>Inserted between the block below and the method it documents, this handler took that
      * block's javadoc and left {@code definitionRowsCouldNotBeRead} with none — Java attaches
@@ -490,8 +507,9 @@ public class IngestDlqController {
      * and the sibling paragraph in the scheduler controller carries the same warning: if you
      * insert a method here, check which comment its neighbour ends up with.
      */
-    @ExceptionHandler(IngestJobService.DlqEntryUnreadableException.class)
-    public ResponseEntity<?> dlqEntryCouldNotBeRead(IngestJobService.DlqEntryUnreadableException e) {
+    @ExceptionHandler({IngestJobService.DlqEntryUnreadableException.class,
+            IngestJobService.IngestStoreDidNotAnswerException.class})
+    public ResponseEntity<?> dlqEntryCouldNotBeRead(RuntimeException e) {
         return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
     }
 

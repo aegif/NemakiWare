@@ -7,6 +7,12 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import java.util.List;
 
@@ -763,5 +769,97 @@ class ImapIdleSessionRegistryTest {
                         + "endpoint answers 403 for: " + refusal);
         assertTrue(ImapIdleMonitor.refusalCouldNotAsk(refusal),
                 "the refusal does not land on the arm that answers 503: " + refusal);
+    }
+
+    /**
+     * Runs one IDLE message through the REAL listener: profile and connector readable, password
+     * resolvable, and the adapter faked so {@code startIdle} hands the listener one message and
+     * returns. Answers once the session has retired, i.e. once the listener has finished.
+     * Until the adapter became injectable nothing inside that listener had been measured.
+     */
+    private Object[] driveOneIdleMessage(jp.aegif.nemaki.rest.ingest.ExternalIngestResult outcome,
+            boolean dlqAccepts) throws Exception {
+        ImapIdleMonitor monitor = new ImapIdleMonitor();
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId(PROF);
+        profile.setRepositoryId("bedroom");
+        profile.setDefaultConnectorId("conn-1");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("conn-1");
+        connector.setSourceSystem("imap");
+        connector.setEndpoint("imap.example:993");
+        connector.setTenantId("user@example.com");
+        ImportProfileDefinitionService profiles = mock(ImportProfileDefinitionService.class);
+        when(profiles.getOwnedRowIndexFree(PROF)).thenReturn(profile);
+        when(profiles.getForRepository(PROF, "bedroom")).thenReturn(profile);
+        ConnectorDefinitionService connectors = mock(ConnectorDefinitionService.class);
+        when(connectors.get("conn-1")).thenReturn(connector);
+        when(connectors.countIndexFree("conn-1")).thenReturn(1);
+        FetchSupport fetch = mock(FetchSupport.class);
+        when(fetch.resolvePasswordOrRefuse(connector)).thenReturn("pw");
+        when(fetch.saveSourceReadToDlq(any(), any())).thenReturn(dlqAccepts);
+        jp.aegif.nemaki.rest.ingest.CanonicalImportService imports =
+                mock(jp.aegif.nemaki.rest.ingest.CanonicalImportService.class);
+        when(imports.executeMailImport(any(), any())).thenReturn(outcome);
+        ImapConnectorAdapter adapter = mock(ImapConnectorAdapter.class);
+        doAnswer(inv -> {
+            java.util.function.Consumer<ImapConnectorAdapter.MessageSummary> onNew =
+                    inv.getArgument(1);
+            onNew.accept(new ImapConnectorAdapter.MessageSummary(7L, 1L, "<m7@example>",
+                    "hello", "a@example", new java.util.Date(), 12));
+            return null;
+        }).when(adapter).startIdle(eq("INBOX"), any());
+        when(adapter.fetchMessage("INBOX", 7L)).thenReturn(
+                new java.io.ByteArrayInputStream("Subject: hello\r\n\r\nbody".getBytes()));
+        monitor.setProfileService(profiles);
+        monitor.setConnectorService(connectors);
+        monitor.setFetchSupport(fetch);
+        monitor.setCanonicalImportService(imports);
+        monitor.adapterFactory = (c, pw) -> adapter;
+
+        String refusal = monitor.startIdle(PROF);
+        assertNull(refusal, "IDLE did not start: " + refusal);
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (!monitor.getIdleProfiles().isEmpty() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20);
+        }
+        assertEquals(List.of(), monitor.getIdleProfiles(), "the listener did not finish");
+        verify(imports).executeMailImport(any(), any());
+        return new Object[]{monitor, fetch};
+    }
+
+    @Test
+    @DisplayName("an import that answered 'not imported' is recorded, not logged as imported")
+    void anIdleImportThatAnsweredNoIsRecorded() throws Exception {
+        // executeMailImport's result was discarded and "imported" logged regardless. The
+        // refusals this branch returns as RESULTS (a target folder that could not be read, a
+        // profile the index could not show) then reached nothing — no DLQ row, no miss count —
+        // and IMAP does not re-deliver. A review found the arm above recording the same class.
+        Object[] r = driveOneIdleMessage(jp.aegif.nemaki.rest.ingest.ExternalIngestResult
+                .error("req-7", "the target folder could not be read; retry shortly"), true);
+
+        verify((FetchSupport) r[1]).saveSourceReadToDlq(any(),
+                contains("the target folder could not be read"));
+        assertEquals(0, ((ImapIdleMonitor) r[0]).undurableMissCount(PROF));
+    }
+
+    @Test
+    @DisplayName("an import refusal that could not be recorded is counted as a miss")
+    void anIdleRefusalThatCouldNotBeRecordedIsCounted() throws Exception {
+        Object[] r = driveOneIdleMessage(jp.aegif.nemaki.rest.ingest.ExternalIngestResult
+                .error("req-7", "the target folder could not be read; retry shortly"), false);
+
+        assertEquals(1, ((ImapIdleMonitor) r[0]).undurableMissCount(PROF),
+                "a miss the DLQ could not take was neither recorded nor counted");
+    }
+
+    @Test
+    @DisplayName("a successful IDLE import records nothing")
+    void aSuccessfulIdleImportRecordsNothing() throws Exception {
+        Object[] r = driveOneIdleMessage(jp.aegif.nemaki.rest.ingest.ExternalIngestResult
+                .success("req-7", "obj-1", "1.0", false, "ev-1"), true);
+
+        verify((FetchSupport) r[1], never()).saveSourceReadToDlq(any(), any());
+        assertEquals(0, ((ImapIdleMonitor) r[0]).undurableMissCount(PROF));
     }
 }

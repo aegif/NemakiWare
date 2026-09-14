@@ -92,6 +92,10 @@ class DlqRetryRefusalStatusTest {
             return true;
         });
 
+        // The cleanup after a successful replay answers a record now; a bare mock answers
+        // null. Default to "one row, confirmed gone" so tests that are not about the cleanup
+        // keep seeing plain "success"; tests about it stub their own answer below.
+        when(jobService.deleteDlqEntry(any())).thenReturn(new IngestJobService.DlqDeletion(1, 0));
         shapeRow.accept(row);
         if (extraStubbing != null) extraStubbing.accept(jobService);
 
@@ -250,7 +254,8 @@ class DlqRetryRefusalStatusTest {
         when(importService.execute(any(), any())).thenReturn(
                 ExternalIngestResult.skipped("req-1", "obj-1", "object already exists"));
         ResponseEntity<?> res = retryWith(row -> { }, importService,
-                jobService -> when(jobService.deleteDlqEntry("dlq-1")).thenReturn(0));
+                jobService -> when(jobService.deleteDlqEntry("dlq-1"))
+                        .thenReturn(new IngestJobService.DlqDeletion(0, 0)));
 
         assertEquals("resolved-entry-kept", ((Map<?, ?>) res.getBody()).get("status"),
                 "a row that was not deleted was reported as plainly resolved: " + res.getBody());
@@ -314,7 +319,7 @@ class DlqRetryRefusalStatusTest {
         // round earlier; a review found the single delete still asserting it.
         IngestDlqController controller = new IngestDlqController();
         IngestJobService jobService = mock(IngestJobService.class);
-        when(jobService.deleteDlqEntry("dlq-1")).thenReturn(0);
+        when(jobService.deleteDlqEntry("dlq-1")).thenReturn(new IngestJobService.DlqDeletion(0, 0));
         wire(controller, "ingestJobService", jobService);
         wire(controller, "httpRequest", adminRequest());
 
@@ -466,5 +471,41 @@ class DlqRetryRefusalStatusTest {
         // than the stored fact.
         assertEquals(1, ((Map<?, ?>) res.getBody()).get("retryCount"),
                 "the answer disagrees with what reserveDlqRetry persisted");
+    }
+
+    @Test
+    @DisplayName("a delete the store confirmed only in part is not 'resolved'")
+    void aPartiallyConfirmedDeleteIsNotResolved() throws Exception {
+        // Twin rows for one dlqId (a recorded residual): the store confirmed one delete and not
+        // the other, and the sum said "resolved" while a row stayed behind. Codex found it in
+        // the pass after single rows were fixed.
+        CanonicalImportService importService = mock(CanonicalImportService.class);
+        when(importService.execute(any(), any())).thenReturn(
+                ExternalIngestResult.skipped("req-1", "obj-1", "object already exists"));
+        ResponseEntity<?> res = retryWith(row -> { }, importService,
+                jobService -> when(jobService.deleteDlqEntry("dlq-1"))
+                        .thenReturn(new IngestJobService.DlqDeletion(1, 1)));
+
+        assertEquals("resolved-entry-kept", ((Map<?, ?>) res.getBody()).get("status"),
+                "a row the store did not confirm gone was reported as plainly resolved: "
+                        + res.getBody());
+    }
+
+    @Test
+    @DisplayName("a delete the store did not confirm in full is not success")
+    void aDeleteTheStoreDidNotConfirmIsNotSuccess() throws Exception {
+        IngestDlqController controller = new IngestDlqController();
+        IngestJobService jobService = mock(IngestJobService.class);
+        when(jobService.deleteDlqEntry("dlq-1")).thenReturn(new IngestJobService.DlqDeletion(1, 1));
+        wire(controller, "ingestJobService", jobService);
+        wire(controller, "httpRequest", adminRequest());
+
+        ResponseEntity<?> res = (ResponseEntity<?>) controller.deleteDlqEntry("dlq-1");
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
+                "a delete with an unconfirmed row was answered as success: " + res.getBody());
+        assertTrue(String.valueOf(((Map<?, ?>) res.getBody()).get("message"))
+                        .contains("did not confirm"),
+                "the answer does not say the store did not confirm: " + res.getBody());
     }
 }

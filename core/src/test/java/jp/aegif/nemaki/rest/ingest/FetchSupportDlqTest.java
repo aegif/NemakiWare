@@ -3,6 +3,7 @@ package jp.aegif.nemaki.rest.ingest;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
 import org.junit.jupiter.api.Test;
@@ -51,5 +52,25 @@ public class FetchSupportDlqTest {
 
         ExternalIngestRequest req = new ExternalIngestRequest();
         assertDoesNotThrow(() -> fetchSupport.saveToDlq(req, "boom", null));
+    }
+
+    @Test
+    public void saveSourceReadToDlqReportsTheServicesAnswer() {
+        // The IDLE monitor claims "the miss was recorded" on this boolean. A helper that
+        // returned true whenever the void call returned would make that claim unconditional.
+        IngestJobService jobService = mock(IngestJobService.class);
+        when(jobService.saveToDlqReporting(any(), any(), isNull(), eq(false), eq(true)))
+                .thenReturn(false);
+        FetchSupport fetchSupport = new FetchSupport();
+        fetchSupport.setIngestJobService(jobService);
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setSourceObjectId("mail-7");
+
+        assertFalse(fetchSupport.saveSourceReadToDlq(req, "not imported"),
+                "the helper claimed a record the service said it did not write");
+
+        when(jobService.saveToDlqReporting(any(), any(), isNull(), eq(false), eq(true)))
+                .thenReturn(true);
+        assertTrue(fetchSupport.saveSourceReadToDlq(req, "not imported"));
     }
 }

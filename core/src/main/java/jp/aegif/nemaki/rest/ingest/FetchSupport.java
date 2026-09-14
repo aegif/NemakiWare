@@ -253,6 +253,25 @@ public class FetchSupport {
     }
 
     /**
+     * As {@link #saveSourceNeverReadToDlq}, for a failure raised AFTER the source item was read
+     * — the import ran and answered that it did not import. Metadata-only: the bytes were
+     * consumed by the import, so the row is a record of the miss, not a replayable item.
+     *
+     * @return whether the row was written, for the same reason as above
+     */
+    public boolean saveSourceReadToDlq(ExternalIngestRequest request, String errorMessage) {
+        if (ingestJobService == null) {
+            return false;
+        }
+        try {
+            return ingestJobService.saveToDlqReporting(request, errorMessage, null, false, true);
+        } catch (Exception e) {
+            logger.warn("Failed to save to DLQ — item may be lost: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Sleep for the throttle delay, if configured. Also sends a progress-based
      * heartbeat at most once per 5 minutes.
      */
