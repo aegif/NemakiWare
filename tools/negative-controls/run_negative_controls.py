@@ -4911,10 +4911,16 @@ CONTROLS = [
         what="the receiver resolves the connector through get() again — a failed read is 401, "
              "'your signature is wrong'",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
-        find='            connector = connectorDefinitionService.getOrRefuse(connectorId);\n'
-             '        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotRead) {',
+        # Re-anchored for R3: the receiver reads through resolveOrRefuse, which carries
+        # whether the selector answered. The sabotage goes back to get() and claims it did.
+        find='            ConnectorDefinitionService.Resolution resolved =\n'
+             '                    connectorDefinitionService.resolveOrRefuse(connectorId);\n'
+             '            connector = resolved.connector();\n'
+             '            // Kept for the refusable answers below',
         replace='            connector = connectorDefinitionService.get(connectorId);\n'
-                '        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotRead) {',
+                '            ConnectorDefinitionService.Resolution resolved =\n'
+                '                    new ConnectorDefinitionService.Resolution(connector, true);\n'
+                '            // Kept for the refusable answers below',
         test='IngestWebhookBoxDropboxTest',
         expect_fail=['aConnectorReadThatCouldNotBeAnsweredIsA503NotA401',
                      'aBrokenRecipientRowRefusesTheDispatchEvenBesideReadableOnes',
@@ -4933,21 +4939,31 @@ CONTROLS = [
                      'aFetchThatCouldNotReadItsConfigurationIsRecorded',
                      'aPairHiddenFromTheIndexIsRefusedAfterTheSignature',
                      'anAuthorisationThatCouldNotBeAskedIsRecordedAsAWebhookDeliveryRecord',
-                     'theWalkIsMadeOnceTheSignatureVerified'],
+                     'theWalkIsMadeOnceTheSignatureVerified',
+                     'aFailedSignatureIsTheRefusedReadsAnswerWhileTheSelectorIsDown',
+                     'aDisabledConnectorIsTheRefusedReadsAnswerWhileTheSelectorIsDown',
+                     'theRightSecretIsStillDispatchedWhileTheSelectorIsDown'],
     ),
     dict(
         id="XE",
         what="the Dropbox URL-verification GET resolves the connector through get() again — "
              "a failed read is 404",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
-        find='            connector = connectorDefinitionService.getOrRefuse(connectorId);\n'
+        # Re-anchored for R3, like XD.
+        find='            ConnectorDefinitionService.Resolution resolved =\n'
+             '                    connectorDefinitionService.resolveOrRefuse(connectorId);\n'
+             '            connector = resolved.connector();\n'
+             '            selectorAnswered = resolved.selectorAnswered();\n'
              '        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotReadOnVerify) {',
         replace='            connector = connectorDefinitionService.get(connectorId);\n'
+                '            selectorAnswered = true;\n'
                 '        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotReadOnVerify) {',
         test='IngestWebhookBoxDropboxTest',
         expect_fail=['theHandshakeAnswers503WhenTheConnectorReadCouldNotBeAnswered',
                      'dropboxChallenge_echoesChallenge',
-                     'dropboxChallenge_setsTextPlainAndNosniff'],
+                     'dropboxChallenge_setsTextPlainAndNosniff',
+                     'theHandshakeIsTheRefusedReadsAnswerWhileTheSelectorIsDown',
+                     'theHandshakeStillEchoesWhileTheSelectorIsDown'],
     ),
     dict(
         id="XF",
@@ -8005,18 +8021,19 @@ CONTROLS = [
         what="R2: the refusing read starts walking — the unauthenticated amplifier dece81f7d "
              "withdrew comes back through getOrRefuse",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
-        find='                return first;\n            }\n        }\n        // The profile twin of this fallback, mirrored:',
-        replace='                if (refuseUnanswered) refuseUnlessUniquelyDefined(connectorId);\n                return first;\n            }\n        }\n        // The profile twin of this fallback, mirrored:',
+        find='                return new Resolution(first, selectorAnswered);\n            }\n        }\n        // The profile twin of this fallback, mirrored:',
+        replace='                if (refuseUnanswered) refuseUnlessUniquelyDefined(connectorId);\n                return new Resolution(first, selectorAnswered);\n            }\n        }\n        // The profile twin of this fallback, mirrored:',
         test='ConnectorLegacyIdMigrationTest',
-        expect_fail=['getOrRefuseDoesNotWalk'],
+        expect_fail=['getOrRefuseDoesNotWalk',
+                     'resolveOrRefuseSaysTheSelectorAnswered'],
     ),
     dict(
         id="AO3",
         what="R2: the receiver walks BEFORE the signature is verified — one unauthenticated "
              "request costs a walk of the configuration database",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
-        find='            // that predate this read.\n            connector = connectorDefinitionService.getOrRefuse(connectorId);\n',
-        replace='            // that predate this read.\n            connector = connectorDefinitionService.getOrRefuse(connectorId);\n            connectorDefinitionService.refuseUnlessUniquelyDefined(connectorId);\n',
+        find='            // that predate this read.\n            ConnectorDefinitionService.Resolution resolved =',
+        replace='            // that predate this read.\n            connectorDefinitionService.refuseUnlessUniquelyDefined(connectorId);\n            ConnectorDefinitionService.Resolution resolved =',
         test='IngestWebhookBoxDropboxTest',
         expect_fail=['theWalkIsNotMadeForAnUnauthenticatedRequest', 'theWalkIsMadeOnceTheSignatureVerified'],
     ),
@@ -8055,6 +8072,107 @@ CONTROLS = [
         replace='',
         test='IngestWebhookBoxDropboxTest',
         expect_fail=['aSubscriptionIsNotDeletedWithOneRowOfAPair'],
+    ),
+    dict(
+        id="AP3",
+        what="R3: the receiver answers 401 again while the selector is down, so a 401 beside "
+             "the read's 503 says a readable row exists at the id",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='            String connectorId, boolean selectorAnswered, String why) {\n        if (selectorAnswered) {',
+        replace='            String connectorId, boolean selectorAnswered, String why) {\n        if (true) {',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['aFailedSignatureIsTheRefusedReadsAnswerWhileTheSelectorIsDown',
+                     'aDisabledConnectorIsTheRefusedReadsAnswerWhileTheSelectorIsDown'],
+    ),
+    dict(
+        id="AQ3",
+        what="R3: the window's 503 carries its own body, so the status matches a refused read "
+             "and the body still separates the two",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)\n                .body(Map.of("error", "Connector could not be read; retry shortly"));\n    }\n\n    private ResponseEntity<?> connectorCouldNotBeRead(String connectorId, String why) {',
+        replace='        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)\n                .body(Map.of("error", "Signature verification failed; retry shortly"));\n    }\n\n    private ResponseEntity<?> connectorCouldNotBeRead(String connectorId, String why) {',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['aFailedSignatureIsTheRefusedReadsAnswerWhileTheSelectorIsDown',
+                     'aDisabledConnectorIsTheRefusedReadsAnswerWhileTheSelectorIsDown'],
+    ),
+    dict(
+        id="AR3",
+        what="R3: the window's answer is given outside the window too — every sender with a "
+             "stale secret is told to retry forever",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='            String connectorId, boolean selectorAnswered, String why) {\n        if (selectorAnswered) {',
+        replace='            String connectorId, boolean selectorAnswered, String why) {\n        if (false) {',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['aFailedSignatureIsStill401WhenTheSelectorAnswered',
+                     'aDisabledConnectorIsStill401WhenTheSelectorAnswered',
+                     'anAbsentConnectorIsStill401',
+                     'boxEvent_invalidSignature_returns401',
+                     'boxEvent_staleTimestamp_returns401',
+                     'dropboxNotification_invalidSignature_returns401',
+                     'theWalkIsNotMadeForAnUnauthenticatedRequest'],
+    ),
+    dict(
+        id="AS3",
+        what="R3: the GET handshake keeps its 404 while the selector is down, so the POST is "
+             "closed and the handshake still separates present from absent",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='            if (!selectorAnswered) {\n                // The same window, for the same reason',
+        replace='            if (false) {\n                // The same window, for the same reason',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['theHandshakeIsTheRefusedReadsAnswerWhileTheSelectorIsDown'],
+    ),
+    dict(
+        id="AT3",
+        what="R3: the GET handshake answers the window's 503 outside the window too",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='            if (!selectorAnswered) {\n                // The same window, for the same reason',
+        replace='            if (true) {\n                // The same window, for the same reason',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['theHandshakeIsStill404WhenTheSelectorAnswered',
+                     'dropboxChallenge_missingChallenge_returns404',
+                     'dropboxChallenge_nonDropboxConnector_returns404',
+                     'dropboxChallenge_tooLong_returns404',
+                     'theHandshakeStill404sAnAbsentConnector'],
+    ),
+    dict(
+        id="AU3",
+        what="R3: the read reports that the selector answered when it did not, so the receiver "
+             "discloses in exactly the window the report exists for",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='            return new Resolution(fromId, selectorAnswered);',
+        replace='            return new Resolution(fromId, true);',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['resolveOrRefuseSaysTheSelectorDidNotAnswer'],
+    ),
+    dict(
+        id="AV3",
+        what="R3: a read that was never made reports that the selector answered — could not "
+             "ask handed out with the value of asked",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='        if (connectorId == null) return new Resolution(null, false);',
+        replace='        if (connectorId == null) return new Resolution(null, true);',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aReadThatWasNeverMadeHasNoSelectorAnswer'],
+    ),
+    dict(
+        id="AW3",
+        what="R3: the whole window is refused instead — the price the design does not pay, "
+             "a sender holding the right secret stopped for the length of an index rebuild",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='        if (!verifySignature(connector, rawBody)) {',
+        replace='        if (!selectorAnswered || !verifySignature(connector, rawBody)) {',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['theRightSecretIsStillDispatchedWhileTheSelectorIsDown'],
+    ),
+    dict(
+        id="AX3",
+        what="R3: the GET handshake refuses the whole window, failing the operator's URL "
+             "verification for the length of an index rebuild",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='        if (connector == null || !connector.isEnabled()\n                || !"dropbox".equals(connector.getSourceSystem())',
+        replace='        if (!selectorAnswered || connector == null || !connector.isEnabled()\n                || !"dropbox".equals(connector.getSourceSystem())',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['theHandshakeStillEchoesWhileTheSelectorIsDown'],
     ),
 ]
 
