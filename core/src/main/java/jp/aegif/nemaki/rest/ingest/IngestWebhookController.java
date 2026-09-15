@@ -162,7 +162,9 @@ public class IngestWebhookController {
             // real signature failure and sends an operator after the wrong secret. A read
             // that did not answer is 503 here; absence stays 401. No index-free walk is
             // made for that: this runs before the signature is verified, and a walk of the
-            // configuration database per unauthenticated request is an amplifier. What
+            // configuration database per unauthenticated request is an amplifier (the walk
+            // that establishes uniqueness is step 5, after the signature and the rate
+            // limit). What
             // this leaves as 401 is a legacy-id row the selector answered WITHOUT (see
             // getOrRefuse's contract): one the startup migration could not rewrite, or one
             // written after its last pass and not reported until the next. What the 503
@@ -219,6 +221,25 @@ public class IngestWebhookController {
         if (isWebhookRateLimited(connectorId)) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                     .body(Map.of("error", "Webhook rate limit exceeded"));
+        }
+
+        // 5. Only now — authenticated and rate limited — establish that the row this request
+        // was verified against is the ONLY row defining the connector. Step 1 answered
+        // whichever row the index showed; a pair of which one row is hidden, or a legacy-id
+        // row beside the deterministic one, would run with that row's secret and enabled
+        // state by the accident of index order (R2). The walk is not made before the
+        // signature: one unauthenticated request must not cost a walk of the configuration
+        // database (dece81f7d withdrew exactly that) — which is also why an event signed
+        // with the HIDDEN row's secret still answers 401 above, not 503.
+        try {
+            connectorDefinitionService.refuseUnlessUniquelyDefined(connectorId);
+        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException notAlone) {
+            // Not "retry shortly": a standing pair stays until an administrator repairs it,
+            // and a walk that did not answer is the store, not the sender. The reason is in
+            // the log, not in the body.
+            logger.error("Webhook for {} not dispatched: {}", connectorId, notAlone.getMessage());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("error", "Connector definition could not be resolved"));
         }
 
         // 4. Parse and dispatch payload
@@ -1102,6 +1123,9 @@ public class IngestWebhookController {
         // become 503 here. Recorded as a residual since round 3; two reviewers raised it again.
         ConnectorDefinition connector = connectorDefinitionService.getOrRefuse(connectorId);
         if (connector == null) return notFound("Connector not found: " + connectorId);
+        // Admin-gated, so the walk is afforded here: a subscription made with whichever row
+        // the index showed is the choice R2 closes. A refusal is the class handler's 503.
+        connectorDefinitionService.refuseUnlessUniquelyDefined(connectorId);
 
         String system = connector.getSourceSystem();
         if (!"teams".equals(system) && !"m365_mail".equals(system)) {
@@ -1197,6 +1221,7 @@ public class IngestWebhookController {
         // getOrRefuse: see createSubscription. A failed read is not "not found".
         ConnectorDefinition connector = connectorDefinitionService.getOrRefuse(connectorId);
         if (connector == null) return notFound("Connector not found");
+        connectorDefinitionService.refuseUnlessUniquelyDefined(connectorId); // see createSubscription
 
         String token = resolveToken(connector);
         if (token == null) return badRequest("No access token");

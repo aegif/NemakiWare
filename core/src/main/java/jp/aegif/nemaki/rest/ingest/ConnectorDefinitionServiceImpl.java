@@ -107,7 +107,9 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
                     // enabled state chosen by Mango ordering. The service's own rule is
                     // that the runtime refuses a pair; a review found this read not
                     // applying it. A pair of which only one row is visible is not seen
-                    // here (this read does not walk), as everywhere the walk is not afforded.
+                    // here: this read does not walk, because the receiver makes it before
+                    // the signature is verified. The receiver establishes uniqueness once the
+                    // request is authenticated (refuseUnlessUniquelyDefined, R2).
                     throw new ConnectorIndexNotReadyException("connector " + connectorId
                             + " has " + definitionsOf(connectorId, results)
                             + " definition rows; refusing to run with whichever the index"
@@ -1347,6 +1349,33 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
             }
         });
         return found[0];
+    }
+
+    @Override
+    public void refuseUnlessUniquelyDefined(String connectorId) {
+        int defined;
+        try {
+            CloudantClientWrapper client = getConfClient();
+            defined = countConnectorRowsIndexFree(client.getClient(), client.getDatabaseName(),
+                    connectorId);
+        } catch (RuntimeException unprovable) {
+            // A row the walk could not classify, a walk that did not answer
+            // (WalkDidNotAnswerException), or no conf client on this node: none of them
+            // establishes uniqueness, and a claim of it made without them is not a claim.
+            throw new ConnectorIndexNotReadyException("the uniqueness of connector "
+                    + connectorId + " could not be established: " + unprovable.getMessage());
+        }
+        if (defined > 1) {
+            throw new ConnectorIndexNotReadyException("connector " + connectorId + " has "
+                    + defined + " definition rows; refusing to run with whichever the index"
+                    + " showed");
+        }
+        if (defined == 0) {
+            // The walk does not show the row the index returned: the two views disagree,
+            // and nothing establishes which is right. Not "unique".
+            throw new ConnectorIndexNotReadyException("connector " + connectorId + " was"
+                    + " returned by the index but the walk shows no row defining it");
+        }
     }
 
     private CloudantClientWrapper getConfClient() {

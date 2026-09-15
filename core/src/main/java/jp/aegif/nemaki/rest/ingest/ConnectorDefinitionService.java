@@ -79,6 +79,25 @@ public interface ConnectorDefinitionService {
      */
     ConnectorDefinition getOrRefuse(String connectorId);
 
+    /**
+     * Establishes from {@code _all_docs} — not the Mango index, so it answers while that
+     * index rebuilds — that exactly one row defines this connector: the row
+     * {@link #getOrRefuse} answered. A pair of which the index showed one row, or a legacy-id
+     * row beside the deterministic one, REFUSES: running with whichever row a read happened
+     * to find, its secret and enabled state chosen by index order, is the choice the
+     * service's own rule forbids (R2). {@code getOrRefuse} itself does not walk: the receiver
+     * reads it before the signature is verified, and a walk of the configuration database per
+     * unauthenticated request is an amplifier (a walk placed there was withdrawn in
+     * {@code dece81f7d}), so callers make this call only once the request is authenticated
+     * and rate limited. One walk of nemaki_conf per call.
+     *
+     * @throws ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException when two or more
+     *         rows define the connector, when the walk shows none (the index and the walk
+     *         disagree, and nothing establishes which is right), or when the walk could not
+     *         be completed or a row of it could not be read
+     */
+    void refuseUnlessUniquelyDefined(String connectorId);
+
     List<ConnectorDefinition> list();
     List<ConnectorDefinition> listByArchetype(SourceArchetype archetype);
     ConnectorDefinition update(ConnectorDefinition def);
