@@ -2236,7 +2236,8 @@ CONTROLS = [
         replace='            if (listing == null || listing.getRows() == null) {\n                break;\n            }',
         test='ConnectorLegacyIdMigrationTest',
         expect_fail=['anUnansweredListingRefuses',
-                     'aPostDeleteCountThatCannotAnswerReportsMinusOne'],
+                     'aPostDeleteCountThatCannotAnswerReportsMinusOne',
+                     'aWalkThatDidNotAnswerRefuses'],
     ),
     dict(
         id="OW",
@@ -3850,7 +3851,10 @@ CONTROLS = [
                      'aStartWhoseDelegatedAuthorisationCouldNotBeAskedIsNotADenial',
                      'aSuccessfulIdleImportRecordsNothing',
                      'anIdleImportThatAnsweredNoIsRecorded',
-                     'anIdleRefusalThatCouldNotBeRecordedIsCounted'],
+                     'anIdleRefusalThatCouldNotBeRecordedIsCounted',
+                     'aFailureTheDlqCouldNotTakeIsCounted',
+                     'aFetchThatThrewIsRecordedAsNeverRead',
+                     'anImportThatThrewIsRecordedAsRead'],
     ),
     dict(
         id="UD",
@@ -4190,7 +4194,9 @@ CONTROLS = [
                      'optInOn_creatorLostCmisAll_skipsAndDoesNotFetch',
                      'optInOn_inactiveCreator_doesNotEmitLegacyOptOutWarn',
                      'targetFolderDisappearsBetweenTicks_emitsTargetFolderUnresolvable_notConnectorNotDelegated',
-                     'targetFolderResolves_butConnectorNoLongerDelegated_stillEmitsConnectorNotDelegated'],
+                     'targetFolderResolves_butConnectorNoLongerDelegated_stillEmitsConnectorNotDelegated',
+                     'aCmisAllReadThatFailedIsNotALoss',
+                     'aTargetFolderReadThatFailedIsNotUnresolvable'],
     ),
     dict(
         id="VE",
@@ -4476,7 +4482,10 @@ CONTROLS = [
                      'aBrokenRowWhoseArchetypesExcludeTheConnectorDoesNotStopTheDispatch',
                      'aBrokenRowWhoseConnectorFieldsCannotBeReadButWhoseArchetypesExcludeTheConnectorDoesNotStopTheDispatch',
                      'boxEvent_fileUploaded_validSignature_triggersFetch',
-                     'dropboxNotification_validSignature_triggersFetch'],
+                     'dropboxNotification_validSignature_triggersFetch',
+                     'aFetchThatCouldNotReadItsConfigurationIsRecorded',
+                     'anAuthorisationThatCouldNotBeAskedIsRecordedAsAWebhookDeliveryRecord',
+                     'theWalkIsMadeOnceTheSignatureVerified'],
     ),
     dict(
         id="VY",
@@ -4920,7 +4929,11 @@ CONTROLS = [
                      'boxEvent_fileUploaded_validSignature_triggersFetch',
                      'boxEvent_nonFileTrigger_ignored',
                      'dropboxNotification_validSignature_triggersFetch',
-                     'theRecipientsAreReadFromTheWalkNotTheSelector'],
+                     'theRecipientsAreReadFromTheWalkNotTheSelector',
+                     'aFetchThatCouldNotReadItsConfigurationIsRecorded',
+                     'aPairHiddenFromTheIndexIsRefusedAfterTheSignature',
+                     'anAuthorisationThatCouldNotBeAskedIsRecordedAsAWebhookDeliveryRecord',
+                     'theWalkIsMadeOnceTheSignatureVerified'],
     ),
     dict(
         id="XE",
@@ -6263,7 +6276,8 @@ CONTROLS = [
         # exited non-zero listing them. A review enumerated the whole suite for this
         # shape rather than one round at a time.
         expect_fail=['theTriggerEndpointSplitsByReason',
-                     'anUnwiredWalkServiceDoesNotFabricateAbsence'],
+                     'anUnwiredWalkServiceDoesNotFabricateAbsence',
+                     'aRefusedListingIs503OnTrigger'],
     ),
     dict(
         id="RR2",
@@ -6376,7 +6390,8 @@ CONTROLS = [
                 '        switch (resolution.why()) {\n',
         test='FolderConnectorControllerTest',
         expect_fail=['run_connectorCouldNotBeRead_is503NotBadRequest',
-                     'run_connectorEstablishedAbsent_is404_andHidden_is503'],
+                     'run_connectorEstablishedAbsent_is404_andHidden_is503',
+                     'aRefusedListingIs503OnRun'],
     ),
     dict(
         id="SA2",
@@ -6566,16 +6581,16 @@ CONTROLS = [
              '                earlierPayloadIsStillAttached = storedDocumentHasAttachment(dlqId);\n',
         replace='                // document, so it is read from the document rather than assumed absent.\n',
         test='DlqReplayArchetypeGateTest',
-        # The two beyond the first ARE measured — but not for the reason first written here.
-        # A review showed why: the fixture answers postFind by CALL INDEX, so deleting this
-        # call shifts upsertDocument's own read onto the throwing index and nothing is written
-        # at all. Both probe outcomes reachable from that fixture already return null, so the
-        # merge input is unchanged by this sabotage. Recorded as a trap: harden the fixture to
-        # answer by selector and SN2 becomes WRONG TEST FIRED while the protection stands.
-        expect_fail=['writingOverAnUnreadableRowKeepsTheAttachedPayload',
-                     'aProbeThatThrewIsNotAnAnsweredAbsence',
-                     'anUnreadableRowDoesNotResetTheFailureHistory',
-                     'aByteLessSaveOverAnUnreadableRowKeepsTheDoorShut'],
+        # Three collateral locks used to fail under this sabotage as well, and the note here
+        # said why: the fixture answers postFind by CALL INDEX, so removing this call shifted
+        # upsertDocument's OWN read onto the throwing index and nothing was written at all.
+        # That note predicted the coupling would end if the fixture were hardened. It ended
+        # for a different reason — the CAS write (R1, batch 3) conditions on the revision the
+        # save already read instead of re-reading, so there is no second read to shift — and
+        # the 2026-09-15/16 sweep reported this control as DID NOT FIRE with only the lock
+        # below failing. The three are measured by SI2, UH2, UJ2 and XV2, all of which fired
+        # in that same sweep; declaring them here would claim a coupling that is gone.
+        expect_fail=['writingOverAnUnreadableRowKeepsTheAttachedPayload'],
     ),
     dict(
         id="SO2",
@@ -6815,7 +6830,8 @@ CONTROLS = [
         # ends in "; retry shortly" and asserts 503 through this very arm.
         expect_fail=['aTargetFolderReadThatCouldNotAnswerKeepsItsRetryMarker',
                      'aFailedProfileReadWhoseCauseSaysNotFound_isStill503NotA404',
-                     'anIdempotencyRecordThatCouldNotBeReadRefuses_ratherThanReplacing'],
+                     'anIdempotencyRecordThatCouldNotBeReadRefuses_ratherThanReplacing',
+                     'anUnwiredSettingsServiceIsNotNoIdempotencyRecord'],
     ),
     dict(
         id="UH2",
@@ -7067,7 +7083,10 @@ CONTROLS = [
         expect_fail=['aCredentialReadThatFailedIsNotAConnectionChange',
                      'aSuccessfulIdleImportRecordsNothing',
                      'anIdleImportThatAnsweredNoIsRecorded',
-                     'anIdleRefusalThatCouldNotBeRecordedIsCounted'],
+                     'anIdleRefusalThatCouldNotBeRecordedIsCounted',
+                     'aFailureTheDlqCouldNotTakeIsCounted',
+                     'aFetchThatThrewIsRecordedAsNeverRead',
+                     'anImportThatThrewIsRecordedAsRead'],
     ),
     dict(
         id="VD2",
