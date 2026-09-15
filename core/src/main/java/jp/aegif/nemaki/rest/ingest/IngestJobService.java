@@ -1335,7 +1335,17 @@ public class IngestJobService {
         if (skip > 0) {
             builder.skip((long) skip);
         }
-        FindResult findResult = cloudant.postFind(builder.build()).execute().getResult();
+        FindResult findResult;
+        try {
+            findResult = cloudant.postFind(builder.build()).execute().getResult();
+        } catch (RuntimeException couldNotAsk) {
+            // Raw, a transport failure here reached the DELETE endpoint as a Spring 500 and
+            // the retry door's cleanup as 500 "Retry failed" — the sibling of the null-list
+            // case below, left unwrapped when that one was typed (R40).
+            throw new IngestStoreDidNotAnswerException("the ingest store did not answer the"
+                    + " query for " + selector.keySet() + "; retry shortly: "
+                    + couldNotAsk.getMessage());
+        }
         List<Document> docs = findResult == null ? null : findResult.getDocs();
         // A response without a document list is the store NOT ANSWERING — NemakiConfFind
         // defines the same shape that way and refuses. Here it was collapsed into "there are
@@ -1359,7 +1369,12 @@ public class IngestJobService {
     private CloudantClientWrapper getConfClient() {
         CloudantClientWrapper client = connectorPool.getClient(SystemConst.NEMAKI_CONF_DB);
         if (client == null) {
-            throw new IllegalStateException("nemaki_conf database client not available");
+            // Unwired is "could not ask", typed like every other answer this store fails to
+            // give — an IllegalStateException here became a 500 in front of the same
+            // endpoints (R40).
+            throw new IngestStoreDidNotAnswerException("the ingest store is not wired on this"
+                    + " node (nemaki_conf database client not available); retry shortly against"
+                    + " a node that runs it");
         }
         return client;
     }

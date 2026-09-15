@@ -209,6 +209,9 @@ public class ImapIdleMonitor {
                     return;
                 }
                 imap.startIdle(mailbox, msg -> {
+                    // Null until the message was fetched: the catch below records a failure
+                    // before that point as "source never read" and after it as a read one.
+                    ExternalIngestRequest req = null;
                     try {
                         // Re-read AND re-authorize on every message. The start-time
                         // snapshot used to be reused: a later folder change or
@@ -355,7 +358,7 @@ public class ImapIdleMonitor {
                             idleCtx = auth.getCallContext();
                         }
                         java.io.InputStream eml = imap.fetchMessage(mailbox, msg.uid());
-                        ExternalIngestRequest req = new ExternalIngestRequest();
+                        req = new ExternalIngestRequest();
                         req.setProfileId(profileId);
                         req.setConnectorId(now.connector().getConnectorId());
                         req.setRepositoryId(now.profile().getRepositoryId());
@@ -381,7 +384,16 @@ public class ImapIdleMonitor {
                             recordRefusedIdleImport(profileId, mailbox, msg, req, outcome);
                         }
                     } catch (Exception e) {
-                        logger.error("IDLE: failed to import message {}: {}", msg.uid(), e.getMessage());
+                        // Not only logged. fetchMessage's I/O failure, a config read that
+                        // threw, an exception escaping the import — IMAP re-delivers none of
+                        // them and the UID checkpoint has not moved. Recorded like the arms
+                        // above. NOT a double write: the import dead-letters its own failures
+                        // inside execute() and RETURNS them as results (recorded through
+                        // recordRefusedIdleImport), so an exception that reaches this catch
+                        // was recorded by nobody (R39).
+                        recordIdleFailure(profileId, connector.getConnectorId(),
+                                session.repositoryId(), mailbox, msg, req,
+                                "IDLE: the message could not be imported: " + e.getMessage());
                     }
                 });
             } catch (Exception e) {
@@ -435,6 +447,43 @@ public class ImapIdleMonitor {
         logger.error("IDLE: message {} from {} was NOT imported ({}); the miss {} recorded."
                 + " The UID checkpoint has not moved, so re-fetch the mailbox to recover",
                 msg.stableKey(), mailbox, why, missRecorded ? "was" : "could NOT be");
+    }
+
+    /**
+     * A message the listener could not import because something THREW — before the fetch
+     * (nothing of the source was read: a never-read record, as the authorisation arms write)
+     * or after it (a metadata-only row of a read source). Either way the row is a RECORD of
+     * the miss, not a replayable item; the counter takes it when the row cannot be written.
+     */
+    private void recordIdleFailure(String profileId, String connectorId, String repositoryId,
+            String mailbox, ImapConnectorAdapter.MessageSummary msg, ExternalIngestRequest read,
+            String why) {
+        boolean failureRecorded = false;
+        if (fetchSupport != null) {
+            if (read != null) {
+                failureRecorded = fetchSupport.saveSourceReadToDlq(read, why);
+            } else {
+                ExternalIngestRequest missed = new ExternalIngestRequest();
+                missed.setProfileId(profileId);
+                missed.setConnectorId(connectorId);
+                missed.setRepositoryId(repositoryId);
+                missed.setSourceObjectId(msg.stableKey());
+                missed.setSourceObjectType("message");
+                missed.setExecutionMode("idle");
+                Map<String, Object> meta = new LinkedHashMap<>();
+                meta.put("mailboxId", mailbox);
+                meta.put("messageStableId", msg.stableKey());
+                missed.setMetadata(meta);
+                failureRecorded = fetchSupport.saveSourceNeverReadToDlq(missed, "[transient] " + why);
+            }
+        }
+        if (!failureRecorded) {
+            undurableMisses.computeIfAbsent(profileId,
+                    k -> new java.util.concurrent.atomic.AtomicInteger()).incrementAndGet();
+        }
+        logger.error("IDLE: message {} from {} could not be imported ({}); the miss {} recorded."
+                + " The UID checkpoint has not moved, so re-fetch the mailbox to recover",
+                msg.stableKey(), mailbox, why, failureRecorded ? "was" : "could NOT be");
     }
 
     /**
