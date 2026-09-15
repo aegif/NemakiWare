@@ -2618,4 +2618,52 @@ class ConnectorLegacyIdMigrationTest {
         assertEquals("Only", only == null ? null : only.getDisplayName());
         verify(cloudant, never()).postAllDocs(any(PostAllDocsOptions.class));
     }
+
+    // ── R3: the read reports whether the SELECTOR answered it ──
+
+    @Test
+    @DisplayName("R3: a read the selector could not answer says so")
+    void resolveOrRefuseSaysTheSelectorDidNotAnswer() {
+        wire();
+        selectorListingDoesNotAnswer();
+        deterministicRowIsReadable("c-late");
+
+        ConnectorDefinitionService.Resolution resolved = assertDoesNotThrow(
+                () -> service.resolveOrRefuse("c-late"),
+                "an incomplete selector listing refused over a readable deterministic row");
+        assertEquals("c-late", resolved.connector() == null
+                ? null : resolved.connector().getConnectorId(),
+                "the deterministic row was not the answer");
+        assertFalse(resolved.selectorAnswered(),
+                "the selector did not answer this read and the resolution says it did — the"
+                        + " receiver reads this to decide whether its 401 discloses");
+    }
+
+    @Test
+    @DisplayName("R3: a read the selector DID answer says so (the over-throw guard)")
+    void resolveOrRefuseSaysTheSelectorAnswered() {
+        wire();
+        selectorShows(row("connector_definition:c-one", connectorProps("c-one", "Only"), "1-a"));
+
+        ConnectorDefinitionService.Resolution resolved = assertDoesNotThrow(
+                () -> service.resolveOrRefuse("c-one"), "a healthy read refused");
+        assertEquals("Only", resolved.connector() == null
+                ? null : resolved.connector().getDisplayName());
+        assertTrue(resolved.selectorAnswered(),
+                "the selector answered and the resolution says it did not — every refusable"
+                        + " answer of the receiver would turn into 503");
+    }
+
+    @Test
+    @DisplayName("R3: a read that was never made has no selector answer to report")
+    void aReadThatWasNeverMadeHasNoSelectorAnswer() {
+        wire();
+
+        ConnectorDefinitionService.Resolution resolved = assertDoesNotThrow(
+                () -> service.resolveOrRefuse(null), "a null id threw instead of answering");
+        assertEquals(null, resolved.connector());
+        assertFalse(resolved.selectorAnswered(),
+                "\"could not ask\" was handed out with the value of \"asked, and the answer"
+                        + " was no\"");
+    }
 }

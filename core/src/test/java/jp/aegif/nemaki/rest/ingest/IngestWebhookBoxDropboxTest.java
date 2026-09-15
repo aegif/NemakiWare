@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -73,9 +74,13 @@ class IngestWebhookBoxDropboxTest {
         c.setSourceSystem(system);
         c.setSourceArchetype(SourceArchetype.FILE_SHARE);
         c.setWebhookSecret(secret);
-        // The receiver reads through getOrRefuse; get() is left unstubbed so a receiver that
-        // went back to it would find no connector here.
+        // The receiver reads through resolveOrRefuse (the admin-gated subscription verbs
+        // still use getOrRefuse); get() is left unstubbed so a receiver that went back to it
+        // would find no connector here. selectorAnswered = true is the ordinary case — the
+        // window tests below say otherwise, explicitly.
         when(connectorDefinitionService.getOrRefuse(id)).thenReturn(c);
+        when(connectorDefinitionService.resolveOrRefuse(id))
+                .thenReturn(new ConnectorDefinitionService.Resolution(c, true));
         return c;
     }
 
@@ -271,7 +276,7 @@ class IngestWebhookBoxDropboxTest {
         // failed read too, and answered 401 — "your signature is wrong" — for a read that
         // did not answer; and a read that threw sat outside the guarded try (500). No
         // index-free walk is made here: a walk per unauthenticated request is an amplifier.
-        when(connectorDefinitionService.getOrRefuse("c-unanswered")).thenThrow(
+        when(connectorDefinitionService.resolveOrRefuse("c-unanswered")).thenThrow(
                 new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
                         "connector c-unanswered could not be read, so whether it exists cannot"
                                 + " be established"));
@@ -291,7 +296,8 @@ class IngestWebhookBoxDropboxTest {
         // The control: a connector that both reads answered "no such row" for keeps the
         // uniform 401, so the status code still does not enumerate ids — and no walk is
         // made to second-guess the answer.
-        when(connectorDefinitionService.getOrRefuse("c-nobody")).thenReturn(null);
+        when(connectorDefinitionService.resolveOrRefuse("c-nobody"))
+                .thenReturn(new ConnectorDefinitionService.Resolution(null, true));
 
         mockMvc.perform(signedDropboxPost("c-nobody", "irrelevant"))
                 .andExpect(status().isUnauthorized());
@@ -303,7 +309,7 @@ class IngestWebhookBoxDropboxTest {
         // The Dropbox URL-verification GET resolved the connector the same way and answered
         // 404 for a read that did not answer — failing the operator's verification as if the
         // id were wrong.
-        when(connectorDefinitionService.getOrRefuse("c-unanswered")).thenThrow(
+        when(connectorDefinitionService.resolveOrRefuse("c-unanswered")).thenThrow(
                 new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
                         "connector c-unanswered could not be read"));
 
@@ -315,7 +321,8 @@ class IngestWebhookBoxDropboxTest {
 
     @Test
     void theHandshakeStill404sAnAbsentConnector() throws Exception {
-        when(connectorDefinitionService.getOrRefuse("c-nobody")).thenReturn(null);
+        when(connectorDefinitionService.resolveOrRefuse("c-nobody"))
+                .thenReturn(new ConnectorDefinitionService.Resolution(null, true));
 
         mockMvc.perform(get("/v1/ingest-webhook/c-nobody").param("challenge", "abc123"))
                 .andExpect(status().isNotFound());
@@ -672,5 +679,146 @@ class IngestWebhookBoxDropboxTest {
                         .andExpect(status().isServiceUnavailable()),
                 "a subscription was deleted with whichever row the index showed, or the"
                         + " refusal escaped as a 500");
+    }
+
+    // ── R3: while the selector is down, every refusable answer is the SAME answer ──
+
+    /** The connector was read while the Mango selector was down (R3's window). */
+    private void readWhileTheSelectorWasDown(String id, ConnectorDefinition c) {
+        when(connectorDefinitionService.resolveOrRefuse(id))
+                .thenReturn(new ConnectorDefinitionService.Resolution(c, false));
+    }
+
+    /**
+     * The answer a read that could not be answered produces. The window's answers have to be
+     * THIS, body and all: a status that matches and a body that does not is still a pair an
+     * unauthenticated caller can separate.
+     */
+    private String whatARefusedReadAnswers() throws Exception {
+        when(connectorDefinitionService.resolveOrRefuse("c-refused")).thenThrow(
+                new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                        "connector c-refused could not be read"));
+        return mockMvc.perform(signedDropboxPost("c-refused", "irrelevant"))
+                .andExpect(status().isServiceUnavailable())
+                .andReturn().getResponse().getContentAsString();
+    }
+
+    private String whatARefusedHandshakeAnswers() throws Exception {
+        when(connectorDefinitionService.resolveOrRefuse("c-refused-get")).thenThrow(
+                new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                        "connector c-refused-get could not be read"));
+        return mockMvc.perform(get("/v1/ingest-webhook/c-refused-get").param("challenge", "abc123"))
+                .andExpect(status().isServiceUnavailable())
+                .andReturn().getResponse().getContentAsString();
+    }
+
+    @Test
+    void aFailedSignatureIsTheRefusedReadsAnswerWhileTheSelectorIsDown() throws Exception {
+        // (selector down, healthy deterministic row) answered 401 while (selector down, no
+        // row) refused with 503, so one unauthenticated request told an id that has a
+        // readable row from one that has none — the single thing this front door's
+        // disclosure analysis keeps out of the answer (R3).
+        String refused = whatARefusedReadAnswers();
+        ConnectorDefinition c = connector("c-window", "dropbox", "the-real-secret");
+        readWhileTheSelectorWasDown("c-window", c);
+        when(httpRequest.getHeader("X-Dropbox-Signature")).thenReturn("not-the-signature");
+
+        String answered = mockMvc.perform(post("/v1/ingest-webhook/c-window")
+                        .contentType(MediaType.APPLICATION_JSON).content(DROPBOX_BODY))
+                .andExpect(status().isServiceUnavailable())
+                .andReturn().getResponse().getContentAsString();
+        assertEquals(refused, answered,
+                "the window's answer can be told apart from a read that could not be answered");
+    }
+
+    @Test
+    void aDisabledConnectorIsTheRefusedReadsAnswerWhileTheSelectorIsDown() throws Exception {
+        String refused = whatARefusedReadAnswers();
+        ConnectorDefinition c = connector("c-off", "dropbox", "s");
+        c.setEnabled(false);
+        readWhileTheSelectorWasDown("c-off", c);
+
+        String answered = mockMvc.perform(signedDropboxPost("c-off", "s"))
+                .andExpect(status().isServiceUnavailable())
+                .andReturn().getResponse().getContentAsString();
+        assertEquals(refused, answered,
+                "a disabled row in the window can be told apart from a refused read");
+    }
+
+    @Test
+    void aFailedSignatureIsStill401WhenTheSelectorAnswered() throws Exception {
+        // The over-throw guard. Outside the window absence and a failed signature are both
+        // 401 and nothing separates them; answering 503 there would tell every sender with a
+        // stale secret to retry forever.
+        connector("c-dbx", "dropbox", "the-real-secret");
+        when(httpRequest.getHeader("X-Dropbox-Signature")).thenReturn("not-the-signature");
+
+        mockMvc.perform(post("/v1/ingest-webhook/c-dbx")
+                        .contentType(MediaType.APPLICATION_JSON).content(DROPBOX_BODY))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void aDisabledConnectorIsStill401WhenTheSelectorAnswered() throws Exception {
+        ConnectorDefinition c = connector("c-off", "dropbox", "s");
+        c.setEnabled(false);
+
+        mockMvc.perform(signedDropboxPost("c-off", "s"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void theRightSecretIsStillDispatchedWhileTheSelectorIsDown() throws Exception {
+        // The price this closing does NOT pay: a sender holding the right secret goes through
+        // the window exactly as before. Refusing the whole window would have stopped it.
+        String secret = "dbxsecret";
+        ConnectorDefinition c = connector("c-dbx", "dropbox", secret);
+        profileFor("c-dbx", Map.of("folderPath", "/Documents"));
+        readWhileTheSelectorWasDown("c-dbx", c);
+
+        mockMvc.perform(signedDropboxPost("c-dbx", secret))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("\"status\":\"accepted\"")));
+        verify(schedulerService).authorizeDelegatedFetch(any(), any());
+    }
+
+    @Test
+    void theHandshakeIsTheRefusedReadsAnswerWhileTheSelectorIsDown() throws Exception {
+        // The GET side of the same window: its uniform 404 stood beside the read's 503 and
+        // separated the same two classes. Closing only the POST would have left it open.
+        String refused = whatARefusedHandshakeAnswers();
+        ConnectorDefinition c = connector("c-not-dbx", "slack", "s");
+        readWhileTheSelectorWasDown("c-not-dbx", c);
+
+        String answered = mockMvc.perform(get("/v1/ingest-webhook/c-not-dbx")
+                        .param("challenge", "abc123"))
+                .andExpect(status().isServiceUnavailable())
+                .andReturn().getResponse().getContentAsString();
+        assertEquals(refused, answered,
+                "the handshake's window answer can be told apart from a refused read");
+    }
+
+    @Test
+    void theHandshakeIsStill404WhenTheSelectorAnswered() throws Exception {
+        // The over-throw guard for the handshake: outside the window a connector that is not
+        // an enabled Dropbox one is still a plain 404, as the operator's URL verification and
+        // every existing caller expect.
+        connector("c-not-dbx", "slack", "s");
+
+        mockMvc.perform(get("/v1/ingest-webhook/c-not-dbx").param("challenge", "abc123"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void theHandshakeStillEchoesWhileTheSelectorIsDown() throws Exception {
+        // The handshake's OWN disclosure is unchanged and predates this: an enabled Dropbox
+        // connector answers the challenge in the window as outside it. Refusing it here would
+        // fail the operator's URL verification for the length of an index rebuild.
+        ConnectorDefinition c = connector("c-dbx", "dropbox", "s");
+        readWhileTheSelectorWasDown("c-dbx", c);
+
+        mockMvc.perform(get("/v1/ingest-webhook/c-dbx").param("challenge", "abc123"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("abc123"));
     }
 }
