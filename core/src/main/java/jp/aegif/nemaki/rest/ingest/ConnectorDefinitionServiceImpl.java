@@ -46,11 +46,16 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
 
     @Override
     public ConnectorDefinition get(String connectorId) {
-        return read(connectorId, false);
+        return read(connectorId, false).connector();
     }
 
     @Override
     public ConnectorDefinition getOrRefuse(String connectorId) {
+        return read(connectorId, true).connector();
+    }
+
+    @Override
+    public Resolution resolveOrRefuse(String connectorId) {
         return read(connectorId, true);
     }
 
@@ -62,12 +67,16 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
      * webhook receiver may not walk the database for an unauthenticated request, so it has
      * nothing to follow a null with.
      */
-    private ConnectorDefinition read(String connectorId, boolean refuseUnanswered) {
+    private Resolution read(String connectorId, boolean refuseUnanswered) {
         // Null means "no such connector", not a crash: Map.of rejects null values with an NPE,
         // so an ingest request that simply omits connectorId used to answer 500 with a stack
         // trace, while a WRONG id answered a clean 404. Callers already treat null as
         // not-found. findBySystemAndArchetype below has guarded this way all along.
-        if (connectorId == null) return null;
+        // selectorAnswered is FALSE here: no read was made, so there is no selector answer to
+        // report. Saying "it answered" would hand "could not ask" out with the value of
+        // "asked, and the answer was no" — the defect this batch is named after, in the field
+        // the receiver's disclosure decision reads (R3).
+        if (connectorId == null) return new Resolution(null, false);
         // WRAPPED, like the profile twin: an unwrapped Mango read that threw escaped as a raw
         // RuntimeException and became a 500 in front of verbs this batch made index-free. A
         // failed selector is not an answer — fall through to the id-addressed read.
@@ -115,7 +124,7 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
                             + " definition rows; refusing to run with whichever the index"
                             + " listed first");
                 }
-                return first;
+                return new Resolution(first, selectorAnswered);
             }
         }
         // The profile twin of this fallback, mirrored: a selector that answers nothing while
@@ -137,14 +146,14 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
                             + " exists under its deterministic id, so a row under a legacy id"
                             + " cannot be excluded");
                 }
-                return null;
+                return new Resolution(null, selectorAnswered);
             }
             ConnectorDefinition fromId = fromRawDoc(row);
             if (fromId == null || !connectorId.equals(fromId.getConnectorId())) {
                 throw new ConnectorIndexNotReadyException("connector " + connectorId
                         + " exists but could not be read as that connector");
             }
-            return fromId;
+            return new Resolution(fromId, selectorAnswered);
         } catch (ConnectorIndexNotReadyException mismatch) {
             throw mismatch;
         } catch (RuntimeException idReadFailed) {
@@ -166,7 +175,7 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
             // "Could not ask" is kept apart from "no" by existsIndexFree, which refuses.
             logger.debug("id-addressed fallback for connector {} failed: {}", connectorId,
                     idReadFailed.getMessage());
-            return null;
+            return new Resolution(null, selectorAnswered);
         }
     }
 

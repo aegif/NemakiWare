@@ -155,6 +155,7 @@ public class IngestWebhookController {
         // 1. Resolve connector — return uniform 401 for not-found/disabled to prevent
         // connector ID enumeration via status code differences
         ConnectorDefinition connector;
+        boolean selectorAnswered;
         try {
             // getOrRefuse, not get: get() answers null for a failed id-addressed read as
             // well as for absence, and this receiver answered 401 for both — "your
@@ -176,15 +177,20 @@ public class IngestWebhookController {
             // and the Dropbox GET challenge (recorded on that GET's javadoc) disclose an
             // enabled connector's existence without a signature — protocol requirements
             // that predate this read.
-            connector = connectorDefinitionService.getOrRefuse(connectorId);
+            ConnectorDefinitionService.Resolution resolved =
+                    connectorDefinitionService.resolveOrRefuse(connectorId);
+            connector = resolved.connector();
+            // Kept for the refusable answers below: while the selector is down, a 401 beside
+            // this read's 503 separates present from absent (R3).
+            selectorAnswered = resolved.selectorAnswered();
         } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotRead) {
             // A row that exists and could not be read as this connector, or a read that
             // did not answer. This sat outside the try below and escaped as a Spring 500.
             return connectorCouldNotBeRead(connectorId, couldNotRead.getMessage());
         }
         if (connector == null || !connector.isEnabled()) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "Signature verification failed"));
+            return unauthorizedUnlessTheSelectorWasDown(connectorId, selectorAnswered,
+                    "no connector, or a disabled one, at this id");
         }
 
         String system = connector.getSourceSystem();
@@ -213,8 +219,8 @@ public class IngestWebhookController {
         // 3. Verify signature FIRST (before processing any payload)
         if (!verifySignature(connector, rawBody)) {
             logger.warn("Webhook signature verification failed for connector {}", connectorId);
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "Signature verification failed"));
+            return unauthorizedUnlessTheSelectorWasDown(connectorId, selectorAnswered,
+                    "the signature did not verify");
         }
 
         // 4. Rate limit AFTER signature verification to prevent unauthenticated exhaustion
@@ -311,10 +317,14 @@ public class IngestWebhookController {
             @PathVariable String connectorId,
             @RequestParam(value = "challenge", required = false) String challenge) {
         ConnectorDefinition connector;
+        boolean selectorAnswered;
         try {
             // As in receiveWebhook: a read that did not answer is not "no such connector",
             // and a 404 here fails the operator's URL verification as if the id were wrong.
-            connector = connectorDefinitionService.getOrRefuse(connectorId);
+            ConnectorDefinitionService.Resolution resolved =
+                    connectorDefinitionService.resolveOrRefuse(connectorId);
+            connector = resolved.connector();
+            selectorAnswered = resolved.selectorAnswered();
         } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotReadOnVerify) {
             return connectorCouldNotBeRead(connectorId, couldNotReadOnVerify.getMessage());
         }
@@ -322,6 +332,15 @@ public class IngestWebhookController {
                 || !"dropbox".equals(connector.getSourceSystem())
                 || challenge == null || challenge.isBlank()
                 || challenge.length() > 1024) {
+            if (!selectorAnswered) {
+                // The same window, for the same reason: while the selector is down this 404
+                // stood beside the read's own 503 and separated present from absent. The
+                // answer is made the read's, body and all (R3). The echo below is unchanged —
+                // an enabled Dropbox connector answers the challenge in this window as
+                // outside it, which is the handshake's own disclosure and predates this.
+                return connectorCouldNotBeRead(connectorId,
+                        "the connector selector was down when the handshake was answered");
+            }
             // Uniform 404 — don't reveal connector existence/type, and bound the
             // echoed value so it can't be used for response amplification.
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
@@ -642,6 +661,37 @@ public class IngestWebhookController {
         RecipientUnreadableException(String message) {
             super(message);
         }
+    }
+
+    /**
+     * The receiver's uniform 401 — unless the Mango selector was DOWN when this connector was
+     * read (R3). While it is, absence REFUSES (a legacy-id row cannot be excluded), so a 401
+     * standing next to that 503 told an unauthenticated caller that a readable
+     * deterministic-id row exists at the id. In that window the refusable answers are made ONE
+     * answer, with the same status and the same body as a read that could not be answered, so
+     * the pair no longer separates present from absent. Outside the window nothing changes:
+     * absence and a failed signature are both 401, as they always were.
+     *
+     * <p>The cost, since it is a real one: while the selector is down, a sender whose signature
+     * is genuinely wrong — and a sender addressing a disabled connector — is told "retry
+     * shortly" instead of "unauthorized"; whether and how often it retries is its own policy.
+     * A sender holding the right secret is not stopped, and the protocol handshakes (Graph's
+     * validationToken echo, the Dropbox GET challenge) disclose an enabled connector's
+     * existence in this window exactly as outside it, so the window is not made silent for
+     * those two systems. Refusing every webhook while the index is down would be; that is the
+     * price this avoids.
+     */
+    private ResponseEntity<?> unauthorizedUnlessTheSelectorWasDown(
+            String connectorId, boolean selectorAnswered, String why) {
+        if (selectorAnswered) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Signature verification failed"));
+        }
+        logger.warn("Webhook for {}: {} — answered as \"could not be read\" because the"
+                + " connector selector was down when it was read, so this answer does not say"
+                + " whether a row exists at the id", connectorId, why);
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(Map.of("error", "Connector could not be read; retry shortly"));
     }
 
     private ResponseEntity<?> connectorCouldNotBeRead(String connectorId, String why) {

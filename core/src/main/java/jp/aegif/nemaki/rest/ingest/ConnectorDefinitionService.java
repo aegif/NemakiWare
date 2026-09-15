@@ -58,18 +58,24 @@ public interface ConnectorDefinitionService {
      * leaves out, is not seen by it); what the receiver then answers (401 for a disabled row
      * or a failed signature; on the GET handshake 404 for a disabled or non-Dropbox connector
      * or a missing, blank or over-long challenge) does not separate absent from present by
-     * this read alone. While the selector is FAILING, a non-503 does mean a readable
+     * this read alone. While the selector is FAILING, THIS READ's non-503 does mean a readable
      * deterministic-id row exists, because absence then refuses (a legacy row cannot be
-     * excluded). The receiver's protocol handshakes disclose more and always did,
+     * excluded) — but the receiver no longer passes that on: in that window it answers a
+     * disabled row, a failed signature and the GET handshake's 404 with the same status and
+     * body as a read that could not be answered (R3, see {@link #resolveOrRefuse}), so an
+     * unauthenticated caller cannot separate the two THROUGH THIS READ's answer — the protocol
+     * handshakes below answer before any signature and still do separate them. The receiver's protocol handshakes
+     * disclose more and always did,
      * independently of this read: an enabled Dropbox connector answers the GET challenge
      * (recorded on that GET), an enabled teams / m365_mail connector echoes
      * {@code validationToken} before any signature (recorded at the receiver's
-     * {@code isMicrosoftGraphSubscriptionValidation}). Refusing whenever the selector fails
-     * would remove the window disclosure at the price of every webhook while the index is
-     * down; answering 503 instead of 401 during that window to a failed signature AND to a
-     * disabled row would remove it on the POST without that price (the GET handshake's 404
-     * would need the same treatment) and is recorded as a follow-up. The caller's decision
-     * was to keep the receiver answering and to say what is revealed.
+     * {@code isMicrosoftGraphSubscriptionValidation}) — in this window as outside it, which
+     * is why closing the 401/404 side does not make the window silent for a Graph or Dropbox
+     * connector. Refusing whenever the selector fails would remove the window disclosure at
+     * the price of every webhook while the index is down; answering as "could not be read"
+     * during that window, to a failed signature and a disabled row and the GET handshake's
+     * refusal, removes it without that price and is what the receiver now does (R3). A sender
+     * holding the right secret is not stopped: its event dispatches exactly as before.
      *
      * @throws ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException when the row
      *         exists but could not be read as this connector, when the id-addressed read
@@ -78,6 +84,27 @@ public interface ConnectorDefinitionService {
      *         or when the selector shows two or more rows that define this connector
      */
     ConnectorDefinition getOrRefuse(String connectorId);
+
+    /**
+     * What {@link #getOrRefuse} answered, plus the one fact its caller cannot recover
+     * afterwards: whether the Mango SELECTOR answered this read.
+     *
+     * <p>It decides an answer, not a row. While the selector is down, absence refuses (a
+     * legacy-id row cannot be excluded), so a 401 standing next to that 503 told an
+     * unauthenticated caller that a readable deterministic-id row exists at the id — the one
+     * thing this front door's disclosure analysis keeps out of the answer. The receiver makes
+     * the two answers one for as long as this is {@code false} (R3).
+     *
+     * @param connector what {@code getOrRefuse} answers (the row, or null for absence)
+     * @param selectorAnswered whether the selector answered this read. FALSE also when no
+     *        read was made at all (a null id): there is no selector answer to lean on, and
+     *        "could not ask" must not be handed out with the value of "asked, and the answer
+     *        was no".
+     */
+    record Resolution(ConnectorDefinition connector, boolean selectorAnswered) {}
+
+    /** {@link #getOrRefuse}, with {@link Resolution#selectorAnswered()} alongside it (R3). */
+    Resolution resolveOrRefuse(String connectorId);
 
     /**
      * Establishes from {@code _all_docs} — not the Mango index, so it answers while that
