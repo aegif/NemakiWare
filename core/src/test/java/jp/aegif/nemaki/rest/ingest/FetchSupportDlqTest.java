@@ -89,4 +89,45 @@ public class FetchSupportDlqTest {
         when(jobService.saveWebhookDeliveryRecordToDlq(any(), any())).thenReturn(true);
         assertTrue(fetchSupport.saveWebhookDeliveryRecordToDlq(req, "not fetched"));
     }
+
+    // ── R4: the after-import link carries its authority, or is not made ──
+
+    @Test
+    public void createRelationshipSafePassesWhatAuthorisesTheLink() {
+        // The orchestrators hold the profile they are running and the request whose import
+        // produced the object. Passing neither is what left the link unauthorised (R4), and a
+        // helper that dropped them on the floor would look exactly like one that passes them.
+        CanonicalImportService importService = mock(CanonicalImportService.class);
+        FetchSupport fetchSupport = new FetchSupport();
+        fetchSupport.setCanonicalImportService(importService);
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setConnectorId("c1");
+        java.util.List<String> errors = new java.util.ArrayList<>();
+
+        fetchSupport.createRelationshipSafe(null, "bedroom", "src-1", "tgt-1", profile, req, errors);
+
+        verify(importService).createDirectRelationship(isNull(), eq("bedroom"), eq("src-1"),
+                eq("tgt-1"), eq(profile), eq(req));
+        assertTrue(errors.isEmpty(), "an authorised link was reported as an error: " + errors);
+    }
+
+    @Test
+    public void createRelationshipSafeRefusesWithNothingToAuthoriseAgainst() {
+        // A caller with neither has nothing to re-ask, and a link written on no authority is
+        // the thing this closes. Refused and reported, not created quietly.
+        CanonicalImportService importService = mock(CanonicalImportService.class);
+        FetchSupport fetchSupport = new FetchSupport();
+        fetchSupport.setCanonicalImportService(importService);
+        java.util.List<String> errors = new java.util.ArrayList<>();
+
+        fetchSupport.createRelationshipSafe(null, "bedroom", "src-1", "tgt-1", null, null, errors);
+
+        verify(importService, never()).createDirectRelationship(any(), any(), any(), any(),
+                any(), any());
+        assertEquals(1, errors.size(), "the refusal was not reported: " + errors);
+        assertTrue(errors.get(0).contains("authorise"),
+                "the refusal does not say why: " + errors);
+    }
 }

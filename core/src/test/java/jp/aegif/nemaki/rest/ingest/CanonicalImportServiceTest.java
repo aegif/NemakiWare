@@ -332,10 +332,10 @@ class CanonicalImportServiceTest {
         req.setProfileId("p1");
         req.setRepositoryId("bedroom");
 
-        String error = service.createDirectRelationship(testContext(), "bedroom",
+        String error = service.createDirectRelationshipAuthorizedForTest(testContext(), "bedroom",
                 "src-1", "tgt-1", "cmis:relationship",
                 jp.aegif.nemaki.rest.ingest.capture.CaptureScope.inactive(),
-                service.relationshipAuthorizingProfileForTest(req), null);
+                service.relationshipAuthorizingProfileForTest(req), req);
 
         assertTrue(error != null && error.contains("cmis:all"),
                 "a link was created for a delegation that had been revoked: " + error);
@@ -2256,7 +2256,7 @@ class CanonicalImportServiceTest {
 
     @Test
     void thePublicEntryPointAnswersNullForALinkCreatedWithoutItsCheck() {
-        // The four-argument entry point is what the fetch orchestrators call after their
+        // The public entry point is what the fetch orchestrators call after their
         // import has returned, and FetchSupport puts every non-null answer into the fetch's
         // ERRORS — which records a fetch that imported nothing as FAILED and advances the
         // connector's circuit breaker. A created link is not a failure: it answers null
@@ -2264,7 +2264,8 @@ class CanonicalImportServiceTest {
         when(contentService.getRelationsipsOfObject(eq("bedroom"), eq("src-1"), any()))
                 .thenThrow(new RuntimeException("view unavailable"));
 
-        String answer = service.createDirectRelationship(testContext(), "bedroom", "src-1", "tgt-1");
+        String answer = service.createDirectRelationship(testContext(), "bedroom", "src-1", "tgt-1",
+                null, null);
 
         verify(objectService, times(1)).createRelationship(any(), any(), any(), any(), any(), any(), any());
         assertNull(answer, "a link that was created was reported as an error to a caller that"
@@ -2281,8 +2282,8 @@ class CanonicalImportServiceTest {
         jp.aegif.nemaki.rest.ingest.capture.CaptureScope scope =
                 mock(jp.aegif.nemaki.rest.ingest.capture.CaptureScope.class);
 
-        service.createDirectRelationship(testContext(), "bedroom", "src-1", "tgt-1",
-                "cmis:relationship", scope, null, null);
+        service.createDirectRelationshipAuthorizedForTest(testContext(), "bedroom", "src-1",
+                "tgt-1", "cmis:relationship", scope, null, null);
 
         verify(scope).record(eq("createRelationship"),
                 eq(jp.aegif.nemaki.rest.ingest.capture.MutationOutcome.SUCCEEDED),
@@ -2296,9 +2297,9 @@ class CanonicalImportServiceTest {
         // that did not answer.
         service.setContentService(null);
 
-        String note = service.createDirectRelationship(testContext(), "bedroom", "src-1", "tgt-1",
-                "cmis:relationship", jp.aegif.nemaki.rest.ingest.capture.CaptureScope.inactive(),
-                null, null);
+        String note = service.createDirectRelationshipAuthorizedForTest(testContext(), "bedroom",
+                "src-1", "tgt-1", "cmis:relationship",
+                jp.aegif.nemaki.rest.ingest.capture.CaptureScope.inactive(), null, null);
 
         verify(objectService, times(1)).createRelationship(any(), any(), any(), any(), any(), any(), any());
         assertTrue(note != null && note.contains("without its duplicate check"),
@@ -2953,5 +2954,89 @@ class CanonicalImportServiceTest {
                 "an unwired node was reported as our bug: " + result.errors());
         verify(objectService, never()).deleteObject(any(), anyString(), anyString(),
                 anyBoolean(), any());
+    }
+
+    // ── R4: the link made AFTER the import is authorised too ──
+
+    private ImportProfileDefinition delegatedProfileRow() {
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        return delegated;
+    }
+
+    private ExternalIngestRequest linkRequest() {
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setRepositoryId("bedroom");
+        return req;
+    }
+
+    @Test
+    void aRevokedDelegationRefusesTheLinkMadeAfterTheImport() {
+        // The fetch orchestrators link an attachment to its message AFTER the import that
+        // produced them has returned, through the public entry point — which passed NO
+        // profile, so the delegation re-check every in-import link makes was not failed here,
+        // it was never made. A fetch whose authorisation was revoked while it ran still wrote
+        // its edges (R4).
+        ImportProfileDefinition delegated = delegatedProfileRow();
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(false);
+        service.setIngestAuthorizationService(auth);
+
+        String error = service.createDirectRelationship(testContext(), "bedroom",
+                "src-1", "tgt-1", delegated, linkRequest());
+
+        assertTrue(error != null && error.contains("cmis:all"),
+                "a link was written after the import for a delegation that had been revoked: "
+                        + error);
+        verify(objectService, never()).createRelationship(any(), anyString(), any(), any(),
+                any(), any(), any());
+    }
+
+    @Test
+    void aDelegationThatStillAuthorizesStillLinksAfterTheImport() {
+        // The over-throw guard: re-asking must not stop the ordinary case. A fetch that still
+        // holds cmis:all links its attachment and answers null, as it always did.
+        ImportProfileDefinition delegated = delegatedProfileRow();
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(true);
+        service.setIngestAuthorizationService(auth);
+
+        String answer = service.createDirectRelationship(testContext(), "bedroom",
+                "src-1", "tgt-1", delegated, linkRequest());
+
+        assertNull(answer, "a link that was authorised was reported as not created: " + answer);
+        verify(objectService, times(1)).createRelationship(any(), anyString(), any(), any(),
+                any(), any(), any());
+    }
+
+    @Test
+    void aNonDelegatedProfileIsNotReAskedAfterTheImport() {
+        // The other over-throw guard: the delegated gate is the only thing re-asked. A profile
+        // that is not delegated has no folder authorisation to lose, and asking anyway would
+        // fail every fetch of an ordinary profile whose caller holds no cmis:all.
+        ImportProfileDefinition plain = new ImportProfileDefinition();
+        plain.setProfileId("p1");
+        plain.setEnabled(true);
+        plain.setRepositoryId("bedroom");
+        plain.setTargetFolderId("folder-1");
+        plain.setDelegated(false);
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        service.setIngestAuthorizationService(auth);
+
+        String answer = service.createDirectRelationship(testContext(), "bedroom",
+                "src-1", "tgt-1", plain, linkRequest());
+
+        assertNull(answer, "a link of a profile that is not delegated was refused: " + answer);
+        verify(objectService, times(1)).createRelationship(any(), anyString(), any(), any(),
+                any(), any(), any());
+        verify(auth, never()).canManageProfileForFolder(any(), anyString(), anyString());
     }
 }
