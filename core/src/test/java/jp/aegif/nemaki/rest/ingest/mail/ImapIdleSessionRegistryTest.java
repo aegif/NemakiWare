@@ -881,4 +881,99 @@ class ImapIdleSessionRegistryTest {
                         jp.aegif.nemaki.rest.ingest.DenialReason.CREATOR_CMIS_ALL_LOST),
                 "a cmis:all the store answered is lost must still stop the session");
     }
+
+    /**
+     * As {@link #driveOneIdleMessage}, with the listener made to THROW: before the fetch
+     * ({@code fetchFails}) or out of the import ({@code importThrows}).
+     */
+    private Object[] driveOneIdleMessageThatThrows(boolean fetchFails, boolean importThrows,
+            boolean dlqAccepts) throws Exception {
+        ImapIdleMonitor monitor = new ImapIdleMonitor();
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId(PROF);
+        profile.setRepositoryId("bedroom");
+        profile.setDefaultConnectorId("conn-1");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("conn-1");
+        connector.setSourceSystem("imap");
+        connector.setEndpoint("imap.example:993");
+        connector.setTenantId("user@example.com");
+        ImportProfileDefinitionService profiles = mock(ImportProfileDefinitionService.class);
+        when(profiles.getOwnedRowIndexFree(PROF)).thenReturn(profile);
+        when(profiles.getForRepository(PROF, "bedroom")).thenReturn(profile);
+        ConnectorDefinitionService connectors = mock(ConnectorDefinitionService.class);
+        when(connectors.get("conn-1")).thenReturn(connector);
+        when(connectors.countIndexFree("conn-1")).thenReturn(1);
+        FetchSupport fetch = mock(FetchSupport.class);
+        when(fetch.resolvePasswordOrRefuse(connector)).thenReturn("pw");
+        when(fetch.saveSourceReadToDlq(any(), any())).thenReturn(dlqAccepts);
+        when(fetch.saveSourceNeverReadToDlq(any(), any())).thenReturn(dlqAccepts);
+        jp.aegif.nemaki.rest.ingest.CanonicalImportService imports =
+                mock(jp.aegif.nemaki.rest.ingest.CanonicalImportService.class);
+        if (importThrows) {
+            when(imports.executeMailImport(any(), any())).thenThrow(new IllegalStateException("boom"));
+        } else {
+            when(imports.executeMailImport(any(), any())).thenReturn(
+                    jp.aegif.nemaki.rest.ingest.ExternalIngestResult.success("r", "o", "1.0", true, "e"));
+        }
+        ImapConnectorAdapter adapter = mock(ImapConnectorAdapter.class);
+        doAnswer(inv -> {
+            java.util.function.Consumer<ImapConnectorAdapter.MessageSummary> onNew =
+                    inv.getArgument(1);
+            onNew.accept(new ImapConnectorAdapter.MessageSummary(7L, 1L, "<m7@example>",
+                    "hello", "a@example", new java.util.Date(), 12));
+            return null;
+        }).when(adapter).startIdle(eq("INBOX"), any());
+        if (fetchFails) {
+            when(adapter.fetchMessage("INBOX", 7L)).thenThrow(new java.io.IOException("socket closed"));
+        } else {
+            when(adapter.fetchMessage("INBOX", 7L)).thenReturn(
+                    new java.io.ByteArrayInputStream("Subject: hello\r\n\r\nbody".getBytes()));
+        }
+        monitor.setProfileService(profiles);
+        monitor.setConnectorService(connectors);
+        monitor.setFetchSupport(fetch);
+        monitor.setCanonicalImportService(imports);
+        monitor.adapterFactory = (c, pw) -> adapter;
+
+        String refusal = monitor.startIdle(PROF);
+        assertNull(refusal, "IDLE did not start: " + refusal);
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (!monitor.getIdleProfiles().isEmpty() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20);
+        }
+        assertEquals(List.of(), monitor.getIdleProfiles(), "the listener did not finish");
+        return new Object[]{monitor, fetch};
+    }
+
+    @Test
+    @DisplayName("a message whose fetch threw is recorded as never read")
+    void aFetchThatThrewIsRecordedAsNeverRead() throws Exception {
+        // The listener's catch only logged: fetchMessage's I/O failure left no row and no
+        // count, and IMAP does not re-deliver (R39).
+        Object[] r = driveOneIdleMessageThatThrows(true, false, true);
+
+        verify((FetchSupport) r[1]).saveSourceNeverReadToDlq(any(),
+                contains("could not be imported"));
+        verify((FetchSupport) r[1], never()).saveSourceReadToDlq(any(), any());
+        assertEquals(0, ((ImapIdleMonitor) r[0]).undurableMissCount(PROF));
+    }
+
+    @Test
+    @DisplayName("an exception escaping the import is recorded as a read source")
+    void anImportThatThrewIsRecordedAsRead() throws Exception {
+        Object[] r = driveOneIdleMessageThatThrows(false, true, true);
+
+        verify((FetchSupport) r[1]).saveSourceReadToDlq(any(), contains("boom"));
+        verify((FetchSupport) r[1], never()).saveSourceNeverReadToDlq(any(), any());
+    }
+
+    @Test
+    @DisplayName("a failure the DLQ could not take is counted as an undurable miss")
+    void aFailureTheDlqCouldNotTakeIsCounted() throws Exception {
+        Object[] r = driveOneIdleMessageThatThrows(true, false, false);
+
+        assertEquals(1, ((ImapIdleMonitor) r[0]).undurableMissCount(PROF),
+                "a miss the DLQ could not take was neither recorded nor counted");
+    }
 }

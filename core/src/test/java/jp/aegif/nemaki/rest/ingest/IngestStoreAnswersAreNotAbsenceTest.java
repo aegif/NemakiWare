@@ -391,4 +391,37 @@ class IngestStoreAnswersAreNotAbsenceTest {
         assertEquals(Boolean.TRUE, written.getValue().document().get("webhookDeliveryRecord"),
                 "the record row was written without its mark");
     }
+
+    @Test
+    @DisplayName("a query the store did not answer is the typed refusal, not a raw failure")
+    @SuppressWarnings("unchecked")
+    void aQueryTheStoreDidNotAnswerIsATypedRefusal() {
+        // Raw, it reached the DELETE endpoint as a Spring 500 and the retry door's cleanup as
+        // 500 "Retry failed" (R40).
+        Cloudant cloudant = mock(Cloudant.class);
+        ServiceCall<FindResult> find = mock(ServiceCall.class);
+        when(find.execute()).thenThrow(new RuntimeException("connection reset"));
+        when(cloudant.postFind(any())).thenReturn(find);
+        IngestJobService jobs = serviceOn(cloudant);
+
+        assertThrows(IngestJobService.IngestStoreDidNotAnswerException.class,
+                () -> jobs.listDlqPage(10, 0, true),
+                "a selector the store did not answer escaped as a raw failure");
+        assertThrows(IngestJobService.IngestStoreDidNotAnswerException.class,
+                () -> jobs.deleteDlqEntry("old"),
+                "a delete whose selector the store did not answer escaped as a raw failure");
+    }
+
+    @Test
+    @DisplayName("an unwired ingest store is the typed refusal, not an IllegalStateException")
+    void anUnwiredStoreIsATypedRefusal() {
+        IngestJobService jobs = new IngestJobService();
+        CloudantClientPool pool = mock(CloudantClientPool.class);
+        when(pool.getClient(anyString())).thenReturn(null);
+        jobs.setConnectorPool(pool);
+
+        assertThrows(IngestJobService.IngestStoreDidNotAnswerException.class,
+                () -> jobs.listDlqPage(10, 0, true),
+                "an unwired node answered with an untyped failure");
+    }
 }
