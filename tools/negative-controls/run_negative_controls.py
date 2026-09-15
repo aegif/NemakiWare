@@ -7901,6 +7901,16 @@ CONTROLS = [
         test='ImapIdleSessionRegistryTest',
         expect_fail=['anImportThatThrewIsRecordedAsRead'],
     ),
+    dict(
+        id="ZV2",
+        what="a new dead-letter row goes back to a generated id, so a row the selector did not "
+             "show gets a twin instead of a conflict",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='            doc.setId("ingest_dlq:" + docKey);',
+        replace='            doc.setId(null);',
+        test='IngestStoreAnswersAreNotAbsenceTest',
+        expect_fail=['aNewDlqRowGetsADeterministicId'],
+    ),
 ]
 
 
@@ -7987,6 +7997,27 @@ UNDECLARED: list = []
 # the reader, not in the protections — but it makes the undeclared report incomplete without
 # saying so, which is the shape of defect that took four rounds to find last time.
 PARSE_GAPS: list = []
+
+
+def purge_poisoned_classes() -> int:
+    """Delete class files the IDE's language server wrote with an unresolved compilation
+    problem baked in (they throw java.lang.Error when touched). Maven's incremental build keeps
+    them because they are newer than their source; deleting them makes it recompile. Cheap:
+    a substring scan of the two output directories."""
+    removed = 0
+    for outdir in (REPO / "core" / "target" / "classes", REPO / "core" / "target" / "test-classes"):
+        if not outdir.exists():
+            continue
+        for cls in outdir.rglob("*.class"):
+            try:
+                if b"Unresolved compilation problem" in cls.read_bytes():
+                    cls.unlink()
+                    removed += 1
+            except OSError:
+                pass
+    if removed:
+        print(f"  (purged {removed} IDE-poisoned class file(s))")
+    return removed
 
 
 # A failure header, matched WHOLE: "<fully.qualified.Class>.method -- Time elapsed: 0.1 s
@@ -8117,9 +8148,23 @@ def run_test(test_class: str) -> tuple:
     # green — the sabotage phase would then misread the silence as "protects nothing" and the
     # restore check as a clean tree. Source anchors refuse loudly on drift; the test side has
     # to as well.
+    purge_poisoned_classes()
     proc = subprocess.run(
         ["mvn", "-o", "-q", "-pl", "core", "test", f"-Dtest={test_class}"],
         cwd=REPO, capture_output=True, text=True, timeout=900)
+    if any("Unresolved compilation problem" in x.read_text(errors="replace")
+           for x in REPORTS.glob("TEST-*.xml")):
+        # The IDE's language server wrote an error-bearing class into the Maven output
+        # directory while this control's sabotage was in flight, and the incremental build
+        # kept it: the reports then say "CouchConflicts cannot be resolved" instead of
+        # measuring the lock. Not a measurement. Purge and run ONCE more (2026-09-15).
+        print("  (poisoned class files from the IDE — purged, re-running once)")
+        purge_poisoned_classes()
+        for old in list(REPORTS.glob("*.txt")) + list(REPORTS.glob("*.xml")):
+            old.unlink()
+        proc = subprocess.run(
+            ["mvn", "-o", "-q", "-pl", "core", "test", f"-Dtest={test_class}"],
+            cwd=REPO, capture_output=True, text=True, timeout=900)
     failed_methods, unreadable, failure_texts = failing_methods_in_reports(
         [x.read_text(errors="replace") for x in REPORTS.glob("TEST-*.xml")])
     # Two ways a run measures nothing, both hit by hand before this runner existed:
