@@ -7854,6 +7854,53 @@ CONTROLS = [
         test='DlqRetryRefusalStatusTest',
         expect_fail=['aDeleteThatFoundNoRowDoesNotSayRetry'],
     ),
+    dict(
+        id="BA3",
+        what="the selector query's transport failure escapes findRawDocs raw again (a 500 at the "
+             "DELETE endpoint and in the retry door's cleanup)",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='        } catch (RuntimeException couldNotAsk) {\n            // Raw, a transport failure here reached the DELETE endpoint',
+        replace='        } catch (ArithmeticException couldNotAsk) {\n            // Raw, a transport failure here reached the DELETE endpoint',
+        test='IngestStoreAnswersAreNotAbsenceTest',
+        expect_fail=['aQueryTheStoreDidNotAnswerIsATypedRefusal'],
+    ),
+    dict(
+        id="BB3",
+        what="an unwired ingest store is an IllegalStateException again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='            throw new IngestStoreDidNotAnswerException("the ingest store is not wired on this"',
+        replace='            throw new IllegalStateException("the ingest store is not wired on this"',
+        test='IngestStoreAnswersAreNotAbsenceTest',
+        expect_fail=['anUnwiredStoreIsATypedRefusal'],
+    ),
+    dict(
+        id="BC3",
+        what="the IDLE listener's catch goes back to logging only, so a fetch or import that "
+             "threw leaves no row and no count",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='                        recordIdleFailure(profileId, connector.getConnectorId(),\n                                session.repositoryId(), mailbox, msg, req,\n                                "IDLE: the message could not be imported: " + e.getMessage());',
+        replace='                        logger.error("IDLE: failed to import message {}: {}", msg.uid(), e.getMessage());',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['aFetchThatThrewIsRecordedAsNeverRead', 'anImportThatThrewIsRecordedAsRead', 'aFailureTheDlqCouldNotTakeIsCounted'],
+    ),
+    dict(
+        id="BD3",
+        what="a failure before the fetch claims a never-read record without writing one",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='                failureRecorded = fetchSupport.saveSourceNeverReadToDlq(missed, "[transient] " + why);',
+        replace='                failureRecorded = true;',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['aFetchThatThrewIsRecordedAsNeverRead', 'aFailureTheDlqCouldNotTakeIsCounted'],
+    ),
+    dict(
+        id="BE3",
+        what="a failure after the fetch claims a record without writing one",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/mail/ImapIdleMonitor.java',
+        find='                failureRecorded = fetchSupport.saveSourceReadToDlq(read, why);',
+        replace='                failureRecorded = true;',
+        test='ImapIdleSessionRegistryTest',
+        expect_fail=['anImportThatThrewIsRecordedAsRead'],
+    ),
 ]
 
 
