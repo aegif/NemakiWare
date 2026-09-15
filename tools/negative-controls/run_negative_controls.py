@@ -7486,7 +7486,7 @@ CONTROLS = [
         what="the reservation's conflict arm is bypassed, so a lost _rev race falls into the "
              "could-not-ask catch and answers 503 for a settled 'someone else holds it'",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
-        find='        } catch (com.ibm.cloud.sdk.core.service.exception.ConflictException lostTheRace) {',
+        find='        } catch (DlqWriteConflictException lostTheRace) {',
         replace='        } catch (ArithmeticException lostTheRace) {',
         test='IngestStoreAnswersAreNotAbsenceTest',
         expect_fail=['aLostReservationRaceIsNotCouldNotAsk'],
@@ -7906,10 +7906,60 @@ CONTROLS = [
         what="a new dead-letter row goes back to a generated id, so a row the selector did not "
              "show gets a twin instead of a conflict",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
-        find='            doc.setId("ingest_dlq:" + docKey);',
-        replace='            doc.setId(null);',
+        find='        doc.setId(storedId != null ? storedId : "ingest_dlq:" + dlqId);',
+        replace='        doc.setId(storedId);',
         test='IngestStoreAnswersAreNotAbsenceTest',
         expect_fail=['aNewDlqRowGetsADeterministicId'],
+    ),
+    dict(
+        id="AA3",
+        what="the dead-letter write no longer carries the revision it read, so it is not a "
+             "compare-and-swap and a concurrent save is silently overwritten",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='            doc.setRev(storedRev);',
+        replace='            doc.setRev(null);',
+        test='DlqWritesAreCompareAndSwapTest',
+        expect_fail=['aSaveWritesAgainstTheRevisionItRead', 'aSaveThatLostTheRaceReMergesFromAFreshRead',
+                     'aReservationIsConditionedOnTheRevisionRead', 'aConfirmingWriteIsConditionedOnTheReRead'],
+    ),
+    dict(
+        id="AB3",
+        what="a save that lost the write race gives up instead of re-merging from a fresh read",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='        for (int attempt = 1; attempt <= 3; attempt++) {',
+        replace='        for (int attempt = 1; attempt <= 1; attempt++) {',
+        test='DlqWritesAreCompareAndSwapTest',
+        expect_fail=['aSaveThatLostTheRaceReMergesFromAFreshRead', 'aSaveThatKeepsLosingIsNotRecorded'],
+    ),
+    dict(
+        id="AC3",
+        what="a reservation without the revision it read is attempted anyway",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='        if (dlq.getStoredRevision() == null) {\n            // Not read from the store: there is no revision to condition the reservation on,',
+        replace='        if (false) {\n            // Not read from the store: there is no revision to condition the reservation on,',
+        test='DlqWritesAreCompareAndSwapTest',
+        expect_fail=['aReservationWithoutAReadRevisionIsRefused'],
+    ),
+    dict(
+        id="AD3",
+        what="the read stops recording the revision, so every write that follows it is a "
+             "create or an unconditioned update",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='                    read.setStoredRevision(rawDoc.getRev());',
+        replace='                    read.setStoredRevision(null);',
+        test='DlqWritesAreCompareAndSwapTest',
+        expect_fail=['aSaveWritesAgainstTheRevisionItRead', 'aSaveThatLostTheRaceReMergesFromAFreshRead',
+                     'aConfirmingWriteIsConditionedOnTheReRead'],
+    ),
+    dict(
+        id="AE3",
+        what="the confirming write is conditioned on this save's own earlier row instead of "
+             "the re-read, so it loses whenever the attachment landed and the row stays assumed",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='                    if (upsertDlqCasOrNull(dlq.getDlqId(), confirmed, current) == null) {',
+        replace='                    if (upsertDlqCasOrNull(dlq.getDlqId(), confirmed, dlq) == null) {',
+        test='DlqWritesAreCompareAndSwapTest',
+        expect_fail=['aConfirmingWriteIsConditionedOnTheReRead'],
     ),
 ]
 
