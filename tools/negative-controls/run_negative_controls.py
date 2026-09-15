@@ -4425,7 +4425,8 @@ CONTROLS = [
         # leaves the round-44 lock's assertDoesNotThrow reddening as well. The declaration
         # has been short since that lock was added and was never re-measured.
         expect_fail=['testARevokedDelegationStopsTheRelationshipCreation',
-                     'aLinkWhoseFolderReadRefusesIsNotLinked_notAnEscapingException'],
+                     'aLinkWhoseFolderReadRefusesIsNotLinked_notAnEscapingException',
+                     'aRevokedDelegationRefusesTheLinkMadeAfterTheImport'],
     ),
     dict(
         id="VU",
@@ -4448,8 +4449,10 @@ CONTROLS = [
         what="an unresolvable connector is passed on as null, skipping the connector half of "
              "the link's authorisation",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        # Re-anchored for R4: the arm moved into createLinkAuthorized and answers a
+        # LinkOutcome, so the span's last line changed with it.
         find_span=('        if (profile != null && profile.isDelegated() && request != null\n                && request.getConnectorId() != null && connector == null) {',
-                   '                    + " could not be resolved, so its delegation could not be checked";\n        }'),
+                   '                    + " could not be resolved, so its delegation could not be checked");\n        }'),
         replace='',
         test='CanonicalImportServiceTest',
         expect_fail=['testAnUnresolvableConnectorRefusesTheLinkInsteadOfSkippingTheCheck'],
@@ -4461,7 +4464,7 @@ CONTROLS = [
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
         # A span ending on the next '}' duplicated the catch clause ("exception already
         # caught"). One line is enough: the catch body is what turns a refusal into a warning.
-        find='            return "the relationship was not created: " + cannotAuthorize.getMessage();',
+        find='            return LinkOutcome.notLinked("the relationship was not created: "\n                    + cannotAuthorize.getMessage());',
         replace='            throw cannotAuthorize;',
         test='CanonicalImportServiceTest',
         expect_fail=['testAProfileGoneDuringTheImportIsAWarningNotA500'],
@@ -6828,7 +6831,8 @@ CONTROLS = [
                      'testARevokedDelegationStopsTheRelationshipCreation',
                      'testAnImportWithNoContentStreamIsAlsoReChecked',
                      'testDelegatedImportReAsksTheAuthorizationAtTheWrite',
-                     'testTheDelegationIsReAskedAfterTheContentIsRead'],
+                     'testTheDelegationIsReAskedAfterTheContentIsRead',
+                     'aRevokedDelegationRefusesTheLinkMadeAfterTheImport'],
     ),
     dict(
         id="UG2",
@@ -8173,6 +8177,59 @@ CONTROLS = [
         replace='        if (!selectorAnswered || connector == null || !connector.isEnabled()\n                || !"dropbox".equals(connector.getSourceSystem())',
         test='IngestWebhookBoxDropboxTest',
         expect_fail=['theHandshakeStillEchoesWhileTheSelectorIsDown'],
+    ),
+    dict(
+        id="AY3",
+        what="R4: the link made after the import goes back to being created with no profile, "
+             "so a revoked delegation still gets its edges",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='        return outsideAnImport(createLinkAuthorized(callContext, repositoryId, sourceId, targetId,\n                "cmis:relationship", CaptureScope.inactive(), authorizingProfile, request));',
+        replace='        return outsideAnImport(createLinkAuthorized(callContext, repositoryId, sourceId, targetId,\n                "cmis:relationship", CaptureScope.inactive(), null, null));',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aRevokedDelegationRefusesTheLinkMadeAfterTheImport'],
+    ),
+    dict(
+        id="AZ3",
+        what="R4: a link that WAS created without its duplicate check is reported as an error "
+             "again, so an unanswered read records the fetch as failed",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='        if (outcome.message() != null) {\n            logger.warn("{} (created outside an import: reported here only)", outcome.message());\n        }\n        return null;',
+        replace='        return outcome.message();',
+        test='CanonicalImportServiceTest',
+        expect_fail=['thePublicEntryPointAnswersNullForALinkCreatedWithoutItsCheck'],
+    ),
+    dict(
+        id="BF3",
+        what="R4: the fetch helper drops what authorises the link and passes nulls on",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/FetchSupport.java',
+        find='            String err = canonicalImportService.createDirectRelationship(callContext, repositoryId,\n                    sourceId, targetId, profile, request);',
+        replace='            String err = canonicalImportService.createDirectRelationship(callContext, repositoryId,\n                    sourceId, targetId, null, null);',
+        test='FetchSupportDlqTest',
+        expect_fail=['createRelationshipSafePassesWhatAuthorisesTheLink'],
+    ),
+    dict(
+        id="BG3",
+        what="R4: the fetch helper links anyway when it has nothing to authorise against",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/FetchSupport.java',
+        find='        if (profile == null && request == null) {',
+        replace='        if (false) {',
+        test='FetchSupportDlqTest',
+        expect_fail=['createRelationshipSafeRefusesWithNothingToAuthoriseAgainst'],
+    ),
+    dict(
+        id="BH3",
+        what="R4: the after-import link refuses whenever it has a profile and a request — the "
+             "over-throw side, every ordinary fetch losing its edges",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='        if (profile != null && profile.isDelegated() && request != null\n                && request.getConnectorId() != null && connector == null) {',
+        replace='        if (profile != null && request != null) {',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aRevokedDelegationRefusesTheLinkMadeAfterTheImport',
+                     'aDelegationThatStillAuthorizesStillLinksAfterTheImport',
+                     'aNonDelegatedProfileIsNotReAskedAfterTheImport',
+                     'createDirectRelationship_createsAndSaysSo_whenExistenceCheckThrows',
+                     'createDirectRelationship_saysNothing_whenExistenceCheckAnswersNoEdge',
+                     'testARevokedDelegationStopsTheRelationshipCreation'],
     ),
 ]
 
