@@ -203,6 +203,8 @@ class IngestStoreAnswersAreNotAbsenceTest {
         IngestJobService jobs = serviceOn(cloudant);
         IngestDeadLetterRecord dlq = new IngestDeadLetterRecord();
         dlq.setDlqId("d1");
+        dlq.setStoredId("ingest_dlq:d1");
+        dlq.setStoredRevision("1-a");
 
         boolean reserved = assertDoesNotThrow(() -> jobs.reserveDlqRetry(dlq),
                 "the loser of a _rev race was told the reservation could not be attempted");
@@ -242,6 +244,8 @@ class IngestStoreAnswersAreNotAbsenceTest {
         IngestJobService jobs = serviceOn(cloudant);
         IngestDeadLetterRecord dlq = new IngestDeadLetterRecord();
         dlq.setDlqId("d1");
+        dlq.setStoredId("ingest_dlq:d1");
+        dlq.setStoredRevision("1-a");
 
         assertThrows(IngestJobService.DlqRetryNotReservableException.class,
                 () -> jobs.reserveDlqRetry(dlq),

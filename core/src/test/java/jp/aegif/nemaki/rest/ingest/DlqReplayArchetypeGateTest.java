@@ -409,8 +409,8 @@ class DlqReplayArchetypeGateTest {
         // Call 1 is getDlqEntry's selector: it throws, so the typed read refuses with "could
         // not be established". Call 2 is the attachment probe — either it throws too, or it
         // comes back with no row for a document the store was just unable to speak about.
-        // Call 3 onward is upsertDocument's own probe, which must succeed so the write lands
-        // and this test can read what was written.
+        // Any later call is the write's own (the CAS create has no probe of its own), and
+        // must succeed so the write lands and this test can read what was written.
         java.util.concurrent.atomic.AtomicInteger calls =
                 new java.util.concurrent.atomic.AtomicInteger();
         when(cloudant.postFind(org.mockito.ArgumentMatchers.any())).thenAnswer(inv -> {
@@ -805,6 +805,9 @@ class DlqReplayArchetypeGateTest {
         // CONTROLLER; this measures the service that has to raise it.
         IngestDeadLetterRecord row = new IngestDeadLetterRecord();
         row.setDlqId("d-9");
+        // As the door reads it: with the revision, so the refusal comes from the STORE.
+        row.setStoredId("ingest_dlq:d-9");
+        row.setStoredRevision("1-a");
         org.junit.jupiter.api.Assertions.assertThrows(
                 IngestJobService.DlqRetryNotReservableException.class,
                 () -> jobsWithADeadStore().reserveDlqRetry(row),
