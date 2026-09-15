@@ -7221,8 +7221,9 @@ CONTROLS = [
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
         # Re-anchored: the confirming write's ownership check added a second `return docId !=
         # null;`. Pinned by the comment that precedes the tail one.
-        find='            // docId is null when upsertDocument\'s own write did not land (a _rev race), and\n'
-             '            // the "Saved to DLQ" line above used to be printed for that too.\n'
+        find='            // docId is null when the store answered the write with ok=false (a revision\n'
+             '            // conflict is thrown as DlqWriteConflictException and re-merged by the caller\n'
+             '            // below), and the "Saved to DLQ" line above used to be printed for that too.\n'
              '            return docId != null;',
         replace='            return true;',
         test='DlqReplayArchetypeGateTest',
@@ -7960,6 +7961,81 @@ CONTROLS = [
         replace='                    if (upsertDlqCasOrNull(dlq.getDlqId(), confirmed, dlq) == null) {',
         test='DlqWritesAreCompareAndSwapTest',
         expect_fail=['aConfirmingWriteIsConditionedOnTheReRead'],
+    ),
+    dict(
+        id="AF3",
+        what="R2: the walk no longer refuses a pair, so the receiver runs with whichever row "
+             "the index happened to show",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='        if (defined > 1) {\n            throw new ConnectorIndexNotReadyException("connector " + connectorId + " has "\n                    + defined + " definition rows; refusing to run with whichever the index"',
+        replace='        if (defined > 2) {\n            throw new ConnectorIndexNotReadyException("connector " + connectorId + " has "\n                    + defined + " definition rows; refusing to run with whichever the index"',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aHiddenPairIsRefusedByTheWalk'],
+    ),
+    dict(
+        id="AG3",
+        what="R2: the receiver drops the post-signature uniqueness walk",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='        try {\n            connectorDefinitionService.refuseUnlessUniquelyDefined(connectorId);\n        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException notAlone) {',
+        replace='        try {\n            /* the walk was dropped */\n        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException notAlone) {',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['aPairHiddenFromTheIndexIsRefusedAfterTheSignature', 'theWalkIsMadeOnceTheSignatureVerified'],
+    ),
+    dict(
+        id="AN3",
+        what="R2: the refusing read starts walking — the unauthenticated amplifier dece81f7d "
+             "withdrew comes back through getOrRefuse",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='                return first;\n            }\n        }\n        // The profile twin of this fallback, mirrored:',
+        replace='                if (refuseUnanswered) refuseUnlessUniquelyDefined(connectorId);\n                return first;\n            }\n        }\n        // The profile twin of this fallback, mirrored:',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['getOrRefuseDoesNotWalk'],
+    ),
+    dict(
+        id="AO3",
+        what="R2: the receiver walks BEFORE the signature is verified — one unauthenticated "
+             "request costs a walk of the configuration database",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='            // that predate this read.\n            connector = connectorDefinitionService.getOrRefuse(connectorId);\n',
+        replace='            // that predate this read.\n            connector = connectorDefinitionService.getOrRefuse(connectorId);\n            connectorDefinitionService.refuseUnlessUniquelyDefined(connectorId);\n',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['theWalkIsNotMadeForAnUnauthenticatedRequest', 'theWalkIsMadeOnceTheSignatureVerified'],
+    ),
+    dict(
+        id="AJ3",
+        what="R2: a walk that could not establish uniqueness is read as unique",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find_span=('        } catch (RuntimeException unprovable) {', '+ connectorId + " could not be established: " + unprovable.getMessage());\n        }'),
+        replace='        } catch (RuntimeException unprovable) {\n            defined = 1;\n        }',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aWalkThatDidNotAnswerRefuses'],
+    ),
+    dict(
+        id="AK3",
+        what="R2: a walk that shows no row for the connector the index returned is read as unique",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ConnectorDefinitionServiceImpl.java',
+        find='        if (defined == 0) {\n            // The walk does not show the row the index returned',
+        replace='        if (defined < 0) {\n            // The walk does not show the row the index returned',
+        test='ConnectorLegacyIdMigrationTest',
+        expect_fail=['aWalkThatShowsNoRowRefuses'],
+    ),
+    dict(
+        id="AL3",
+        what="R2: the subscription POST no longer establishes uniqueness",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='        // the index showed is the choice R2 closes. A refusal is the class handler\'s 503.\n        connectorDefinitionService.refuseUnlessUniquelyDefined(connectorId);\n',
+        replace='        // the index showed is the choice R2 closes. A refusal is the class handler\'s 503.\n',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['aSubscriptionIsNotMadeWithOneRowOfAPair'],
+    ),
+    dict(
+        id="AM3",
+        what="R2: the subscription DELETE no longer establishes uniqueness",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='        connectorDefinitionService.refuseUnlessUniquelyDefined(connectorId); // see createSubscription\n',
+        replace='',
+        test='IngestWebhookBoxDropboxTest',
+        expect_fail=['aSubscriptionIsNotDeletedWithOneRowOfAPair'],
     ),
 ]
 
