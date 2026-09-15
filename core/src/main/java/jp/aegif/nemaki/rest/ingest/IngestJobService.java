@@ -242,6 +242,27 @@ public class IngestJobService {
     boolean saveToDlqReporting(ExternalIngestRequest request, String errorMessage,
             byte[] contentBytes, boolean sourceNeverRead, boolean sourceWasRead,
             boolean webhookDeliveryRecord) {
+        // Bounded re-merge on a compare-and-swap conflict: the row changed under this save
+        // (another failure of the same item, a reservation, a confirming write). The merge is
+        // recomputed from a fresh read. Three losses in a row is contention this save will not
+        // win by retrying, and "could not record" is the honest answer (R1).
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                return saveToDlqOnce(request, errorMessage, contentBytes, sourceNeverRead,
+                        sourceWasRead, webhookDeliveryRecord);
+            } catch (DlqWriteConflictException lost) {
+                logger.warn("the DLQ save for {} lost a write race (attempt {} of 3): {}",
+                        request.getSourceObjectId(), attempt, lost.getMessage());
+            }
+        }
+        logger.error("the DLQ save for {} could not be recorded: its row kept changing under"
+                + " it", request.getSourceObjectId());
+        return false;
+    }
+
+    private boolean saveToDlqOnce(ExternalIngestRequest request, String errorMessage,
+            byte[] contentBytes, boolean sourceNeverRead, boolean sourceWasRead,
+            boolean webhookDeliveryRecord) {
         try {
             String dlqId = deadLetterIdFor(request);
             // The WRITE path must not inherit the read path's refusal. getDlqEntry refuses a
@@ -257,8 +278,17 @@ public class IngestJobService {
             // read and carries none, null = the question could not be asked.
             Boolean earlierPayloadIsStillAttached = null;
             boolean rowWasUnreadable = false;
+            // What the write below is conditioned on: the row as READ, or nothing.
+            String storedId = null;
+            String storedRev = null;
+            java.util.Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> storedAttachments = null;
             try {
                 existing = getDlqEntry(dlqId);
+                if (existing != null) {
+                    storedId = existing.getStoredId();
+                    storedRev = existing.getStoredRevision();
+                    storedAttachments = existing.getStoredAttachments();
+                }
                 if (existing != null && existing.isHasContent()
                         && existing.isPayloadPresenceAssumed()) {
                     // The row we can now read says it HAS a payload, but that flag was
@@ -277,6 +307,12 @@ public class IngestJobService {
                         + " is being written over it", dlqId, couldNotRead.getMessage());
                 existing = null;
                 rowWasUnreadable = true;
+                // The unreadable row is still written OVER as a compare-and-swap on the
+                // revision that was returned; when the selector did not answer there is
+                // nothing to condition on and the write is a create.
+                storedId = couldNotRead.getStoredId();
+                storedRev = couldNotRead.getStoredRevision();
+                storedAttachments = couldNotRead.getStoredAttachments();
                 // null is the ANSWERED-nothing value, and it decides hasContent below — so
                 // writing over an unreadable row set "no payload" on a row whose attachment
                 // the upsert carries forward, and the next retry then imported content-less
@@ -385,7 +421,16 @@ public class IngestJobService {
             dlq.setPayloadWriteToken(writeToken);
             @SuppressWarnings("unchecked")
             Map<String, Object> jsonMap = MAPPER.convertValue(dlq, Map.class);
-            String docId = upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE, jsonMap);
+            DocumentResult written = upsertDlqCas(dlq.getDlqId(), jsonMap, storedId, storedRev,
+                    storedAttachments);
+            String docId = written != null ? written.getId() : null;
+            if (written != null) {
+                // This save's own revision, for the writes that follow the attachment; the
+                // stubs are unchanged by a metadata write and are carried forward again.
+                dlq.setStoredId(written.getId());
+                dlq.setStoredRevision(written.getRev());
+                dlq.setStoredAttachments(storedAttachments);
+            }
 
             // Attach binary content to CouchDB document if available
             if (payload != null && docId != null) {
@@ -397,10 +442,11 @@ public class IngestJobService {
                     // visible to the index yet", and on the second reading it SKIPS the
                     // attachment — dropping a payload that was encrypted and never stored, with
                     // the row left saying "assumed". The existing lock caught it. The
-                    // interleaving it was meant to close is part of the upsertDocument
-                    // lost-update class, which is recorded as a residual: upsertDocument adopts
-                    // the current revision instead of conditioning on the one this save read,
-                    // and nothing short of a compare-and-swap closes it.
+                    // interleaving it was meant to close was the lost-update class of the
+                    // old upsertDocument, which adopted the current revision instead of
+                    // conditioning on the one this save read. The write is now upsertDlqCas
+                    // (R1): conditioned on that revision, a concurrent save is a conflict
+                    // re-merged by the caller, not a lost update.
                     attachContentToDlq(docId, request.getFileName(), request.getMimeType(), payload);
                     // Confirmed. Only now does the row stop saying "assumed".
                     //
@@ -408,9 +454,9 @@ public class IngestJobService {
                     // Writing this save's whole record back would revert a concurrent save's
                     // metadata while keeping the attachment the other save had just replaced —
                     // one attempt's metadata with another attempt's bytes, marked confirmed.
-                    // A review built the interleaving. This does not make the write atomic;
-                    // the general lost-update shape of upsertDocument is recorded as a
-                    // residual. It does stop THIS write from being the one that loses it.
+                    // A review built the interleaving. The confirming write below is
+                    // conditioned on the revision re-read (upsertDlqCasOrNull, R1): a row
+                    // that moved in between answers null and is left as it is, with a WARN.
                     IngestDeadLetterRecord current = dlq;
                     try {
                         IngestDeadLetterRecord stored = getDlqEntry(dlq.getDlqId());
@@ -436,8 +482,7 @@ public class IngestJobService {
                     current.setHasContent(true);
                     @SuppressWarnings("unchecked")
                     Map<String, Object> confirmed = MAPPER.convertValue(current, Map.class);
-                    if (upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE,
-                            confirmed) == null) {
+                    if (upsertDlqCasOrNull(dlq.getDlqId(), confirmed, current) == null) {
                         logger.warn("the payload of DLQ entry {} is stored, but the row still"
                                 + " says its presence is assumed: the confirming write did not"
                                 + " land. A replay will refuse until the next save",
@@ -462,12 +507,11 @@ public class IngestJobService {
                         dlq.setPayloadWriteToken(null);
                         @SuppressWarnings("unchecked")
                         Map<String, Object> corrected = MAPPER.convertValue(dlq, Map.class);
-                        // The correction's own result is CHECKED. upsertDocument answers null
-                        // on a _rev race and the first version ignored it, while the log line
+                        // The correction's own result is CHECKED. upsertDlqCasOrNull answers
+                        // null on a _rev race and the first version ignored it, while the log line
                         // above — emitted before the write — already claimed the row had been
                         // corrected. A review found both halves.
-                        String correctedId = upsertDocument(dlq.getDlqId(),
-                                IngestDeadLetterRecord.DOC_TYPE, corrected);
+                        String correctedId = upsertDlqCasOrNull(dlq.getDlqId(), corrected, dlq);
                         if (correctedId == null) {
                             logger.error("DLQ row {} still claims a payload that was not"
                                     + " stored: the correcting write did not land. The retry"
@@ -479,7 +523,7 @@ public class IngestJobService {
                         }
                     } else {
                         // TRUE and null are BOTH "we do not know". TRUE was read as proof that
-                        // this payload landed — but upsertDocument deliberately carries an
+                        // this payload landed — but upsertDlqCas deliberately carries an
                         // EARLIER attempt's attachment forward, so the probe cannot tell one
                         // from the other, and the row was left claiming a payload that may be
                         // the wrong one. null was written as hasContent=false, which the
@@ -498,8 +542,7 @@ public class IngestJobService {
                         dlq.setPayloadWriteToken(null);
                         @SuppressWarnings("unchecked")
                         Map<String, Object> unknown = MAPPER.convertValue(dlq, Map.class);
-                        if (upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE,
-                                unknown) == null) {
+                        if (upsertDlqCasOrNull(dlq.getDlqId(), unknown, dlq) == null) {
                             logger.error("DLQ row {} does not record that its payload's"
                                     + " presence is unestablished: the correcting write did"
                                     + " not land", dlq.getDlqId());
@@ -511,9 +554,13 @@ public class IngestJobService {
             logger.info("Saved to DLQ: {} (source={}, failures={}, contentSize={})",
                     dlq.getDlqId(), request.getSourceObjectId(), dlq.getFailureCount(),
                     payload != null ? payload.length : 0);
-            // docId is null when upsertDocument's own write did not land (a _rev race), and
-            // the "Saved to DLQ" line above used to be printed for that too.
+            // docId is null when the store answered the write with ok=false (a revision
+            // conflict is thrown as DlqWriteConflictException and re-merged by the caller
+            // below), and the "Saved to DLQ" line above used to be printed for that too.
             return docId != null;
+        } catch (DlqWriteConflictException lost) {
+            // Re-merged by the caller from a fresh read; not "failed to save".
+            throw lost;
         } catch (Exception e) {
             logger.error("Failed to save to DLQ: {}", e.getMessage(), e);
             return false;
@@ -719,7 +766,7 @@ public class IngestJobService {
             // independently in the round after it was written.
             //
             // The dependency this rests on — that a Mango _find returns attachment stubs — is
-            // shared with loadDlqContent and with upsertDocument's carry-forward, which would
+            // shared with loadDlqContent and with upsertDlqCas's carry-forward, which would
             // DESTROY payloads on every update if it did not hold. It is not measured here.
             return raw.get(0).getAttachments() != null
                     && !raw.get(0).getAttachments().isEmpty();
@@ -855,7 +902,7 @@ public class IngestJobService {
                             .db(dbName).docId(docId).build()).execute().getResult();
             String rev = docResponse.getRev();
 
-            // A FIXED name, not the filename. upsertDocument carries an earlier attempt's
+            // A FIXED name, not the filename. upsertDlqCas carries an earlier attempt's
             // attachment forward, so a later attempt with a different filename left TWO
             // attachments on the row — and loadDlqContent takes the first key, which is the
             // older one. A replay then paired old bytes with new metadata and called the
@@ -1072,7 +1119,8 @@ public class IngestJobService {
             if (!raw.isEmpty()) {
                 throw new DlqEntryUnreadableException("DLQ entry " + dlqId + " is stored but"
                         + " could not be read; it has NOT been lost, and it is not safe to"
-                        + " report it as absent");
+                        + " report it as absent", raw.get(0).getId(), raw.get(0).getRev(),
+                        raw.get(0).getAttachments());
             }
         } catch (DlqEntryUnreadableException unreadable) {
             throw unreadable;
@@ -1083,10 +1131,32 @@ public class IngestJobService {
         return null;
     }
 
-    /** A dead-letter entry that is stored and could not be read as one. */
+    /**
+     * A dead-letter entry that is stored and could not be read as one.
+     *
+     * <p>When the row itself WAS returned, its storage bookkeeping travels here so the save
+     * that writes over it can do so as a compare-and-swap on that revision (R1); when the
+     * selector did not answer, all three are null and the save is a create under the
+     * deterministic id, which a row that is there refuses with a conflict.
+     */
     public static class DlqEntryUnreadableException extends RuntimeException {
         private static final long serialVersionUID = 1L;
-        public DlqEntryUnreadableException(String message) { super(message); }
+        private final transient String storedId;
+        private final transient String storedRevision;
+        private final transient java.util.Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> storedAttachments;
+        public DlqEntryUnreadableException(String message) { this(message, null, null, null); }
+        public DlqEntryUnreadableException(String message, String storedId, String storedRevision,
+                java.util.Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> storedAttachments) {
+            super(message);
+            this.storedId = storedId;
+            this.storedRevision = storedRevision;
+            this.storedAttachments = storedAttachments;
+        }
+        public String getStoredId() { return storedId; }
+        public String getStoredRevision() { return storedRevision; }
+        public java.util.Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> getStoredAttachments() {
+            return storedAttachments;
+        }
     }
 
     /**
@@ -1101,17 +1171,24 @@ public class IngestJobService {
     public boolean reserveDlqRetry(IngestDeadLetterRecord dlq) {
         dlq.setRetryCount(dlq.getRetryCount() + 1);
         dlq.setLastRetryAt(Instant.now().toString());
-        String savedId;
+        if (dlq.getStoredRevision() == null) {
+            // Not read from the store: there is no revision to condition the reservation on,
+            // and reserving against "whatever is there now" is exactly the race this method
+            // claims to close — two doors both re-found the row and both won (R1). The retry
+            // door always reads through getDlqEntry, which records the revision.
+            throw new DlqRetryNotReservableException("the retry of DLQ entry " + dlq.getDlqId()
+                    + " could not be reserved: the entry was not read from the store, so there"
+                    + " is no revision to reserve against", null);
+        }
+        DocumentResult saved;
         try {
-            savedId = upsertDocument(dlq.getDlqId(), IngestDeadLetterRecord.DOC_TYPE,
-                    MAPPER.convertValue(dlq, Map.class));
-        } catch (com.ibm.cloud.sdk.core.service.exception.ConflictException lostTheRace) {
-            // The 409 the javadoc describes. It never reached the arm above — the SDK throws
-            // on a conflict rather than answering ok=false — so the loser of a race landed in
-            // the catch below and was told the reservation could not be ATTEMPTED (503): a
-            // settled answer, "someone else holds it", reported as could-not-ask, with the 429
-            // the notes promise unreachable. A review found the arm dead in the round after
-            // the catch below was added.
+            saved = upsertDlqCas(dlq.getDlqId(), MAPPER.convertValue(dlq, Map.class),
+                    dlq.getStoredId(), dlq.getStoredRevision(), dlq.getStoredAttachments());
+        } catch (DlqWriteConflictException lostTheRace) {
+            // The 409 the javadoc describes — now a REAL one: the write is conditioned on
+            // the revision the door read, so a rival that reserved first makes this one
+            // lose instead of both adopting the latest revision and both winning. Reported
+            // as false (429), which is the settled answer "someone else holds it".
             logger.debug("DLQ retry reservation lost a write race: dlqId={}", dlq.getDlqId());
             return false;
         } catch (Exception couldNotAsk) {
@@ -1124,7 +1201,7 @@ public class IngestJobService {
             throw new DlqRetryNotReservableException("the retry of DLQ entry " + dlq.getDlqId()
                     + " could not be reserved: " + couldNotAsk.getMessage(), couldNotAsk);
         }
-        if (savedId == null) {
+        if (saved == null) {
             // The store answered ok=false without throwing: a write this node cannot vouch
             // for. Not "someone else holds it" — a _rev race is raised as ConflictException —
             // so it must not become the 429 the controller reserves for a rival. Codex found
@@ -1133,6 +1210,7 @@ public class IngestJobService {
                     + " could not be reserved: the store did not accept the reservation write",
                     null);
         }
+        dlq.setStoredRevision(saved.getRev());
         return true;
     }
 
@@ -1269,18 +1347,9 @@ public class IngestJobService {
                     && doc.getAttachments() == null) {
                 doc.setAttachments(prior.getAttachments());
             }
-        } else if (IngestDeadLetterRecord.DOC_TYPE.equals(docType)) {
-            // No prior row was RETURNED — which is also what a rebuilding index answers for
-            // a row that is there. A generated id then wrote a second row for the same item,
-            // and the id-addressed read that closed this for definitions does not exist here.
-            // A deterministic id turns that second write into a 409 (the save reports it as
-            // "could not record", the safe direction) instead of a twin. No compare-and-swap
-            // is involved (R1 is separate): this only stops the selector's empty answer from
-            // being written as "there is no row". Rows written before this carry generated
-            // ids and are not migrated: a twin of such a LEGACY row while the index rebuilds
-            // remains possible and is recorded (R23).
-            doc.setId("ingest_dlq:" + docKey);
         }
+        // Job rows only. The dead-letter rows go through upsertDlqCas: this method adopts
+        // whatever revision is there NOW, which is the lost-update class recorded as R1.
 
         PostDocumentOptions options = new PostDocumentOptions.Builder()
                 .db(dbName).document(doc).build();
@@ -1290,6 +1359,71 @@ public class IngestJobService {
             return null;
         }
         return result.getId();
+    }
+
+    /**
+     * The dead-letter write, conditioned on the revision the caller READ. A concurrent save
+     * is answered with {@link DlqWriteConflictException} to re-merge from — never adopted as
+     * "whatever is there now", which silently discarded the other writer's fields (R1). A
+     * record that was not read ({@code storedRev == null}) is a CREATE under the deterministic
+     * id; a row that is there then conflicts the same way (R23). The attachment stubs of the
+     * revision read are carried forward: CouchDB drops attachments an update does not list.
+     *
+     * @return the store's answer (id and new revision), or null when it answered ok=false
+     */
+    private DocumentResult upsertDlqCas(String dlqId, Map<String, Object> jsonMap, String storedId,
+            String storedRev, java.util.Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> storedAttachments) {
+        CloudantClientWrapper client = getConfClient();
+        String dbName = client.getDatabaseName();
+        var cloudant = client.getClient();
+        jsonMap.put("type", IngestDeadLetterRecord.DOC_TYPE);
+        Document doc = new Document();
+        for (Map.Entry<String, Object> entry : jsonMap.entrySet()) {
+            doc.put(entry.getKey(), entry.getValue());
+        }
+        doc.setId(storedId != null ? storedId : "ingest_dlq:" + dlqId);
+        if (storedRev != null) {
+            doc.setRev(storedRev);
+            if (storedAttachments != null && !storedAttachments.isEmpty()
+                    && doc.getAttachments() == null) {
+                doc.setAttachments(storedAttachments);
+            }
+        }
+        DocumentResult result;
+        try {
+            result = cloudant.postDocument(new PostDocumentOptions.Builder()
+                    .db(dbName).document(doc).build()).execute().getResult();
+        } catch (com.ibm.cloud.sdk.core.service.exception.ConflictException lost) {
+            throw new DlqWriteConflictException("the row of DLQ entry " + dlqId
+                    + " changed since it was read (" + (storedRev != null
+                            ? "revision " + storedRev : "no row was read") + ")", lost);
+        }
+        if (result == null || !Boolean.TRUE.equals(result.isOk())) {
+            logger.error("Failed to save DLQ entry {}: {}", dlqId,
+                    result != null ? result.getError() : "no answer");
+            return null;
+        }
+        return result;
+    }
+
+    /** As {@link #upsertDlqCas} against the row {@code read} was read from; null when it lost. */
+    private String upsertDlqCasOrNull(String dlqId, Map<String, Object> jsonMap,
+            IngestDeadLetterRecord read) {
+        try {
+            DocumentResult result = upsertDlqCas(dlqId, jsonMap, read.getStoredId(),
+                    read.getStoredRevision(), read.getStoredAttachments());
+            return result != null ? result.getId() : null;
+        } catch (DlqWriteConflictException lost) {
+            logger.warn("a follow-up write of DLQ entry {} lost a write race and was not"
+                    + " applied: {}", dlqId, lost.getMessage());
+            return null;
+        }
+    }
+
+    /** A compare-and-swap write that lost: the row changed since the read it was conditioned on. */
+    public static class DlqWriteConflictException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        public DlqWriteConflictException(String message, Throwable cause) { super(message, cause); }
     }
 
     @SuppressWarnings("unchecked")
@@ -1318,7 +1452,15 @@ public class IngestJobService {
                 props.remove("_id");
                 props.remove("_rev");
                 props.remove("type");
-                results.add(MAPPER.convertValue(props, clazz));
+                T decoded = MAPPER.convertValue(props, clazz);
+                if (decoded instanceof IngestDeadLetterRecord read) {
+                    // The revision — and the attachment stubs of that same revision — the
+                    // compare-and-swap write is conditioned on (R1).
+                    read.setStoredId(rawDoc.getId());
+                    read.setStoredRevision(rawDoc.getRev());
+                    read.setStoredAttachments(rawDoc.getAttachments());
+                }
+                results.add(decoded);
                 count++;
             } catch (Exception e) {
                 logger.warn("Failed to deserialize {}: {}", clazz.getSimpleName(), e.getMessage());

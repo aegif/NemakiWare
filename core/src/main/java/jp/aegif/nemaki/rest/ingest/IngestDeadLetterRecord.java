@@ -195,4 +195,34 @@ public class IngestDeadLetterRecord {
     public void setWebhookDeliveryRecord(boolean webhookDeliveryRecord) {
         this.webhookDeliveryRecord = webhookDeliveryRecord;
     }
+
+    /**
+     * Storage bookkeeping of the row this record was READ from — never persisted, never
+     * inherited. A write that follows a read is conditioned on this revision (a
+     * compare-and-swap), so a concurrent save is a 409 to re-merge from rather than a lost
+     * update; the attachment stubs are those of the same revision, carried forward by the
+     * write so CouchDB keeps the payload. Null for a record that was not read from the store
+     * (R1: {@code upsertDocument} adopted "whatever is there now" and silently discarded the
+     * other writer's fields).
+     */
+    private transient String storedId;
+    private transient String storedRevision;
+    private transient java.util.Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> storedAttachments;
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public String getStoredId() { return storedId; }
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public void setStoredId(String storedId) { this.storedId = storedId; }
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public String getStoredRevision() { return storedRevision; }
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public void setStoredRevision(String storedRevision) { this.storedRevision = storedRevision; }
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public java.util.Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> getStoredAttachments() {
+        return storedAttachments;
+    }
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public void setStoredAttachments(
+            java.util.Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> storedAttachments) {
+        this.storedAttachments = storedAttachments;
+    }
 }
