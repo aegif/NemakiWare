@@ -862,4 +862,23 @@ class ImapIdleSessionRegistryTest {
         verify((FetchSupport) r[1], never()).saveSourceReadToDlq(any(), any());
         assertEquals(0, ((ImapIdleMonitor) r[0]).undurableMissCount(PROF));
     }
+
+    @Test
+    @DisplayName("a folder or ACL read that failed is not a revocation either")
+    void aFolderOrAclReadThatFailedIsNotARevocation() {
+        // The two reasons R11 added carry the same distinction CREATOR_LOOKUP_FAILED does:
+        // the store did not answer. The predicate is what this test can reach.
+        assertTrue(ImapIdleMonitor.denialCouldNotAsk(
+                        jp.aegif.nemaki.rest.ingest.DenialReason.TARGET_FOLDER_LOOKUP_FAILED),
+                "a target folder read that failed was treated as a settled denial");
+        assertTrue(ImapIdleMonitor.denialCouldNotAsk(
+                        jp.aegif.nemaki.rest.ingest.DenialReason.CREATOR_CMIS_ALL_LOOKUP_FAILED),
+                "a cmis:all evaluation that failed was treated as a settled denial");
+        assertFalse(ImapIdleMonitor.denialCouldNotAsk(
+                        jp.aegif.nemaki.rest.ingest.DenialReason.TARGET_FOLDER_UNRESOLVABLE),
+                "a folder the store answered is gone must still stop the session");
+        assertFalse(ImapIdleMonitor.denialCouldNotAsk(
+                        jp.aegif.nemaki.rest.ingest.DenialReason.CREATOR_CMIS_ALL_LOST),
+                "a cmis:all the store answered is lost must still stop the session");
+    }
 }

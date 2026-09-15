@@ -238,12 +238,28 @@ class CheckpointManagerTest {
     // ── null settingsService ──
 
     @Test
-    void nullSettingsService_gracefulDegradation() {
+    void nullSettingsService_savesNothingAndListsNothing() {
         CheckpointManager noSettings = new CheckpointManager();
-        assertNull(noSettings.loadSimpleCheckpoint("p1", "gmail"));
         assertDoesNotThrow(() -> noSettings.saveSimpleCheckpoint("p1", "gmail", "val"));
-        assertArrayEquals(new long[]{0, 0}, noSettings.loadCheckpointWithValidity("p1", "INBOX"));
         assertTrue(noSettings.getCheckpoints("p1").isEmpty());
+    }
+
+    @Test
+    void loadSimple_refusesWhenUnwired() {
+        // Unwired answered null — "never polled" — and the next poll then took the first
+        // page and wrote a checkpoint past everything it did not list (R28).
+        CheckpointManager noSettings = new CheckpointManager();
+        assertThrows(IntegrationSettingsService.SettingUnreadableException.class,
+                () -> noSettings.loadSimpleCheckpoint("p1", "gmail"),
+                "an unwired node answered 'never polled'");
+    }
+
+    @Test
+    void loadValidity_refusesWhenUnwired() {
+        CheckpointManager noSettings = new CheckpointManager();
+        assertThrows(IntegrationSettingsService.SettingUnreadableException.class,
+                () -> noSettings.loadCheckpointWithValidity("p1", "INBOX"),
+                "an unwired node answered {0, 0}");
     }
 
     // ── Mock IntegrationSettingsService ──

@@ -131,15 +131,15 @@ class IngestSchedulerDelegatedRunTest {
         when(profileService.listScheduledIndexFree())
                 .thenReturn(List.of(delegatedProfile()));
         when(ctxFactory.buildOrNull(REPO, CREATOR)).thenReturn(synth);
-        when(authService.resolveFolderId(eq(REPO), eq(FOLDER), any())).thenReturn(FOLDER);
+        when(authService.resolveFolderIdOrRefuse(eq(REPO), eq(FOLDER), any())).thenReturn(FOLDER);
         // CREATOR_CMIS_ALL_LOST path
-        when(authService.canManageProfileForFolderAsUser(eq(CREATOR), eq(REPO), eq(FOLDER)))
+        when(authService.canManageProfileForFolderAsUserOrRefuse(eq(CREATOR), eq(REPO), eq(FOLDER)))
                 .thenReturn(false);
 
         scheduler.pollScheduledProfiles();
 
         verify(authService, times(1))
-                .canManageProfileForFolderAsUser(eq(CREATOR), eq(REPO), eq(FOLDER));
+                .canManageProfileForFolderAsUserOrRefuse(eq(CREATOR), eq(REPO), eq(FOLDER));
         verify(connectorService, never()).get(any());
         verify(canonicalImportService, never()).execute(any(), any());
     }
@@ -167,8 +167,8 @@ class IngestSchedulerDelegatedRunTest {
         when(profileService.listScheduledIndexFree())
                 .thenReturn(List.of(delegatedProfile()));
         when(ctxFactory.buildOrNull(REPO, CREATOR)).thenReturn(synth);
-        when(authService.resolveFolderId(eq(REPO), eq(FOLDER), any())).thenReturn(FOLDER);
-        when(authService.canManageProfileForFolderAsUser(eq(CREATOR), eq(REPO), eq(FOLDER)))
+        when(authService.resolveFolderIdOrRefuse(eq(REPO), eq(FOLDER), any())).thenReturn(FOLDER);
+        when(authService.canManageProfileForFolderAsUserOrRefuse(eq(CREATOR), eq(REPO), eq(FOLDER)))
                 .thenReturn(true);
         lenient().when(connectorService.get(eq("c1"))).thenReturn(null);
 
@@ -297,9 +297,9 @@ class IngestSchedulerDelegatedRunTest {
         // First call (in prepareDelegatedTick step 5) returns FOLDER.
         // Second call (the new explicit resolve in pollScheduledProfiles)
         // returns null — folder deleted between ticks.
-        when(authService.resolveFolderId(eq(REPO), eq(FOLDER), any()))
+        when(authService.resolveFolderIdOrRefuse(eq(REPO), eq(FOLDER), any()))
                 .thenReturn(FOLDER, (String) null);
-        when(authService.canManageProfileForFolderAsUser(eq(CREATOR), eq(REPO), eq(FOLDER)))
+        when(authService.canManageProfileForFolderAsUserOrRefuse(eq(CREATOR), eq(REPO), eq(FOLDER)))
                 .thenReturn(true);
         ConnectorDefinition delegatedConnector = new ConnectorDefinition();
         delegatedConnector.setConnectorId("c1");
@@ -350,9 +350,9 @@ class IngestSchedulerDelegatedRunTest {
         when(profileService.listScheduledIndexFree())
                 .thenReturn(List.of(delegatedProfile()));
         when(ctxFactory.buildOrNull(REPO, CREATOR)).thenReturn(synth);
-        when(authService.resolveFolderId(eq(REPO), eq(FOLDER), any()))
+        when(authService.resolveFolderIdOrRefuse(eq(REPO), eq(FOLDER), any()))
                 .thenReturn(FOLDER);
-        when(authService.canManageProfileForFolderAsUser(eq(CREATOR), eq(REPO), eq(FOLDER)))
+        when(authService.canManageProfileForFolderAsUserOrRefuse(eq(CREATOR), eq(REPO), eq(FOLDER)))
                 .thenReturn(true);
         ConnectorDefinition revokedConnector = new ConnectorDefinition();
         revokedConnector.setConnectorId("c1");
@@ -454,8 +454,8 @@ class IngestSchedulerDelegatedRunTest {
         ConnectorDefinition c = new ConnectorDefinition();
         c.setConnectorId("c1");
         when(ctxFactory.buildOrNull(REPO, CREATOR)).thenReturn(synth);
-        when(authService.resolveFolderId(eq(REPO), eq(FOLDER), any())).thenReturn(FOLDER);
-        when(authService.canManageProfileForFolderAsUser(eq(CREATOR), eq(REPO), eq(FOLDER)))
+        when(authService.resolveFolderIdOrRefuse(eq(REPO), eq(FOLDER), any())).thenReturn(FOLDER);
+        when(authService.canManageProfileForFolderAsUserOrRefuse(eq(CREATOR), eq(REPO), eq(FOLDER)))
                 .thenReturn(true);
         // connector delegation revoked
         when(authService.canUseConnectorForDelegatedProfileAsUser(
@@ -475,8 +475,8 @@ class IngestSchedulerDelegatedRunTest {
         ConnectorDefinition c = new ConnectorDefinition();
         c.setConnectorId("c1");
         when(ctxFactory.buildOrNull(REPO, CREATOR)).thenReturn(synth);
-        when(authService.resolveFolderId(eq(REPO), eq(FOLDER), any())).thenReturn(FOLDER);
-        when(authService.canManageProfileForFolderAsUser(eq(CREATOR), eq(REPO), eq(FOLDER)))
+        when(authService.resolveFolderIdOrRefuse(eq(REPO), eq(FOLDER), any())).thenReturn(FOLDER);
+        when(authService.canManageProfileForFolderAsUserOrRefuse(eq(CREATOR), eq(REPO), eq(FOLDER)))
                 .thenReturn(true);
         when(authService.canUseConnectorForDelegatedProfileAsUser(
                 eq(CREATOR), eq(REPO), any(), eq(FOLDER))).thenReturn(true);
@@ -487,5 +487,72 @@ class IngestSchedulerDelegatedRunTest {
         assertTrue(auth.isAllowed(), "fully-valid delegated fetch must be allowed");
         assertEquals(synth, auth.getCallContext(),
                 "must return the synthesised creator context for executeFetch");
+    }
+
+    @Test
+    void aTargetFolderReadThatFailedIsNotUnresolvable() {
+        // resolveFolderId answered null for a store that did not answer, and the tick wrote
+        // TARGET_FOLDER_UNRESOLVABLE — a settled finding about a folder nothing read — into
+        // the audit trail; IDLE, which stops on a settled denial, ended capture for good on
+        // one CouchDB blip (R11).
+        CallContext synth = mock(CallContext.class);
+        when(synth.getUsername()).thenReturn(CREATOR);
+        when(profileService.listScheduledIndexFree())
+                .thenReturn(List.of(delegatedProfile()));
+        when(ctxFactory.buildOrNull(REPO, CREATOR)).thenReturn(synth);
+        when(authService.resolveFolderIdOrRefuse(eq(REPO), eq(FOLDER), any()))
+                .thenThrow(new IngestAuthorizationService.AuthorizationReadFailedException(
+                        "the target folder path could not be read: connection reset", null));
+
+        scheduler.pollScheduledProfiles();
+
+        verify(authService, never()).canManageProfileForFolderAsUserOrRefuse(
+                anyString(), anyString(), anyString());
+        verify(canonicalImportService, never()).execute(any(), any());
+        ArgumentCaptor<java.util.Map<String, ?>> detailsCap =
+                ArgumentCaptor.forClass(java.util.Map.class);
+        verify(auditLogger, atLeastOnce()).logOperation(
+                eq(jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_INGEST_FAILED),
+                eq(REPO), eq(CREATOR), anyString(), anyBoolean(), anyString(),
+                detailsCap.capture());
+        assertTrue(detailsCap.getAllValues().stream().anyMatch(d ->
+                        DenialReason.TARGET_FOLDER_LOOKUP_FAILED.name().equals(d.get("denialReason"))),
+                "a folder read that failed was not recorded as could-not-ask: "
+                        + detailsCap.getAllValues());
+        assertFalse(detailsCap.getAllValues().stream().anyMatch(d ->
+                        DenialReason.TARGET_FOLDER_UNRESOLVABLE.name().equals(d.get("denialReason"))),
+                "a folder read that failed was recorded as a folder that is gone: "
+                        + detailsCap.getAllValues());
+    }
+
+    @Test
+    void aCmisAllReadThatFailedIsNotALoss() {
+        CallContext synth = mock(CallContext.class);
+        when(synth.getUsername()).thenReturn(CREATOR);
+        when(profileService.listScheduledIndexFree())
+                .thenReturn(List.of(delegatedProfile()));
+        when(ctxFactory.buildOrNull(REPO, CREATOR)).thenReturn(synth);
+        when(authService.resolveFolderIdOrRefuse(eq(REPO), eq(FOLDER), any())).thenReturn(FOLDER);
+        when(authService.canManageProfileForFolderAsUserOrRefuse(eq(CREATOR), eq(REPO), eq(FOLDER)))
+                .thenThrow(new IngestAuthorizationService.AuthorizationReadFailedException(
+                        "the ACL of folder folder-1 could not be read: connection reset", null));
+
+        scheduler.pollScheduledProfiles();
+
+        verify(canonicalImportService, never()).execute(any(), any());
+        ArgumentCaptor<java.util.Map<String, ?>> detailsCap =
+                ArgumentCaptor.forClass(java.util.Map.class);
+        verify(auditLogger, atLeastOnce()).logOperation(
+                eq(jp.aegif.nemaki.audit.AuditOperation.EXTERNAL_INGEST_FAILED),
+                eq(REPO), eq(CREATOR), anyString(), anyBoolean(), anyString(),
+                detailsCap.capture());
+        assertTrue(detailsCap.getAllValues().stream().anyMatch(d ->
+                        DenialReason.CREATOR_CMIS_ALL_LOOKUP_FAILED.name().equals(d.get("denialReason"))),
+                "an ACL read that failed was not recorded as could-not-ask: "
+                        + detailsCap.getAllValues());
+        assertFalse(detailsCap.getAllValues().stream().anyMatch(d ->
+                        DenialReason.CREATOR_CMIS_ALL_LOST.name().equals(d.get("denialReason"))),
+                "an ACL read that failed was recorded as a lost cmis:all: "
+                        + detailsCap.getAllValues());
     }
 }

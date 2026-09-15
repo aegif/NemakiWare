@@ -1695,4 +1695,48 @@ class IngestEvidenceSnapshotTest {
                 "a standing misconfiguration was marked retryable, so the caller appends "
                         + "'; retry shortly' and the endpoint answers 503");
     }
+
+    @Test
+    @DisplayName("a target folder path the importing user may not read is not a retry, and is 403")
+    void aTargetFolderPathTheUserMayNotReadIsNotARetry() throws Exception {
+        // A permission denial is an ANSWER: every retry gets the same one. It was folded into
+        // the generic arm and came back as "; retry shortly" / 503 (R31).
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        jp.aegif.nemaki.cmis.service.ObjectService objects =
+                mock(jp.aegif.nemaki.cmis.service.ObjectService.class);
+        when(objects.getObjectByPath(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenThrow(
+                new org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException(
+                        "Permission denied"));
+        inject(service, "objectService", objects);
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setRepositoryId("bedroom");
+        profile.setTargetFolderPath("/a/b");
+        java.lang.reflect.Method resolve = CanonicalImportServiceImpl.class.getDeclaredMethod(
+                "resolveTargetFolderId", ImportProfileDefinition.class, String.class,
+                org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        resolve.setAccessible(true);
+
+        java.lang.reflect.InvocationTargetException wrapped =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        java.lang.reflect.InvocationTargetException.class,
+                        () -> resolve.invoke(service, profile, "bedroom", null),
+                        "a permission denial answered 'there is no folder'");
+        Throwable cause = wrapped.getCause();
+        assertTrue(cause instanceof CanonicalImportServiceImpl.TargetFolderUnreadableException,
+                "the refusal is not the typed one: " + cause);
+        assertFalse(((CanonicalImportServiceImpl.TargetFolderUnreadableException) cause).isRetryable(),
+                "a permission denial was made a retry");
+        assertTrue(cause.getMessage().contains("permission denied for the importing user"),
+                "the refusal does not name the denial: " + cause.getMessage());
+        org.junit.jupiter.api.Assertions.assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
+                ExternalIngestController.classifyErrorStatus(
+                        ExternalIngestResult.error("r", cause.getMessage())),
+                "a permission denial on the target folder was not answered 403");
+    }
 }

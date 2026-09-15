@@ -659,4 +659,44 @@ class IngestSchedulerControllerAnswerTest {
                         + " could not be established (CREATOR_LOOKUP_FAILED); retry shortly"),
                 "an authorisation that could not be ASKED was answered as a denial");
     }
+
+    @Test
+    @DisplayName("a listing that refused is not an answer, and does not take the resolution down")
+    void aListingThatRefusedIsNotAnAnswer() {
+        // Raw, the refusal escaped to the poll's outer catch and ended the tick for every
+        // profile after this one, and answered 500 from the folder and trigger endpoints (R29).
+        IngestSchedulerService service = new IngestSchedulerService();
+        ConnectorDefinitionService connectors = mock(ConnectorDefinitionService.class);
+        service.setConnectorService(connectors);
+        ImportProfileDefinition profile = scheduledProfile();
+        profile.setSchedulerEnabled(false);
+        profile.setDefaultConnectorId(null);
+        profile.setAllowedArchetypes(java.util.List.of(SourceArchetype.FILE_SHARE));
+        org.mockito.Mockito.doThrow(
+                new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException("nope"))
+                .when(connectors).listByArchetype(SourceArchetype.FILE_SHARE);
+
+        IngestSchedulerService.ConnectorForProfile refused =
+                assertDoesNotThrow(() -> service.resolveConnectorFor(profile),
+                        "a refused listing took the resolution down instead of being reported");
+
+        assertEquals(IngestSchedulerService.Unresolved.LISTING_REFUSED, refused.why());
+        assertFalse(refused.answered(), "a refused listing was reported as an answer");
+    }
+
+    @Test
+    @DisplayName("a refused listing answers 503 from the trigger, not 'no compatible connector'")
+    void aRefusedListingIs503OnTrigger() {
+        ImportProfileDefinition profile = scheduledProfile();
+        when(schedulerService.scheduledProfilesWithUnreadable()).thenReturn(
+                new ImportProfileDefinitionService.OwnedProfiles(
+                        java.util.List.of(profile), java.util.List.of()));
+        when(schedulerService.resolveConnectorFor(profile)).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(
+                        null, IngestSchedulerService.Unresolved.LISTING_REFUSED));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE,
+                controller.triggerIngest("p1").getStatusCode(),
+                "a listing that never ran was reported as the profile's fault");
+    }
 }

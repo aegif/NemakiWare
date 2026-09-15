@@ -508,4 +508,77 @@ class DlqRetryRefusalStatusTest {
                         .contains("did not confirm"),
                 "the answer does not say the store did not confirm: " + res.getBody());
     }
+
+    @Test
+    @DisplayName("a webhook delivery record is refused by its own mark")
+    void aWebhookDeliveryRecordIsNotReplayed() throws Exception {
+        CanonicalImportService importService = mock(CanonicalImportService.class);
+        ResponseEntity<?> res = retryWith(row -> row.setWebhookDeliveryRecord(true),
+                importService, null);
+
+        assertEquals(HttpStatus.CONFLICT, res.getStatusCode(),
+                "a row that records misses and carries no delivery was replayed: " + res.getBody());
+        assertTrue(String.valueOf(((Map<?, ?>) res.getBody()).get("message"))
+                        .contains("webhook deliveries"),
+                "the answer does not say what the row is: " + res.getBody());
+        org.mockito.Mockito.verify(importService, org.mockito.Mockito.never())
+                .execute(any(), any());
+    }
+
+    @Test
+    @DisplayName("a genuine item whose id merely looks like the old marker is replayed")
+    void aGenuineItemNamedLikeTheOldMarkerIsReplayed() throws Exception {
+        // The marker used to be the prefix of sourceObjectId — a caller-supplied string — so
+        // a genuine item named that way was refused for ever (R10).
+        CanonicalImportService importService = mock(CanonicalImportService.class);
+        when(importService.execute(any(), any())).thenReturn(
+                ExternalIngestResult.success("req-1", "obj-1", "1.0", true, "ev-1"));
+        ResponseEntity<?> res = retryWith(
+                row -> row.setSourceObjectId("webhook-deliveries:p1:c1"), importService, null);
+
+        assertEquals(HttpStatus.OK, res.getStatusCode(),
+                "an item whose id looks like the old marker was refused: " + res.getBody());
+        org.mockito.Mockito.verify(importService).execute(any(), any());
+    }
+
+    @Test
+    @DisplayName("a cleanup the store did not answer keeps the entry — the import still landed")
+    void aCleanupTheStoreDidNotAnswerKeepsTheEntry() throws Exception {
+        // deleteDlqEntry's typed refusal fell into the retry door's catch-all and answered 500
+        // "Retry failed" for an import that had succeeded; the row is still there and the
+        // next replay resolves it idempotently (R37).
+        CanonicalImportService importService = mock(CanonicalImportService.class);
+        when(importService.execute(any(), any())).thenReturn(
+                ExternalIngestResult.success("req-1", "obj-1", "1.0", true, "ev-1"));
+        ResponseEntity<?> res = retryWith(row -> { }, importService,
+                jobService -> when(jobService.deleteDlqEntry("dlq-1")).thenThrow(
+                        new IngestJobService.IngestStoreDidNotAnswerException(
+                                "the store did not answer the delete of row x; retry shortly")));
+
+        assertEquals(HttpStatus.OK, res.getStatusCode(),
+                "an import that landed was reported as a failed retry: " + res.getBody());
+        assertEquals("success-entry-kept", ((Map<?, ?>) res.getBody()).get("status"),
+                "the entry's survival was not stated: " + res.getBody());
+        assertTrue(String.valueOf(((Map<?, ?>) res.getBody()).get("entryKeptNote"))
+                        .contains("did not answer"),
+                "the note does not say why the entry survived: " + res.getBody());
+    }
+
+    @Test
+    @DisplayName("the 404 for a delete that found no row does not tell the caller to retry")
+    void aDeleteThatFoundNoRowDoesNotSayRetry() throws Exception {
+        IngestDlqController controller = new IngestDlqController();
+        IngestJobService jobService = mock(IngestJobService.class);
+        when(jobService.deleteDlqEntry("dlq-1")).thenReturn(new IngestJobService.DlqDeletion(0, 0));
+        wire(controller, "ingestJobService", jobService);
+        wire(controller, "httpRequest", adminRequest());
+
+        ResponseEntity<?> res = (ResponseEntity<?>) controller.deleteDlqEntry("dlq-1");
+
+        assertEquals(HttpStatus.NOT_FOUND, res.getStatusCode());
+        String message = String.valueOf(((Map<?, ?>) res.getBody()).get("message"));
+        org.junit.jupiter.api.Assertions.assertFalse(message.contains("retry"),
+                "a 404 told the caller to retry a request that answered 'not found': " + message);
+        assertTrue(message.contains("nothing was deleted"), "the body no longer says the row survived");
+    }
 }

@@ -47,6 +47,7 @@ class IngestWebhookBoxDropboxTest {
     @Mock private IngestSchedulerService schedulerService;
     @Mock private ImportProfileDefinitionService profileService;
     @Mock private HttpServletRequest httpRequest;
+    @Mock private FetchSupport fetchSupport;
 
     @InjectMocks private IngestWebhookController controller;
 
@@ -516,5 +517,68 @@ class IngestWebhookBoxDropboxTest {
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("\"status\":\"ignored\"")));
+    }
+
+    // ── The deliveries this node accepted and did not fetch are RECORDED (R10 / R30) ──
+
+    @Test
+    void anAuthorisationThatCouldNotBeAskedIsRecordedAsAWebhookDeliveryRecord() throws Exception {
+        // The row is marked by the service as a record — not by the shape of its
+        // sourceObjectId, which is the caller's string (R10).
+        String secret = "dbxsecret";
+        connector("c-dbx", "dropbox", secret);
+        profileFor("c-dbx", Map.of("folderPath", "/Documents"));
+        IngestSchedulerService.DelegatedAuthorization couldNotAsk =
+                org.mockito.Mockito.mock(IngestSchedulerService.DelegatedAuthorization.class);
+        when(couldNotAsk.isAllowed()).thenReturn(false);
+        when(couldNotAsk.getDenialReason()).thenReturn(DenialReason.CREATOR_LOOKUP_FAILED);
+        when(schedulerService.authorizeDelegatedFetch(any(), any())).thenReturn(couldNotAsk);
+        when(fetchSupport.saveWebhookDeliveryRecordToDlq(any(), any())).thenReturn(true);
+
+        mockMvc.perform(signedDropboxPost("c-dbx", secret)).andExpect(status().isOk());
+
+        verify(fetchSupport).saveWebhookDeliveryRecordToDlq(any(),
+                org.mockito.ArgumentMatchers.contains("could not be established"));
+        verify(fetchSupport, never()).saveSourceNeverReadToDlq(any(), any());
+    }
+
+    @Test
+    void aFetchThatCouldNotReadItsConfigurationIsRecorded() throws Exception {
+        // The sender already has its 200. A fetch that could not read its own configuration
+        // or checkpoint only logged; the authorisation arm records the same class (R30).
+        String secret = "dbxsecret";
+        connector("c-dbx", "dropbox", secret);
+        profileFor("c-dbx", Map.of("folderPath", "/Documents"));
+        org.mockito.Mockito.doThrow(new jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                        .SettingUnreadableException("the checkpoint of p-c-dbx could not be read"))
+                .when(schedulerService).executeFetch(any(), any(), any(), any());
+        when(fetchSupport.saveWebhookDeliveryRecordToDlq(any(), any())).thenReturn(true);
+
+        mockMvc.perform(signedDropboxPost("c-dbx", secret)).andExpect(status().isOk());
+
+        verify(fetchSupport, org.mockito.Mockito.timeout(5000)).saveWebhookDeliveryRecordToDlq(
+                any(), org.mockito.ArgumentMatchers.contains("could not read its configuration"));
+    }
+
+    @Test
+    void anUnwiredPropertyManagerDoesNotAnswerNoAccessToken() throws Exception {
+        // propertyManager is not a mock of this class, so @InjectMocks leaves it null — the
+        // shape of a node without it. It answered null, and the caller said "No access
+        // token" (400): a claim about the credential from a node that cannot read any (R28).
+        ConnectorDefinition c = new ConnectorDefinition();
+        c.setConnectorId("c-teams");
+        c.setCredentialRef("secret.teams");
+        java.lang.reflect.Method resolve = IngestWebhookController.class
+                .getDeclaredMethod("resolveToken", ConnectorDefinition.class);
+        resolve.setAccessible(true);
+
+        java.lang.reflect.InvocationTargetException wrapped =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        java.lang.reflect.InvocationTargetException.class,
+                        () -> resolve.invoke(controller, c),
+                        "an unwired node answered 'no access token'");
+        org.junit.jupiter.api.Assertions.assertTrue(wrapped.getCause() instanceof
+                        jp.aegif.nemaki.rest.controller.IntegrationSettingsService.SettingUnreadableException,
+                "the refusal is not the typed one: " + wrapped.getCause());
     }
 }

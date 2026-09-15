@@ -2933,4 +2933,25 @@ class CanonicalImportServiceTest {
                 ExternalIngestController.classifyErrorStatus(result),
                 "a caller mistake was answered as our bug: " + result.errors());
     }
+
+    @Test
+    void anUnwiredSettingsServiceIsNotNoIdempotencyRecord() {
+        // Unwired answered "no record", and a dedupePolicy=replace request then DELETED the
+        // document the earlier run of the same request had committed (R28).
+        plainProfileReachingTheWrite().setDedupePolicy("replace");
+        service.setIntegrationSettingsService(null);
+        ExternalIngestRequest req = requestForReCheck();
+        req.setIdempotencyKey("k-1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(), "an unwired settings service let the write run as 'no record'");
+        assertTrue(result.errors().get(0).contains("not wired"),
+                "the refusal does not say the service is unwired: " + result.errors());
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                ExternalIngestController.classifyErrorStatus(result),
+                "an unwired node was reported as our bug: " + result.errors());
+        verify(objectService, never()).deleteObject(any(), anyString(), anyString(),
+                anyBoolean(), any());
+    }
 }

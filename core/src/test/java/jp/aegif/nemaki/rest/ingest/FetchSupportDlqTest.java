@@ -73,4 +73,20 @@ public class FetchSupportDlqTest {
                 .thenReturn(true);
         assertTrue(fetchSupport.saveSourceReadToDlq(req, "not imported"));
     }
+
+    @Test
+    public void saveWebhookDeliveryRecordToDlqReportsTheServicesAnswer() {
+        IngestJobService jobService = mock(IngestJobService.class);
+        when(jobService.saveWebhookDeliveryRecordToDlq(any(), any())).thenReturn(false);
+        FetchSupport fetchSupport = new FetchSupport();
+        fetchSupport.setIngestJobService(jobService);
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setSourceObjectId("webhook-deliveries:p1:c1");
+
+        assertFalse(fetchSupport.saveWebhookDeliveryRecordToDlq(req, "not fetched"),
+                "the helper claimed a record the service said it did not write");
+
+        when(jobService.saveWebhookDeliveryRecordToDlq(any(), any())).thenReturn(true);
+        assertTrue(fetchSupport.saveWebhookDeliveryRecordToDlq(req, "not fetched"));
+    }
 }

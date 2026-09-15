@@ -557,4 +557,21 @@ class FolderConnectorControllerTest {
                 "a profile whose connector could not be read vanished from the folder: " + body);
         assertTrue(body.get("connectorsUnresolved").toString().contains(PROFILE));
     }
+
+    @Test
+    void aRefusedListingIs503OnRun() {
+        // The default arm answered 400 "No connector resolved" for a listing that never ran (R29).
+        adminCtx();
+        folder();
+        when(profileService.get(PROFILE)).thenReturn(profile());
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(
+                        null, IngestSchedulerService.Unresolved.LISTING_REFUSED));
+
+        ResponseEntity<Map<String, Object>> r = controller.run(REPO, FOLDER, PROFILE);
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, r.getStatusCode(),
+                "a listing that never ran was reported as the profile's fault: " + r.getBody());
+    }
 }

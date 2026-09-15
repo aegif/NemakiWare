@@ -26,6 +26,9 @@ import com.ibm.cloud.sdk.core.service.exception.ServiceResponseException;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import jp.aegif.nemaki.dao.impl.couch.connector.CouchConflicts;
+import com.ibm.cloud.cloudant.v1.model.PostDocumentOptions;
+import org.mockito.ArgumentCaptor;
+import static org.mockito.Mockito.verify;
 
 /**
  * The ingest store's reads through {@code IngestJobService.findRawDocs}, where three answers
@@ -341,5 +344,51 @@ class IngestStoreAnswersAreNotAbsenceTest {
 
         assertEquals(new IngestJobService.DlqDeletion(1, 1), jobs.deleteDlqEntry("old"),
                 "the unconfirmed twin was folded into a confirmed count");
+    }
+
+    private static ExternalIngestRequest itemRequest() {
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setRepositoryId("bedroom");
+        request.setConnectorId("c1");
+        request.setSourceObjectId("m-1");
+        return request;
+    }
+
+    @Test
+    @DisplayName("a delete the store did not answer is the typed refusal, not a raw failure")
+    @SuppressWarnings("unchecked")
+    void aDeleteTheStoreDidNotAnswerIsATypedRefusal() {
+        // Raw, it reached the DELETE endpoint as a Spring 500 (R27).
+        Cloudant cloudant = mock(Cloudant.class);
+        ServiceCall<FindResult> find = findAnswering(List.of(oldEntry()));
+        when(cloudant.postFind(any())).thenReturn(find);
+        ServiceCall<DocumentResult> delete = mock(ServiceCall.class);
+        when(delete.execute()).thenThrow(new RuntimeException("connection reset"));
+        when(cloudant.deleteDocument(any())).thenReturn(delete);
+        IngestJobService jobs = serviceOn(cloudant);
+
+        assertThrows(IngestJobService.IngestStoreDidNotAnswerException.class,
+                () -> jobs.deleteDlqEntry("old"),
+                "a store that did not answer the delete escaped as a raw failure");
+    }
+
+    @Test
+    @DisplayName("a webhook delivery record is written with its own mark")
+    void aWebhookDeliveryRecordSaveWritesTheMark() {
+        // The mark used to be a prefix on sourceObjectId — the caller's string (R10).
+        Cloudant cloudant = mock(Cloudant.class);
+        ServiceCall<FindResult> find = findAnswering(List.of());
+        when(cloudant.postFind(any())).thenReturn(find);
+        ServiceCall<DocumentResult> post = writeAnswering(true);
+        when(cloudant.postDocument(any())).thenReturn(post);
+        IngestJobService jobs = serviceOn(cloudant);
+
+        assertTrue(jobs.saveWebhookDeliveryRecordToDlq(itemRequest(),
+                "[transient] webhook deliveries were accepted but not fetched"));
+
+        ArgumentCaptor<PostDocumentOptions> written = ArgumentCaptor.forClass(PostDocumentOptions.class);
+        verify(cloudant).postDocument(written.capture());
+        assertEquals(Boolean.TRUE, written.getValue().document().get("webhookDeliveryRecord"),
+                "the record row was written without its mark");
     }
 }
