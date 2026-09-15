@@ -424,4 +424,48 @@ class IngestStoreAnswersAreNotAbsenceTest {
                 () -> jobs.listDlqPage(10, 0, true),
                 "an unwired node answered with an untyped failure");
     }
+
+    @Test
+    @DisplayName("a new dead-letter row is written under a deterministic id")
+    void aNewDlqRowGetsADeterministicId() {
+        // The selector answering nothing is also what a rebuilding index answers for a row
+        // that is there; a generated id then wrote a twin. A deterministic id makes that
+        // second write a conflict instead (R23 — no compare-and-swap, that is R1).
+        Cloudant cloudant = mock(Cloudant.class);
+        ServiceCall<FindResult> find = findAnswering(List.of());
+        when(cloudant.postFind(any())).thenReturn(find);
+        ServiceCall<DocumentResult> post = writeAnswering(true);
+        when(cloudant.postDocument(any())).thenReturn(post);
+        IngestJobService jobs = serviceOn(cloudant);
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setRepositoryId("bedroom");
+        request.setConnectorId("c1");
+        request.setSourceObjectId("m-1");
+
+        jobs.saveToDlq(request, "boom", null);
+
+        ArgumentCaptor<PostDocumentOptions> written = ArgumentCaptor.forClass(PostDocumentOptions.class);
+        verify(cloudant).postDocument(written.capture());
+        Document doc = written.getValue().document();
+        assertEquals("ingest_dlq:" + doc.get("dlqId"), doc.getId(),
+                "a row the selector did not show was written under a generated id — a twin, not a conflict");
+    }
+
+    @Test
+    @DisplayName("a job row keeps its generated id — the control; jobs are outside R23")
+    void aJobRowKeepsAGeneratedId() {
+        Cloudant cloudant = mock(Cloudant.class);
+        ServiceCall<FindResult> find = findAnswering(List.of());
+        when(cloudant.postFind(any())).thenReturn(find);
+        ServiceCall<DocumentResult> post = writeAnswering(true);
+        when(cloudant.postDocument(any())).thenReturn(post);
+        IngestJobService jobs = serviceOn(cloudant);
+
+        jobs.createJob("p1", "c1", "bedroom");
+
+        ArgumentCaptor<PostDocumentOptions> written = ArgumentCaptor.forClass(PostDocumentOptions.class);
+        verify(cloudant).postDocument(written.capture());
+        assertEquals(null, written.getValue().document().getId(),
+                "a job row was given a deterministic id — R23 is about dead-letter rows only");
+    }
 }
