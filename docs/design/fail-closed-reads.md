@@ -56,7 +56,7 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
 | R20 | purge は先頭 1,000 行しか走査せず、続きがあることを応答が言わない（60 巡 Codex P2。RELEASE_NOTES の「中断した purge は 503」より弱い） — **文面で上限を明示済み (2026-09-14)**、製品は不変 | ページング | |
 | R21 | ~~`reserveDlqRetry` の 429 の腕が死んでいる — `_rev` 競合は SDK が `ConflictException` で投げ、`catch (Exception)` が 503「訊けなかった」にする（60 巡 subagent P2）~~ **処置済み 2026-09-14**（Codex 3 回のレビューを経て取り込み、`7ca81425d` でコミット済み） | — | |
 | R22 | ~~IMAP IDLE が `executeMailImport` の**結果**を捨て「imported」とログ — 結果として返る拒否（対象フォルダ読取失敗等）は DLQ にも `undurableMisses` にも載らず、IMAP は再配信しない（60 巡 subagent P2）~~ **処置済み 2026-09-14**（Codex 3 回のレビューを経て取り込み、`7ca81425d` でコミット済み） | — | |
-| R23 | DLQ 書き込みがセレクタの空答えを「行なし」と読み、生成 id の 2 行目を作りうる（60 巡 P3） | 確定 id か R1 | |
+| R23 | ~~DLQ 書き込みがセレクタの空答えを「行なし」と読み、生成 id の 2 行目を作りうる（60 巡 P3）~~ **処置済み 2026-09-15（バッチ 2）**: 新しい DLQ 行は `ingest_dlq:<dlqId>` の確定 `_id`。隠れた行への 2 度目の書き込みは 409 →「記録できなかった」に倒れる。CAS は入れていない（R1）。生成 id の旧行は未移行でその双子は残る。錠 2 本（ジョブ行は生成 id のままの対照を含む）、control ZV2。確認レビュー 2 本 CONVERGED。subagent が条件にした「削除済み行（tombstone）の上に `_rev` 無しで再作成すると 409 か」は scratch の CouchDB 3.3.3 で実測: POST / PUT とも 201（rev N+1）。再実行成功 → 行削除 → 同じ項目が再失敗、の順路は記録できる | 旧行の双子は R1 の後に | |
 | R24 | `upsertDocument` は競合で throw するのに、3 か所のコメントと `== null` 判定が「null を返す」前提（凍結領域、60 巡 P3） | 凍結解除時 | |
 | R25 | `classifyErrorStatus` の 500 fallback に落ちる拒否: 自動解決の曖昧さ、`findExistingDocument` の `[permanent]` 重複拒否（60 巡 P3） | 分類の腕 | |
 | R26 | ~~`_all_docs` walk の transport 失敗が ISE 経由で 400「retry shortly」（定義 API の作成腕、60 巡 P3）~~ **処置済み 2026-09-14（ユーザー指定のバッチ）**: `NemakiConfAllDocs.WalkDidNotAnswerException`（ISE の派生）で走査の未応答を型付けし、create の 3 腕が typed 503 に写す。行が読めない場合は従来どおり 400。錠 4 本、control ZH2/ZI2/ZJ2 | — | |
@@ -75,6 +75,7 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
 | R39 | ~~IDLE の per-message ラムダの `catch (Exception)`（`fetchMessage` の I/O 失敗、`executeMailImport` 自体の例外など）はログだけで、DLQ にも `undurableMisses` にも載らない。IMAP は再配信しない。R22 は**結果**として返る拒否だけを記録した（並行レビュー 2026-09-15 の隣接指摘）~~ **処置済み 2026-09-15（バッチ 1）**: IDLE ラムダの `catch (Exception)` が `recordIdleFailure` で記録する — fetch 前は never-read 記録行、fetch 後はメタデータのみの行、書けなければ `undurableMisses`。取込内部の失敗は結果として返り既に記録されるので二重には書かない。錠 3 本、control BC3/BD3/BE3 | — | |
 | R40 | ~~`IngestJobService.findRawDocs` の `postFind` 自体は包まれておらず、`deleteDlqEntry` のセレクタ側 transport 失敗と `getConfClient()` の ISE は生のまま — DELETE は 500、再実行の後片付けは 500 "Retry failed"（R27/R37 の兄弟。損失も偽の不在もない。Phase D subagent P3）~~ **処置済み 2026-09-15（バッチ 1）**: `findRawDocs` の `postFind` と `getConfClient()` の未配線を `IngestStoreDidNotAnswerException`（503 / 後片付けは `*-entry-kept`）に。錠 2 本、control BA3/BB3 | — | |
 | R41 | R10 の移行面: 印の無い接頭辞だけの記録行（このブランチの中間ビルド `55f35915d` 以降が書いたもの。リリース版には接頭辞自体が無い）は扉を通り、`sourceNeverRead` は dispatch 後にしか効かないので空の webhook 取込が走りうる。開発 DB だけの話で、`sourceObjectType=webhook_event` かつ接頭辞付きの行を消せば済む（Phase D subagent P3） | 開発 DB の掃除。移行は書かない | |
+| R42 | 凍結領域（バッチ 2 の subagent P3、記録のみ）: `reserveDlqRetry` は扉の `getDlqEntry` と upsert の間で索引が行を隠すと、確定 id の 409 を「他の再実行が保持」(429) と読む。差分前は同じ窓で retryCount+1 の双子を作っていたので安全側への変化だが、文言は事実でない | R1 (CAS) の後に文言を確認 — CAS は読んだ `_rev` に条件付けるので、この窓そのものが消えるはず | |
 | D1 | token 付き行の**添付前検査**（57 巡）、添付を landed の証拠に読む**自己修復**（58 巡）、15 分で通常経路に落とす **lease**（59 巡） | 凍結解除まで再導入しない | やめた（いずれも古い bytes を新しいメタデータで再生する同じ class に落ちた） |
 
 ## 5. 測定
