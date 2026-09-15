@@ -2533,4 +2533,89 @@ class ConnectorLegacyIdMigrationTest {
         assertTrue(defaultSeedOrRemainder < 0 || seed < defaultSeedOrRemainder,
                 "the migration is pinned AFTER the default-connector patch in the seeds");
     }
+
+    // ── R2: uniqueness is established by the walk, after the receiver has authenticated ──
+
+    @Test
+    @DisplayName("R2: a pair of which the index shows one row is refused by the walk")
+    void aHiddenPairIsRefusedByTheWalk() {
+        wire();
+        listingAnswers(List.of(
+                row("connector_definition:c-twin", connectorProps("c-twin", "Twin A"), "1-a"),
+                row("legacy-c-twin", connectorProps("c-twin", "Twin B"), "1-b")));
+
+        ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused = assertThrows(
+                ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> service.refuseUnlessUniquelyDefined("c-twin"),
+                "a pair the walk shows was not refused");
+        assertTrue(refused.getMessage().contains("2 definition rows"),
+                "refused for another reason: " + refused.getMessage());
+    }
+
+    @Test
+    @DisplayName("R2: the one row the walk confirms alone is not refused (the over-throw guard)")
+    void aRowTheWalkConfirmsUniqueIsNotRefused() {
+        wire();
+        listingAnswers(List.of(
+                row("connector_definition:c-one", connectorProps("c-one", "Only"), "1-a"),
+                row("connector_definition:c-other", connectorProps("c-other", "Other"), "1-b")));
+
+        assertDoesNotThrow(() -> service.refuseUnlessUniquelyDefined("c-one"),
+                "a connector the walk confirms unique was refused");
+    }
+
+    @Test
+    @DisplayName("R2: a walk that did not answer refuses — it does not read as unique")
+    void aWalkThatDidNotAnswerRefuses() {
+        wire();
+        pages.add(null);
+
+        ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused = assertThrows(
+                ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> service.refuseUnlessUniquelyDefined("c-one"),
+                "a walk that did not answer was read as unique");
+        assertTrue(refused.getMessage().contains("could not be established"),
+                "refused for another reason: " + refused.getMessage());
+    }
+
+    @Test
+    @DisplayName("R2: a walk that shows no row for a connector the index returned refuses")
+    void aWalkThatShowsNoRowRefuses() {
+        wire();
+        listingAnswers(List.of(
+                row("connector_definition:c-other", connectorProps("c-other", "Other"), "1-b")));
+
+        ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused = assertThrows(
+                ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> service.refuseUnlessUniquelyDefined("c-one"),
+                "the index and the walk disagreed and the row was still resolved");
+        assertTrue(refused.getMessage().contains("shows no row"),
+                "refused for another reason: " + refused.getMessage());
+    }
+
+    @Test
+    @DisplayName("R2: getOrRefuse itself does not walk — it runs before the signature is verified")
+    void getOrRefuseDoesNotWalk() {
+        // The decision dece81f7d recorded: an unauthenticated request must not cost a walk of
+        // the configuration database. A refusing read that started walking would put it back.
+        wire();
+        selectorShows(row("connector_definition:c-one", connectorProps("c-one", "Only"), "1-a"));
+
+        ConnectorDefinition only = assertDoesNotThrow(() -> service.getOrRefuse("c-one"),
+                "the refusing read refused a row the selector showed alone");
+        assertEquals("Only", only.getDisplayName());
+        verify(cloudant, never()).postAllDocs(any(PostAllDocsOptions.class));
+    }
+
+    @Test
+    @DisplayName("get() does not walk either — its callers are outside this change")
+    void getStillDoesNotWalk() {
+        wire();
+        selectorShows(row("connector_definition:c-one", connectorProps("c-one", "Only"), "1-a"));
+
+        ConnectorDefinition only = assertDoesNotThrow(() -> service.get("c-one"),
+                "get() started walking — its callers gained a refusal path");
+        assertEquals("Only", only == null ? null : only.getDisplayName());
+        verify(cloudant, never()).postAllDocs(any(PostAllDocsOptions.class));
+    }
 }

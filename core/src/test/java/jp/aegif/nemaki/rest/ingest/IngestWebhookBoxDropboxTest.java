@@ -29,6 +29,8 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.hamcrest.Matchers.containsString;
@@ -580,5 +582,95 @@ class IngestWebhookBoxDropboxTest {
         org.junit.jupiter.api.Assertions.assertTrue(wrapped.getCause() instanceof
                         jp.aegif.nemaki.rest.controller.IntegrationSettingsService.SettingUnreadableException,
                 "the refusal is not the typed one: " + wrapped.getCause());
+    }
+
+    // ── R2: uniqueness is established by the walk, AFTER the signature and the rate limit ──
+
+    @Test
+    void aPairHiddenFromTheIndexIsRefusedAfterTheSignature() throws Exception {
+        // The index showed one row and the signature verified against it. The walk shows a
+        // second row: the receiver must not run with the one the index happened to show.
+        String secret = "dbxsecret";
+        connector("c-dbx", "dropbox", secret);
+        profileFor("c-dbx", Map.of("folderPath", "/Documents"));
+        doThrow(new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                "connector c-dbx has 2 definition rows"))
+                .when(connectorDefinitionService).refuseUnlessUniquelyDefined("c-dbx");
+
+        assertDoesNotThrow(() -> mockMvc.perform(signedDropboxPost("c-dbx", secret))
+                        .andExpect(status().isServiceUnavailable())
+                        .andExpect(content().string(org.hamcrest.Matchers.not(
+                                containsString("2 definition rows")))),
+                "a pair the walk showed was run with, or the refusal escaped as a 500");
+        verify(schedulerService, never()).authorizeDelegatedFetch(any(), any());
+    }
+
+    @Test
+    void theWalkIsMadeOnceTheSignatureVerified() throws Exception {
+        // The over-throw guard and the placement lock in one: a verified event IS checked
+        // (a receiver that dropped the call would pass every other test here, the mock's
+        // default being "unique") and, checked clean, is dispatched.
+        String secret = "dbxsecret";
+        connector("c-dbx", "dropbox", secret);
+        profileFor("c-dbx", Map.of("folderPath", "/Documents"));
+
+        mockMvc.perform(signedDropboxPost("c-dbx", secret))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("\"status\":\"accepted\"")));
+
+        verify(connectorDefinitionService).refuseUnlessUniquelyDefined("c-dbx");
+        verify(schedulerService).authorizeDelegatedFetch(any(), any());
+    }
+
+    @Test
+    void theWalkIsNotMadeForAnUnauthenticatedRequest() throws Exception {
+        // dece81f7d: a walk of the configuration database per unauthenticated request is an
+        // amplifier. A bad signature is answered 401 without the walk.
+        connector("c-dbx", "dropbox", "dbxsecret");
+        profileFor("c-dbx", Map.of("folderPath", "/Documents"));
+        when(httpRequest.getHeader("X-Dropbox-Signature")).thenReturn("not-a-signature");
+
+        mockMvc.perform(post("/v1/ingest-webhook/c-dbx")
+                        .contentType(MediaType.APPLICATION_JSON).content(DROPBOX_BODY))
+                .andExpect(status().isUnauthorized());
+
+        verify(connectorDefinitionService, never()).refuseUnlessUniquelyDefined(any());
+    }
+
+    private void callerIsAdmin() {
+        org.apache.chemistry.opencmis.commons.server.CallContext ctx =
+                org.mockito.Mockito.mock(org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        when(ctx.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN)).thenReturn(Boolean.TRUE);
+        when(httpRequest.getAttribute("CallContext")).thenReturn(ctx);
+    }
+
+    @Test
+    void aSubscriptionIsNotMadeWithOneRowOfAPair() throws Exception {
+        callerIsAdmin();
+        connector("c-teams", "teams", "s");
+        doThrow(new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                "connector c-teams has 2 definition rows"))
+                .when(connectorDefinitionService).refuseUnlessUniquelyDefined("c-teams");
+
+        assertDoesNotThrow(() -> mockMvc.perform(post("/v1/ingest-webhook/c-teams/subscribe")
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                        .andExpect(status().isServiceUnavailable()),
+                "a subscription was made with whichever row the index showed, or the refusal"
+                        + " escaped as a 500");
+    }
+
+    @Test
+    void aSubscriptionIsNotDeletedWithOneRowOfAPair() throws Exception {
+        callerIsAdmin();
+        connector("c-teams", "teams", "s");
+        doThrow(new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                "connector c-teams has 2 definition rows"))
+                .when(connectorDefinitionService).refuseUnlessUniquelyDefined("c-teams");
+
+        assertDoesNotThrow(() -> mockMvc.perform(delete("/v1/ingest-webhook/c-teams/subscribe")
+                        .param("subscriptionId", "sub-1"))
+                        .andExpect(status().isServiceUnavailable()),
+                "a subscription was deleted with whichever row the index showed, or the"
+                        + " refusal escaped as a 500");
     }
 }
