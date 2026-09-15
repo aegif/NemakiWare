@@ -12,13 +12,20 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
 - **主張しない**: 全読みを直した、通し negative-control 済み、DLQ 再実行が常に元バイトを
   復元する、`upsertDocument` が原子的。
 
-## 2. 凍結
+## 2. 凍結（CAS のためだけに限定解除、2026-09-15 バッチ 3）
 
 - **DLQ payload 状態機械**（`hasContent` / `payloadPresenceAssumed` / `payloadDropReason` /
-  `payloadWriteToken` / `sourceNeverRead` と、添付名 `payload`・2 段書き・確定書き込み）。
-- 現行: token あり → 409・添付不使用。bytes 無し保存 → token 継承。
-  新しい欄・lease・自己修復を足さない。
-- 解凍: CAS な upsert + 添付世代が token に結び付く。別バッチ。
+  `payloadWriteToken` / `sourceNeverRead` と、添付名 `payload`・2 段書き・確定書き込み）は
+  **凍結のまま**。lease・自己修復・添付の再読・新しい意味の欄は禁止。
+- 現行: token あり → 409・添付不使用。bytes 無し保存 → token 継承。読めない行の上の bytes 無し
+  保存 → 既存 token 欄に新 UUID（R34）。
+- **限定解除（R1）**: DLQ の書き込みは読んだ `_rev` に条件付ける compare-and-swap
+  （`upsertDlqCas`）。そのために要る transient な bookkeeping（`storedId` / `storedRevision` /
+  `storedAttachments`、永続化せず・継承せず）だけを足した。競合は `DlqWriteConflictException`
+  で、保存は読み直して最大 3 回再マージ、負け続ければ「記録できなかった」。予約は競合で
+  false（429 は、扉の読みから書き込みまでの窓に割り込んだ同時要求を確実に拒む答えになった。従来は内部の読み直しから書き込みまでの一瞬でしか起こりえなかった）。ジョブ行の `upsertDocument` は不変。
+- **解凍していないもの**: 添付世代と token の結び付け（`upsertDlqCas` は読んだ revision の
+  添付 stub を carry-forward するだけ）。これが要る指摘は引き続き残件 1 行。
 
 ## 3. 扉の許す組（新しい印を足す前に、この組を変えるかユーザーに聞け）
 
@@ -34,7 +41,7 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
 
 | ID | 内容 | 解凍の条件 | やめた |
 |---|---|---|---|
-| R1 | `upsertDocument` は CAS ではない（lost-update class） | CAS | |
+| R1 | ~~`upsertDocument` は CAS ではない（lost-update class）~~ **処置済み 2026-09-15（バッチ 3、CAS のためだけの限定解除）**: `upsertDlqCas` が読んだ `_rev` に条件付け、`findBySelector` / `DlqEntryUnreadableException` が読みの bookkeeping を運ぶ。予約・確定・訂正の書き込みも同じ。錠 6 本、control AA3〜AE3。実測: 9/9 発火（AA3〜AE3 と再錨の XK2 / ZV2 / XR2 / UU2）、全ユニット 6,991 green。確認レビュー Codex / subagent とも CONVERGED（新規 P1 なし、錠の P2 なし）。製品差分は約 +210 行で Phase C の 1 ID 100 行を超える（CAS の再試行・型付き競合・読みの bookkeeping） | — | |
 | R2 | `getOrRefuse` は walk しない | 別バッチ | |
 | R3 | セレクタ障害中の開示（署名不一致を 503 にする案） | 未着手 | |
 | R4 | 公開 4 引数 `createDirectRelationship` の再認可なし | 別バッチ | |
@@ -57,7 +64,7 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
 | R21 | ~~`reserveDlqRetry` の 429 の腕が死んでいる — `_rev` 競合は SDK が `ConflictException` で投げ、`catch (Exception)` が 503「訊けなかった」にする（60 巡 subagent P2）~~ **処置済み 2026-09-14**（Codex 3 回のレビューを経て取り込み、`7ca81425d` でコミット済み） | — | |
 | R22 | ~~IMAP IDLE が `executeMailImport` の**結果**を捨て「imported」とログ — 結果として返る拒否（対象フォルダ読取失敗等）は DLQ にも `undurableMisses` にも載らず、IMAP は再配信しない（60 巡 subagent P2）~~ **処置済み 2026-09-14**（Codex 3 回のレビューを経て取り込み、`7ca81425d` でコミット済み） | — | |
 | R23 | ~~DLQ 書き込みがセレクタの空答えを「行なし」と読み、生成 id の 2 行目を作りうる（60 巡 P3）~~ **処置済み 2026-09-15（バッチ 2）**: 新しい DLQ 行は `ingest_dlq:<dlqId>` の確定 `_id`。隠れた行への 2 度目の書き込みは 409 →「記録できなかった」に倒れる。CAS は入れていない（R1）。生成 id の旧行は未移行でその双子は残る。錠 2 本（ジョブ行は生成 id のままの対照を含む）、control ZV2。確認レビュー 2 本 CONVERGED。subagent が条件にした「削除済み行（tombstone）の上に `_rev` 無しで再作成すると 409 か」は scratch の CouchDB 3.3.3 で実測: POST / PUT とも 201（rev N+1）。再実行成功 → 行削除 → 同じ項目が再失敗、の順路は記録できる | 旧行の双子は R1 の後に | |
-| R24 | `upsertDocument` は競合で throw するのに、3 か所のコメントと `== null` 判定が「null を返す」前提（凍結領域、60 巡 P3） | 凍結解除時 | |
+| R24 | ~~`upsertDocument` は競合で throw するのに、3 か所のコメントと `== null` 判定が「null を返す」前提（凍結領域、60 巡 P3）~~ **処置済み 2026-09-15（バッチ 3 の確認レビューで判定）**: `== null` 判定は `upsertDlqCasOrNull`（競合で本当に null）を通り事実になった。旧 `upsertDocument` を名指す 7 か所のコメントを書き直した（挙動変更なし） | — | |
 | R25 | `classifyErrorStatus` の 500 fallback に落ちる拒否: 自動解決の曖昧さ、`findExistingDocument` の `[permanent]` 重複拒否（60 巡 P3） | 分類の腕 | |
 | R26 | ~~`_all_docs` walk の transport 失敗が ISE 経由で 400「retry shortly」（定義 API の作成腕、60 巡 P3）~~ **処置済み 2026-09-14（ユーザー指定のバッチ）**: `NemakiConfAllDocs.WalkDidNotAnswerException`（ISE の派生）で走査の未応答を型付けし、create の 3 腕が typed 503 に写す。行が読めない場合は従来どおり 400。錠 4 本、control ZH2/ZI2/ZJ2 | — | |
 | R27 | ~~`DELETE /dlq/{id}` の 404 本文が「retry」、生 RuntimeException は 500（60 巡 P3）~~ **処置済み 2026-09-14（ユーザー指定のバッチ）**: `deleteDlqEntry` の**削除要求** (`deleteDocument`) の transport 失敗を `IngestStoreDidNotAnswerException`（503）に包む（セレクタ側の失敗は未包装 → R40）。404 の本文（索引が追いつくまで retry）は不在を確かめる手段が無いため残す。錠 1 本、control ZW2 | — | |
@@ -68,20 +75,21 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
 | R32 | ~~RELEASE_NOTES「中身を持つのに payload が返らない場合は 409」は assumed の腕（中身なしで再実行し、成功なら削除）を言っていない（60 巡 P3）~~ **文面を訂正済み 2026-09-14** | — | |
 | R33 | multipart 取込の未型 RuntimeException → 400「Invalid request」（JSON 経路は 500）（60 巡 P3） | 型分け | |
 | R34 | ~~**凍結領域の P1 class**: bytes 無し保存が**読めない既存行**の上に書くとき token を `null` にする — `existing == null` の 2 義（「行が無い」/「読めなかった」）のうち後者で、`hasContent` と履歴カウンタは同じ catch で「不明」扱いなのに token だけ隣に残った。読めない行が未確認 token を持てば次の bytes 無し保存で扉が開く（Phase 2 subagent）~~ **処置済み 2026-09-14（ユーザー判断）**: `rowWasUnreadable` の腕だけ、既存の `payloadWriteToken` に新 UUID を立てて既存の 409 扉に乗せた（新しい欄・lease・自己修復・添付の再読なし。「行が無い」側は null のまま）。錠 `aByteLessSaveOverAnUnreadableRowKeepsTheDoorShut`（保存 → token 非 null → 再実行 409）、control XV2。**凍結は解いていない** | 解凍条件は不変（CAS な upsert + 添付世代が token に結び付く） | |
-| R35 | token 継承で、並行する bytes 無し保存 B の行が A と同じ token を持ち、A の確定書き込みの所有権検査（WF2）が B の行を自分の行と見る。結果は凍結前と同じ合成で退行ではないが、検査の保証は「payload 付きの別保存」に狭まった（Phase 2 subagent） | R1（CAS でも閉じない: A は最新 rev を読んでいる） | |
+| R35 | token 継承で、並行する bytes 無し保存 B の行が A と同じ token を持ち、A の確定書き込みの所有権検査（WF2）が B の行を自分の行と見る。結果は凍結前と同じ合成で退行ではないが、検査の保証は「payload 付きの別保存」に狭まった（Phase 2 subagent） | CAS 適用後も残る（2026-09-15 の確認レビューで両者確認: 所有権検査は token 等値で、B は A の token を継承する）。閉じるには token 継承の変更 = 凍結領域 | |
 | R36 | ~~`deleteDlqEntry` は store が確認した削除だけを数えるようになったが、同じ dlqId の行が 2 行以上あり一方だけ未確認のとき `removed > 0` で success / resolved と答える（Codex 3 回目のレビュー。R23 の重複行が前提）。同じ領域の 3 度目の指摘なので止めた~~ **処置済み 2026-09-14（ユーザー判断）**: `deleteDlqEntry` が `DlqDeletion(confirmed, unconfirmed)` を返し、未確認が残れば `DELETE` は 503、再実行の後片付けは `*-entry-kept`。双子行のマージも一意制約も足していない（R23 / R1 のまま）。錠 3 本、control XX2 / XY2（+ XU2 / VG2 / VN2 の宣言追加）。**同じ領域の 4 度目は止まる** | — | |
 | R37 | ~~再実行の後片付け `deleteDlqEntry` で `findRawDocs` が「store が答えなかった」（R18 の型付き拒否）を投げると、扉の `catch (Exception)` に落ちて **500 "Retry failed"** になる。取込は成功済みで行は残り、次の再実行は冪等に resolved になるので損失はないが、応答文が偽（R34/R36 確認レビューの subagent P3。範囲外）~~ **処置済み 2026-09-15（Phase C-1）**: 後片付けの typed 拒否は `*-entry-kept` + `entryKeptNote`（取込は成功済み、行は残る）。錠 1 本、control AH3 | — | |
 | R38 | webhook 受信の GET 握手で「コネクタ読みが答えなかった → 503」は、腕の catch とクラスの `@ExceptionHandler` の**二重**の保護で、片方を外しても錠が緑のまま（通しスイープで WX が不発）。1 錨のサボタージュでは測れないので WX は退役。XE（`get()` に戻す）は独立に発火 | 二重保護のどちらかを外す製品変更（今は開かない）か、複数錨のサボタージュ | |
 | R39 | ~~IDLE の per-message ラムダの `catch (Exception)`（`fetchMessage` の I/O 失敗、`executeMailImport` 自体の例外など）はログだけで、DLQ にも `undurableMisses` にも載らない。IMAP は再配信しない。R22 は**結果**として返る拒否だけを記録した（並行レビュー 2026-09-15 の隣接指摘）~~ **処置済み 2026-09-15（バッチ 1）**: IDLE ラムダの `catch (Exception)` が `recordIdleFailure` で記録する — fetch 前は never-read 記録行、fetch 後はメタデータのみの行、書けなければ `undurableMisses`。取込内部の失敗は結果として返り既に記録されるので二重には書かない。錠 3 本、control BC3/BD3/BE3 | — | |
 | R40 | ~~`IngestJobService.findRawDocs` の `postFind` 自体は包まれておらず、`deleteDlqEntry` のセレクタ側 transport 失敗と `getConfClient()` の ISE は生のまま — DELETE は 500、再実行の後片付けは 500 "Retry failed"（R27/R37 の兄弟。損失も偽の不在もない。Phase D subagent P3）~~ **処置済み 2026-09-15（バッチ 1）**: `findRawDocs` の `postFind` と `getConfClient()` の未配線を `IngestStoreDidNotAnswerException`（503 / 後片付けは `*-entry-kept`）に。錠 2 本、control BA3/BB3 | — | |
 | R41 | R10 の移行面: 印の無い接頭辞だけの記録行（このブランチの中間ビルド `55f35915d` 以降が書いたもの。リリース版には接頭辞自体が無い）は扉を通り、`sourceNeverRead` は dispatch 後にしか効かないので空の webhook 取込が走りうる。開発 DB だけの話で、`sourceObjectType=webhook_event` かつ接頭辞付きの行を消せば済む（Phase D subagent P3） | 開発 DB の掃除。移行は書かない | |
-| R42 | 凍結領域（バッチ 2 の subagent P3、記録のみ）: `reserveDlqRetry` は扉の `getDlqEntry` と upsert の間で索引が行を隠すと、確定 id の 409 を「他の再実行が保持」(429) と読む。差分前は同じ窓で retryCount+1 の双子を作っていたので安全側への変化だが、文言は事実でない | R1 (CAS) の後に文言を確認 — CAS は読んだ `_rev` に条件付けるので、この窓そのものが消えるはず | |
+| R42 | ~~凍結領域（バッチ 2 の subagent P3、記録のみ）: `reserveDlqRetry` は扉の `getDlqEntry` と upsert の間で索引が行を隠すと、確定 id の 409 を「他の再実行が保持」(429) と読む。差分前は同じ窓で retryCount+1 の双子を作っていたので安全側への変化だが、文言は事実でない~~ **処置済み 2026-09-15（バッチ 3）**: 予約の内部の読み直しが消え、409 は「扉の読み以後に行が変わった」（他の再実行か並行する保存）だけを意味するようになった。文言はそのまま | — | |
+| R43 | 凍結領域（バッチ 3 の subagent、記録のみ）: 確定書き込みの fallback 腕（再読が訊けず `current = dlq`）は、添付 PUT で rev が上がった後に PUT 前の rev に条件付けるので必ず負ける（死んだ腕）。落ち先は「確定書き込みが landed しなかった」状態（assumed + token → 再実行 409）で、差分前はこの腕が landed していた。fail-closed 方向だが、届いた payload の再実行を拒む過剰拒否 | 凍結解除時（再読の rev ではなく PUT 後の rev に条件付ける） | |
 | D1 | token 付き行の**添付前検査**（57 巡）、添付を landed の証拠に読む**自己修復**（58 巡）、15 分で通常経路に落とす **lease**（59 巡） | 凍結解除まで再導入しない | やめた（いずれも古い bytes を新しいメタデータで再生する同じ class に落ちた） |
 
 ## 5. 測定
 
-- コントロール 645（2026-09-15 時点。内訳: 通し前 621 → 不発の WX を退役して 620 → Phase C で
-  25 新設）。**通し negative-control は 2026-09-14〜15 に 1 回完走**（621 本、約 15 時間、exit 1）:
+- コントロール 656（2026-09-15 時点。内訳: 通し前 621 → 不発の WX を退役して 620 → Phase C で
+  25 新設 = 645 → バッチ 1〜3 で 11 新設）。**通し negative-control は 2026-09-14〜15 に 1 回完走**（621 本、約 15 時間、exit 1）:
   620 発火、不発 1（WX。腕とクラス `@ExceptionHandler` の二重保護で 1 錨では測れない → 退役、R38）、
   宣言漏れ 68 本（ログ末尾の節から機械的に補完し、ID 指定で再実測 68/68）、錨外れ 0、製品欠陥 0。
   以後、通しは毎バッチでは走らせず、CAS（R1）のあとに 1 回。事前検査は exit code と `== summary` の
