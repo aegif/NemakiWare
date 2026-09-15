@@ -7695,3 +7695,4 @@ establish できない** (宣言漏れはサボタージュ下でテストが走
 - 2026-09-15 / `6aa359120` / Phase A 通し NC 621 本: 620 発火、不発 1（WX、腕 + @ExceptionHandler の二重保護 → 退役、R38）、宣言漏れ 68 本、錨外れ 0、製品欠陥なし。Phase B: 宣言 68 本を補完し ID 指定で再実測 68/68（製品は不変）。このあと Phase C（R37, R11, R10, R26, R27, R31, R29, R28, R30）
 - 2026-09-15 / 作業ツリー（未コミット） / Phase C: R37, R11, R10, R26, R27, R31, R29, R28, R30 を指示の順に処置。製品 16 ファイル +420/−71（各 ID 100 行以内）、錠 29 本、control 25 新設 + 8 再錨 = 33/33 発火、全ユニット 6,978 green。R23 / R1 / R2 は指示どおり開いていない（検証済み差分は /tmp に退避）。R39 を新設。次: Phase D
 - 2026-09-15 / 作業ツリー / Phase D（§6 の依頼文、Codex + subagent）: 両者 CONVERGED — 開いた 9 ID に新規 P1 なし、錠の P2 なし。subagent の P3: `findRawDocs` の postFind は未包装（→ R40）、印の無い接頭辞だけの記録行の移行面（→ R41）、`resolveToken` の `if (propertyManager != null)` は throw の後で常に真（死んだガード、記録のみ）。製品はここで停止
+- 2026-09-15 / バッチ 1（R40 + R39）: `findRawDocs` の postFind と未配線クライアントを typed 503 に、IDLE ラムダの catch を記録に。錠 5 本、control 5 本。R38 は触っていない
