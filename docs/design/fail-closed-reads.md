@@ -10,7 +10,9 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
 - **主張する**: 設定・DLQ・IDLE の読みで「訊けなかった」を「無い」と書かない。
   一意の喪失は行か、書けなければメモリの数として残す。
 - **主張しない**: 全読みを直した、通し negative-control 済み、DLQ 再実行が常に元バイトを
-  復元する、`upsertDocument` が原子的。
+  復元する、ジョブ行の `upsertDocument` が原子的、DLQ の保存**全体**が原子的。
+  DLQ の個々の書き込みは読んだ `_rev` への compare-and-swap（R1、バッチ 3）だが、
+  メタデータ書き込み → 添付 PUT → 確定書き込みの 3 段を 1 つにはしない。
 
 ## 2. 凍結（CAS のためだけに限定解除、2026-09-15 バッチ 3）
 
@@ -34,7 +36,7 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
   `stopIdle` しない。確定拒否（壊れた行、委譲取り消し）は止める。
 - **DLQ 再実行**: token あり 409。`payloadDropReason` あり 409。
   `sourceNeverRead` の skip では削除しない。webhook 記録行
-  （予約接頭辞の現状は残件）は replay しない。
+  （行自身の欄 `webhookDeliveryRecord`。接頭辞では見ない、R10）は replay しない。
 - **設定読み**: 例外 / `loadFailed` は不在ではない。circuit breaker に数えない。
 
 ## 4. 残件表（再審して製品を開かない）
@@ -42,7 +44,7 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
 | ID | 内容 | 解凍の条件 | やめた |
 |---|---|---|---|
 | R1 | ~~`upsertDocument` は CAS ではない（lost-update class）~~ **処置済み 2026-09-15（バッチ 3、CAS のためだけの限定解除）**: `upsertDlqCas` が読んだ `_rev` に条件付け、`findBySelector` / `DlqEntryUnreadableException` が読みの bookkeeping を運ぶ。予約・確定・訂正の書き込みも同じ。錠 6 本、control AA3〜AE3。実測: 9/9 発火（AA3〜AE3 と再錨の XK2 / ZV2 / XR2 / UU2）、全ユニット 6,991 green。確認レビュー Codex / subagent とも CONVERGED（新規 P1 なし、錠の P2 なし）。製品差分は約 +210 行で Phase C の 1 ID 100 行を超える（CAS の再試行・型付き競合・読みの bookkeeping） | — | |
-| R2 | `getOrRefuse` は walk しない | 別バッチ | |
+| R2 | ~~`getOrRefuse` は walk しない~~ **処置済み 2026-09-15（バッチ 4）**: walk は `getOrRefuse` の中ではなく、受信の署名検証・レート制限の**後**に `refuseUnlessUniquelyDefined`（`_all_docs` の行数え。2 行以上・0 行・走査未完了は typed 503）。署名前の読みは設計どおり walk しない — `dece81f7d` で取り下げた「未認証 1 リクエストで全走査」を戻さない（錠 `getOrRefuseDoesNotWalk` / `theWalkIsNotMadeForAnUnauthenticatedRequest`）。管理 API の subscribe / delete も同じ確認。残る限界: 相方の secret で署名されたイベントは 401 のまま（署名前に走査しない以上、分けられない）。錠 11 本、control AF3 / AG3 / AJ3〜AO3（AH3・AI3 は使用済みのため飛ばした） | — | |
 | R3 | セレクタ障害中の開示（署名不一致を 503 にする案） | 未着手 | |
 | R4 | 公開 4 引数 `createDirectRelationship` の再認可なし | 別バッチ | |
 | R5 | gate / execute の版 TOCTOU | 別バッチ | |
@@ -88,14 +90,15 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
 
 ## 5. 測定
 
-- コントロール 656（2026-09-15 時点。内訳: 通し前 621 → 不発の WX を退役して 620 → Phase C で
-  25 新設 = 645 → バッチ 1〜3 で 11 新設）。**通し negative-control は 2026-09-14〜15 に 1 回完走**（621 本、約 15 時間、exit 1）:
+- コントロール 664（2026-09-15 時点。内訳: 通し前 621 → 不発の WX を退役して 620 → Phase C で
+  25 新設 = 645 → バッチ 1〜3 で 11 新設 = 656 → バッチ 4 で 8 新設）。**通し negative-control は 2026-09-14〜15 に 1 回完走**（621 本、約 15 時間、exit 1）:
   620 発火、不発 1（WX。腕とクラス `@ExceptionHandler` の二重保護で 1 錨では測れない → 退役、R38）、
   宣言漏れ 68 本（ログ末尾の節から機械的に補完し、ID 指定で再実測 68/68）、錨外れ 0、製品欠陥 0。
-  以後、通しは毎バッチでは走らせず、CAS（R1）のあとに 1 回。事前検査は exit code と `== summary` の
+  以後、通しは毎バッチでは走らせず、CAS（R1）のあとに 1 回 — **CAS はバッチ 3 で入り、その通しは
+  未実施**（バッチ 4 のコミット後に走らせる）。事前検査は exit code と `== summary` の
   存在で確認（出力が無いことを clean と読むな）。**runner は錠が自分の assertion で落ちたときだけ
   発火と認める** — 例外が素通りする欠陥の錠は `assertDoesNotThrow` で包む。
-- 全ユニット 6,978 本 green（Phase C 適用時点。`bfc5629db` 時点は 6,927。
+- 全ユニット 7,002 本 green（バッチ 4 適用時点。Phase C 適用時点は 6,978、`bfc5629db` 時点は 6,927。
   `!MultiThreadTest,!InheritedFlagTest,!*IT,!jp.aegif.nemaki.cmis.tck.**,!AtlasManualDataLoader` を除外）。
 - 製品差分の目安は 1 バッチ 100 行/ID。Phase C は 9 ID で +420/−71。
 
