@@ -1269,6 +1269,17 @@ public class IngestJobService {
                     && doc.getAttachments() == null) {
                 doc.setAttachments(prior.getAttachments());
             }
+        } else if (IngestDeadLetterRecord.DOC_TYPE.equals(docType)) {
+            // No prior row was RETURNED — which is also what a rebuilding index answers for
+            // a row that is there. A generated id then wrote a second row for the same item,
+            // and the id-addressed read that closed this for definitions does not exist here.
+            // A deterministic id turns that second write into a 409 (the save reports it as
+            // "could not record", the safe direction) instead of a twin. No compare-and-swap
+            // is involved (R1 is separate): this only stops the selector's empty answer from
+            // being written as "there is no row". Rows written before this carry generated
+            // ids and are not migrated: a twin of such a LEGACY row while the index rebuilds
+            // remains possible and is recorded (R23).
+            doc.setId("ingest_dlq:" + docKey);
         }
 
         PostDocumentOptions options = new PostDocumentOptions.Builder()
