@@ -46,7 +46,7 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
 | R1 | ~~`upsertDocument` は CAS ではない（lost-update class）~~ **処置済み 2026-09-15（バッチ 3、CAS のためだけの限定解除）**: `upsertDlqCas` が読んだ `_rev` に条件付け、`findBySelector` / `DlqEntryUnreadableException` が読みの bookkeeping を運ぶ。予約・確定・訂正の書き込みも同じ。錠 6 本、control AA3〜AE3。実測: 9/9 発火（AA3〜AE3 と再錨の XK2 / ZV2 / XR2 / UU2）、全ユニット 6,991 green。確認レビュー Codex / subagent とも CONVERGED（新規 P1 なし、錠の P2 なし）。製品差分は約 +210 行で Phase C の 1 ID 100 行を超える（CAS の再試行・型付き競合・読みの bookkeeping） | — | |
 | R2 | ~~`getOrRefuse` は walk しない~~ **処置済み 2026-09-15（バッチ 4）**: walk は `getOrRefuse` の中ではなく、受信の署名検証・レート制限の**後**に `refuseUnlessUniquelyDefined`（`_all_docs` の行数え。2 行以上・0 行・走査未完了は typed 503）。署名前の読みは設計どおり walk しない — `dece81f7d` で取り下げた「未認証 1 リクエストで全走査」を戻さない（錠 `getOrRefuseDoesNotWalk` / `theWalkIsNotMadeForAnUnauthenticatedRequest`）。管理 API の subscribe / delete も同じ確認。残る限界: 相方の secret で署名されたイベントは 401 のまま（署名前に走査しない以上、分けられない）。錠 11 本、control AF3 / AG3 / AJ3〜AO3（AH3・AI3 は使用済みのため飛ばした） | — | |
 | R3 | ~~セレクタ障害中の開示（署名不一致を 503 にする案）~~ **処置済み 2026-09-15（バッチ 5）**: 読みが「セレクタが答えたか」を `Resolution` で運び（`resolveOrRefuse`）、答えなかった窓では受信の 401（署名不一致・無効な行）と GET の 404 を、拒否した読みと**同じ状態コード・同じ本文**にする。一律拒否（窓の間すべての webhook を止める）は採らず、正しい secret の送信側は通る。ハンドシェイクの開示は従来どおり（署名より前に答えるもので対象外）。錠 11 本、control AP3〜AX3、再錨 XD / XE / AN3 / AO3 | — | |
-| R4 | 公開 4 引数 `createDirectRelationship` の再認可なし | 別バッチ | |
+| R4 | ~~公開 4 引数 `createDirectRelationship` の再認可なし~~ **処置済み 2026-09-15（バッチ 6）**: 入口が authorizing profile と request を受け取り、`createLinkAuthorized`（取込中のリンクと同じ核）を通る。委譲プロファイルは対象フォルダの現在の ACL に対して再確認、非委譲は対象外（過剰拒否の側も錠）。`outsideAnImport` の答え方（作られたリンクは null + WARN）は不変。`FetchSupport` は**両方とも**無ければリンクせず拒否を報告する。オーケストレータ 3 本の呼び出し側は**錠で測っていない**（orchestrator のユニットテストが無い）。**profile だけ渡して request を落とした場合は拒否されず**、コネクタ側の腕を黙って飛ばす（現在の 3 呼び出し側からは到達しない）。錠 6 本、control AY3 / AZ3 / BF3 / BG3 / BH3 | — | |
 | R5 | gate / execute の版 TOCTOU | 別バッチ | |
 | R6 | 数値 `repositoryId` はどのリポジトリも名指さない | 意図 | |
 | R7 | Mango `_find` が添付 stub を返す前提は未測定 | 実測 | |
@@ -86,6 +86,8 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
 | R41 | R10 の移行面: 印の無い接頭辞だけの記録行（このブランチの中間ビルド `55f35915d` 以降が書いたもの。リリース版には接頭辞自体が無い）は扉を通り、`sourceNeverRead` は dispatch 後にしか効かないので空の webhook 取込が走りうる。開発 DB だけの話で、`sourceObjectType=webhook_event` かつ接頭辞付きの行を消せば済む（Phase D subagent P3） | 開発 DB の掃除。移行は書かない | |
 | R42 | ~~凍結領域（バッチ 2 の subagent P3、記録のみ）: `reserveDlqRetry` は扉の `getDlqEntry` と upsert の間で索引が行を隠すと、確定 id の 409 を「他の再実行が保持」(429) と読む。差分前は同じ窓で retryCount+1 の双子を作っていたので安全側への変化だが、文言は事実でない~~ **処置済み 2026-09-15（バッチ 3）**: 予約の内部の読み直しが消え、409 は「扉の読み以後に行が変わった」（他の再実行か並行する保存）だけを意味するようになった。文言はそのまま | — | |
 | R43 | 凍結領域（バッチ 3 の subagent、記録のみ）: 確定書き込みの fallback 腕（再読が訊けず `current = dlq`）は、添付 PUT で rev が上がった後に PUT 前の rev に条件付けるので必ず負ける（死んだ腕）。落ち先は「確定書き込みが landed しなかった」状態（assumed + token → 再実行 409）で、差分前はこの腕が landed していた。fail-closed 方向だが、届いた payload の再実行を拒む過剰拒否 | 凍結解除時（再読の rev ではなく PUT 後の rev に条件付ける） | |
+| R44 | 取込後のリンクの認可は、**フェッチ開始時のプロファイル行**に対して行う（`knownProfile` を渡すので行を読み直さない）。読み直すのはフォルダの ACL とコネクタ行だけで、`isDelegated` / `targetFolderId` は開始時の値。取込中の一部の呼び出し側（`null, request`）は行も読み直す（バッチ 6 の subagent、記録のみ） | 読み直すなら 1 リンクにつき設定 DB の走査 1 回 | |
+| R45 | 取込後のリンクで、`targetFolderPath` 指定の委譲プロファイルは新たに `resolveTargetFolderId` のパス解決を通る。一過性の読み失敗が拒否 → fetch のエラー → circuit breaker の前進になりうる。方向は取込中と同じだが、**過剰拒否の側の錠は非委譲の腕しか押さえていない**（バッチ 6 の subagent、記録のみ） | 過剰拒否の錠 | |
 | D1 | token 付き行の**添付前検査**（57 巡）、添付を landed の証拠に読む**自己修復**（58 巡）、15 分で通常経路に落とす **lease**（59 巡） | 凍結解除まで再導入しない | やめた（いずれも古い bytes を新しいメタデータで再生する同じ class に落ちた） |
 
 ## 5. 測定
