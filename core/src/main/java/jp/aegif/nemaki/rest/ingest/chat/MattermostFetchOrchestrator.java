@@ -140,7 +140,7 @@ public class MattermostFetchOrchestrator implements FetchOrchestrator {
                                 skipped++;
                             } else if (result.isSuccess()) {
                                 imported++;
-                                if (parentObjectId != null) fetchSupport.createRelationshipSafe(callContext, profile.getRepositoryId(), parentObjectId, result.objectId(), errors);
+                                if (parentObjectId != null) fetchSupport.createRelationshipSafe(callContext, profile.getRepositoryId(), parentObjectId, result.objectId(), profile, req, errors);
                             } else { attachmentFailed = true; FetchSupport.addError(errors, "MM " + fileId + ": " + String.join(", ", result.errors())); }
                         } catch (Exception e) {
                             attachmentFailed = true;

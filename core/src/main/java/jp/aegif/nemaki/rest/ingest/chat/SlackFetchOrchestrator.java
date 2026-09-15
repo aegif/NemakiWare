@@ -138,13 +138,13 @@ public class SlackFetchOrchestrator implements FetchOrchestrator {
                                 skipped++;
                                 if (parentObjectId != null && result.objectId() != null) {
                                     fetchSupport.createRelationshipSafe(callContext, profile.getRepositoryId(),
-                                            parentObjectId, result.objectId(), errors);
+                                            parentObjectId, result.objectId(), profile, req, errors);
                                 }
                             } else if (result.isSuccess()) {
                                 imported++;
                                 if (parentObjectId != null) {
                                     fetchSupport.createRelationshipSafe(callContext, profile.getRepositoryId(),
-                                            parentObjectId, result.objectId(), errors);
+                                            parentObjectId, result.objectId(), profile, req, errors);
                                 }
                             } else { attachmentFailed = true; FetchSupport.addError(errors, "Slack file " + file.id() + ": " + String.join(", ", result.errors())); }
                         } catch (Exception e) {

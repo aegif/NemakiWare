@@ -311,12 +311,29 @@ public class FetchSupport {
         }
     }
 
-    /** Create a direct relationship, logging errors instead of throwing. */
+    /**
+     * Create a direct relationship after the import that produced the objects has returned,
+     * logging errors instead of throwing.
+     *
+     * <p>{@code profile} and {@code request} are what the link is AUTHORISED against (R4).
+     * They used to not be passed at all: the entry point had no profile, so the delegation
+     * re-check never ran and a fetch whose authorisation was revoked while it ran still wrote
+     * its edges. With neither in hand there is nothing to re-ask, so the link is REFUSED and
+     * the refusal is reported — a link written with no authority is the thing this closes, and
+     * an orchestrator that passes nulls must not get it by default.
+     */
     public void createRelationshipSafe(org.apache.chemistry.opencmis.commons.server.CallContext callContext,
                                        String repositoryId, String sourceId, String targetId,
+                                       ImportProfileDefinition profile, ExternalIngestRequest request,
                                        List<String> errors) {
+        if (profile == null && request == null) {
+            addError(errors, "Relationship " + sourceId + " → " + targetId + ": not created —"
+                    + " nothing was passed to authorise it against");
+            return;
+        }
         try {
-            String err = canonicalImportService.createDirectRelationship(callContext, repositoryId, sourceId, targetId);
+            String err = canonicalImportService.createDirectRelationship(callContext, repositoryId,
+                    sourceId, targetId, profile, request);
             if (err != null) addError(errors, err);
         } catch (Exception e) {
             addError(errors, "Relationship " + sourceId + " → " + targetId + ": " + e.getMessage());

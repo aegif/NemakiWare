@@ -2092,12 +2092,20 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * its scope has been completed — design §4 rule 7 puts that case out of scope for this
      * change and closes it alongside the stamp in P1-1(e). Inside an ingest, use the overload
      * that takes a scope; a relationship created through this one is a change no intent covers.
+     *
+     * <p>The AUTHORISATION is not out of scope, and used to be missing here (R4): with no
+     * profile in hand this entry point skipped the delegation re-check entirely, so a fetch
+     * whose delegation was revoked while it ran still wrote its edges. It now goes through the
+     * same authorising core as an in-import link; only the capture scope stays inactive and
+     * only the ANSWER differs (see {@link #outsideAnImport}).
      */
     @Override
     public String createDirectRelationship(CallContext callContext, String repositoryId,
-                                           String sourceId, String targetId) {
-        return outsideAnImport(createLink(callContext, repositoryId, sourceId, targetId,
-                "cmis:relationship", CaptureScope.inactive(), null, null));
+                                           String sourceId, String targetId,
+                                           ImportProfileDefinition authorizingProfile,
+                                           ExternalIngestRequest request) {
+        return outsideAnImport(createLinkAuthorized(callContext, repositoryId, sourceId, targetId,
+                "cmis:relationship", CaptureScope.inactive(), authorizingProfile, request));
     }
 
     /**
@@ -2146,25 +2154,18 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      *
      * <p>{@code authorizingProfile} is what lets the existence check below be followed by a
      * re-authorisation: the check is a read and the creation is a write, and every other
-     * read/write pair in this import re-asks in between. Null means the caller has no profile
-     * to authorise against — the public four-argument entry point used by fetch orchestrators
-     * after their import has returned — and then no re-check happens, which is recorded rather
-     * than hidden. In-import callers go through {@code createDirectRelationshipAuthorized},
-     * which refuses rather than passing a null it could not resolve.
+     * read/write pair in this import re-asks in between. Null means the caller had no profile
+     * to authorise against, and then no re-check happens — which is recorded rather than
+     * hidden. Every caller now reaches this through {@code createLinkAuthorized}, which
+     * resolves the profile and refuses rather than passing on a null it could not produce
+     * (R4 closed the last entry point that passed null unconditionally); the two differ only
+     * in how the outcome is ANSWERED, in an import as a warning and outside one through
+     * {@link #outsideAnImport}.
      *
-     * <p>In-import semantics: a non-null answer is a WARNING — the link was not created, or
-     * it was created without its duplicate check. The callers add it to the result's
-     * warnings and treat nothing else as a failure.
+     * <p>The wrapper that took these eight arguments was deleted with R4: its last production
+     * caller became {@code createLinkAuthorized}, and a method only tests call is a door that
+     * measures nothing about production.
      */
-    String createDirectRelationship(CallContext callContext, String repositoryId,
-                                            String sourceId, String targetId,
-                                            String relationshipTypeId, CaptureScope captureScope,
-                                            ImportProfileDefinition authorizingProfile,
-                                            ConnectorDefinition authorizingConnector) {
-        return createLink(callContext, repositoryId, sourceId, targetId, relationshipTypeId,
-                captureScope, authorizingProfile, authorizingConnector).message();
-    }
-
     private LinkOutcome createLink(CallContext callContext, String repositoryId,
                                    String sourceId, String targetId,
                                    String relationshipTypeId, CaptureScope captureScope,
@@ -2559,6 +2560,20 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     private String createDirectRelationshipAuthorized(CallContext callContext, String repositoryId,
             String sourceId, String targetId, String relationshipTypeId, CaptureScope captureScope,
             ImportProfileDefinition knownProfile, ExternalIngestRequest request) {
+        return createLinkAuthorized(callContext, repositoryId, sourceId, targetId,
+                relationshipTypeId, captureScope, knownProfile, request).message();
+    }
+
+    /**
+     * The authorising core both entry points share. Split out for the public one (R4), which
+     * needs the outcome rather than the message: outside an import a link that WAS created
+     * answers null even when its duplicate check did not answer, and only a refusal is a
+     * message. Folding that into the message here would have turned every unanswered check
+     * into a failed fetch.
+     */
+    private LinkOutcome createLinkAuthorized(CallContext callContext, String repositoryId,
+            String sourceId, String targetId, String relationshipTypeId, CaptureScope captureScope,
+            ImportProfileDefinition knownProfile, ExternalIngestRequest request) {
         ImportProfileDefinition profile = knownProfile;
         ConnectorDefinition connector;
         try {
@@ -2567,16 +2582,18 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             }
             connector = relationshipAuthorizingConnector(request);
         } catch (RuntimeException cannotAuthorize) {
-            return "the relationship was not created: " + cannotAuthorize.getMessage();
+            return LinkOutcome.notLinked("the relationship was not created: "
+                    + cannotAuthorize.getMessage());
         }
         if (profile != null && profile.isDelegated() && request != null
                 && request.getConnectorId() != null && connector == null) {
             // The request names a connector and it could not be produced. Passing null on
             // would skip the connector check entirely, which is the fail-open this closes.
-            return "the relationship was not created: connector " + request.getConnectorId()
-                    + " could not be resolved, so its delegation could not be checked";
+            return LinkOutcome.notLinked("the relationship was not created: connector "
+                    + request.getConnectorId()
+                    + " could not be resolved, so its delegation could not be checked");
         }
-        return createDirectRelationship(callContext, repositoryId, sourceId, targetId,
+        return createLink(callContext, repositoryId, sourceId, targetId,
                 relationshipTypeId, captureScope, profile, connector);
     }
 
