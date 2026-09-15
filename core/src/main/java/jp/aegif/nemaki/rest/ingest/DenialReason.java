@@ -52,6 +52,17 @@ public enum DenialReason {
      * repeated three times used to disable a legitimate profile permanently.
      */
     CREATOR_LOOKUP_FAILED,
+    /**
+     * The target folder could not be READ (a store failure) — not a finding that it is gone.
+     * Denies this tick like TARGET_FOLDER_UNRESOLVABLE, but is "could not ask": IDLE keeps its
+     * session, the webhook records the miss, and nothing is written about the folder (R11).
+     */
+    TARGET_FOLDER_LOOKUP_FAILED,
+    /**
+     * The creator's cmis:all could not be EVALUATED (the folder, its ACL or the creator's
+     * groups could not be read) — not a loss of it. Same "could not ask" class (R11).
+     */
+    CREATOR_CMIS_ALL_LOOKUP_FAILED,
     /** Creator no longer holds cmis:all on the profile's target folder
      *  (ACE revoked between ticks). Scheduled tick refused. */
     CREATOR_CMIS_ALL_LOST,

@@ -225,6 +225,23 @@ public class IngestJobService {
      */
     public boolean saveToDlqReporting(ExternalIngestRequest request, String errorMessage,
             byte[] contentBytes, boolean sourceNeverRead, boolean sourceWasRead) {
+        return saveToDlqReporting(request, errorMessage, contentBytes, sourceNeverRead,
+                sourceWasRead, false);
+    }
+
+    /**
+     * A row that RECORDS webhook deliveries this node accepted and did not fetch. It carries no
+     * item and is not replayable; the retry door refuses it by this mark. The mark used to be a
+     * prefix on {@code sourceObjectId} — a caller-supplied string, so a genuine item named that
+     * way was refused for ever and nothing stopped a caller from naming one so (R10).
+     */
+    public boolean saveWebhookDeliveryRecordToDlq(ExternalIngestRequest request, String errorMessage) {
+        return saveToDlqReporting(request, errorMessage, null, true, false, true);
+    }
+
+    boolean saveToDlqReporting(ExternalIngestRequest request, String errorMessage,
+            byte[] contentBytes, boolean sourceNeverRead, boolean sourceWasRead,
+            boolean webhookDeliveryRecord) {
         try {
             String dlqId = deadLetterIdFor(request);
             // The WRITE path must not inherit the read path's refusal. getDlqEntry refuses a
@@ -279,6 +296,8 @@ public class IngestJobService {
             // source clears the mark; one that did not, keeps it.
             dlq.setSourceNeverRead(sourceNeverRead
                     || (!sourceWasRead && existing != null && existing.isSourceNeverRead()));
+            // Set by the WRITER, never inherited: the row means what its latest save says.
+            dlq.setWebhookDeliveryRecord(webhookDeliveryRecord);
 
             // The payload is encrypted or it is not written. Storing ingested bytes in the
             // clear in nemaki_conf — no ACL of its own, no retention — is not an acceptable
@@ -1187,10 +1206,22 @@ public class IngestJobService {
         int confirmed = 0;
         int unconfirmed = 0;
         for (Document doc : docs) {
-            DocumentResult answer = cloudant.deleteDocument(
-                    new com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions.Builder()
-                            .db(dbName).docId(doc.getId()).rev(doc.getRev()).build())
-                    .execute().getResult();
+            DocumentResult answer;
+            try {
+                answer = cloudant.deleteDocument(
+                        new com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions.Builder()
+                                .db(dbName).docId(doc.getId()).rev(doc.getRev()).build())
+                        .execute().getResult();
+            } catch (RuntimeException couldNotAsk) {
+                // Raw, this reached the DELETE endpoint as a Spring 500 — "our bug" for a
+                // store that did not answer. The typed refusal the listings use answers 503
+                // there; the retry door's cleanup still answers 500 for it (recorded, R37).
+                // Rows confirmed before the failure are named: the walk did not finish (R27).
+                throw new IngestStoreDidNotAnswerException("the store did not answer the delete"
+                        + " of row " + doc.getId() + " of DLQ entry " + dlqId + " (" + confirmed
+                        + " row(s) confirmed before it); retry shortly: "
+                        + couldNotAsk.getMessage());
+            }
             // Counted only on the store's affirmative answer, as the purge does: "execute()
             // returned" counted a deletion nothing confirmed, and the endpoint said success
             // over a row still there. Codex found it in the pass that fixed the purge. NOT

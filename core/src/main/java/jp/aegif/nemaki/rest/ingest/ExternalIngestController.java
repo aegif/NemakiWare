@@ -409,6 +409,7 @@ public class ExternalIngestController {
         // only the first left every top-level-folder denial on 500, which is the one a
         // delegated profile targeting the repository root produces on EVERY import.
         if (firstError.contains("permission denied! repositoryid=")
+                || firstError.contains("permission denied for the importing user")
                 || firstError.contains("permission denied to top level folders")) {
             return HttpStatus.FORBIDDEN;
         }

@@ -699,7 +699,7 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
             // recorded at closure time as "twin-free but unlocked" — while the
             // condition is exactly as transient as the rebuilding-index refusals this
             // exception exists for. A retry reads the row and proceeds.
-            if (creating) {
+            if (createKeepsItsOwnAnswer(creating, unprovable)) {
                 throw unprovable;
             }
             throw new ConnectorIndexNotReadyException(unprovable.getMessage());
@@ -1355,5 +1355,14 @@ public class ConnectorDefinitionServiceImpl implements ConnectorDefinitionServic
             throw new IllegalStateException("nemaki_conf database client not available");
         }
         return client;
+    }
+
+    /**
+     * A CREATE answers 400 for a row the walk could not CLASSIFY (standing, an administrator
+     * repairs it) and 503 for a walk that did not ANSWER (transport; a retry reads it). Both
+     * arrived here as the same IllegalStateException and both answered 400 (R26).
+     */
+    private static boolean createKeepsItsOwnAnswer(boolean creating, IllegalStateException unprovable) {
+        return creating && !(unprovable instanceof NemakiConfAllDocs.WalkDidNotAnswerException);
     }
 }

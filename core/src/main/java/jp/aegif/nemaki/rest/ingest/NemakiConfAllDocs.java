@@ -75,7 +75,7 @@ final class NemakiConfAllDocs {
                 // IllegalStateException into a typed 503 and let everything else become
                 // a 500. A reset mid-page is "could not ask", the same as a listing
                 // that did not answer.
-                throw new IllegalStateException("the _all_docs listing of '" + dbName
+                throw new WalkDidNotAnswerException("the _all_docs listing of '" + dbName
                         + "' could not be read, so whether the rows are there cannot be"
                         + " established; retry shortly: " + transport.getMessage(),
                         transport);
@@ -84,7 +84,7 @@ final class NemakiConfAllDocs {
                 // The ENUMERATION did not answer. Returning what has been seen so far would
                 // read as "migration complete" to the caller — the same failure-as-absence
                 // this migration exists to close, one layer up.
-                throw new IllegalStateException("the _all_docs listing of '" + dbName
+                throw new WalkDidNotAnswerException("the _all_docs listing of '" + dbName
                         + "' did not answer, so whether any legacy rows remain"
                         + " cannot be established; the migration will retry on the next"
                         + " startup");
@@ -107,12 +107,25 @@ final class NemakiConfAllDocs {
                 // A FULL page advanced the cursor by nothing: repeating the query would loop
                 // on the same page for ever, and stopping quietly would claim the rest of
                 // the database was seen.
-                throw new IllegalStateException("a full _all_docs page of '" + dbName
+                throw new WalkDidNotAnswerException("a full _all_docs page of '" + dbName
                         + "' carried no usable row ids, so the walk cannot make progress");
             }
             if (listing.getRows().size() < MIGRATION_PAGE) {
                 break;
             }
         }
+    }
+
+    /**
+     * The walk itself did not ANSWER — transport, an empty listing object, or a page it
+     * could not advance past. An {@link IllegalStateException} so that every arm which already
+     * treats the walk's refusals as "unprovable" keeps doing so; a distinct type so that a
+     * CREATE, which answers 400 for a ROW it cannot classify, can answer 503 for a walk that
+     * never ran — the two used to share the 400 (R26).
+     */
+    public static class WalkDidNotAnswerException extends IllegalStateException {
+        private static final long serialVersionUID = 1L;
+        public WalkDidNotAnswerException(String message) { super(message); }
+        public WalkDidNotAnswerException(String message, Throwable cause) { super(message, cause); }
     }
 }

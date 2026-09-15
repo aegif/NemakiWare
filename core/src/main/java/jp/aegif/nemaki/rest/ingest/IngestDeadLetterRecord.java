@@ -183,4 +183,16 @@ public class IngestDeadLetterRecord {
 
     public boolean isHasContent() { return hasContent; }
     public void setHasContent(boolean hasContent) { this.hasContent = hasContent; }
+
+    /**
+     * True for a row that records webhook deliveries this node accepted and did not fetch.
+     * Such a row carries no item: the retry door refuses to replay it and says to re-fetch
+     * through the connector. Only {@code IngestJobService.saveWebhookDeliveryRecordToDlq}
+     * sets it — callers of the ingest API cannot (R10).
+     */
+    private boolean webhookDeliveryRecord;
+    public boolean isWebhookDeliveryRecord() { return webhookDeliveryRecord; }
+    public void setWebhookDeliveryRecord(boolean webhookDeliveryRecord) {
+        this.webhookDeliveryRecord = webhookDeliveryRecord;
+    }
 }

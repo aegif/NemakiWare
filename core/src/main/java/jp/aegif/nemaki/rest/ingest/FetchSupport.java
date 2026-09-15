@@ -272,6 +272,22 @@ public class FetchSupport {
     }
 
     /**
+     * A row that RECORDS webhook deliveries accepted and not fetched — marked as such by the
+     * service, not by anything the request carries (R10). Same boolean contract as above.
+     */
+    public boolean saveWebhookDeliveryRecordToDlq(ExternalIngestRequest request, String errorMessage) {
+        if (ingestJobService == null) {
+            return false;
+        }
+        try {
+            return ingestJobService.saveWebhookDeliveryRecordToDlq(request, errorMessage);
+        } catch (Exception e) {
+            logger.warn("Failed to save to DLQ — item may be lost: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Sleep for the throttle delay, if configured. Also sends a progress-based
      * heartbeat at most once per 5 minutes.
      */

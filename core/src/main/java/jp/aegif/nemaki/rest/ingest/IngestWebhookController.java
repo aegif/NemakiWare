@@ -772,34 +772,12 @@ public class IngestWebhookController {
             // together sent an unwired node's could-not-ask down the "refused" log line below —
             // the exact mis-statement this arm exists to remove. A review found it.
             if (IngestSchedulerService.denialCouldNotAsk(auth.getDenialReason())) {
-                boolean recorded = false;
-                if (fetchSupport != null) {
-                    ExternalIngestRequest missed = new ExternalIngestRequest();
-                    missed.setProfileId(profile.getProfileId());
-                    missed.setConnectorId(connector.getConnectorId());
-                    missed.setRepositoryId(profile.getRepositoryId());
-                    // DETERMINISTIC, like the IMAP twin's msg.stableKey(). A timestamp made the
-                    // dead-letter id new on every delivery, and this method runs once per
-                    // notification per matching profile behind a 100/minute limiter — thousands
-                    // of unresolvable rows a minute into nemaki_conf during one outage. This
-                    // class's own comment records that shape as an external-review finding for
-                    // the item path; a review found it reintroduced here.
-                    missed.setSourceObjectId("webhook-deliveries:" + profile.getProfileId()
-                            + ":" + connector.getConnectorId());
-                    missed.setSourceObjectType("webhook_event");
-                    missed.setExecutionMode("webhook");
-                    recorded = fetchSupport.saveSourceNeverReadToDlq(missed,
-                            "[transient] webhook deliveries were accepted but not fetched: the"
-                                    + " delegated authorisation could not be established ("
-                                    + auth.getDenialReason() + "). This row RECORDS the misses;"
-                                    + " it carries no delivery and is not replayable — re-fetch"
-                                    + " through the connector");
-                }
-                if (!recorded) {
-                    undeliveredWebhooks.computeIfAbsent(profile.getProfileId(),
-                            k -> new java.util.concurrent.atomic.AtomicInteger())
-                            .incrementAndGet();
-                }
+                boolean recorded = recordUndeliveredWebhook(profile, connector,
+                        "[transient] webhook deliveries were accepted but not fetched: the"
+                                + " delegated authorisation could not be established ("
+                                + auth.getDenialReason() + "). This row RECORDS the misses;"
+                                + " it carries no delivery and is not replayable — re-fetch"
+                                + " through the connector");
                 logger.error("Webhook-triggered fetch for delegated profile {} (connector {})"
                         + " could not be AUTHORISED ({}), which is not a denial. The sender was"
                         + " told 'accepted'; the delivery {} recorded",
@@ -815,11 +793,61 @@ public class IngestWebhookController {
         Thread.ofVirtual().name("webhook-fetch-" + profile.getProfileId()).start(() -> {
             try {
                 schedulerService.executeFetch(fetchCtx, profile, connector, params);
+            } catch (jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                    .SettingUnreadableException couldNotAsk) {
+                // The sender has its 200 and will not retry. A fetch that could not read its
+                // own configuration or checkpoint fetched nothing; the authorisation arm above
+                // records the same class and this one only logged (R30).
+                boolean recorded = recordUndeliveredWebhook(profile, connector,
+                        "[transient] webhook deliveries were accepted but not fetched: the"
+                                + " fetch could not read its configuration ("
+                                + couldNotAsk.getMessage() + "). This row RECORDS the misses;"
+                                + " it carries no delivery and is not replayable — re-fetch"
+                                + " through the connector");
+                logger.error("Webhook-triggered fetch for profile {} (connector {}) could not"
+                        + " read its configuration: {}. The sender was told 'accepted'; the"
+                        + " delivery {} recorded", profile.getProfileId(),
+                        connector.getConnectorId(), couldNotAsk.getMessage(),
+                        recorded ? "was" : "could NOT be");
             } catch (Exception e) {
                 logger.error("Webhook-triggered fetch failed for profile {}: {}",
                         profile.getProfileId(), e.getMessage());
             }
         });
+    }
+
+    /**
+     * Record deliveries this node accepted and did not fetch: a dead-letter row marked as a
+     * RECORD (it carries no delivery), or, when that row cannot be written, the in-memory
+     * counter the status endpoint shows.
+     *
+     * @return whether the row was written
+     */
+    private boolean recordUndeliveredWebhook(ImportProfileDefinition profile,
+            ConnectorDefinition connector, String why) {
+        boolean recorded = false;
+        if (fetchSupport != null) {
+            ExternalIngestRequest missed = new ExternalIngestRequest();
+            missed.setProfileId(profile.getProfileId());
+            missed.setConnectorId(connector.getConnectorId());
+            missed.setRepositoryId(profile.getRepositoryId());
+            // DETERMINISTIC, like the IMAP twin's msg.stableKey(). A timestamp made the
+            // dead-letter id new on every delivery, and this runs once per notification per
+            // matching profile behind a 100/minute limiter — thousands of unresolvable rows a
+            // minute into nemaki_conf during one outage. The string is only the id now; the
+            // row's meaning is carried by its own mark (R10).
+            missed.setSourceObjectId("webhook-deliveries:" + profile.getProfileId()
+                    + ":" + connector.getConnectorId());
+            missed.setSourceObjectType("webhook_event");
+            missed.setExecutionMode("webhook");
+            recorded = fetchSupport.saveWebhookDeliveryRecordToDlq(missed, why);
+        }
+        if (!recorded) {
+            undeliveredWebhooks.computeIfAbsent(profile.getProfileId(),
+                    k -> new java.util.concurrent.atomic.AtomicInteger())
+                    .incrementAndGet();
+        }
+        return recorded;
     }
 
     /**
@@ -1204,6 +1232,15 @@ public class IngestWebhookController {
     private String resolveToken(ConnectorDefinition connector) {
         String ref = connector.getCredentialRef();
         if (ref == null) return null;
+        if (propertyManager == null) {
+            // Unwired answered null, and the caller said "No access token" (400) — a claim
+            // about the credential made by a node that cannot read any (R28).
+            throw new jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                    .SettingUnreadableException("the credential '" + ref + "' of connector "
+                            + connector.getConnectorId() + " cannot be read on this node: the"
+                            + " property manager is not wired; retry shortly against a node"
+                            + " that runs it");
+        }
         if (propertyManager != null) {
             try {
                 String value = propertyManager.readValue(ref);

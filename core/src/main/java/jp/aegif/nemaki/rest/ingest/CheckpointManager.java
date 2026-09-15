@@ -46,7 +46,7 @@ public class CheckpointManager {
      *         answer.
      */
     public String loadSimpleCheckpoint(String profileId, String scope) {
-        if (settingsService == null) return null;
+        if (settingsService == null) throw notWired(profileId + "/" + scope);
         String key = "ingest.checkpoint." + profileId + "." + scope;
         String value = settingsService.readSettingOrRefuse(key);
         return (value != null && !value.isBlank()) ? value : null;
@@ -66,7 +66,7 @@ public class CheckpointManager {
      * Load checkpoint as [uidValidity, lastUid].
      */
     public long[] loadCheckpointWithValidity(String profileId, String mailboxFolder) {
-        if (settingsService == null) return new long[]{0, 0};
+        if (settingsService == null) throw notWired(profileId + "/" + mailboxFolder + " (IMAP)");
         String key = "ingest.checkpoint." + profileId + "." + mailboxFolder;
         // {0, 0} means "never polled" and makes the next poll start from the beginning. A
         // read that FAILED must not produce it — see loadSimpleCheckpoint.
@@ -199,5 +199,17 @@ public class CheckpointManager {
         String key = "ingest.checkpoint." + profileId + "." + scope;
         String val = settingsService.readSettingOrRefuse(key);
         if (val != null && !val.isBlank()) result.put(scope, val);
+    }
+
+    /**
+     * Unwired used to answer "never polled" (null / {0, 0}) — the value that makes the next
+     * poll start from the beginning and then write a checkpoint past everything it did not
+     * list. Same refusal as a store that did not answer; the orchestrators already carry it
+     * out as a retry, and the scheduler does not count it against the connector (R28).
+     */
+    private static IntegrationSettingsService.SettingUnreadableException notWired(String what) {
+        return new IntegrationSettingsService.SettingUnreadableException("the checkpoint of "
+                + what + " cannot be read on this node: the settings service is not wired;"
+                + " retry shortly against a node that runs it");
     }
 }

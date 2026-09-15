@@ -134,16 +134,101 @@ public class IngestAuthorizationService {
      * decides whether that's a 400 (missing input) or a 404 (path not found).
      */
     public String resolveFolderId(String repositoryId, String folderId, String folderPath) {
-        if (folderId != null && !folderId.isBlank()) return folderId;
-        if (folderPath == null || folderPath.isBlank()) return null;
         try {
-            Content content = contentService.getContentByPath(repositoryId, folderPath);
-            if (content == null || !content.isFolder()) return null;
-            return content.getId();
-        } catch (RuntimeException e) {
-            logger.debug("Path resolution failed for {}/{}: {}", repositoryId, folderPath, e.getMessage());
+            return resolveFolderIdOrRefuse(repositoryId, folderId, folderPath);
+        } catch (AuthorizationReadFailedException couldNotAsk) {
+            logger.debug("Path resolution failed for {}/{}: {}", repositoryId, folderPath,
+                    couldNotAsk.getMessage());
             return null;
         }
+    }
+
+    /**
+     * A read the authorisation needed did not answer. Not a denial: nothing was established
+     * about the folder, the ACL or the user. Callers that record a denial reason record it as
+     * "could not ask" (R11); the null/false-answering methods above swallow it for callers
+     * that have not been given that distinction yet.
+     */
+    public static class AuthorizationReadFailedException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        public AuthorizationReadFailedException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
+    /**
+     * As {@link #resolveFolderId}, refusing when the path read failed instead of answering
+     * the null that means "there is no such path".
+     */
+    public String resolveFolderIdOrRefuse(String repositoryId, String folderId, String folderPath) {
+        if (folderId != null && !folderId.isBlank()) return folderId;
+        if (folderPath == null || folderPath.isBlank()) return null;
+        Content content;
+        try {
+            content = contentService.getContentByPath(repositoryId, folderPath);
+        } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException absent) {
+            // The store ANSWERED: no such path.
+            return null;
+        } catch (RuntimeException couldNotAsk) {
+            throw new AuthorizationReadFailedException("the target folder path '" + folderPath
+                    + "' of repository " + repositoryId + " could not be read: "
+                    + couldNotAsk.getMessage(), couldNotAsk);
+        }
+        if (content == null || !content.isFolder()) return null;
+        return content.getId();
+    }
+
+    /**
+     * As {@link #canManageProfileForFolderAsUser}, refusing when the folder, its ACL, the
+     * user's groups or the repository's Anyone principal could not be read — each of which
+     * the answering variant folds into "does not hold cmis:all".
+     */
+    public boolean canManageProfileForFolderAsUserOrRefuse(String username, String repositoryId,
+            String folderId) {
+        if (username == null || username.isBlank()
+                || repositoryId == null
+                || folderId == null || folderId.isBlank()) {
+            return false;
+        }
+        Folder folder;
+        try {
+            folder = contentService.getFolder(repositoryId, folderId);
+        } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException absent) {
+            return false;
+        } catch (RuntimeException couldNotAsk) {
+            throw new AuthorizationReadFailedException("folder " + folderId + " of repository "
+                    + repositoryId + " could not be read: " + couldNotAsk.getMessage(),
+                    couldNotAsk);
+        }
+        if (folder == null) return false;
+        Acl acl;
+        try {
+            acl = contentService.calculateAcl(repositoryId, folder);
+        } catch (RuntimeException couldNotAsk) {
+            throw new AuthorizationReadFailedException("the ACL of folder " + folderId
+                    + " of repository " + repositoryId + " could not be read: "
+                    + couldNotAsk.getMessage(), couldNotAsk);
+        }
+        if (acl == null) return false;
+        Set<String> principals = new HashSet<>();
+        principals.add(username);
+        try {
+            Set<String> groups = principalService.getGroupIdsContainingUser(repositoryId, username);
+            if (groups != null) principals.addAll(groups);
+        } catch (RuntimeException couldNotAsk) {
+            throw new AuthorizationReadFailedException("the groups of " + username
+                    + " in repository " + repositoryId + " could not be read: "
+                    + couldNotAsk.getMessage(), couldNotAsk);
+        }
+        try {
+            String anyoneId = principalService.getAnyone(repositoryId);
+            if (anyoneId != null && !anyoneId.isBlank()) principals.add(anyoneId);
+        } catch (RuntimeException couldNotAsk) {
+            throw new AuthorizationReadFailedException("the Anyone principal of repository "
+                    + repositoryId + " could not be read: " + couldNotAsk.getMessage(),
+                    couldNotAsk);
+        }
+        return aclGrantsCmisAll(acl, principals);
     }
 
     /**
@@ -349,6 +434,11 @@ public class IngestAuthorizationService {
         }
         if (anyoneId != null && !anyoneId.isBlank()) principals.add(anyoneId);
 
+        return aclGrantsCmisAll(acl, principals);
+    }
+
+    /** The pure half: whether any ACE for one of {@code principals} carries cmis:all. */
+    static boolean aclGrantsCmisAll(Acl acl, Set<String> principals) {
         List<Ace> aces = acl.getAllAces();
         if (aces == null || aces.isEmpty()) return false;
         for (Ace ace : aces) {

@@ -280,6 +280,13 @@ public class FolderConnectorController {
                         + " shortly against a node that runs it");
                 return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
             }
+            case LISTING_REFUSED -> {
+                // Without this arm the default below answered 400 "no connector" for a
+                // listing that never ran (R29).
+                body.put("message", "the connectors of profile " + profile.getProfileId()
+                        + " could not be listed while the index is not ready; retry shortly");
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+            }
             case NOT_READ -> {
                 body.put("message", "connector " + id + " exists but could not be read as that"
                         + " connector; retry shortly");

@@ -1424,7 +1424,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
             // create keeps the existing contract (IllegalStateException → 400, locked); an
             // update is refused retryably (503) — the condition is as transient as an index
             // rebuild.
-            if (creating) {
+            if (createKeepsItsOwnAnswer(creating, unprovable)) {
                 throw unprovable;
             }
             throw new ProfileIndexNotReadyException(unprovable.getMessage());
@@ -1643,7 +1643,7 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
         try {
             NemakiConfAllDocs.forEachRow(cloudant, dbName, perRow);
         } catch (IllegalStateException unprovable) {
-            if (creating) {
+            if (createKeepsItsOwnAnswer(creating, unprovable)) {
                 throw unprovable;
             }
             throw new ProfileIndexNotReadyException(unprovable.getMessage());
@@ -1743,5 +1743,10 @@ public class ImportProfileDefinitionServiceImpl implements ImportProfileDefiniti
             throw new IllegalStateException("nemaki_conf database client not available");
         }
         return client;
+    }
+
+    /** See the connector twin: a walk that did not ANSWER is a retry on a create too (R26). */
+    private static boolean createKeepsItsOwnAnswer(boolean creating, IllegalStateException unprovable) {
+        return creating && !(unprovable instanceof NemakiConfAllDocs.WalkDidNotAnswerException);
     }
 }

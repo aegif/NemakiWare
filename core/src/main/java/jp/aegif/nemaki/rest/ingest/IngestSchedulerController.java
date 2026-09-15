@@ -286,6 +286,13 @@ public class IngestSchedulerController {
                         + " retry shortly against a node that runs it");
                 return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
             }
+            case LISTING_REFUSED -> {
+                // Without this arm the default below answered 400 "no connector" for a
+                // listing that never ran (R29).
+                response.put("message", "the connectors of profile " + profile.getProfileId()
+                        + " could not be listed while the index is not ready; retry shortly");
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
+            }
             case NOT_READ -> {
                 response.put("message", "connector " + profile.getDefaultConnectorId()
                         + " exists but could not be read as that connector");

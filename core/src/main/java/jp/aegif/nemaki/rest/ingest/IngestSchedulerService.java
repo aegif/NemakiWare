@@ -225,7 +225,9 @@ public class IngestSchedulerService {
      */
     public static boolean denialCouldNotAsk(DenialReason why) {
         return why == DenialReason.CREATOR_LOOKUP_FAILED
-                || why == DenialReason.SERVICES_UNAVAILABLE;
+                || why == DenialReason.SERVICES_UNAVAILABLE
+                || why == DenialReason.TARGET_FOLDER_LOOKUP_FAILED
+                || why == DenialReason.CREATOR_CMIS_ALL_LOOKUP_FAILED;
     }
 
     /**
@@ -357,17 +359,42 @@ public class IngestSchedulerService {
         inactiveCreatorStreak.remove(pid);
 
         // 5. cmis:all re-eval
-        String folderId = ingestAuthorizationService.resolveFolderId(
-                profile.getRepositoryId(),
-                profile.getTargetFolderId(), profile.getTargetFolderPath());
+        // Through the reads that REFUSE. resolveFolderId and canManageProfileForFolderAsUser
+        // answer null / false for a store that did not answer, and this method then wrote
+        // TARGET_FOLDER_UNRESOLVABLE / CREATOR_CMIS_ALL_LOST into the audit trail — settled
+        // findings about a folder and a creator that nothing established — and IDLE, which
+        // stops on a settled denial, ended capture for good on one CouchDB blip (R11).
+        String folderId;
+        try {
+            folderId = ingestAuthorizationService.resolveFolderIdOrRefuse(
+                    profile.getRepositoryId(),
+                    profile.getTargetFolderId(), profile.getTargetFolderPath());
+        } catch (IngestAuthorizationService.AuthorizationReadFailedException couldNotAsk) {
+            // Not "no longer resolvable": the read did not answer.
+            auditScheduledDelegatedDenial(profile, null,
+                    DenialReason.TARGET_FOLDER_LOOKUP_FAILED,
+                    "Profile's target folder could not be read: " + couldNotAsk.getMessage());
+            return new DelegatedTick(null, DenialReason.TARGET_FOLDER_LOOKUP_FAILED);
+        }
         if (folderId == null) {
             auditScheduledDelegatedDenial(profile, null,
                     DenialReason.TARGET_FOLDER_UNRESOLVABLE,
                     "Profile's target folder no longer resolvable");
             return new DelegatedTick(null, DenialReason.TARGET_FOLDER_UNRESOLVABLE);
         }
-        if (!ingestAuthorizationService.canManageProfileForFolderAsUser(
-                creatorUser, profile.getRepositoryId(), folderId)) {
+        boolean creatorHoldsCmisAll;
+        try {
+            creatorHoldsCmisAll = ingestAuthorizationService.canManageProfileForFolderAsUserOrRefuse(
+                    creatorUser, profile.getRepositoryId(), folderId);
+        } catch (IngestAuthorizationService.AuthorizationReadFailedException couldNotAsk) {
+            // Not "no longer holds": the folder, its ACL or the groups could not be read.
+            auditScheduledDelegatedDenial(profile, null,
+                    DenialReason.CREATOR_CMIS_ALL_LOOKUP_FAILED,
+                    "Whether creator " + creatorUser + " holds cmis:all on the target folder"
+                            + " could not be established: " + couldNotAsk.getMessage());
+            return new DelegatedTick(null, DenialReason.CREATOR_CMIS_ALL_LOOKUP_FAILED);
+        }
+        if (!creatorHoldsCmisAll) {
             auditScheduledDelegatedDenial(profile, null,
                     DenialReason.CREATOR_CMIS_ALL_LOST,
                     "Creator " + creatorUser + " no longer holds cmis:all on target folder");
@@ -580,10 +607,21 @@ public class IngestSchedulerService {
                     // check returns false on null folderId, so the prior
                     // shape masked folder-resolution failures as connector
                     // denials in the audit trail.
-                    String delegatedFolderId = ingestAuthorizationService.resolveFolderId(
-                            profile.getRepositoryId(),
-                            profile.getTargetFolderId(),
-                            profile.getTargetFolderPath());
+                    String delegatedFolderId;
+                    try {
+                        delegatedFolderId = ingestAuthorizationService.resolveFolderIdOrRefuse(
+                                profile.getRepositoryId(),
+                                profile.getTargetFolderId(),
+                                profile.getTargetFolderPath());
+                    } catch (IngestAuthorizationService.AuthorizationReadFailedException couldNotAsk) {
+                        // Could not ask: skipped this tick, recorded as such, not as a folder
+                        // that is gone (R11).
+                        auditScheduledDelegatedDenial(profile, connector,
+                                DenialReason.TARGET_FOLDER_LOOKUP_FAILED,
+                                "Profile's target folder could not be read: "
+                                        + couldNotAsk.getMessage());
+                        continue;
+                    }
                     if (delegatedFolderId == null) {
                         auditScheduledDelegatedDenial(profile, connector,
                                 DenialReason.TARGET_FOLDER_UNRESOLVABLE,
@@ -1012,6 +1050,9 @@ public class IngestSchedulerService {
          *  show" — the two are told apart only by an index-free walk, which this method does
          *  not do (it runs once per profile on a listing). Not a fact on its own. */
         ABSENT_OR_HIDDEN,
+        /** The archetype listing REFUSED (its index is not ready). Says nothing about the
+         *  connectors; the fallback search never ran. */
+        LISTING_REFUSED,
         /** The row was READ and is not usable: disabled, not allowed, wrong archetype. */
         NOT_USABLE,
         /** No default is named and no allowed archetype produced a candidate. Counted as an
@@ -1094,7 +1135,17 @@ public class IngestSchedulerService {
         // Fallback for non-scheduled profiles only: find first allowed connector by archetype
         if (profile.getAllowedArchetypes() != null && !profile.getAllowedArchetypes().isEmpty()) {
             for (SourceArchetype archetype : profile.getAllowedArchetypes()) {
-                List<ConnectorDefinition> candidates = connectorService.listByArchetype(archetype);
+                List<ConnectorDefinition> candidates;
+                try {
+                    candidates = connectorService.listByArchetype(archetype);
+                } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused) {
+                    // The listing refused. Raw, this escaped to the poll's outer catch and
+                    // ended the tick for every profile after this one, and answered 500 from
+                    // the folder and trigger endpoints. Not a fact about the connectors (R29).
+                    logger.warn("The connectors of archetype {} could not be listed for profile"
+                            + " {}: {}", archetype, profile.getProfileId(), refused.getMessage());
+                    return new ConnectorForProfile(null, Unresolved.LISTING_REFUSED);
+                }
                 for (ConnectorDefinition c : candidates) {
                     if (c.isEnabled() && profile.isConnectorAllowed(c.getConnectorId())) {
                         return new ConnectorForProfile(c, null);
@@ -1200,10 +1251,20 @@ public class IngestSchedulerService {
         }
 
         // Stage 2: connector still delegated to the creator for this folder.
-        String delegatedFolderId = ingestAuthorizationService.resolveFolderId(
-                profile.getRepositoryId(),
-                profile.getTargetFolderId(),
-                profile.getTargetFolderPath());
+        String delegatedFolderId;
+        try {
+            delegatedFolderId = ingestAuthorizationService.resolveFolderIdOrRefuse(
+                    profile.getRepositoryId(),
+                    profile.getTargetFolderId(),
+                    profile.getTargetFolderPath());
+        } catch (IngestAuthorizationService.AuthorizationReadFailedException couldNotAsk) {
+            // Could not ask — the same class stage 1 records for the creator lookup (R11).
+            auditScheduledDelegatedDenial(profile, connector,
+                    DenialReason.TARGET_FOLDER_LOOKUP_FAILED,
+                    "Profile's target folder could not be read: " + couldNotAsk.getMessage());
+            return new DelegatedAuthorization(false, null,
+                    DenialReason.TARGET_FOLDER_LOOKUP_FAILED);
+        }
         if (delegatedFolderId == null) {
             auditScheduledDelegatedDenial(profile, connector,
                     DenialReason.TARGET_FOLDER_UNRESOLVABLE,

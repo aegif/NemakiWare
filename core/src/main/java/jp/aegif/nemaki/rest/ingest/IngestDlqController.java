@@ -206,8 +206,10 @@ public class IngestDlqController {
             // sourceObjectType — that is an unrestricted caller-supplied string, so a genuine
             // item whose type happened to be "webhook_event" was refused for ever as if it
             // were the synthetic marker. Codex found the over-throw.
-            if (dlq.getSourceObjectId() != null
-                    && dlq.getSourceObjectId().startsWith("webhook-deliveries:")) {
+            // By the row's own mark, not by the shape of sourceObjectId: that string is the
+            // caller's, so a genuine item named "webhook-deliveries:…" was refused for ever
+            // while nothing stopped a caller from naming one so (R10).
+            if (dlq.isWebhookDeliveryRecord()) {
                 // This row RECORDS that deliveries were accepted and not fetched. It carries no
                 // delivery — the webhook body and the event scope were never stored — so
                 // dispatching it would create an empty "imported-webhook:..." document and,
@@ -326,24 +328,24 @@ public class IngestDlqController {
             }
             if (result.skipped()) {
                 // Idempotent outcome — object already exists, remove from DLQ
-                IngestJobService.DlqDeletion removed = ingestJobService.deleteDlqEntry(dlqId);
+                IngestJobService.DlqDeletion removed = cleanupAfterReplay(dlqId, response);
                 response.put("status", fullyGone(removed) ? "resolved" : "resolved-entry-kept");
                 if (!fullyGone(removed)) {
                     // The delete walks a Mango selector; a rebuilding index removes nothing.
                     // Saying "resolved" alone left the row to reappear in the next listing
                     // with no hint of why. A review found the return value ignored here.
-                    response.put("entryKeptNote", "the import was resolved but no stored row"
-                            + " was returned to delete, or the store did not confirm the"
+                    response.putIfAbsent("entryKeptNote", "the import was resolved but no stored"
+                            + " row was returned to delete, or the store did not confirm the"
                             + " delete; the entry may reappear until the index catches up");
                 }
                 if (result.objectId() != null) response.put("objectId", result.objectId());
                 response.put("skipReason", result.skipReason());
             } else if (result.isSuccess()) {
-                IngestJobService.DlqDeletion removed = ingestJobService.deleteDlqEntry(dlqId);
+                IngestJobService.DlqDeletion removed = cleanupAfterReplay(dlqId, response);
                 response.put("status", fullyGone(removed) ? "success" : "success-entry-kept");
                 if (!fullyGone(removed)) {
-                    response.put("entryKeptNote", "the import succeeded but no stored row was"
-                            + " returned to delete, or the store did not confirm the delete;"
+                    response.putIfAbsent("entryKeptNote", "the import succeeded but no stored row"
+                            + " was returned to delete, or the store did not confirm the delete;"
                             + " the entry may reappear until the index catches up");
                 }
                 response.put("objectId", result.objectId());
@@ -406,8 +408,8 @@ public class IngestDlqController {
         }
         if (deleted.confirmed() == 0) {
             return errorResponse(HttpStatus.NOT_FOUND, "no stored row of DLQ entry " + dlqId
-                    + " was returned to delete. If the entry is listed, the index has not"
-                    + " caught up — nothing was deleted, so retry");
+                    + " was returned to delete; nothing was deleted. If the entry is still"
+                    + " listed, the index has not caught up with it yet");
         }
         response.put("status", "success");
         response.put("deleted", deleted.confirmed());
@@ -494,6 +496,24 @@ public class IngestDlqController {
     /** Gone only when at least one row was confirmed deleted and none was left unconfirmed. */
     private static boolean fullyGone(IngestJobService.DlqDeletion removed) {
         return removed.confirmed() > 0 && removed.complete();
+    }
+
+    /**
+     * The cleanup after a replay the import has ALREADY resolved or succeeded. A store that
+     * did not answer it used to fall into this method's catch-all and answer 500 "Retry
+     * failed" — for an import that landed, with the row still there to be resolved by the next
+     * replay. Not a failure of the retry: the entry is kept, and the answer says why (R37).
+     */
+    private IngestJobService.DlqDeletion cleanupAfterReplay(String dlqId,
+            Map<String, Object> response) {
+        try {
+            return ingestJobService.deleteDlqEntry(dlqId);
+        } catch (IngestJobService.IngestStoreDidNotAnswerException couldNotAsk) {
+            response.put("entryKeptNote", "the import landed, but the store did not answer the"
+                    + " cleanup of this entry (" + couldNotAsk.getMessage() + "); the entry is"
+                    + " kept and the next replay resolves it");
+            return new IngestJobService.DlqDeletion(0, 1);
+        }
     }
 
     /**

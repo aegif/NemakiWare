@@ -3495,6 +3495,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                                 idempSkip = true;       // legacy value without "|" separator
                             }
                         }
+                    } else {
+                        // Unwired is not "no record": with dedupePolicy=replace the request
+                        // would delete the earlier run's document on the strength of a read
+                        // that never happened. The same answer as a read that failed (R28).
+                        return ExternalIngestResult.error(requestId, "the idempotency record for"
+                                + " key '" + request.getIdempotencyKey() + "' could not be"
+                                + " established: the settings service is not wired on this"
+                                + " node; retry shortly against a node that runs it");
                     }
                 } catch (jp.aegif.nemaki.rest.controller.IntegrationSettingsService
                         .SettingUnreadableException couldNotAsk) {
@@ -4408,8 +4416,17 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 logger.warn("targetFolderPath '{}' does not exist in repository '{}'",
                         folderPath, repositoryId);
                 return null;
+            } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException denied) {
+                // The store ANSWERED: the importing user may not read this path. Not a retry
+                // — every retry answers the same — and not "the profile has no folder". It
+                // was folded into the arm below and came back as "; retry shortly" / 503 (R31).
+                logger.warn("targetFolderPath '{}' in repository '{}' is not readable by the"
+                        + " importing user: {}", folderPath, repositoryId, denied.getMessage());
+                throw new TargetFolderUnreadableException("the target folder path '" + folderPath
+                        + "' of this profile is not readable: permission denied for the importing"
+                        + " user (" + denied.getMessage() + ")", denied, false);
             } catch (Exception e) {
-                // Everything else — a permission denial, a store failure — used to answer the
+                // Everything else — a store failure — used to answer the
                 // same null, and the caller then said the profile has NEITHER field
                 // configured, which is provably false: control only reaches here because
                 // targetFolderPath IS set. Worse, that return happens before the try that
