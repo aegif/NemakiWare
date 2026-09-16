@@ -2969,7 +2969,10 @@ CONTROLS = [
         # never fall back to the deterministic id. An early return keeps the block below
         # it compiling (javac does not flag statements after `if (true) return`).
         find='        if (!results.isEmpty()) {\n            ConnectorDefinition first = results.get(0);',
-        replace='        if (true) return results.isEmpty() ? null : results.get(0);\n        if (!results.isEmpty()) {\n            ConnectorDefinition first = results.get(0);',
+        # The early return now has to build a Resolution: R3 gave read() that return type so
+        # the receiver can see whether the SELECTOR answered. The sabotage is unchanged in
+        # meaning — answer from the selector alone — and the sweep died here on the old shape.
+        replace='        if (true) return new Resolution(results.isEmpty() ? null : results.get(0), selectorAnswered);\n        if (!results.isEmpty()) {\n            ConnectorDefinition first = results.get(0);',
         test='ConnectorLegacyIdMigrationTest',
         expect_fail=['aDeterministicRowTheIndexCannotShowIsStillFoundByGet',
                      'aDeterministicRowThatNamesAnotherConnectorIsNotReturned',
