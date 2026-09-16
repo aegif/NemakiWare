@@ -3125,4 +3125,159 @@ class CanonicalImportServiceTest {
 
         assertEquals(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR, statusFor(result));
     }
+
+    // ── R5: the window between the gate and the write ──
+
+    /**
+     * A delegated profile, a connector, and an authorisation that is revoked the moment the
+     * dedupe listing is read. The FILE_SHARE entry point has had this lock since the round
+     * that moved the re-check below the read; the archetype entry points did not, and they
+     * reach their writes through {@code execute} — a change that gave one of them a write of
+     * its own would pass every lock here (R5).
+     */
+    private void revokeWhenTheDedupeListingIsRead(SourceArchetype archetype) {
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        when(profileService.get("p1")).thenReturn(delegated);
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(archetype);
+        connector.setSourceSystem("slack");
+        when(connectorService.get("c1")).thenReturn(connector);
+
+        java.util.concurrent.atomic.AtomicBoolean revoked =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        jp.aegif.nemaki.dao.ContentDaoService dao =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        service.setContentDaoService(dao);
+        when(dao.getChildren(anyString(), anyString())).thenAnswer(inv -> {
+            revoked.set(true);
+            return java.util.List.of();
+        });
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString()))
+                .thenAnswer(inv -> !revoked.get());
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
+        service.setIngestAuthorizationService(auth);
+    }
+
+    @Test
+    void aRevokeDuringTheDedupeReadStopsTheChatImport() {
+        revokeWhenTheDedupeListingIsRead(SourceArchetype.CHAT_CONTEXT);
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("slack-msg-1");
+        req.setSourceObjectType("message");
+        req.setFileName("message.txt");
+        req.setContentStream(new java.io.ByteArrayInputStream("data".getBytes()));
+        java.util.Map<String, Object> meta = new java.util.HashMap<>();
+        meta.put("channelId", "C123");
+        req.setMetadata(meta);
+
+        ExternalIngestResult result = service.executeChatContextImport(testContext(), req);
+
+        assertFalse(result.isSuccess(),
+                "a revoke that landed during the dedupe read did not stop the chat write");
+        assertTrue(String.valueOf(result.errors()).contains("cmis:all"),
+                "the refusal does not name the authorisation: " + result.errors());
+        verify(objectService, never()).createDocument(any(), any(), any(), any(), any(), any(),
+                any(), any(), any(), any());
+    }
+
+    @Test
+    void aRevokeDuringTheDedupeReadStopsTheNoteImport() {
+        revokeWhenTheDedupeListingIsRead(SourceArchetype.COMPOUND_NOTE);
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("page-1");
+        req.setSourceObjectType("page");
+        // files_and_body: without it the page body is not imported at all, the dedupe listing
+        // is never read, and the revoke this lock arranges never lands.
+        req.setImportPolicy("files_and_body");
+        req.setFileName("page.html");
+        req.setMimeType("text/html");
+        req.setContentStream(new java.io.ByteArrayInputStream("<p>body</p>".getBytes()));
+
+        ExternalIngestResult result = service.executeNoteImport(testContext(), req);
+
+        assertFalse(result.isSuccess(),
+                "a revoke that landed during the dedupe read did not stop the note write");
+        assertTrue(String.valueOf(result.errors()).contains("cmis:all"),
+                "the refusal does not name the authorisation: " + result.errors());
+        verify(objectService, never()).createDocument(any(), any(), any(), any(), any(), any(),
+                any(), any(), any(), any());
+    }
+
+    @Test
+    void theWriteIsReAskedTwiceAndTheArchetypeDoorsHaveNoWriteOfTheirOwn() throws Exception {
+        // The structural half of R5. The window is irreducible — a revoke landing between the
+        // second re-ask and the write is not caught, and no number of checks changes that —
+        // but WHICH points re-ask, and that no entry point writes outside them, is a standing
+        // property and is measurable. Both re-asks are needed: the first covers the reads that
+        // decide, the second covers the content drain, which for a large attachment is the
+        // long part.
+        String source = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java"));
+        String execute = jp.aegif.nemaki.util.test.JavaSource.methodBody(source,
+                "ExternalIngestResult execute(CallContext callContext, ExternalIngestRequest request,\n"
+                        + "            CaptureScope captureScope, BeforeEmitHook beforeEmitHook) {");
+        int reAsks = execute.split("refuseIfDelegationNoLongerAuthorizes\\(", -1).length - 1;
+        assertEquals(2, reAsks,
+                "the write path no longer re-asks the delegation twice; it asks " + reAsks
+                        + " time(s)");
+        // The four entry points hold their logic in ...Internal; the public wrappers are a
+        // capture scope and a try. A lock pointed at the wrappers reads none of the code it
+        // claims to be about — a review found this one doing exactly that.
+        for (String door : java.util.List.of(
+                "private ExternalIngestResult executeMailImportInternal(",
+                "private ExternalIngestResult executeChatContextImportInternal(",
+                "private ExternalIngestResult executeNoteImportInternal(",
+                "private ExternalIngestResult executeBusinessRecordImportInternal(")) {
+            String body = jp.aegif.nemaki.util.test.JavaSource.methodBody(source, door);
+            for (String write : java.util.List.of("objectService.createDocument(",
+                    "objectService.createFolder(", "objectService.createRelationship(",
+                    "versioningService.checkIn(", "contentService.update(")) {
+                assertFalse(body.contains(write),
+                        door + " calls " + write + " itself, outside the re-asked path");
+            }
+        }
+
+        // The INVENTORY, by count. "Every write is inside a re-asked path" is only as good as
+        // the list of writes it was checked against, and the first version of this lock looked
+        // at two call shapes in four bodies that hold no code. The numbers below are what the
+        // audit counted (R5); a write added or removed anywhere in these two files changes
+        // them, and then a human decides whether the new one is inside the re-asked path or
+        // belongs in the residual table beside R47.
+        assertEquals(9, writeCallSites(source),
+                "the write call sites of CanonicalImportServiceImpl have changed");
+        String metadataService = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/rest/ingest/IngestMetadataService.java"));
+        assertEquals(4, writeCallSites(metadataService),
+                "the write call sites of IngestMetadataService have changed — the helpers the"
+                        + " entry points call AFTER execute returns (R47) live here");
+    }
+
+    /** How many times this source creates, versions or updates an object. */
+    private static int writeCallSites(String source) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                "objectService\\.create(?:Document|Folder|Relationship)\\("
+                        + "|contentService\\.update\\(|versioningService\\.checkIn\\(").matcher(source);
+        int n = 0;
+        while (m.find()) n++;
+        return n;
+    }
 }
