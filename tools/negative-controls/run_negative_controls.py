@@ -4215,8 +4215,10 @@ CONTROLS = [
         what="a delegated import stops re-asking cmis:all at the write — the scheduler, webhook "
              "and IDLE authorise a profile and their orchestrators build unstamped requests",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
-        find='        if (profile == null || !profile.isDelegated()) {',
-        replace='        if (true) {',
+        # Re-anchored: R47's decoration re-ask opens with the same two lines, so the bare
+        # guard now matches twice. The line that follows it is what differs.
+        find='        if (profile == null || !profile.isDelegated()) {\n            return null;\n        }\n        if (ingestAuthorizationService == null || callContext == null) {',
+        replace='        if (true) {\n            return null;\n        }\n        if (ingestAuthorizationService == null || callContext == null) {',
         test='CanonicalImportServiceTest',
         # The list below is the MEASURED one, not a derived one. Four rounds in a row a
         # lock added in the same commit as its own control was left out of an OLDER
@@ -4235,7 +4237,12 @@ CONTROLS = [
                      'testAnImportWithNoContentStreamIsAlsoReChecked',
                      'testDelegatedImportReAsksTheConnectorDelegation',
                      'testDelegatedImportWithNoCallerIsRefused',
-                     'testTheDelegationIsReAskedAfterTheContentIsRead'],
+                     'testTheDelegationIsReAskedAfterTheContentIsRead',
+                     'aRevokeAfterTheImportReturnedStopsTheDecoration',
+                     'aRevokeDuringTheDedupeReadStopsTheChatImport',
+                     'aRevokeDuringTheDedupeReadStopsTheNoteImport',
+                     'aRevokedDelegationRefusesTheLinkMadeAfterTheImport',
+                     'aDecorationIsRefusedWhenTheConnectorCannotBeResolved'],
     ),
     dict(
         id="VG",
@@ -4356,7 +4363,12 @@ CONTROLS = [
         expect_fail=['testTheDelegationIsReAskedAfterTheContentIsRead',
                      'testAnImportWithNoContentStreamIsAlsoReChecked',
                      'testARevokeDuringTheDedupeReadStillStopsTheWrite',
-                     'testARevokeDuringTheRelationshipListingStillStopsTheWrite'],
+                     'testARevokeDuringTheRelationshipListingStillStopsTheWrite',
+                     'aDecorationIsRefusedWhenTheConnectorCannotBeResolved',
+                     'aRevokeAfterTheImportReturnedStopsTheDecoration',
+                     'aRevokeDuringTheDedupeReadStopsTheChatImport',
+                     'aRevokeDuringTheDedupeReadStopsTheNoteImport',
+                     'theWriteIsReAskedTwiceAndTheArchetypeDoorsHaveNoWriteOfTheirOwn'],
     ),
     dict(
         id="VP",
@@ -4442,7 +4454,9 @@ CONTROLS = [
         # shape rather than one round at a time.
         expect_fail=['testARevokedDelegationStopsTheRelationshipCreation',
                      'testAProfileGoneDuringTheImportIsAWarningNotA500',
-                     'testAnUnresolvableConnectorRefusesTheLinkInsteadOfSkippingTheCheck'],
+                     'testAnUnresolvableConnectorRefusesTheLinkInsteadOfSkippingTheCheck',
+                     'aDecorationIsRefusedWhenTheConnectorCannotBeResolved',
+                     'aRevokeAfterTheImportReturnedStopsTheDecoration'],
     ),
     dict(
         id="VV",
@@ -6830,7 +6844,11 @@ CONTROLS = [
                      'testAnImportWithNoContentStreamIsAlsoReChecked',
                      'testDelegatedImportReAsksTheAuthorizationAtTheWrite',
                      'testTheDelegationIsReAskedAfterTheContentIsRead',
-                     'aRevokedDelegationRefusesTheLinkMadeAfterTheImport'],
+                     'aRevokedDelegationRefusesTheLinkMadeAfterTheImport',
+                     'aDecorationIsRefusedWhenTheConnectorCannotBeResolved',
+                     'aRevokeAfterTheImportReturnedStopsTheDecoration',
+                     'aRevokeDuringTheDedupeReadStopsTheChatImport',
+                     'aRevokeDuringTheDedupeReadStopsTheNoteImport'],
     ),
     dict(
         id="UG2",
@@ -8313,7 +8331,9 @@ CONTROLS = [
                      'testARevokeDuringTheDedupeReadStillStopsTheWrite',
                      'testARevokeDuringTheRelationshipListingStillStopsTheWrite',
                      'testAnImportWithNoContentStreamIsAlsoReChecked',
-                     'testTheDelegationIsReAskedAfterTheContentIsRead'],
+                     'testTheDelegationIsReAskedAfterTheContentIsRead',
+                     'aDecorationIsRefusedWhenTheConnectorCannotBeResolved',
+                     'aRevokeAfterTheImportReturnedStopsTheDecoration'],
     ),
     dict(
         id="BR3",
@@ -8325,7 +8345,62 @@ CONTROLS = [
         test='CanonicalImportServiceTest',
         expect_fail=['theWriteIsReAskedTwiceAndTheArchetypeDoorsHaveNoWriteOfTheirOwn',
                      'testAnImportWithNoContentStreamIsAlsoReChecked',
-                     'testTheDelegationIsReAskedAfterTheContentIsRead'],
+                     'testTheDelegationIsReAskedAfterTheContentIsRead',
+                     'aDecorationIsRefusedWhenTheConnectorCannotBeResolved',
+                     'aRevokeAfterTheImportReturnedStopsTheDecoration'],
+    ),
+    dict(
+        id="BS3",
+        what="R47: the decoration's re-ask never refuses, so a delegation revoked while the "
+             "poll ran still gets its gap-filling write",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        # Re-anchored: the connector read moved BELOW the delegated test (it is not paid by a
+        # profile that is not delegated), so the two lines that followed the guard changed.
+        find='        if (profile == null || !profile.isDelegated()) {\n            return null;\n        }\n        ConnectorDefinition connector;',
+        replace='        if (true) {\n            return null;\n        }\n        ConnectorDefinition connector;',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aRevokeAfterTheImportReturnedStopsTheDecoration',
+                     'aDecorationIsRefusedWhenTheConnectorCannotBeResolved'],
+    ),
+    dict(
+        id="BT3",
+        what="R47: the chat door refuses its decoration unconditionally — the over-throw side, "
+             "every poll of an already-imported message losing its gap fill",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='        boolean decorateThisPass = noEventForThisPass && chatDecorationRefused == null;',
+        replace='        boolean decorateThisPass = false;',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aDecorationIsStillWrittenWhileTheDelegationHolds'],
+    ),
+    dict(
+        id="BU3",
+        what="R47: one of the five doors loses the re-ask before its decoration (the business "
+             "record) — the REMOVAL shape; BW3 is the one that moves when a door is added",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='                ? refuseDecorationIfNoLongerAuthorized(callContext, request,\n                        "the record metadata this pass would have filled in")',
+        replace='                ? null',
+        test='CanonicalImportServiceTest',
+        expect_fail=['everyPostExecuteDecorationReAsksTheDelegation'],
+    ),
+    dict(
+        id="BV3",
+        what="R47: the decoration's re-ask passes an unresolvable connector on as \"no "
+             "connector\", skipping the connector half of the delegation in silence",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='        if (request.getConnectorId() != null && connector == null) {',
+        replace='        if (false) {',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aDecorationIsRefusedWhenTheConnectorCannotBeResolved'],
+    ),
+    dict(
+        id="BW3",
+        what="R47: the metadata service gains a use the inventory lock does not know about — "
+             "the shape a new door without a re-ask arrives in",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='        String metaError;\n        String recordDecorationRefused = result.skipped()',
+        replace='        String metaError;\n        if (false) ingestMetadataService.willWriteNoteMetadata(request);\n        String recordDecorationRefused = result.skipped()',
+        test='CanonicalImportServiceTest',
+        expect_fail=['everyPostExecuteDecorationReAsksTheDelegation'],
     ),
 ]
 
