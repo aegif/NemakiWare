@@ -441,12 +441,25 @@ public class ExternalIngestController {
                 // earlier ("...; retry shortly") answered 503. This arm is above "not found"
                 // on purpose: a transient failure whose text happens to carry a foreign
                 // "not found" is still a retry, not an absence.
-                || firstError.contains("[transient] ")) {
+                || firstError.contains("[transient] ")
+                // Dedupe could not ENUMERATE the target folder, so whether the document is
+                // already there is unknown and the import refused rather than risk a
+                // duplicate. A retry reads the view again. It arrives prefixed "[permanent] "
+                // — execute() classifies the CAUSE, and our own IllegalStateException is not a
+                // socket timeout — so the arm above does not take it and it landed on the 500
+                // fallback: "our bug" for the one refusal that says exactly what happened (R25).
+                || firstError.contains("could not be enumerated, so it is unknown whether")) {
             return HttpStatus.SERVICE_UNAVAILABLE;
         }
         if (firstError.contains("definition rows")
                 || firstError.contains("more than one definition row")
-                || firstError.contains("more than one owned definition row")) {
+                || firstError.contains("more than one owned definition row")
+                // The target folder's listing came back with rows this node cannot decode, so
+                // dedupe was not made against a complete listing. Standing until the row is
+                // repaired — a retry reads the same broken row — which is why this is here and
+                // not on the retryable arm above, where its sibling ("could not be
+                // enumerated") belongs (R25).
+                || firstError.contains("listing is incomplete")) {
             // A standing pair an administrator has to resolve — not a retry, not a 500.
             // getForRepository says "more than one definition row" (singular); the update
             // path says "definition rows". Matching only the plural left the import door
