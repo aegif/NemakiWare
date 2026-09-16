@@ -3039,4 +3039,90 @@ class CanonicalImportServiceTest {
                 any(), any(), any());
         verify(auth, never()).canManageProfileForFolder(any(), anyString(), anyString());
     }
+
+    // ── R25: refusals that fell onto the 500 fallback of the import door's classifier ──
+
+    /**
+     * The message the PRODUCT built, run through the PRODUCT's classifier. A test that typed
+     * the message itself would stay green while the import changed its wording and the arm
+     * stopped applying — the shape this project has been caught by before.
+     */
+    private org.springframework.http.HttpStatus statusFor(ExternalIngestResult result) {
+        return ExternalIngestController.classifyErrorStatus(result);
+    }
+
+    /** A dao wired into the service, so the dedupe listing below is the one under test. */
+    private jp.aegif.nemaki.dao.ContentDaoService dedupeDao() {
+        jp.aegif.nemaki.dao.ContentDaoService dao =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        service.setContentDaoService(dao);
+        return dao;
+    }
+
+    private ExternalIngestRequest dedupeRequest() {
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        when(profileService.get("p1")).thenReturn(profile);
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        connector.setSourceSystem("slack");
+        when(connectorService.get("c1")).thenReturn(connector);
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj-1");
+        req.setSourceObjectType("file");
+        req.setFileName("a.txt");
+        req.setMimeType("text/plain");
+        req.setContentStream(new java.io.ByteArrayInputStream("hello".getBytes()));
+        return req;
+    }
+
+    @Test
+    void aDedupeListingThatDidNotAnswerIsRetryableNot500() {
+        // The refusal says the view did not answer and the import was not risked; a retry
+        // reads it again. The door answered 500 — "our bug" — for the one refusal that says
+        // exactly what happened and what fixes it.
+        jp.aegif.nemaki.dao.ContentDaoService dao = dedupeDao();
+        when(dao.getChildren("bedroom", "folder-1"))
+                .thenThrow(new RuntimeException("view unavailable"));
+
+        ExternalIngestResult result = service.execute(testContext(), dedupeRequest());
+
+        assertFalse(result.isSuccess(), "the import reported success: " + result.errors());
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, statusFor(result),
+                "a read that did not answer was reported as a server fault: " + result.errors());
+    }
+
+    @Test
+    void aDedupeListingThatCameBackIncompleteIsAConflictNot500() {
+        // Its sibling: the rows came back and some could not be decoded. A retry reads the
+        // same broken row, so this is not retryable — but it is not our bug either.
+        jp.aegif.nemaki.dao.ContentDaoService dao = dedupeDao();
+        when(dao.getChildren("bedroom", "folder-1")).thenReturn(java.util.List.of());
+        when(dao.lastUnreadableChildCount()).thenReturn(2);
+
+        ExternalIngestResult result = service.execute(testContext(), dedupeRequest());
+
+        assertFalse(result.isSuccess(), "the import reported success: " + result.errors());
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, statusFor(result),
+                "an incomplete listing was reported as a server fault: " + result.errors());
+    }
+
+    @Test
+    void anImportFailureWithNoArmStill500s() {
+        // The over-throw guard for both arms above: a failure the classifier has no arm for
+        // is still 500. Widening an arm until everything matched would make every server
+        // fault look like a configuration the operator should fix.
+        ExternalIngestResult result = ExternalIngestResult.error("req-1",
+                "something nobody has classified");
+
+        assertEquals(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR, statusFor(result));
+    }
 }
