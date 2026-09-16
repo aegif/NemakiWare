@@ -238,6 +238,75 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     }
 
     /**
+     * The delegation, re-asked before a decoration this wrapper writes AFTER {@code execute}
+     * has returned (R47).
+     *
+     * <p>Every archetype door fills gaps on a dedupe or idempotency skip: the object is already
+     * there, and the pass writes the properties this request carries that the object does not.
+     * {@code execute} re-asked the delegation immediately before returning that skip, so these
+     * writes stand after the last authorisation — the shape {@code createLink} calls "an
+     * avoidable database read placed after the last authorisation" and answers by re-asking.
+     * The audit that counted the write points found all four doors doing it; the first version
+     * of that audit called the window irreducible, which the {@code createLink} precedent
+     * contradicts.
+     *
+     * <p>The refusal is a WARNING, not an error. The object was captured under an authorisation
+     * that held, and reporting the pass as failed would enrol a completed capture in the DLQ
+     * and advance the connector's circuit breaker for a decoration.
+     *
+     * <p>Cost, stated rather than hidden, per decorated pass — that is, per already-imported
+     * item per poll: one index-free read of the profile row (a walk of the configuration
+     * database, the same cost R44 records on the link path); then, only for a DELEGATED
+     * profile, one read of the connector row and one {@code cmis:all} evaluation, which is a
+     * folder read plus group expansion — a third of that work again on the skip path. A
+     * path-only profile adds the folder resolution behind its five-minute cache. A profile
+     * that is not delegated pays only the first of these: the connector is read after the
+     * delegated test, not before it.
+     *
+     * @return null when the decoration may be written, or the sentence to report instead of it
+     */
+    private String refuseDecorationIfNoLongerAuthorized(CallContext callContext,
+            ExternalIngestRequest request, String whatWouldHaveBeenWritten) {
+        ImportProfileDefinition profile;
+        try {
+            profile = relationshipAuthorizingProfile(request);
+        } catch (RuntimeException cannotAuthorize) {
+            return whatWouldHaveBeenWritten + " was not applied: " + cannotAuthorize.getMessage();
+        }
+        if (profile == null || !profile.isDelegated()) {
+            return null;
+        }
+        ConnectorDefinition connector;
+        try {
+            connector = relationshipAuthorizingConnector(request);
+        } catch (RuntimeException cannotAuthorize) {
+            return whatWouldHaveBeenWritten + " was not applied: " + cannotAuthorize.getMessage();
+        }
+        if (request.getConnectorId() != null && connector == null) {
+            // get() answers null for a row that is not there AND for a read that did not
+            // answer, so passing it on skips the connector half of the delegation in silence —
+            // refuseIfDelegationNoLongerAuthorizes only asks about a non-null connector.
+            // createLinkAuthorized refuses for exactly this. The first version of this helper
+            // copied that method's resolution and not its refusal, reproducing the defect the
+            // precedent had closed; two reviews found it.
+            return whatWouldHaveBeenWritten + " was not applied: connector "
+                    + request.getConnectorId() + " could not be resolved, so its delegation"
+                    + " could not be checked";
+        }
+        String folderNow;
+        try {
+            folderNow = resolveTargetFolderId(profile, request.getRepositoryId(), callContext);
+        } catch (RuntimeException unresolvable) {
+            return whatWouldHaveBeenWritten + " was not applied: " + unresolvable.getMessage();
+        }
+        ExternalIngestResult revoked = refuseIfDelegationNoLongerAuthorizes(
+                request.getRequestId(), profile, connector, callContext,
+                request.getRepositoryId(), folderNow);
+        return revoked == null ? null
+                : whatWouldHaveBeenWritten + " was not applied: " + revoked.errors().get(0);
+    }
+
+    /**
      * A stable fingerprint of everything the delegated gate authorises FROM a profile row:
      * where the content lands and which connectors may put it there. Two rows with the same
      * fingerprint are interchangeable as far as that authorisation goes; anything else is a
@@ -623,7 +692,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // already-imported message, with no event anywhere. On a skip pass, fill gaps and
             // refuse changes; on a real capture, write as before.
             String metaError;
-            if (messageResult.skipped()) {
+            String mailDecorationRefused = messageResult.skipped()
+                    ? refuseDecorationIfNoLongerAuthorized(callContext, request,
+                            "the message metadata this pass would have filled in")
+                    : null;
+            if (mailDecorationRefused != null) {
+                warnings.add(mailDecorationRefused);
+                metaError = null;
+            } else if (messageResult.skipped()) {
                 boolean[] mailFillAttempted = {false};
                 IngestMetadataService.FillOutcome fill =
                         ingestMetadataService.fillMissingMessageMetadata(
@@ -900,7 +976,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 // D-7: on a page dedupe-skip no event was emitted, so fill gaps and refuse
                 // changes rather than rewriting the aspect every poll (D6's rule, extended).
                 String metaError;
-                if (pageSkipped) {
+                String noteDecorationRefused = pageSkipped
+                        ? refuseDecorationIfNoLongerAuthorized(callContext, request,
+                                "the page metadata this pass would have filled in")
+                        : null;
+                if (noteDecorationRefused != null) {
+                    warnings.add(noteDecorationRefused);
+                    metaError = null;
+                } else if (pageSkipped) {
                     boolean[] noteFillAttempted = {false};
                     IngestMetadataService.FillOutcome fill =
                             ingestMetadataService.fillMissingNoteMetadata(
@@ -1117,6 +1200,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // re-applying so a late-arriving page context still lands.
             String metaError = attHookMetaError[0];
             if (metaError == null && attResult.skipped()) {
+                metaError = refuseDecorationIfNoLongerAuthorized(callContext, attReq,
+                        "the note context this pass would have re-applied");
+            }
+            if (metaError == null && attResult.skipped()) {
                 boolean tracked = openIfWriting(childScope,
                         ingestMetadataService.willWriteNoteMetadata(pageRequest));
                 metaError = ingestMetadataService.applyNoteMetadata(
@@ -1219,7 +1306,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // D-7: D6's rule, extended — on a skip pass no event was emitted, so fill gaps and
         // refuse changes; on a real capture, write as before.
         String metaError;
-        if (result.skipped()) {
+        String recordDecorationRefused = result.skipped()
+                ? refuseDecorationIfNoLongerAuthorized(callContext, request,
+                        "the record metadata this pass would have filled in")
+                : null;
+        if (recordDecorationRefused != null) {
+            warnings.add(recordDecorationRefused);
+            metaError = null;
+        } else if (result.skipped()) {
             boolean[] brFillAttempted = {false};
             IngestMetadataService.FillOutcome fill =
                     ingestMetadataService.fillMissingArchetypeMetadata(request.getRepositoryId(),
@@ -1360,7 +1454,17 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         String metaError;
         List<String> refusedByThisPass = new ArrayList<>();
         List<String> filledByThisPass = new ArrayList<>();
-        if (noEventForThisPass) {
+        // One re-ask for both of this door's decorations: they write on the same pass, so a
+        // second one would only ask the same question again (R47).
+        String chatDecorationRefused = noEventForThisPass
+                ? refuseDecorationIfNoLongerAuthorized(callContext, request,
+                        "the chat evidence and capture window this pass would have filled in")
+                : null;
+        if (chatDecorationRefused != null) {
+            warnings.add(chatDecorationRefused);
+        }
+        boolean decorateThisPass = noEventForThisPass && chatDecorationRefused == null;
+        if (decorateThisPass) {
             // The intent opens from INSIDE the fill, between its decision and its write. The
             // first shape ran a willFill preflight and opened here — a second read of the same
             // object, and the two could disagree: one direction opened an intent for a pass
@@ -1406,7 +1510,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // does not exist yet" — the hook is the gate that makes the aspect exist first, so the
         // event now carries the stamp as its second copy (D1 resolved for new captures).
 
-        if (noEventForThisPass) {
+        if (decorateThisPass) {
             applyCaptureWindow(captureScope, callContext, request, result.objectId(),
                     true, warnings, refusedByThisPass, filledByThisPass);
         }
