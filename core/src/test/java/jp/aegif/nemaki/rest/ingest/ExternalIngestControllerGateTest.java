@@ -675,9 +675,11 @@ class ExternalIngestControllerGateTest {
 
     @Test
     void theMultipartDoorAnswersTheSameRefusalAsTheJsonDoor() throws Exception {
-        // ingestMultipart wraps parsing AND the whole ingest in one catch(Exception) -> 400
-        // "Invalid request", so the same ingest answered 503 as JSON and 400 as multipart —
-        // the 400 asserting something about the caller's request that no read established.
+        // ingestMultipart USED TO wrap parsing AND the whole ingest in one catch(Exception)
+        // -> 400 "Invalid request", so the same ingest answered 503 as JSON and 400 as
+        // multipart — the 400 asserting something about the caller's request that no read
+        // established. The rethrow arm that closed it for these three types is gone with R33:
+        // the ingest now sits outside the parse catch, so nothing it raises can reach it.
         adminContext();
         when(connectorDefinitionService.get(CONN))
                 .thenThrow(new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
@@ -866,5 +868,84 @@ class ExternalIngestControllerGateTest {
 
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
                 "a read that could not answer stopped being a retry");
+    }
+
+    // ── R33: "Invalid request" is a claim about the request, not about the ingest ──
+
+    /** The JSON of {@link #baseRequest()}, for the multipart door's request part. */
+    private static String baseRequestJson() {
+        return "{\"profileId\":\"" + PROF + "\",\"connectorId\":\"" + CONN
+                + "\",\"sourceObjectId\":\"src-1\",\"sourceObjectType\":\"file\"}";
+    }
+
+    @Test
+    void theMultipartDoorAnswersAnIngestFailureTheWayTheJsonDoorDoes() {
+        // The arm exists for a malformed multipart body. It also held the whole ingest, so a
+        // failure that says nothing about the caller's request — here the import service
+        // itself throwing — answered 400 "Invalid request" as multipart and left as an
+        // exception (500) as JSON. The 400 asserts something no read established (R33).
+        adminContext();
+        when(connectorDefinitionService.get(CONN)).thenReturn(delegatedConnector());
+        when(canonicalImportService.execute(any(), any(ExternalIngestRequest.class)))
+                .thenThrow(new IllegalStateException("the import flow blew up"));
+
+        RuntimeException fromJson = assertThrows(RuntimeException.class,
+                () -> controller.ingestJson(REPO, baseRequest()));
+        RuntimeException fromMultipart = assertThrows(RuntimeException.class,
+                () -> controller.ingestMultipart(REPO, baseRequestJson(), null),
+                "the multipart door answered an ingest failure as \"Invalid request\" (400)");
+        assertEquals(fromJson.getClass(), fromMultipart.getClass(),
+                "the two doors answer the same ingest failure with different types");
+        assertEquals(fromJson.getMessage(), fromMultipart.getMessage(),
+                "the two doors answer the same ingest failure differently");
+    }
+
+    @Test
+    void theMultipartDoorStill400sAMalformedRequestPart() {
+        // The over-throw guard, and the reason the arm exists: a request part that is not
+        // this document IS a claim about the caller's request.
+        adminContext();
+
+        ResponseEntity<ExternalIngestResult> res = assertDoesNotThrow(
+                () -> controller.ingestMultipart(REPO, "{not json", null),
+                "a malformed request part escaped instead of answering 400");
+        assertEquals(HttpStatus.BAD_REQUEST, res.getStatusCode());
+        assertTrue(String.valueOf(res.getBody().errors()).contains("Invalid request"),
+                "the malformed body lost its answer: " + res.getBody().errors());
+        verifyNoInteractions(canonicalImportService);
+    }
+
+    @Test
+    void theMultipartDoorStill400sAnOversizedFile() {
+        // The other over-throw guard: the size limit is about the request too, and it must
+        // keep its own message rather than becoming the generic one.
+        adminContext();
+        org.springframework.web.multipart.MultipartFile big =
+                mock(org.springframework.web.multipart.MultipartFile.class);
+        when(big.isEmpty()).thenReturn(false);
+        when(big.getSize()).thenReturn(200L * 1024 * 1024);
+
+        ResponseEntity<ExternalIngestResult> res = assertDoesNotThrow(
+                () -> controller.ingestMultipart(REPO, baseRequestJson(), big),
+                "an oversized upload escaped instead of answering 400");
+        assertEquals(HttpStatus.BAD_REQUEST, res.getStatusCode());
+        assertTrue(String.valueOf(res.getBody().errors()).contains("maximum size"),
+                "the size refusal lost its message: " + res.getBody().errors());
+        verifyNoInteractions(canonicalImportService);
+    }
+
+    @Test
+    void theMultipartDoorStill400sARequestPartThatIsJsonNull() {
+        // "null" PARSES — Jackson answers it with null instead of throwing — so narrowing the
+        // catch to parsing sent it on to the ingest, which died on it (500) while the JSON
+        // door answers 400 for the same input. The over-throw guard for the arm that closed
+        // it, and the reason it is not covered by the malformed-body lock above.
+        adminContext();
+
+        ResponseEntity<ExternalIngestResult> res = assertDoesNotThrow(
+                () -> controller.ingestMultipart(REPO, "null", null),
+                "a request part that parsed to nothing escaped as a server fault");
+        assertEquals(HttpStatus.BAD_REQUEST, res.getStatusCode());
+        verifyNoInteractions(canonicalImportService);
     }
 }
