@@ -3721,7 +3721,7 @@ CONTROLS = [
         what="a standing twin pair reached through the import answers 500 while the same state "
              "through the gate answers 409",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
-        find_span=('        if (firstError.contains("definition rows")\n                || firstError.contains("more than one definition row")\n                || firstError.contains("more than one owned definition row")) {',
+        find_span=('        if (firstError.contains("definition rows")\n                || firstError.contains("more than one definition row")\n                || firstError.contains("more than one owned definition row")',
                    '            return HttpStatus.CONFLICT;\n        }'),
         replace='',
         test='ExternalIngestControllerGateTest',
@@ -3872,8 +3872,8 @@ CONTROLS = [
         what="the import status mapper matches only 'definition rows' again — the "
              "getForRepository wording answers 500",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
-        find='        if (firstError.contains("definition rows")\n                || firstError.contains("more than one definition row")\n                || firstError.contains("more than one owned definition row")) {',
-        replace='        if (firstError.contains("definition rows")) {',
+        find='        if (firstError.contains("definition rows")\n                || firstError.contains("more than one definition row")\n                || firstError.contains("more than one owned definition row")',
+        replace='        if (firstError.contains("definition rows")',
         test='ExternalIngestControllerGateTest',
         expect_fail=['aGetForRepositoryTwinMessage_is409NotAServerError'],
     ),
@@ -8269,6 +8269,35 @@ CONTROLS = [
         replace='            if (false) {',
         test='ExternalIngestControllerGateTest',
         expect_fail=['theMultipartDoorStill400sARequestPartThatIsJsonNull'],
+    ),
+    dict(
+        id="BM3",
+        what="R25: a dedupe listing that did not answer falls back onto 500 again — our bug "
+             "for the one refusal that says what happened and that a retry reads it",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='                || firstError.contains("could not be enumerated, so it is unknown whether")) {',
+        replace='                || firstError.contains("a phrase the import never produces")) {',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aDedupeListingThatDidNotAnswerIsRetryableNot500'],
+    ),
+    dict(
+        id="BO3",
+        what="R25: an incomplete dedupe listing falls back onto 500 again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='                || firstError.contains("listing is incomplete")) {',
+        replace='                || firstError.contains("a phrase the dedupe never produces")) {',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aDedupeListingThatCameBackIncompleteIsAConflictNot500'],
+    ),
+    dict(
+        id="BP3",
+        what="R25: the classifier's fallback stops being 500, so every unclassified server "
+             "fault reads as something the operator should fix",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='        return HttpStatus.INTERNAL_SERVER_ERROR;\n    }\n\n    /** Strip path separators',
+        replace='        return HttpStatus.CONFLICT;\n    }\n\n    /** Strip path separators',
+        test='CanonicalImportServiceTest',
+        expect_fail=['anImportFailureWithNoArmStill500s'],
     ),
 ]
 
