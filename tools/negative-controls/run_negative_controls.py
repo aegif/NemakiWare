@@ -8299,6 +8299,34 @@ CONTROLS = [
         test='CanonicalImportServiceTest',
         expect_fail=['anImportFailureWithNoArmStill500s'],
     ),
+    dict(
+        id="BQ3",
+        what="R5: the SECOND delegation re-ask goes away, so a revoke landing while the "
+             "content is drained and the dedupe listing read is not caught",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='            ExternalIngestResult revoked = refuseIfDelegationNoLongerAuthorizes(\n                    requestId, profile, connector, callContext, repositoryId, targetFolderId);\n            if (revoked != null) return revoked;',
+        replace='',
+        test='CanonicalImportServiceTest',
+        expect_fail=['aRevokeDuringTheDedupeReadStopsTheChatImport',
+                     'aRevokeDuringTheDedupeReadStopsTheNoteImport',
+                     'theWriteIsReAskedTwiceAndTheArchetypeDoorsHaveNoWriteOfTheirOwn',
+                     'testARevokeDuringTheDedupeReadStillStopsTheWrite',
+                     'testARevokeDuringTheRelationshipListingStillStopsTheWrite',
+                     'testAnImportWithNoContentStreamIsAlsoReChecked',
+                     'testTheDelegationIsReAskedAfterTheContentIsRead'],
+    ),
+    dict(
+        id="BR3",
+        what="R5: the FIRST delegation re-ask goes away, so a revoke that landed before the "
+             "reads that decide is not caught at the point the profile is resolved",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='        ExternalIngestResult noLongerAuthorized = refuseIfDelegationNoLongerAuthorizes(\n                requestId, profile, connector, callContext, repositoryId, targetFolderId);\n        if (noLongerAuthorized != null) return noLongerAuthorized;',
+        replace='',
+        test='CanonicalImportServiceTest',
+        expect_fail=['theWriteIsReAskedTwiceAndTheArchetypeDoorsHaveNoWriteOfTheirOwn',
+                     'testAnImportWithNoContentStreamIsAlsoReChecked',
+                     'testTheDelegationIsReAskedAfterTheContentIsRead'],
+    ),
 ]
 
 
