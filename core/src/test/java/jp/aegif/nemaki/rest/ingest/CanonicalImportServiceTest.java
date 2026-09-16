@@ -3393,7 +3393,7 @@ class CanonicalImportServiceTest {
         // claiming more than it does:
         //   - the first catches a re-ask REMOVED from one of the five doors (BU3);
         //   - the second catches a door added that decorates THROUGH THE METADATA SERVICE,
-        //     which four of the five do.
+        //     which all five do (chat writes its capture window directly as well).
         // What neither catches: a door that writes its decoration DIRECTLY, the way chat's
         // capture window does (applyCaptureWindow calls contentService.update itself — its
         // own comment says that is how it was missed once before). Such a door arrives with
