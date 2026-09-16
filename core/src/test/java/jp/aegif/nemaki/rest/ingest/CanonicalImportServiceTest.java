@@ -3280,4 +3280,166 @@ class CanonicalImportServiceTest {
         while (m.find()) n++;
         return n;
     }
+
+    // ── R47: the decoration written AFTER execute returned ──
+
+    /**
+     * A delegated profile, an object already in the folder (so the pass is a dedupe SKIP and
+     * the door's gap-filling decoration runs), and an authorisation that answers yes to the
+     * two re-asks {@code execute} makes and no to the third. The revoke therefore lands in
+     * exactly the window R47 is about: after the last check the import makes, before the
+     * decoration writes.
+     *
+     * @param askedTimes how many times the folder authorisation is allowed to answer yes
+     */
+    private java.util.concurrent.atomic.AtomicInteger revokeAfterTheImportReturned(
+            SourceArchetype archetype, int askedTimes) {
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        delegated.setDedupePolicy("skip_if_same_version");
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        when(profileService.get("p1")).thenReturn(delegated);
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(archetype);
+        connector.setSourceSystem("slack");
+        when(connectorService.get("c1")).thenReturn(connector);
+
+        jp.aegif.nemaki.dao.ContentDaoService dao =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        service.setContentDaoService(dao);
+        Content existing = createMockContent("chat-obj-1");
+        existing.setName("message.txt");
+        Aspect ext = new Aspect();
+        ext.setName("nemaki:externalIntegration");
+        ext.setProperties(List.of(
+                new Property("nemaki:sourceObjectId", "slack-msg-1"),
+                new Property("nemaki:sourceSystem", "slack"),
+                new Property("nemaki:sourceObjectType", "message")));
+        existing.setAspects(List.of(ext));
+        when(dao.getChildren("bedroom", "folder-1")).thenReturn(List.of(existing));
+
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
+        java.util.concurrent.atomic.AtomicInteger asked =
+                new java.util.concurrent.atomic.AtomicInteger();
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString()))
+                .thenAnswer(inv -> asked.incrementAndGet() <= askedTimes);
+        service.setIngestAuthorizationService(auth);
+        return asked;
+    }
+
+    private ExternalIngestRequest chatSkipRequest() {
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("slack-msg-1");
+        req.setSourceObjectType("message");
+        req.setFileName("message.txt");
+        req.setContentStream(new java.io.ByteArrayInputStream("data".getBytes()));
+        java.util.Map<String, Object> meta = new java.util.HashMap<>();
+        meta.put("channelId", "C123");
+        req.setMetadata(meta);
+        return req;
+    }
+
+    @Test
+    void aRevokeAfterTheImportReturnedStopsTheDecoration() {
+        // The gap-filling pass writes properties onto an object that is already there, and it
+        // runs after execute's last re-ask. createLink answers the same shape by re-asking;
+        // this door did not, so a delegation revoked while the poll ran still wrote.
+        revokeAfterTheImportReturned(SourceArchetype.CHAT_CONTEXT, 2);
+
+        ExternalIngestResult result = service.executeChatContextImport(
+                testContext(), chatSkipRequest());
+
+        verify(ingestMetadataService, never()).fillMissingArchetypeMetadata(any(), any(), any(),
+                any(), any(), any(), any());
+        assertTrue(String.valueOf(result.warnings()).contains("was not applied"),
+                "the refused decoration was not reported: " + result.warnings());
+        assertTrue(result.errors() == null || result.errors().isEmpty(),
+                "a refused decoration was reported as a failed import, which would enrol a"
+                        + " completed capture in the DLQ: " + result.errors());
+    }
+
+    @Test
+    void aDecorationIsStillWrittenWhileTheDelegationHolds() {
+        // The over-throw guard. The pass that fills gaps on an already-imported object is the
+        // ordinary case on every poll; refusing it whenever the profile is delegated would
+        // stop all of them.
+        revokeAfterTheImportReturned(SourceArchetype.CHAT_CONTEXT, Integer.MAX_VALUE);
+
+        ExternalIngestResult result = service.executeChatContextImport(
+                testContext(), chatSkipRequest());
+
+        verify(ingestMetadataService).fillMissingArchetypeMetadata(any(), any(), any(), any(),
+                any(), any(), any());
+        assertFalse(String.valueOf(result.warnings()).contains("was not applied"),
+                "an authorised decoration was refused: " + result.warnings());
+    }
+
+    @Test
+    void everyPostExecuteDecorationReAsksTheDelegation() throws Exception {
+        // The inventory half, in the shape R5 settled on: count, do not sample. What each
+        // number catches, stated exactly, because two rounds of review caught this comment
+        // claiming more than it does:
+        //   - the first catches a re-ask REMOVED from one of the five doors (BU3);
+        //   - the second catches a door added that decorates THROUGH THE METADATA SERVICE,
+        //     which four of the five do.
+        // What neither catches: a door that writes its decoration DIRECTLY, the way chat's
+        // capture window does (applyCaptureWindow calls contentService.update itself — its
+        // own comment says that is how it was missed once before). Such a door arrives with
+        // both numbers unchanged. R48 records that hole rather than this comment hiding it.
+        String source = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java"));
+        int guards = source.split("refuseDecorationIfNoLongerAuthorized\\(", -1).length - 1;
+        assertEquals(6, guards,
+                "a post-execute decoration lost its re-ask: " + guards
+                        + " mentions (5 call sites + the declaration)");
+        int metadataWrites = source.split("ingestMetadataService\\.", -1).length - 1;
+        assertEquals(15, metadataWrites,
+                "the metadata service is used in a new place (" + metadataWrites + "); if that"
+                        + " is a decoration written after execute returned, it needs the"
+                        + " re-ask the five above make");
+    }
+
+    @Test
+    void aDecorationIsRefusedWhenTheConnectorCannotBeResolved() {
+        // get() answers null for a connector row that is not there AND for a read that did not
+        // answer, and refuseIfDelegationNoLongerAuthorizes only asks about a non-null
+        // connector — so passing that null on skips the connector half of the delegation
+        // without saying so. createLinkAuthorized refuses for exactly this; the first version
+        // of the decoration's re-ask copied its resolution and not its refusal.
+        java.util.concurrent.atomic.AtomicInteger asked =
+                revokeAfterTheImportReturned(SourceArchetype.CHAT_CONTEXT, Integer.MAX_VALUE);
+        // The connector reads while the import runs and stops answering before the decoration:
+        // execute has made both of its re-asks by then, so the counter marks the window. A
+        // connector left unreadable from the start never gets there — the door refuses it as
+        // "Connector not found" long before the decoration.
+        ConnectorDefinition readable = new ConnectorDefinition();
+        readable.setConnectorId("c1");
+        readable.setEnabled(true);
+        readable.setSourceArchetype(SourceArchetype.CHAT_CONTEXT);
+        readable.setSourceSystem("slack");
+        when(connectorService.get("c1")).thenAnswer(inv -> asked.get() >= 2 ? null : readable);
+
+        ExternalIngestResult result = service.executeChatContextImport(
+                testContext(), chatSkipRequest());
+
+        verify(ingestMetadataService, never()).fillMissingArchetypeMetadata(any(), any(), any(),
+                any(), any(), any(), any());
+        assertTrue(String.valueOf(result.warnings()).contains("could not be resolved"),
+                "a connector this node could not read was passed on as \"no connector\";"
+                        + " skipped=" + result.skipped() + " errors=" + result.errors()
+                        + " warnings=" + result.warnings());
+    }
 }
