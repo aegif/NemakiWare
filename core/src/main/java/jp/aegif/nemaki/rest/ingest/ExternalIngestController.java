@@ -82,8 +82,18 @@ public class ExternalIngestController {
             @PathVariable String repositoryId,
             @RequestPart("request") String requestJson,
             @RequestPart(value = "content", required = false) MultipartFile content) {
+        ExternalIngestRequest request;
         try {
-            ExternalIngestRequest request = MAPPER.readValue(requestJson, ExternalIngestRequest.class);
+            request = MAPPER.readValue(requestJson, ExternalIngestRequest.class);
+            if (request == null) {
+                // "null" is well-formed JSON, and Jackson ANSWERS it with null rather than
+                // throwing — so narrowing the catch below sent it on to the ingest, which
+                // died on it (500) while the JSON door answers 400 for the same input. A
+                // request part that is not this document is a claim about the request, so it
+                // belongs on the same 400 as a part that does not parse at all.
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(ExternalIngestResult.error("unknown", "Invalid request"));
+            }
             if (content != null && !content.isEmpty()) {
                 // Guard against oversized uploads (100MB default)
                 if (content.getSize() > 100 * 1024 * 1024) {
@@ -98,21 +108,23 @@ public class ExternalIngestController {
                     request.setMimeType(content.getContentType());
                 }
             }
-            return doIngest(repositoryId, request);
-        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException
-                | ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException
-                | ConnectorArchetypeUnusableException refused) {
-            // NOT "Invalid request". This arm exists for a malformed multipart body, and it
-            // was swallowing the typed "this row could not be read" refusals raised deep
-            // inside doIngest — so the same ingest answered 503 as JSON and 400 as multipart,
-            // the 400 asserting something about the caller's request that no read
-            // established. Two reviews found it in the same round. Rethrown for the handler
-            // below, which answers 503 for both shapes.
-            throw refused;
-        } catch (Exception e) {
+        } catch (Exception malformed) {
+            // ONLY the multipart body's own parsing is inside this try (R33). "Invalid
+            // request" is a claim ABOUT THE CALLER'S REQUEST, and the ingest below can fail
+            // for reasons that say nothing about it — a store that did not answer, a bug in
+            // an import flow. Those used to land here too, so the same failure answered 500
+            // as JSON and 400 as multipart, and the 400 asserted something no read had
+            // established. An earlier round pulled three TYPED refusals out of this arm by
+            // rethrowing them; that left every other shape in it. The whole ingest is now
+            // outside the try, which is why those rethrows are gone: nothing raised by the
+            // ingest can reach this catch any more.
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(ExternalIngestResult.error("unknown", "Invalid request"));
         }
+        // Outside the catch, deliberately: whatever the ingest raises must leave this door the
+        // way it leaves the JSON one — to the class's exception handlers (503 / 409) or, for a
+        // shape no handler claims, as the 500 that says "our bug" rather than "your request".
+        return doIngest(repositoryId, request);
     }
 
     private ResponseEntity<ExternalIngestResult> doIngest(String repositoryId, ExternalIngestRequest request) {
