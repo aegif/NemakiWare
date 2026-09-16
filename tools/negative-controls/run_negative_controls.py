@@ -5974,14 +5974,12 @@ CONTROLS = [
         id="QR2",
         what="the multipart door swallows a typed read refusal as 400 'Invalid request' again",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
-        find='        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException\n'
-             '                | ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException\n'
-             '                | ConnectorArchetypeUnusableException refused) {\n',
-        replace='        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException\n'
-                '                | ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException\n'
-                '                | ConnectorArchetypeUnusableException refused) {\n'
-                '            if (true) return ResponseEntity.status(HttpStatus.BAD_REQUEST)\n'
-                '                    .body(ExternalIngestResult.error("unknown", "Invalid request"));\n',
+        # Re-anchored for R33: the rethrow arm this used to sabotage is gone — the ingest now
+        # sits OUTSIDE the parse catch, so nothing it raises can reach it. The equivalent
+        # sabotage is a catch placed around the ingest for the typed refusal alone; BI3 is the
+        # wider one (every shape), so the two still measure different claims.
+        find='        // Outside the catch, deliberately: whatever the ingest raises must leave this door the\n        // way it leaves the JSON one — to the class\'s exception handlers (503 / 409) or, for a\n        // shape no handler claims, as the 500 that says "our bug" rather than "your request".\n        return doIngest(repositoryId, request);',
+        replace='        try {\n            return doIngest(repositoryId, request);\n        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused) {\n            return ResponseEntity.status(HttpStatus.BAD_REQUEST)\n                    .body(ExternalIngestResult.error("unknown", "Invalid request"));\n        }',
         test='ExternalIngestControllerGateTest',
         expect_fail=['theMultipartDoorAnswersTheSameRefusalAsTheJsonDoor'],
     ),
@@ -8230,6 +8228,47 @@ CONTROLS = [
                      'createDirectRelationship_createsAndSaysSo_whenExistenceCheckThrows',
                      'createDirectRelationship_saysNothing_whenExistenceCheckAnswersNoEdge',
                      'testARevokedDelegationStopsTheRelationshipCreation'],
+    ),
+    dict(
+        id="BI3",
+        what="R33: the multipart door puts the whole ingest back inside its catch, so a "
+             "failure that says nothing about the request answers 400 \"Invalid request\"",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='        // Outside the catch, deliberately: whatever the ingest raises must leave this door the\n        // way it leaves the JSON one — to the class\'s exception handlers (503 / 409) or, for a\n        // shape no handler claims, as the 500 that says "our bug" rather than "your request".\n        return doIngest(repositoryId, request);',
+        replace='        try {\n            return doIngest(repositoryId, request);\n        } catch (Exception e) {\n            return ResponseEntity.status(HttpStatus.BAD_REQUEST)\n                    .body(ExternalIngestResult.error("unknown", "Invalid request"));\n        }',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['theMultipartDoorAnswersAnIngestFailureTheWayTheJsonDoorDoes',
+                     'theMultipartDoorAnswersTheSameRefusalAsTheJsonDoor'],
+    ),
+    dict(
+        id="BJ3",
+        what="R33: a malformed multipart body stops answering 400 — the over-throw side, the "
+             "one thing the arm is for",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='        } catch (Exception malformed) {',
+        replace='        } catch (Exception malformed) {\n            if (true) throw new IllegalStateException(malformed);',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['theMultipartDoorStill400sAMalformedRequestPart'],
+    ),
+    dict(
+        id="BK3",
+        what="R33: the multipart size guard goes away, so an oversized upload is no longer "
+             "the request's own refusal",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='                if (content.getSize() > 100 * 1024 * 1024) {',
+        replace='                if (false) {',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['theMultipartDoorStill400sAnOversizedFile'],
+    ),
+    dict(
+        id="BL3",
+        what="R33: a request part that PARSES to nothing (the JSON literal null) goes on to "
+             "the ingest again and dies there — 500 where the JSON door answers 400",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='            if (request == null) {',
+        replace='            if (false) {',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['theMultipartDoorStill400sARequestPartThatIsJsonNull'],
     ),
 ]
 
