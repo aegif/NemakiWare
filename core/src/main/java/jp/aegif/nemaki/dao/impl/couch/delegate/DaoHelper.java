@@ -38,6 +38,12 @@ public class DaoHelper {
 	}
 
 	/**
+	 * 2^53: the largest integer a double holds exactly. Above it the SDK's widening has already
+	 * dropped digits, so the number no longer names the instant that was stored.
+	 */
+	private static final double EXACT_INTEGER_LIMIT = 9007199254740992.0;
+
+	/**
 	 * Lets a stored timestamp be read back after the Cloudant SDK has widened it.
 	 *
 	 * <p>This mapper WRITES a {@code GregorianCalendar} as epoch millis, and CouchDB stores that
@@ -65,9 +71,18 @@ public class DaoHelper {
 			public GregorianCalendar deserialize(JsonParser p, DeserializationContext ctxt) {
 				if (p.currentToken() == JsonToken.VALUE_NUMBER_FLOAT) {
 					double widened = p.getDoubleValue();
-					if (widened != Math.floor(widened) || Double.isInfinite(widened)) {
-						// Not a whole millisecond: this is not a timestamp this code wrote, and
-						// guessing one would put a made-up instant on a record.
+					if (widened != Math.floor(widened) || Double.isInfinite(widened)
+							|| Math.abs(widened) > EXACT_INTEGER_LIMIT) {
+						// Refused, not guessed. Two ways a float fails to name the instant this
+						// code wrote, and a review found the second:
+						//   - not a whole millisecond, so it was never one of ours;
+						//   - beyond 2^53, where a double no longer holds every integer. Past
+						//     it the SDK's widening has already lost the last digits (an
+						//     original 9007199254740993 comes back as ...992, one millisecond
+						//     out), and a cast saturates at Long.MAX_VALUE, so 1.0E20 would
+						//     read as a perfectly ordinary date.
+						// Putting a made-up instant on a record is the failure this whole
+						// branch exists to stop.
 						return (GregorianCalendar) ctxt.handleUnexpectedToken(
 								GregorianCalendar.class, p);
 					}
@@ -76,8 +91,22 @@ public class DaoHelper {
 					return restored;
 				}
 				// Every other shape keeps Jackson's own behaviour, including the refusals.
-				return ctxt.readValue(p, java.util.Calendar.class) instanceof GregorianCalendar gc
-						? gc : null;
+				java.util.Calendar asRead = ctxt.readValue(p, java.util.Calendar.class);
+				if (asRead == null) {
+					return null;
+				}
+				if (asRead instanceof GregorianCalendar alreadyOurs) {
+					return alreadyOurs;
+				}
+				// NOT null for anything else. Jackson builds this through
+				// Calendar.getInstance(), which under a Japanese-imperial FORMAT locale
+				// (ja_JP_JP) answers a JapaneseImperialCalendar — not a GregorianCalendar. A
+				// review found the first version returning null there: a value that PARSED,
+				// reported as the absence of one, on the very field this branch is about. The
+				// instant is what was read; only the calendar system differs.
+				GregorianCalendar sameInstant = new GregorianCalendar(asRead.getTimeZone());
+				sameInstant.setTimeInMillis(asRead.getTimeInMillis());
+				return sameInstant;
 			}
 		});
 		return module;
