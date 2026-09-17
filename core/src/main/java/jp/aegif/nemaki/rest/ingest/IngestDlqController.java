@@ -99,6 +99,18 @@ public class IngestDlqController {
         // there IS a next page — a continuation token on the last page walks a client through
         // an endless run of empty ones. A review found it.
         if (hasMore) response.put("nextOffset", safeOffset + cappedLimit);
+        if (!fetched.stablyOrdered()) {
+            // Only when it is false, like unreadableEntries below. The page is still served —
+            // each row is the only record that a source item was lost, so refusing the whole
+            // listing would deny the operator the very thing they came for — but it must not
+            // pass for an ordered one: with no order, this offset can hand back a row an
+            // earlier page showed and pass over one no page shows (R13).
+            response.put("stableOrder", false);
+            response.put("stableOrderNote", "this node could not order the page by (type, dlqId)"
+                    + " — the index is not registered on this database — so 'offset' may repeat"
+                    + " or pass over entries across pages. Read the queue in one page (raise"
+                    + " 'limit') until the index exists");
+        }
         if (fetched.unreadable() > 0) {
             // Or "count" reads as the whole page. Each of these is the only record that a
             // source item was lost, so their absence has to be said, not left in the log.

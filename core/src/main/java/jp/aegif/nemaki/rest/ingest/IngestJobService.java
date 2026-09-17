@@ -974,9 +974,13 @@ public class IngestJobService {
      * answer can say the page is incomplete instead of asserting it is whole.
      *
      * @param unreadable rows returned by the store that this node could not turn into records
+     * @param stablyOrdered whether the page came back in a total order over an immutable key.
+     *        False means {@code offset} is a boundary over an unspecified sequence, so a row can
+     *        repeat across pages or be passed over by all of them (R13) — the caller must say so
+     *        rather than hand out a page that looks whole
      */
     public record DlqPage(List<IngestDeadLetterRecord> entries, int unreadable,
-            boolean hasMore) {}
+            boolean hasMore, boolean stablyOrdered) {}
 
     public DlqPage listDlqPage(int limit, int offset) {
         return listDlqPage(limit, offset, false);
@@ -993,9 +997,10 @@ public class IngestJobService {
         String dbName = client.getDatabaseName();
         var cloudant = client.getClient();
         int pageSize = Math.max(1, limit);
-        List<Document> rawDocs = findRawDocs(cloudant, dbName,
+        OrderedRows fetched = findDlqRowsInOrder(cloudant, dbName,
                 Map.of("type", IngestDeadLetterRecord.DOC_TYPE),
                 withProbe ? pageSize + 1 : pageSize, Math.max(0, offset));
+        List<Document> rawDocs = fetched.docs();
         boolean more = withProbe && rawDocs.size() > pageSize;
         List<Document> onThisPage = more ? rawDocs.subList(0, pageSize) : rawDocs;
         List<IngestDeadLetterRecord> results = new ArrayList<>();
@@ -1015,7 +1020,68 @@ public class IngestJobService {
                         + " {}", rawDoc.getId(), e.getMessage());
             }
         }
-        return new DlqPage(results, unreadable, more);
+        return new DlqPage(results, unreadable, more, fetched.stablyOrdered());
+    }
+
+    /** A page's raw rows, plus whether this node could put them in a total order. */
+    private record OrderedRows(List<Document> docs, boolean stablyOrdered) {}
+
+    /**
+     * The DLQ page's rows, ordered by a key that never changes for a row.
+     *
+     * <p>{@code offset} without an ORDER is a page boundary over an unspecified sequence: Mango
+     * returns whatever index it chose, so the same {@code skip} can hand back a row a previous
+     * page already showed and pass over one no page ever shows. Each dead-letter row is the only
+     * record that a source item was lost, so a row no page shows is the loss finishing (R13).
+     * Measured on CouchDB 3.3.3 with this tree's seven ingest indexes registered: unsorted,
+     * {@code _find} answered in {@code _all_docs} (_id) order — stable in that run, promised
+     * nowhere.
+     *
+     * <p>Sorted by {@code (type, dlqId)}, not {@code _id}: {@code dlqId} is unique per row and
+     * never changes, the same index {@code Patch_IngestMangoIndexes} already registers
+     * ({@code idx_type_dlqId}) serves it, and rows written before the deterministic {@code _id}
+     * (R23) carry it too. Measured: 30 rows, five pages, no repeat and no row missed.
+     *
+     * <p>A store that cannot serve the sort answers 400 {@code no_usable_index}. That is the one
+     * failure this method absorbs, and it does NOT pass the fallback off as an ordered page — the
+     * page comes back marked, and the endpoint says so. Everything else — a transport failure, a
+     * response without a document list — is the store not answering, as it was before. If the
+     * SDK ever words that 400 differently the fallback stops firing and the listing refuses
+     * instead: a refusal, not a page that claims an order it does not have.
+     */
+    private OrderedRows findDlqRowsInOrder(com.ibm.cloud.cloudant.v1.Cloudant cloudant,
+                                           String dbName, Map<String, Object> selector,
+                                           int limit, int skip) {
+        PostFindOptions.Builder builder = new PostFindOptions.Builder()
+                .db(dbName).selector(selector).limit(Math.max(1, limit))
+                .sort(List.of(Map.of("type", "asc"), Map.of("dlqId", "asc")));
+        if (skip > 0) {
+            builder.skip((long) skip);
+        }
+        FindResult findResult;
+        try {
+            findResult = cloudant.postFind(builder.build()).execute().getResult();
+        } catch (com.ibm.cloud.sdk.core.service.exception.ServiceResponseException couldNotOrder) {
+            String why = String.valueOf(couldNotOrder.getMessage());
+            if (couldNotOrder.getStatusCode() != 400
+                    || !(why.contains("no_usable_index")
+                            || why.contains("No index exists for this sort"))) {
+                throw new IngestStoreDidNotAnswerException("the ingest store did not answer the"
+                        + " ordered query for " + selector.keySet() + "; retry shortly: " + why);
+            }
+            logger.warn("the dead-letter listing could not be ordered by (type, dlqId) — the"
+                    + " index is not registered on '{}'; the page is returned UNORDERED and"
+                    + " marked as such: {}", dbName, why);
+            return new OrderedRows(findRawDocs(cloudant, dbName, selector, limit, skip), false);
+        } catch (RuntimeException couldNotAsk) {
+            throw new IngestStoreDidNotAnswerException("the ingest store did not answer the"
+                    + " ordered query for " + selector.keySet() + "; retry shortly: "
+                    + couldNotAsk.getMessage());
+        }
+        // Through the same check as the unordered read, not a second copy of it: two sites for
+        // "the store returned no document list" would mean the control that measures it covers
+        // only one of them, and the preflight caught the duplicate anchor the moment it existed.
+        return new OrderedRows(rowsOrRefuse(findResult, selector), true);
     }
 
     /**
@@ -1499,6 +1565,11 @@ public class IngestJobService {
                     + " query for " + selector.keySet() + "; retry shortly: "
                     + couldNotAsk.getMessage());
         }
+        return rowsOrRefuse(findResult, selector);
+    }
+
+    /** The one place a {@code _find} answer becomes rows — or the refusal that it did not. */
+    private List<Document> rowsOrRefuse(FindResult findResult, Map<String, Object> selector) {
         List<Document> docs = findResult == null ? null : findResult.getDocs();
         // A response without a document list is the store NOT ANSWERING — NemakiConfFind
         // defines the same shape that way and refuses. Here it was collapsed into "there are
