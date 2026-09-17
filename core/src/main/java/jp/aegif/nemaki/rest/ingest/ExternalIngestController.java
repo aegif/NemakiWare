@@ -100,7 +100,39 @@ public class ExternalIngestController {
                     return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                             .body(ExternalIngestResult.error("unknown", "File exceeds maximum size (100MB)"));
                 }
-                request.setContentStream(content.getInputStream());
+                try {
+                    request.setContentStream(content.getInputStream());
+                } catch (java.io.IOException couldNotReadTheStoredPart) {
+                    // R46. Everything else in this try is a claim the caller's own bytes made
+                    // (the part does not parse, it parses to nothing, it is too large). This
+                    // one is not: by the time this method runs the multipart body has already
+                    // been parsed and each part stored, and opening what WE stored fails for
+                    // our reasons — the temp directory, the disk, the store. Answering 400
+                    // "Invalid request" for it asserted something no read established.
+                    //
+                    // Not a hypothetical arm: web.xml gives the spring-mvc servlet a 1MB
+                    // file-size-threshold, so every part above it is a file on disk by the
+                    // time we open it, and getInputStream() declares the checked IOException
+                    // that says so.
+                    //
+                    // Its own try, not an IOException arm on the catch below: Jackson's parse
+                    // failures would sit on such an arm too if this tree's mapper ever throws
+                    // a checked IOException from readValue, and that would send a malformed
+                    // request part to 503 — the opposite over-throw.
+                    //
+                    // 503, not 500: a fresh upload re-stores the part, so a retry is the
+                    // caller's move. The reason travels in the message because this door is
+                    // behind restAuthenticationFilter (web.xml maps it, and the spring-mvc
+                    // servlet, on /api/*), so the answer goes to an authenticated caller —
+                    // unlike the webhook's front door, whose handler deliberately does not
+                    // echo. This return is before doIngest's own CallContext check, so the
+                    // filter is what carries that, not the check below.
+                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                            .body(ExternalIngestResult.error("unknown",
+                                    "the uploaded content could not be read on this node ("
+                                            + couldNotReadTheStoredPart.getMessage()
+                                            + "); retry the upload"));
+                }
                 if (request.getFileName() == null || request.getFileName().isBlank()) {
                     request.setFileName(sanitizeFilename(content.getOriginalFilename()));
                 }
