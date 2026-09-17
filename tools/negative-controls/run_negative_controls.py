@@ -8468,7 +8468,8 @@ CONTROLS = [
              "whatever index Mango picked",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
         find='                .db(dbName).selector(selector).limit(Math.max(1, limit))\n'
-             '                .sort(List.of(Map.of("type", "asc"), Map.of("dlqId", "asc")));',
+             '                .sort(List.of(Map.of("type", "asc"), Map.of("dlqId", "asc"),\n'
+             '                        Map.of("_id", "asc")));',
         replace='                .db(dbName).selector(selector).limit(Math.max(1, limit));',
         test='IngestStoreAnswersAreNotAbsenceTest',
         # The marker lock goes too: with no sort asked for, the store never refuses the order,
@@ -8500,7 +8501,20 @@ CONTROLS = [
         replace='            String why = String.valueOf(couldNotOrder.getMessage());\n'
                 '            if (false) {',
         test='IngestStoreAnswersAreNotAbsenceTest',
-        expect_fail=['aStoreThatDidNotAnswerTheOrderedQueryIsStillARefusal'],
+        expect_fail=['aStoreThatDidNotAnswerTheOrderedQueryIsStillARefusal',
+                     'a400ThatIsNotNoUsableIndexIsStillARefusal'],
+    ),
+    dict(
+        id="CE3",
+        what="R13: only the status code is asked, not WHICH 400 — a malformed query of ours is "
+             "absorbed and answered as a page that merely lacks an order",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='            if (couldNotOrder.getStatusCode() != 400\n'
+             '                    || !(why.contains("no_usable_index")\n'
+             '                            || why.contains("No index exists for this sort"))) {',
+        replace='            if (couldNotOrder.getStatusCode() != 400) {',
+        test='IngestStoreAnswersAreNotAbsenceTest',
+        expect_fail=['a400ThatIsNotNoUsableIndexIsStillARefusal'],
     ),
     dict(
         id="CD3",
