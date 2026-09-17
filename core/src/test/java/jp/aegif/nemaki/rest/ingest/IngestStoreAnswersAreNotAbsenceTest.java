@@ -472,4 +472,99 @@ class IngestStoreAnswersAreNotAbsenceTest {
         assertEquals(null, written.getValue().document().getId(),
                 "a job row was given a deterministic id — R23 is about dead-letter rows only");
     }
+
+    // ── R13: an offset without an order is a boundary over an unspecified sequence ──
+
+    /** A 400 as the SDK raises it when the sort has no index — the body CouchDB 3.3.3 sends. */
+    private static ServiceResponseException noUsableIndex() {
+        okhttp3.Request request = new okhttp3.Request.Builder()
+                .url("http://couchdb:5984/nemaki_conf/_find").build();
+        okhttp3.Response response = new okhttp3.Response.Builder()
+                .request(request)
+                .protocol(okhttp3.Protocol.HTTP_1_1)
+                .code(400)
+                .message("Bad Request")
+                .body(okhttp3.ResponseBody.create(
+                        "{\"error\":\"no_usable_index\",\"reason\":\"No index exists for this"
+                                + " sort, try indexing by the sort fields.\"}",
+                        okhttp3.MediaType.parse("application/json")))
+                .build();
+        return new ServiceResponseException(400, response);
+    }
+
+    @Test
+    @DisplayName("the dead-letter page is ordered by a key that never changes for a row")
+    void theDeadLetterPageIsOrderedByAKeyThatNeverChanges() {
+        Cloudant cloudant = mock(Cloudant.class);
+        // Built BEFORE the when(): findAnswering stubs mocks of its own, and calling it inside
+        // an unfinished when() leaves the outer stubbing open — which fails the whole class.
+        ServiceCall<FindResult> find = findAnswering(List.of(oldEntry()));
+        when(cloudant.postFind(any())).thenReturn(find);
+        IngestJobService jobs = serviceOn(cloudant);
+
+        IngestJobService.DlqPage page = jobs.listDlqPage(10, 20, true);
+
+        ArgumentCaptor<com.ibm.cloud.cloudant.v1.model.PostFindOptions> asked =
+                ArgumentCaptor.forClass(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class);
+        verify(cloudant).postFind(asked.capture());
+        // (type, dlqId), not _id: dlqId is unique per row, never changes, is carried by rows
+        // written before the deterministic _id (R23), and idx_type_dlqId already serves it.
+        assertEquals(List.of(java.util.Map.of("type", "asc"), java.util.Map.of("dlqId", "asc")),
+                asked.getValue().sort(),
+                "the page was asked for without an order — this offset can hand back a row an"
+                        + " earlier page showed and pass over one no page shows");
+        assertEquals(Long.valueOf(20L), asked.getValue().skip(),
+                "the offset stopped travelling with the order");
+        assertEquals(Long.valueOf(11L), asked.getValue().limit(),
+                "the probe row stopped travelling with the order");
+        assertTrue(page.stablyOrdered(), "an ordered page did not say it was ordered");
+    }
+
+    @Test
+    @DisplayName("a page that could not be ordered is not passed off as ordered")
+    void aPageThatCouldNotBeOrderedIsNotPassedOffAsOrdered() {
+        // The store has no index for the sort. Refusing the whole listing would deny the
+        // operator the only record that these items were lost, so the page is still served —
+        // but it must not read like an ordered one.
+        Cloudant cloudant = mock(Cloudant.class);
+        ServiceCall<FindResult> unsorted = findAnswering(List.of(oldEntry()));
+        when(cloudant.postFind(any())).thenAnswer(call -> {
+            com.ibm.cloud.cloudant.v1.model.PostFindOptions asked = call.getArgument(0);
+            if (asked.sort() != null) throw noUsableIndex();
+            return unsorted;
+        });
+        IngestJobService jobs = serviceOn(cloudant);
+
+        IngestJobService.DlqPage page = assertDoesNotThrow(() -> jobs.listDlqPage(10, 0, true),
+                "a store that cannot serve the sort took the listing away entirely");
+        assertEquals(1, page.entries().size(), "the fallback lost the page");
+        assertFalse(page.stablyOrdered(),
+                "a page the store could not order was reported as ordered — the caller then"
+                        + " pages with an offset that can repeat and pass over rows");
+    }
+
+    @Test
+    @DisplayName("a store that did not answer the ordered query is still a refusal")
+    void aStoreThatDidNotAnswerTheOrderedQueryIsStillARefusal() {
+        // The over-throw guard's mirror: only 400 no_usable_index may become an unordered page.
+        // Absorbing anything else would turn a store that did not answer into a page that looks
+        // whole — the defect this whole class exists for.
+        //
+        // Only the SORTED query fails here. Failing both would let the fallback's own refusal
+        // satisfy this assertion, so the lock would stay green with the guard deleted — measured:
+        // it did, and the control did not fire. The unsorted read must SUCCEED for the failure
+        // to belong to the guard alone.
+        Cloudant cloudant = mock(Cloudant.class);
+        ServiceCall<FindResult> unsorted = findAnswering(List.of(oldEntry()));
+        when(cloudant.postFind(any())).thenAnswer(call -> {
+            com.ibm.cloud.cloudant.v1.model.PostFindOptions asked = call.getArgument(0);
+            if (asked.sort() != null) throw serverError();
+            return unsorted;
+        });
+        IngestJobService jobs = serviceOn(cloudant);
+
+        assertThrows(IngestJobService.IngestStoreDidNotAnswerException.class,
+                () -> jobs.listDlqPage(10, 0, true),
+                "a transport failure on the ordered query became an unordered page");
+    }
 }

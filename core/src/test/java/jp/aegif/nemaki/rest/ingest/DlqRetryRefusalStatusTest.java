@@ -30,6 +30,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -299,7 +300,7 @@ class DlqRetryRefusalStatusTest {
         IngestDlqController controller = new IngestDlqController();
         IngestJobService jobService = mock(IngestJobService.class);
         when(jobService.listDlqPage(100, 0, true)).thenReturn(
-                new IngestJobService.DlqPage(java.util.List.of(), 0, false));
+                new IngestJobService.DlqPage(java.util.List.of(), 0, false, true));
         wire(controller, "ingestJobService", jobService);
         wire(controller, "httpRequest", adminRequest());
 
@@ -308,6 +309,30 @@ class DlqRetryRefusalStatusTest {
         assertEquals(Boolean.FALSE, body.get("hasMore"));
         assertNull(body.get("nextOffset"),
                 "the last page still offered a continuation: " + body);
+        assertNull(body.get("stableOrder"),
+                "an ordered page carried the unordered marker: " + body);
+    }
+
+    @Test
+    @DisplayName("a page the store could not order says so to the caller")
+    void aPageTheStoreCouldNotOrderSaysSoToTheCaller() throws Exception {
+        // R13. The service knows the page came back unordered; if the endpoint keeps that to
+        // itself, the operator pages with an offset that can hand back a row an earlier page
+        // showed and pass over one no page shows — and each row is the only record that a
+        // source item was lost.
+        IngestDlqController controller = new IngestDlqController();
+        IngestJobService jobService = mock(IngestJobService.class);
+        when(jobService.listDlqPage(100, 0, true)).thenReturn(
+                new IngestJobService.DlqPage(java.util.List.of(), 0, false, false));
+        wire(controller, "ingestJobService", jobService);
+        wire(controller, "httpRequest", adminRequest());
+
+        Map<?, ?> body = (Map<?, ?>) ((ResponseEntity<?>) controller.listDlq(100, 0)).getBody();
+
+        assertEquals(Boolean.FALSE, body.get("stableOrder"),
+                "an unordered page was handed out as if it were ordered: " + body);
+        assertNotNull(body.get("stableOrderNote"),
+                "the marker arrived without saying what it means for paging: " + body);
     }
 
     @Test
@@ -437,7 +462,7 @@ class DlqRetryRefusalStatusTest {
         // The service decodes exactly the page and answers hasMore from a probe row it does
         // NOT return. The controller must not re-derive either from the entry count.
         when(jobService.listDlqPage(100, 0, true))
-                .thenReturn(new IngestJobService.DlqPage(decoded, 1, true));
+                .thenReturn(new IngestJobService.DlqPage(decoded, 1, true, true));
         wire(controller, "ingestJobService", jobService);
         wire(controller, "httpRequest", adminRequest());
 
