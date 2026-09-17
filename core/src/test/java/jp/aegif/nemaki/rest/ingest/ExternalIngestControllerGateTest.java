@@ -971,10 +971,34 @@ class ExternalIngestControllerGateTest {
                 "a stored part this node could not open escaped as a server fault");
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
                 "a read that FAILED on our side was answered as the caller's bad request");
-        assertTrue(String.valueOf(res.getBody().errors()).contains("stored part is gone"),
-                "the refusal does not say what failed: " + res.getBody().errors());
+        // R49: the refusal is still identifiable — it says which failure this is — but the
+        // underlying reason stays in the log. This answer is given BEFORE doIngest's delegation
+        // gate, so a caller authenticated but not authorised for any profile receives it, and
+        // a failure opening a stored part names a path on this host.
+        assertTrue(String.valueOf(res.getBody().errors())
+                        .contains(ExternalIngestController.STORED_PART_UNREADABLE),
+                "the refusal stopped naming which failure it is: " + res.getBody().errors());
+        assertFalse(String.valueOf(res.getBody().errors()).contains("stored part is gone"),
+                "the store's own words reached the caller: " + res.getBody().errors());
         // And it must not be reported as an ingest that happened.
         verifyNoInteractions(canonicalImportService);
+    }
+
+    @Test
+    void theDefinitionRowRefusalDoesNotHandTheCallerTheStoresWords() {
+        // R49's other half. These refusals carry the store's own message — "the ingest store
+        // did not answer the query for [type]; retry shortly: <SDK message>" — and the SDK
+        // names the host it could not reach. The handler answers before the delegation gate.
+        ResponseEntity<ExternalIngestResult> res = controller.definitionRowsCouldNotBeRead(
+                new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                        "the ingest store did not answer: couchdb.internal:5984 refused"));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode());
+        assertFalse(String.valueOf(res.getBody().errors()).contains("couchdb.internal"),
+                "the store's own words reached the caller: " + res.getBody().errors());
+        assertTrue(String.valueOf(res.getBody().errors())
+                        .contains(ExternalIngestController.DEFINITION_ROW_UNREADABLE),
+                "the refusal stopped saying which failure it is: " + res.getBody().errors());
     }
 
     @Test
