@@ -999,6 +999,18 @@ class ExternalIngestControllerGateTest {
                 "a readable upload escaped");
         assertEquals(HttpStatus.OK, res.getStatusCode(),
                 "a part that opens was refused: " + res.getBody());
-        verify(canonicalImportService).execute(any(), any(ExternalIngestRequest.class));
+        // Not "execute was called": that is the cheap substitute for the claim this lock's
+        // name makes. What the arm must leave behind is the OPENED stream on the request the
+        // ingest receives — setContentStream(null) past an uncaught read would satisfy a bare
+        // verify(). A review found the substitution.
+        org.mockito.ArgumentCaptor<ExternalIngestRequest> dispatched =
+                org.mockito.ArgumentCaptor.forClass(ExternalIngestRequest.class);
+        verify(canonicalImportService).execute(any(), dispatched.capture());
+        assertNotNull(dispatched.getValue().getContentStream(),
+                "the ingest was reached without the bytes this door opened");
+        assertEquals("a.txt", dispatched.getValue().getFileName(),
+                "the filename the part carried did not travel with it");
+        assertEquals("text/plain", dispatched.getValue().getMimeType(),
+                "the content type the part carried did not travel with it");
     }
 }
