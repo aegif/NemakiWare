@@ -8548,6 +8548,27 @@ CONTROLS = [
         test='ExternalIngestControllerGateTest',
         expect_fail=['theDefinitionRowRefusalDoesNotHandTheCallerTheStoresWords'],
     ),
+    # ── R51: a stored timestamp survives the SDK widening it (found by the release gate) ──
+    dict(
+        id="CH3",
+        what="R51: the module that reads back a timestamp the SDK widened is gone — every row "
+             "decoded through an SDK map counts as unreadable again",
+        file='core/src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/DaoHelper.java',
+        find='\t\t\t\t.addModule(storedTimestampsModule())\n',
+        replace='',
+        test='StoredTimestampsSurviveTheSdkTest',
+        expect_fail=['aWidenedTimestampIsReadBack'],
+    ),
+    dict(
+        id="CI3",
+        what="R51: any float is taken as a timestamp — a number that is not a whole millisecond "
+             "becomes a made-up instant on a record",
+        file='core/src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/DaoHelper.java',
+        find='\t\t\t\t\tif (widened != Math.floor(widened) || Double.isInfinite(widened)) {',
+        replace='\t\t\t\t\tif (false) {',
+        test='StoredTimestampsSurviveTheSdkTest',
+        expect_fail=['aFractionalNumberIsStillRefused'],
+    ),
 ]
 
 
