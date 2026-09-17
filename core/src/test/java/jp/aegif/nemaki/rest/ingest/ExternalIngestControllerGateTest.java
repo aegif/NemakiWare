@@ -948,4 +948,57 @@ class ExternalIngestControllerGateTest {
         assertEquals(HttpStatus.BAD_REQUEST, res.getStatusCode());
         verifyNoInteractions(canonicalImportService);
     }
+
+    // ── R46: opening the part WE stored is not a claim about the caller's request ──
+
+    @Test
+    void aStoredPartThisNodeCannotOpenIsNotTheCallersBadRequest() throws Exception {
+        // The other three refusals of this door are claims the caller's own bytes made: the
+        // part does not parse, it parses to nothing, it is too large. This one is ours — the
+        // container has already stored the part by the time the method runs, so opening it
+        // fails for our reasons (the temp directory, the disk). It answered 400 "Invalid
+        // request" for a read that had established nothing about the request.
+        adminContext();
+        org.springframework.web.multipart.MultipartFile unreadable =
+                mock(org.springframework.web.multipart.MultipartFile.class);
+        when(unreadable.isEmpty()).thenReturn(false);
+        when(unreadable.getSize()).thenReturn(12L);
+        when(unreadable.getInputStream())
+                .thenThrow(new java.io.IOException("stored part is gone"));
+
+        ResponseEntity<ExternalIngestResult> res = assertDoesNotThrow(
+                () -> controller.ingestMultipart(REPO, baseRequestJson(), unreadable),
+                "a stored part this node could not open escaped as a server fault");
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
+                "a read that FAILED on our side was answered as the caller's bad request");
+        assertTrue(String.valueOf(res.getBody().errors()).contains("stored part is gone"),
+                "the refusal does not say what failed: " + res.getBody().errors());
+        // And it must not be reported as an ingest that happened.
+        verifyNoInteractions(canonicalImportService);
+    }
+
+    @Test
+    void aStoredPartThisNodeCanOpenStillReachesTheIngest() throws Exception {
+        // The over-throw guard for the arm above: a part that opens must not refuse. Without
+        // it, widening the refusal to every upload would still leave the lock above green.
+        adminContext();
+        when(connectorDefinitionService.get(CONN)).thenReturn(delegatedConnector());
+        org.springframework.web.multipart.MultipartFile readable =
+                mock(org.springframework.web.multipart.MultipartFile.class);
+        when(readable.isEmpty()).thenReturn(false);
+        when(readable.getSize()).thenReturn(4L);
+        when(readable.getInputStream())
+                .thenReturn(new java.io.ByteArrayInputStream("data".getBytes()));
+        when(readable.getOriginalFilename()).thenReturn("a.txt");
+        when(readable.getContentType()).thenReturn("text/plain");
+        when(canonicalImportService.execute(any(), any(ExternalIngestRequest.class)))
+                .thenReturn(ExternalIngestResult.success("src-1", "obj-1", "1.0", false, null));
+
+        ResponseEntity<ExternalIngestResult> res = assertDoesNotThrow(
+                () -> controller.ingestMultipart(REPO, baseRequestJson(), readable),
+                "a readable upload escaped");
+        assertEquals(HttpStatus.OK, res.getStatusCode(),
+                "a part that opens was refused: " + res.getBody());
+        verify(canonicalImportService).execute(any(), any(ExternalIngestRequest.class));
+    }
 }
