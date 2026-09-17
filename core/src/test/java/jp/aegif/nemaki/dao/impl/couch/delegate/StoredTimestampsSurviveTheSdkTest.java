@@ -64,8 +64,10 @@ class StoredTimestampsSurviveTheSdkTest {
 		assertNotNull(decoded.getArchivedAt(), "archivedAt did not survive the round trip");
 		assertEquals(WHEN, decoded.getArchivedAt().getTimeInMillis(),
 				"the instant changed on the way back");
-		assertEquals(WHEN, decoded.getCreated().getTimeInMillis(),
-				"created changed on the way back");
+		// archivedAt only. created/modified reach the model through
+		// CouchNodeBase.setCreated(Object), which has always parsed numbers itself — asserting
+		// on them here would read as evidence about this module and is not. A review found the
+		// claim. The properties this module actually decodes are archivedAt and coldArchivedAt.
 	}
 
 	@Test
@@ -109,8 +111,44 @@ class StoredTimestampsSurviveTheSdkTest {
 		Map<String, Object> doc = asTheSdkHandsItOver();
 		doc.put("archivedAt", 1786536650704.5);
 
-		assertThrows(Exception.class,
+		// The guard's own refusal, not "something went wrong": handleUnexpectedToken raises
+		// MismatchedInputException, and a bare Exception would also pass if Jackson refused for
+		// its own reasons — which is exactly what happens with the module removed.
+		assertThrows(tools.jackson.databind.exc.MismatchedInputException.class,
 				() -> mapper.readValue(mapper.writeValueAsString(doc), CouchArchive.class),
 				"a fraction of a millisecond was accepted as an archive time");
+	}
+
+	@Test
+	@DisplayName("a number too large for a double to hold exactly is refused, not saturated")
+	void aNumberBeyondExactIntegersIsRefused() {
+		// A review found this half: integrality alone is not enough. 1.0E20 is a whole number,
+		// and (long) saturates it to Long.MAX_VALUE — so a value that names no instant we wrote
+		// would have read as an ordinary date. Past 2^53 the SDK's widening has also already
+		// dropped the last digits, so the number cannot name the stored instant either way.
+		ObjectMapper mapper = mapper();
+		Map<String, Object> doc = asTheSdkHandsItOver();
+		doc.put("archivedAt", 1.0E20);
+
+		assertThrows(tools.jackson.databind.exc.MismatchedInputException.class,
+				() -> mapper.readValue(mapper.writeValueAsString(doc), CouchArchive.class),
+				"a number a double cannot hold exactly was read as a date");
+	}
+
+	@Test
+	@DisplayName("a timestamp just inside the exact range still reads")
+	void aTimestampInsideTheExactRangeStillReads() {
+		// The over-throw guard for the range check: the limit must not refuse real timestamps.
+		// Epoch millis are ~1.8E12, four orders of magnitude below 2^53.
+		ObjectMapper mapper = mapper();
+		Map<String, Object> doc = asTheSdkHandsItOver();
+		doc.put("archivedAt", 9007199254740992.0);
+
+		String json = mapper.writeValueAsString(doc);
+		CouchArchive decoded = assertDoesNotThrow(
+				() -> mapper.readValue(json, CouchArchive.class),
+				"the largest exactly-held integer was refused");
+		assertEquals(9007199254740992L, decoded.getArchivedAt().getTimeInMillis(),
+				"the instant changed at the edge of the exact range");
 	}
 }
