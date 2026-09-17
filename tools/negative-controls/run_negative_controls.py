@@ -6234,18 +6234,16 @@ CONTROLS = [
         id="RJ2",
         what="the ingest refusal answers a bare map again, not the endpoint's own document",
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        # Re-anchored for R49: the body is a fixed string now, not the exception's words.
         find='        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)\n'
-             '                .body(ExternalIngestResult.error("unknown", String.valueOf(e.getMessage())));\n'
-             '    }\n'
-             '\n'
-             '    /** A connector whose stored row cannot say which flow the request belongs to. */\n',
+             '                .body(ExternalIngestResult.error("unknown", DEFINITION_ROW_UNREADABLE));',
         replace='        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)\n'
-                '                .body(ExternalIngestResult.success("unknown", "unknown", "1.0", false, null));\n'
-                '    }\n'
-                '\n'
-                '    /** A connector whose stored row cannot say which flow the request belongs to. */\n',
+                '                .body(ExternalIngestResult.success("unknown", "unknown", "1.0", false, null));',
         test='ExternalIngestControllerGateTest',
-        expect_fail=['theRefusalAnswersTheEndpointsOwnDocument'],
+        # The R49 lock goes too: a success document carries no errors list, so the refusal it
+        # reads for the fixed text is not there. Declared from the run.
+        expect_fail=['theRefusalAnswersTheEndpointsOwnDocument',
+                     'theDefinitionRowRefusalDoesNotHandTheCallerTheStoresWords'],
     ),
     dict(
         id="RK2",
@@ -8443,7 +8441,7 @@ CONTROLS = [
         find_span=('                try {\n'
                    '                    request.setContentStream(content.getInputStream());\n'
                    '                } catch (java.io.IOException couldNotReadTheStoredPart) {',
-                   '                                            + "); retry the upload"));\n'
+                   '                            .body(ExternalIngestResult.error("unknown", STORED_PART_UNREADABLE));\n'
                    '                }'),
         replace='                request.setContentStream(content.getInputStream());',
         test='ExternalIngestControllerGateTest',
@@ -8525,6 +8523,30 @@ CONTROLS = [
         replace='            response.put("stableOrderInternal", false);',
         test='DlqRetryRefusalStatusTest',
         expect_fail=['aPageTheStoreCouldNotOrderSaysSoToTheCaller'],
+    ),
+    # ── R49: the reason for a refusal given before the delegation gate stays in the log ──
+    dict(
+        id="CF3",
+        what="R49: the multipart door hands the caller the words of the failure that opened "
+             "the stored part — an absolute path on this host — again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='                            .body(ExternalIngestResult.error("unknown", STORED_PART_UNREADABLE));',
+        replace='                            .body(ExternalIngestResult.error("unknown",\n'
+                '                                    STORED_PART_UNREADABLE + " ("\n'
+                '                                            + couldNotReadTheStoredPart.getMessage() + ")"));',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['aStoredPartThisNodeCannotOpenIsNotTheCallersBadRequest'],
+    ),
+    dict(
+        id="CG3",
+        what="R49: the definition-row refusal hands the caller the store's own message — the "
+             "host it could not reach — again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='                .body(ExternalIngestResult.error("unknown", DEFINITION_ROW_UNREADABLE));',
+        replace='                .body(ExternalIngestResult.error("unknown",\n'
+                '                        DEFINITION_ROW_UNREADABLE + " " + e.getMessage()));',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['theDefinitionRowRefusalDoesNotHandTheCallerTheStoresWords'],
     ),
 ]
 
