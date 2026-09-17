@@ -67,6 +67,13 @@ public class IngestDlqController {
     // ── Dead-Letter Queue ──────────────────────────────────────────
 
     /**
+     * The largest page this endpoint will return. Named, not repeated, so the refusal note below
+     * cannot advise a page size the endpoint refuses to serve — a review found it doing exactly
+     * that.
+     */
+    private static final int MAX_LIMIT = 500;
+
+    /**
      * A page of dead-letter entries.
      *
      * <p>{@code offset} exists because the fetch underneath was capped at a hardcoded 200 with no
@@ -77,7 +84,7 @@ public class IngestDlqController {
     public ResponseEntity<?> listDlq(@RequestParam(defaultValue = "100") int limit,
                                      @RequestParam(defaultValue = "0") int offset) {
         if (!isAdmin()) return forbidden();
-        int cappedLimit = Math.min(Math.max(limit, 1), 500);
+        int cappedLimit = Math.min(Math.max(limit, 1), MAX_LIMIT);
         int safeOffset = Math.max(offset, 0);
         // Fetch one extra to say whether more exist without a second count query.
         // The service decodes exactly this page and answers "is there more" from a probe row
@@ -106,10 +113,15 @@ public class IngestDlqController {
             // pass for an ordered one: with no order, this offset can hand back a row an
             // earlier page showed and pass over one no page shows (R13).
             response.put("stableOrder", false);
-            response.put("stableOrderNote", "this node could not order the page by (type, dlqId)"
-                    + " — the index is not registered on this database — so 'offset' may repeat"
-                    + " or pass over entries across pages. Read the queue in one page (raise"
-                    + " 'limit') until the index exists");
+            // Says only what the store's refusal established — no index here can serve that
+            // order — not that a particular index is unregistered, and points at a remedy this
+            // endpoint can actually perform: 'limit' is capped at 500 above, so "read it in one
+            // page" is advice that runs out. A review found both.
+            response.put("stableOrderNote", "no index on this database can serve the"
+                    + " (type, dlqId, _id) order, so 'offset' may repeat or pass over entries"
+                    + " across pages. A page read in one request (limit up to " + MAX_LIMIT
+                    + ") is unaffected; beyond that, re-read from offset 0 before acting on"
+                    + " what is missing");
         }
         if (fetched.unreadable() > 0) {
             // Or "count" reads as the whole page. Each of these is the only record that a

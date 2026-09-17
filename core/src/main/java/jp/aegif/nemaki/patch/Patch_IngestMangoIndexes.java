@@ -54,6 +54,10 @@ import java.util.List;
  *       {@code IngestJobService} record lookups.</li>
  *   <li>{@code idx_type_dlqId} → {@code (type, dlqId)} — covers
  *       dead-letter retry lookups.</li>
+ *   <li>{@code idx_type_dlqId_id} → {@code (type, dlqId, _id)} — orders
+ *       the dead-letter LISTING. The pair alone is not a total order:
+ *       twin rows share a dlqId, so an offset page could repeat one and
+ *       pass over the other (R13).</li>
  * </ul>
  *
  * <p><b>RC4.1 (F2)</b>: the previous spelling
@@ -102,7 +106,16 @@ public class Patch_IngestMangoIndexes extends AbstractNemakiPatch {
             // selector field in IngestJobService is dlqId. Operators
             // upgrading from RC4 will get this new index; the old dead
             // one stays put until removed manually (see class javadoc).
-            new IndexSpec("idx_type_dlqId", "type", "dlqId")
+            new IndexSpec("idx_type_dlqId", "type", "dlqId"),
+            // R13: the dead-letter LISTING's order, not a lookup. (type, dlqId) alone is not a
+            // total order over this collection — the same dlqId can be stored twice (the twin
+            // rows deleteDlqEntry calls a recorded residual, from before the deterministic _id
+            // of R23), and two rows with equal sort keys have no defined order between them, so
+            // an offset page can repeat one and pass over the other. _id breaks the tie and is
+            // unique by definition. Measured on CouchDB 3.3.3: without this index the three-key
+            // sort is refused (400 no_usable_index) and the listing says the page is unordered;
+            // with it, four twin pairs page with no repeat and no row missed.
+            new IndexSpec("idx_type_dlqId_id", "type", "dlqId", "_id")
     );
 
     @Override

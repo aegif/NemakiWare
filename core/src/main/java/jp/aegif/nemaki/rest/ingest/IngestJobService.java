@@ -1037,10 +1037,15 @@ public class IngestJobService {
      * {@code _find} answered in {@code _all_docs} (_id) order — stable in that run, promised
      * nowhere.
      *
-     * <p>Sorted by {@code (type, dlqId)}, not {@code _id}: {@code dlqId} is unique per row and
-     * never changes, the same index {@code Patch_IngestMangoIndexes} already registers
-     * ({@code idx_type_dlqId}) serves it, and rows written before the deterministic {@code _id}
-     * (R23) carry it too. Measured: 30 rows, five pages, no repeat and no row missed.
+     * <p>Sorted by {@code (type, dlqId, _id)}. {@code dlqId} first because rows written before
+     * the deterministic {@code _id} (R23) carry it too, so it names the same entry across both
+     * shapes. {@code _id} last because {@code dlqId} is NOT unique over this collection: the
+     * same dlqId can be stored twice — the twin rows {@link #deleteDlqEntry} calls a recorded
+     * residual — and two rows with equal sort keys have no defined order between them, which is
+     * the very hole this method closes. A review found the two-key version claiming a total
+     * order it did not have. Measured on CouchDB 3.3.3: four twin pairs, four pages, no repeat
+     * and no row missed; the two-key sort ordered the twins consistently in that run, but by
+     * the index's internal tie-break, promised nowhere.
      *
      * <p>A store that cannot serve the sort answers 400 {@code no_usable_index}. That is the one
      * failure this method absorbs, and it does NOT pass the fallback off as an ordered page — the
@@ -1054,7 +1059,8 @@ public class IngestJobService {
                                            int limit, int skip) {
         PostFindOptions.Builder builder = new PostFindOptions.Builder()
                 .db(dbName).selector(selector).limit(Math.max(1, limit))
-                .sort(List.of(Map.of("type", "asc"), Map.of("dlqId", "asc")));
+                .sort(List.of(Map.of("type", "asc"), Map.of("dlqId", "asc"),
+                        Map.of("_id", "asc")));
         if (skip > 0) {
             builder.skip((long) skip);
         }
