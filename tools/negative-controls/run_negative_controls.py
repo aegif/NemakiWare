@@ -8461,6 +8461,57 @@ CONTROLS = [
         test='ExternalIngestControllerGateTest',
         expect_fail=['aStoredPartThisNodeCanOpenStillReachesTheIngest'],
     ),
+    # ── R13: the dead-letter page's offset stops being a boundary over an unspecified order ──
+    dict(
+        id="CA3",
+        what="R13: the page is asked for without a sort again — offset becomes a boundary over "
+             "whatever index Mango picked",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='                .db(dbName).selector(selector).limit(Math.max(1, limit))\n'
+             '                .sort(List.of(Map.of("type", "asc"), Map.of("dlqId", "asc")));',
+        replace='                .db(dbName).selector(selector).limit(Math.max(1, limit));',
+        test='IngestStoreAnswersAreNotAbsenceTest',
+        # The marker lock goes too: with no sort asked for, the store never refuses the order,
+        # so the page comes back claiming to be ordered. Declared from the run.
+        expect_fail=['theDeadLetterPageIsOrderedByAKeyThatNeverChanges',
+                     'aPageThatCouldNotBeOrderedIsNotPassedOffAsOrdered',
+                     # And the refusal lock: with no sort asked for, the store this lock points
+                     # at never fails, so its assertThrows finds nothing. Declared from the run.
+                     'aStoreThatDidNotAnswerTheOrderedQueryIsStillARefusal'],
+    ),
+    dict(
+        id="CB3",
+        what="R13: the unordered fallback goes back to passing for an ordered page",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='            return new OrderedRows(findRawDocs(cloudant, dbName, selector, limit, skip), false);',
+        replace='            return new OrderedRows(findRawDocs(cloudant, dbName, selector, limit, skip), true);',
+        test='IngestStoreAnswersAreNotAbsenceTest',
+        expect_fail=['aPageThatCouldNotBeOrderedIsNotPassedOffAsOrdered'],
+    ),
+    dict(
+        id="CC3",
+        what="R13: every failure of the ordered query becomes an unordered page — a store that "
+             "did not answer is served as a page that looks whole",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='            String why = String.valueOf(couldNotOrder.getMessage());\n'
+             '            if (couldNotOrder.getStatusCode() != 400\n'
+             '                    || !(why.contains("no_usable_index")\n'
+             '                            || why.contains("No index exists for this sort"))) {',
+        replace='            String why = String.valueOf(couldNotOrder.getMessage());\n'
+                '            if (false) {',
+        test='IngestStoreAnswersAreNotAbsenceTest',
+        expect_fail=['aStoreThatDidNotAnswerTheOrderedQueryIsStillARefusal'],
+    ),
+    dict(
+        id="CD3",
+        what="R13: the endpoint keeps the unordered page to itself — the caller pages on with "
+             "an offset that can repeat and pass over rows",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
+        find='            response.put("stableOrder", false);',
+        replace='            response.put("stableOrderInternal", false);',
+        test='DlqRetryRefusalStatusTest',
+        expect_fail=['aPageTheStoreCouldNotOrderSaysSoToTheCaller'],
+    ),
 ]
 
 
