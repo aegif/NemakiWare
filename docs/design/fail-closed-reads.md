@@ -55,7 +55,7 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
 | R10 | ~~`webhook-deliveries:` は予約名ではない~~ **処置済み 2026-09-14（ユーザー指定のバッチ）**: 既存の `sourceObjectId` 接頭辞ではなく、行自身の欄 `webhookDeliveryRecord`（`saveWebhookDeliveryRecordToDlq` だけが立てる）で扉が拒否する。錠 4 本、control ZK2/ZL2/ZM2/ZN2 | — | |
 | R11 | ~~フォルダ読み swallow → `CREATOR_CMIS_ALL_LOST` / `TARGET_FOLDER_UNRESOLVABLE` で IDLE 停止~~ **処置済み 2026-09-14（ユーザー指定のバッチ）**: `resolveFolderIdOrRefuse` / `canManageProfileForFolderAsUserOrRefuse` と新しい拒否理由 `TARGET_FOLDER_LOOKUP_FAILED` / `CREATOR_CMIS_ALL_LOOKUP_FAILED`（could-not-ask 側）。答える側の旧メソッドは他の呼び出し元のため不変（プロファイル編集 gate の 403 は別残件）。錠 8 本、control ZB2〜ZF2 | — | |
 | R12 | IDLE ラムダの per-message 腕は 2026-09-14 に adapter 注入 (`adapterFactory`) で実測できるようになった（`driveOneIdleMessage`）。connect / IDLE ループ / `fetchMessage` の実 I/O は依然未測定 | 実セッション | |
-| R13 | DLQ ページの `skip` に安定ソートが無い | 別バッチ | |
+| R13 | ~~DLQ ページの `skip` に安定ソートが無い~~ **処置済み 2026-09-17**: 一覧は `(type, dlqId, _id)` 順。`_id` まで並べるのは `dlqId` が全順序にならないため（同じ `dlqId` の双子行が在りうる — `deleteDlqEntry` が既に扱っている既知状態）。索引 `idx_type_dlqId_id` を `Patch_IngestMangoIndexes` に 1 本追加。索引が無いデータベースでは 400 `no_usable_index` を吸って従来の並びで返すが、応答に `stableOrder: false` を付ける（一覧ごと拒否しない — 各行は喪失の唯一の記録）。吸うのはその 400 だけで、輸送の失敗・他の 400・「文書一覧が無い応答」は拒否のまま。purge の 1,000 行走査（R20）と他の読みは不変。錠 5 本、control CA3〜CE3 | — | 確認レビュー 2 名とも CONVERGED（Codex の P1「(type, dlqId) は全順序でない」を処置） |
 | R14 | Notion の per-page catch は adapter が `new` されるため未測定 | 注入 | |
 | R15 | コントロール×兄弟錠 2403 組は未判定 | 掃きはユーザー指示があるまで禁止 | |
 | R16 | `statusOfIdleRefusal` が `raw` も見る | 意図した非対称（敵対 id は 503 しか買えない） | |
@@ -92,11 +92,12 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
 | R47 | ~~4 つの archetype 入口はすべて `execute` が返った後に属性を書く~~ **処置済み 2026-09-16（バッチ 10）**: 装飾 5 か所（mail / note ページ / note 添付 / record / chat。chat の 2 つは同じパスなので問い直し 1 回で覆う）の手前で `refuseDecorationIfNoLongerAuthorized` が委譲を問い直す。拒否は**警告**で、取込は失敗にしない（有効だった認可で取り込まれたオブジェクトをDLQ に入れて breaker を進めないため。`createLink` の先例と同じ）。コネクタ行が読めなかった場合も拒否する（`get()` は不在と読み失敗の両方に null を返すので、渡すと委譲の半分を黙って飛ばす。`createLinkAuthorized` の先例と同じ腕。**初版はその先例から解決だけを写して拒否を写しておらず、2 本のレビューが P1 として出した**）。**コスト**（装飾 1 回 = 取込済み項目 1 件・ポーリング 1 回あたり）: プロファイル行の索引不要読み 1 回（設定 DB の走査、R44 と同じ family）、委譲プロファイルならさらにコネクタ行の読み 1 回と `cmis:all` 評価 1 回（フォルダ読み + グループ展開）。非委譲はプロファイル行の読みだけ（コネクタ読みは委譲判定の後ろに置いた）。錠 4 本（窓に正確に着地させる実測、過剰拒否の対照、コネクタ不達の拒否、問い直しと metadata service 使用箇所の本数）、control BS3 / BT3 / BU3 / BV3 / BW3、再錨 VF / BS3、巻き添えの宣言を 6 control に補完。**測定に穴が残る（→ R48）**: 装飾を metadata service を通さず直接書く扉は本数の錠が動かない。2 巡目のレビューで出た P1 で、ユーザー指示「同じ領域で 2 度目の P1 が出たら残件に戻して止まる」によりここで止めた | 直接書きの扉を数える（R48） | |
 | R48 | R47 の本数の錠は「問い直しの出現数」と「metadata service の使用箇所数」を数えるので、**装飾を `contentService.update` で直接書く扉**（chat の capture window と同じ形）が問い直し無しで増えても動かない。5 つの装飾のうち 1 つが実際にその形（`applyCaptureWindow`）（バッチ 10 の 2 巡目 subagent P1。製品ではなく測定の穴）。**バッチ 11 で 3 つ目の数（`contentService.update(` = 5）を足そうとしたが、錠のコメントの過大主張が 2 巡続けて HOLD になったため、指示（`v34-fail-closed-resume.md` §3「過大主張が 2 度目なら 3 つ目の数を足さず残件のまま進め」）に従って取り下げた。取り下げたのは数と control BX3 で、製品は最初から触っていない。2 巡で判明した事実: この 3 形以外に `checkOut` / `deleteObject` はどの錠も数えていない、既存の `checkIn` の properties に装飾を載せる形は R5 の書き込み本数の錠でも見えない** | 3 つ目の数を足すなら、「捕まえないもの」を先に列挙してから | |
 | R49 | 取込入口の 503 は例外の `getMessage()` をそのまま本文に入れる。R46 の腕（一時ファイルのパスが入りうる）と、既存の `definitionRowsCouldNotBeRead`（`ExternalIngestController` のクラス handler）の両方。どちらも委譲ゲートより手前で返るので、認証済みだが未認可の利用者にも届く（バッチ 12 の subagent P3。開示の方式はR46 が作ったものではない。パスが入る点は未実測の推論） | 2 か所まとめて判定 | |
+| R50 | `listDlq` と 2 引数の `listDlqPage` は `stablyOrdered` を捨てる（`unreadable` / `hasMore` を捨てる既存の形と同じ）。**現在の本番呼び出し元は 3 引数版だけ**なので今は誤答しないが、将来の呼び出し元が R13 を繰り返してもどの錠も動かない（バッチ 13 の subagent P3-3） | 呼び出し元が増えるとき | |
 | D1 | token 付き行の**添付前検査**（57 巡）、添付を landed の証拠に読む**自己修復**（58 巡）、15 分で通常経路に落とす **lease**（59 巡） | 凍結解除まで再導入しない | やめた（いずれも古い bytes を新しいメタデータで再生する同じ class に落ちた） |
 
 ## 5. 測定
 
-- コントロール 694（2026-09-17 時点。R46 の BY3 / BZ3 を含む。内訳: 通し前 621 → 不発の WX を退役して 620 → Phase C で
+- コントロール 699（2026-09-17 時点。R46 の BY3 / BZ3、R13 の CA3〜CE3 を含む。内訳: 通し前 621 → 不発の WX を退役して 620 → Phase C で
   25 新設 = 645 → バッチ 1〜3 で 11 新設 = 656 → バッチ 4 で 8 新設 = 664 → バッチ 5〜10 で 28 新設）。**通し negative-control は
   2 回完走**。1 回目 2026-09-14〜15（621 本、約 15 時間、exit 1）: 620 発火、不発 1（WX。腕とクラス
   `@ExceptionHandler` の二重保護で 1 錨では測れない → 退役、R38）、宣言漏れ 68 本、錨外れ 0、製品欠陥 0。
