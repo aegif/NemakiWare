@@ -507,9 +507,13 @@ class IngestStoreAnswersAreNotAbsenceTest {
         ArgumentCaptor<com.ibm.cloud.cloudant.v1.model.PostFindOptions> asked =
                 ArgumentCaptor.forClass(com.ibm.cloud.cloudant.v1.model.PostFindOptions.class);
         verify(cloudant).postFind(asked.capture());
-        // (type, dlqId), not _id: dlqId is unique per row, never changes, is carried by rows
-        // written before the deterministic _id (R23), and idx_type_dlqId already serves it.
-        assertEquals(List.of(java.util.Map.of("type", "asc"), java.util.Map.of("dlqId", "asc")),
+        // (type, dlqId, _id). dlqId names the same entry in both row shapes (rows written
+        // before the deterministic _id of R23 carry it too); _id is the tie-break, because the
+        // same dlqId CAN be stored twice — the twin rows deleteDlqEntry calls a recorded
+        // residual — and two rows with equal sort keys have no defined order between them. A
+        // review found the two-key version claiming a total order it did not have.
+        assertEquals(List.of(java.util.Map.of("type", "asc"), java.util.Map.of("dlqId", "asc"),
+                        java.util.Map.of("_id", "asc")),
                 asked.getValue().sort(),
                 "the page was asked for without an order — this offset can hand back a row an"
                         + " earlier page showed and pass over one no page shows");
@@ -566,5 +570,42 @@ class IngestStoreAnswersAreNotAbsenceTest {
         assertThrows(IngestJobService.IngestStoreDidNotAnswerException.class,
                 () -> jobs.listDlqPage(10, 0, true),
                 "a transport failure on the ordered query became an unordered page");
+    }
+
+    @Test
+    @DisplayName("a 400 that is not no_usable_index is still a refusal")
+    void a400ThatIsNotNoUsableIndexIsStillARefusal() {
+        // The other half of the same guard. The lock above fails a 503, so it only presses the
+        // status-code half: deleting the message check alone left every lock green (a review
+        // found the hole). A 400 the store raises for some OTHER reason is our malformed query,
+        // and absorbing it would answer a marked page for a bug of ours.
+        Cloudant cloudant = mock(Cloudant.class);
+        ServiceCall<FindResult> unsorted = findAnswering(List.of(oldEntry()));
+        when(cloudant.postFind(any())).thenAnswer(call -> {
+            com.ibm.cloud.cloudant.v1.model.PostFindOptions asked = call.getArgument(0);
+            if (asked.sort() != null) throw badQuery();
+            return unsorted;
+        });
+        IngestJobService jobs = serviceOn(cloudant);
+
+        assertThrows(IngestJobService.IngestStoreDidNotAnswerException.class,
+                () -> jobs.listDlqPage(10, 0, true),
+                "a 400 this node caused was served as a page that only lacks an order");
+    }
+
+    /** A 400 the store raises for a reason other than the missing sort index. */
+    private static ServiceResponseException badQuery() {
+        okhttp3.Request request = new okhttp3.Request.Builder()
+                .url("http://couchdb:5984/nemaki_conf/_find").build();
+        okhttp3.Response response = new okhttp3.Response.Builder()
+                .request(request)
+                .protocol(okhttp3.Protocol.HTTP_1_1)
+                .code(400)
+                .message("Bad Request")
+                .body(okhttp3.ResponseBody.create(
+                        "{\"error\":\"query_parse_error\",\"reason\":\"Invalid sort field\"}",
+                        okhttp3.MediaType.parse("application/json")))
+                .build();
+        return new ServiceResponseException(400, response);
     }
 }
