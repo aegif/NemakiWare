@@ -121,17 +121,19 @@ public class ExternalIngestController {
                     // request part to 503 — the opposite over-throw.
                     //
                     // 503, not 500: a fresh upload re-stores the part, so a retry is the
-                    // caller's move. The reason travels in the message because this door is
-                    // behind restAuthenticationFilter (web.xml maps it, and the spring-mvc
-                    // servlet, on /api/*), so the answer goes to an authenticated caller —
-                    // unlike the webhook's front door, whose handler deliberately does not
-                    // echo. This return is before doIngest's own CallContext check, so the
-                    // filter is what carries that, not the check below.
+                    // caller's move.
+                    //
+                    // R49: the reason goes to the log, not to the caller. A failure opening a
+                    // stored part names the file — an absolute path under the container's temp
+                    // directory — and this return is before doIngest's delegation gate, so a
+                    // caller authenticated but not authorised for any profile would read it.
+                    // The webhook's front door made the same choice for the same reason.
+                    org.slf4j.LoggerFactory.getLogger(ExternalIngestController.class)
+                            .warn("the uploaded part could not be opened; the multipart door"
+                                    + " answered 503 without the reason: {}",
+                                    couldNotReadTheStoredPart.getMessage());
                     return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                            .body(ExternalIngestResult.error("unknown",
-                                    "the uploaded content could not be read on this node ("
-                                            + couldNotReadTheStoredPart.getMessage()
-                                            + "); retry the upload"));
+                            .body(ExternalIngestResult.error("unknown", STORED_PART_UNREADABLE));
                 }
                 if (request.getFileName() == null || request.getFileName().isBlank()) {
                     request.setFileName(sanitizeFilename(content.getOriginalFilename()));
@@ -800,9 +802,37 @@ public class ExternalIngestController {
         // The endpoint's own document, not a different one. The first version answered a
         // bare map, so a caller parsing requestId / success / errors got a shape it does not
         // know from the one path that refuses; a review found the undescribed change.
+        //
+        // R49: the reason goes to the log, not to the caller. These refusals carry the store's
+        // own words — "the ingest store did not answer the query for [type]; retry shortly:
+        // <SDK message>" — and the SDK names the host it could not reach. This handler answers
+        // BEFORE doIngest's delegation gate, so a caller authenticated but not authorised for
+        // any profile reads it. The status already says everything the caller can act on:
+        // the read did not answer, and a retry is the move.
+        org.slf4j.LoggerFactory.getLogger(ExternalIngestController.class)
+                .warn("a definition row could not be read; the ingest endpoint answered 503"
+                        + " without the reason: {}", String.valueOf(e.getMessage()));
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                .body(ExternalIngestResult.error("unknown", String.valueOf(e.getMessage())));
+                .body(ExternalIngestResult.error("unknown", DEFINITION_ROW_UNREADABLE));
     }
+
+    /**
+     * What the caller is told when a definition row could not be read. Fixed text: the reason
+     * belongs in the log (R49). Distinct enough that a test can tell this refusal from the
+     * endpoint's other 503.
+     */
+    static final String DEFINITION_ROW_UNREADABLE =
+            "a connector or import profile row could not be read on this node; retry shortly."
+                    + " The reason is in the server log";
+
+    /**
+     * What the caller is told when the part they uploaded could not be opened here (R46). Fixed
+     * text for the same reason as {@link #DEFINITION_ROW_UNREADABLE}: the failure names a path
+     * on this host, and this answer is given before the delegation gate.
+     */
+    static final String STORED_PART_UNREADABLE =
+            "the uploaded content could not be read on this node; retry the upload."
+                    + " The reason is in the server log";
 
     /** A connector whose stored row cannot say which flow the request belongs to. */
     @ExceptionHandler(ConnectorArchetypeUnusableException.class)
