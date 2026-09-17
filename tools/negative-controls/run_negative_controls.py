@@ -8557,17 +8557,30 @@ CONTROLS = [
         find='\t\t\t\t.addModule(storedTimestampsModule())\n',
         replace='',
         test='StoredTimestampsSurviveTheSdkTest',
-        expect_fail=['aWidenedTimestampIsReadBack'],
+        # 範囲の錠も落ちる: 2^53 は float トークンで来るので、module を外すと読めない。実測で判明。
+        expect_fail=['aWidenedTimestampIsReadBack',
+                     'aTimestampInsideTheExactRangeStillReads'],
     ),
     dict(
         id="CI3",
         what="R51: any float is taken as a timestamp — a number that is not a whole millisecond "
              "becomes a made-up instant on a record",
         file='core/src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/DaoHelper.java',
-        find='\t\t\t\t\tif (widened != Math.floor(widened) || Double.isInfinite(widened)) {',
-        replace='\t\t\t\t\tif (false) {',
+        # 再錨: 範囲の検査 (P2 の処置) が同じ条件式に足された。
+        find='\t\t\t\t\tif (widened != Math.floor(widened) || Double.isInfinite(widened)\n',
+        replace='\t\t\t\t\tif (false\n',
         test='StoredTimestampsSurviveTheSdkTest',
         expect_fail=['aFractionalNumberIsStillRefused'],
+    ),
+    dict(
+        id="CJ3",
+        what="R51: the range check is gone — a whole number a double cannot hold exactly "
+             "saturates on the cast and reads as an ordinary date",
+        file='core/src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/DaoHelper.java',
+        find='\n\t\t\t\t\t\t\t|| Math.abs(widened) > EXACT_INTEGER_LIMIT) {',
+        replace='\n\t\t\t\t\t\t\t) {',
+        test='StoredTimestampsSurviveTheSdkTest',
+        expect_fail=['aNumberBeyondExactIntegersIsRefused'],
     ),
 ]
 
