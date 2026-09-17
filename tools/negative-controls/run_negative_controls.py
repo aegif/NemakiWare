@@ -8432,6 +8432,35 @@ CONTROLS = [
         test='CanonicalImportServiceTest',
         expect_fail=['everyPostExecuteDecorationReAsksTheDelegation'],
     ),
+    # ── R46: the multipart door's 400 stops covering the part WE stored ──
+    dict(
+        id="BY3",
+        # BX3 is skipped on purpose: it was the withdrawn R48 control, and reusing the id
+        # would make the diary's "BX3 was withdrawn" line read as if this were that control.
+        what="R46: opening the stored part goes back inside the parse-only catch — an upload "
+             "this node cannot read is 400 \"Invalid request\" again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find_span=('                try {\n'
+                   '                    request.setContentStream(content.getInputStream());\n'
+                   '                } catch (java.io.IOException couldNotReadTheStoredPart) {',
+                   '                                            + "); retry the upload"));\n'
+                   '                }'),
+        replace='                request.setContentStream(content.getInputStream());',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['aStoredPartThisNodeCannotOpenIsNotTheCallersBadRequest'],
+    ),
+    dict(
+        id="BZ3",
+        what="R46: the refusal stops depending on the read failing — every stored part it "
+             "opens is refused too (the over-throw the guard exists for)",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestController.java',
+        find='                    request.setContentStream(content.getInputStream());',
+        replace='                    request.setContentStream(content.getInputStream());\n'
+                '                    if (true) throw new java.io.IOException("the arm no longer'
+                ' asks whether the read failed");',
+        test='ExternalIngestControllerGateTest',
+        expect_fail=['aStoredPartThisNodeCanOpenStillReachesTheIngest'],
+    ),
 ]
 
 
