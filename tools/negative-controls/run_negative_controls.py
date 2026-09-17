@@ -2982,7 +2982,12 @@ CONTROLS = [
                      'getOrRefuseNamesTheRowWhenTheDeterministicRowCannotBeReadAsAConnector',
                      'getOrRefuseRefusesAVisiblePair',
                      'getOrRefuseRefusesWhenTheIdReadFails',
-                     'getOrRefuseRefusesWhenTheSelectorFailedAndTheIdReadFindsNothing'],
+                     'getOrRefuseRefusesWhenTheSelectorFailedAndTheIdReadFindsNothing',
+                     # R3's lock, added after the last completed sweep (4ec0677a6), so the
+                     # declaration was never measured under this control. The sabotage returns
+                     # the selector's answer alone, so the readable deterministic row is not
+                     # the answer and this lock's first assertion fails. Declared from the run.
+                     'resolveOrRefuseSaysTheSelectorDidNotAnswer'],
     ),
     dict(
         id="RE",
@@ -3807,7 +3812,11 @@ CONTROLS = [
         expect_fail=['aFailingSelectorDoesNotEscape',
                      'aMissingConfClientOnTheIdFallbackDoesNotEscape',
                      'getFallsBackToTheDeterministicRowWhenTheSelectorListingIsIncomplete',
-                     'getOrRefuseFallsBackToTheDeterministicRowWhenTheSelectorListingIsIncomplete'],
+                     'getOrRefuseFallsBackToTheDeterministicRowWhenTheSelectorListingIsIncomplete',
+                     # R3's lock, added after the last completed sweep. Unwrapping the catch
+                     # lets the failing selector escape, so this lock's assertDoesNotThrow is
+                     # what fails. Declared from the run.
+                     'resolveOrRefuseSaysTheSelectorDidNotAnswer'],
     ),
     dict(
         id="TY",
@@ -4505,7 +4514,11 @@ CONTROLS = [
                      'dropboxNotification_validSignature_triggersFetch',
                      'aFetchThatCouldNotReadItsConfigurationIsRecorded',
                      'anAuthorisationThatCouldNotBeAskedIsRecordedAsAWebhookDeliveryRecord',
-                     'theWalkIsMadeOnceTheSignatureVerified'],
+                     'theWalkIsMadeOnceTheSignatureVerified',
+                     # R2's lock, added after the last completed sweep. Reading the recipients
+                     # from the selector while it is down loses the row that carries the
+                     # secret, so the dispatch this lock checks does not happen. From the run.
+                     'theRightSecretIsStillDispatchedWhileTheSelectorIsDown'],
     ),
     dict(
         id="VY",
@@ -4576,7 +4589,12 @@ CONTROLS = [
                 '        return docs != null ? docs : List.of();',
         test='ConnectorLegacyIdMigrationTest',
         expect_fail=['theSelectorListingPagesPastTheFirstPage',
-                     'theSelectorListingRefusesAFullPageWithoutABookmark'],
+                     'theSelectorListingRefusesAFullPageWithoutABookmark',
+                     # R3's lock, added after the last completed sweep. With the paging listing
+                     # replaced by one limit(200) page there is no "full page without a
+                     # bookmark" refusal, so the read answers from the selector and reports the
+                     # selector as having answered — this lock's assertFalse. From the run.
+                     'resolveOrRefuseSaysTheSelectorDidNotAnswer'],
     ),
     dict(
         id="WD",
@@ -4712,7 +4730,12 @@ CONTROLS = [
         find='            return connectorCouldNotBeRead(connectorId, couldNotRead.getMessage());',
         replace='            throw couldNotRead;',
         test='IngestWebhookBoxDropboxTest',
-        expect_fail=['aConnectorReadThatCouldNotBeAnsweredIsA503NotA401'],
+        expect_fail=['aConnectorReadThatCouldNotBeAnsweredIsA503NotA401',
+                     # R2's locks, added after the last completed sweep. They exercise the
+                     # refusing connector read while the selector is down; rethrowing that
+                     # read's refusal replaces both of their expected answers. From the run.
+                     'aDisabledConnectorIsTheRefusedReadsAnswerWhileTheSelectorIsDown',
+                     'aFailedSignatureIsTheRefusedReadsAnswerWhileTheSelectorIsDown'],
     ),
     dict(
         id="WN",
@@ -5080,7 +5103,11 @@ CONTROLS = [
         expect_fail=['getOrRefuseFallsBackToTheDeterministicRowWhenTheSelectorListingIsIncomplete',
                      'getFallsBackToTheDeterministicRowWhenTheSelectorListingIsIncomplete',
                      'aFailingSelectorDoesNotEscape',
-                     'aMissingConfClientOnTheIdFallbackDoesNotEscape'],
+                     'aMissingConfClientOnTheIdFallbackDoesNotEscape',
+                     # R3's lock, added after the last completed sweep. Widening the dedicated
+                     # catch makes the incomplete listing refuse instead of falling back, so
+                     # this lock's assertDoesNotThrow is what fails. Declared from the run.
+                     'resolveOrRefuseSaysTheSelectorDidNotAnswer'],
     ),
     # ── round 8 of the second batch: what the seventh review round found ──
     dict(
