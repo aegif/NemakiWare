@@ -8476,7 +8476,10 @@ CONTROLS = [
                      'aPageThatCouldNotBeOrderedIsNotPassedOffAsOrdered',
                      # And the refusal lock: with no sort asked for, the store this lock points
                      # at never fails, so its assertThrows finds nothing. Declared from the run.
-                     'aStoreThatDidNotAnswerTheOrderedQueryIsStillARefusal'],
+                     'aStoreThatDidNotAnswerTheOrderedQueryIsStillARefusal',
+                     # 同じ理由で、あとから足した「no_usable_index 以外の 400」の錠も落ちる:
+                     # sort を訊かなければ store は失敗しないので assertThrows が空振りする。
+                     'a400ThatIsNotNoUsableIndexIsStillARefusal'],
     ),
     dict(
         id="CB3",
@@ -8821,7 +8824,15 @@ def run_test(test_class: str) -> tuple:
     # to as well.
     purge_poisoned_classes()
     proc = subprocess.run(
-        ["mvn", "-o", "-q", "-pl", "core", "test", f"-Dtest={test_class}"],
+        ["mvn", "-o", "-q", "-pl", "core", "test", f"-Dtest={test_class}",
+         # The UI bundle is not part of what any control measures — every sabotage
+         # is Java and every lock is a Java test — but frontend-maven-plugin runs
+         # npm at generate-resources on EVERY build: about 40 seconds of the 43 a
+         # small class takes, ~7.8 hours over a full sweep, and one reach for the
+         # npm registry per control. A 13-hour run died on the 601st of those
+         # reaches (2026-09-18) with the other 600 having succeeded. Measured: the
+         # whole unit suite is 7,046 green with and without these flags.
+         "-Dskip.npm=true", "-Dskip.installnodenpm=true"],
         cwd=REPO, capture_output=True, text=True, timeout=900)
     if any("Unresolved compilation problem" in x.read_text(errors="replace")
            for x in REPORTS.glob("TEST-*.xml")):
@@ -8834,7 +8845,15 @@ def run_test(test_class: str) -> tuple:
         for old in list(REPORTS.glob("*.txt")) + list(REPORTS.glob("*.xml")):
             old.unlink()
         proc = subprocess.run(
-            ["mvn", "-o", "-q", "-pl", "core", "test", f"-Dtest={test_class}"],
+            ["mvn", "-o", "-q", "-pl", "core", "test", f"-Dtest={test_class}",
+         # The UI bundle is not part of what any control measures — every sabotage
+         # is Java and every lock is a Java test — but frontend-maven-plugin runs
+         # npm at generate-resources on EVERY build: about 40 seconds of the 43 a
+         # small class takes, ~7.8 hours over a full sweep, and one reach for the
+         # npm registry per control. A 13-hour run died on the 601st of those
+         # reaches (2026-09-18) with the other 600 having succeeded. Measured: the
+         # whole unit suite is 7,046 green with and without these flags.
+         "-Dskip.npm=true", "-Dskip.installnodenpm=true"],
             cwd=REPO, capture_output=True, text=True, timeout=900)
     failed_methods, unreadable, failure_texts = failing_methods_in_reports(
         [x.read_text(errors="replace") for x in REPORTS.glob("TEST-*.xml")])
@@ -9218,7 +9237,8 @@ def compile_check(ids: list) -> list:
         try:
             path.write_text(sabotage_text(original, control))
             result = subprocess.run(
-                ["mvn", "-o", "-q", "-pl", "core", "test-compile", "-DskipTests"],
+                ["mvn", "-o", "-q", "-pl", "core", "test-compile", "-DskipTests",
+         "-Dskip.npm=true", "-Dskip.installnodenpm=true"],
                 cwd=REPO, capture_output=True, text=True)
             if result.returncode != 0:
                 errors = [line for line in (result.stdout + result.stderr).splitlines()
