@@ -8556,8 +8556,9 @@ CONTROLS = [
         id="CH3",
         what="R51: the module that reads back a timestamp the SDK widened is gone — every row "
              "decoded through an SDK map counts as unreadable again",
-        file='core/src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/DaoHelper.java',
-        find='\t\t\t\t.addModule(storedTimestampsModule())\n',
+        # 定義は A-1 (R52) で ObjectMapperFactory へ移った。錨も移す。
+        file='core/src/main/java/jp/aegif/nemaki/config/ObjectMapperFactory.java',
+        find='                .addModule(storedTimestampsModule())\n',
         replace='',
         test='StoredTimestampsSurviveTheSdkTest',
         # 範囲の錠も落ちる: 2^53 は float トークンで来るので、module を外すと読めない。実測で判明。
@@ -8568,10 +8569,11 @@ CONTROLS = [
         id="CI3",
         what="R51: any float is taken as a timestamp — a number that is not a whole millisecond "
              "becomes a made-up instant on a record",
-        file='core/src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/DaoHelper.java',
-        # 再錨: 範囲の検査 (P2 の処置) が同じ条件式に足された。
-        find='\t\t\t\t\tif (widened != Math.floor(widened) || Double.isInfinite(widened)\n',
-        replace='\t\t\t\t\tif (false\n',
+        # 再錨 2 度目: 範囲の検査が同じ条件式に足され (P2 の処置)、その後 A-1 で
+        # ObjectMapperFactory へ移った。
+        file='core/src/main/java/jp/aegif/nemaki/config/ObjectMapperFactory.java',
+        find='                    if (widened != Math.floor(widened) || Double.isInfinite(widened)\n',
+        replace='                    if (false\n',
         test='StoredTimestampsSurviveTheSdkTest',
         expect_fail=['aFractionalNumberIsStillRefused'],
     ),
@@ -8579,9 +8581,9 @@ CONTROLS = [
         id="CJ3",
         what="R51: the range check is gone — a whole number a double cannot hold exactly "
              "saturates on the cast and reads as an ordinary date",
-        file='core/src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/DaoHelper.java',
-        find='\n\t\t\t\t\t\t\t|| Math.abs(widened) > EXACT_INTEGER_LIMIT) {',
-        replace='\n\t\t\t\t\t\t\t) {',
+        file='core/src/main/java/jp/aegif/nemaki/config/ObjectMapperFactory.java',
+        find='\n                            || Math.abs(widened) > EXACT_INTEGER_LIMIT) {',
+        replace='\n                            ) {',
         test='StoredTimestampsSurviveTheSdkTest',
         expect_fail=['aNumberBeyondExactIntegersIsRefused'],
     ),
@@ -9108,6 +9110,42 @@ CONTROLS = [
         replace='            if (proof == null || proof.isEmpty()) {',
         test='SipVerifierTest',
         expect_fail=['anEmptyProofObjectIsNotAnAbsentOne'],
+    ),
+    # ── A-1 (R52): mapper の定義元を 1 か所に寄せる ──
+    dict(
+        id="EG3",
+        what="the DAO-delegate profile goes back to being defined in DaoHelper, so the factory's "
+             "'the one place' javadoc is false again and the next fix reaches one copy",
+        file='core/src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/DaoHelper.java',
+        find='\t\treturn jp.aegif.nemaki.config.ObjectMapperFactory.createDaoDelegateObjectMapper();',
+        replace='\t\treturn tools.jackson.databind.json.JsonMapper.builderWithJackson2Defaults()\n'
+                '\t\t\t\t.configure(tools.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)\n'
+                '\t\t\t\t.build();',
+        test='MapperDefinitionsAreInOnePlaceTest',
+        expect_fail=['everyMapperDefinitionIsDeclared'],
+    ),
+    dict(
+        id="EH3",
+        what="the factory's DAO-delegate profile loses the stored-timestamps module, so a "
+             "timestamp the SDK widened can be written and not read back (R51 all over again)",
+        file='core/src/main/java/jp/aegif/nemaki/config/ObjectMapperFactory.java',
+        find='                .addModule(storedTimestampsModule())\n',
+        replace='',
+        test='MapperDefinitionsAreInOnePlaceTest',
+        expect_fail=['theDaoDelegateMapperCarriesTheModule'],
+    ),
+    dict(
+        id="EI3",
+        what="the DAO-delegate profile is merged into the couchdb one, so rows stop decoding "
+             "through the setters that validate them",
+        file='core/src/main/java/jp/aegif/nemaki/config/ObjectMapperFactory.java',
+        find='    public static ObjectMapper createDaoDelegateObjectMapper() {\n'
+             '        return JsonMapper.builderWithJackson2Defaults()',
+        replace='    public static ObjectMapper createDaoDelegateObjectMapper() {\n'
+                '        if (true) return createCouchdbObjectMapper();\n'
+                '        return JsonMapper.builderWithJackson2Defaults()',
+        test='MapperDefinitionsAreInOnePlaceTest',
+        expect_fail=['theProfilesAreNotMerged'],
     ),
     dict(
         id="DQ3",
