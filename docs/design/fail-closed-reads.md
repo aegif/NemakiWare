@@ -82,7 +82,7 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
 | R35 | token 継承で、並行する bytes 無し保存 B の行が A と同じ token を持ち、A の確定書き込みの所有権検査（WF2）が B の行を自分の行と見る。結果は凍結前と同じ合成で退行ではないが、検査の保証は「payload 付きの別保存」に狭まった（Phase 2 subagent） | CAS 適用後も残る（2026-09-15 の確認レビューで両者確認: 所有権検査は token 等値で、B は A の token を継承する）。閉じるには token 継承の変更 = 凍結領域 | |
 | R36 | ~~`deleteDlqEntry` は store が確認した削除だけを数えるようになったが、同じ dlqId の行が 2 行以上あり一方だけ未確認のとき `removed > 0` で success / resolved と答える（Codex 3 回目のレビュー。R23 の重複行が前提）。同じ領域の 3 度目の指摘なので止めた~~ **処置済み 2026-09-14（ユーザー判断）**: `deleteDlqEntry` が `DlqDeletion(confirmed, unconfirmed)` を返し、未確認が残れば `DELETE` は 503、再実行の後片付けは `*-entry-kept`。双子行のマージも一意制約も足していない（R23 / R1 のまま）。錠 3 本、control XX2 / XY2（+ XU2 / VG2 / VN2 の宣言追加）。**同じ領域の 4 度目は止まる** | — | |
 | R37 | ~~再実行の後片付け `deleteDlqEntry` で `findRawDocs` が「store が答えなかった」（R18 の型付き拒否）を投げると、扉の `catch (Exception)` に落ちて **500 "Retry failed"** になる。取込は成功済みで行は残り、次の再実行は冪等に resolved になるので損失はないが、応答文が偽（R34/R36 確認レビューの subagent P3。範囲外）~~ **処置済み 2026-09-15（Phase C-1）**: 後片付けの typed 拒否は `*-entry-kept` + `entryKeptNote`（取込は成功済み、行は残る）。錠 1 本、control AH3 | — | |
-| R38 | webhook 受信の GET 握手で「コネクタ読みが答えなかった → 503」は、腕の catch とクラスの `@ExceptionHandler` の**二重**の保護で、片方を外しても錠が緑のまま（通しスイープで WX が不発）。1 錨のサボタージュでは測れないので WX は退役。XE（`get()` に戻す）は独立に発火 | 二重保護のどちらかを外す製品変更（今は開かない）か、複数錨のサボタージュ | |
+| R38 | ~~webhook 受信の GET 握手で「コネクタ読みが答えなかった → 503」は、腕の catch とクラスの `@ExceptionHandler` の**二重**の保護で、片方を外しても錠が緑のまま（通しスイープで WX が不発）。1 錨のサボタージュでは測れないので WX は退役。XE（`get()` に戻す）は独立に発火~~ **処置済み 2026-09-20（トラック A-5）**: 錨を**別々に**測る錠 3 本にした。**2 つの 503 は同じではない** — 腕は受信側の文面で答え、クラス handler は`{"error":"temporarily unavailable"}` で答える（未認証の入口があるので行の存在を漏らさない）。**body がどちらが答えたかを言う**ので、腕を外すと錠が落ちる。handler 側は**腕を持たない verb**（handler だけが答える場所）と、`@ExceptionHandler` の型一覧を annotation から読む錠で測る。control EQ3（腕）/ ER3（handler の status）/ ES3（handler の型一覧）。**退役していた WX の「測れない」は、status しか見ていなかったから**だった。また EQ3 で分かったこと: **クラス handler は Spring の dispatcher の中でしか働かない**ので、腕が投げると直接呼び出しでは誰も答えない（錠は `assertDoesNotThrow` で包んだ） | — | |
 | R39 | ~~IDLE の per-message ラムダの `catch (Exception)`（`fetchMessage` の I/O 失敗、`executeMailImport` 自体の例外など）はログだけで、DLQ にも `undurableMisses` にも載らない。IMAP は再配信しない。R22 は**結果**として返る拒否だけを記録した（並行レビュー 2026-09-15 の隣接指摘）~~ **処置済み 2026-09-15（バッチ 1）**: IDLE ラムダの `catch (Exception)` が `recordIdleFailure` で記録する — fetch 前は never-read 記録行、fetch 後はメタデータのみの行、書けなければ `undurableMisses`。取込内部の失敗は結果として返り既に記録されるので二重には書かない。錠 3 本、control BC3/BD3/BE3 | — | |
 | R40 | ~~`IngestJobService.findRawDocs` の `postFind` 自体は包まれておらず、`deleteDlqEntry` のセレクタ側 transport 失敗と `getConfClient()` の ISE は生のまま — DELETE は 500、再実行の後片付けは 500 "Retry failed"（R27/R37 の兄弟。損失も偽の不在もない。Phase D subagent P3）~~ **処置済み 2026-09-15（バッチ 1）**: `findRawDocs` の `postFind` と `getConfClient()` の未配線を `IngestStoreDidNotAnswerException`（503 / 後片付けは `*-entry-kept`）に。錠 2 本、control BA3/BB3 | — | |
 | R41 | R10 の移行面: 印の無い接頭辞だけの記録行（このブランチの中間ビルド `55f35915d` 以降が書いたもの。リリース版には接頭辞自体が無い）は扉を通り、`sourceNeverRead` は dispatch 後にしか効かないので空の webhook 取込が走りうる。開発 DB だけの話で、`sourceObjectType=webhook_event` かつ接頭辞付きの行を消せば済む（Phase D subagent P3） | 開発 DB の掃除。移行は書かない | |
@@ -116,12 +116,12 @@ attachment 行を作る → body を PUT」の順で（`ArchiveDaoDelegate` の 
 
 ## 5. 測定
 
-- コントロール **760**（2026-09-20 時点）。**うち 704 だけが通しで測られている** — 4 回目の通し以降に
-  足した 56 本（DG3 / DJ3 は退役。SIP 検証器の読みを手組みからパーサに替えたので、
+- コントロール **763**（2026-09-20 時点）。**うち 704 だけが通しで測られている** — 4 回目の通し以降に
+  足した 59 本（DG3 / DJ3 は退役。SIP 検証器の読みを手組みからパーサに替えたので、
   細工の対象そのものが無くなった）（CK3 / CL3 BagIt、CM3 stamp、CN3 / CO3 強制変換ログ、CP3 setup URL、CQ3 指紋、
   CR3 / CS3 / CT3 SIP の verdict、CU3〜CX3 内容複製、CY3 / CZ3 / DA3 / DC3〜DF3 / DL3〜DP3
   証拠 JSON の読み、DR3〜EF3 package 自身が述べた理由・重複キー・BOM・未知の理由・規則の一本化、
-  DB3 / DH3 / DI3 / DK3 / DQ3 中身の無い添付行・復元の窓・割り込み、EG3〜EI3 mapper の一本化、EJ3〜EL3 purge の走査上限、EM3 一覧の overload、EN3〜EP3 パス解決の期待値表）は
+  DB3 / DH3 / DI3 / DK3 / DQ3 中身の無い添付行・復元の窓・割り込み、EG3〜EI3 mapper の一本化、EJ3〜EL3 purge の走査上限、EM3 一覧の overload、EN3〜EP3 パス解決の期待値表、EQ3〜ES3 二重保護の各錨）は
   **ID 指定で 1 本ずつ実測しただけ**で、通しに入れたことはない。次の通しで初めて
   「他の錠を巻き添えにしないか」が測られる（CZ3 / DE3 / DH3 は実際に巻き込みがあり、宣言を足した）。
   **3 本が「発火しない」ことも分かった** — 新しい arm（空の path は `UNAVAILABLE`）が

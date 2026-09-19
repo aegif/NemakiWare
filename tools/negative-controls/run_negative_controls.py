@@ -9238,6 +9238,42 @@ CONTROLS = [
         test='TargetFolderResolutionTableTest',
         expect_fail=['theTableIsNotPartial'],
     ),
+    # ── A-5 (R38): 二重保護の各錨を別々に壊す ──
+    dict(
+        id="EQ3",
+        what="the handshake's OWN refusal is removed, so the class handler answers for it — "
+             "same 503, a different sentence, which is what the retired WX could not see",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotReadOnVerify) {\n'
+             '            return connectorCouldNotBeRead(connectorId, couldNotReadOnVerify.getMessage());',
+        replace='        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotReadOnVerify) {\n'
+                '            throw couldNotReadOnVerify;',
+        test='TheDoubleRefusalIsActuallyDoubleTest',
+        expect_fail=['theArmAnswersTheHandshake'],
+    ),
+    dict(
+        id="ER3",
+        what="the class handler stops answering 503, so every verb here without an arm of its "
+             "own reaches Spring as a 500 for a condition a retry fixes",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)\n'
+             '                .body(Map.of("error", "temporarily unavailable"));',
+        replace='        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)\n'
+                '                .body(Map.of("error", "temporarily unavailable"));',
+        test='TheDoubleRefusalIsActuallyDoubleTest',
+        expect_fail=['theHandlerAnswersTheRest'],
+    ),
+    dict(
+        id="ES3",
+        what="a typed refusal drops off the class handler's list, so it escapes as a 500 on "
+             "every endpoint that does not catch it itself",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestWebhookController.java',
+        find='    @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,\n'
+             '            ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,',
+        replace='    @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,',
+        test='TheDoubleRefusalIsActuallyDoubleTest',
+        expect_fail=['theHandlerCoversTheTypes'],
+    ),
     dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
