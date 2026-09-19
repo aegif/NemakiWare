@@ -37,14 +37,67 @@ grep で呼び出し元を数え、囲みメソッドと、その CMIS / REST �
 `versioningService.checkIn`（2 か所）と `objectService.createDocument`（1 か所）を呼ぶので、
 W1 と W4 に合流する。取込のために E1 を別に作る必要はない。
 
-### まだ確かめていないこと（成功扱いにしない）
+### 読んで決めた（2026-09-19 追記）
 
-- **W7 の追記**が最下層で何を書くか（`appendAttachment` の実装を読んでいない）。
-  追記は「新しい bytes」でも「既存 bytes の延長」でもありうるので、statement の
-  `commitmentKind` をどう置くかが決まらない。
-- **W6 / W8 の複製**に、元と同じ `contentDigest` を持つ statement を書いてよいか。
-  複製は新しい記録であって、元の記録の証拠を引き継ぐものではない。
-- `deleteContentStream`（bytes を消す）を E1 がどう扱うか。消去も内容状態の遷移である。
+**W7 の追記は「新しい attachment」ではない。** `appendAttachment`
+（`ContentServiceImpl:4508`）は `contentDaoService.updateAttachment` で**同じ attachment 行を
+その場で書き換える**。新しい行も新しい版も作らない。bytes は
+`SequenceInputStream(既存, 追記分)` で、**意図的に一度もメモリに載せない**（巨大ファイル用）。
+したがって digest を取るなら書き込みの流れに `DigestInputStream` を挟むしかない
+（1 パスで済むが、値が分かるのは書き終えた後）。
+
+`isLastChunk` は**引数にあるだけで本体で使われていない**（:4509 の宣言以外に出現 0）。
+**製品は中間チャンクと最終状態を区別できない。**
+
+→ **決定**: W7 は E1 の対象にする。statement は **1 回の追記呼び出しごと**に 1 本
+（CouchDB の添付は各呼び出しの後に完全な状態なので、中間状態も「その時点の内容」である）。
+`commitmentKind` は W1〜W5 と同じ扱い。ただし**どれが最終かは記録しない** — 製品が
+知らないことを台帳に書かない。これは limits に書く。
+
+**W6 / W8 の複製は新しい bytes を作る。** `copyAttachment`
+（`AttachmentServiceDelegate:107`）は元の stream を読んで
+`contentDaoService.createAttachment` で**新しい行**を書く。参照の共有ではない。
+
+→ **決定**: W6 / W8 も対象。statement は**複製自身の digest**を持ち、元の台帳 entry を
+引き継がない。元の attachment と文書を「由来」として名指すだけにする。
+（`createDocumentFromSource` が evidence aspect を剥がすのと同じ向き —
+`stripEvidenceForNewObject`、`ContentServiceImpl:1311`。）
+
+**`deleteContentStream` は bytes を消す。** attachment 行を削除し、参照を null にする
+（`ContentServiceImpl:3555-3562`）。版を作らないので、非 versionable では戻せない。
+
+→ **決定**: 対象にする。内容状態の遷移として「この時点で内容が無くなった」を書く。
+書かないと、台帳の最後の statement が**もう存在しない bytes** を指したままになり、
+弱い事実が強い事実として読める。
+
+### この棚卸しで見つけた欠陥（処置済み）
+
+複製の経路を読んでいて、**`checkOut` と `checkIn` が `copyAttachment` の null を
+そのまま複製に書いている**のを見つけた。`copyAttachment` は 2 つの別のことに null を返す
+（元が内容を持たない／元が名指す attachment 行が store に無い）。後者では、内容のある文書が
+**内容の無い作業コピー**として checkout され、check-in するとその版が最新になる。
+`createDocumentFromSource` は同じ状況で既に拒否していた（1 メソッド隣）。
+
+`copyAttachmentOrRefuse` を 1 か所に置いて 3 呼び出し側を通した。詳細と錠は
+[`fail-closed-reads.md`](fail-closed-reads.md) の **R54**。
+
+### E1 にとって決定的な事実 — **現状どこも bytes を hash していない**
+
+主経路（`createAttachment` → `AttachmentServiceDelegate` → CouchDB）に digest の計算は
+**無い**。SHA-256 を取っているのは rendition / 複製記録の側（`createRendition`、
+`FormatDuplicationRecorder`）だけで、`nemaki:contentHash` は**外部取込元が申告した値**であり
+サーバが保存 bytes について計算した値ではない。
+
+したがって E1 は「既にある digest を台帳へ結ぶ」のではなく、**hash そのものを新設する**。
+案は 2 つあり、Phase 0 の ADR で fault injection で選ぶ:
+
+- **書きながら取る**（`DigestInputStream` で 1 パス）— 追加の読みは無いが、
+  測っているのは「送った bytes」であって「保存された bytes」ではない
+- **書いた後に読み直して取る**（2 パス）— 保存された bytes そのものを測るが、
+  大きな添付で全再読のコストがかかる
+
+この選択は計画 §8 の案 A / 案 B（outbox marker / durable commitment intent）と**別の軸**で、
+両方を決める必要がある。
 
 ---
 
@@ -131,8 +184,13 @@ genTime に加えて、**発行時の** CRL/OCSP の生データと digest と�
 
 ## 5. この文書で決めたこと
 
-- E1 の対象は **W1〜W8 のうち、`commitmentKind` を決められたもの**に限る。
-  現時点で決められているのは W1〜W5（新しい bytes を書く経路）。
-- W6 / W7 / W8 と `deleteContentStream` は **未決**であり、決まるまで E1 の対象に
-  しない。対象にしないことを RELEASE_NOTES と verifier の `limits` に書く。
+- E1 の対象は **W1〜W8 と `deleteContentStream`**。2026-09-19 に実装を読んで
+  W6 / W7 / W8 / 消去の扱いを決めた（§1）。**列挙できたのはここまで**であり、
+  ここに書いていない経路について「記録した」とは後段のどこにも書かない。
+- W7（追記）は 1 呼び出しごとに 1 statement。**どれが最終かは書かない** —
+  製品が `isLastChunk` を使っていないので知らない。limits に明記する。
+- W6 / W8（複製）は**自分の digest**を持ち、元の entry を引き継がない。
+- `deleteContentStream` は「内容が無くなった」遷移として書く。
+- **hash は新設する。** 主経路は現在 bytes を hash していない（§1 末尾）。
+  「書きながら 1 パス」か「書いた後に読み直す」かは ADR で fault injection で決める。
 - A-1 の寄せ先は `ObjectMapperFactory`。

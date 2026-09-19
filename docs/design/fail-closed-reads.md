@@ -98,11 +98,16 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
 | R51 | ~~ゴミ箱（アーカイブ）一覧が、アーカイブのある DB では常に 500~~ **処置済み 2026-09-18（リリースゲートの発見）**: 原因は共有 mapper の非対称だった — `GregorianCalendar` を epoch ミリ秒で書き、CouchDB は**整数**で保存するのに（実機の行で確認: `archivedAt: 1786536650704`）、Cloudant SDK が文書を `Map<String, Object>` で返すとき JSON 数値をすべて `Double` に広げるため、再直列化すると `1.786536650704E12` になり、Jackson 3 のカレンダー復号が受けない。`DaoHelper.createConfiguredObjectMapper()` に deserializer を 1 つ足して読み戻せるようにした（整数・文字列・null は不変、ミリ秒の端数は引き続き拒否）。**製品の他の場所は触っていない。** ただし「mapper は 1 つではない」（確認レビュー）: `ContentDaoServiceImpl` は同名の private 複製を持ち、`getSearchableArchivesPaged` は `ObjectMapperFactory.createCouchdbObjectMapper()` を通る。**実測したのは 2 経路** — api/v1 の一覧（500 →100 件）と、UI が叩く `/rest/repo/{repo}/archive/index`（`totalItems` 352,293 を返し正常。レビューはここも壊れていると予測したが再現しなかった）。実機: 修正前 500（「145 行が読めない」）→ 修正後 100 件。錠 6 本、control CH3 / CI3 / CJ3。確認レビューで 3 件を処置: 範囲の検査（`1.0E20` が `Long.MAX_VALUE` に飽和して普通の日時になる／2^53 超は SDK の広げで既に末尾が落ちている）、委譲の戻り値が `GregorianCalendar` でないロケール（和暦）で **parse できた値を null にしていた**、定数の挿入位置が R51 の javadoc を孤児にしていた（既存の錠が赤になる）。途中で「view の `getValue()` を `getDoc()` に替える」修正を書いたが実測で否定して戻した（両方 Double で届く） | — | 確認レビュー 2 名 |
 | R52 | `ContentDaoServiceImpl` は `DaoHelper` に委譲せず**同内容の private 複製**の mapper を持ち、R51 の module が載らない。`getSearchableArchivesPaged` 系は `ObjectMapperFactory.createCouchdbObjectMapper()` を通り、これも載らない。現状 `GregorianCalendar` 型の mutator を持つ型をこれらが復号していないため実害は確認されていない（UI の `/archive/index` は実測で正常）が、**次に DaoHelper を直しても伝わらない**（バッチ 14 の subagent P2） | mapper の一本化 | |
 | R53 | setup の接続は、**検証した解決先を接続まで固定していない**。`SetupAdminResource` は使う場所でも `UrlValidator` を通すようになった（3.4.0）が、その検査と接続の間に DNS の答えが変われば認証情報は新しい宛先へ行く。閉じるには解決したアドレスを接続まで運ぶ必要があり、setup の全接続の作りに関わる（CodeQL の user-controlled-bypass を追ったレビューの指摘） | 接続の作りを変えるとき | |
+| R54 | ~~`checkOut` / `checkIn` が `copyAttachment` の null をそのまま複製に書く — 文書が名指す attachment 行が store に無いとき、内容の無い作業コピーになり、check-in ではその版が**最新**になる~~ **処置済み 2026-09-19（3.4.0 計画の Phase 0 棚卸しで発見）**: `copyAttachmentOrRefuse` を 1 か所に置き、`checkOut`（`ContentServiceImpl:1665`）・`checkIn`（同 :1844）・`copyAttachmentAtomic`（同 :5241）を通した。元が**何も名指していない**ときは従来どおり null（内容の無い文書の複製は正常な操作）。名指した行が無いときだけ `CmisStorageException`（本文に「これは内容が無いという判定ではない」）。**読みの失敗はここに null で来ない** — `AttachmentDaoDelegate.getAttachment` は失敗で投げる（このブランチの既処置）ので、null は不在だけ。`createDocumentFromSource` は同じ状況で既に拒否していた（同じクラスの 1 メソッド隣）。錠 4 本（拒否 2・過剰拒否 2）、control CU3 / CV3 / CW3 / CX3 | — | |
 | D1 | token 付き行の**添付前検査**（57 巡）、添付を landed の証拠に読む**自己修復**（58 巡）、15 分で通常経路に落とす **lease**（59 巡） | 凍結解除まで再導入しない | やめた（いずれも古い bytes を新しいメタデータで再生する同じ class に落ちた） |
 
 ## 5. 測定
 
-- コントロール 704（2026-09-19 時点。R46 の BY3 / BZ3、R13 の CA3〜CE3、R49 の CF3 / CG3、R51 の CH3 / CI3 を含む。内訳: 通し前 621 → 不発の WX を退役して 620 → Phase C で
+- コントロール **718**（2026-09-19 時点）。**うち 704 だけが通しで測られている** — 4 回目の通し以降に
+  足した 14 本（CK3 / CL3 BagIt、CM3 stamp、CN3 / CO3 強制変換ログ、CP3 setup URL、CQ3 指紋、
+  CR3 / CS3 / CT3 SIP の verdict、CU3〜CX3 内容複製）は **ID 指定で 1 本ずつ実測しただけ**で、
+  通しに入れたことはない。次の通しで初めて「他の錠を巻き添えにしないか」が測られる。
+  内訳（通しに入った 704 まで。R46 の BY3 / BZ3、R13 の CA3〜CE3、R49 の CF3 / CG3、R51 の CH3 / CI3 を含む）: 通し前 621 → 不発の WX を退役して 620 → Phase C で
   25 新設 = 645 → バッチ 1〜3 で 11 新設 = 656 → バッチ 4 で 8 新設 = 664 → バッチ 5〜10 で 28 新設）。**通し negative-control は
   2 回完走**。1 回目 2026-09-14〜15（621 本、約 15 時間、exit 1）: 620 発火、不発 1（WX。腕とクラス
   `@ExceptionHandler` の二重保護で 1 錨では測れない → 退役、R38）、宣言漏れ 68 本、錨外れ 0、製品欠陥 0。
