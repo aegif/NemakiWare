@@ -949,20 +949,24 @@ public class IngestJobService {
      */
     public record JobPage(List<IngestJobRecord> entries, int unreadable) {}
 
-    public List<IngestDeadLetterRecord> listDlq(int limit) {
-        return listDlq(limit, 0);
-    }
-
-    /**
-     * A page of dead-letter entries.
+    /*
+     * listDlq(int) and listDlq(int, int) were REMOVED (R50, 2026-09-20).
      *
-     * <p>Paging matters here more than in most listings: an entry is the only record that a
-     * source item was lost, and before this the fetch was capped at a hardcoded 200 with no
-     * ordering — so past that point entries could not be seen, retried or deleted.
+     * They returned the entries and dropped everything the page says about itself —
+     * `stablyOrdered` above all. Neither had a caller anywhere in the repository; they were a
+     * shape waiting for one. A future caller picking the shorter signature would have repeated
+     * R13 exactly: a page that looks whole, over an order that is not total, so a row can
+     * repeat across pages or be passed over by all of them.
+     *
+     * The plan's A-3 asks that EVERY overload preserve the flag. The way to make that true of
+     * an overload that cannot carry it is to not have it. `listDlqPage` is the one way in;
+     * callers that genuinely want only the entries call `.entries()` themselves, where the
+     * discarding is visible at the call site.
+     *
+     * Paging matters here more than in most listings: an entry is the only record that a source
+     * item was lost, and before this the fetch was capped at a hardcoded 200 with no ordering —
+     * so past that point entries could not be seen, retried or deleted.
      */
-    public List<IngestDeadLetterRecord> listDlq(int limit, int offset) {
-        return listDlqPage(limit, offset).entries();
-    }
 
     /**
      * A page, plus how many rows on it could not be decoded.

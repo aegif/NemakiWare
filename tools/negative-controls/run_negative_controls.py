@@ -9179,6 +9179,25 @@ CONTROLS = [
         test='ThePurgeSaysWhatItDidNotSeeTest',
         expect_fail=['anUnreadableRowIsCounted'],
     ),
+    # ── A-3 (R50): 一覧の overload が自分の素性を落とさない ──
+    dict(
+        id="EM3",
+        what="a listing overload that answers with the entries alone comes back, so a caller "
+             "can take a page that looks whole over an order that may not be total (R13/R50)",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='    public DlqPage listDlqPage(int limit, int offset) {\n'
+             '        return listDlqPage(limit, offset, false);\n'
+             '    }',
+        replace='    public DlqPage listDlqPage(int limit, int offset) {\n'
+                '        return listDlqPage(limit, offset, false);\n'
+                '    }\n'
+                '\n'
+                '    public List<IngestDeadLetterRecord> listDlq(int limit, int offset) {\n'
+                '        return listDlqPage(limit, offset).entries();\n'
+                '    }',
+        test='ThePurgeSaysWhatItDidNotSeeTest',
+        expect_fail=['everyListingOverloadCarriesTheOrderingFlag'],
+    ),
     dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "

@@ -177,6 +177,32 @@ class ThePurgeSaysWhatItDidNotSeeTest {
     }
 
     @Test
+    @DisplayName("there is no listing overload that can drop what the page says about itself")
+    void everyListingOverloadCarriesTheOrderingFlag() throws Exception {
+        // R50. `listDlq(int)` and `listDlq(int, int)` returned the entries and dropped
+        // `stablyOrdered`, `hasMore` and `unreadable` with them. Neither had a caller — they
+        // were a shape waiting for one, and the one that took it would have repeated R13.
+        //
+        // Measured by reflection rather than by "it compiles": a method that returns the list
+        // can be added back without any existing test noticing.
+        List<String> dropping = new ArrayList<>();
+        for (java.lang.reflect.Method method : IngestJobService.class.getMethods()) {
+            if (!method.getName().startsWith("listDlq")) {
+                continue;
+            }
+            if (!IngestJobService.DlqPage.class.equals(method.getReturnType())) {
+                dropping.add(method.getName() + " -> " + method.getReturnType().getSimpleName());
+            }
+        }
+
+        assertTrue(dropping.isEmpty(),
+                "a DLQ listing method answers without the page's own account of itself — "
+                        + "stablyOrdered is how a caller knows the offset is a boundary over an "
+                        + "order that may not be total (R13/R50):\n  "
+                        + String.join("\n  ", dropping));
+    }
+
+    @Test
     @DisplayName("a row whose failedAt cannot be read is counted, not passed over in silence")
     void anUnreadableRowIsCounted() {
         // The cutoff was never applied to it. "Nothing older was found" is a claim about rows
