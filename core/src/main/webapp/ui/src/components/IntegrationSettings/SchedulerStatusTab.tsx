@@ -39,8 +39,16 @@ export function SchedulerStatusTab() {
   const handleTrigger = async (profileId: string) => {
     try {
       const result = await triggerProfile(profileId);
-      if (result.status === 'success' || result.status === 'partial') {
+      if (result.status === 'success') {
         message.success(t('schedulerStatus.triggerSuccess'));
+      } else if (result.status === 'partial') {
+        // "partial" covers two things now — some items failed, OR nothing failed and the run
+        // did not see the whole source. Either way it is not the green tick it used to get.
+        const why = Array.isArray(result.incompleteReads)
+          ? (result.incompleteReads as string[])
+          : Array.isArray(result.errors) ? (result.errors as string[]) : [];
+        message.warning(`${t('schedulerStatus.triggerSuccess')} — ${
+          why.join('; ') || t('schedulerStatus.triggerPartial')}`);
       } else {
         message.error(String(result.errors ?? result.message ?? t('schedulerStatus.triggerFailed')));
       }

@@ -819,10 +819,18 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         message.error(result.message || t('documentList.runConnectorError'));
         return;
       }
-      message.success(t('documentList.runConnectorDone', {
+      // A run that stopped at its limit is not "done". The server has said so since the
+      // review that found this door answering "success" with pages it had never looked at;
+      // this is the screen that a person actually reads.
+      const done = t('documentList.runConnectorDone', {
         imported: result.imported ?? 0,
         skipped: result.skipped ?? 0,
-      }));
+      });
+      if (result.sawEverything === false) {
+        message.warning(`${done} — ${t('documentList.runConnectorIncomplete')}`);
+      } else {
+        message.success(done);
+      }
       await loadObjects();
     } catch (e: any) {
       message.error(e?.message || t('documentList.runConnectorError'));

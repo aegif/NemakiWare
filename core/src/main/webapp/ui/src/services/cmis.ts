@@ -3972,6 +3972,11 @@ export class CMISService {
       authError: data.authError === true,
       canManageCredential: data.canManageCredential === true,
       errors: Array.isArray(data.errors) ? data.errors.map(String) : undefined,
+      // The server says whether the run saw the whole source. Copying only the counters is
+      // what let a run that stopped at its limit reach the screen as "done".
+      sawEverything: data.sawEverything !== false,
+      incompleteReads: Array.isArray(data.incompleteReads)
+        ? data.incompleteReads.map(String) : undefined,
     };
   }
 
@@ -4022,6 +4027,13 @@ export interface FolderConnectorRunResult {
   /** True when the caller (an admin) may re-set the connector credential. */
   canManageCredential?: boolean;
   errors?: string[];
+  /**
+   * Whether the run saw the whole source. False is NOT a failure: the run stopped at its
+   * limit and imported what it read. It still must not be reported as "done".
+   */
+  sawEverything: boolean;
+  /** Why it did not, when it did not. */
+  incompleteReads?: string[];
 }
 
 export interface FolderConnectorCredentialResult {
