@@ -34,11 +34,15 @@
 
 		     BC publishes patch releases PER ARTIFACT, so a chosen version may not exist for
 		     every module: at 1.81.1 bcjmail had no such release and was excluded from the pin
-		     and from the enforcer rule. **Check before bumping** — at 1.84 all four exist
-		     (prov / pkix / util / jmail, verified against Central), so the exclusion is gone
-		     and the rule now covers every module. If a later version is missing one, exclude
-		     that module again rather than pinning it to something never released. -->
-		<org.bouncycastle.version>1.84</org.bouncycastle.version>
+		     and from the enforcer rule. **Check before bumping** — at 1.84 all four existed
+		     (prov / pkix / util / jmail, verified against Central), and at 1.85 all four exist
+		     as well (verified the same way, 2026-09-19), so the exclusion stays gone and the
+		     rule covers every module. If a later version is missing one, exclude that module
+		     again rather than pinning it to something never released.
+
+		     1.85 is the fix for the Name Constraints bypass (trailing dot) that Dependabot
+		     rates critical, and for the lazy-ASN.1 nesting-depth reset it rates high. -->
+		<org.bouncycastle.version>1.85</org.bouncycastle.version>
 		<httpcomponents.client5.version>5.6.3</httpcomponents.client5.version>
 		<httpcomponents.core5.version>5.4.3</httpcomponents.core5.version>
 		<opencmis.github.packages.url>https://maven.pkg.github.com/aegif/chemistry-opencmis-nemakiware</opencmis.github.packages.url>
