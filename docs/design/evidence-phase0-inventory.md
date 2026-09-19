@@ -175,10 +175,24 @@ genTime に加えて、**発行時の** CRL/OCSP の生データと digest と�
 あとから取った current OCSP を発行時取得済みのように扱わない、という区別も
 保存構造の側で持たせる必要がある（同じ欄に入れれば区別が消える）。
 
-### まだ読んでいない
+### 長期検証側の役割分担（2026-09-19 に読んだ）
 
-`EvidenceRecordService` / `LongTermValidityService` / `ErsFormat` / `RenewalNeed` の
-役割分担。Phase 6 に入る前に同じやり方で棚卸しする。
+| クラス | 役割 | 持たないもの |
+|---|---|---|
+| `ErsFormat` | **決定**: RFC 4998 を採る（6283 ではない）。実装はしない | — |
+| `ErsRecord` / `ErsVerifier` | 組む / 検証する。data object は checkpoint の正準 bytes | — |
+| `EvidenceRecordService` | 既にある anchor から **その場で** ERS を組む（`latest` / `forCheckpoint`） | **保存しない** |
+| `LongTermValidityService` | 「何が古びつつあり、どの更新が要るか」を**報告する** | 更新は**しない**（hash-tree 更新は全読みになるため既定にしない） |
+| `RenewalNeed` | timestamp 更新と hash-tree 更新を**1 語にまとめない**。更新が遡らないことも答えに含む | — |
+| `AlgorithmRegistry` | 運用者の宣言を保持して機械的に答える。既定値は出発点であって保証ではない | — |
+
+**Phase 6 にとっての要点: ERS は保存されていない。** `EvidenceRecordService` は
+要求のたびに現在の材料から組み直す。RFC 4998 の timestamp 更新は**前の evidence record の
+bytes の上に**新しい token を置くので、保存が無いままでは更新の連鎖はそもそも作れない。
+Phase 6 の「ERS persistence」はここを指す。
+
+なお `Built` は `present()` と `unavailable`（理由文字列）を持ち、
+「組めなかった」を「無い」と混ぜない形には既になっている。
 
 ---
 
