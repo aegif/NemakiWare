@@ -89,11 +89,43 @@ domain / repositoryId / intentId / connectorId / sourceObjectId
 
 ## 4. anchor の段
 
-`evidence/anchor` 配下に `AnchorService` / `AnchorReceiptStore` /
-`CouchAnchorReceiptStore` / `EvidenceRecordService` / `LongTermValidityService` /
-`ErsFormat` / `RenewalNeed` がある。段の構成と、どの段が何を保存しているかは
-**まだ読んでいない**。計画 §11（発行時の失効材料を保存する）に着手する前に、
-ここを同じやり方で棚卸しする。
+### 段の種類
+
+`AnchorKind`（`rest/purview/anchor/AnchorKind.java`）は 3 つで、それぞれが
+**時刻について何を言えるか**を型で持っている。
+
+| 段 | `TimeSemantics` | 言えること |
+|---|---|---|
+| `ATLAS_CATALOG` | `NOT_A_TIME_PROOF` | 時刻の証明ではない |
+| `OPENTIMESTAMPS` | `UPPER_BOUND_ONLY` | 「これより後ではない」だけ |
+| `RFC3161_TSA` | `BIDIRECTIONAL_WITHIN_ACCURACY` | 精度の範囲で両方向 |
+
+`AnchorService` は主張の限界文をこの enum から導く（テキストで渡させない）。
+新しい段を足したときに限界文を書き忘れられない形になっている。
+
+### receipt が保存しているもの
+
+`AnchorReceiptCodec` が書くのは:
+
+```
+kind / status / timeSemantics / anchoredDigest / attemptedAt / anchoredAt
+proofBase64 / proofDigest / attributes / failureReason
+```
+
+**失効材料（CRL / OCSP）は 1 語も無い**（`AnchorReceiptCodec` を grep して 0 件）。
+計画 §3 の「RFC 3161 の失効情報を発行時に保存していない」はコードのとおり。
+`revocation` / `OCSP` / `CRL` の語が出るのは `evidence/validity` の
+`ErsVerifier` / `ErsRecord` だけで、**検証側にはあるが発行側の保存が無い**。
+
+計画 §11 が足すのはここ — token DER・imprint/CMS アルゴリズム・chain・policy OID・
+genTime に加えて、**発行時の** CRL/OCSP の生データと digest と取得時刻。
+あとから取った current OCSP を発行時取得済みのように扱わない、という区別も
+保存構造の側で持たせる必要がある（同じ欄に入れれば区別が消える）。
+
+### まだ読んでいない
+
+`EvidenceRecordService` / `LongTermValidityService` / `ErsFormat` / `RenewalNeed` の
+役割分担。Phase 6 に入る前に同じやり方で棚卸しする。
 
 ---
 
