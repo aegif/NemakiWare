@@ -134,16 +134,6 @@ public final class BagItTransferPackager {
     public record Bagged(Path zippedBag, String payloadOxum, long payloadBytes, String limits) {}
 
     /**
-     * Wraps {@code sip} as a zipped bag under {@code workDir}.
-     *
-     * @param sip the package to carry; copied, never moved, so a failure here cannot destroy it
-     * @param submissionId goes into {@code bag-info.txt} as {@code External-Identifier}, which
-     *        is the field a later conversation about this transfer refers to
-     * @param sipDigest goes in as an {@code External-Description} line, so the bag itself names
-     *        the package digest a receipt has to match. Without it, a bag and a receipt can
-     *        only be tied together through a system that has both.
-     */
-    /**
      * The bag's file, guaranteed to be INSIDE {@code workDir}.
      *
      * <p>{@code submissionId} arrives from the caller — {@code @RequestParam} on the bag
@@ -177,6 +167,16 @@ public final class BagItTransferPackager {
         return zip;
     }
 
+    /**
+     * Wraps {@code sip} as a zipped bag under {@code workDir}.
+     *
+     * @param sip the package to carry; copied, never moved, so a failure here cannot destroy it
+     * @param submissionId goes into {@code bag-info.txt} as {@code External-Identifier}, which
+     *        is the field a later conversation about this transfer refers to
+     * @param sipDigest goes in as an {@code External-Description} line, so the bag itself names
+     *        the package digest a receipt has to match. Without it, a bag and a receipt can
+     *        only be tied together through a system that has both.
+     */
     public static Bagged bag(Path sip, Path workDir, String submissionId, String sipDigest)
             throws IOException {
         if (sip == null || !Files.isRegularFile(sip)) {
