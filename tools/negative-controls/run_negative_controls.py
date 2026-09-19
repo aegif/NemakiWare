@@ -9274,6 +9274,32 @@ CONTROLS = [
         test='TheDoubleRefusalIsActuallyDoubleTest',
         expect_fail=['theHandlerCoversTheTypes'],
     ),
+    # ── A-6 (R48): 数は scope と一緒に出す ──
+    dict(
+        id="ET3",
+        what="a decoration door loses its re-ask, and the inventory notices by NAME rather than "
+             "by a number moving",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        # コンパイルが通る細工にすること: 存在しないメソッド名にすると build ごと落ちて
+        # 「何も測れなかった」になる (実測)。
+        find='                metaError = refuseDecorationIfNoLongerAuthorized(callContext, attReq,\n'
+             '                        "the note context this pass would have re-applied");',
+        replace='                metaError = null;',
+        test='CanonicalImportServiceTest',
+        expect_fail=['everyPostExecuteDecorationReAsksTheDelegation'],
+    ),
+    dict(
+        id="EU3",
+        what="a door appears that is in neither the included nor the excluded list, and the "
+             "inventory emits its count anyway instead of refusing to be read as one",
+        file='core/src/test/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceTest.java',
+        # 未計上の door を実際に作る: scope から 1 つ外す。表明を無効化するだけでは、
+        # 木が無傷のとき unaccounted が空なので何も変わらない (実測)。
+        find='                    "executeNoteAttachment",\n',
+        replace='',
+        test='CanonicalImportServiceTest',
+        expect_fail=['everyPostExecuteDecorationReAsksTheDelegation'],
+    ),
     dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "

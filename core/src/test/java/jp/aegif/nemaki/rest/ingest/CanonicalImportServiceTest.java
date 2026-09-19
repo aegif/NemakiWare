@@ -3386,30 +3386,97 @@ class CanonicalImportServiceTest {
                 "an authorised decoration was refused: " + result.warnings());
     }
 
+    /**
+     * The scope of the decoration inventory below: what it counts, and what it does NOT.
+     *
+     * <p>R48 asks for this shape rather than a bare number. Two rounds of review rejected a
+     * third count here because the comment beside it claimed more than the count did — a number
+     * with no stated scope invites exactly that, since the reader has to guess what it covers.
+     *
+     * @param version           bumped when the scope itself changes, so a stale expectation is
+     *                          a failing test rather than a quiet disagreement
+     * @param includedOperations the doors this inventory accounts for, by enclosing method
+     * @param excludedOperations doors deliberately NOT accounted for, each with its reason
+     */
+    record DecorationScope(int version, java.util.List<String> includedOperations,
+            java.util.Map<String, String> excludedOperations) {}
+
+    private static final DecorationScope DECORATION_SCOPE = new DecorationScope(1,
+            java.util.List.of(
+                    "executeMailImportInternal",
+                    "executeNoteImportInternal",
+                    "executeNoteAttachment",
+                    "executeBusinessRecordImportInternal",
+                    "executeChatContextImportInternal"),
+            java.util.Map.of(
+                    "applyCaptureWindow",
+                    "writes its decoration DIRECTLY through contentService.update rather than "
+                            + "through the metadata service, so neither number here would move "
+                            + "if a door like it were added (R48, recorded not hidden)"));
+
     @Test
     void everyPostExecuteDecorationReAsksTheDelegation() throws Exception {
-        // The inventory half, in the shape R5 settled on: count, do not sample. What each
-        // number catches, stated exactly, because two rounds of review caught this comment
-        // claiming more than it does:
-        //   - the first catches a re-ask REMOVED from one of the five doors (BU3);
-        //   - the second catches a door added that decorates THROUGH THE METADATA SERVICE,
-        //     which all five do (chat writes its capture window directly as well).
-        // What neither catches: a door that writes its decoration DIRECTLY, the way chat's
-        // capture window does (applyCaptureWindow calls contentService.update itself — its
-        // own comment says that is how it was missed once before). Such a door arrives with
-        // both numbers unchanged. R48 records that hole rather than this comment hiding it.
+        // The inventory half, in the shape R5 settled on — count, do not sample — and in the
+        // shape R48 settled on: the count travels with the scope that makes it readable.
+        //
+        // The enumeration is mechanical: every call site of the re-ask is attributed to its
+        // enclosing method and compared with the declared list. A door that appears in neither
+        // the included nor the excluded list fails the test rather than moving a number, which
+        // is R48's rule — if the operations cannot be enumerated, the count is not emitted.
         String source = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
                 jp.aegif.nemaki.util.test.JavaSource.read(
                         "src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java"));
-        int guards = source.split("refuseDecorationIfNoLongerAuthorized\\(", -1).length - 1;
-        assertEquals(6, guards,
-                "a post-execute decoration lost its re-ask: " + guards
-                        + " mentions (5 call sites + the declaration)");
+
+        java.util.List<String> doors = enclosingMethodsCalling(source,
+                "refuseDecorationIfNoLongerAuthorized(");
+        // The declaration itself is not a door: its own signature is the nearest one above it.
+        doors.remove("refuseDecorationIfNoLongerAuthorized");
+
+        java.util.List<String> unaccounted = new java.util.ArrayList<>(doors);
+        unaccounted.removeAll(DECORATION_SCOPE.includedOperations());
+        unaccounted.removeAll(DECORATION_SCOPE.excludedOperations().keySet());
+        assertTrue(unaccounted.isEmpty(),
+                "a decoration door is in neither the included nor the excluded list, so this "
+                        + "inventory cannot be read as a count of anything: " + unaccounted);
+
+        assertEquals(DECORATION_SCOPE.includedOperations(), doors,
+                "the doors that re-ask the delegation are not the ones this scope names. "
+                        + "included=" + DECORATION_SCOPE.includedOperations() + " found=" + doors);
+
+        for (String excluded : DECORATION_SCOPE.excludedOperations().keySet()) {
+            assertTrue(source.contains(excluded + "("),
+                    "the excluded list names " + excluded + ", which no longer exists — an "
+                            + "exclusion nobody prunes stops being a decision and becomes a name");
+        }
+
         int metadataWrites = source.split("ingestMetadataService\\.", -1).length - 1;
         assertEquals(15, metadataWrites,
-                "the metadata service is used in a new place (" + metadataWrites + "); if that"
-                        + " is a decoration written after execute returned, it needs the"
-                        + " re-ask the five above make");
+                "the metadata service is used in a new place (" + metadataWrites + "). SCOPE: "
+                        + "this number covers decorations written THROUGH that service only; a "
+                        + "door that writes directly (see excludedOperations) does not move it");
+    }
+
+    /** Every method that contains a call to {@code needle}, in source order, deduplicated. */
+    private static java.util.List<String> enclosingMethodsCalling(String source, String needle) {
+        java.util.regex.Pattern declaration = java.util.regex.Pattern.compile(
+                "^\\s{4}(?:public|private|protected)[\\w<>,\\[\\]. ]*\\s+(\\w+)\\s*\\(");
+        String[] lines = source.split("\n", -1);
+        java.util.List<String> found = new java.util.ArrayList<>();
+        for (int i = 0; i < lines.length; i++) {
+            if (!lines[i].contains(needle)) {
+                continue;
+            }
+            for (int j = i; j >= 0; j--) {
+                java.util.regex.Matcher m = declaration.matcher(lines[j]);
+                if (m.find()) {
+                    if (!found.contains(m.group(1))) {
+                        found.add(m.group(1));
+                    }
+                    break;
+                }
+            }
+        }
+        return found;
     }
 
     @Test
