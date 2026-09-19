@@ -519,7 +519,10 @@ public final class SipVerifier {
      * verifier only had to read it.
      */
     private static Check noProofCheck(Map<String, Object> document, Object proofValue) {
-        Check reason = reasonFor(document, Map.of());
+        // null, not an empty Map: "there is no proof object" and "there is one and it
+        // is empty" are different things, and `isEmpty()` could not tell them apart
+        // (review, 2026-09-20).
+        Check reason = reasonFor(document, null);
         if (reason != null) {
             return reason;
         }
@@ -544,6 +547,9 @@ public final class SipVerifier {
      * verifier than the canon's own table says, depending on WHERE it put the reason
      * (review, 2026-09-20).
      *
+     * <p>{@code proof} is null when the package carries no proof OBJECT at all, which is a
+     * different thing from an empty one.
+     *
      * <p>The reason may be written inside the proof object, beside it, or both; both are read.
      * "Says something" is decided by the key being PRESENT, not by its value being a readable
      * string: a package whose {@code message} is an object for translations has still said
@@ -563,15 +569,24 @@ public final class SipVerifier {
         // ONE source, not two fields resolved separately: taking the status from the proof and
         // the message from the document pairs a state with an explanation of a different one
         // (review, 2026-09-20). The proof's own words win when it has any.
-        Map<String, Object> source =
-                proof.containsKey("status") || proof.containsKey("message") ? proof : document;
+        Map<String, Object> source = proof != null
+                && (proof.containsKey("status") || proof.containsKey("message")) ? proof : document;
         if (!source.containsKey("status") && !source.containsKey("message")) {
             return null;
         }
         String status = asString(source.get("status"));
         String message = asString(source.get("message"));
-        boolean unreadable = (source.containsKey("status") && status == null)
+        // "part of it could not be read" is not "it could not be read". Reporting the second
+        // when only one field is unreadable threw away the one that WAS read — and the token a
+        // reader acts on is usually the status (review, 2026-09-20).
+        boolean partlyUnreadable = (source.containsKey("status") && status == null)
                 || (source.containsKey("message") && message == null);
+        if (status == null && message == null) {
+            return new Check("audit path", Outcome.UNAVAILABLE,
+                    "the evidence package carries no usable inclusion proof, and the reason it "
+                            + "gives is not a readable string. Nothing about the entry's "
+                            + "inclusion is established either way.");
+        }
         if ("not-chained".equals(status)) {
             return new Check("audit path", Outcome.NOT_PRESENT,
                     message != null ? message
@@ -585,7 +600,7 @@ public final class SipVerifier {
                             + (message == null ? "" : ": " + message));
         }
         if ("success".equals(status)) {
-            if (proof.isEmpty()) {
+            if (proof == null) {
                 // It says the proof succeeded and there is no proof object at all. That is the
                 // package contradicting itself, not a reason — and falling through here reached
                 // "carries no inclusion proof, and does NOT SAY WHY" about a package that had
@@ -599,12 +614,6 @@ public final class SipVerifier {
             // more than this one would.
             return null;
         }
-        if (unreadable) {
-            return new Check("audit path", Outcome.UNAVAILABLE,
-                    "the evidence package carries no usable inclusion proof, and the reason it "
-                            + "gives is not a readable string. Nothing about the entry's "
-                            + "inclusion is established either way.");
-        }
         // It says SOMETHING, and it is not one of the states this verifier knows. Calling that
         // "no proof is present" would classify a sentence we did not understand — a third-party
         // or older package saying "ledger temporarily unreachable" is not a package saying the
@@ -614,6 +623,8 @@ public final class SipVerifier {
                         + "verifier does not recognise"
                         + (status == null ? "" : " (status " + status + ")")
                         + (message == null ? "" : ": " + message)
+                        + (partlyUnreadable
+                                ? ". Part of what it says is not a readable string." : "")
                         + ". Nothing about the entry's inclusion is established either way.");
     }
 }
