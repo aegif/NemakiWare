@@ -560,15 +560,18 @@ public final class SipVerifier {
                                     + "reason it gives is not a readable string. Nothing about "
                                     + "the entry's inclusion is established either way.");
         }
-        boolean saysSomething = proof.containsKey("status") || proof.containsKey("message")
-                || document.containsKey("status") || document.containsKey("message");
-        if (!saysSomething) {
+        // ONE source, not two fields resolved separately: taking the status from the proof and
+        // the message from the document pairs a state with an explanation of a different one
+        // (review, 2026-09-20). The proof's own words win when it has any.
+        Map<String, Object> source =
+                proof.containsKey("status") || proof.containsKey("message") ? proof : document;
+        if (!source.containsKey("status") && !source.containsKey("message")) {
             return null;
         }
-        String status = asString(proof.get("status")) != null ? asString(proof.get("status"))
-                : asString(document.get("status"));
-        String message = asString(proof.get("message")) != null ? asString(proof.get("message"))
-                : asString(document.get("message"));
+        String status = asString(source.get("status"));
+        String message = asString(source.get("message"));
+        boolean unreadable = (source.containsKey("status") && status == null)
+                || (source.containsKey("message") && message == null);
         if ("not-chained".equals(status)) {
             return new Check("audit path", Outcome.NOT_PRESENT,
                     message != null ? message
@@ -582,9 +585,25 @@ public final class SipVerifier {
                             + (message == null ? "" : ": " + message));
         }
         if ("success".equals(status)) {
-            // It says the proof worked, and we are here because it is not usable. That is not a
-            // reason — fall through to the sentence about the fields themselves.
+            if (proof.isEmpty()) {
+                // It says the proof succeeded and there is no proof object at all. That is the
+                // package contradicting itself, not a reason — and falling through here reached
+                // "carries no inclusion proof, and does NOT SAY WHY" about a package that had
+                // said something (review, 2026-09-20).
+                return new Check("audit path", Outcome.UNAVAILABLE,
+                        "the package says its inclusion proof succeeded and carries no proof to "
+                                + "read. Nothing about the entry's inclusion is established "
+                                + "either way.");
+            }
+            // A proof object IS there and is not usable; the sentence about its own fields says
+            // more than this one would.
             return null;
+        }
+        if (unreadable) {
+            return new Check("audit path", Outcome.UNAVAILABLE,
+                    "the evidence package carries no usable inclusion proof, and the reason it "
+                            + "gives is not a readable string. Nothing about the entry's "
+                            + "inclusion is established either way.");
         }
         // It says SOMETHING, and it is not one of the states this verifier knows. Calling that
         // "no proof is present" would classify a sentence we did not understand — a third-party
