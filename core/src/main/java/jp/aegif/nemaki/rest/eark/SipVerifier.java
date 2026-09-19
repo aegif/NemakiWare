@@ -550,21 +550,28 @@ public final class SipVerifier {
      * <p>{@code proof} is null when the package carries no proof OBJECT at all, which is a
      * different thing from an empty one.
      *
-     * <p>The reason may be written inside the proof object, beside it, or both; both are read.
-     * "Says something" is decided by the key being PRESENT, not by its value being a readable
+     * <p>The reason is read from ONE place: the proof object when it carries a {@code status}
+     * or a {@code message}, otherwise the document. Not merged — pairing a status from one with
+     * a message from the other explains a state the package did not report.
+     *
+     * <p>"Says something" is decided by the key being PRESENT, not by its value being a readable
      * string: a package whose {@code message} is an object for translations has still said
      * something, and calling that "does not say why" asserts the opposite of what happened.
+     * When part of what it says cannot be read, EVERY answer here says so — the note used to
+     * hang off one arm of four, so three of them dropped the fact that something was there
+     * (both reviews, 2026-09-20).
      */
     private static Check reasonFor(Map<String, Object> document, Map<String, Object> proof) {
         if (document.containsKey("inclusionProofFailed")) {
             String couldNotBuild = asString(document.get("inclusionProofFailed"));
-            return new Check("audit path", Outcome.UNAVAILABLE,
+            return reason(Outcome.UNAVAILABLE,
                     couldNotBuild != null
                             ? "the package says the audit path could not be built: "
                                     + couldNotBuild
                             : "the package says the audit path could not be built, and the "
                                     + "reason it gives is not a readable string. Nothing about "
-                                    + "the entry's inclusion is established either way.");
+                                    + "the entry's inclusion is established either way.",
+                    false);
         }
         // ONE source, not two fields resolved separately: taking the status from the proof and
         // the message from the document pairs a state with an explanation of a different one
@@ -582,22 +589,25 @@ public final class SipVerifier {
         boolean partlyUnreadable = (source.containsKey("status") && status == null)
                 || (source.containsKey("message") && message == null);
         if (status == null && message == null) {
-            return new Check("audit path", Outcome.UNAVAILABLE,
+            return reason(Outcome.UNAVAILABLE,
                     "the evidence package carries no usable inclusion proof, and the reason it "
                             + "gives is not a readable string. Nothing about the entry's "
-                            + "inclusion is established either way.");
+                            + "inclusion is established either way.",
+                    false);
         }
         if ("not-chained".equals(status)) {
-            return new Check("audit path", Outcome.NOT_PRESENT,
+            return reason(Outcome.NOT_PRESENT,
                     message != null ? message
                             : "the package says no ledger entry names this object. The chain "
                                     + "only holds what was written to it, with no back-fill, so "
-                                    + "this says nothing about whether the record is genuine.");
+                                    + "this says nothing about whether the record is genuine.",
+                    partlyUnreadable);
         }
         if ("unavailable".equals(status) || "error".equals(status)) {
-            return new Check("audit path", Outcome.UNAVAILABLE,
+            return reason(Outcome.UNAVAILABLE,
                     "the package says its own evidence could not be read"
-                            + (message == null ? "" : ": " + message));
+                            + (message == null ? "" : ": " + message),
+                    partlyUnreadable);
         }
         if ("success".equals(status)) {
             if (proof == null) {
@@ -605,26 +615,34 @@ public final class SipVerifier {
                 // package contradicting itself, not a reason — and falling through here reached
                 // "carries no inclusion proof, and does NOT SAY WHY" about a package that had
                 // said something (review, 2026-09-20).
-                return new Check("audit path", Outcome.UNAVAILABLE,
+                return reason(Outcome.UNAVAILABLE,
                         "the package says its inclusion proof succeeded and carries no proof to "
                                 + "read. Nothing about the entry's inclusion is established "
-                                + "either way.");
+                                + "either way.",
+                        partlyUnreadable);
             }
             // A proof object IS there and is not usable; the sentence about its own fields says
-            // more than this one would.
+            // more than this one would. The note would be lost here, so it is carried into that
+            // sentence by the caller instead — see auditPathCheck.
             return null;
         }
         // It says SOMETHING, and it is not one of the states this verifier knows. Calling that
         // "no proof is present" would classify a sentence we did not understand — a third-party
         // or older package saying "ledger temporarily unreachable" is not a package saying the
         // record was never chained.
-        return new Check("audit path", Outcome.UNAVAILABLE,
+        return reason(Outcome.UNAVAILABLE,
                 "the evidence package carries no usable inclusion proof and gives a reason this "
                         + "verifier does not recognise"
                         + (status == null ? "" : " (status " + status + ")")
                         + (message == null ? "" : ": " + message)
-                        + (partlyUnreadable
-                                ? ". Part of what it says is not a readable string." : "")
-                        + ". Nothing about the entry's inclusion is established either way.");
+                        + ". Nothing about the entry's inclusion is established either way.",
+                partlyUnreadable);
+    }
+
+    /** One exit, so the "part of it is unreadable" note cannot be left off an arm. */
+    private static Check reason(Outcome outcome, String detail, boolean partlyUnreadable) {
+        return new Check("audit path", outcome, partlyUnreadable
+                ? detail + " Part of what the package says is not a readable string."
+                : detail);
     }
 }
