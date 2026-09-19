@@ -593,6 +593,18 @@ class SipVerifierTest {
                 + "this object.\" } }";
         String beside = "{ \"inclusionProof\" : null, \"status\" : \"not-chained\", "
                 + "\"message\" : \"no ledger entry names this object.\" }";
+        // The third combination, and the one the canon newly promises: the proof object IS
+        // there and the reason is only BESIDE it. Without this the test varies two things at
+        // once (where the reason is AND whether a proof object exists), so the document-side
+        // fallback inside auditPathCheck was never measured (review, 2026-09-20).
+        String besideAProof = "{ \"inclusionProof\" : { \"provesSequence\" : 7 }, "
+                + "\"status\" : \"not-chained\", \"message\" : \"no ledger entry names "
+                + "this object.\" }";
+        Path besideAProofPkg = zip(tmp, "reason-beside-a-proof.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", besideAProof));
         Path insidePkg = zip(tmp, "reason-inside.zip", Map.of(
                 "sip/representations/rep1/data/minutes.txt", payload,
                 "sip/metadata/preservation/premis.xml",
@@ -607,11 +619,21 @@ class SipVerifierTest {
         SipVerifier.Result fromInside = SipVerifier.verify(insidePkg);
         SipVerifier.Result fromBeside = SipVerifier.verify(besidePkg);
 
+        SipVerifier.Result fromBesideAProof = SipVerifier.verify(besideAProofPkg);
+
         assertEquals(SipVerifier.Outcome.NOT_PRESENT, outcomeOf(fromInside, "audit path"),
                 "a reason written INSIDE the proof got a different answer: "
                         + fromInside.asMap());
         assertEquals(outcomeOf(fromBeside, "audit path"), outcomeOf(fromInside, "audit path"),
                 "the same reason, written in the two places the canon names, gets two answers");
+        assertEquals(SipVerifier.Outcome.NOT_PRESENT,
+                outcomeOf(fromBesideAProof, "audit path"),
+                "a reason written beside a proof object was not read: "
+                        + fromBesideAProof.asMap());
+        // The detail too, not just the outcome: another arm can reach NOT_PRESENT for its own
+        // reason and leave this green.
+        assertTrue(detailOf(fromBesideAProof, "audit path").contains("no ledger entry names"),
+                detailOf(fromBesideAProof, "audit path"));
     }
 
     @Test
@@ -635,6 +657,52 @@ class SipVerifierTest {
         assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"), detail);
         assertFalse(detail.contains("does not say why"),
                 "a package that said why was reported as one that did not: " + detail);
+    }
+
+    @Test
+    @DisplayName("a package that says its proof succeeded, with no proof, contradicts itself")
+    void aSuccessWithNoProofIsNotSilence(@TempDir Path tmp) throws Exception {
+        // `{"inclusionProof": null, "status": "success"}` used to fall through to "carries no
+        // inclusion proof, and DOES NOT SAY WHY" — about a package that had said something,
+        // and with the chain sentence attached. The same word inside a proof object answered
+        // differently, which is what this batch claimed to have fixed (review, 2026-09-20).
+        String payload = "the minutes";
+        String evidence = "{ \"inclusionProof\" : null, \"status\" : \"success\" }";
+        Path sip = zip(tmp, "successnoproof.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", evidence));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+        String detail = detailOf(result, "audit path");
+
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"), detail);
+        assertFalse(detail.contains("does not say why"),
+                "a package that said its proof succeeded was reported as saying nothing: "
+                        + detail);
+    }
+
+    @Test
+    @DisplayName("a reason that cannot be read says THAT, not 'unrecognised'")
+    void anUnreadableReasonSaysItIsUnreadable(@TempDir Path tmp) throws Exception {
+        // "we do not recognise this state" and "we could not read what it says" are different
+        // sentences, and the second was being reported as the first (review, 2026-09-20).
+        String payload = "the minutes";
+        String evidence = "{ \"inclusionProof\" : null, "
+                + "\"message\" : { \"en\" : \"ledger unreachable\" } }";
+        Path sip = zip(tmp, "unreadablereason.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", evidence));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+        String detail = detailOf(result, "audit path");
+
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"), detail);
+        assertTrue(detail.contains("not a readable string"),
+                "an unreadable reason was reported as an unrecognised one: " + detail);
     }
 
     @Test
