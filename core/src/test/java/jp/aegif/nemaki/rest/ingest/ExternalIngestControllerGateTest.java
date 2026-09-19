@@ -496,6 +496,43 @@ class ExternalIngestControllerGateTest {
     }
 
     @Test
+    void aStampTheCallerSuppliedIsOverwrittenByTheGate() {
+        // The stamps cannot be set from the wire (AuthorizationStampsAreNotAcceptedFromTheWire
+        // measures that). This is the layer behind it: even a request that arrives already
+        // stamped — a caller inside the JVM, a future binding change — is stamped AGAIN with
+        // what the gate itself checked, so the import compares against the gate's own reading
+        // and not the caller's. A review found only the "the gate sets it" half measured, and
+        // only for the profile: the folder id had nothing.
+        CallContext ctx = nonAdminContext();
+        ImportProfileDefinition p = delegatedProfile();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER)).thenReturn(true);
+        ConnectorDefinition c = delegatedConnector();
+        when(connectorDefinitionService.get(CONN)).thenReturn(c);
+        when(ingestAuthorizationService.canUseConnectorForDelegatedProfile(ctx, REPO, c, FOLDER))
+                .thenReturn(true);
+        when(canonicalImportService.execute(eq(ctx), any(ExternalIngestRequest.class)))
+                .thenReturn(ExternalIngestResult.success("src-1", "obj-1", "1.0", false, null));
+
+        ExternalIngestRequest forged = baseRequest();
+        forged.setAuthorizedProfileFingerprint("forged-by-the-caller");
+        forged.setAuthorizedTargetFolderId("F-forged");
+
+        ingest(forged);
+
+        org.mockito.ArgumentCaptor<ExternalIngestRequest> sent =
+                org.mockito.ArgumentCaptor.forClass(ExternalIngestRequest.class);
+        verify(canonicalImportService).execute(eq(ctx), sent.capture());
+        assertEquals(CanonicalImportServiceImpl.authorizationFingerprint(p),
+                sent.getValue().getAuthorizedProfileFingerprint(),
+                "the caller's own fingerprint reached the import");
+        assertEquals(FOLDER, sent.getValue().getAuthorizedTargetFolderId(),
+                "the caller's own folder id reached the import");
+    }
+
+    @Test
     void allGatesPass_dispatchesToCanonicalImportService() {
         CallContext ctx = nonAdminContext();
         ImportProfileDefinition p = delegatedProfile();
