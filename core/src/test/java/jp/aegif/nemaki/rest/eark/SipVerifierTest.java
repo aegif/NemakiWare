@@ -301,45 +301,86 @@ class SipVerifierTest {
     }
 
     @Test
-    @DisplayName("the proof as THIS PRODUCT serialises it verifies")
-    void theProductsOwnSerialisationIsRead(@TempDir Path tmp) throws Exception {
-        // Every other fixture here is hand-written with spaces around the colons. The exporter
-        // writes COMPACT JSON (ObjectMapperFactory.createDefaultObjectMapper, EarkSipExporter
-        // :1000), so none of them measured the shape the product actually produces — and the
-        // round-trip test cannot, because with no ledger wired it has no inclusion proof at all
-        // (review, 2026-09-19). The proof is built here and then serialised BY THE PRODUCT'S
-        // OWN MAPPER, so a change to that mapper turns this red instead of going unnoticed.
-        List<String> leaves = List.of("e0hash", "e1hash", "e2hash", "e3hash");
-        List<Map<String, Object>> steps = new java.util.ArrayList<>();
-        for (MerkleTree.ProofStep step : MerkleTree.proof(leaves, 1)) {
-            Map<String, Object> one = new LinkedHashMap<>();
-            one.put("siblingHash", step.siblingHash());
-            one.put("siblingIsLeft", step.siblingIsLeft());
-            steps.add(one);
-        }
-        Map<String, Object> inclusionProof = new LinkedHashMap<>();
-        inclusionProof.put("leafHash", "e1hash");
-        inclusionProof.put("merkleRoot", MerkleTree.root(leaves));
-        inclusionProof.put("auditPath", steps);
-        Map<String, Object> evidence = new LinkedHashMap<>();
-        evidence.put("status", "success");
-        evidence.put("inclusionProof", inclusionProof);
-        String json = jp.aegif.nemaki.config.ObjectMapperFactory.createDefaultObjectMapper()
-                .writeValueAsString(evidence);
-        assertTrue(json.contains("\"siblingIsLeft\":"),
-                "the product's mapper no longer writes compact JSON — this fixture has stopped "
-                        + "measuring what it says it measures: " + json);
+    @DisplayName("a package this product built WITH a ledger verifies, audit path and all")
+    void aRealExportedPackageWithALedgerVerifies(@TempDir Path tmp) throws Exception {
+        // The round trip the class javadoc claims, finally reaching the audit path. Every other
+        // fixture here hand-builds the proof, so all of them could pass while the exporter
+        // wrote a shape the verifier cannot read — and the earlier round-trip test wires no
+        // ledger, so it stops at NOT_PRESENT. A reviewer pointed out that the previous attempt
+        // at this (serialising a HAND-BUILT proof through the product's mapper) measured the
+        // mapper's formatting and nothing about the product's own proof shape: rename
+        // `siblingIsLeft` in EvidenceLedgerService and it stayed green. This one goes through
+        // EvidenceLedgerService.inclusionProof and EarkSipExporter, so the key names, the
+        // nesting and the compact serialisation are all the product's.
+        jp.aegif.nemaki.evidence.EvidenceLedgerEntry first =
+                jp.aegif.nemaki.evidence.EvidenceLedgerEntry.of("bedroom", 1,
+                        jp.aegif.nemaki.evidence.EvidenceLedgerEntry.SubjectKind.CAPTURE_COMPLETED,
+                        "doc-1", "digest-1", "2026-09-20T00:00:00Z", null);
+        jp.aegif.nemaki.evidence.EvidenceLedgerEntry second =
+                jp.aegif.nemaki.evidence.EvidenceLedgerEntry.of("bedroom", 2,
+                        jp.aegif.nemaki.evidence.EvidenceLedgerEntry.SubjectKind.FIXITY_RESULT,
+                        "doc-1", "digest-2", "2026-09-20T00:01:00Z", first.entryHash());
+        // Two leaves, so the audit path has a step in it. A checkpoint sealing ONE entry
+        // produces an empty path, which this verifier answers UNAVAILABLE for its own reasons.
+        String root = MerkleTree.root(List.of(first.entryHash(), second.entryHash()));
+        jp.aegif.nemaki.evidence.EvidenceCheckpoint checkpoint =
+                jp.aegif.nemaki.evidence.EvidenceCheckpoint.of("bedroom", 1L, 2L, root, null,
+                        "2026-09-20T00:02:00Z");
+        jp.aegif.nemaki.evidence.EvidenceLedgerStore store =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.evidence.EvidenceLedgerStore.class);
+        org.mockito.Mockito.when(store.isActive()).thenReturn(true);
+        org.mockito.Mockito.when(store.findBySubject(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(List.of(first, second));
+        org.mockito.Mockito.when(store.latestCheckpoint("bedroom")).thenReturn(checkpoint);
+        org.mockito.Mockito.when(store.range(org.mockito.ArgumentMatchers.eq("bedroom"),
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(List.of(first, second));
+        jp.aegif.nemaki.evidence.EvidenceLedgerService ledgerService =
+                new jp.aegif.nemaki.evidence.EvidenceLedgerService();
+        ledgerService.setStore(store);
 
+        EarkSipExporter exporter = exporterWithContent("the minutes");
+        exporter.setLedgerStore(store);
+        exporter.setLedgerService(ledgerService);
+        EarkSipExporter.Exported exported = exporter.export("bedroom", "doc-1",
+                EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp);
+
+        SipVerifier.Result result = SipVerifier.verify(exported.sip());
+
+        assertEquals(SipVerifier.Outcome.PASSED, outcomeOf(result, "audit path"),
+                "the verifier could not read the inclusion proof this product wrote:\n"
+                        + result.asMap());
+        assertEquals(SipVerifier.Verdict.VERIFIED, result.verdict(), result.asMap().toString());
+    }
+
+    @Test
+    @DisplayName("a half-written proof says which half, about BOTH fields")
+    void aHalfWrittenProofDescribesBothFields(@TempDir Path tmp) throws Exception {
+        // leafHash is not written at all; merkleRoot IS written but is not a string. Naming
+        // only the first said "the other one is fine" about a field that is equally unusable —
+        // the conflation this branch exists to remove, one level down (review, 2026-09-20).
         String payload = "the minutes";
-        Path sip = zip(tmp, "compact.zip", Map.of(
+        String evidence = "{ \"inclusionProof\" : { \"merkleRoot\" : 42, "
+                + "\"auditPath\" : [ ] } }";
+        Path sip = zip(tmp, "halfproof.zip", Map.of(
                 "sip/representations/rep1/data/minutes.txt", payload,
                 "sip/metadata/preservation/premis.xml",
                 premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
-                "sip/metadata/other/nemaki-evidence.json", json));
+                "sip/metadata/other/nemaki-evidence.json", evidence));
 
         SipVerifier.Result result = SipVerifier.verify(sip);
 
-        assertEquals(SipVerifier.Verdict.VERIFIED, result.verdict(), result.asMap().toString());
+        String detail = detailOf(result, "audit path");
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"), detail);
+        assertTrue(detail.contains("leafHash is not written"),
+                "the detail does not say that leafHash is absent: " + detail);
+        assertTrue(detail.contains("merkleRoot is not a readable string"),
+                "the detail does not say what is wrong with merkleRoot — naming one field and "
+                        + "stopping asserts the other is usable: " + detail);
     }
 
     @Test
@@ -348,21 +389,30 @@ class SipVerifierTest {
         // `startsWith("true", …)` accepted `truegarbage`, so a step whose side could not be read
         // combined on a side the verifier had invented — and a package built around THAT reading
         // reached PASSED (review, 2026-09-19).
-        Map<String, String> proof = realProofFor(3);
-        String broken = proof.get("json").replaceFirst(
-                "\"siblingIsLeft\" : (true|false)", "\"siblingIsLeft\" : truegarbage");
-        assertFalse(broken.equals(proof.get("json")), "the fixture was not altered");
+        // BOTH spellings. The first fix stopped at "a space follows", so `true garbage` still
+        // read as true while `truegarbage` did not — and this lock only measured the second
+        // one, which is how a half-fix stays green (review, 2026-09-20). The hand-built
+        // fixtures here vary in spacing (some around the colon, aReformattedProofStillVerifies
+        // only after it); what none of them was, before the ledger round trip above, is the
+        // product's own output.
         String payload = "the minutes";
-        Path sip = zip(tmp, "truegarbage.zip", Map.of(
-                "sip/representations/rep1/data/minutes.txt", payload,
-                "sip/metadata/preservation/premis.xml",
-                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
-                "sip/metadata/other/nemaki-evidence.json", broken));
+        for (String garbage : List.of("truegarbage", "true garbage")) {
+            Map<String, String> proof = realProofFor(3);
+            String broken = proof.get("json").replaceFirst(
+                    "\"siblingIsLeft\" : (true|false)", "\"siblingIsLeft\" : " + garbage);
+            assertFalse(broken.equals(proof.get("json")), "the fixture was not altered");
+            Path sip = zip(tmp, "garbage-" + garbage.indexOf(' ') + ".zip", Map.of(
+                    "sip/representations/rep1/data/minutes.txt", payload,
+                    "sip/metadata/preservation/premis.xml",
+                    premisWithDigest(
+                            SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                    "sip/metadata/other/nemaki-evidence.json", broken));
 
-        SipVerifier.Result result = SipVerifier.verify(sip);
+            SipVerifier.Result result = SipVerifier.verify(sip);
 
-        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"),
-                result.asMap().toString());
+            assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"),
+                    "`" + garbage + "` was read as a literal: " + result.asMap());
+        }
     }
 
     @Test
@@ -596,6 +646,28 @@ class SipVerifierTest {
         // The round trip, and the only test here that proves the two halves agree. Every other
         // fixture is hand-built, so all of them could pass while the real exporter wrote
         // something the verifier cannot read — a verifier that only verifies its own fixtures.
+        EarkSipExporter exporter = exporterWithContent("the minutes");
+        EarkSipExporter.Exported exported = exporter.export("bedroom", "doc-1",
+                EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp);
+
+        SipVerifier.Result result = SipVerifier.verify(exported.sip());
+
+        assertEquals(SipVerifier.Outcome.PASSED, outcomeOf(result, "payload digest"),
+                "the verifier could not check a package this product built:\n" + result.asMap());
+        // No ledger was wired, so there IS no inclusion proof, and saying so is the right
+        // answer — not a failure, and not a pass either.
+        assertEquals(SipVerifier.Outcome.NOT_PRESENT, outcomeOf(result, "audit path"),
+                result.asMap().toString());
+        // And therefore the package this exporter produces here is INDETERMINATE, not verified.
+        // Worth pinning at the round trip rather than only on hand-built fixtures: this is the
+        // shape a real deployment without a ledger ships, and under the old rule it came back
+        // `verified: true`.
+        assertEquals(SipVerifier.Verdict.INDETERMINATE, result.verdict(),
+                result.asMap().toString());
+    }
+
+    /** The real exporter over one document whose bytes are {@code payload}. */
+    private static EarkSipExporter exporterWithContent(String payload) {
         jp.aegif.nemaki.businesslogic.ContentService contentService =
                 org.mockito.Mockito.mock(jp.aegif.nemaki.businesslogic.ContentService.class);
         jp.aegif.nemaki.model.Document document = new jp.aegif.nemaki.model.Document();
@@ -609,14 +681,14 @@ class SipVerifierTest {
                 org.mockito.Mockito.mock(jp.aegif.nemaki.model.AttachmentNode.class);
         org.mockito.Mockito.when(attachment.getName()).thenReturn("minutes.txt");
         org.mockito.Mockito.when(attachment.getInputStream()).thenReturn(
-                new java.io.ByteArrayInputStream("the minutes".getBytes(StandardCharsets.UTF_8)));
+                new java.io.ByteArrayInputStream(payload.getBytes(StandardCharsets.UTF_8)));
         org.mockito.Mockito.when(contentService.getAttachment("bedroom", "att-1"))
                 .thenReturn(attachment);
 
         // A content section carrying the digest of the bytes above, so PREMIS records a real one.
         Map<String, Object> content = new LinkedHashMap<>();
         content.put("recordedDigest",
-                SipVerifier.sha256Hex("the minutes".getBytes(StandardCharsets.UTF_8)));
+                SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8)));
         content.put("algorithm", "SHA-256");
         jp.aegif.nemaki.evidence.AuthenticityReport report =
                 new jp.aegif.nemaki.evidence.AuthenticityReport("bedroom", "doc-1",
@@ -636,23 +708,16 @@ class SipVerifierTest {
         EarkSipExporter exporter = new EarkSipExporter();
         exporter.setContentService(contentService);
         exporter.setReportAssembler(assembler);
-        EarkSipExporter.Exported exported = exporter.export("bedroom", "doc-1",
-                EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp);
+        return exporter;
+    }
 
-        SipVerifier.Result result = SipVerifier.verify(exported.sip());
-
-        assertEquals(SipVerifier.Outcome.PASSED, outcomeOf(result, "payload digest"),
-                "the verifier could not check a package this product built:\n" + result.asMap());
-        // No ledger was wired, so there IS no inclusion proof, and saying so is the right
-        // answer — not a failure, and not a pass either.
-        assertEquals(SipVerifier.Outcome.NOT_PRESENT, outcomeOf(result, "audit path"),
-                result.asMap().toString());
-        // And therefore the package this exporter produces here is INDETERMINATE, not verified.
-        // Worth pinning at the round trip rather than only on hand-built fixtures: this is the
-        // shape a real deployment without a ledger ships, and under the old rule it came back
-        // `verified: true`.
-        assertEquals(SipVerifier.Verdict.INDETERMINATE, result.verdict(),
-                result.asMap().toString());
+    private static String detailOf(SipVerifier.Result result, String name) {
+        for (SipVerifier.Check check : result.checks()) {
+            if (check.name().equals(name)) {
+                return check.detail();
+            }
+        }
+        return "(no check named " + name + ")";
     }
 
     private static SipVerifier.Outcome outcomeOf(SipVerifier.Result result, String name) {

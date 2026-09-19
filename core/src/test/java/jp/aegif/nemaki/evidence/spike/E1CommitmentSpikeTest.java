@@ -615,20 +615,19 @@ class E1CommitmentSpikeTest {
     }
 
     @Test
-    @DisplayName("C6: an unrelated writer of the same document must not drop the record")
-    void anUnrelatedWriterDoesNotDropTheGap() {
-        // The property this codebase actually forces, and where the two designs part. The
-        // content document is written from many places — renames, ACL changes, version-series
-        // flags, the twelve content-write paths themselves — and every service-layer update
-        // rebuilds the stored model FROM THE DOMAIN MODEL
-        // (ContentDaoServiceImpl.update: `new CouchDocument(document)`), which carries only
-        // its declared fields. The stored-JSON carrier (CouchNodeBase's @JsonAnySetter into
-        // additionalProperties) does not survive that hop.
+    @DisplayName("C6: a marker NOT on a carrier is dropped by an unrelated write")
+    void anUnrelatedWriterDropsAMarkerThatRidesNoCarrier() {
+        // NOT the ADR's deciding measurement. It was, for one round, and the ADR withdrew it:
+        // the domain model HAS a verbatim carrier (Content.aclEpochFields) built for exactly
+        // this erasure, so design A's marker can ride it for the cost of one key. What this
+        // measures is narrower and still worth keeping — WHY that carrier exists.
         //
-        // This is not hypothetical here. CouchContent's own comment records the product losing
-        // `contentIncarnation` exactly this way: "the model round-trip used to LOSE
-        // contentIncarnation … each ordinary rename silently started a new lifetime". A
-        // rename did that. Nothing can drop a row in the other store.
+        // Every service-layer update rebuilds the stored model from the domain model
+        // (ContentDaoServiceImpl.update: `new CouchDocument(document)`), so a field the domain
+        // model does not carry is erased by an ordinary rename. The product has been burned by
+        // exactly that: CouchContent's comment records `contentIncarnation` being lost this
+        // way, "each ordinary rename silently started a new lifetime". Design B's intent is a
+        // row in another store, so it depends on no such carrier.
         Store storeA = new Store();
         OutboxMarker a = new OutboxMarker();
         try {
@@ -641,10 +640,11 @@ class E1CommitmentSpikeTest {
         a.writeUnrelated(storeA, "doc-1");
         a.recover(storeA);
 
-        assertTrue(a.openGaps(storeA).isEmpty(), "design A no longer loses the marker to an "
-                + "unrelated write — re-derive the ADR's decision");
+        assertTrue(a.openGaps(storeA).isEmpty(), "a marker on no carrier survived an unrelated "
+                + "write — this test no longer shows what carriers are for");
         assertTrue(storeA.statementsFor("doc-1").isEmpty(), "design A recorded it after all");
-        // So: the bytes are there, no statement is, and nothing says so. A rename did that.
+        // So: the bytes are there, no statement is, and nothing says so. A rename did that —
+        // to a marker that rides nothing. Put it on the carrier and this stops happening.
 
         Store storeB = new Store();
         CommitmentIntent b = new CommitmentIntent();
@@ -658,7 +658,8 @@ class E1CommitmentSpikeTest {
         b.recover(storeB);
 
         assertEquals(1, storeB.statementsFor("doc-1").size(),
-                "design B lost the intent to an unrelated write, so the ADR's reason is gone");
+                "design B lost the intent to an unrelated write — it is in another store and "
+                        + "nothing about a content-document write should be able to touch it");
         assertTrue(b.openGaps(storeB).isEmpty(), b.openGaps(storeB).toString());
     }
 

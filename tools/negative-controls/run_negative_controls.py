@@ -8964,9 +8964,20 @@ CONTROLS = [
         expect_fail=['aRestoreThatHasNotReachedTheRowYetIsNotRefused'],
     ),
     dict(
+        id="DM3",
+        what="the two fields of a half-written proof are described by one sentence about the "
+             "first problem found, which asserts the other field is usable",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='                                + fieldState(evidence, "leafHash", leaf) + ", "\n'
+             '                                + fieldState(evidence, "merkleRoot", root)',
+        replace='                                + fieldState(evidence, "leafHash", leaf)',
+        test='SipVerifierTest',
+        expect_fail=['aHalfWrittenProofDescribesBothFields'],
+    ),
+    dict(
         id="DL3",
         what="the audit path is read by a rule that only matches hand-spaced JSON, so the "
-             "compact form this product's own mapper writes stops verifying",
+             "compact proof this product's own ledger and exporter write stops verifying",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
         find='        int i = colon + 1;\n'
              '        while (i < json.length() && Character.isWhitespace(json.charAt(i))) {\n'
@@ -8974,7 +8985,7 @@ CONTROLS = [
              '        }',
         replace='        int i = colon + 2;',
         test='SipVerifierTest',
-        expect_fail=['theProductsOwnSerialisationIsRead'],
+        expect_fail=['aRealExportedPackageWithALedgerVerifies'],
     ),
 ]
 
