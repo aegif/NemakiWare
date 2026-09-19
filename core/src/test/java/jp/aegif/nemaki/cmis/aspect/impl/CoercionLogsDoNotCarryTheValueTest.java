@@ -47,8 +47,16 @@ class CoercionLogsDoNotCarryTheValueTest {
     private static final Pattern LOG_CALL =
             Pattern.compile("log\\.(warn|debug|info|error)\\((.*?)\\);", Pattern.DOTALL);
 
-    /** The locals that hold the property's own value in the coercion arms. */
-    private static final List<String> VALUE_HOLDERS = List.of("element", "timestamp", "value");
+    /**
+     * The locals that hold the property's own value in the coercion arms.
+     *
+     * <p>Started as {@code element / timestamp / value} and missed two: the {@code Double d} and
+     * {@code BigDecimal bd} arms print the number and, in one case, its fractional part. A review
+     * found them — which is the argument for listing the holders by name AND for the assertion
+     * below that no NEW single-letter local appears in one of these messages.
+     */
+    private static final List<String> VALUE_HOLDERS =
+            List.of("element", "timestamp", "value", "d", "bd");
 
     @Test
     @DisplayName("no coercion log line interpolates the property value")

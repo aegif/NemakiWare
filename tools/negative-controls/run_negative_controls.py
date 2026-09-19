@@ -8686,6 +8686,28 @@ CONTROLS = [
         test='CouchDbVersionSetupModeGateTest',
         expect_fail=['changePasswordRefusesAStoredUrlItWouldNotConnectTo'],
     ),
+    # ── 認可指紋が単射であること (確認レビューが衝突対を組んだ) ──
+    dict(
+        id="CQ3",
+        what="the authorisation fingerprint goes back to joining fields with a separator it "
+             "does not escape — two different profile rows can share one fingerprint",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='        StringBuilder fingerprint = new StringBuilder("v2");\n'
+             '        appendLengthPrefixed(fingerprint, profile.getRepositoryId());',
+        replace='        if (true) return String.join("\\u001f",\n'
+                '                String.valueOf(profile.getRepositoryId()),\n'
+                '                String.valueOf(profile.getTargetFolderId()),\n'
+                '                String.valueOf(profile.getTargetFolderPath()),\n'
+                '                String.valueOf(profile.isDelegated()),\n'
+                '                String.valueOf(profile.getDefaultConnectorId()),\n'
+                '                String.join(",", connectors));\n'
+                '        StringBuilder fingerprint = new StringBuilder("v2");\n'
+                '        appendLengthPrefixed(fingerprint, profile.getRepositoryId());',
+        test='CanonicalImportServiceTest',
+        expect_fail=['twoDifferentRowsCannotShareAFingerprint',
+                     'aConnectorListIsNotConfusableWithOneLongerId',
+                     'anUnsetFieldIsNotTheStringNull'],
+    ),
 ]
 
 

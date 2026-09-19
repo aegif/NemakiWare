@@ -3442,4 +3442,70 @@ class CanonicalImportServiceTest {
                         + " skipped=" + result.skipped() + " errors=" + result.errors()
                         + " warnings=" + result.warnings());
     }
+
+    // ── the authorisation fingerprint names one row and only one row ──
+
+    private static ImportProfileDefinition profileFor(String path, boolean delegated,
+            String defaultConnector) {
+        ImportProfileDefinition p = new ImportProfileDefinition();
+        p.setRepositoryId("bedroom");
+        p.setTargetFolderId("F-1");
+        p.setTargetFolderPath(path);
+        p.setDelegated(delegated);
+        p.setDefaultConnectorId(defaultConnector);
+        p.setAllowedConnectorIds(java.util.List.of("c-1"));
+        return p;
+    }
+
+    @org.junit.jupiter.api.Test
+    void twoDifferentRowsCannotShareAFingerprint() {
+        // The pair a review built against the first version, which joined the fields with U+001F
+        // and escaped nothing: move the separator inside a value and the field boundary moves
+        // with it. The rows differ in path, in delegated, and in default connector — three
+        // decisions the gate makes — yet the old encoding produced one string for both.
+        ImportProfileDefinition a = profileFor("p", true, "false\u001fd");
+        ImportProfileDefinition b = profileFor("p\u001ftrue", false, "d");
+
+        assertNotEquals(CanonicalImportServiceImpl.authorizationFingerprint(a),
+                CanonicalImportServiceImpl.authorizationFingerprint(b),
+                "two rows the gate would treat differently share one fingerprint, so a swap "
+                        + "between the gate and the write is not refused");
+    }
+
+    @org.junit.jupiter.api.Test
+    void aConnectorListIsNotConfusableWithOneLongerId() {
+        // The same hole in the list: ["a", "b"] and ["a,b"] were both "a,b".
+        ImportProfileDefinition two = profileFor("p", true, "d");
+        two.setAllowedConnectorIds(java.util.List.of("a", "b"));
+        ImportProfileDefinition one = profileFor("p", true, "d");
+        one.setAllowedConnectorIds(java.util.List.of("a,b"));
+
+        assertNotEquals(CanonicalImportServiceImpl.authorizationFingerprint(two),
+                CanonicalImportServiceImpl.authorizationFingerprint(one),
+                "a two-connector row and a one-connector row share a fingerprint");
+    }
+
+    @org.junit.jupiter.api.Test
+    void anUnsetFieldIsNotTheStringNull() {
+        // A row whose path is unset and a row whose path is the text "null" are different rows.
+        ImportProfileDefinition unset = profileFor(null, true, "d");
+        ImportProfileDefinition literal = profileFor("null", true, "d");
+
+        assertNotEquals(CanonicalImportServiceImpl.authorizationFingerprint(unset),
+                CanonicalImportServiceImpl.authorizationFingerprint(literal),
+                "an unset path and the literal text \"null\" share a fingerprint");
+    }
+
+    @org.junit.jupiter.api.Test
+    void theSameRowStillFingerprintsTheSame() {
+        // The over-throw guard: the fingerprint is compared for equality on every delegated
+        // import, so an encoding that is merely injective but unstable would refuse every write.
+        ImportProfileDefinition once = profileFor("p", true, "d");
+        ImportProfileDefinition twice = profileFor("p", true, "d");
+
+        assertEquals(CanonicalImportServiceImpl.authorizationFingerprint(once),
+                CanonicalImportServiceImpl.authorizationFingerprint(twice),
+                "the same row fingerprinted differently twice — every delegated import would "
+                        + "be refused as a row that changed");
+    }
 }
