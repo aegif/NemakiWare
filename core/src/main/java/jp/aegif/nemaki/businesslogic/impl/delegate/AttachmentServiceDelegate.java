@@ -130,11 +130,22 @@ public class AttachmentServiceDelegate {
 				// blocking read on an interrupted thread can fail with a different sentence
 				// than the one this method means to say.
 				Thread.currentThread().interrupt();
-				if (original == null) {
-					return null;
-				}
+			}
+			// Checked again here, not only in the catch: the interrupt can arrive AFTER the
+			// sleep returns and before the read starts, and a blocking read on an interrupted
+			// thread fails with a different sentence than the one this method means to say
+			// (review, 2026-09-20).
+			if (Thread.currentThread().isInterrupted()) {
+				// Its OWN sentence. Answering with the two-read message would say "asked twice,
+				// twice there was nothing" about a read that was never made — the branch's
+				// subject, in miniature (review, 2026-09-20).
 				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisStorageException(
-						bodyMissing(repositoryId, attachmentId));
+						"the attachment '" + attachmentId + "' in '" + repositoryId + "' was "
+								+ (original == null ? "not found" : "found without a content body")
+								+ " on the first read, and this thread was interrupted before it "
+								+ "could be read again. This is NOT a finding that the document "
+								+ "has no content, and NOT a finding that the attachment is "
+								+ "gone — the second read did not happen.");
 			}
 			original = contentDaoService.getAttachment(repositoryId, attachmentId);
 		}

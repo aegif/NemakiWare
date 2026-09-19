@@ -194,6 +194,15 @@ public final class SipVerifier {
         return new Result(List.copyOf(checks), LIMITS);
     }
 
+    /** "leafHash is not written" / "merkleRoot is not a readable string" / "leafHash is read". */
+    private static String fieldState(String evidence, String field, String value) {
+        if (value != null) {
+            return field + " is read";
+        }
+        return hasKey(evidence, field) ? field + " is not a readable string"
+                : field + " is not written";
+    }
+
     /**
      * Do the packaged bytes hash to the digest PREMIS records for them?
      *
@@ -269,17 +278,15 @@ public final class SipVerifier {
                 // proof was written", and it used to come out as that one. The two shapes are
                 // named separately because a message that merges them asserts something this
                 // check did not establish (review).
-                String missing = leaf == null && !hasKey(evidence, "leafHash") ? "leafHash"
-                        : root == null && !hasKey(evidence, "merkleRoot") ? "merkleRoot" : null;
+                // Both fields are described, each in its own words. Naming only the first
+                // problem said "the rest is fine" about a field that might be unreadable too
+                // — the same conflation one level down (review, 2026-09-20).
                 return new Check("audit path", Outcome.UNAVAILABLE,
-                        missing != null
-                                ? "the evidence package carries half an inclusion proof: "
-                                        + missing + " is not written. Nothing about the entry's "
-                                        + "inclusion is established either way."
-                                : "the evidence package carries an inclusion proof whose "
-                                        + "leafHash or merkleRoot is not a readable string. "
-                                        + "Nothing about the entry's inclusion is established "
-                                        + "either way.");
+                        "the evidence package's inclusion proof cannot be read: "
+                                + fieldState(evidence, "leafHash", leaf) + ", "
+                                + fieldState(evidence, "merkleRoot", root)
+                                + ". Nothing about the entry's inclusion is established "
+                                + "either way.");
             }
             return new Check("audit path", Outcome.NOT_PRESENT,
                     "the evidence package carries no inclusion proof. The chain only holds what "
@@ -503,11 +510,18 @@ public final class SipVerifier {
             return false;
         }
         int after = start + literal.length();
+        // Whitespace may follow, but only whitespace and then a delimiter. The first version
+        // stopped at "the next character is a space", so `true garbage` read as true while
+        // `truegarbage` did not — a distinction with no meaning, and the lock only measured the
+        // second one (review, 2026-09-20).
+        while (after < json.length() && Character.isWhitespace(json.charAt(after))) {
+            after++;
+        }
         if (after >= json.length()) {
             return true;
         }
         char next = json.charAt(after);
-        return Character.isWhitespace(next) || next == ',' || next == '}' || next == ']';
+        return next == ',' || next == '}' || next == ']';
     }
 
     /**
