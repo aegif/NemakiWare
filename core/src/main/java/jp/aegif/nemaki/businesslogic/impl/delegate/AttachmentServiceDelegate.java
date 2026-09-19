@@ -127,11 +127,34 @@ public class AttachmentServiceDelegate {
 		// successful copy of content that was never there. Found by review, 2026-09-19; same
 		// class as R54, one level further in. A zero-byte upload is NOT this case: CouchDB
 		// answers it with an empty stream, not with none.
-		if (original.getInputStream() == null) {
-			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisStorageException(
-					"the attachment '" + attachmentId + "' in '" + repositoryId + "' has a row "
-							+ "but no content body, so there is nothing to copy. This is NOT a "
-							+ "finding that the document has no content.");
+		//
+		// It is read ONCE MORE before refusing, because this state also occurs in the middle of
+		// a legitimate operation: restoring from the archive creates the attachment row
+		// (ArchiveDaoDelegate:772) and PUTs the body in a SEPARATE write (:792), with the
+		// restored document already reachable. A check-out landing between the two reads a row
+		// with no body, and a moment later the same read succeeds. The same shape as
+		// ContentServiceImpl.getAttachmentRef's "minimal retry for async scenarios". One retry
+		// narrows that window; it does not close it, so the refusal says to retry (review,
+		// 2026-09-19).
+		if (!hasBody(original)) {
+			try {
+				Thread.sleep(25);
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+			}
+			AttachmentNode reread = contentDaoService.getAttachment(repositoryId, attachmentId);
+			if (reread == null) {
+				log.warn("copyAttachment: attachment '{}' disappeared between reads", attachmentId);
+				return null;
+			}
+			if (!hasBody(reread)) {
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisStorageException(
+						"the attachment '" + attachmentId + "' in '" + repositoryId + "' has a row "
+								+ "but no content body, so there is nothing to copy. This is NOT a "
+								+ "finding that the document has no content. If a restore from the "
+								+ "archive is in progress for this document, retry shortly.");
+			}
+			original = reread;
 		}
 
 		String mimeType = original.getMimeType();
@@ -159,6 +182,18 @@ public class AttachmentServiceDelegate {
 		nemakiCachePool.get(repositoryId).getAttachmentCache().remove(attachmentId);
 
 		return newAttachmentId;
+	}
+
+	/**
+	 * Does this node carry bytes?
+	 *
+	 * <p>One place decides it, because the wrong answer is a plausible one: keying on the
+	 * recorded LENGTH instead would refuse a zero-byte attachment as if its body were missing.
+	 * CouchDB answers a zero-byte attachment with an EMPTY stream, not with none — a null
+	 * stream means the document carries no {@code content} attachment at all.
+	 */
+	private static boolean hasBody(AttachmentNode node) {
+		return node != null && node.getInputStream() != null;
 	}
 
 	/*

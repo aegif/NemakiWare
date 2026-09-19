@@ -264,6 +264,14 @@ public final class SipVerifier {
         String leaf = jsonString(evidence, "leafHash");
         String root = jsonString(evidence, "merkleRoot");
         if (leaf == null || root == null) {
+            if (hasKey(evidence, "leafHash") || hasKey(evidence, "merkleRoot")) {
+                // Written, but not as a string this verifier can read. Not the same sentence as
+                // "no proof was written", and it used to come out as that one.
+                return new Check("audit path", Outcome.UNAVAILABLE,
+                        "the evidence package carries an inclusion proof whose leafHash or "
+                                + "merkleRoot is not a readable string. Nothing about the "
+                                + "entry's inclusion is established either way.");
+            }
             return new Check("audit path", Outcome.NOT_PRESENT,
                     "the evidence package carries no inclusion proof. The chain only holds what "
                             + "was written to it, with no back-fill, so this says nothing about "
@@ -285,6 +293,21 @@ public final class SipVerifier {
                     "the auditPath could not be read: " + path.unreadable()
                             + ". Nothing about the entry's inclusion is established either way.");
         }
+        if (path.steps().isEmpty()) {
+            // An empty path makes the check arithmetic-free: it would compare leaf(leafHash)
+            // with merkleRoot, and BOTH are values the package supplies. A checkpoint that
+            // sealed a single entry genuinely produces this shape (MerkleTree.root of one leaf
+            // IS that leaf's hash), so the package is not wrong — but nothing inside it tells
+            // the two apart, and the first version reported the fabricable one as PASSED.
+            // Whoever holds the checkpoint can settle it in one look; this verifier cannot.
+            return new Check("audit path", Outcome.UNAVAILABLE,
+                    "the auditPath is empty. That is what a checkpoint which sealed a SINGLE "
+                            + "entry produces — and it is also what a package gets by writing a "
+                            + "leaf and the hash of that same leaf as the root. Both values come "
+                            + "from this package, so nothing here separates them. Settling it "
+                            + "needs the checkpoint's own span, which this package does not "
+                            + "carry.");
+        }
         // The leaf hash is applied FIRST. `leafHash` in the proof is the entry's own hash, and
         // the tree is built over hashLeaf(entryHash) — walking the path from the raw value
         // would report every genuine package as broken, which is the failure mode a verifier
@@ -297,12 +320,8 @@ public final class SipVerifier {
         }
         if (current.equalsIgnoreCase(root)) {
             return new Check("audit path", Outcome.PASSED,
-                    (path.steps().isEmpty()
-                            ? "the auditPath is empty, which is what a checkpoint that sealed a "
-                                    + "single entry produces: the leaf's own hash IS the root ("
-                            : "the audit path leads from the entry's leaf to the Merkle root the "
-                                    + "checkpoint claims (")
-                            + root + ")");
+                    "the audit path leads from the entry's leaf to the Merkle root the "
+                            + "checkpoint claims (" + root + ")");
         }
         return new Check("audit path", Outcome.FAILED,
                 "the audit path leads to " + current + ", not to the claimed root " + root
@@ -394,28 +413,73 @@ public final class SipVerifier {
         return end < 0 ? null : text.substring(start + open.length(), end);
     }
 
+    /** Is this field written at all? Distinguishes "absent" from "present and unreadable". */
+    static boolean hasKey(String json, String field) {
+        return json.contains("\"" + field + "\"");
+    }
+
+    /**
+     * The index of the first non-space character of the value that follows {@code "field":},
+     * or -1 when the field is absent or has no value after its colon.
+     */
+    private static int valueStart(String json, String field) {
+        String needle = "\"" + field + "\"";
+        int at = json.indexOf(needle);
+        if (at < 0) {
+            return -1;
+        }
+        int colon = json.indexOf(':', at + needle.length());
+        if (colon < 0) {
+            return -1;
+        }
+        int i = colon + 1;
+        while (i < json.length() && Character.isWhitespace(json.charAt(i))) {
+            i++;
+        }
+        return i < json.length() ? i : -1;
+    }
+
     /**
      * One string field out of the JSON, without a JSON library.
      *
      * <p>Deliberately dependency-free: a verifier a third party is meant to reimplement should
      * not need our object mapper, and the shapes read here are flat.
+     *
+     * <p>It reads THE VALUE AFTER THE COLON and nothing else. The first version searched forward
+     * for the next quote, so a field whose value was not a string — {@code "leafHash": 42} —
+     * returned the NEXT KEY'S NAME as the value, and {@code "leafHash": null} did the same.
+     * Answering "could not read that" with a plausible-looking string is the defect this whole
+     * branch is about, in the verifier itself (review, 2026-09-19). Null now means only
+     * "absent, or present and not a string", which {@link #hasKey} separates.
      */
     static String jsonString(String json, String field) {
-        String needle = "\"" + field + "\"";
-        int at = json.indexOf(needle);
-        if (at < 0) {
+        int start = valueStart(json, field);
+        if (start < 0 || json.charAt(start) != '"') {
             return null;
         }
-        int colon = json.indexOf(':', at + needle.length());
-        if (colon < 0) {
+        int end = json.indexOf('"', start + 1);
+        return end < 0 ? null : json.substring(start + 1, end);
+    }
+
+    /**
+     * One boolean field: {@code TRUE}, {@code FALSE}, or null when it is absent or is neither.
+     *
+     * <p>The audit path used to read this by substring — two exact spellings of
+     * {@code "siblingIsLeft" : true}, everything else silently FALSE. A path reformatted by any
+     * JSON tool (a single space after the colon instead of around it) therefore combined every
+     * sibling on the wrong side, landed on a different root, and was reported FAILED: "the entry
+     * named in this package was not in the span that checkpoint sealed", about a package the
+     * verifier had not managed to read.
+     */
+    static Boolean jsonBoolean(String json, String field) {
+        int start = valueStart(json, field);
+        if (start < 0) {
             return null;
         }
-        int quote = json.indexOf('"', colon + 1);
-        if (quote < 0) {
-            return null;
+        if (json.startsWith("true", start)) {
+            return Boolean.TRUE;
         }
-        int end = json.indexOf('"', quote + 1);
-        return end < 0 ? null : json.substring(quote + 1, end);
+        return json.startsWith("false", start) ? Boolean.FALSE : null;
     }
 
     /**
@@ -441,16 +505,25 @@ public final class SipVerifier {
         }
     }
 
-    /** The audit path steps, in order, read out of the flat JSON. */
+    /**
+     * The audit path steps, in order, read out of the flat JSON.
+     *
+     * <p>The array has to be THE VALUE of {@code auditPath}. Taking the next {@code [} anywhere
+     * after the key let {@code "auditPath": null} followed by any other array in the document —
+     * {@code "notes": []} — be read as an empty path, which is a "could not read" answered with
+     * a value (review, 2026-09-19).
+     */
     static AuditPath auditPath(String json) {
-        int at = json.indexOf("\"auditPath\"");
-        if (at < 0) {
+        if (!hasKey(json, "auditPath")) {
             return AuditPath.absent();
         }
-        int open = json.indexOf('[', at);
-        int close = open < 0 ? -1 : json.indexOf(']', open);
-        if (open < 0 || close < 0) {
+        int open = valueStart(json, "auditPath");
+        if (open < 0 || json.charAt(open) != '[') {
             return AuditPath.unreadable("the auditPath field is not a JSON array");
+        }
+        int close = json.indexOf(']', open);
+        if (close < 0) {
+            return AuditPath.unreadable("the auditPath array is not closed");
         }
         List<Map<String, Object>> steps = new ArrayList<>();
         String body = json.substring(open + 1, close);
@@ -465,12 +538,15 @@ public final class SipVerifier {
                 if (chunk.replaceAll("[\\s,\\[\\]]", "").isEmpty()) {
                     continue;
                 }
-                return AuditPath.unreadable("a step carries no siblingHash");
+                return AuditPath.unreadable("a step carries no readable siblingHash");
+            }
+            Boolean siblingIsLeft = jsonBoolean(chunk, "siblingIsLeft");
+            if (siblingIsLeft == null) {
+                return AuditPath.unreadable("a step does not say which side its sibling is on");
             }
             Map<String, Object> step = new LinkedHashMap<>();
             step.put("siblingHash", sibling);
-            step.put("siblingIsLeft", chunk.contains("\"siblingIsLeft\" : true")
-                    || chunk.contains("\"siblingIsLeft\":true"));
+            step.put("siblingIsLeft", siblingIsLeft);
             steps.add(step);
         }
         return AuditPath.of(steps);
