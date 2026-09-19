@@ -9198,6 +9198,46 @@ CONTROLS = [
         test='ThePurgeSaysWhatItDidNotSeeTest',
         expect_fail=['everyListingOverloadCarriesTheOrderingFlag'],
     ),
+    # ── A-4 (R45): 期待値表が両方向を測る ──
+    dict(
+        id="EN3",
+        what="an ANSWERED 'there is no such path' starts refusing, so a profile whose folder "
+             "genuinely is not there stops the import (over-refusal)",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='                logger.warn("targetFolderPath \'{}\' does not exist in repository \'{}\'",\n'
+             '                        folderPath, repositoryId);\n'
+             '                return null;',
+        replace='                logger.warn("targetFolderPath \'{}\' does not exist in repository \'{}\'",\n'
+                '                        folderPath, repositoryId);\n'
+                '                throw new TargetFolderUnreadableException("no such path", absent);',
+        test='TargetFolderResolutionTableTest',
+        expect_fail=['theTableHolds'],
+    ),
+    dict(
+        id="EO3",
+        what="a permission denial answers null again, so the caller says the profile configured "
+             "no folder and the import proceeds without the authorisation (over-permission)",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java',
+        find='                throw new TargetFolderUnreadableException("the target folder path \'" + folderPath\n'
+             '                        + "\' of this profile is not readable: permission denied for the importing"\n'
+             '                        + " user (" + denied.getMessage() + ")", denied, false);',
+        replace='                return null;',
+        test='TargetFolderResolutionTableTest',
+        expect_fail=['theTableHolds'],
+    ),
+    dict(
+        id="EP3",
+        what="the expectation table stops covering one of the four outcomes, so 'both "
+             "directions' becomes a claim about whichever rows happen to be in it",
+        file='core/src/test/java/jp/aegif/nemaki/rest/ingest/TargetFolderResolutionTableTest.java',
+        # 1 行だけ消しても同じ outcome の別の行が残るので測れない (実測)。表が縮むことそのものを細工する。
+        find='        return rows;\n'
+             '    }',
+        replace='        return rows.subList(0, 1);\n'
+                '    }',
+        test='TargetFolderResolutionTableTest',
+        expect_fail=['theTableIsNotPartial'],
+    ),
     dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
