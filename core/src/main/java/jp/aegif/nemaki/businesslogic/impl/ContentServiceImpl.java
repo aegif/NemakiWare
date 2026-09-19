@@ -2531,8 +2531,13 @@ public class ContentServiceImpl implements ContentService {
 	 * and copying one has to keep working. The refusal is only for "the source says it has
 	 * content and the store does not have it".
 	 *
-	 * <p>A read that FAILED never arrives here as null: {@code AttachmentDaoDelegate.getAttachment}
-	 * throws for that and says so in its message. Null below is genuine absence.
+	 * <p>A read that FAILED does not arrive here as null in the deployed shape:
+	 * {@code AttachmentDaoDelegate.getAttachment} throws for that and says so in its message.
+	 * Two narrower windows are known and neither is reachable from here (review, 2026-09-19):
+	 * {@code CloudantClientWrapper.get} answers null instead of throwing WHILE THE REPOSITORY IS
+	 * PROVISIONING, and a failed write inside {@code copyAttachment} would be a null about the
+	 * DESTINATION rather than the source. If either ever reaches this method the message below
+	 * is wrong, so it is named here rather than left as "null is absence".
 	 */
 	private String copyAttachmentOrRefuse(CallContext callContext, String repositoryId,
 			String sourceAttachmentId) {

@@ -269,21 +269,40 @@ public final class SipVerifier {
                             + "was written to it, with no back-fill, so this says nothing about "
                             + "whether the record is genuine.");
         }
-        List<Map<String, Object>> steps = auditSteps(evidence);
+        AuditPath path = auditPath(evidence);
+        if (!path.present()) {
+            // An absent path walked as an empty one compares leaf(leafHash) with merkleRoot
+            // directly, so a package carrying a leaf and a root it computed FROM that leaf comes
+            // back PASSED without carrying a proof of anything. "There is no path" is not "the
+            // path is empty" (found by review, 2026-09-19).
+            return new Check("audit path", Outcome.NOT_PRESENT,
+                    "the evidence package names a leaf and a root but carries no auditPath, so "
+                            + "there is nothing to walk. A root that equals the leaf's own hash "
+                            + "says only that the two were written together.");
+        }
+        if (path.unreadable() != null) {
+            return new Check("audit path", Outcome.UNAVAILABLE,
+                    "the auditPath could not be read: " + path.unreadable()
+                            + ". Nothing about the entry's inclusion is established either way.");
+        }
         // The leaf hash is applied FIRST. `leafHash` in the proof is the entry's own hash, and
         // the tree is built over hashLeaf(entryHash) — walking the path from the raw value
         // would report every genuine package as broken, which is the failure mode a verifier
         // can least afford.
         String current = leaf(leaf);
-        for (Map<String, Object> step : steps) {
+        for (Map<String, Object> step : path.steps()) {
             String sibling = String.valueOf(step.get("siblingHash"));
             boolean siblingIsLeft = Boolean.TRUE.equals(step.get("siblingIsLeft"));
             current = siblingIsLeft ? node(sibling, current) : node(current, sibling);
         }
         if (current.equalsIgnoreCase(root)) {
             return new Check("audit path", Outcome.PASSED,
-                    "the audit path leads from the entry's leaf to the Merkle root the "
-                            + "checkpoint claims (" + root + ")");
+                    (path.steps().isEmpty()
+                            ? "the auditPath is empty, which is what a checkpoint that sealed a "
+                                    + "single entry produces: the leaf's own hash IS the root ("
+                            : "the audit path leads from the entry's leaf to the Merkle root the "
+                                    + "checkpoint claims (")
+                            + root + ")");
         }
         return new Check("audit path", Outcome.FAILED,
                 "the audit path leads to " + current + ", not to the claimed root " + root
@@ -399,23 +418,54 @@ public final class SipVerifier {
         return end < 0 ? null : json.substring(quote + 1, end);
     }
 
+    /**
+     * What the evidence package says about the audit path. Three readings, not one list.
+     *
+     * <p>A single list cannot carry them: "there is no auditPath", "there is one and it is
+     * empty" and "there is one and it cannot be read" all came out as zero steps, and zero steps
+     * walked from the leaf lands exactly on {@code leaf(leafHash)} — which a package can put in
+     * its own {@code merkleRoot}.
+     */
+    record AuditPath(List<Map<String, Object>> steps, boolean present, String unreadable) {
+
+        static AuditPath absent() {
+            return new AuditPath(List.of(), false, null);
+        }
+
+        static AuditPath unreadable(String why) {
+            return new AuditPath(List.of(), true, why);
+        }
+
+        static AuditPath of(List<Map<String, Object>> steps) {
+            return new AuditPath(List.copyOf(steps), true, null);
+        }
+    }
+
     /** The audit path steps, in order, read out of the flat JSON. */
-    static List<Map<String, Object>> auditSteps(String json) {
-        List<Map<String, Object>> steps = new ArrayList<>();
+    static AuditPath auditPath(String json) {
         int at = json.indexOf("\"auditPath\"");
         if (at < 0) {
-            return steps;
+            return AuditPath.absent();
         }
         int open = json.indexOf('[', at);
-        int close = json.indexOf(']', open);
+        int close = open < 0 ? -1 : json.indexOf(']', open);
         if (open < 0 || close < 0) {
-            return steps;
+            return AuditPath.unreadable("the auditPath field is not a JSON array");
         }
+        List<Map<String, Object>> steps = new ArrayList<>();
         String body = json.substring(open + 1, close);
         for (String chunk : body.split("\\}")) {
             String sibling = jsonString(chunk, "siblingHash");
             if (sibling == null) {
-                continue;
+                // Separators and the tail after the last '}' are not steps. A chunk with
+                // content but no siblingHash is a step this verifier cannot read, and dropping
+                // it silently shortens the path — which lands on a different root and reports
+                // FAILED, i.e. "the entry was not in that span", about a package we did not
+                // manage to read.
+                if (chunk.replaceAll("[\\s,\\[\\]]", "").isEmpty()) {
+                    continue;
+                }
+                return AuditPath.unreadable("a step carries no siblingHash");
             }
             Map<String, Object> step = new LinkedHashMap<>();
             step.put("siblingHash", sibling);
@@ -423,6 +473,6 @@ public final class SipVerifier {
                     || chunk.contains("\"siblingIsLeft\":true"));
             steps.add(step);
         }
-        return steps;
+        return AuditPath.of(steps);
     }
 }

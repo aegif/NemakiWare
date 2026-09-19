@@ -119,6 +119,21 @@ public class AttachmentServiceDelegate {
 			return null;
 		}
 
+		// The row is there and its body is not. getAttachment leaves the stream null for exactly
+		// one thing — the CouchDB document carries no `content` attachment — and createAttachment
+		// SKIPS stage 2 for a null stream and returns the new id as a success
+		// (AttachmentDaoDelegate: "STAGE 2 SKIPPED: No binary content to attach"). So copying it
+		// produced a second empty row, and the caller, holding a non-null id, recorded a
+		// successful copy of content that was never there. Found by review, 2026-09-19; same
+		// class as R54, one level further in. A zero-byte upload is NOT this case: CouchDB
+		// answers it with an empty stream, not with none.
+		if (original.getInputStream() == null) {
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisStorageException(
+					"the attachment '" + attachmentId + "' in '" + repositoryId + "' has a row "
+							+ "but no content body, so there is nothing to copy. This is NOT a "
+							+ "finding that the document has no content.");
+		}
+
 		String mimeType = original.getMimeType();
 		if (mimeType == null || mimeType.isEmpty()) {
 			mimeType = "application/octet-stream";
