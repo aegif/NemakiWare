@@ -358,6 +358,106 @@ class SipVerifierTest {
     }
 
     @Test
+    @DisplayName("keys beside the proof are not read as the proof")
+    void looseKeysDoNotShadowTheProof(@TempDir Path tmp) throws Exception {
+        // The reader used to take the first key of each name ANYWHERE in the document, so a
+        // package whose real inclusionProof is null could carry a working leaf, root and path
+        // beside it and be read as proved. The proof is read from INSIDE inclusionProof
+        // (review, 2026-09-20).
+        Map<String, String> real = realProofFor(2);
+        String json = real.get("json");
+        String pathText = json.substring(json.indexOf("\"auditPath\""), json.lastIndexOf("]") + 1);
+        String evidence = "{ \"leafHash\" : \"" + real.get("leafHash") + "\", "
+                + "\"merkleRoot\" : \"" + real.get("merkleRoot") + "\", " + pathText
+                + ", \"inclusionProof\" : null }";
+        String payload = "the minutes";
+        Path sip = zip(tmp, "shadow.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", evidence));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.NOT_PRESENT, outcomeOf(result, "audit path"),
+                "loose keys beside a null inclusionProof were read as the proof: "
+                        + result.asMap());
+    }
+
+    @Test
+    @DisplayName("a null in the step array is not absorbed by its neighbour")
+    void aNullStepIsNotAbsorbed(@TempDir Path tmp) throws Exception {
+        // Splitting the array text on '}' put a leading `null` in the same chunk as the step
+        // after it, and the step's own siblingHash satisfied the read — so an element the
+        // verifier could not read vanished and the path came back one step shorter, walked,
+        // and PASSED (review, 2026-09-20).
+        Map<String, String> real = realProofFor(2);
+        String withNull = real.get("json").replace(
+                "\"auditPath\" : [ ", "\"auditPath\" : [ null, ");
+        assertFalse(withNull.equals(real.get("json")), "the fixture was not altered");
+        String payload = "the minutes";
+        Path sip = zip(tmp, "nullstep.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", withNull));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"),
+                result.asMap().toString());
+    }
+
+    @Test
+    @DisplayName("evidence that is not JSON at all is UNAVAILABLE, not absent")
+    void unparseableEvidenceIsUnavailable(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Path sip = zip(tmp, "notjson.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", "{ \"inclusionProof\" : {"));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"),
+                result.asMap().toString());
+    }
+
+    @Test
+    @DisplayName("a package that says WHY it has no proof is quoted, not overwritten")
+    void thePackagesOwnReasonIsUsed(@TempDir Path tmp) throws Exception {
+        // Four states came out as one sentence about the chain — including the two where the
+        // exporter had written "This is NOT a statement that the record was never chained".
+        // `not-chained` is the ONE that means what that sentence says (review, 2026-09-20).
+        String payload = "the minutes";
+        String notChained = "{ \"status\" : \"not-chained\", \"inclusionProof\" : null, "
+                + "\"message\" : \"no ledger entry names this object.\" }";
+        Path chained = zip(tmp, "notchained.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", notChained));
+        String couldNotBuild = "{ \"status\" : \"error\", \"inclusionProof\" : null, "
+                + "\"inclusionProofFailed\" : \"the audit path could not be built (timeout).\" }";
+        Path failed = zip(tmp, "proofFailed.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", couldNotBuild));
+
+        assertEquals(SipVerifier.Outcome.NOT_PRESENT,
+                outcomeOf(SipVerifier.verify(chained), "audit path"),
+                "a package that says no entry names the object is not an unreadable one");
+        SipVerifier.Result failedResult = SipVerifier.verify(failed);
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(failedResult, "audit path"),
+                "a package that says the path could NOT BE BUILT was reported as one that was "
+                        + "never chained: " + failedResult.asMap());
+        assertTrue(detailOf(failedResult, "audit path").contains("could not be built"),
+                detailOf(failedResult, "audit path"));
+    }
+
+    @Test
     @DisplayName("a half-written proof says which half, about BOTH fields")
     void aHalfWrittenProofDescribesBothFields(@TempDir Path tmp) throws Exception {
         // leafHash is not written at all; merkleRoot IS written but is not a string. Naming
@@ -378,7 +478,7 @@ class SipVerifierTest {
         assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"), detail);
         assertTrue(detail.contains("leafHash is not written"),
                 "the detail does not say that leafHash is absent: " + detail);
-        assertTrue(detail.contains("merkleRoot is not a readable string"),
+        assertTrue(detail.contains("merkleRoot is not a string"),
                 "the detail does not say what is wrong with merkleRoot — naming one field and "
                         + "stopping asserts the other is usable: " + detail);
     }
@@ -654,10 +754,18 @@ class SipVerifierTest {
 
         assertEquals(SipVerifier.Outcome.PASSED, outcomeOf(result, "payload digest"),
                 "the verifier could not check a package this product built:\n" + result.asMap());
-        // No ledger was wired, so there IS no inclusion proof, and saying so is the right
-        // answer — not a failure, and not a pass either.
-        assertEquals(SipVerifier.Outcome.NOT_PRESENT, outcomeOf(result, "audit path"),
+        // No ledger was wired. This test used to assert NOT_PRESENT here, and a reviewer
+        // pointed out what that sentence said: "the chain only holds what was written to it …
+        // this says nothing about whether the record is genuine" — chain semantics, about a
+        // package whose own status field says the LEDGER WAS NOT REACHABLE and, in as many
+        // words, "This is NOT a statement that the record was never chained". The lock was
+        // pinning the conflation this branch exists to remove, with the material to tell them
+        // apart sitting in the same document.
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"),
                 result.asMap().toString());
+        assertTrue(detailOf(result, "audit path").contains("not wired"),
+                "the verifier does not repeat what the package says about its own evidence: "
+                        + detailOf(result, "audit path"));
         // And therefore the package this exporter produces here is INDETERMINATE, not verified.
         // Worth pinning at the round trip rather than only on hand-built fixtures: this is the
         // shape a real deployment without a ledger ships, and under the old rule it came back

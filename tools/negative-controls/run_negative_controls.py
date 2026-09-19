@@ -8734,7 +8734,13 @@ CONTROLS = [
         expect_fail=['aDigestWithoutAnAuditPathIsIndeterminate',
                      'anAuditPathWithoutADigestIsIndeterminate',
                      'theBodyCarriesTheVerdict',
-                     'aRealExportedPackageIsRead'],
+                     'aRealExportedPackageIsRead',
+                     # Everything that asserts INDETERMINATE for an unusable path goes with it:
+                     # under the old rule the payload digest alone carried the verdict.
+                     'aMissingAuditPathIsNotAnEmptyOne',
+                     'anEmptyAuditPathEstablishesNothing',
+                     'anUnreadableStepIsNotAFailure',
+                     'anotherArrayIsNotTheAuditPath'],
     ),
     dict(
         id="CS3",
@@ -8803,36 +8809,35 @@ CONTROLS = [
     # ── 確認レビューが出した P1 / P2 の処置 (2026-09-19) ──
     dict(
         id="CY3",
-        what="an ABSENT auditPath stops being distinguished from a present one, so 'no proof "
-             "was written' is reported as 'the proof is there and could not be used'",
+        what="an ABSENT auditPath is no longer told apart from a present one, so 'no proof was "
+             "written' and 'the proof is there and unusable' become one answer",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='        if (!path.present()) {',
+        find='        if (!proof.containsKey("auditPath")) {',
         replace='        if (false) {',
         test='SipVerifierTest',
         expect_fail=['aMissingAuditPathIsNotAnEmptyOne'],
     ),
     dict(
         id="CZ3",
-        what="a path that is present but unusable (empty, unreadable, a decoy array) is reported "
-             "as ABSENT, collapsing 'nothing was written' into 'this cannot be told apart'",
+        what="an auditPath that is present but not an array is reported as ABSENT, collapsing "
+             "'nothing was written' into 'this cannot be used'",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='        if (!path.present()) {',
-        replace='        if (!path.present() || path.steps().isEmpty()) {',
+        find='        if (!(proof.get("auditPath") instanceof List)) {\n'
+             '            return new Check("audit path", Outcome.UNAVAILABLE,',
+        replace='        if (!(proof.get("auditPath") instanceof List)) {\n'
+                '            return new Check("audit path", Outcome.NOT_PRESENT,',
         test='SipVerifierTest',
-        # Everything that ends with zero steps goes down with it: the sabotage answers
-        # NOT_PRESENT before the empty and unreadable arms are reached.
-        expect_fail=['anEmptyAuditPathEstablishesNothing', 'anUnreadableStepIsNotAFailure',
-                     'aStepWithNoSideIsUnavailable', 'anotherArrayIsNotTheAuditPath'],
+        expect_fail=['anotherArrayIsNotTheAuditPath'],
     ),
     dict(
         id="DA3",
         what="a step this verifier cannot read is dropped silently again, shortening the path "
              "and reporting FAILED about a package it did not manage to read",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='                return AuditPath.unreadable("a step carries no readable siblingHash");',
-        replace='                continue;',
+        find='            if (sibling == null || !(side instanceof Boolean)) {',
+        replace='            if (false) {',
         test='SipVerifierTest',
-        expect_fail=['anUnreadableStepIsNotAFailure'],
+        expect_fail=['aStepWithNoSideIsUnavailable', 'anUnreadableStepIsNotAFailure'],
     ),
     dict(
         id="DB3",
@@ -8847,72 +8852,51 @@ CONTROLS = [
     # ── 2 巡目のレビューが出した P1 の処置 (2026-09-19) ──
     dict(
         id="DC3",
-        what="the auditPath array is taken from anywhere after the key again, so `auditPath: "
-             "null` plus any other array in the document reads as an empty path",
+        what="the proof is read from the whole evidence document again, so loose keys beside a "
+             "null inclusionProof are read as the proof",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find="        int open = valueStart(json, \"auditPath\");\n"
-             "        if (open < 0 || json.charAt(open) != '[') {",
-        replace="        int open = json.indexOf('[', json.indexOf(\"\\\"auditPath\\\"\"));\n"
-                "        if (open < 0) {",
+        find='        Object proofValue = document.get("inclusionProof");',
+        replace='        Object proofValue = document;',
         test='SipVerifierTest',
-        expect_fail=['anotherArrayIsNotTheAuditPath'],
+        # Reading the whole document as the proof breaks every package whose proof IS nested,
+        # which is all of them — declared rather than narrowed, because the sabotage is the
+        # honest revert of the scoping.
+        expect_fail=['looseKeysDoNotShadowTheProof', 'aRealExportedPackageWithALedgerVerifies',
+                     'aRealExportedPackageIsRead', 'aBrokenAuditPathFails',
+                     'aGoodPackageVerifies', 'aHalfWrittenProofDescribesBothFields',
+                     'aMissingAuditPathIsNotAnEmptyOne', 'aReformattedProofStillVerifies',
+                     'anAuditPathWithoutADigestIsIndeterminate', 'thePackagesOwnReasonIsUsed'],
     ),
     dict(
         id="DD3",
-        what="a string field is read by searching forward for the next quote again, so a "
-             "non-string value returns the NEXT KEY'S NAME as the value",
+        what="a non-string value is coerced to its text again, so a number or an object reads "
+             "as a hash",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find="        if (start < 0 || json.charAt(start) != '\"') {\n"
-             "            return null;\n"
-             "        }\n"
-             "        int end = json.indexOf('\"', start + 1);\n"
-             "        return end < 0 ? null : json.substring(start + 1, end);",
-        replace="        if (start < 0) {\n"
-                "            return null;\n"
-                "        }\n"
-                "        int quote = json.indexOf('\"', start);\n"
-                "        if (quote < 0) {\n"
-                "            return null;\n"
-                "        }\n"
-                "        int end = json.indexOf('\"', quote + 1);\n"
-                "        return end < 0 ? null : json.substring(quote + 1, end);",
+        find='        return value instanceof String ? (String) value : null;',
+        replace='        return value == null ? null : String.valueOf(value);',
         test='SipVerifierTest',
-        expect_fail=['aNonStringFieldIsNotReadAsTheNextKey'],
+        expect_fail=['aNonStringFieldIsNotReadAsTheNextKey',
+                     'aHalfWrittenProofDescribesBothFields'],
     ),
     dict(
         id="DE3",
-        what="siblingIsLeft goes back to matching two exact spellings, so a proof reformatted "
-             "by any JSON tool combines every sibling on the wrong side and reports FAILED",
+        what="siblingIsLeft is no longer required to be a boolean, so a step that does not say "
+             "which side it is on combines on a side the verifier chose",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='            Boolean siblingIsLeft = jsonBoolean(chunk, "siblingIsLeft");',
-        replace='            Boolean siblingIsLeft = chunk.contains("\\"siblingIsLeft\\" : true")\n'
-                '                    || chunk.contains("\\"siblingIsLeft\\":true");',
+        find='            if (sibling == null || !(side instanceof Boolean)) {',
+        replace='            if (sibling == null) {',
         test='SipVerifierTest',
-        # The substring version never answers null, so the "no side" arm stops firing too.
-        expect_fail=['aReformattedProofStillVerifies', 'aStepWithNoSideIsUnavailable'],
+        expect_fail=['aStepWithNoSideIsUnavailable'],
     ),
     dict(
         id="DF3",
         what="an empty audit path is walked and reported PASSED again — the arithmetic-free "
              "comparison of leaf(leafHash) with a merkleRoot the same package supplies",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='        if (path.steps().isEmpty()) {',
+        find='        if (steps.isEmpty()) {',
         replace='        if (false) {',
         test='SipVerifierTest',
         expect_fail=['anEmptyAuditPathEstablishesNothing'],
-    ),
-    dict(
-        id="DG3",
-        what="a step that does not say which side its sibling is on defaults to false again",
-        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='            if (siblingIsLeft == null) {\n'
-             '                return AuditPath.unreadable("a step does not say which side its sibling is on");\n'
-             '            }',
-        replace='            if (siblingIsLeft == null) {\n'
-                '                siblingIsLeft = Boolean.FALSE;\n'
-                '            }',
-        test='SipVerifierTest',
-        expect_fail=['aStepWithNoSideIsUnavailable'],
     ),
     dict(
         id="DH3",
@@ -8938,20 +8922,14 @@ CONTROLS = [
     ),
     # ── 3 巡目のレビューが出した P1 の処置 (2026-09-20) ──
     dict(
-        id="DJ3",
-        what="a JSON literal is matched by prefix again, so `truegarbage` reads as true and a "
-             "step whose side is unreadable combines on a side the verifier invented",
-        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='        if (isLiteral(json, start, "true")) {\n'
-             '            return Boolean.TRUE;\n'
-             '        }\n'
-             '        return isLiteral(json, start, "false") ? Boolean.FALSE : null;',
-        replace='        if (json.startsWith("true", start)) {\n'
-                '            return Boolean.TRUE;\n'
-                '        }\n'
-                '        return json.startsWith("false", start) ? Boolean.FALSE : null;',
-        test='SipVerifierTest',
-        expect_fail=['aTruncatedLiteralIsNotRead'],
+        id="DQ3",
+        what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
+             "twice there was nothing' about a read that was never made",
+        file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/delegate/AttachmentServiceDelegate.java',
+        find='\t\t\tif (Thread.currentThread().isInterrupted()) {',
+        replace='\t\t\tif (false) {',
+        test='CopyingContentRefusesAMissingRowTest',
+        expect_fail=['anInterruptedRetrySaysSo'],
     ),
     dict(
         id="DK3",
@@ -8968,24 +8946,60 @@ CONTROLS = [
         what="the two fields of a half-written proof are described by one sentence about the "
              "first problem found, which asserts the other field is usable",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='                                + fieldState(evidence, "leafHash", leaf) + ", "\n'
-             '                                + fieldState(evidence, "merkleRoot", root)',
-        replace='                                + fieldState(evidence, "leafHash", leaf)',
+        find='                            + fieldState(proof, "leafHash") + ", "\n'
+             '                            + fieldState(proof, "merkleRoot")',
+        replace='                            + fieldState(proof, "leafHash")',
         test='SipVerifierTest',
         expect_fail=['aHalfWrittenProofDescribesBothFields'],
     ),
     dict(
-        id="DL3",
-        what="the audit path is read by a rule that only matches hand-spaced JSON, so the "
-             "compact proof this product's own ledger and exporter write stops verifying",
+        id="DN3",
+        what="evidence that is not JSON at all is reported as an absent proof, so 'we could not "
+             "read this' becomes 'there was nothing to read'",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='        int i = colon + 1;\n'
-             '        while (i < json.length() && Character.isWhitespace(json.charAt(i))) {\n'
-             '            i++;\n'
-             '        }',
-        replace='        int i = colon + 2;',
+        find='        } catch (Exception malformed) {\n'
+             '            return new Check("audit path", Outcome.UNAVAILABLE,',
+        replace='        } catch (Exception malformed) {\n'
+                '            return new Check("audit path", Outcome.NOT_PRESENT,',
         test='SipVerifierTest',
-        expect_fail=['aRealExportedPackageWithALedgerVerifies'],
+        # `truegarbage` is not valid JSON either, so it takes the same arm.
+        expect_fail=['unparseableEvidenceIsUnavailable', 'aTruncatedLiteralIsNotRead'],
+    ),
+    dict(
+        id="DO3",
+        what="a package that says its own ledger could not be read is reported with the chain "
+             "sentence — the conflation the exporter explicitly warned against",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='        if ("unavailable".equals(status) || "error".equals(status)) {',
+        replace='        if (false) {',
+        test='SipVerifierTest',
+        expect_fail=['aRealExportedPackageIsRead'],
+    ),
+    dict(
+        id="DP3",
+        what="a package that says its audit path COULD NOT BE BUILT is described by its status "
+             "alone, dropping the reason the package carries",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='        if (couldNotBuild != null) {',
+        replace='        if (false) {',
+        test='SipVerifierTest',
+        expect_fail=['thePackagesOwnReasonIsUsed'],
+    ),
+    dict(
+        id="DL3",
+        what="an array element that is not an object is skipped instead of refused, so an "
+             "unreadable step vanishes and the path comes back shorter",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='            if (!(element instanceof Map)) {\n'
+             '                return new Check("audit path", Outcome.UNAVAILABLE,\n'
+             '                        "the auditPath could not be read: a step is not an object. Nothing about "\n'
+             '                                + "the entry\'s inclusion is established either way.");\n'
+             '            }',
+        replace='            if (!(element instanceof Map)) {\n'
+                '                continue;\n'
+                '            }',
+        test='SipVerifierTest',
+        expect_fail=['aNullStepIsNotAbsorbed'],
     ),
 ]
 

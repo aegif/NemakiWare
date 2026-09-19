@@ -301,6 +301,35 @@ class CopyingContentRefusesAMissingRowTest {
     }
 
     @Test
+    @DisplayName("an interrupted retry says the second read did not happen")
+    void anInterruptedRetrySaysSo() throws Exception {
+        // The arm had no lock at all, while RELEASE_NOTES and the canon both described its
+        // behaviour (review, 2026-09-20). Answering with the two-read message would say "asked
+        // twice, twice there was nothing" about a read that was never made.
+        jp.aegif.nemaki.dao.ContentDaoService dao = dao();
+        when(dao.getDocument("bedroom", "doc-1")).thenReturn(document("doc-1", "att-9"));
+        when(dao.getAttachment("bedroom", "att-9")).thenReturn(bodyless(), stored("the minutes"));
+        ContentServiceImpl service = serviceOn(dao);
+
+        CmisStorageException refusal;
+        try {
+            Thread.currentThread().interrupt();
+            refusal = assertThrows(CmisStorageException.class,
+                    () -> service.checkOut(mock(CallContext.class), "bedroom", "doc-1", null));
+        } finally {
+            // Cleared here, not left for the next test in this JVM to inherit.
+            Thread.interrupted();
+        }
+
+        assertTrue(refusal.getMessage().contains("second read did not happen"),
+                "the refusal does not say that the retry never ran: " + refusal.getMessage());
+        assertTrue(refusal.getMessage().contains("found without a content body"),
+                "the refusal does not say what the FIRST read found: " + refusal.getMessage());
+        // The second read would have succeeded — and the message must not imply it was made.
+        verify(dao, org.mockito.Mockito.times(1)).getAttachment("bedroom", "att-9");
+    }
+
+    @Test
     @DisplayName("a document that genuinely has no content is still checked out")
     void aContentLessDocumentStillChecksOut() throws Exception {
         // The over-throw guard. "The source names nothing" and "the store does not have what the
