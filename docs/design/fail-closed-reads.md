@@ -58,7 +58,7 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
 | R11 | ~~フォルダ読み swallow → `CREATOR_CMIS_ALL_LOST` / `TARGET_FOLDER_UNRESOLVABLE` で IDLE 停止~~ **処置済み 2026-09-14（ユーザー指定のバッチ）**: `resolveFolderIdOrRefuse` / `canManageProfileForFolderAsUserOrRefuse` と新しい拒否理由 `TARGET_FOLDER_LOOKUP_FAILED` / `CREATOR_CMIS_ALL_LOOKUP_FAILED`（could-not-ask 側）。答える側の旧メソッドは他の呼び出し元のため不変（プロファイル編集 gate の 403 は別残件）。錠 8 本、control ZB2〜ZF2 | — | |
 | R12 | IDLE ラムダの per-message 腕は 2026-09-14 に adapter 注入 (`adapterFactory`) で実測できるようになった（`driveOneIdleMessage`）。connect / IDLE ループ / `fetchMessage` の実 I/O は依然未測定 | 実セッション | |
 | R13 | ~~DLQ ページの `skip` に安定ソートが無い~~ **処置済み 2026-09-17**: 一覧は `(type, dlqId, _id)` 順。`_id` まで並べるのは `dlqId` が全順序にならないため（同じ `dlqId` の双子行が在りうる — `deleteDlqEntry` が既に扱っている既知状態）。索引 `idx_type_dlqId_id` を `Patch_IngestMangoIndexes` に 1 本追加。索引が無いデータベースでは 400 `no_usable_index` を吸って従来の並びで返すが、応答に `stableOrder: false` を付ける（一覧ごと拒否しない — 各行は喪失の唯一の記録）。吸うのはその 400 だけで、輸送の失敗・他の 400・「文書一覧が無い応答」は拒否のまま。purge の 1,000 行走査（R20）と他の読みは不変。錠 5 本、control CA3〜CE3 | — | 確認レビュー 2 名とも CONVERGED（Codex の P1「(type, dlqId) は全順序でない」を処置） |
-| R14 | Notion の per-page catch は adapter が `new` されるため未測定 | 注入 | |
+| R14 | ~~Notion の per-page catch は adapter が `new` されるため未測定~~ **処置済み 2026-09-20（トラック A-8）— 測れるようにしたら腕が偽だった**: `NotionFetchOrchestrator` に `adapterFactory` を置き（`ImapIdleMonitor` と同じ形）、**本物の adapter をローカルの stub API に向けて**測る（mock の想像ではなく adapter 自身のstatus 処理・再試行・pagination を測る）。見つかった欠陥: **block listing が非 200 を「ここまでで終わり」として返していた** (`fetchAllBlocks` の `if (statusCode != 200) break;`)。429（再試行後）・500・切れた接続が `extractFiles` の**空リスト**になり、呼び出し側はそれを事実として述べる — 添付なしで note を取り込み、DLQ 行も書かず、last-edited チェックポイントがそのページを追い越す（**恒久**）。非 200 / `results` 無し / `has_more` なのに cursor 無し / cursor 反復 / 100 ページ上限をすべて `NotionReadIncompleteException` にした。**空の `results` は今も答え**（過剰拒否の側も錠）。`searchPages` は `PageListing(pages, complete, truncatedBecause)` を返し、limit / 50 ページ上限で切れたことを運ぶ。`FetchResult` に **`incompleteReads`**（errors とは別 — errors に入れるとスケジューラが健全な大きな workspace を circuit breaker に数え、過剰拒否になる）、`completeJob` は `sawEverything()` が偽なら **COMPLETED ではなく PARTIAL**。錠 10 本、control FA3 / FB3 / FC3 / FD3 / FE3 / FG3 | — | 残る窓は R59（順序の保証が無いので、切れた listing で high-water を上げること自体は直していない） |
 | R15 | コントロール×兄弟錠 2403 組は未判定 | 掃きはユーザー指示があるまで禁止 | |
 | R16 | `statusOfIdleRefusal` が `raw` も見る | 意図した非対称（敵対 id は 503 しか買えない） | |
 | R17 | 一覧が空に見えるだけの経路 — 読みの失敗が「無い」という**断定**に使われない箇所は直していない（RELEASE_NOTES が指す） | 別バッチ | |
@@ -112,16 +112,17 @@ attachment 行を作る → body を PUT」の順で（`ArchiveDaoDelegate` の 
 述べる別の文面で拒否する**（「2 回訊いた」と「訊けなかった」を混ぜない）。根治は復元の順序を変えること（body が入ってから文書を公開する）で、復元の意味に関わる（確認レビュー 2 巡目の P1 を、過剰拒否側の処置と残件に分けたもの） | 復元の順序を変えるとき | |
 | R57 | **cold へ MOVE した文書を復元すると、body の無い attachment 行が恒久的に残る。** MOVE は archive 行の `content` 添付だけを消して行を残すので、復元の事前検査は「在る」と答え、`restoreAttachment` は body の PUT に失敗しても `archiveHasBinary == false` のため**例外を投げずに正常終了**する。以後その文書の checkOut / checkIn / copy は**永久に** R54 の拒否になり、文面は「復元中なら少し待って再実行」と言う — 復元は進行中ではなく、**失敗せずに終わっている**。製品に cold から読み戻す経路は無い（`adapter.get` の呼び出しは 0 件、ダウンロードは 410 Gone）。根治は復元側で「binary が無いまま終わったこと」を答えることで、W11 / W12 の意味に関わる（5 巡目の確認レビュー P2） | 復元が「内容なしで終わった」と答えるようになるとき | |
 | R58 | **SIP 検証器の残りの精度**（11 巡目のレビューが記録した 4 件・いずれも `UNAVAILABLE` / `NOT_PRESENT` の**文面**の問題で、判定そのものは fail-closed）: (a) `inclusionProofFailed` が非文字列のときの腕、`not-chained` の既定文、message 無しの `unavailable` 腕 — **到達はするが fixture が無い**。(b) `{"inclusionProof": "n/a", "status":"success"}` が「proof が無い」の文に落ち、`noProofCheck` の「inclusionProof is not an object」に到達しない。(c) 読めない `status` について「この版が知らない理由」と述べる（注記が別文で救っている）。**この検証器は本番の呼び出し元を持たず、Phase 5 で独立 CLI として作り直す対象**なので、そこで正典ごと書き直す | Phase 5（独立 verifier） | |
+| R59 | **順序の保証が無い listing で last-edited の high-water を上げること自体は直していない。** Notion の `/search` に sort を渡していないので返る順は未規定で、limit や 50 ページ上限で切れたlisting の max(見た last_edited) を checkpoint にすると、**見ていないページのうち last_edited がそれより小さいものは以後の poll で恒久的に除外される**。A-8 で直したのは「切れたことを黙っていた」側で（`incompleteReads` / PARTIAL）、切り詰め自体は残る。閉じ方は `sort: {direction: ascending, timestamp: last_edited_time}` を足して listing を編集時刻の prefix にし、境界の同時刻グループを次回に回すこと — **実機の Notion が無いと検証できないので、このセッションでは足していない**（検証できない API パラメータを入れると、落ちたときに connector ごと止まる）。**checkpoint を上げない**という選択は採らなかった: 既定 limit は 50 なので、50 ページを超えるworkspace で前進しなくなる（過剰拒否）。**同じ形は他の connector にもある** — `incompleteReads` の経路は用意したが、埋めているのは Notion だけ | 実機 Notion で sort を確認できるとき、および connector ごとに | |
 | D1 | token 付き行の**添付前検査**（57 巡）、添付を landed の証拠に読む**自己修復**（58 巡）、15 分で通常経路に落とす **lease**（59 巡） | 凍結解除まで再導入しない | やめた（いずれも古い bytes を新しいメタデータで再生する同じ class に落ちた） |
 
 ## 5. 測定
 
-- コントロール **770**（2026-09-20 時点）。**うち 704 だけが通しで測られている** — 4 回目の通し以降に
-  足した 66 本（DG3 / DJ3 は退役。SIP 検証器の読みを手組みからパーサに替えたので、
+- コントロール **776**（2026-09-20 時点）。**うち 704 だけが通しで測られている** — 4 回目の通し以降に
+  足した 72 本（DG3 / DJ3 は退役。SIP 検証器の読みを手組みからパーサに替えたので、
   細工の対象そのものが無くなった）（CK3 / CL3 BagIt、CM3 stamp、CN3 / CO3 強制変換ログ、CP3 setup URL、CQ3 指紋、
   CR3 / CS3 / CT3 SIP の verdict、CU3〜CX3 内容複製、CY3 / CZ3 / DA3 / DC3〜DF3 / DL3〜DP3
   証拠 JSON の読み、DR3〜EF3 package 自身が述べた理由・重複キー・BOM・未知の理由・規則の一本化、
-  DB3 / DH3 / DI3 / DK3 / DQ3 中身の無い添付行・復元の窓・割り込み、EG3〜EI3 mapper の一本化、EJ3〜EL3 purge の走査上限、EM3 一覧の overload、EN3〜EP3 パス解決の期待値表、EQ3〜ES3 二重保護の各錨、ET3 / EU3 装飾の scope 付き列挙、EV3〜EZ3 版ごとの実測とその fail-closed）は
+  DB3 / DH3 / DI3 / DK3 / DQ3 中身の無い添付行・復元の窓・割り込み、EG3〜EI3 mapper の一本化、EJ3〜EL3 purge の走査上限、EM3 一覧の overload、EN3〜EP3 パス解決の期待値表、EQ3〜ES3 二重保護の各錨、ET3 / EU3 装飾の scope 付き列挙、EV3〜EZ3 版ごとの実測とその fail-closed、FA3〜FG3 Notion の読み切れなかった listing）は
   **ID 指定で 1 本ずつ実測しただけ**で、通しに入れたことはない。次の通しで初めて
   「他の錠を巻き添えにしないか」が測られる（CZ3 / DE3 / DH3 は実際に巻き込みがあり、宣言を足した）。
   **3 本が「発火しない」ことも分かった** — 新しい arm（空の path は `UNAVAILABLE`）が
