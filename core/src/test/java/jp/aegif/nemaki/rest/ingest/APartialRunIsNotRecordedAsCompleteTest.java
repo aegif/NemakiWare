@@ -189,15 +189,64 @@ class APartialRunIsNotRecordedAsCompleteTest {
         // And the screens that read those doors. "Unactionable" was measured on the server and
         // not on the only consumer, so the response carried the reason while both manual-run
         // screens still showed a green "done" (subagent review, P1).
-        for (String screen : List.of(
-                "components/DocumentList/DocumentList.tsx",
-                "components/IntegrationSettings/SchedulerStatusTab.tsx")) {
-            String source = Files.readString(Path.of("src/main/webapp/ui/src/" + screen),
-                    StandardCharsets.UTF_8);
-            assertTrue(source.contains("sawEverything") || source.contains("incompleteReads"),
-                    screen + " reports a manual run without looking at whether it saw the whole "
-                            + "source, so a run that stopped at its limit reads as finished");
+        // Scoped to the HANDLER, not the file. DocumentList.tsx also imports a ZIP, and that
+        // branch has always read status === 'partial' and warned — so a file-level grep for
+        // either token was satisfied by a different feature and both controls stayed green
+        // (measured: FW3 and FY3 did not fire until this was scoped).
+        for (String[] screen : List.of(
+                new String[] {"components/DocumentList/DocumentList.tsx", "handleRunConnector"},
+                new String[] {"components/IntegrationSettings/SchedulerStatusTab.tsx",
+                        "handleTrigger"})) {
+            // Comments stripped here too. The Java half of this method was given that in the
+            // round before, and the TSX half was written the same afternoon without it — one
+            // comment mentioning the field would have retired the check (subagent review, P3).
+            String where = screen[0] + "#" + screen[1];
+            String handler = handlerBody(withoutTsComments(Files.readString(
+                    Path.of("src/main/webapp/ui/src/" + screen[0]), StandardCharsets.UTF_8)),
+                    screen[1]);
+
+            assertTrue(handler.contains("'partial'") || handler.contains("\"partial\""),
+                    where + " reports a manual run without looking at its status, so a run "
+                            + "that stopped at its limit — or that failed items — reads as "
+                            + "finished");
+            // Checking the identifier is present says nothing about what it does with it. The
+            // outcome has to differ: a handler that branches on status and then calls success
+            // either way is the defect with an extra line.
+            assertTrue(handler.contains("message.warning"),
+                    where + " never warns, so whatever it reads about a partial run changes "
+                            + "nothing the person who pressed the button sees");
         }
+    }
+
+    /**
+     * The body of one arrow-function handler, from its declaration to the closing {@code };}
+     * at the same indentation.
+     *
+     * <p>A whole .tsx file is the wrong scope: DocumentList also imports ZIPs, and that handler
+     * has always branched on {@code status === 'partial'} and warned, so a file-level grep for
+     * either token was answered by an unrelated feature.
+     */
+    private static String handlerBody(String source, String handler) {
+        int start = source.indexOf("const " + handler + " =");
+        assertTrue(start >= 0, "no handler named " + handler + " in that screen");
+        int end = source.indexOf("\n  };", start);
+        assertTrue(end > start, handler + " does not close where this expects; the scope would "
+                + "be the rest of the file, which is what made this check answerable by another "
+                + "feature");
+        return source.substring(start, end);
+    }
+
+    /** Line and block comments out, so a sentence about the code cannot stand in for it. */
+    private static String withoutTsComments(String source) {
+        String withoutBlocks = source.replaceAll("(?s)/\\*.*?\\*/", "");
+        StringBuilder kept = new StringBuilder();
+        for (String line : withoutBlocks.split("\n", -1)) {
+            String trimmed = line.trim();
+            if (!trimmed.startsWith("//")) {
+                kept.append(line).append('\n');
+            }
+        }
+        return kept.toString();
     }
 
     @Test

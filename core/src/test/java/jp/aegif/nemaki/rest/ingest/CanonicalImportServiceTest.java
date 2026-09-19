@@ -3411,7 +3411,23 @@ class CanonicalImportServiceTest {
             java.util.Map<String, String> writersBelowADoor,
             java.util.Map<String, String> reAskAbove) {}
 
-    private static final DecorationScope DECORATION_SCOPE = new DecorationScope(4,
+    /**
+     * Every call shape through which this class writes to the store.
+     *
+     * <p>The inventory is only as wide as this list. It held two entries and the lock's own
+     * comment called them "both ways a decoration reaches the store" — an overclaim that the
+     * text R48 struck through had already contradicted.
+     */
+    private static final java.util.List<String> WRITE_FORMS = java.util.List.of(
+            "contentService.update(",
+            "ingestMetadataService.",
+            "versioningService.checkIn(",
+            "versioningService.checkOut(",
+            "objectService.createDocument(",
+            "objectService.createRelationship(",
+            "objectService.deleteObject(");
+
+    private static final DecorationScope DECORATION_SCOPE = new DecorationScope(5,
             java.util.List.of(
                     "executeMailImportInternal",
                     "executeNoteImportInternal",
@@ -3441,12 +3457,17 @@ class CanonicalImportServiceTest {
                             + "starts after its second re-ask",
                     "applySourceMetadata", "reached from execute, which re-asks twice",
                     "applyAclSyncPolicy", "reached from applySourceMetadata, below execute",
-                    "applySourceAcl", "reached from applyAclSyncPolicy, below execute"),
+                    "applySourceAcl", "reached from applyAclSyncPolicy, below execute",
+                    "removeRelationshipsById", "reached from execute, below its second re-ask",
+                    "createLink", "reached from createLinkAuthorized, which re-authorises "
+                            + "against the target folder's current ACL (R4)"),
             java.util.Map.of(
                     // Found by the caller check itself, on the round that added it: `execute`
                     // reaches applySourceMetadata and is neither a guard caller nor a writer,
                     // so it was in none of the lists while being the very method the claim
                     // "below a door, which re-asks" rests on.
+                    "createLinkAuthorized", "re-authorises the link itself (R4) rather than "
+                            + "through refuseDecorationIfNoLongerAuthorized",
                     "execute", "re-asks the delegation TWICE itself (R5) — once after profile "
                             + "resolution and again immediately before the write — rather than "
                             + "through refuseDecorationIfNoLongerAuthorized, so it is not a "
@@ -3474,8 +3495,15 @@ class CanonicalImportServiceTest {
         // — which is the door worth catching (Codex review, P2). So the WRITES are enumerated
         // too, both ways a decoration reaches the store, and every method that performs one has
         // to be named somewhere in the scope.
-        java.util.List<String> writers = enclosingMethodsCalling(source, "contentService.update(");
-        writers.addAll(enclosingMethodsCalling(source, "ingestMetadataService."));
+        // EVERY way this class writes, not the two that decorations happen to use today. The
+        // comment here used to say "both ways a decoration reaches the store", which the
+        // withdrawn half of R48 had already named as false: a decoration can ride on the
+        // properties of a checkIn, or on a createDocument, and neither moves either count
+        // (subagent review, P2). Widening cost two names.
+        java.util.List<String> writers = new java.util.ArrayList<>();
+        for (String write : WRITE_FORMS) {
+            writers.addAll(enclosingMethodsCalling(source, write));
+        }
 
         java.util.List<String> named = new java.util.ArrayList<>(
                 DECORATION_SCOPE.includedOperations());
@@ -3491,6 +3519,19 @@ class CanonicalImportServiceTest {
                         + "the scope's lists, so this inventory cannot be read as a count of "
                         + "anything (scope version " + DECORATION_SCOPE.version() + "): "
                         + unaccounted);
+
+        // The accounting above only fails on names it FINDS and cannot place. Nothing failed
+        // when a write form was dropped from WRITE_FORMS, because the method it named was found
+        // through another form — so the list could shrink in silence (measured: GA3 did not
+        // fire). Every declared writer has to be found by the enumeration as well.
+        java.util.List<String> declaredButNotFound =
+                new java.util.ArrayList<>(DECORATION_SCOPE.writersBelowADoor().keySet());
+        declaredButNotFound.removeAll(writers);
+        assertTrue(declaredButNotFound.isEmpty(),
+                "the scope declares a writer that the enumeration no longer finds, so either the "
+                        + "method is gone or WRITE_FORMS lost the shape it writes through — "
+                        + "either way the inventory covers less than it says: "
+                        + declaredButNotFound);
 
         // The writers are claimed to sit BELOW a door. Naming them is not the same as pinning
         // that: a new entry point calling one of them directly, without re-asking, changes

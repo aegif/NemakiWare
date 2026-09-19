@@ -97,7 +97,9 @@ class EverySupportedCouchDbIsMeasuredTest {
         // the job is not the job. Trailing comments go too — dropping only whole-line ones left
         // `... # nemaki.test.couchdb.required=true` able to satisfy an assertion below (Codex
         // review, P2). The `#` is taken as a comment start only with whitespace before it, so a
-        // URL fragment or a `#` inside a quoted string is left alone.
+        // `#` with no whitespace before it — a URL fragment like `…/x#y` — is left alone. A `#`
+        // AFTER whitespace inside a quoted string would be cut, which is not YAML's rule; the
+        // job has no such string and this is not a YAML parser.
         StringBuilder running = new StringBuilder();
         for (String line : yaml.substring(from, end).split("\n", -1)) {
             String trimmed = line.trim();
@@ -148,6 +150,44 @@ class EverySupportedCouchDbIsMeasuredTest {
                         + "past an unreachable CouchDB and every matrix entry reports green — a "
                         + "read that never happened, reported as a read that found nothing:\n"
                         + job);
+    }
+
+    @Test
+    @DisplayName("the canon's control count is the runner's, and the whole batch's locks are in CI")
+    void theRecordedNumbersAreTheRealOnes() throws IOException {
+        // Two numbers this batch got wrong by hand. The control count went into the canon as
+        // 791 when the file held 793 — read off "791 not measured by this run" without adding
+        // the two that were. And the allow-list widening covered the class that noticed the
+        // problem while leaving its siblings out (both round-3 reviews).
+        String runner = Files.readString(
+                Path.of("../tools/negative-controls/run_negative_controls.py"),
+                StandardCharsets.UTF_8);
+        int declared = 0;
+        Matcher ids = Pattern.compile("(?m)^\\s+id=[\"']([A-Z0-9]+)[\"'],").matcher(runner);
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        while (ids.find()) {
+            declared++;
+            assertTrue(seen.add(ids.group(1)), "control id " + ids.group(1) + " is declared twice");
+        }
+
+        String canon = Files.readString(Path.of("../docs/design/fail-closed-reads.md"),
+                StandardCharsets.UTF_8);
+        Matcher recorded = Pattern.compile("コントロール \\*\\*(\\d+)\\*\\*").matcher(canon);
+        assertTrue(recorded.find(), "the canon does not state a control count");
+        assertEquals(declared, Integer.parseInt(recorded.group(1)),
+                "the canon says " + recorded.group(1) + " controls and the runner declares "
+                        + declared + ". A count nobody checks is how a retired or a missing "
+                        + "control reads as a known rounding difference");
+
+        String yaml = workflow();
+        for (String lock : List.of("EverySupportedCouchDbIsMeasuredTest",
+                "APartialRunIsNotRecordedAsCompleteTest",
+                "NotionPartialReadsAreNotCompleteTest",
+                "NoJavadocIsOrphanedTest")) {
+            assertTrue(yaml.contains(lock),
+                    lock + " is in no -Dtest list in " + WORKFLOW + ", so it runs on a laptop "
+                            + "and nowhere else");
+        }
     }
 
     @Test
