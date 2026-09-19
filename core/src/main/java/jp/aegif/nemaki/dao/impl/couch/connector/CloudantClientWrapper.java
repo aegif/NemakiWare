@@ -1430,7 +1430,7 @@ public class CloudantClientWrapper {
 			}
 			log.error("Design document '" + designDoc + "' or view '" + viewName + "' is not"
 					+ " deployed; a caller would otherwise read that as 'no such row'");
-			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+			throw new ViewNotDeployedException(
 					"View " + designDoc + "/" + viewName + " is not deployed in database '"
 							+ databaseName + "', so it cannot answer for key '" + key + "'", e);
 		} catch (Exception e) {
@@ -1529,7 +1529,7 @@ public class CloudantClientWrapper {
 			}
 			log.error("Design document '" + designDoc + "' or view '" + viewName + "' is not"
 					+ " deployed; a caller would otherwise read that as 'no such row'");
-			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+			throw new ViewNotDeployedException(
 					"View " + designDoc + "/" + viewName + " is not deployed in database '"
 							+ databaseName + "', so it cannot answer for key '" + key + "'", e);
 		} catch (Exception e) {
@@ -1742,7 +1742,7 @@ public class CloudantClientWrapper {
 						+ " found during startup - returning an empty page");
 				return new PagedViewResult<>(new ArrayList<>(), 0);
 			}
-			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+			throw new ViewNotDeployedException(
 					"View " + designDoc + "/" + viewName + " is not deployed in database '"
 							+ databaseName + "', so it cannot answer", e);
 		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException refusal) {
@@ -1878,7 +1878,7 @@ public class CloudantClientWrapper {
 						+ " found during startup - returning an empty page");
 				return new PagedViewResult<>(new ArrayList<>(), 0);
 			}
-			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+			throw new ViewNotDeployedException(
 					"View " + designDoc + "/" + viewName + " is not deployed in database '"
 							+ databaseName + "', so it cannot answer", e);
 		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException refusal) {
@@ -1941,7 +1941,7 @@ public class CloudantClientWrapper {
 						+ " returning 0 for count");
 				return 0;
 			}
-			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+			throw new ViewNotDeployedException(
 					"View " + designDoc + "/" + viewName + " is not deployed in database '"
 							+ databaseName + "', so it cannot be counted", e);
 		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException refusal) {
@@ -2043,7 +2043,7 @@ public class CloudantClientWrapper {
 						+ " returning 0 for count");
 				return 0;
 			}
-			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+			throw new ViewNotDeployedException(
 					"View " + designDoc + "/" + viewName + " is not deployed in database '"
 							+ databaseName + "', so it cannot be counted", e);
 		} catch (Exception e) {
