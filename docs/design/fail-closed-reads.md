@@ -64,7 +64,7 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
 | R17 | 一覧が空に見えるだけの経路 — 読みの失敗が「無い」という**断定**に使われない箇所は直していない（RELEASE_NOTES が指す） | 別バッチ | |
 | R18 | ~~`IngestJobService.findRawDocs` が `docs == null`（store が文書一覧を返さない）を空扱い → DLQ 一覧は空、再実行は 404、purge は success（60 巡 Codex P2）~~ **処置済み 2026-09-14**（Codex 3 回のレビューを経て取り込み、`7ca81425d` でコミット済み） | — | |
 | R19 | ~~purge の `deleteExactRevision` が競合以外の失敗も「行が動いた」= 0 として success（60 巡 Codex P2）~~ **処置済み 2026-09-14**（Codex 3 回のレビューを経て取り込み、`7ca81425d` でコミット済み） | — | |
-| R20 | purge は先頭 1,000 行しか走査せず、続きがあることを応答が言わない（60 巡 Codex P2。RELEASE_NOTES の「中断した purge は 503」より弱い） — **文面で上限を明示済み (2026-09-14)**、製品は不変 | ページング | |
+| R20 | ~~purge は先頭 1,000 行しか走査せず、続きがあることを応答が言わない（60 巡 Codex P2。RELEASE_NOTES の「中断した purge は 503」より弱い） — **文面で上限を明示済み (2026-09-14)**、製品は不変~~ **処置済み 2026-09-20（トラック A-2）**: **上限は 1,000 のまま**。走査が `limit + 1` 行を読むようにして、「続きがある」を**推測ではなく読んで**答える（余分な 1 行は数えも消しもしない）。応答に `scanLimit` / `rowsExamined` / `rowsPurged` / `limitReached` / `moreRowsMayExist` / `unreadableRows` を足した。**`deleted` は意味も名前もそのまま**（既存の読み手のため）。`failedAt` が読めない行は**黙って飛ばず数える** — cutoff を当てていないので「古いものは無かった」の対象外である。**「上限まで読んだ」を「続きがある」と断定しない**（計画 A-2 の文言）。錠 4 本、control EJ3 / EK3 / EL3 | — | 錠の store が limit を無視していたため EJ3 が不発。fixture を直して発火 |
 | R21 | ~~`reserveDlqRetry` の 429 の腕が死んでいる — `_rev` 競合は SDK が `ConflictException` で投げ、`catch (Exception)` が 503「訊けなかった」にする（60 巡 subagent P2）~~ **処置済み 2026-09-14**（Codex 3 回のレビューを経て取り込み、`7ca81425d` でコミット済み） | — | |
 | R22 | ~~IMAP IDLE が `executeMailImport` の**結果**を捨て「imported」とログ — 結果として返る拒否（対象フォルダ読取失敗等）は DLQ にも `undurableMisses` にも載らず、IMAP は再配信しない（60 巡 subagent P2）~~ **処置済み 2026-09-14**（Codex 3 回のレビューを経て取り込み、`7ca81425d` でコミット済み） | — | |
 | R23 | ~~DLQ 書き込みがセレクタの空答えを「行なし」と読み、生成 id の 2 行目を作りうる（60 巡 P3）~~ **処置済み 2026-09-15（バッチ 2）**: 新しい DLQ 行は `ingest_dlq:<dlqId>` の確定 `_id`。隠れた行への 2 度目の書き込みは 409 →「記録できなかった」に倒れる。CAS はこのバッチでは入れず、バッチ 3（R1）で入った。生成 id の旧行は未移行でその双子は残る。錠 2 本（ジョブ行は生成 id のままの対照を含む）、control ZV2。確認レビュー 2 本 CONVERGED。subagent が条件にした「削除済み行（tombstone）の上に `_rev` 無しで再作成すると 409 か」は scratch の CouchDB 3.3.3 で実測: POST / PUT とも 201（rev N+1）。再実行成功 → 行削除 → 同じ項目が再失敗、の順路は記録できる | 旧行の双子は R1 の後に | |
@@ -116,12 +116,12 @@ attachment 行を作る → body を PUT」の順で（`ArchiveDaoDelegate` の 
 
 ## 5. 測定
 
-- コントロール **753**（2026-09-20 時点）。**うち 704 だけが通しで測られている** — 4 回目の通し以降に
-  足した 49 本（DG3 / DJ3 は退役。SIP 検証器の読みを手組みからパーサに替えたので、
+- コントロール **756**（2026-09-20 時点）。**うち 704 だけが通しで測られている** — 4 回目の通し以降に
+  足した 52 本（DG3 / DJ3 は退役。SIP 検証器の読みを手組みからパーサに替えたので、
   細工の対象そのものが無くなった）（CK3 / CL3 BagIt、CM3 stamp、CN3 / CO3 強制変換ログ、CP3 setup URL、CQ3 指紋、
   CR3 / CS3 / CT3 SIP の verdict、CU3〜CX3 内容複製、CY3 / CZ3 / DA3 / DC3〜DF3 / DL3〜DP3
   証拠 JSON の読み、DR3〜EF3 package 自身が述べた理由・重複キー・BOM・未知の理由・規則の一本化、
-  DB3 / DH3 / DI3 / DK3 / DQ3 中身の無い添付行・復元の窓・割り込み、EG3〜EI3 mapper の一本化）は
+  DB3 / DH3 / DI3 / DK3 / DQ3 中身の無い添付行・復元の窓・割り込み、EG3〜EI3 mapper の一本化、EJ3〜EL3 purge の走査上限）は
   **ID 指定で 1 本ずつ実測しただけ**で、通しに入れたことはない。次の通しで初めて
   「他の錠を巻き添えにしないか」が測られる（CZ3 / DE3 / DH3 は実際に巻き込みがあり、宣言を足した）。
   **3 本が「発火しない」ことも分かった** — 新しい arm（空の path は `UNAVAILABLE`）が
