@@ -49,9 +49,9 @@
 | **W9** | **`replacePwc`** | **`updateAttachment`（:1488、その場）** | `ObjectServiceImpl.setContentStream`（対象が PWC のとき、:799） | PWC の内容差し替え |
 | **W10** | **アーカイブ（削除）** | `ArchiveDaoDelegate.createAttachmentArchive`（:481。bytes を **archive DB へ複製**、:545） | `deleteContentStream` / `deleteDocument` → `deleteAttachment`（`ContentServiceImpl` の両メソッド内） | 本番からは消え、archive に残る |
 | **W11** | **復元** | `ArchiveDaoDelegate.restoreAttachment`（:714。attachment 行を作り直し、:792 で **本番へ body を PUT**） | `ContentServiceImpl.restoreArchive` / `restoreArchiveGuarded` | bytes が本番に戻る |
+| **W12** | **cold 移送**（COPY / MOVE） | `RetentionScheduler.moveToCold` → `LongTermStorageAdapter.put`（:599。**外部保管へ bytes を書く**）。MOVE なら `contentService.deleteArchiveContent`（:666 → `ArchiveDaoDelegate:1133`）で**ローカルの bytes を消す** | 保持ポリシーのスケジューラ | COPY は二重化、MOVE は所在の移動 |
 | **W13** | **アーカイブの物理削除** | `ArchiveServiceDelegate.destroyArchive` → `destroyDocument`（**body を持つ attachment archive 行そのものを削除**） | `ArchiveResource.destroyArchive`（api/v1、管理者） | **ローカルの** bytes が消える |
 | **W14** | **cold blob の孤児化**（W13 を cold 化済みの文書に実行したとき） | 同上。`LongTermStorageAdapter.delete` は**呼ばれない** | 同上（管理 API は archive の状態で分岐しない） | 参照は消え、外部保管の blob は残る |
-| **W12** | **cold 移送**（COPY / MOVE） | `RetentionScheduler.moveToCold` → `LongTermStorageAdapter.put`（:599。**外部保管へ bytes を書く**）。MOVE なら `contentService.deleteArchiveContent`（:666 → `ArchiveDaoDelegate:1133`）で**ローカルの bytes を消す** | 保持ポリシーのスケジューラ | COPY は二重化、MOVE は所在の移動 |
 
 **外部取込は独自の書き込み経路を持たない。** `CanonicalImportServiceImpl` は
 `versioningService.checkIn`（2 か所）と `objectService.createDocument`（1 か所）を呼ぶので、

@@ -86,6 +86,7 @@ rollback は検出するが、それは「最新である」証明ではない)�
 | T5 | A3 が package 内の root を信頼根拠にさせる | `SipVerifier` の `limits` が「独立性には外部 anchor が要る / この package はそれを運んでいない」と**書いてはいる** (`SipVerifier.LIMITS`)。ただし**文言であって検査ではない** | **Phase 5** (profile で必須にする) |
 | T6 | A3 が別文書の proof を組み合わせる | **検出できない** (T3 と同じ理由) | **Phase 4 / 5** |
 | T7 | A5 が ZIP bomb / 巨大 entry を渡す | **無防備。** `SipVerifier.read`（メソッド `read(Path)`）は全 entry を `ByteArrayOutputStream` に**無制限に**読み込む。件数・サイズ・圧縮率のどれも見ていない | **Phase 5** (`RESOURCE_LIMIT`) |
+| T8b | A5 が**証拠 JSON の中で**キーを重複させる | **塞いだ (2026-09-20)**。`STRICT_DUPLICATE_DETECTION` を有効にしたので重複キーは parse error → `UNAVAILABLE`。以前は Jackson 既定の**後勝ち**で、先勝ちの読み手と答えが割れた (手組み時代は先勝ち。向きが反転していた) | 済 |
 | T8 | A5 が entry 名を重複させる / 未参照の entry を足す | **検出できない。** `read` の `entries.put(entry.getName(), ...)` は `Map#put` なので**後勝ちで黙って上書き**する。`textOf` は suffix 一致の**最初の 1 件**を返す。`payloadDigestCheck` は payload の**どれか 1 つ**が記録 digest に一致すれば PASSED を返す（`payloadDigestCheck` の payload ループ）ので、**無関係な payload を並べても通る** | **Phase 2 / 5** (P0 の一対一) |
 | T9 | A4 が TSA を差し替える / 応答を偽造する | 署名検証と trust anchor 時の PKIX はある。**発行時の失効材料 (CRL / OCSP) を保存していない** (`AnchorReceiptCodec` に `revocation` / `OCSP` / `CRL` の語が 0 件) ので、後から「発行時に有効だったか」を offline で言えない | **Phase 6** |
 | T10 | 時刻の主張を過大に読む | `AnchorKind` が `TimeSemantics` を型で持ち (`NOT_A_TIME_PROOF` / `UPPER_BOUND_ONLY` / `BIDIRECTIONAL_WITHIN_ACCURACY`)、`AnchorService` が限界文をそこから導く。**テキストで渡させない** | 済 |

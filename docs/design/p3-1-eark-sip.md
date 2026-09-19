@@ -279,7 +279,11 @@ CSIP 版を落とす)。**うち「非 ASCII を潰す」は 1 度目の細工�
 
 `metadata/other/nemaki-evidence.json`:
 
-- **この文書を連鎖に結び付ける inclusion proof** (`leafHash` / `merkleRoot` / `auditPath`)
+- **この文書を連鎖に結び付ける inclusion proof** — **`inclusionProof` オブジェクトの内側**に
+  `leafHash` / `merkleRoot` / `auditPath` を置く。**検証器は必ずその内側から読む**こと
+  (外側に同名のキーがあっても proof ではない。緩いキーで proof を上書きできてはならない)。
+  組めなかったときは `inclusionProof` に**理由を持つオブジェクト**を置き
+  (`status` / `message`)、**文書の直下にも** `inclusionProofFailed` を書く
 - その文書について台帳が持つエントリの一覧 (sequence / kind / payloadDigest /
   occurredAt / entryHash / prevEntryHash)
 - 何を establish しないか (`limits`)
@@ -315,10 +319,17 @@ CSIP 版を落とす)。**うち「非 ASCII を潰す」は 1 度目の細工�
    | 配列が**空** | `UNAVAILABLE`。単一 entry を封じた checkpoint は本当にこの形を作るが、**leaf とその hash を書けば誰でも同じ形が作れる**。package の中だけでは分けられない。分けるには checkpoint の span が要る |
    | 配列に step がある | 歩いて `merkleRoot` と比べる。一致で `PASSED`、不一致で `FAILED` |
 
-   値は**キーの直後を読む** (`"auditPath": null` の後ろにある無関係な配列を拾わない。
-   `"leafHash": 42` で次のキー名を値として返さない)。`siblingIsLeft` は `true` / `false`
-   として読み、**読めなければ step ごと `UNAVAILABLE`** — 既定 false に倒すと、整形し直した
-   だけの本物の package を「別の root に着いた」と報告する。
+   **JSON は JSON として読む** (2026-09-20 に手組みの走査から替えた)。値の型は明示的に
+   検査する — `inclusionProof` は object、`leafHash` / `merkleRoot` は string、`auditPath` は
+   array、step は object で `siblingHash` は string・`siblingIsLeft` は boolean。
+   どれかが違えば `UNAVAILABLE`。**重複キーは error** にする (後勝ち・先勝ちで読み手ごとに
+   答えが変わらないように)。先頭の BOM は飛ばす。
+
+   **proof が無いときは、package 自身が書いた理由を読む。**「台帳に届かなかった」
+   「読み取りに失敗した」「path を組めなかった」は `UNAVAILABLE`、
+   「どの entry もこのオブジェクトを名指していない」(`status: "not-chained"`) だけが
+   `NOT_PRESENT` である。**この 4 つを 1 つの文にしない** — 書き出し側は 3 か所で
+   「これは鎖に載っていないという判定ではない」と明記している。
 
 `leafHash` は**エントリの生ハッシュ**であって葉ハッシュではない。
 最初の実装はここを取り違えていて、**本物のパッケージを全部「壊れている」と報告する**
