@@ -147,6 +147,28 @@ public class EvidenceRecordService {
                     + " could not be read (" + e.getMessage() + ")");
         }
         if (token == null) {
+            // "None was found" is only "there is none" if every row was read. The store drops
+            // rows it cannot decode, and counts what it dropped precisely so this sentence can
+            // be told apart from the one below it; AnchorService reads that count in both of
+            // its verbs and this caller did not. The difference travels further here than
+            // anywhere else: EarkSipExporter writes this string into nemaki-evidence.json,
+            // inside the package that leaves the organisation, where it cannot be corrected.
+            int unaccounted = anchorReceiptStore.unreadableCount();
+            if (unaccounted > 0) {
+                // Two sentences for two facts, and this is the consumer where the difference
+                // travels furthest: the string is written into nemaki-evidence.json, inside a
+                // package that leaves the organisation. "1 row could not be read, and no token
+                // was found among the rest" is DOUBLY wrong for a view that did not answer —
+                // no row is known to exist, and "the rest" is nothing.
+                return absent(anchorReceiptStore.lastQueryFailed()
+                        ? "the anchor receipts for checkpoint " + checkpoint.toSequence()
+                                + " could NOT BE QUERIED, so whether it holds an RFC 3161 token "
+                                + "is unknown. This is NOT a finding that it has none"
+                        : unaccounted + " anchor receipt row(s) for checkpoint "
+                                + checkpoint.toSequence() + " could not be read, and no RFC 3161 "
+                                + "token was found among the rest. This is NOT a finding that "
+                                + "the checkpoint has no token");
+            }
             return absent("checkpoint " + checkpoint.toSequence() + " has no CONFIRMED RFC 3161 "
                     + "token. An OpenTimestamps receipt cannot stand in for one: an evidence "
                     + "record's timestamp is an RFC 3161 token, and this is a statement about "

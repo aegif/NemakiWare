@@ -63,6 +63,15 @@ class IngestAclSyncPolicyTest {
     private ExternalIngestResult runImport(String aclSyncPolicy, boolean aclUpdateFails,
             boolean withSourceAcl) {
         service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to create
+        // one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolderDao =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolderDao.getChildren(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolderDao);
         ConnectorDefinitionService connectorService = mock(ConnectorDefinitionService.class);
         ImportProfileDefinitionService profileService = mock(ImportProfileDefinitionService.class);
         jp.aegif.nemaki.cmis.service.ObjectService objectService =
@@ -86,6 +95,7 @@ class IngestAclSyncPolicyTest {
         profile.setRepositoryId("bedroom");
         profile.setAclSyncPolicy(aclSyncPolicy);
         when(profileService.get("p1")).thenReturn(profile);
+        when(profileService.getForRepository("p1", "bedroom")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();
         connector.setConnectorId("c1");
@@ -93,6 +103,7 @@ class IngestAclSyncPolicyTest {
         connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
         connector.setSourceSystem("acme");
         when(connectorService.get("c1")).thenReturn(connector);
+        when(connectorService.countIndexFree("c1")).thenReturn(1);
         when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
                 any(), any(), isNull(), isNull(), isNull(), isNull()))
                 .thenReturn("new-obj-id");

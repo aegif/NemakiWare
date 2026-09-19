@@ -1,8 +1,8 @@
 package jp.aegif.nemaki.rest.ingest;
 
 import tools.jackson.databind.ObjectMapper;
-import org.junit.Test;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.ByteArrayInputStream;
 import java.util.Map;
@@ -17,9 +17,16 @@ public class ExternalIngestRequestTest {
 
     @Test
     public void testRequestIdGenerated() {
+        // The "ingest-" prefix this used to assert has not been the product's shape for a
+        // long time — a UUID is. Nobody noticed because the class was JUnit 4 in a project
+        // with no vintage engine, so it never ran; a review found four such classes, 19
+        // tests, silently absent from every suite. Asserting the real shape, not a count.
         ExternalIngestRequest req = new ExternalIngestRequest();
         assertNotNull(req.getRequestId());
-        assertTrue(req.getRequestId().startsWith("ingest-"));
+        assertEquals(req.getRequestId(),
+                java.util.UUID.fromString(req.getRequestId()).toString());
+        assertNotEquals(req.getRequestId(), new ExternalIngestRequest().getRequestId(),
+                "two requests were given the same id");
     }
 
     @Test

@@ -96,6 +96,7 @@ class IngestEntryPointFailurePathTest {
         profile.setTargetFolderId("folder-1");
         profile.setRepositoryId("bedroom");
         when(profileService.get("p1")).thenReturn(profile);
+        when(profileService.getForRepository("p1", "bedroom")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();
         connector.setConnectorId("c1");
@@ -103,6 +104,7 @@ class IngestEntryPointFailurePathTest {
         connector.setSourceArchetype(archetype);
         connector.setSourceSystem("acme");
         when(connectorService.get("c1")).thenReturn(connector);
+        when(connectorService.countIndexFree("c1")).thenReturn(1);
         when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
                 any(), any(), isNull(), isNull(), isNull(), isNull()))
                 .thenReturn("new-obj-id");
@@ -164,7 +166,10 @@ class IngestEntryPointFailurePathTest {
         assertEquals(expectedObjectId, result.objectId(),
                 "the document IS committed; reporting objectId=null tells the caller the "
                         + "opposite of the truth and leaves nothing to clean up by");
-        verify(jobService).saveToDlq(any(), any(), any());
+        // saveSourceReadToDlq: these paths are past the import service, so the source WAS
+        // read and their rows may clear an earlier attempt's "never read" mark. The
+        // 3-arg saveToDlq no longer clears it.
+        verify(jobService).saveSourceReadToDlq(any(), any(), any());
     }
 
     @Test
@@ -231,7 +236,10 @@ class IngestEntryPointFailurePathTest {
         assertFalse(result.isSuccess(), "control");
         assertEquals("mail-obj", result.objectId(),
                 "the existing message was decorated, so the caller must be told which object");
-        verify(jobService).saveToDlq(any(), any(), any());
+        // saveSourceReadToDlq: these paths are past the import service, so the source WAS
+        // read and their rows may clear an earlier attempt's "never read" mark. The
+        // 3-arg saveToDlq no longer clears it.
+        verify(jobService).saveSourceReadToDlq(any(), any(), any());
     }
 
     @Test
@@ -274,6 +282,7 @@ class IngestEntryPointFailurePathTest {
         profile.setRepositoryId("bedroom");
         profile.setDedupePolicy("replace");
         when(profileServiceRef.get("p1")).thenReturn(profile);
+        when(profileServiceRef.getForRepository("p1", "bedroom")).thenReturn(profile);
         org.mockito.Mockito.doThrow(new IllegalStateException("object is locked"))
                 .when(objectServiceRef).deleteObject(any(), org.mockito.ArgumentMatchers.anyString(),
                         eq("old-obj"), any(), any());
@@ -333,6 +342,9 @@ class IngestEntryPointFailurePathTest {
         assertEquals("new-obj-id", result.objectId(),
                 "the document was created before the failure; the catch reported null because "
                         + "objectId was declared inside the try");
-        verify(jobService).saveToDlq(any(), any(), any());
+        // saveSourceReadToDlq: these paths are past the import service, so the source WAS
+        // read and their rows may clear an earlier attempt's "never read" mark. The
+        // 3-arg saveToDlq no longer clears it.
+        verify(jobService).saveSourceReadToDlq(any(), any(), any());
     }
 }

@@ -75,6 +75,12 @@ class DuplicationSectionTest {
             when(store.findBySubject(anyString(), anyString(), anyInt())).thenReturn(entries);
             assembler.setLedgerStore(store);
         }
+        return sectionFrom(assembler);
+    }
+
+    /** The duplications section from an assembler the caller has already wired as it wants. */
+    private static AuthenticityReport.Section sectionFrom(
+            AuthenticityReportAssembler assembler) {
         Document document = new Document();
         document.setId("doc-1");
         document.setName("minutes.docx");
@@ -191,20 +197,45 @@ class DuplicationSectionTest {
     }
 
     @Test
-    @DisplayName("the disclosure does not claim, or deny, an archival-profile check")
-    void theDisclosureIsHonestAboutPdfA() {
-        // The recorder now folds a veraPDF finding into the entry's digest, and the roadmap
-        // briefly claimed that finding was "wired into the disclosure". It is not: the entry
-        // carries a digest, so this section cannot reveal the outcome any more than it can
-        // reveal the format. What it CAN do is say so — rather than leaving a reader with the
-        // old flat sentence, which read as "no copy here was ever checked".
+    @DisplayName("the disclosure does not deny what the rows in the same map carry")
+    void theDisclosureDoesNotDenyItsOwnRows() {
+        // This test used to assert the disclosure said "does NOT say one passed" -- and it
+        // passed, because its fixture had NO renditions. Meanwhile theVerdictIsReadable, in
+        // this same class, asserts that a row carries archivalProfileOutcome=CONFORMS. One map,
+        // two keys apart: a verdict, and a sentence saying this report does not give one.
+        //
+        // The fixture is the whole point of the failure. A test written against the arm that
+        // avoids the contradiction cannot see the contradiction, and reverting the shared line
+        // still goes red on the covered arm -- which is why revert->fail did not surface this.
+        //
+        // So this one uses the arm that HAS a verdict. The first version said that in a comment
+        // and then called the 2-arg form, which leaves contentService unwired and yields no
+        // verdict at all: the comment described a fixture the fixture was not. The assertions
+        // held anyway (the disclosure is a static constant), so nothing failed -- and nothing
+        // asserted the co-presence of a CONFORMS row and the denial in ONE map, which IS the
+        // defect.
         AuthenticityReport.Section section = duplications(
-                List.of(entry(7, EvidenceLedgerEntry.SubjectKind.FORMAT_DUPLICATION)), true);
+                List.of(entry(7, EvidenceLedgerEntry.SubjectKind.FORMAT_DUPLICATION)), true,
+                List.of(rendition("rend-1", "application/pdf", "CONFORMS", "1b")));
         String disclosure = String.valueOf(section.content().get("disclosure"));
 
-        assertTrue(disclosure.contains("archival profile such as PDF/A"), disclosure);
-        assertTrue(disclosure.contains("does NOT say a copy failed"), disclosure);
-        assertTrue(disclosure.contains("does NOT say one passed"), disclosure);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> now =
+                (List<Map<String, Object>>) section.content().get("renditionsNow");
+        assertEquals("CONFORMS", now.get(0).get("archivalProfileOutcome"),
+                "fixture check: this test is only meaningful while a row carries a verdict");
+
+        assertFalse(disclosure.contains("does NOT say one passed")
+                        || disclosure.contains("does NOT say a copy failed"),
+                "the disclosure denies giving a profile verdict, which the rows in this same "
+                        + "section now carry in the clear: " + disclosure);
+        assertFalse(disclosure.contains("no output format produced here is requested or "
+                        + "validated against an archival profile"),
+                "the disclosure says no profile is ever requested; "
+                        + "rendition.pdfa.validate.flavour requests one: " + disclosure);
+        // And it must still say what an ABSENT verdict means, or a reader takes the empty key
+        // for a failure.
+        assertTrue(disclosure.contains("NOTHING WAS CHECKED"), disclosure);
     }
 
     @Test
@@ -278,5 +309,68 @@ class DuplicationSectionTest {
         assertFalse(section.limits().isBlank());
         assertTrue(section.limits().contains("NOT a complete inventory"),
                 "a reader could take this list for every copy that exists: " + section.limits());
+    }
+
+    @Test
+    @DisplayName("EVERY way of not listing the current copies says so, none reads as 'none'")
+    void notListingTheCurrentCopiesIsNeverSilentlyEmpty() {
+        // renditionsNow() had THREE no-answer paths -- service unwired, read threw, service
+        // returned null -- and all three returned List.of(), so the renditionsNow key was simply
+        // omitted. "Could not read them" and "there are none" were the same output, in the one
+        // section built entirely around telling ABSENT from UNAVAILABLE.
+        //
+        // All three arms in one loop. The audit that found this named "a correction applied to
+        // one arm of a fan-out, with the test written for that arm" as the mechanic behind five
+        // separate defects, and the cheap defence is to iterate the arms.
+        List<EvidenceLedgerEntry> entries =
+                List.of(entry(7, EvidenceLedgerEntry.SubjectKind.FORMAT_DUPLICATION));
+
+        jp.aegif.nemaki.businesslogic.ContentService throwing =
+                mock(jp.aegif.nemaki.businesslogic.ContentService.class);
+        when(throwing.getRenditions(anyString(), anyString()))
+                .thenThrow(new RuntimeException("couchdb is down"));
+        jp.aegif.nemaki.businesslogic.ContentService silent =
+                mock(jp.aegif.nemaki.businesslogic.ContentService.class);
+        when(silent.getRenditions(anyString(), anyString())).thenReturn(null);
+
+        for (jp.aegif.nemaki.businesslogic.ContentService service
+                : new jp.aegif.nemaki.businesslogic.ContentService[] { null, throwing, silent }) {
+            AuthenticityReportAssembler assembler = new AuthenticityReportAssembler();
+            if (service != null) {
+                assembler.setContentService(service);
+            }
+            EvidenceLedgerStore store = mock(EvidenceLedgerStore.class);
+            when(store.findBySubject(anyString(), anyString(), anyInt())).thenReturn(entries);
+            assembler.setLedgerStore(store);
+            AuthenticityReport.Section section = sectionFrom(assembler);
+
+            assertTrue(section.content().containsKey("renditionsNowUnavailable"),
+                    "a no-answer path left the section indistinguishable from 'this object "
+                            + "carries no copies': " + section.content());
+            assertTrue(String.valueOf(section.content().get("renditionsNowUnavailable"))
+                            .contains("NOT a finding"),
+                    "the reason does not say what it is not: " + section.content());
+        }
+    }
+
+    @Test
+    @DisplayName("an answered, empty list does NOT carry the unavailable note — the control")
+    void anEmptyRenditionListIsNotCalledUnreadable() {
+        // Without this, emitting the note unconditionally would satisfy the test above and make
+        // every report claim its copies could not be read.
+        AuthenticityReport.Section section = duplications(
+                List.of(entry(7, EvidenceLedgerEntry.SubjectKind.FORMAT_DUPLICATION)), true,
+                List.of());
+
+        assertFalse(section.content().containsKey("renditionsNowUnavailable"),
+                "an answered, empty rendition list was reported as unreadable: "
+                        + section.content());
+        // ... and it does not go silent either. Omitting the key on this arm is how the answered
+        // case ends up indistinguishable from a question never asked, which is the very
+        // substitution the test above removed from the other three arms.
+        assertTrue(section.content().containsKey("renditionsNow"),
+                "an answered, empty rendition list emitted NO key at all, so a consumer cannot "
+                        + "tell it from a lookup that never happened: " + section.content());
+        assertEquals(List.of(), section.content().get("renditionsNow"), section.content().toString());
     }
 }

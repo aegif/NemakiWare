@@ -142,4 +142,55 @@ class PatchViewCanaryTest {
 
         assertFalse(util.cmisViewsAreAnswering(REPO));
     }
+
+    /**
+     * The count that did not ARRIVE is not a count of zero.
+     *
+     * <p>The gate read {@code getDatabaseInfo() == null ? 0L : ...}, and zero is below the
+     * canary floor — so a repository whose document count could not be obtained was declared
+     * to have healthy views and every patch ran against it. That is the same substitution the
+     * gate exists to refuse, made by the gate itself. {@code childrenNamesViewIsAlive} asks
+     * the same question of the same fact and refuses when it does not arrive; two answers to
+     * one fact is the defect shape, so both doors are pinned here.
+     */
+    @Test
+    void aDocumentCountThatDidNotAnswerIsRefused() {
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.getDatabaseInfo()).thenReturn(null);
+        CloudantClientPool pool = mock(CloudantClientPool.class);
+        when(pool.getClient(anyString())).thenReturn(client);
+        PatchUtil util = new PatchUtil();
+        util.setConnectorPool(pool);
+
+        assertFalse(util.cmisViewsAreAnswering(REPO),
+                "the document count did not answer and the gate reported healthy views — "
+                        + "'could not ask' became 'nearly empty, nothing to lose'");
+    }
+
+    /** The same door one step in: info arrived, the count inside it did not. */
+    @Test
+    void aNullDocumentCountInsideTheInfoIsRefused() {
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        DatabaseInformation info = mock(DatabaseInformation.class);
+        when(info.getDocCount()).thenReturn(null);
+        when(client.getDatabaseInfo()).thenReturn(info);
+        CloudantClientPool pool = mock(CloudantClientPool.class);
+        when(pool.getClient(anyString())).thenReturn(client);
+        PatchUtil util = new PatchUtil();
+        util.setConnectorPool(pool);
+
+        assertFalse(util.cmisViewsAreAnswering(REPO),
+                "a DatabaseInformation with no docCount was read as zero documents");
+    }
+
+    /** No client at all: the same fact is unavailable, so the same refusal. */
+    @Test
+    void anAbsentClientIsRefused() {
+        CloudantClientPool pool = mock(CloudantClientPool.class);
+        when(pool.getClient(anyString())).thenReturn(null);
+        PatchUtil util = new PatchUtil();
+        util.setConnectorPool(pool);
+
+        assertFalse(util.cmisViewsAreAnswering(REPO));
+    }
 }

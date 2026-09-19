@@ -602,8 +602,8 @@ public class CompileServiceImpl implements CompileService {
 
 			// Set metadata
 			ObjectListImpl list = new ObjectListImpl();
-			Integer _skipCount = skipCount.intValue();
-			Integer _maxItems = maxItems.intValue();
+			int _skipCount = clampSkipCount(skipCount);
+			int _maxItems = clampMaxItems(skipCount, maxItems);
 
 			if (_skipCount >= objectDataList.size()) {
 				list.setHasMoreItems(false);
@@ -679,8 +679,8 @@ public class CompileServiceImpl implements CompileService {
 
 			// Set metadata
 			ObjectListImpl list = new ObjectListImpl();
-			Integer _skipCount = skipCount.intValue();
-			Integer _maxItems = maxItems.intValue();
+			int _skipCount = clampSkipCount(skipCount);
+			int _maxItems = clampMaxItems(skipCount, maxItems);
 
 			if (_skipCount >= numFound) {
 				list.setHasMoreItems(false);
@@ -1529,23 +1529,13 @@ public class CompileServiceImpl implements CompileService {
 		// cmis:changeToken - Version control property (add here to avoid duplication)
 		addProperty(properties, tdf, PropertyIds.CHANGE_TOKEN, String.valueOf(content.getChangeToken()));
 		
-		// TCK COMPLIANCE DEBUG: Verify compiled properties for all objects
-		if (log.isDebugEnabled()) {
-			log.debug("=== TCK DEBUG: Final compiled properties for object: " + content.getId() + " ===");
-			for (PropertyData<?> prop : properties.getPropertyList()) {
-				Object value = prop.getFirstValue();
-				log.debug("  Property: " + prop.getId() + " = " + value + " (type: " + (value != null ? value.getClass().getSimpleName() : "null") + ")");
-			}
-			log.debug("=== END TCK DEBUG ===");
-		}
-		
-		if (log.isDebugEnabled() && "cmis:document".equals(content.getType()) && content.getName() != null) {
-			log.debug("TCK PROPERTIES AFTER COMPILATION (Object: " + content.getName() + ", ID: " + content.getId() + ")");
-			for (PropertyData<?> prop : properties.getPropertyList()) {
-				Object value = prop.getFirstValue();
-				log.debug("  " + prop.getId() + " = " + value + " (type: " + (value != null ? value.getClass().getSimpleName() : "null") + ")");
-			}
-		}
+		// The two "TCK DEBUG" blocks that stood here dumped EVERY compiled property value of
+		// EVERY object, plus the object's name. They were an aid while the TCK was being made
+		// to pass; nothing reads them (no test, script or configuration in this repository
+		// refers to the strings), and the TCK judges CMIS responses, not logs. What they cost
+		// is that turning DEBUG on copies document metadata — a customer number, a diagnosis,
+		// a salary — into the log file. compileProperties already logs a summary above
+		// (repository, id, name, type), which is what a person debugging compilation needs.
 
 		// Note: If subType properties are not registered in DB, they won't appear in CMIS response
 		// SubType properties
@@ -2021,10 +2011,10 @@ public class CompileServiceImpl implements CompileService {
 				} else if (element instanceof String) {
 					String s = ((String) element).toLowerCase().trim();
 					if ("true".equals(s) || "1".equals(s)) {
-						log.debug("Type coercion: String '" + element + "' → Boolean true for property " + propertyId);
+						log.debug("Type coercion: String → Boolean true for property " + propertyId);
 						return Boolean.TRUE;
 					} else if ("false".equals(s) || "0".equals(s)) {
-						log.debug("Type coercion: String '" + element + "' → Boolean false for property " + propertyId);
+						log.debug("Type coercion: String → Boolean false for property " + propertyId);
 						return Boolean.FALSE;
 					}
 				} else if (element instanceof Number) {
@@ -2081,11 +2071,11 @@ public class CompileServiceImpl implements CompileService {
 					try {
 						// Trim whitespace before parsing
 						BigInteger parsed = new BigInteger(((String) element).trim());
-						log.debug("Type coercion: String '" + element + "' → Integer for property " + propertyId);
+						log.debug("Type coercion: String → Integer for property " + propertyId);
 						return parsed;
 					} catch (NumberFormatException e) {
 						log.warn("TYPE COERCION FAILED for property '" + propertyId + "': " +
-							"Cannot parse String '" + element + "' as Integer.");
+							"the stored String is not an Integer (value withheld from the log).");
 					}
 				}
 				break;
@@ -2113,11 +2103,11 @@ public class CompileServiceImpl implements CompileService {
 					try {
 						// Trim whitespace before parsing
 						BigDecimal parsed = new BigDecimal(((String) element).trim());
-						log.debug("Type coercion: String '" + element + "' → Decimal for property " + propertyId);
+						log.debug("Type coercion: String → Decimal for property " + propertyId);
 						return parsed;
 					} catch (NumberFormatException e) {
 						log.warn("TYPE COERCION FAILED for property '" + propertyId + "': " +
-							"Cannot parse String '" + element + "' as Decimal.");
+							"the stored String is not a Decimal (value withheld from the log).");
 					}
 				}
 				break;
@@ -2132,7 +2122,7 @@ public class CompileServiceImpl implements CompileService {
 						return cal;
 					} catch (ParseException e) {
 						log.warn("TYPE COERCION FAILED for property '" + propertyId + "': " +
-							"Cannot parse String '" + element + "' as DateTime.");
+							"the stored String is not a DateTime (value withheld from the log).");
 					}
 				} else if (element instanceof Number) {
 					// Timestamps stored as epoch millis. Number, not Long: the CouchDB round
@@ -2148,7 +2138,8 @@ public class CompileServiceImpl implements CompileService {
 					// Reject negative timestamps (before 1970-01-01)
 					if (timestamp < 0) {
 						log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
-							"numeric value " + timestamp + " is negative (before Unix epoch). " +
+							"the stored numeric timestamp is negative, before the Unix epoch " +
+							"(value withheld from the log). " +
 							"Returning null to avoid invalid DateTime.");
 						return null;
 					}
@@ -2158,7 +2149,7 @@ public class CompileServiceImpl implements CompileService {
 					long maxFutureMs = System.currentTimeMillis() + (100L * 365L * 24L * 60L * 60L * 1000L);
 					if (timestamp > maxFutureMs) {
 						log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
-							"numeric value " + timestamp + " is too far in the future (>100 "
+							"the stored numeric timestamp is too far in the future (>100 "
 							+ "years). This may be garbage data. Returning null.");
 						return null;
 					}
@@ -2851,6 +2842,58 @@ public class CompileServiceImpl implements CompileService {
 				+ ", name=" + content.getName() + ", type=" + objectType);
 
 		return properties;
+	}
+
+	/**
+	 * The largest page this server assembles in one response.
+	 *
+	 * <p>Same reasoning (and same number) as the change feed's page cap: a client asking for
+	 * everything gets a page plus {@code hasMoreItems}, not a request nobody can serve.
+	 */
+	private static final int MAX_PAGE = 10_000;
+
+	/** A non-positive maxItems is not "no limit" and not "nothing": it is the default page. */
+	private static final int DEFAULT_PAGE_FOR_NON_POSITIVE = 100;
+
+	/**
+	 * Converts a client's skipCount without truncating it.
+	 *
+	 * <p>{@code BigInteger.intValue()} keeps only the low 32 bits. A live probe found what
+	 * that costs here: {@code maxItems = 2^32} became 0, so {@code subList(0, 0)} returned an
+	 * EMPTY page with {@code hasMoreItems = true} — the client asked for everything and was
+	 * told, with a 200, that the folder's first page is empty. Navigation clamped its own
+	 * copies, but its small-folder branch passes the raw values here, and so do query and
+	 * relationships.
+	 */
+	private static int clampSkipCount(BigInteger skipCount) {
+		if (skipCount == null || skipCount.signum() <= 0) {
+			return 0;
+		}
+		return skipCount.compareTo(BigInteger.valueOf(Integer.MAX_VALUE)) >= 0
+				? Integer.MAX_VALUE
+				: skipCount.intValue();
+	}
+
+	/**
+	 * Converts a client's maxItems, bounded so that {@code skipCount + maxItems} cannot
+	 * overflow into a negative index either.
+	 */
+	private static int clampMaxItems(BigInteger skipCount, BigInteger maxItems) {
+		if (maxItems == null || maxItems.signum() <= 0) {
+			// A non-positive ask is a DEFAULT page, not an empty one. Two callers of this
+			// service disagreed about that: navigation mapped the same input to its default
+			// page while query and relationships handed the raw value straight through and
+			// got an empty page — the same 200-with-nothing the live probe found, reached by
+			// the other door. One answer per input, decided here.
+			return DEFAULT_PAGE_FOR_NON_POSITIVE;
+		}
+		int page = maxItems.compareTo(BigInteger.valueOf(MAX_PAGE)) >= 0
+				? MAX_PAGE
+				: maxItems.intValue();
+		// skipCount is already clamped to <= Integer.MAX_VALUE; keep the sum in range so the
+		// subList bounds below stay positive.
+		int skip = clampSkipCount(skipCount);
+		return Math.min(page, Integer.MAX_VALUE - skip);
 	}
 
 }

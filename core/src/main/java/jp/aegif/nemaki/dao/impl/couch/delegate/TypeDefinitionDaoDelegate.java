@@ -58,13 +58,18 @@ public class TypeDefinitionDaoDelegate {
 			List<NemakiTypeDefinition> typeDefinitions = new ArrayList<NemakiTypeDefinition>();
 
 			// Handle null result gracefully (occurs during initial startup when design documents may not exist yet)
+			int unreadableRows = 0;
 			if (result != null && result.getRows() != null) {
 				int processedCount = 0;
 
 				for (ViewResultRow row : result.getRows()) {
 					processedCount++;
 
-					if (row.getDoc() != null) {
+					if (row.getDoc() == null) {
+						unreadableRows++;
+						continue;
+					}
+					{
 						// Convert document to CouchTypeDefinition, then to NemakiTypeDefinition
 						try {
 							// Handle both Document and Map types from Cloudant SDK
@@ -90,6 +95,7 @@ public class TypeDefinitionDaoDelegate {
 									}
 
 								} else {
+									unreadableRows++;
 									continue;
 							}
 									String typeId = (String) docMap.get("typeId");
@@ -123,8 +129,8 @@ public class TypeDefinitionDaoDelegate {
 							} catch (Exception ex) {
 								// Ignore, use default "unknown"
 							}
-								e.printStackTrace();
-							log.warn("Failed to convert type definition document: " + e.getMessage());
+							unreadableRows++;
+							log.warn("Failed to convert type definition document (typeId=" + typeId + "): " + e.getMessage());
 							if (log.isDebugEnabled()) {
 								e.printStackTrace();
 							}
@@ -133,6 +139,17 @@ public class TypeDefinitionDaoDelegate {
 				}
 			}
 
+
+			// A SHORT type list is not a smaller type system. Every dropped row is a type
+			// that exists: the CMIS type registry would treat its objects as broken, and
+			// the Purview type-definition sync diffs this list against its snapshot and
+			// DELETES the "missing" type entities from the external catalog —
+			// classifications and terms attached to them do not come back on republish.
+			if (unreadableRows > 0) {
+				throw new IllegalStateException(unreadableRows + " type definition row(s) in '"
+						+ repositoryId + "' could not be read; serving the remaining types as"
+						+ " the complete type system would delete the unreadable ones downstream");
+			}
 
 			// If no types found via ViewQuery, return basic CMIS types as fallback
 			if (typeDefinitions.isEmpty()) {
@@ -158,28 +175,21 @@ public class TypeDefinitionDaoDelegate {
 			log.debug("Retrieved " + typeDefinitions.size() + " type definitions from repository: " + repositoryId);
 			return typeDefinitions;
 
+		} catch (IllegalStateException e) {
+			throw e;
 		} catch (Exception e) {
+			// The old arm synthesized cmis:folder + cmis:document here — so one transient
+			// CouchDB failure answered "this repository has exactly two types", the
+			// type-definition sync diffed that against its snapshot, and every custom
+			// type's external entity was deleted and later re-created under a new GUID
+			// (losing whatever the catalog had attached to the old one). A failure to
+			// read the type system is a failure, not a smaller type system. The
+			// genuinely-empty fallback above stays: it is reached only when the view
+			// ANSWERED with no rows (bootstrap before the type documents exist).
 			log.error("Error retrieving type definitions from repository '" + repositoryId + "': " + e.getMessage(), e);
-
-			// Return basic CMIS types as fallback in case of error
-			List<NemakiTypeDefinition> fallbackTypes = new ArrayList<NemakiTypeDefinition>();
-
-			NemakiTypeDefinition folderType = new NemakiTypeDefinition();
-			folderType.setId("cmis:folder");
-			folderType.setType("typeDefinition");
-			folderType.setBaseId(BaseTypeId.CMIS_FOLDER);
-			folderType.setTypeId("cmis:folder");
-			fallbackTypes.add(folderType);
-
-			NemakiTypeDefinition documentType = new NemakiTypeDefinition();
-			documentType.setId("cmis:document");
-			documentType.setType("typeDefinition");
-			documentType.setBaseId(BaseTypeId.CMIS_DOCUMENT);
-			documentType.setTypeId("cmis:document");
-			fallbackTypes.add(documentType);
-
-			log.warn("Using fallback type definitions due to error");
-			return fallbackTypes;
+			throw new IllegalStateException("the type definitions of '" + repositoryId
+					+ "' could not be read; this is NOT a finding that only the base types"
+					+ " exist", e);
 		}
 	}
 
@@ -239,9 +249,22 @@ public class TypeDefinitionDaoDelegate {
 
 			List<NemakiPropertyDefinitionCore> cores = new ArrayList<NemakiPropertyDefinitionCore>();
 
-			if (result.getRows() != null) {
+			// A SHORT list of cores is not a smaller set of property definitions. Every patch
+			// asks getPropertyDefinitionCoreByPropertyId / this list "does this property
+			// already exist?" and CREATES it when the answer is no — so a dropped row becomes
+			// a DUPLICATE core for a property that is already there. The empty answer is kept
+			// only where the view genuinely answered with nothing (bootstrap, before any
+			// property document exists); queryView returns null when the design document
+			// itself is not there yet, which is that same bootstrap.
+			int unreadableRows = 0;
+
+			if (result != null && result.getRows() != null) {
 				for (ViewResultRow row : result.getRows()) {
-					if (row.getDoc() != null) {
+					if (row.getDoc() == null) {
+						unreadableRows++;
+						continue;
+					}
+					{
 						try {
 
 							ObjectMapper mapper = daoHelper.createConfiguredObjectMapper();
@@ -267,6 +290,7 @@ public class TypeDefinitionDaoDelegate {
 									originalDoc.put("_rev", doc.getRev());
 								}
 							} else {
+								unreadableRows++;
 								continue;
 							}
 
@@ -310,32 +334,43 @@ public class TypeDefinitionDaoDelegate {
 
 							CouchPropertyDefinitionCore cpdc = mapper.convertValue(isolatedDoc, CouchPropertyDefinitionCore.class);
 
-							// CRITICAL CONTAMINATION PREVENTION: Validate PropertyId before conversion
-							if (cpdc != null) {
-								if (cpdc.getPropertyId() == null) {
-									continue; // Skip NULL PropertyId entries to prevent contamination
-								}
-
-								// ADDITIONAL VALIDATION: Check for empty PropertyId
-								if (cpdc.getPropertyId().trim().isEmpty()) {
-									continue; // Skip empty PropertyId entries
-								}
-
-								cores.add(cpdc.convert());
+							// A core whose propertyId decoded as null or blank is a row that
+							// could not be READ, not a row that says "no such property":
+							// createPropertyDefinitionCore refuses to store either shape
+							// (see the two throws below), so the document on disk had one
+							// and the decode lost it. Skipping it silently is what makes
+							// the patch create the property a second time.
+							if (cpdc == null || cpdc.getPropertyId() == null
+									|| cpdc.getPropertyId().trim().isEmpty()) {
+								unreadableRows++;
+								continue;
 							}
+
+							cores.add(cpdc.convert());
 						} catch (Exception e) {
+							unreadableRows++;
 							log.warn("Failed to convert property definition core document: " + e.getMessage());
 						}
 					}
 				}
 			}
 
+			if (unreadableRows > 0) {
+				throw new IllegalStateException(unreadableRows + " property definition core"
+						+ " row(s) in '" + repositoryId + "' could not be read; serving the"
+						+ " remaining cores as the complete set would make the patches create"
+						+ " duplicates of the properties they cover");
+			}
+
 			log.debug("Retrieved " + cores.size() + " property definition cores from repository: " + repositoryId);
 			return cores;
 
+		} catch (IllegalStateException e) {
+			throw e;
 		} catch (Exception e) {
 			log.error("Error retrieving property definition cores from repository '" + repositoryId + "': " + e.getMessage(), e);
-			return new ArrayList<NemakiPropertyDefinitionCore>(); // Return empty list on error
+			throw new IllegalStateException("the property definition cores of '" + repositoryId
+					+ "' could not be read; this is NOT a finding that no property is defined", e);
 		}
 	}
 
@@ -345,14 +380,13 @@ public class TypeDefinitionDaoDelegate {
 			CouchPropertyDefinitionCore cpdc = client.get(CouchPropertyDefinitionCore.class, nodeId);
 
 			if (cpdc != null) {
-				// CRITICAL CONTAMINATION PREVENTION: Validate PropertyId before conversion
-				if (cpdc.getPropertyId() == null) {
-					return null; // Return null instead of processing contaminated data
-				}
-
-				// ADDITIONAL VALIDATION: Check for empty PropertyId
-				if (cpdc.getPropertyId().trim().isEmpty()) {
-					return null; // Return null instead of processing contaminated data
+				// The document IS there — a propertyId that decoded as null or blank means
+				// this row could not be read, and answering null would say "no such core",
+				// which is the sentence the patches turn into a duplicate create.
+				if (cpdc.getPropertyId() == null || cpdc.getPropertyId().trim().isEmpty()) {
+					throw new IllegalStateException("the property definition core '" + nodeId
+							+ "' in '" + repositoryId + "' decoded without a propertyId; this"
+							+ " is NOT a finding that the core does not exist");
 				}
 
 				if (log.isDebugEnabled()) {
@@ -367,11 +401,17 @@ public class TypeDefinitionDaoDelegate {
 				return result;
 			}
 
+			// Genuine absence: the wrapper's get() answers null only for NotFound — every
+			// other failure now throws there — so this null really means "no such document".
 			return null;
 
+		} catch (IllegalStateException e) {
+			throw e;
 		} catch (Exception e) {
 			log.error("Error retrieving property definition core '" + nodeId + "' from repository '" + repositoryId + "': " + e.getMessage(), e);
-			return null;
+			throw new IllegalStateException("the property definition core '" + nodeId + "' in '"
+					+ repositoryId + "' could not be read; this is NOT a finding that it does"
+					+ " not exist", e);
 		}
 	}
 
@@ -381,30 +421,39 @@ public class TypeDefinitionDaoDelegate {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
 			List<CouchPropertyDefinitionCore> couchCores = client.queryView("_repo", "propertyDefinitionCoresByPropertyId", propertyId, CouchPropertyDefinitionCore.class);
 
-			if (!couchCores.isEmpty()) {
+			if (couchCores != null && !couchCores.isEmpty()) {
 				CouchPropertyDefinitionCore cpdc = couchCores.get(0);
 
-				// CRITICAL CONTAMINATION PREVENTION: Validate PropertyId before conversion
-				if (cpdc == null) {
-					return null;
-				}
-
-				if (cpdc.getPropertyId() == null) {
-					return null; // Return null instead of processing contaminated data
-				}
-
-				// ADDITIONAL VALIDATION: Check for empty PropertyId
-				if (cpdc.getPropertyId().trim().isEmpty()) {
-					return null; // Return null instead of processing contaminated data
+				// The view matched a row for this propertyId. If that row will not decode,
+				// the property EXISTS and we cannot describe it — the one answer that must
+				// not be given here is "no core for this propertyId", because every caller
+				// (the patches, TypeResource, RepositoryServiceImpl) creates one when it
+				// hears that.
+				if (cpdc == null || cpdc.getPropertyId() == null
+						|| cpdc.getPropertyId().trim().isEmpty()) {
+					throw new IllegalStateException("the property definition core matched for '"
+							+ propertyId + "' in '" + repositoryId + "' could not be decoded;"
+							+ " this is NOT a finding that the property is undefined");
 				}
 				// Return the first (and should be only) result
 				return cpdc.convert();
 			}
 
+			// Genuine absence: the view answered, and no row carries this propertyId.
+			//
+			// A null LIST used to be able to arrive here too, from an undeployed view, and
+			// this comment asserted the opposite of what that value meant. The wrapper now
+			// refuses an undeployed view outside the provisioning window, so the only null
+			// list left is the one inside that window — where the patches have not run yet
+			// and "not defined" is the right answer for them to create on.
 			return null;
+		} catch (IllegalStateException e) {
+			throw e;
 		} catch (Exception e) {
 			log.error("Error getting property definition core by property ID: " + propertyId + " in repository: " + repositoryId, e);
-			return null;
+			throw new IllegalStateException("the property definition core for '" + propertyId
+					+ "' in '" + repositoryId + "' could not be read; this is NOT a finding"
+					+ " that the property is undefined", e);
 		}
 	}
 
@@ -416,11 +465,14 @@ public class TypeDefinitionDaoDelegate {
 			if (cpdd != null) {
 				return cpdd.convert();
 			}
+			// Genuine absence: the wrapper's get() answers null only for NotFound.
 			return null;
 
 		} catch (Exception e) {
 			log.error("Error retrieving property definition detail '" + nodeId + "' from repository '" + repositoryId + "': " + e.getMessage(), e);
-			return null;
+			throw new IllegalStateException("the property definition detail '" + nodeId + "' in '"
+					+ repositoryId + "' could not be read; this is NOT a finding that it does"
+					+ " not exist", e);
 		}
 	}
 
@@ -434,12 +486,21 @@ public class TypeDefinitionDaoDelegate {
 			ViewResult result = client.queryView("_repo", "propertyDefinitionDetails", queryParams);
 			List<NemakiPropertyDefinitionDetail> details = new ArrayList<NemakiPropertyDefinitionDetail>();
 
+			// PatchService reads this list once and derives "which cores already have a
+			// detail" from it. A short list therefore says "this property has no detail
+			// yet" and a second detail is created for a core that already has one.
+			int unreadableRows = 0;
+
 			if (result != null && result.getRows() != null) {
 				tools.jackson.databind.ObjectMapper mapper = tools.jackson.databind.json.JsonMapper.builderWithJackson2Defaults()
 						.configure(tools.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 						.build();
 				for (ViewResultRow row : result.getRows()) {
-					if (row.getDoc() != null) {
+					if (row.getDoc() == null) {
+						unreadableRows++;
+						continue;
+					}
+					{
 						try {
 							Object docObj = row.getDoc();
 							if (docObj instanceof com.ibm.cloud.cloudant.v1.model.Document) {
@@ -463,23 +524,42 @@ public class TypeDefinitionDaoDelegate {
 										}
 									}
 									CouchPropertyDefinitionDetail cpdd = mapper.convertValue(completeMap, CouchPropertyDefinitionDetail.class);
-									if (cpdd != null) {
+									if (cpdd == null) {
+										unreadableRows++;
+									} else {
 										details.add(cpdd.convert());
 									}
+								} else {
+									unreadableRows++;
 								}
+							} else {
+								// Not a Cloudant Document: this row was neither read nor
+								// refused before — it simply vanished from the answer.
+								unreadableRows++;
 							}
 						} catch (Exception e) {
+							unreadableRows++;
 							log.warn("Failed to convert property definition detail: " + e.getMessage());
 						}
 					}
 				}
 			}
 
+			if (unreadableRows > 0) {
+				throw new IllegalStateException(unreadableRows + " property definition detail"
+						+ " row(s) in '" + repositoryId + "' could not be read; serving the"
+						+ " remaining details as the complete set would make the patches create"
+						+ " duplicates of the details they cover");
+			}
+
 			log.debug("Retrieved " + details.size() + " property definition details from repository: " + repositoryId);
 			return details;
+		} catch (IllegalStateException e) {
+			throw e;
 		} catch (Exception e) {
 			log.error("Error retrieving all property definition details from repository '" + repositoryId + "': " + e.getMessage(), e);
-			return new ArrayList<NemakiPropertyDefinitionDetail>();
+			throw new IllegalStateException("the property definition details of '" + repositoryId
+					+ "' could not be read; this is NOT a finding that no detail is defined", e);
 		}
 	}
 
@@ -496,12 +576,19 @@ public class TypeDefinitionDaoDelegate {
 			ViewResult result = client.queryView("_repo", "propertyDefinitionDetails", queryParams);
 			List<NemakiPropertyDefinitionDetail> details = new ArrayList<NemakiPropertyDefinitionDetail>();
 
-
-
+			// A row that cannot be read cannot be TESTED against coreNodeId either, so it
+			// is not "a detail belonging to another core" — it is an unknown. Answering an
+			// empty list makes every caller (the patches, TypeResource, ZipImporter) create
+			// a detail the core may already have.
+			int unreadableRows = 0;
 
 			if (result != null && result.getRows() != null) {
 				for (ViewResultRow row : result.getRows()) {
-					if (row.getDoc() != null) {
+					if (row.getDoc() == null) {
+						unreadableRows++;
+						continue;
+					}
+					{
 						// Handle Cloudant SDK Document object properly
 						Object docObj = row.getDoc();
 						Map<String, Object> docMap = null;
@@ -519,10 +606,12 @@ public class TypeDefinitionDaoDelegate {
 								docMap.put("_rev", cloudantDoc.getRev());
 												}
 						} else {
+									unreadableRows++;
 									continue;
 						}
 
 						if (docMap == null) {
+									unreadableRows++;
 									continue;
 						}
 
@@ -642,17 +731,33 @@ public class TypeDefinitionDaoDelegate {
 								details.add(cpdd.convert());
 
 							} catch (Exception constructionError) {
+								// This catch was EMPTY: a detail that belonged to the core
+								// being asked about was dropped without a line in the log.
+								unreadableRows++;
+								log.warn("Failed to build property definition detail "
+										+ docMap.get("_id") + " for core '" + coreNodeId
+										+ "': " + constructionError.getMessage());
 								}
 						}
 					}
 				}
 			}
 
+			if (unreadableRows > 0) {
+				throw new IllegalStateException(unreadableRows + " property definition detail"
+						+ " row(s) in '" + repositoryId + "' could not be read, so whether core '"
+						+ coreNodeId + "' already has a detail cannot be established");
+			}
+
 					return details;
 
+		} catch (IllegalStateException e) {
+			throw e;
 		} catch (Exception e) {
 			log.error("Error retrieving property definition details for core node '" + coreNodeId + "' from repository '" + repositoryId + "': " + e.getMessage(), e);
-			return new ArrayList<NemakiPropertyDefinitionDetail>(); // Return empty list on error
+			throw new IllegalStateException("the property definition details for core '"
+					+ coreNodeId + "' in '" + repositoryId + "' could not be read; this is NOT"
+					+ " a finding that the core has no detail", e);
 		}
 	}
 

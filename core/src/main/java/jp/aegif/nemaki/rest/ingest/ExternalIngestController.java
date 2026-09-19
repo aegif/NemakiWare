@@ -82,15 +82,59 @@ public class ExternalIngestController {
             @PathVariable String repositoryId,
             @RequestPart("request") String requestJson,
             @RequestPart(value = "content", required = false) MultipartFile content) {
+        ExternalIngestRequest request;
         try {
-            ExternalIngestRequest request = MAPPER.readValue(requestJson, ExternalIngestRequest.class);
+            request = MAPPER.readValue(requestJson, ExternalIngestRequest.class);
+            if (request == null) {
+                // "null" is well-formed JSON, and Jackson ANSWERS it with null rather than
+                // throwing — so narrowing the catch below sent it on to the ingest, which
+                // died on it (500) while the JSON door answers 400 for the same input. A
+                // request part that is not this document is a claim about the request, so it
+                // belongs on the same 400 as a part that does not parse at all.
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(ExternalIngestResult.error("unknown", "Invalid request"));
+            }
             if (content != null && !content.isEmpty()) {
                 // Guard against oversized uploads (100MB default)
                 if (content.getSize() > 100 * 1024 * 1024) {
                     return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                             .body(ExternalIngestResult.error("unknown", "File exceeds maximum size (100MB)"));
                 }
-                request.setContentStream(content.getInputStream());
+                try {
+                    request.setContentStream(content.getInputStream());
+                } catch (java.io.IOException couldNotReadTheStoredPart) {
+                    // R46. Everything else in this try is a claim the caller's own bytes made
+                    // (the part does not parse, it parses to nothing, it is too large). This
+                    // one is not: by the time this method runs the multipart body has already
+                    // been parsed and each part stored, and opening what WE stored fails for
+                    // our reasons — the temp directory, the disk, the store. Answering 400
+                    // "Invalid request" for it asserted something no read established.
+                    //
+                    // Not a hypothetical arm: web.xml gives the spring-mvc servlet a 1MB
+                    // file-size-threshold, so every part above it is a file on disk by the
+                    // time we open it, and getInputStream() declares the checked IOException
+                    // that says so.
+                    //
+                    // Its own try, not an IOException arm on the catch below: Jackson's parse
+                    // failures would sit on such an arm too if this tree's mapper ever throws
+                    // a checked IOException from readValue, and that would send a malformed
+                    // request part to 503 — the opposite over-throw.
+                    //
+                    // 503, not 500: a fresh upload re-stores the part, so a retry is the
+                    // caller's move.
+                    //
+                    // R49: the reason goes to the log, not to the caller. A failure opening a
+                    // stored part names the file — an absolute path under the container's temp
+                    // directory — and this return is before doIngest's delegation gate, so a
+                    // caller authenticated but not authorised for any profile would read it.
+                    // The webhook's front door made the same choice for the same reason.
+                    org.slf4j.LoggerFactory.getLogger(ExternalIngestController.class)
+                            .warn("the uploaded part could not be opened; the multipart door"
+                                    + " answered 503 without the reason: {}",
+                                    couldNotReadTheStoredPart.getMessage());
+                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                            .body(ExternalIngestResult.error("unknown", STORED_PART_UNREADABLE));
+                }
                 if (request.getFileName() == null || request.getFileName().isBlank()) {
                     request.setFileName(sanitizeFilename(content.getOriginalFilename()));
                 }
@@ -98,11 +142,23 @@ public class ExternalIngestController {
                     request.setMimeType(content.getContentType());
                 }
             }
-            return doIngest(repositoryId, request);
-        } catch (Exception e) {
+        } catch (Exception malformed) {
+            // ONLY the multipart body's own parsing is inside this try (R33). "Invalid
+            // request" is a claim ABOUT THE CALLER'S REQUEST, and the ingest below can fail
+            // for reasons that say nothing about it — a store that did not answer, a bug in
+            // an import flow. Those used to land here too, so the same failure answered 500
+            // as JSON and 400 as multipart, and the 400 asserted something no read had
+            // established. An earlier round pulled three TYPED refusals out of this arm by
+            // rethrowing them; that left every other shape in it. The whole ingest is now
+            // outside the try, which is why those rethrows are gone: nothing raised by the
+            // ingest can reach this catch any more.
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(ExternalIngestResult.error("unknown", "Invalid request"));
         }
+        // Outside the catch, deliberately: whatever the ingest raises must leave this door the
+        // way it leaves the JSON one — to the class's exception handlers (503 / 409) or, for a
+        // shape no handler claims, as the 500 that says "our bug" rather than "your request".
+        return doIngest(repositoryId, request);
     }
 
     private ResponseEntity<ExternalIngestResult> doIngest(String repositoryId, ExternalIngestRequest request) {
@@ -137,7 +193,20 @@ public class ExternalIngestController {
         }
         if (!ingestAuthorizationService.isAdmin(callContext)) {
             delegatedRequest = true;
-            Denial denial = enforceDelegatedExecution(callContext, repositoryId, request);
+            Denial denial;
+            try {
+                denial = enforceDelegatedExecution(callContext, repositoryId, request);
+            } catch (RuntimeException refused) {
+                // The gate READS the connector too, and get() rethrows when the deterministic
+                // id holds another document — so a delegated attempt refused inside the gate
+                // left no audit entry at all. The previous round audited the dispatch's
+                // refusals and then wrote, in this class's javadoc and in the release notes,
+                // that every outcome is recorded. It was not: a review found the gate's two
+                // reads outside the catch. Audited here, then rethrown for the handler.
+                auditDelegatedAttempt(callContext, repositoryId, request, false,
+                        refused.getMessage(), DenialReason.SERVICES_UNAVAILABLE);
+                throw refused;
+            }
             if (denial != null) {
                 auditDelegatedAttempt(callContext, repositoryId, request, false,
                         denial.message(), denial.reason());
@@ -152,7 +221,22 @@ public class ExternalIngestController {
         boolean isEml = request.getFileName() != null && request.getFileName().toLowerCase().endsWith(".eml");
 
         // Check connector archetype first — it takes precedence over filename
-        SourceArchetype connectorArchetype = resolveConnectorArchetype(request.getConnectorId());
+        SourceArchetype connectorArchetype;
+        try {
+            connectorArchetype = resolveConnectorArchetype(request.getConnectorId());
+        } catch (RuntimeException refused) {
+            // The refusals raised in there leave this method by exception, and a delegated
+            // attempt that leaves by exception used to leave no audit entry at all — while
+            // the same input was audited before those refusals existed. An earlier note here
+            // said moving the audit would mean touching the authorisation gate; a review
+            // showed the call site knows everything it needs. Audited, then rethrown for the
+            // handler that decides the status.
+            if (delegatedRequest) {
+                auditDelegatedAttempt(callContext, repositoryId, request, false,
+                        refused.getMessage(), DenialReason.SERVICES_UNAVAILABLE);
+            }
+            throw refused;
+        }
 
         if (connectorArchetype != null) {
             // Connector archetype is known — dispatch by archetype, not filename
@@ -193,9 +277,17 @@ public class ExternalIngestController {
     }
 
     /**
-     * Records a delegated ingest attempt regardless of outcome — gives the
-     * security review trail for the new non-admin code path. Admin ingests
-     * continue through the existing AOP audit and don't double-log here.
+     * Records a delegated ingest attempt for every outcome this method is REACHED for —
+     * gives the security review trail for the non-admin code path. Admin ingests continue
+     * through the existing AOP audit and don't double-log here.
+     *
+     * <p>That includes the outcomes that leave by EXCEPTION — a connector that could not be
+     * read, or whose row does not say which flow the request belongs to. Those refusals once
+     * left no audit entry, while the same input had been audited before they existed. The
+     * first note about it said "regardless of outcome" and did not mention the gap; the
+     * second recorded the gap as not worth closing, on the ground that the refusals are
+     * raised below the point that knows the delegated context. A review showed that ground
+     * was wrong: the dispatch call site holds both, so it is closed there.
      */
     private void auditDelegatedAttempt(CallContext ctx, String repositoryId,
                                        ExternalIngestRequest request, boolean success, String errorMessage) {
@@ -225,43 +317,216 @@ public class ExternalIngestController {
     }
 
     /**
-     * Fallback dispatch for "message" sourceObjectType when connector archetype
-     * was not resolved by the primary dispatch (connectorId absent or lookup failed).
-     * Defaults to mail parser since "message" without archetype context is most
-     * likely an email.
+     * Fallback dispatch for "message" sourceObjectType when no connector archetype was
+     * resolved. That means the caller named NO connector, or the walk ESTABLISHED that the
+     * one it named does not exist. Everything else refuses before reaching here: a lookup
+     * that failed, a row the index could not show, a row without an archetype, and an unwired
+     * connector service. An earlier version of this note listed "lookup failed" among the
+     * reasons, and the version after it still let the unwired case through while claiming
+     * otherwise; two reviews found the two. Defaults to the mail parser, since "message" with no connector context
+     * is most likely an email.
      */
     private ExternalIngestResult resolveMessageImport(CallContext callContext, ExternalIngestRequest request) {
-        // connectorArchetype was already checked in doIngest() and returned null,
-        // so no point re-looking up — default to mail
         return canonicalImportService.executeMailImport(callContext, request);
     }
 
-    /** Look up the connector's archetype, returning null if unavailable. */
+    /** A connector row that was READ and does not say which import flow it belongs to. */
+    public static class ConnectorArchetypeUnusableException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        public ConnectorArchetypeUnusableException(String message) { super(message); }
+    }
+
+    /**
+     * The named connector's archetype. There are TWO {@code return null} statements below,
+     * and they are the whole of it: the caller named no connector, and a connector the
+     * index-free walk ESTABLISHES is absent. Everything else that could once produce a null
+     * here now refuses — a read that failed, a row the index cannot show, a row that carries
+     * no archetype, and this service being unwired. Each was found by a review AFTER the
+     * previous one was closed, three rounds running, because the dispatch above reads null as
+     * "no connector context" and picks the flow from the file name.
+     *
+     * <p>Two earlier versions of this paragraph opened in universal terms ("null ONLY when…",
+     * then "Null means ONE thing…") while a contradicting return was open or, the second
+     * time, while the exception was named six lines below. Both were found by review. Count
+     * the returns before rewriting this.
+     *
+     * <p>It used to answer null for a failed lookup too, and null is what the dispatch above
+     * reads as "no connector context" — so a transient read failure sent the request into the
+     * filename / sourceObjectType heuristics and COMMITTED it through a different import flow
+     * ({@code sourceObjectType=message} on a CHAT_CONTEXT connector is parsed as mail). The
+     * chosen flow does not re-check the archetype, so the wrong shape is what gets stored. A
+     * review found it; it is the batch's rule applied to a dispatch rather than to a status
+     * code — an explicitly named connector whose archetype cannot be ESTABLISHED must not be
+     * replaced by a guess from the file name.
+     *
+     * <p>Absence still behaves as it always has: a connector the walk says is not there
+     * answers null and the heuristics run, so this does not turn an unknown connectorId into
+     * a new refusal. The walk costs one pass of the config database, and only on the path
+     * where the ordinary read already failed to produce a connector.
+     */
     private SourceArchetype resolveConnectorArchetype(String connectorId) {
         if (connectorId == null) return null;
+        if (connectorDefinitionService == null) {
+            // The third arm of the same hole, found by two reviewers independently after the
+            // first two were closed. An unwired service answered null, and null is what the
+            // dispatch reads as "no connector context" — so the flow came from the file name
+            // again. Latent (Spring wires this or fails to start), but the class already
+            // refuses on exactly this shape for the non-admin path and for the authorization
+            // service; only the admin dispatch degraded silently.
+            throw new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                    "the connector service is not wired on this node, so which import flow"
+                            + " this request belongs to cannot be established; retry shortly"
+                            + " against a node that runs it");
+        }
         try {
-            if (connectorDefinitionService != null) {
-                ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
-                if (connector != null) return connector.getSourceArchetype();
+            ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
+            if (connector != null) {
+                if (connector.getSourceArchetype() == null) {
+                    // The row READ, and it does not say what it is. Returning null here was
+                    // the same hole through its other arm: the dispatch reads null as "no
+                    // connector context" and picks the flow from the file name. The API's
+                    // create and update reject a null archetype, so this is a row written
+                    // before that check, by hand, or by a half-run migration — the DLQ
+                    // replay refuses exactly this input with the same reasoning. Not a
+                    // retry: no read makes the field appear.
+                    throw new ConnectorArchetypeUnusableException("connector " + connectorId
+                            + " has no sourceArchetype, so which import flow this request"
+                            + " belongs to cannot be established; set the connector's"
+                            + " sourceArchetype and submit again");
+                }
+                return connector.getSourceArchetype();
             }
-        } catch (Exception e) {
+        } catch (ConnectorArchetypeUnusableException unusable) {
+            throw unusable;
+        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused) {
+            throw refused;
+        } catch (RuntimeException lookupFailed) {
             org.slf4j.LoggerFactory.getLogger(ExternalIngestController.class)
-                    .warn("Connector lookup failed for {}: {}", connectorId, e.getMessage());
+                    .warn("Connector lookup failed for {}: {}", connectorId,
+                            lookupFailed.getMessage());
+            throw new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                    "connector " + connectorId + " could not be read, so which import flow this"
+                            + " request belongs to cannot be established; retry shortly: "
+                            + lookupFailed.getMessage());
+        }
+        // null from get() is "absent" OR "the selector answered nothing while its index
+        // rebuilds". Only the index-free walk tells them apart, and only the second may not
+        // fall through to the heuristics.
+        if (connectorDefinitionService.existsIndexFree(connectorId)) {
+            throw new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                    "connector " + connectorId + " exists but could not be read, so which"
+                            + " import flow this request belongs to cannot be established;"
+                            + " retry shortly");
         }
         return null;
     }
 
-    private static HttpStatus classifyErrorStatus(ExternalIngestResult result) {
+    // Package-private, not private: the locks that measure this join two files. They used to
+    // assert only that the import's message still CARRIED the token this method keys on,
+    // which stays green when an arm here is deleted. They now run the real message through
+    // the real classifier.
+    static HttpStatus classifyErrorStatus(ExternalIngestResult result) {
         if (result.errors() == null || result.errors().isEmpty()) {
             return HttpStatus.INTERNAL_SERVER_ERROR;
         }
         String firstError = result.errors().get(0);
         if (firstError == null) return HttpStatus.INTERNAL_SERVER_ERROR;
         firstError = firstError.toLowerCase();
+        // The retryable arms come FIRST, and before "not found": these messages name a read
+        // that could not be answered, and one of them ends in "...could not be read ...;
+        // retry shortly" — which contains "not found" nowhere but did land on the 500
+        // fallback. Every refusal this batch added to the import path was answering 500, the
+        // status the admin controller's own comment calls "what opens tickets for a condition
+        // a retry resolves". The same twin pair was 409 through the non-admin gate and 500
+        // here. A review measured the split.
+        // The THIRD checkpoint, and it has to be asked FIRST. The gate refuses at the door,
+        // the write point re-asks, and the CMIS ACL evaluation inside the write refuses last —
+        // CmisPermissionDeniedException, wrapped as "[permanent] Permission Denied!
+        // repositoryId=... content={id:..., name:...}". Only that last one answered 500.
+        //
+        // Above the retryable block because isTransientError() tests "503" against the RAW
+        // message before it tests "403"/"Forbidden", and that message interpolates the
+        // repository id, the object id and the object NAME — so a folder called "err-503"
+        // made a denial come back marked "[transient]" and answer 503. A denial is never a
+        // retry. The token carries the bang and is matched against the product's own format,
+        // not the bare words, so an id or name containing "permission denied" does not land
+        // here. A review found both halves.
+        // ExceptionServiceImpl builds TWO denial formats and both have to be here; matching
+        // only the first left every top-level-folder denial on 500, which is the one a
+        // delegated profile targeting the repository root produces on EVERY import.
+        if (firstError.contains("permission denied! repositoryid=")
+                || firstError.contains("permission denied for the importing user")
+                || firstError.contains("permission denied to top level folders")) {
+            return HttpStatus.FORBIDDEN;
+        }
+        if (firstError.contains("retry shortly") || firstError.contains("temporarily unavailable")
+                // The import's own re-check of the delegation cannot ASK when the
+                // authorization service is not wired. The gate one frame up answers 503 for
+                // the same state (SERVICES_UNAVAILABLE); this door answered 500. The sibling
+                // message "no caller to authorise" is deliberately not listed: doIngest
+                // answers 401 before dispatching without a CallContext, so that refusal
+                // cannot arrive here, and if it ever did the 500 would be the true answer.
+                || firstError.contains("the authorization service is not available")
+                // The import's own verdict, not a guess about the words: execute() prefixes
+                // "[transient] " only after isTransientError() has classified the cause
+                // (socket timeout, conflict, 429/502/503/504, rate limit — with 401/403/404
+                // explicitly excluded). That verdict was then thrown away here and the same
+                // condition answered 500, while the identical store failure seen one frame
+                // earlier ("...; retry shortly") answered 503. This arm is above "not found"
+                // on purpose: a transient failure whose text happens to carry a foreign
+                // "not found" is still a retry, not an absence.
+                || firstError.contains("[transient] ")
+                // Dedupe could not ENUMERATE the target folder, so whether the document is
+                // already there is unknown and the import refused rather than risk a
+                // duplicate. A retry reads the view again. It arrives prefixed "[permanent] "
+                // — execute() classifies the CAUSE, and our own IllegalStateException is not a
+                // socket timeout — so the arm above does not take it and it landed on the 500
+                // fallback: "our bug" for the one refusal that says exactly what happened (R25).
+                || firstError.contains("could not be enumerated, so it is unknown whether")) {
+            return HttpStatus.SERVICE_UNAVAILABLE;
+        }
+        if (firstError.contains("definition rows")
+                || firstError.contains("more than one definition row")
+                || firstError.contains("more than one owned definition row")
+                // The target folder's listing came back with rows this node cannot decode, so
+                // dedupe was not made against a complete listing. Standing until the row is
+                // repaired — a retry reads the same broken row — which is why this is here and
+                // not on the retryable arm above, where its sibling ("could not be
+                // enumerated") belongs (R25).
+                || firstError.contains("listing is incomplete")) {
+            // A standing pair an administrator has to resolve — not a retry, not a 500.
+            // getForRepository says "more than one definition row" (singular); the update
+            // path says "definition rows". Matching only the plural left the import door
+            // at 500. A review measured the split.
+            return HttpStatus.CONFLICT;
+        }
         if (firstError.contains("not found")) return HttpStatus.NOT_FOUND;
-        if (firstError.contains("not allowed") || firstError.contains("scoped to repository")) return HttpStatus.FORBIDDEN;
+        if (firstError.contains("not allowed") || firstError.contains("scoped to repository")
+                || firstError.contains("repository mismatch")
+                // The three authorisation refusals the import raises when it re-asks the
+                // delegation at the write point. The gate one frame up answers 403 for each
+                // of the same states — PROFILE_REPO_MISMATCH, CMIS_ALL_REQUIRED and
+                // CONNECTOR_NOT_DELEGATED — while this door answered 500 for two of them and
+                // 400 for the third, by the accident of its wording containing "is required".
+                // A denial read as a server fault, and a denial read as the caller's bad
+                // request. This arm must stay ABOVE the "is required" arm below for that
+                // third one. A review found the split.
+                || firstError.contains("not the repository this caller authenticated")
+                || firstError.contains("was not held when this import ran")
+                || firstError.contains("no longer delegated")) return HttpStatus.FORBIDDEN;
         if (firstError.contains("disabled") || firstError.contains("is required")
-                || firstError.contains("no resolvable")) return HttpStatus.BAD_REQUEST;
+                || firstError.contains("no resolvable")
+                // A standing profile misconfiguration the read ANSWERED. Making the refusal
+                // permanent (dropping "; retry shortly") took it off the 503 arm and dropped
+                // it onto the 500 fallback below — worse than the 400 the vaguer message
+                // "no resolvable target folder" had always produced. Two reviewers measured
+                // it in the round that made the suffix conditional.
+                || firstError.contains("fix the profile")
+                // Two caller mistakes that answered 500. The same door already answers 400
+                // for the sibling mistake one layer up ("File exceeds maximum size (100MB)"),
+                // so one endpoint gave two different answers to "your request was too big".
+                || firstError.contains("exceeds max size")
+                || firstError.contains("invalid metadata format")) return HttpStatus.BAD_REQUEST;
         return HttpStatus.INTERNAL_SERVER_ERROR;
     }
 
@@ -286,11 +551,45 @@ public class ExternalIngestController {
     }
 
     /**
-     * Carries a refusal across the gate boundary. The {@link DenialReason}
-     * is recorded in the audit details map so SOC tooling can search by
-     * code rather than by free-form English. The wire body still uses the
-     * existing {@link ExternalIngestResult#error} factory so external
-     * clients see no schema change.
+     * A retryable refusal when an index-free read says the definition exists (or cannot say),
+     * and null when it really is absent. "Not found" is a claim about the database; every
+     * read that can answer it here is index-backed, so it has to be checked without the index
+     * before it is made.
+     */
+    private Denial profileHiddenOrAbsent(String profileId, String repositoryId) {
+        try {
+            if (importProfileDefinitionService.existsIndexFree(profileId, repositoryId)) {
+                return new Denial(HttpStatus.SERVICE_UNAVAILABLE, DenialReason.SERVICES_UNAVAILABLE,
+                        "unknown", "import profile " + profileId + " exists but could not be"
+                                + " read; retry shortly");
+            }
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+            return new Denial(HttpStatus.SERVICE_UNAVAILABLE, DenialReason.SERVICES_UNAVAILABLE,
+                    "unknown", "whether import profile " + profileId + " exists could not be"
+                            + " established; retry shortly");
+        }
+        return null;
+    }
+
+    /** The connector twin of {@link #profileHiddenOrAbsent}. */
+    private Denial connectorHiddenOrAbsent(String connectorId) {
+        try {
+            if (connectorDefinitionService.existsIndexFree(connectorId)) {
+                return new Denial(HttpStatus.SERVICE_UNAVAILABLE, DenialReason.SERVICES_UNAVAILABLE,
+                        connectorId, "connector " + connectorId + " exists but could not be"
+                                + " read; retry shortly");
+            }
+        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+            return new Denial(HttpStatus.SERVICE_UNAVAILABLE, DenialReason.SERVICES_UNAVAILABLE,
+                    connectorId, "whether connector " + connectorId + " exists could not be"
+                            + " established; retry shortly");
+        }
+        return null;
+    }
+
+    /**
+     * Carries a refusal across the gate boundary. The {@link DenialReason} is the stable tag
+     * the audit trail and the UI key on; the message is for a human.
      */
     private record Denial(HttpStatus status, DenialReason reason, String requestId, String message) {
         ResponseEntity<ExternalIngestResult> toResponse() {
@@ -329,8 +628,43 @@ public class ExternalIngestController {
             return new Denial(HttpStatus.FORBIDDEN, DenialReason.PROFILE_ID_REQUIRED,
                     "unknown", "profileId is required for non-admin ingestion");
         }
-        ImportProfileDefinition profile = importProfileDefinitionService.get(profileId);
+        // The row this gate AUTHORISES has to be the row the import then uses. Both sides
+        // resolve the profile independently, and the selector answers on profileId alone —
+        // so with two rows of one profileId in ONE repository the gate could authorise the
+        // folder and connector of row A while the import ran with row B's target. The walk
+        // is authoritative here and refuses that pair outright; the selector is left to do
+        // nothing but LABEL an absence (elsewhere → 403, nowhere → 404/503 below). A review
+        // showed that "only DELETE crosses an authorisation boundary" was too narrow.
+        ImportProfileDefinition profile;
+        try {
+            profile = importProfileDefinitionService.getForRepository(profileId, repositoryId);
+        } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException pair) {
+            return new Denial(HttpStatus.CONFLICT, DenialReason.SERVICES_UNAVAILABLE,
+                    "unknown", pair.getMessage());
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+            return new Denial(HttpStatus.SERVICE_UNAVAILABLE, DenialReason.SERVICES_UNAVAILABLE,
+                    "unknown", "import profile " + profileId + " could not be resolved for"
+                            + " this repository; retry shortly");
+        }
         if (profile == null) {
+            ImportProfileDefinition selected = importProfileDefinitionService.get(profileId);
+            if (selected != null && repositoryId.equals(selected.getRepositoryId())) {
+                // The walk says this repository has no such row and the selector says it
+                // does. Authorising the selector's row would undo the paragraph above, so
+                // the disagreement is reported as one.
+                return new Denial(HttpStatus.SERVICE_UNAVAILABLE, DenialReason.SERVICES_UNAVAILABLE,
+                        "unknown", "import profile " + profileId + " is reported by the index"
+                                + " but not by the stored rows of this repository; retry shortly");
+            }
+            profile = selected;
+        }
+        if (profile == null) {
+            // This gate runs BEFORE the import service, so its 404 is the answer the caller
+            // gets — the split inside the service never reaches them. A rebuilding index
+            // makes "not found" a claim about the index, not the database. A review found
+            // this entry point still reporting failure as absence.
+            Denial hidden = profileHiddenOrAbsent(profileId, repositoryId);
+            if (hidden != null) return hidden;
             return new Denial(HttpStatus.NOT_FOUND, DenialReason.PROFILE_NOT_FOUND,
                     "unknown", "Profile not found");
         }
@@ -339,7 +673,15 @@ public class ExternalIngestController {
                     "unknown", "Admin-managed profile");
         }
         // Repo must match — non-admins cannot route a profile across repos.
-        if (profile.getRepositoryId() != null && !profile.getRepositoryId().equals(repositoryId)) {
+        // A row that names NO repository is not a wildcard. The guard used to pass it
+        // through (null fails the != null test), so a corrupt or half-migrated row acted
+        // as a profile for EVERY repository — invisible to the admin API, which is
+        // repository-confined, while the runtime happily used it as configuration. The
+        // service that lets an administrator delete such a row says plainly that it
+        // "belongs to none"; this is the other half of that sentence. A review found the
+        // two disagreeing.
+        if (profile.getRepositoryId() == null
+                || !profile.getRepositoryId().equals(repositoryId)) {
             return new Denial(HttpStatus.FORBIDDEN, DenialReason.PROFILE_REPO_MISMATCH,
                     "unknown", "Profile is not bound to this repository");
         }
@@ -370,6 +712,16 @@ public class ExternalIngestController {
             return new Denial(HttpStatus.FORBIDDEN, DenialReason.CMIS_ALL_REQUIRED,
                     "unknown", "cmis:all on target folder required");
         }
+        // Stamp the row this gate is authorising. The import resolves the profile again, and
+        // a PUT landing in between moves the target folder — by someone who need not be this
+        // caller, so nothing about that update authorises this caller for the new folder. The
+        // import refuses when the row it resolves is not this one.
+        request.setAuthorizedProfileFingerprint(
+                CanonicalImportServiceImpl.authorizationFingerprint(profile));
+        // And the folder itself, not just the row: cmis:all was checked on THIS object. A
+        // path-only profile re-resolves at import time, so moving the authorised folder away
+        // and putting another at the same path changes nothing the row can see.
+        request.setAuthorizedTargetFolderId(folderId);
 
         // (4) connectorId, if provided, must be in the profile's saved
         // allowedConnectorIds — and that connector must still be delegated
@@ -384,6 +736,8 @@ public class ExternalIngestController {
             }
             ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
             if (connector == null) {
+                Denial hidden = connectorHiddenOrAbsent(connectorId);
+                if (hidden != null) return hidden;
                 return new Denial(HttpStatus.NOT_FOUND, DenialReason.UNKNOWN_CONNECTOR,
                         connectorId, "Connector not found");
             }
@@ -417,6 +771,8 @@ public class ExternalIngestController {
             }
             ConnectorDefinition connector = connectorDefinitionService.get(def);
             if (connector == null) {
+                Denial hidden = connectorHiddenOrAbsent(def);
+                if (hidden != null) return hidden;
                 return new Denial(HttpStatus.NOT_FOUND, DenialReason.UNKNOWN_CONNECTOR,
                         def, "Profile's default connector not found");
             }
@@ -430,5 +786,61 @@ public class ExternalIngestController {
             request.setConnectorId(def);
         }
         return null;
+    }
+
+    /**
+     * The typed "this row could not be read" refusals reach the ingest endpoints from the
+     * connector and profile services — {@code get()} rethrows them for a deterministic id
+     * holding another document — with nothing catching them, and Spring answers 500: "our
+     * bug" for a condition whose whole point is that a retry fixes it. The definition APIs
+     * have had this floor since the batch began; a review found the ingest, DLQ and webhook
+     * controllers without it. Endpoints that map these themselves keep their own mapping.
+     */
+    @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+            ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})
+    public ResponseEntity<ExternalIngestResult> definitionRowsCouldNotBeRead(RuntimeException e) {
+        // The endpoint's own document, not a different one. The first version answered a
+        // bare map, so a caller parsing requestId / success / errors got a shape it does not
+        // know from the one path that refuses; a review found the undescribed change.
+        //
+        // R49: the reason goes to the log, not to the caller. These refusals carry the store's
+        // own words — "the ingest store did not answer the query for [type]; retry shortly:
+        // <SDK message>" — and the SDK names the host it could not reach. This handler answers
+        // BEFORE doIngest's delegation gate, so a caller authenticated but not authorised for
+        // any profile reads it. The status already says everything the caller can act on:
+        // the read did not answer, and a retry is the move.
+        org.slf4j.LoggerFactory.getLogger(ExternalIngestController.class)
+                .warn("a definition row could not be read; the ingest endpoint answered 503"
+                        + " without the reason: {}", String.valueOf(e.getMessage()));
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ExternalIngestResult.error("unknown", DEFINITION_ROW_UNREADABLE));
+    }
+
+    /**
+     * What the caller is told when a definition row could not be read. Fixed text: the reason
+     * belongs in the log (R49). Distinct enough that a test can tell this refusal from the
+     * endpoint's other 503.
+     */
+    static final String DEFINITION_ROW_UNREADABLE =
+            "a connector or import profile row could not be read on this node; retry shortly."
+                    + " The reason is in the server log";
+
+    /**
+     * What the caller is told when the part they uploaded could not be opened here (R46). Fixed
+     * text for the same reason as {@link #DEFINITION_ROW_UNREADABLE}: the failure names a path
+     * on this host, and this answer is given before the delegation gate.
+     */
+    static final String STORED_PART_UNREADABLE =
+            "the uploaded content could not be read on this node; retry the upload."
+                    + " The reason is in the server log";
+
+    /** A connector whose stored row cannot say which flow the request belongs to. */
+    @ExceptionHandler(ConnectorArchetypeUnusableException.class)
+    public ResponseEntity<ExternalIngestResult> connectorCannotSayWhatItIs(
+            ConnectorArchetypeUnusableException e) {
+        // 409, not 503: no retry makes the field appear, and not 400 either — the request is
+        // well formed and names a connector that exists. The operator has to fix the row.
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ExternalIngestResult.error("unknown", String.valueOf(e.getMessage())));
     }
 }

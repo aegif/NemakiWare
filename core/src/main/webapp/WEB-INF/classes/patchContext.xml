@@ -265,6 +265,19 @@
 						<ref bean="patchUtil" />
 					</property>
 				</bean>
+				<!-- §62: legacy generated-id connector rows are rewritten under their
+				     deterministic ids. MUST come before
+				     Patch_DefaultCloudDriveConnectorProfile: that patch's existence check is
+				     a Mango selector, and with the legacy row migrated first, even a selector
+				     whose index is rebuilding cannot lead to a duplicate — the id-addressed
+				     check inside create() sees the deterministic row. Always-run, historyless
+				     and ungated (reads only _all_docs and id-addressed gets); the class
+				     javadoc carries the full argument. -->
+				<bean class="jp.aegif.nemaki.patch.Patch_ConnectorDefinitionDeterministicIds">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
 				<!-- Default cloud drive connector/profile definitions -->
 				<bean class="jp.aegif.nemaki.patch.Patch_DefaultCloudDriveConnectorProfile">
 					<property name="patchUtil">
@@ -310,6 +323,18 @@
 				<!-- RC4 (R2): Mango compound indexes for nemaki_conf _find paths
 				     (ConnectorDefinition / ImportProfileDefinition / IngestJobRecord) -->
 				<bean class="jp.aegif.nemaki.patch.Patch_IngestMangoIndexes">
+					<property name="patchUtil">
+						<ref bean="patchUtil" />
+					</property>
+				</bean>
+				<!-- Mango indexes on each content DB for the type-dependency check. It runs
+				     TWO selectors: confirmNoInstances on {objectType} and, whenever the first
+				     finds nothing (i.e. whenever the deletion should SUCCEED),
+				     isUsedAsSecondaryType on {secondaryIds}. Unindexed either one scans the
+				     whole database, times out on a large repository, and the fail-closed
+				     caller then refuses every type deletion for ever. Found by the TCK once
+				     bedroom passed 800k documents. -->
+				<bean class="jp.aegif.nemaki.patch.Patch_ObjectTypeMangoIndex">
 					<property name="patchUtil">
 						<ref bean="patchUtil" />
 					</property>
@@ -567,6 +592,11 @@
 			<ref bean="patchUtil" />
 		</property>
 	</bean>
+	<bean id="patch_ConnectorDefinitionDeterministicIds" class="jp.aegif.nemaki.patch.Patch_ConnectorDefinitionDeterministicIds">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
 	<bean id="patch_DefaultCloudDriveConnectorProfile" class="jp.aegif.nemaki.patch.Patch_DefaultCloudDriveConnectorProfile">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
@@ -593,6 +623,15 @@
 		</property>
 	</bean>
 	<bean id="patch_PurviewStateMigration" class="jp.aegif.nemaki.patch.Patch_PurviewStateMigration">
+		<property name="patchUtil">
+			<ref bean="patchUtil" />
+		</property>
+	</bean>
+
+	<!-- Top-level bean as well as the inline one, so the fallback
+	     NemakiPatchInitializationListener.getBeansOfType() path collects it too — the
+	     registration asymmetry RC4 (R1) fixed for the others. -->
+	<bean id="patch_ObjectTypeMangoIndex" class="jp.aegif.nemaki.patch.Patch_ObjectTypeMangoIndex">
 		<property name="patchUtil">
 			<ref bean="patchUtil" />
 		</property>

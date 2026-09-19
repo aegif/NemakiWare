@@ -105,6 +105,28 @@ class ReceiptSignatureVerifierTest {
     }
 
     @Test
+    @DisplayName("altering the AIP checksum after signing breaks the signature too")
+    void anAlteredAipChecksumIsCaught() throws Exception {
+        // `aipChecksum` stopped being a REQUIRED field (design §16): no receiver's checksum is
+        // ever compared here, and RODA reports none at all. That made it easy to read the field
+        // as inert and drop it from canonicalForm() as tidy-up — at which point the one check on
+        // it that CAN fail disappears, and every existing test stays green because the tampering
+        // test above alters sipDigest instead. When a receiver DOES report a checksum, altering
+        // it afterwards has to break the signature.
+        CustodyReceipt signed = signedBy(theirs);
+        CustodyReceipt altered = new CustodyReceipt(signed.submissionId(), signed.aipId(),
+                "d".repeat(64), signed.sipDigest(), signed.verificationOutcome(),
+                signed.receivingAgent(), signed.receivedAt(), signed.signature(), false);
+
+        ReceiptSignatureVerifier.Checked checked = ReceiptSignatureVerifier.verify(
+                altered, theirs.getPublic(), ALGORITHM);
+
+        assertFalse(checked.valid(),
+                "the receiver's reported AIP checksum was changed after signing and the "
+                        + "signature still passed, so nothing covers that field any more");
+    }
+
+    @Test
     @DisplayName("no key is 'not checked', not 'invalid'")
     void noKeyIsNotAFinding() throws Exception {
         ReceiptSignatureVerifier.Checked checked = ReceiptSignatureVerifier.verify(
@@ -165,5 +187,34 @@ class ReceiptSignatureVerifierTest {
                 new String(ReceiptSignatureVerifier.canonicalForm(unsigned())),
                 new String(ReceiptSignatureVerifier.canonicalForm(verifiedFlagSet)),
                 "the signature or the verified flag is inside the signed bytes");
+    }
+
+    @Test
+    @DisplayName("a mapped receipt is signed over the RECEIVER's word, not our translation")
+    void theSignatureCoversWhatTheReceiverSaid() throws Exception {
+        // Archivematica reports COMPLETE, which reportsSuccess() does not accept, so a connector
+        // maps it to SUCCESS and puts the mapped word where the state machine reads it
+        // (design §13.1). The far end signed COMPLETE -- it has never heard of our vocabulary.
+        // If canonicalForm signed the mapped word, EVERY mapped receipt would fail verification.
+        CustodyReceipt mapped = new CustodyReceipt("sub-1", "aip-1", "b".repeat(64),
+                "a".repeat(64), "SUCCESS", "COMPLETE", "am-agent", "2026-08-27T00:00:00Z",
+                null, false);
+
+        String signed = new String(ReceiptSignatureVerifier.canonicalForm(mapped),
+                java.nio.charset.StandardCharsets.UTF_8);
+
+        assertTrue(signed.contains("COMPLETE"),
+                "the canonical form does not carry the receiver's own word, so a receipt the "
+                        + "receiver really signed would fail verification here: " + signed);
+        assertFalse(signed.contains("SUCCESS"),
+                "the canonical form carries OUR mapped word. The far end never signed that: "
+                        + signed);
+
+        // And with no mapping, nothing changes: the receiver's word IS the judged word.
+        CustodyReceipt plain = new CustodyReceipt("sub-1", "aip-1", "b".repeat(64),
+                "a".repeat(64), "PASSED", "roda-agent", "2026-08-27T00:00:00Z", null, false);
+        assertTrue(new String(ReceiptSignatureVerifier.canonicalForm(plain),
+                        java.nio.charset.StandardCharsets.UTF_8).contains("PASSED"),
+                "an unmapped receipt lost its outcome from the canonical form");
     }
 }

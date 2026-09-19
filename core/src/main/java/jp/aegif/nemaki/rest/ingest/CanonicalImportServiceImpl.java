@@ -115,6 +115,19 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         this.integrationSettingsService = service;
     }
 
+    private IngestAuthorizationService ingestAuthorizationService;
+
+    /**
+     * Optional wiring for the delegated re-check below. The manual gate, the scheduler, the
+     * webhook and IDLE each authorise a delegated profile and then hand this service a request
+     * that it resolves independently — so the authorisation has to be re-asked HERE, against
+     * the folder the write actually lands in, or it is only as good as the path that built the
+     * request. The stamps carry the manual gate's decision; this carries every other path's.
+     */
+    public void setIngestAuthorizationService(IngestAuthorizationService ingestAuthorizationService) {
+        this.ingestAuthorizationService = ingestAuthorizationService;
+    }
+
     public void setIngestMetadataService(IngestMetadataService ingestMetadataService) {
         this.ingestMetadataService = ingestMetadataService;
     }
@@ -124,9 +137,277 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     }
 
     /**
+     * "Not found" is a claim about the DATABASE, and {@code get} is answered by a Mango
+     * selector plus one id-addressed fallback — both of which can miss a row that is there.
+     * Returns a retryable refusal when an index-free read says the row exists (or cannot say),
+     * and null when it really is absent. Shared by every entry point that reports absence.
+     */
+    private ExternalIngestResult profileHiddenOrAbsent(String requestId, String profileId,
+            String repositoryId) {
+        try {
+            if (importProfileDefinitionService.existsIndexFree(profileId, repositoryId)) {
+                return ExternalIngestResult.error(requestId, "import profile " + profileId
+                        + " exists but could not be read for this import; retry shortly");
+            }
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+            return ExternalIngestResult.error(requestId, "whether import profile " + profileId
+                    + " exists could not be established; retry shortly: " + e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * The caller's own unique row. Always walks: a selector hit on a same-repository
+     * row used to skip {@code getForRepository}, so a standing pair in that repository
+     * was resolved by index order. Twin / unreadable / missing-client refusals propagate
+     * so execute and mail validation can fail closed; optional decoration catches them.
+     */
+    private ImportProfileDefinition resolveProfileForRepository(String profileId, String repositoryId)
+            throws ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException,
+            ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException {
+        if (profileId == null || importProfileDefinitionService == null) {
+            return null;
+        }
+        return importProfileDefinitionService.getForRepository(profileId, repositoryId);
+    }
+
+    /**
+     * Re-asks the delegated authorisation against the folder this write lands in AND the
+     * connector it goes through.
+     *
+     * <p>The manual gate's stamps only reach requests it built; the scheduler, the webhook and
+     * IDLE authorise a profile and then construct their own requests in a dozen orchestrators,
+     * so anything that moved between their check and this write was never re-examined.
+     *
+     * <p>An ADMINISTRATOR is exempt, as at the REST gate, which bypasses delegated
+     * authorisation for administrators on purpose. The first version of this check did not:
+     * {@code canUseConnectorForDelegatedProfile} has no administrator shortcut and applies
+     * {@code allowedPrincipalIds} to them, so admin-only paths — the folder Run endpoint, DLQ
+     * replay — started refusing. A review measured the over-throw.
+     *
+     * <p>A null context is refused rather than exempted: it cannot be shown to be an
+     * administrator, and there is nothing to authorise a delegated write against.
+     *
+     * <p>Called twice: once when the profile is resolved, and once after the content buffer,
+     * the de-duplication listing, the idempotency record and the resync plan have been read
+     * and before the writes those decide. It does NOT cover every later read — the
+     * relationship-existence check inside {@code createDirectRelationship} re-asks on its
+     * own, with the profile and connector that import used. Between them the content stream is drained,
+     * which for a large attachment is the long part, so a revoke landing during it is caught.
+     * It is a check at a point in time, not a lock: a revoke landing between the second call
+     * and the write is NOT caught, and no number of checks changes that — it needs fencing
+     * shared with the revoke path, or a transaction the store does not offer.
+     */
+    private ExternalIngestResult refuseIfDelegationNoLongerAuthorizes(String requestId,
+            ImportProfileDefinition profile, ConnectorDefinition connector,
+            CallContext callContext, String repositoryId, String targetFolderId) {
+        if (profile == null || !profile.isDelegated()) {
+            return null;
+        }
+        if (ingestAuthorizationService == null || callContext == null) {
+            return ExternalIngestResult.error(requestId, "delegated import cannot be"
+                    + " authorised: " + (callContext == null
+                            ? "this import has no caller to authorise"
+                            : "the authorization service is not available"));
+        }
+        // Repository confinement FIRST. canManageProfileForFolder checks it before its own
+        // administrator short-circuit, and returning early here skipped it: an administrator
+        // authenticated in one repository passed for a delegated profile requested in another.
+        // A review found the exemption wider than the one it was copied from.
+        if (!ingestAuthorizationService.isAuthenticatedRepository(callContext, repositoryId)) {
+            return ExternalIngestResult.error(requestId, "this import is for repository "
+                    + repositoryId + ", which is not the repository this caller authenticated"
+                    + " against");
+        }
+        if (ingestAuthorizationService.isAdmin(callContext)) {
+            return null;
+        }
+        if (!ingestAuthorizationService.canManageProfileForFolder(
+                callContext, repositoryId, targetFolderId)) {
+            return ExternalIngestResult.error(requestId, "cmis:all on the target folder of"
+                    + " import profile " + profile.getProfileId() + " is required and was"
+                    + " not held when this import ran");
+        }
+        if (connector != null && !ingestAuthorizationService.canUseConnectorForDelegatedProfile(
+                callContext, repositoryId, connector, targetFolderId)) {
+            return ExternalIngestResult.error(requestId, "connector "
+                    + connector.getConnectorId() + " is no longer delegated for this"
+                    + " caller and target folder");
+        }
+        return null;
+    }
+
+    /**
+     * The delegation, re-asked before a decoration this wrapper writes AFTER {@code execute}
+     * has returned (R47).
+     *
+     * <p>Every archetype door fills gaps on a dedupe or idempotency skip: the object is already
+     * there, and the pass writes the properties this request carries that the object does not.
+     * {@code execute} re-asked the delegation immediately before returning that skip, so these
+     * writes stand after the last authorisation — the shape {@code createLink} calls "an
+     * avoidable database read placed after the last authorisation" and answers by re-asking.
+     * The audit that counted the write points found all four doors doing it; the first version
+     * of that audit called the window irreducible, which the {@code createLink} precedent
+     * contradicts.
+     *
+     * <p>The refusal is a WARNING, not an error. The object was captured under an authorisation
+     * that held, and reporting the pass as failed would enrol a completed capture in the DLQ
+     * and advance the connector's circuit breaker for a decoration.
+     *
+     * <p>Cost, stated rather than hidden, per decorated pass — that is, per already-imported
+     * item per poll: one index-free read of the profile row (a walk of the configuration
+     * database, the same cost R44 records on the link path); then, only for a DELEGATED
+     * profile, one read of the connector row and one {@code cmis:all} evaluation, which is a
+     * folder read plus group expansion — a third of that work again on the skip path. A
+     * path-only profile adds the folder resolution behind its five-minute cache. A profile
+     * that is not delegated pays only the first of these: the connector is read after the
+     * delegated test, not before it.
+     *
+     * @return null when the decoration may be written, or the sentence to report instead of it
+     */
+    private String refuseDecorationIfNoLongerAuthorized(CallContext callContext,
+            ExternalIngestRequest request, String whatWouldHaveBeenWritten) {
+        ImportProfileDefinition profile;
+        try {
+            profile = relationshipAuthorizingProfile(request);
+        } catch (RuntimeException cannotAuthorize) {
+            return whatWouldHaveBeenWritten + " was not applied: " + cannotAuthorize.getMessage();
+        }
+        if (profile == null || !profile.isDelegated()) {
+            return null;
+        }
+        ConnectorDefinition connector;
+        try {
+            connector = relationshipAuthorizingConnector(request);
+        } catch (RuntimeException cannotAuthorize) {
+            return whatWouldHaveBeenWritten + " was not applied: " + cannotAuthorize.getMessage();
+        }
+        if (request.getConnectorId() != null && connector == null) {
+            // get() answers null for a row that is not there AND for a read that did not
+            // answer, so passing it on skips the connector half of the delegation in silence —
+            // refuseIfDelegationNoLongerAuthorizes only asks about a non-null connector.
+            // createLinkAuthorized refuses for exactly this. The first version of this helper
+            // copied that method's resolution and not its refusal, reproducing the defect the
+            // precedent had closed; two reviews found it.
+            return whatWouldHaveBeenWritten + " was not applied: connector "
+                    + request.getConnectorId() + " could not be resolved, so its delegation"
+                    + " could not be checked";
+        }
+        String folderNow;
+        try {
+            folderNow = resolveTargetFolderId(profile, request.getRepositoryId(), callContext);
+        } catch (RuntimeException unresolvable) {
+            return whatWouldHaveBeenWritten + " was not applied: " + unresolvable.getMessage();
+        }
+        ExternalIngestResult revoked = refuseIfDelegationNoLongerAuthorizes(
+                request.getRequestId(), profile, connector, callContext,
+                request.getRepositoryId(), folderNow);
+        return revoked == null ? null
+                : whatWouldHaveBeenWritten + " was not applied: " + revoked.errors().get(0);
+    }
+
+    /**
+     * A stable fingerprint of everything the delegated gate authorises FROM a profile row:
+     * where the content lands and which connectors may put it there. Two rows with the same
+     * fingerprint are interchangeable as far as that authorisation goes; anything else is a
+     * different decision and must be refused rather than silently adopted.
+     */
+    static String authorizationFingerprint(ImportProfileDefinition profile) {
+        if (profile == null) return null;
+        java.util.List<String> connectors = profile.getAllowedConnectorIds() == null
+                ? java.util.List.of()
+                : profile.getAllowedConnectorIds().stream().sorted().toList();
+        return String.join("\u001f",
+                String.valueOf(profile.getRepositoryId()),
+                String.valueOf(profile.getTargetFolderId()),
+                String.valueOf(profile.getTargetFolderPath()),
+                String.valueOf(profile.isDelegated()),
+                String.valueOf(profile.getDefaultConnectorId()),
+                String.join(",", connectors));
+    }
+
+    /**
+     * Refuses when the row this import resolved is not the row the gate authorised.
+     *
+     * <p>The gate checks {@code cmis:all} on the target folder of the row IT read, and this
+     * service resolves the profile again. A {@code PUT} landing in between moves the target
+     * folder — and the updater need not be this caller, so nothing about that update
+     * authorises this caller for the new folder. A review showed the reasoning that had this
+     * deferred ("the update itself required cmis:all") was answering about the wrong person.
+     *
+     * <p>A null fingerprint means no stamp reached this request. That is NOT the same as "an
+     * administrator's own import", which is what this note used to claim: the scheduler,
+     * webhook and IDLE paths authorise a delegated profile and then build their own requests,
+     * and until they stamped them too, every automatic delegated capture skipped this check. A
+     * review found the claim and the paths. Null is still left alone — a check that refused
+     * unstamped requests would refuse admin imports, which no gate ever authorises.
+     */
+    private ExternalIngestResult refuseIfNotTheAuthorizedRow(ExternalIngestRequest request,
+            ImportProfileDefinition resolved, String requestId) {
+        String authorized = request.getAuthorizedProfileFingerprint();
+        if (authorized == null || resolved == null) {
+            return null;
+        }
+        if (authorized.equals(authorizationFingerprint(resolved))) {
+            return null;
+        }
+        return ExternalIngestResult.error(requestId, "import profile "
+                + request.getProfileId() + " changed between authorisation and execution;"
+                + " this import was authorised against a different target. Retry shortly.");
+    }
+
+    private ImportProfileDefinition confinedProfile(ExternalIngestRequest request) {
+        return confinedProfileRead(request).profile();
+    }
+
+    /**
+     * The profile row, and whether the read ANSWERED.
+     *
+     * <p>{@code confinedProfile} answers null for a read that refused and for a profile that
+     * is not there alike, and its caller writes the difference into persisted lineage
+     * evidence: a null profile becomes a null folderId and an attribution reading "admin
+     * profile unknown, schedule configured-by unrecorded" — three statements about a row that
+     * was never read, one of which ("unrecorded") is defined elsewhere in this file as "the
+     * row has no such field". A review found it. The read's outcome now travels with it.
+     */
+    private record ProfileRead(ImportProfileDefinition profile, boolean answered) {}
+
+    private ProfileRead confinedProfileRead(ExternalIngestRequest request) {
+        try {
+            return new ProfileRead(
+                    resolveProfileForRepository(request.getProfileId(), request.getRepositoryId()),
+                    true);
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException
+                | ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException couldNotAsk) {
+            logger.warn("import profile {} for {} could not be read: {}",
+                    request.getProfileId(), request.getRepositoryId(), couldNotAsk.getMessage());
+            return new ProfileRead(null, false);
+        } catch (RuntimeException e) {
+            logger.debug("could not resolve import profile {} for {}: {}",
+                    request.getProfileId(), request.getRepositoryId(), e.getMessage());
+            return new ProfileRead(null, false);
+        }
+    }
+
+    /** The connector twin of {@link #profileHiddenOrAbsent}. */
+    private ExternalIngestResult connectorHiddenOrAbsent(String requestId, String connectorId) {
+        try {
+            if (connectorDefinitionService.existsIndexFree(connectorId)) {
+                return ExternalIngestResult.error(requestId, "connector " + connectorId
+                        + " exists but could not be read for this import; retry shortly");
+            }
+        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+            return ExternalIngestResult.error(requestId, "whether connector " + connectorId
+                    + " exists could not be established; retry shortly: " + e.getMessage());
+        }
+        return null;
+    }
+
+    /**
      * Cloud Drive UI and REST use short provider ids ({@code google}, {@code microsoft}) while
      * scheduler docs and some deployments register FILE_SHARE connectors as {@code google_drive} /
-     * {@code onedrive}. Try aliases so canonical cloud import auto-resolves either way.
+     * {@code onedrive}. Try aliases so canonical cloud import auto-resolves either way. The
+     * ORDER is the preference: the spelling the request used first.
      */
     static List<String> connectorLookupKeysForAutoResolve(String sourceSystem, SourceArchetype archetype) {
         if (sourceSystem == null || sourceSystem.isBlank()) {
@@ -153,11 +434,21 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (request.getConnectorId() == null || request.getConnectorId().isBlank()) {
             ConnectorDefinition autoConnector = null;
             List<String> keysTried = connectorLookupKeysForAutoResolve(sourceSystem, archetype);
-            for (String key : keysTried) {
-                autoConnector = connectorDefinitionService.findBySystemAndArchetype(key, archetype);
-                if (autoConnector != null) {
-                    break;
-                }
+            try {
+                // ONE index-free walk for every alias key, not one per key: each key that
+                // missed used to pay for its own walk of the whole config database. The key
+                // ORDER still decides — the resolver applies the preference itself.
+                autoConnector = connectorDefinitionService.findBySystemsAndArchetype(
+                        keysTried, archetype);
+            } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+                // The connector twin of the profile arm below: a row that could not be read
+                // while deciding WHICH connector this import uses is a retryable refusal, not
+                // an unexplained failure at CloudDriveResource. A review found it unmapped.
+                return ExternalIngestResult.error(requestId, "connector resolution is"
+                        + " temporarily unavailable, retry shortly: " + e.getMessage());
+            } catch (IllegalStateException e) {
+                // Several connectors match — refuse rather than let storage order choose.
+                return ExternalIngestResult.error(requestId, e.getMessage());
             }
             if (autoConnector == null) {
                 String hint = keysTried.size() > 1
@@ -176,6 +467,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             try {
                 autoProfile = importProfileDefinitionService
                         .findDefaultForRepository(request.getRepositoryId(), archetype, request.getConnectorId());
+            } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+                // A profile row could not be read while resolving WHERE this import lands.
+                // Refuse the import as retryable — the same request succeeds once the row
+                // reads — rather than let the exception surface as an unexplained failure
+                // one layer up (a round-3 review found it unmapped there).
+                return ExternalIngestResult.error(requestId, "import profile resolution is"
+                        + " temporarily unavailable, retry shortly: " + e.getMessage());
             } catch (IllegalStateException e) {
                 // Ambiguous: multiple profiles match — fail closed, do NOT fall through
                 return ExternalIngestResult.error(requestId, e.getMessage());
@@ -212,20 +510,87 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
         // Early validation: check profile AND connector BEFORE expensive EML parsing
         if (request.getProfileId() != null && importProfileDefinitionService != null) {
-            ImportProfileDefinition profile = importProfileDefinitionService.get(request.getProfileId());
+            ImportProfileDefinition profile;
+            try {
+                profile = resolveProfileForRepository(
+                        request.getProfileId(), request.getRepositoryId());
+            } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException pair) {
+                return ExternalIngestResult.error(requestId, pair.getMessage());
+            } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+                return ExternalIngestResult.error(requestId, "import profile "
+                        + request.getProfileId() + " could not be resolved for this"
+                        + " repository; retry shortly: " + e.getMessage());
+            }
+            // The row the gate authorised must be the row this import uses.
+            ExternalIngestResult stale = refuseIfNotTheAuthorizedRow(request, profile, requestId);
+            if (stale != null) return stale;
             if (profile == null) {
+                // The same split execute() got: this early validation runs BEFORE it, so
+                // without the split a hidden legacy row was still reported as absence on the
+                // mail entry point. A review found the remaining door.
+                ExternalIngestResult hidden = profileHiddenOrAbsent(requestId,
+                        request.getProfileId(), request.getRepositoryId());
+                if (hidden != null) return hidden;
                 return ExternalIngestResult.error(requestId, "Import profile not found: " + request.getProfileId());
             }
             if (!profile.isEnabled()) {
                 return ExternalIngestResult.error(requestId, "Import profile is disabled: " + request.getProfileId());
             }
             String repositoryId = request.getRepositoryId();
-            if (profile.getRepositoryId() != null && !profile.getRepositoryId().equals(repositoryId)) {
-                return ExternalIngestResult.error(requestId, "Profile repository mismatch");
+            // A row that names NO repository is not a wildcard. The guard used to pass it
+            // through (null fails the != null test), so a corrupt or half-migrated row acted
+            // as a profile for EVERY repository — invisible to the admin API, which is
+            // repository-confined, while the runtime happily used it as configuration. The
+            // service that lets an administrator delete such a row says plainly that it
+            // "belongs to none"; this is the other half of that sentence. A review found the
+            // two disagreeing.
+            if (profile.getRepositoryId() == null
+                    || !profile.getRepositoryId().equals(repositoryId)) {
+                // Same wording as execute(): the status mapper matches "scoped to repository"
+                // and "repository mismatch" to 403. The short "Profile repository mismatch"
+                // used to fall through to 500 on the mail door. A review measured the split.
+                return ExternalIngestResult.error(requestId,
+                        "Profile '" + profile.getProfileId() + "' is scoped to repository '"
+                        + profile.getRepositoryId() + "', not '" + repositoryId + "'");
             }
             if (request.getConnectorId() != null && connectorDefinitionService != null) {
-                ConnectorDefinition conn = connectorDefinitionService.get(request.getConnectorId());
+                ConnectorDefinition conn;
+                try {
+                    conn = connectorDefinitionService.get(request.getConnectorId());
+                } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+                    return ExternalIngestResult.error(requestId, "connector "
+                            + request.getConnectorId()
+                            + " exists but could not be read for this import; retry shortly: "
+                            + e.getMessage());
+                }
+                if (conn != null && !request.getConnectorId().equals(conn.getConnectorId())) {
+                    return ExternalIngestResult.error(requestId, "connector "
+                            + request.getConnectorId()
+                            + " exists but could not be read as that connector");
+                }
+                if (conn != null) {
+                    try {
+                        int seen = connectorDefinitionService.countIndexFree(request.getConnectorId());
+                        if (seen > 1) {
+                            return ExternalIngestResult.error(requestId, "connector "
+                                    + request.getConnectorId()
+                                    + " has more than one definition row");
+                        }
+                        if (seen < 1) {
+                            return ExternalIngestResult.error(requestId, "connector "
+                                    + request.getConnectorId()
+                                    + " exists but could not be read for this import; retry shortly");
+                        }
+                    } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+                        return ExternalIngestResult.error(requestId, "whether connector "
+                                + request.getConnectorId() + " is unique could not be established;"
+                                + " retry shortly: " + e.getMessage());
+                    }
+                }
                 if (conn == null) {
+                    ExternalIngestResult hidden = connectorHiddenOrAbsent(requestId,
+                            request.getConnectorId());
+                    if (hidden != null) return hidden;
                     return ExternalIngestResult.error(requestId, "Connector not found: " + request.getConnectorId());
                 }
                 if (!conn.isEnabled()) {
@@ -327,7 +692,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // already-imported message, with no event anywhere. On a skip pass, fill gaps and
             // refuse changes; on a real capture, write as before.
             String metaError;
-            if (messageResult.skipped()) {
+            String mailDecorationRefused = messageResult.skipped()
+                    ? refuseDecorationIfNoLongerAuthorized(callContext, request,
+                            "the message metadata this pass would have filled in")
+                    : null;
+            if (mailDecorationRefused != null) {
+                warnings.add(mailDecorationRefused);
+                metaError = null;
+            } else if (messageResult.skipped()) {
                 boolean[] mailFillAttempted = {false};
                 IngestMetadataService.FillOutcome fill =
                         ingestMetadataService.fillMissingMessageMetadata(
@@ -356,11 +728,34 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (metaError != null) warnings.add(metaError);
 
             // 4b. Preserve raw .eml as a separate document if profile requests it
-            ImportProfileDefinition mailProfile = request.getProfileId() != null
-                    ? importProfileDefinitionService.get(request.getProfileId()) : null;
+            ImportProfileDefinition mailProfile;
+            try {
+                mailProfile = resolveProfileForRepository(
+                        request.getProfileId(), request.getRepositoryId());
+            } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException
+                    | ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+                warnings.add("Raw .eml preservation could not be decided; retry shortly: "
+                        + e.getMessage());
+                mailProfile = null;
+            }
+            if (mailProfile != null
+                    && refuseIfNotTheAuthorizedRow(request, mailProfile, requestId) != null) {
+                // The raw .eml child lands in the same folder as the message it came from, so
+                // it inherits the same question. A row that changed under the authorisation
+                // does not decide preservation: say so and skip, rather than write a second
+                // object on a decision nobody authorised.
+                warnings.add("Raw .eml preservation was not decided: the profile changed"
+                        + " between authorisation and execution");
+                mailProfile = null;
+            }
             if (mailProfile != null && mailProfile.isPreserveOriginalEml() && rawEmlBytes.length > 0) {
                 try {
                     ExternalIngestRequest emlReq = new ExternalIngestRequest();
+                    // A derived write lands in the same folder as the object it came from and
+                    // inherits the same authorisation. Dropping the stamps made every child an
+                    // ungated import — and note's files_only default writes ONLY children, so
+                    // for that archetype nothing was checked at all. A review found it.
+                    request.copyAuthorizationStampsTo(emlReq);
                     emlReq.setProfileId(request.getProfileId());
                     emlReq.setConnectorId(request.getConnectorId());
                     emlReq.setRepositoryId(request.getRepositoryId());
@@ -382,9 +777,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     CaptureScope emlScope = newCaptureScope(callContext, emlReq);
                     ExternalIngestResult emlResult = execute(callContext, emlReq, emlScope);
                     if (emlResult.isSuccess()) {
-                        String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
+                        String relErr = createDirectRelationshipAuthorized(callContext, request.getRepositoryId(),
                                 messageObjectId, emlResult.objectId(), "nemaki:hasAttachment",
-                                emlScope);
+                                emlScope,
+                                null, request);
                         if (relErr != null) warnings.add(relErr);
                     } else if (!emlResult.skipped()) {
                         warnings.add("Raw .eml preservation failed: " + String.join(", ", emlResult.errors()));
@@ -409,6 +805,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             for (ParsedAttachment att : parsed.attachments()) {
                 try {
                     ExternalIngestRequest attReq = new ExternalIngestRequest();
+                    request.copyAuthorizationStampsTo(attReq);
                     attReq.setProfileId(request.getProfileId());
                     attReq.setConnectorId(request.getConnectorId());
                     attReq.setRepositoryId(request.getRepositoryId());
@@ -444,9 +841,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                                 : (attResult.skipped() ? attResult.objectId() : null);
                         if (existingId != null) {
                             // Rule 5: the link is part of THIS attachment's work.
-                            String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
+                            String relErr = createDirectRelationshipAuthorized(callContext, request.getRepositoryId(),
                                     messageObjectId, existingId, "nemaki:hasAttachment",
-                                    attScope);
+                                    attScope,
+                                    null, request);
                             if (relErr != null) warnings.add(relErr);
                         }
                     } else {
@@ -578,7 +976,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 // D-7: on a page dedupe-skip no event was emitted, so fill gaps and refuse
                 // changes rather than rewriting the aspect every poll (D6's rule, extended).
                 String metaError;
-                if (pageSkipped) {
+                String noteDecorationRefused = pageSkipped
+                        ? refuseDecorationIfNoLongerAuthorized(callContext, request,
+                                "the page metadata this pass would have filled in")
+                        : null;
+                if (noteDecorationRefused != null) {
+                    warnings.add(noteDecorationRefused);
+                    metaError = null;
+                } else if (pageSkipped) {
                     boolean[] noteFillAttempted = {false};
                     IngestMetadataService.FillOutcome fill =
                             ingestMetadataService.fillMissingNoteMetadata(
@@ -620,6 +1025,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 if (!(attObj instanceof Map<?, ?> attMap)) continue;
                 try {
                     ExternalIngestRequest attReq = new ExternalIngestRequest();
+                    request.copyAuthorizationStampsTo(attReq);
                     attReq.setProfileId(request.getProfileId());
                     attReq.setConnectorId(request.getConnectorId());
                     attReq.setRepositoryId(request.getRepositoryId());
@@ -690,9 +1096,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                             }
                             if (importBody && pageObjectId != null && !request.isDryRun()) {
                                 // Rule 5: the link is part of THIS attachment's work.
-                                String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
+                                String relErr = createDirectRelationshipAuthorized(callContext, request.getRepositoryId(),
                                         pageObjectId, attObjectId, "nemaki:hasAttachment",
-                                        attScope);
+                                        attScope,
+                                        null, request);
                                 if (relErr != null) warnings.add(relErr);
                             }
                         }
@@ -792,6 +1199,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // run (execute returns before it), and this path keeps the previous behaviour of
             // re-applying so a late-arriving page context still lands.
             String metaError = attHookMetaError[0];
+            if (metaError == null && attResult.skipped()) {
+                metaError = refuseDecorationIfNoLongerAuthorized(callContext, attReq,
+                        "the note context this pass would have re-applied");
+            }
             if (metaError == null && attResult.skipped()) {
                 boolean tracked = openIfWriting(childScope,
                         ingestMetadataService.willWriteNoteMetadata(pageRequest));
@@ -895,7 +1306,14 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // D-7: D6's rule, extended — on a skip pass no event was emitted, so fill gaps and
         // refuse changes; on a real capture, write as before.
         String metaError;
-        if (result.skipped()) {
+        String recordDecorationRefused = result.skipped()
+                ? refuseDecorationIfNoLongerAuthorized(callContext, request,
+                        "the record metadata this pass would have filled in")
+                : null;
+        if (recordDecorationRefused != null) {
+            warnings.add(recordDecorationRefused);
+            metaError = null;
+        } else if (result.skipped()) {
             boolean[] brFillAttempted = {false};
             IngestMetadataService.FillOutcome fill =
                     ingestMetadataService.fillMissingArchetypeMetadata(request.getRepositoryId(),
@@ -928,9 +1346,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (request.getMetadata() != null) {
             String parentRecordId = resolveMetadataString(request, "parentRecordId");
             if (parentRecordId != null) {
-                String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
+                String relErr = createDirectRelationshipAuthorized(callContext, request.getRepositoryId(),
                         parentRecordId, result.objectId(), "nemaki:attachedToRecord",
-                        captureScope);
+                        captureScope,
+                        null, request);
                 if (relErr != null) warnings.add(relErr);
             }
         }
@@ -1035,7 +1454,17 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         String metaError;
         List<String> refusedByThisPass = new ArrayList<>();
         List<String> filledByThisPass = new ArrayList<>();
-        if (noEventForThisPass) {
+        // One re-ask for both of this door's decorations: they write on the same pass, so a
+        // second one would only ask the same question again (R47).
+        String chatDecorationRefused = noEventForThisPass
+                ? refuseDecorationIfNoLongerAuthorized(callContext, request,
+                        "the chat evidence and capture window this pass would have filled in")
+                : null;
+        if (chatDecorationRefused != null) {
+            warnings.add(chatDecorationRefused);
+        }
+        boolean decorateThisPass = noEventForThisPass && chatDecorationRefused == null;
+        if (decorateThisPass) {
             // The intent opens from INSIDE the fill, between its decision and its write. The
             // first shape ran a willFill preflight and opened here — a second read of the same
             // object, and the two could disagree: one direction opened an intent for a pass
@@ -1081,7 +1510,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // does not exist yet" — the hook is the gate that makes the aspect exist first, so the
         // event now carries the stamp as its second copy (D1 resolved for new captures).
 
-        if (noEventForThisPass) {
+        if (decorateThisPass) {
             applyCaptureWindow(captureScope, callContext, request, result.objectId(),
                     true, warnings, refusedByThisPass, filledByThisPass);
         }
@@ -1090,9 +1519,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (request.getMetadata() != null) {
             String parentContextId = resolveMetadataString(request, "parentContextId");
             if (parentContextId != null) {
-                String relErr = createDirectRelationship(callContext, request.getRepositoryId(),
+                String relErr = createDirectRelationshipAuthorized(callContext, request.getRepositoryId(),
                         parentContextId, result.objectId(), "nemaki:derivedFromContext",
-                        captureScope);
+                        captureScope,
+                        null, request);
                 if (relErr != null) warnings.add(relErr);
             }
         }
@@ -1175,6 +1605,33 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
     static jp.aegif.nemaki.rest.purview.journal.LineageExecutionAttribution
             resolveExecutionAttribution(ImportProfileDefinition profile, CallContext callContext) {
+        return resolveExecutionAttribution(profile, callContext, true, null);
+    }
+
+    /**
+     * As above, with what the caller knows about the READ.
+     *
+     * <p>With {@code profileRowRead == false} the row is not absent — it was not read. The
+     * three-arm string below states that the run was not delegated, that the profile is
+     * "unknown", and that the schedule's configured-by is "unrecorded"; the last is defined
+     * here as "the row carries no such field". None of the three is established when the read
+     * refused, and this attribution is persisted as evidence. A review found it.
+     */
+    static jp.aegif.nemaki.rest.purview.journal.LineageExecutionAttribution
+            resolveExecutionAttribution(ImportProfileDefinition profile, CallContext callContext,
+                    boolean profileRowRead, String askedProfileId) {
+        if (profile == null && !profileRowRead) {
+            String named = askedProfileId == null || askedProfileId.isBlank()
+                    ? "the import profile" : "import profile " + askedProfileId;
+            boolean unattended = callContext == null
+                    || DelegatedCallContextFactory.isSynthetic(callContext);
+            return new jp.aegif.nemaki.rest.purview.journal.LineageExecutionAttribution(
+                    (unattended ? "scheduler: " : callContext.getUsername() + "; ")
+                            + named + " could not be read for this event, so whether the run"
+                            + " was delegated and who configured its schedule are not"
+                            + " established",
+                    null);
+        }
         boolean autonomous = callContext == null
                 || DelegatedCallContextFactory.isSynthetic(callContext);
         boolean delegated = profile != null && profile.isDelegated();
@@ -1225,9 +1682,25 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (filled.isEmpty() && refused.isEmpty()) return;
         try {
             ConnectorDefinition connector = connectorDefinitionService.get(request.getConnectorId());
-            ImportProfileDefinition profile = request.getProfileId() == null ? null
-                    : importProfileDefinitionService.get(request.getProfileId());
-            if (connector == null) return;
+            ProfileRead profileRead = confinedProfileRead(request);
+            ImportProfileDefinition profile = profileRead.profile();
+            if (connector == null) {
+                // get() answers null for a read that did not answer as readily as for an
+                // absent connector, and this method is only entered when evidence WAS
+                // written or refused. Returning here left no event and, unlike the catch at
+                // the end of this method, no warning either — the pass reported success with
+                // nothing recording that evidence changed. A review found it.
+                logger.warn("no re-import lineage event was emitted for {}: connector {} did"
+                        + " not come back, so the event could not be attributed. Evidence"
+                        + " fields {} were filled and {} refused by this pass.",
+                        result.objectId(), request.getConnectorId(), filled, refused);
+                // The caller is told too. A line in the log is not a record: the pass changed
+                // evidence and the answer said nothing about the event that did not happen.
+                warnings.add("evidence was changed by this pass, but no re-import lineage"
+                        + " event was recorded: connector " + request.getConnectorId()
+                        + " could not be read");
+                return;
+            }
             String repositoryId = request.getRepositoryId();
             // The same resolution execute() uses, not profile.getTargetFolderId(): a profile
             // defined with targetFolderPath only has a null id, and the original capture event
@@ -1254,8 +1727,18 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (!refused.isEmpty()) {
                 passOutcome.put(CaptureEvidenceField.REIMPORT_REFUSED, String.join(",", refused));
             }
+            if (!profileRead.answered()) {
+                // Said in the record, not left to be inferred from a null folder and an
+                // attribution built out of nothing.
+                passOutcome.put(CaptureEvidenceField.REIMPORT_OUTCOME,
+                        passOutcome.get(CaptureEvidenceField.REIMPORT_OUTCOME)
+                                + "; the import profile row could not be read for this event,"
+                                + " so the target folder and the execution attribution below"
+                                + " are not established from it");
+            }
             jp.aegif.nemaki.rest.purview.journal.LineageExecutionAttribution reimportAttribution =
-                    resolveExecutionAttribution(profile, callContext);
+                    resolveExecutionAttribution(profile, callContext, profileRead.answered(),
+                            request.getProfileId());
             String eventId = ingestLineageEmitter.emitLineageEvent(repositoryId, result.objectId(),
                     folderId, documentName, java.util.UUID.randomUUID().toString(),
                     connector, request,
@@ -1713,43 +2196,125 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * its scope has been completed — design §4 rule 7 puts that case out of scope for this
      * change and closes it alongside the stamp in P1-1(e). Inside an ingest, use the overload
      * that takes a scope; a relationship created through this one is a change no intent covers.
+     *
+     * <p>The AUTHORISATION is not out of scope, and used to be missing here (R4): with no
+     * profile in hand this entry point skipped the delegation re-check entirely, so a fetch
+     * whose delegation was revoked while it ran still wrote its edges. It now goes through the
+     * same authorising core as an in-import link; only the capture scope stays inactive and
+     * only the ANSWER differs (see {@link #outsideAnImport}).
      */
     @Override
     public String createDirectRelationship(CallContext callContext, String repositoryId,
-                                           String sourceId, String targetId) {
-        return createDirectRelationship(callContext, repositoryId, sourceId, targetId,
-                "cmis:relationship", CaptureScope.inactive());
+                                           String sourceId, String targetId,
+                                           ImportProfileDefinition authorizingProfile,
+                                           ExternalIngestRequest request) {
+        return outsideAnImport(createLinkAuthorized(callContext, repositoryId, sourceId, targetId,
+                "cmis:relationship", CaptureScope.inactive(), authorizingProfile, request));
     }
 
     /**
-     * Typed relationship with no capture scope.
-     *
-     * <p>Kept so a caller that has no scope in hand still compiles, but it is NOT the right
-     * overload inside an ingest: a relationship created here is a change that no intent covers.
-     * The call sites that legitimately use it are the ones design §4 rule 7 puts outside this
-     * PR's boundary — the orchestrators that link objects after the entry point returns.
+     * The answer of an entry point whose callers put every non-null value into their fetch
+     * ERRORS: null when the link is there, a message only when it is not. A link created
+     * without its duplicate check is there, so it answers null — and the fact is logged
+     * here, WARN, source and target named, because a fetch that imported nothing and carries
+     * one "error" is recorded FAILED and advances the connector's circuit breaker, and that
+     * would be a report of a failure that did not happen. Inside an import the same fact is
+     * a relationship warning on the result (the eight-argument overload).
      */
-    String createDirectRelationship(CallContext callContext, String repositoryId,
-                                    String sourceId, String targetId, String relationshipTypeId) {
-        return createDirectRelationship(callContext, repositoryId, sourceId, targetId,
-                relationshipTypeId, CaptureScope.inactive());
+    private String outsideAnImport(LinkOutcome outcome) {
+        if (!outcome.linked()) {
+            return outcome.message();
+        }
+        if (outcome.message() != null) {
+            logger.warn("{} (created outside an import: reported here only)", outcome.message());
+        }
+        return null;
     }
 
     /**
-     * Creates a typed CMIS relationship.
+     * What a link attempt came to. {@code linked} is true when the relationship is there —
+     * created now, or found already; {@code message} is the refusal when it is not, and the
+     * unanswered-duplicate-check note when it is and the check did not answer.
+     */
+    private record LinkOutcome(boolean linked, String message) {
+        static LinkOutcome linked(String note) {
+            return new LinkOutcome(true, note);
+        }
+
+        static LinkOutcome notLinked(String why) {
+            return new LinkOutcome(false, why);
+        }
+    }
+
+    // The five- and six-argument overloads (typed relationship without a profile) were
+    // removed: nothing in production called them, and the six-argument one took a capture
+    // scope — an in-import thing — while answering with the outside-an-import contract, so
+    // a future in-import caller would have lost the duplicate-check warning in silence. A
+    // review found the dead pair.
+
+    /**
+     * Creates a typed CMIS relationship, with the profile whose import this link belongs to.
      * Falls back to generic cmis:relationship if the custom type is not available.
+     *
+     * <p>{@code authorizingProfile} is what lets the existence check below be followed by a
+     * re-authorisation: the check is a read and the creation is a write, and every other
+     * read/write pair in this import re-asks in between. Null means the caller had no profile
+     * to authorise against, and then no re-check happens — which is recorded rather than
+     * hidden. Every caller now reaches this through {@code createLinkAuthorized}, which
+     * resolves the profile and refuses rather than passing on a null it could not produce
+     * (R4 closed the last entry point that passed null unconditionally); the two differ only
+     * in how the outcome is ANSWERED, in an import as a warning and outside one through
+     * {@link #outsideAnImport}.
+     *
+     * <p>The wrapper that took these eight arguments was deleted with R4: its last production
+     * caller became {@code createLinkAuthorized}, and a method only tests call is a door that
+     * measures nothing about production.
      */
-    String createDirectRelationship(CallContext callContext, String repositoryId,
-                                            String sourceId, String targetId,
-                                            String relationshipTypeId, CaptureScope captureScope) {
+    private LinkOutcome createLink(CallContext callContext, String repositoryId,
+                                   String sourceId, String targetId,
+                                   String relationshipTypeId, CaptureScope captureScope,
+                                   ImportProfileDefinition authorizingProfile,
+                                   ConnectorDefinition authorizingConnector) {
         try {
             // Idempotent: if this source→target link already exists, do not
             // create a duplicate. Relationship creation is otherwise re-run on
             // every poll for already-imported objects (e.g. dedupe-skipped
             // chat attachments), which would accumulate duplicate edges.
-            if (sourceId != null && targetId != null
-                    && relationshipExists(repositoryId, sourceId, targetId)) {
-                return null;
+            String unansweredCheck = null;
+            if (sourceId != null && targetId != null) {
+                EdgeLookup edge = lookUpRelationship(repositoryId, sourceId, targetId);
+                if (edge.answered() && edge.exists()) {
+                    return LinkOutcome.linked(null);
+                }
+                if (!edge.answered()) {
+                    // Created anyway (below) and SAID SO. The check used to fail open to
+                    // "no such edge" in silence: the link was created, a duplicate may have
+                    // been, and nothing reaching the caller told it apart from an answered
+                    // check. Refusing instead would let a transient read stop a legitimate
+                    // first link, so the choice stays; what changes is that it is reported.
+                    unansweredCheck = "relationship " + sourceId + " → " + targetId
+                            + " was created without its duplicate check: the existing"
+                            + " relationships could not be read (" + edge.failure()
+                            + "), so a duplicate edge may now exist";
+                }
+            }
+            // The existence check above is a read and the creation below is a write, so the
+            // authorisation is re-asked between them — the rule every other read/write pair in
+            // this import follows. A review called the missing re-check a release blocker and
+            // was right: this is not the irreducible instant before a write, it is an
+            // avoidable database read placed after the last authorisation.
+            if (authorizingProfile != null && authorizingProfile.isDelegated()) {
+                String folderNow = resolveTargetFolderId(authorizingProfile, repositoryId, callContext);
+                // The connector the LINK's import actually used, not the profile's default: a
+                // profile may allow several, and authorising the default would answer about a
+                // connector this import never touched. A review named the substitution.
+                ExternalIngestResult revokedHere = refuseIfDelegationNoLongerAuthorizes(
+                        "relationship", authorizingProfile, authorizingConnector, callContext,
+                        repositoryId, folderNow);
+                if (revokedHere != null) {
+                    return LinkOutcome.notLinked("the relationship was not created: "
+                            + revokedHere.errors().get(0));
+                }
             }
             PropertiesImpl relProps = new PropertiesImpl();
             relProps.addProperty(new PropertyIdImpl(PropertyIds.OBJECT_TYPE_ID, relationshipTypeId));
@@ -1759,33 +2324,71 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             // changes nothing, and an intent for it could never be completed.
             captureScope.ensureIntentOpened();
             objectService.createRelationship(callContext, repositoryId, relProps, null, null, null, null);
-            captureScope.record("createRelationship", MutationOutcome.SUCCEEDED);
-            return null;
+            if (unansweredCheck != null) {
+                // The capture record carries the same fact: "succeeded" alone would read as
+                // the ordinary case to anyone reading the evidence later.
+                captureScope.record("createRelationship", MutationOutcome.SUCCEEDED,
+                        unansweredCheck);
+            } else {
+                captureScope.record("createRelationship", MutationOutcome.SUCCEEDED);
+            }
+            return LinkOutcome.linked(unansweredCheck);
         } catch (CaptureScope.CaptureIntentFailedException failClosed) {
             // Never swallowed. This is the fail-closed point: it means the intent could 
             // not be written, so nothing may be changed. Caught by the surrounding catch
             //  it became a warning, and on the replace path the code then fell through a
             // nd created the replacement anyway (external review).
             throw failClosed;
+        } catch (TargetFolderUnreadableException folderRefused) {
+            // NOT the custom-type fallback: the folder read refused, the relationship TYPE
+            // never failed, and recursing would ask the same question again. NOT a throw
+            // either — a review found that rethrowing escaped this method into the import's
+            // top-level catch, so one unauthorisable LINK turned a document that was already
+            // committed into an error result and a DLQ row. That is the over-throw the
+            // wrapper's own javadoc and control VW forbid. The shape three lines up is the
+            // right one: report it as not linked.
+            logger.warn("Relationship {} → {} was not created: {}", sourceId, targetId,
+                    folderRefused.getMessage());
+            return LinkOutcome.notLinked("Relationship not authorised: "
+                    + folderRefused.getMessage());
         } catch (Exception e) {
             // Fallback to generic cmis:relationship if custom type fails
             if (!"cmis:relationship".equals(relationshipTypeId)) {
                 logger.debug("Custom relationship type {} failed, falling back to cmis:relationship", relationshipTypeId);
-                return createDirectRelationship(callContext, repositoryId, sourceId, targetId,
-                        "cmis:relationship", captureScope);
+                return createLink(callContext, repositoryId, sourceId, targetId,
+                        "cmis:relationship", captureScope, authorizingProfile, authorizingConnector);
             }
             logger.warn("Relationship {} → {} failed: {}", sourceId, targetId, e.getMessage());
             // INDETERMINATE: the throw may have come from before createRelationship or from the
             // call itself, and the wrapper below it returns null for every kind of failure.
             captureScope.record("createRelationship", MutationOutcome.INDETERMINATE,
                     e.getMessage());
-            return "Relationship failed: " + e.getMessage();
+            return LinkOutcome.notLinked("Relationship failed: " + e.getMessage());
         }
     }
 
     /**
-     * True if a relationship with the given source already targets {@code targetId}.
-     * Used to keep {@link #createDirectRelationship} idempotent.
+     * What the relationship read said — or that it said nothing. {@code exists} is
+     * meaningful only when {@code answered}; {@code failure} only when not.
+     */
+    private record EdgeLookup(boolean answered, boolean exists, String failure) {
+        static EdgeLookup present() {
+            return new EdgeLookup(true, true, null);
+        }
+
+        static EdgeLookup absent() {
+            return new EdgeLookup(true, false, null);
+        }
+
+        static EdgeLookup unanswered(String failure) {
+            return new EdgeLookup(false, false, failure);
+        }
+    }
+
+    /**
+     * Whether a relationship with the given source already targets {@code targetId} — or
+     * that this could not be established. Used to keep {@link #createDirectRelationship}
+     * idempotent.
      *
      * <p>The match is intentionally <b>type-agnostic</b> (source→target only).
      * Each ingest flow links a given source/target pair with exactly one
@@ -1794,24 +2397,36 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * Type-agnostic matching also means a custom-type retry won't duplicate an
      * edge that a previous call had to create as the cmis:relationship fallback.
      *
-     * <p>Fails open to {@code false} (allows creation) on query error, so a
-     * transient lookup failure never blocks a legitimate first link.
+     * <p>A read that fails is returned as UNANSWERED, not as "no such edge". The DAO
+     * underneath throws precisely so that "could not ask" is not read as "none", and this
+     * was the one layer that turned it back into {@code false} — with a javadoc that called
+     * it failing open. The caller still creates the link (a transient read must not block a
+     * legitimate first link) but reports that the check did not happen.
      */
-    private boolean relationshipExists(String repositoryId, String sourceId, String targetId) {
-        if (contentService == null) return false;
+    private EdgeLookup lookUpRelationship(String repositoryId, String sourceId, String targetId) {
+        if (contentService == null) {
+            // Wiring, not a read — but "could not ask" all the same, and the batch's rule for
+            // a missing service is that it is not "there is none". A review found the arm
+            // answering absent.
+            return EdgeLookup.unanswered("contentService is not wired");
+        }
         try {
             List<jp.aegif.nemaki.model.Relationship> rels = contentService.getRelationsipsOfObject(
                     repositoryId, sourceId,
                     org.apache.chemistry.opencmis.commons.enums.RelationshipDirection.SOURCE);
             if (rels != null) {
                 for (jp.aegif.nemaki.model.Relationship r : rels) {
-                    if (r != null && targetId.equals(r.getTargetId())) return true;
+                    if (r != null && targetId.equals(r.getTargetId())) {
+                        return EdgeLookup.present();
+                    }
                 }
             }
+            return EdgeLookup.absent();
         } catch (Exception e) {
-            logger.debug("Relationship existence check failed for {} -> {}: {}", sourceId, targetId, e.getMessage());
+            logger.warn("Relationship existence check for {} -> {} did not answer: {}", sourceId,
+                    targetId, e.getMessage());
+            return EdgeLookup.unanswered(e.getMessage());
         }
-        return false;
     }
 
     /**
@@ -2013,78 +2628,221 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     }
 
     /**
-     * Remove all existing CMIS relationships where the given object is the source.
-     * Used by replace_relationships_on_resync policy.
+     * The profile a relationship created during this import must be authorised against.
+     *
+     * <p>The archetype wrappers create their links AFTER the import that produced the objects
+     * has returned, so they have no resolved profile in hand. Resolving it here keeps the
+     * authorisation bound to the row that is current at the moment of the link — which is the
+     * point of re-asking at all. A resolution that cannot answer does NOT return null — an
+     * unreadable read propagates and a row that has gone throws — and
+     * {@code createDirectRelationshipAuthorized} turns either into the relationship warning
+     * its callers already expect. (This note used to say the opposite, describing an earlier
+     * version in which both became null and the link was created unchecked.)
      */
-    private String removeExistingRelationships(CaptureScope captureScope,
-            CallContext callContext, String repositoryId, String objectId) {
-        if (relationshipService == null) return null;
-        try {
-            int totalRemoved = 0;
-            int totalFailed = 0;
-            java.math.BigInteger batchSize = java.math.BigInteger.valueOf(100);
-            java.math.BigInteger skipCount = java.math.BigInteger.ZERO;
-            // Paginate to handle documents with many relationships
-            while (true) {
-                org.apache.chemistry.opencmis.commons.data.ObjectList rels = relationshipService.getObjectRelationships(
-                        callContext, repositoryId, objectId, true,
-                        org.apache.chemistry.opencmis.commons.enums.RelationshipDirection.SOURCE,
-                        null, null, false, batchSize, skipCount, null);
-                if (rels == null || rels.getObjects() == null || rels.getObjects().isEmpty()) break;
-
-                int removedThisPass = 0;
-                for (var relData : rels.getObjects()) {
-                    try {
-                        captureScope.ensureIntentOpened();
-                        objectService.deleteObject(callContext, repositoryId,
-                                relData.getId(), true, null);
-                        captureScope.record("removeRelationship", MutationOutcome.SUCCEEDED);
-                        totalRemoved++;
-                        removedThisPass++;
-                    } catch (CaptureScope.CaptureIntentFailedException failClosed) {
-                        // Never swallowed. This is the fail-closed point: it means the intent could 
-                        // not be written, so nothing may be changed. Caught by the surrounding catch
-                        //  it became a warning, and on the replace path the code then fell through a
-                        // nd created the replacement anyway (external review).
-                        throw failClosed;
-                    } catch (Exception e) {
-                        totalFailed++;
-                        captureScope.record("removeRelationship", MutationOutcome.FAILED,
-                                e.getMessage());
-                        logger.warn("Failed to remove relationship {}: {}", relData.getId(), e.getMessage());
-                    }
-                }
-                // After deleting, re-fetch from start (indices shift after deletion) — which is
-                // why skipCount stays at zero. That makes progress depend entirely on deletions
-                // succeeding: with every delete failing, the same page came back for ever and
-                // hasMoreItems() stayed true, so this looped without end while holding up the
-                // import (external review). A pass that removed nothing cannot make progress.
-                if (removedThisPass == 0) {
-                    break;
-                }
-                if (!Boolean.TRUE.equals(rels.hasMoreItems())) break;
-            }
-            if (totalRemoved > 0) {
-                logger.info("Resync: removed {} relationships from {}", totalRemoved, objectId);
-            }
-            if (totalFailed > 0) {
-                // Returned, not only logged: replace_relationships_on_resync exists to leave the
-                // object with ONLY the incoming relationships. Surviving edges mean the object
-                // is not in the state the policy promises.
-                return "Resync did not remove " + totalFailed + " existing relationship(s) from "
-                        + objectId + "; stale edges remain alongside the re-imported ones";
-            }
-            return null;
-        } catch (CaptureScope.CaptureIntentFailedException failClosed) {
-            // The per-item guard rethrows into THIS catch, which turned it straight back into a
-            // warning — so the guard was inoperative (external review).
-            throw failClosed;
-        } catch (Exception e) {
-            logger.warn("Failed to query relationships for {}: {}", objectId, e.getMessage());
-            return "Existing relationships of " + objectId + " could not be listed, so the resync "
-                    + "policy could not be applied: " + e.getMessage();
-        }
+    ImportProfileDefinition relationshipAuthorizingProfileForTest(ExternalIngestRequest request) {
+        return relationshipAuthorizingProfile(request);
     }
+
+    /**
+     * Creates an in-import link, resolving what authorises it and reporting a refusal the way
+     * a relationship failure is reported — as a warning string, not an exception.
+     *
+     * <p>Two things were wrong before this existed. A resolution that refused (row gone, or
+     * unreadable) escaped to the wrapper's top-level catch, so a link that could not be
+     * authorised turned the whole import into a 500 — over-throwing, after the object had
+     * already been committed. And a connector that could not be resolved arrived as null,
+     * which silently SKIPPED the connector half of the authorisation: `get()` answers null for
+     * absence and for a failed read alike. A review named both.
+     */
+    String createDirectRelationshipAuthorizedForTest(CallContext callContext, String repositoryId,
+            String sourceId, String targetId, String relationshipTypeId, CaptureScope captureScope,
+            ImportProfileDefinition knownProfile, ExternalIngestRequest request) {
+        return createDirectRelationshipAuthorized(callContext, repositoryId, sourceId, targetId,
+                relationshipTypeId, captureScope, knownProfile, request);
+    }
+
+    private String createDirectRelationshipAuthorized(CallContext callContext, String repositoryId,
+            String sourceId, String targetId, String relationshipTypeId, CaptureScope captureScope,
+            ImportProfileDefinition knownProfile, ExternalIngestRequest request) {
+        return createLinkAuthorized(callContext, repositoryId, sourceId, targetId,
+                relationshipTypeId, captureScope, knownProfile, request).message();
+    }
+
+    /**
+     * The authorising core both entry points share. Split out for the public one (R4), which
+     * needs the outcome rather than the message: outside an import a link that WAS created
+     * answers null even when its duplicate check did not answer, and only a refusal is a
+     * message. Folding that into the message here would have turned every unanswered check
+     * into a failed fetch.
+     */
+    private LinkOutcome createLinkAuthorized(CallContext callContext, String repositoryId,
+            String sourceId, String targetId, String relationshipTypeId, CaptureScope captureScope,
+            ImportProfileDefinition knownProfile, ExternalIngestRequest request) {
+        ImportProfileDefinition profile = knownProfile;
+        ConnectorDefinition connector;
+        try {
+            if (profile == null) {
+                profile = relationshipAuthorizingProfile(request);
+            }
+            connector = relationshipAuthorizingConnector(request);
+        } catch (RuntimeException cannotAuthorize) {
+            return LinkOutcome.notLinked("the relationship was not created: "
+                    + cannotAuthorize.getMessage());
+        }
+        if (profile != null && profile.isDelegated() && request != null
+                && request.getConnectorId() != null && connector == null) {
+            // The request names a connector and it could not be produced. Passing null on
+            // would skip the connector check entirely, which is the fail-open this closes.
+            return LinkOutcome.notLinked("the relationship was not created: connector "
+                    + request.getConnectorId()
+                    + " could not be resolved, so its delegation could not be checked");
+        }
+        return createLink(callContext, repositoryId, sourceId, targetId,
+                relationshipTypeId, captureScope, profile, connector);
+    }
+
+    /** The connector THIS import used, for the link's re-authorisation. Null when unknown. */
+    private ConnectorDefinition relationshipAuthorizingConnector(ExternalIngestRequest request) {
+        if (request == null || request.getConnectorId() == null
+                || connectorDefinitionService == null) {
+            return null;
+        }
+        return connectorDefinitionService.get(request.getConnectorId());
+    }
+
+    private ImportProfileDefinition relationshipAuthorizingProfile(ExternalIngestRequest request) {
+        if (request == null || request.getProfileId() == null
+                || importProfileDefinitionService == null) {
+            return null;
+        }
+        // No catch that turns a failure into "no profile", and absence is not null either.
+        // Both mean the link cannot be authorised: unreadable propagates, and a row that has
+        // gone while the import ran is refused here. The first version returned null for both
+        // and the caller skipped the check — exactly the substitution this batch is about.
+        ImportProfileDefinition current = importProfileDefinitionService.getForRepository(
+                request.getProfileId(), request.getRepositoryId());
+        if (current == null) {
+            throw new IllegalStateException("import profile " + request.getProfileId()
+                    + " no longer has a row in repository " + request.getRepositoryId()
+                    + "; the relationship cannot be authorised");
+        }
+        return current;
+    }
+
+    /** Beyond this the resync refuses rather than replacing part of the edges. */
+    private static final int MAX_RESYNC_RELATIONSHIPS = 10_000;
+
+    /**
+     * The ids this resync would delete — a read, and only a read.
+     *
+     * <p>Enumeration and deletion used to be one paginated loop, so a revoke landing while a
+     * page was fetched was not seen by the deletions that followed it. The plan is now formed
+     * before the authorisation is re-asked, and the deletion works from that snapshot. A
+     * review found the last read left inside the write phase.
+     *
+     * <p>Throws whatever the listing throws; the caller turns it into the same warning the
+     * combined version produced.
+     */
+    private java.util.List<String> collectExistingRelationshipIds(
+            CallContext callContext, String repositoryId, String objectId) {
+        java.util.List<String> ids = new ArrayList<>();
+        if (relationshipService == null) {
+            // An empty list is "this object has no relationships", and the caller acts on it:
+            // replace_relationships_on_resync deletes nothing, adds no warning, and reports
+            // success — while its promise is that the object ends up with ONLY the incoming
+            // edges. This same file closed the identical arm twice before (lookUpRelationship
+            // and findExistingDocument), and their comments name each other; the split of
+            // enumeration from deletion carried this one through. A review found the third.
+            throw new IllegalStateException("the relationships of " + objectId + " could not be"
+                    + " listed: the relationship service is not wired on this node; retry"
+                    + " shortly against a node that runs it");
+        }
+        java.math.BigInteger batchSize = java.math.BigInteger.valueOf(100);
+        java.math.BigInteger skipCount = java.math.BigInteger.ZERO;
+        while (true) {
+            org.apache.chemistry.opencmis.commons.data.ObjectList rels =
+                    relationshipService.getObjectRelationships(
+                            callContext, repositoryId, objectId, true,
+                            org.apache.chemistry.opencmis.commons.enums.RelationshipDirection.SOURCE,
+                            null, null, false, batchSize, skipCount, null);
+            if (rels == null || rels.getObjects() == null || rels.getObjects().isEmpty()) {
+                // An EMPTY page that still says there is more is an incomplete listing, not
+                // the end of one. Breaking here returned the ids collected so far as a
+                // complete plan — the same silent-truncation shape as the cap below, and a
+                // review found it surviving the cap fix.
+                if (rels != null && Boolean.TRUE.equals(rels.hasMoreItems())) {
+                    throw new IllegalStateException("the relationships of " + objectId
+                            + " could not be listed: a page came back empty while the listing"
+                            + " reports more to come");
+                }
+                break;
+            }
+            for (var relData : rels.getObjects()) {
+                if (relData.getId() != null) ids.add(relData.getId());
+            }
+            if (!Boolean.TRUE.equals(rels.hasMoreItems())) break;
+            java.math.BigInteger advanced =
+                    skipCount.add(java.math.BigInteger.valueOf(rels.getObjects().size()));
+            if (advanced.equals(skipCount)) {
+                // Unreachable while a page carries at least one object (the empty case is
+                // handled above), and kept as a guard rather than removed: a store that
+                // reported a non-empty page of size zero would otherwise loop for ever. The
+                // ledger said "a non-advancing page throws" as though this were the arm that
+                // catches a repeating listing — it is not; the empty-page arm above is.
+                throw new IllegalStateException("the relationships of " + objectId
+                        + " could not be listed: the listing does not advance");
+            }
+            skipCount = advanced;
+            if (ids.size() > MAX_RESYNC_RELATIONSHIPS) {
+                // NOT a silent truncation. Returning what was collected would delete part of
+                // the edges and report success, leaving the rest without either warning — the
+                // policy promises the object keeps ONLY the incoming relationships. A review
+                // found the cap returning a partial plan as a complete one.
+                throw new IllegalStateException("the relationships of " + objectId
+                        + " could not be listed: more than " + MAX_RESYNC_RELATIONSHIPS
+                        + " exist, which is beyond what this policy will replace");
+            }
+        }
+        return ids;
+    }
+
+    /** Deletes the ids the enumeration above produced. No listing happens here. */
+    private String removeRelationshipsById(CaptureScope captureScope, CallContext callContext,
+            String repositoryId, String objectId, java.util.List<String> relationshipIds) {
+        if (relationshipService == null || relationshipIds == null || relationshipIds.isEmpty()) {
+            return null;
+        }
+        int totalRemoved = 0;
+        int totalFailed = 0;
+        for (String relId : relationshipIds) {
+            try {
+                captureScope.ensureIntentOpened();
+                objectService.deleteObject(callContext, repositoryId, relId, true, null);
+                captureScope.record("removeRelationship", MutationOutcome.SUCCEEDED);
+                totalRemoved++;
+            } catch (CaptureScope.CaptureIntentFailedException failClosed) {
+                throw failClosed;
+            } catch (Exception e) {
+                // Recorded, not only logged: the capture evidence has to carry the failed
+                // mutation. The split dropped this line and a review caught the loss.
+                captureScope.record("removeRelationship", MutationOutcome.FAILED, e.getMessage());
+                logger.warn("Resync: failed to remove relationship {} from {}: {}",
+                        relId, objectId, e.getMessage());
+                totalFailed++;
+            }
+        }
+        if (totalRemoved > 0) {
+            logger.info("Resync: removed {} relationships from {}", totalRemoved, objectId);
+        }
+        if (totalFailed > 0) {
+            // replace_relationships_on_resync exists to leave the object with ONLY the incoming
+            // relationships. Surviving edges mean it is not in the state the policy promises.
+            return "Resync did not remove " + totalFailed + " existing relationship(s) from "
+                    + objectId + "; stale edges remain alongside the re-imported ones";
+        }
+        return null;
+    }
+
 
     private String sanitizeFilename(String name) {
         if (name == null) return "untitled";
@@ -2475,25 +3233,123 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             }
         }
 
-        // 1. Resolve profile
-        ImportProfileDefinition profile = importProfileDefinitionService.get(request.getProfileId());
+        // 1. Resolve profile — always walk. A selector hit on a same-repository row
+        // skipped getForRepository, so a standing pair in that repository was chosen
+        // by index order. The non-admin gate already refused the pair; this door did not.
+        ImportProfileDefinition profile;
+        try {
+            profile = resolveProfileForRepository(
+                    request.getProfileId(), request.getRepositoryId());
+        } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException pair) {
+            return ExternalIngestResult.error(requestId, pair.getMessage());
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+            return ExternalIngestResult.error(requestId, "import profile "
+                    + request.getProfileId() + " could not be resolved for this"
+                    + " repository; retry shortly: " + e.getMessage());
+        }
+        // The row the gate authorised must be the row this import uses.
+        ExternalIngestResult stale = refuseIfNotTheAuthorizedRow(request, profile, requestId);
+        if (stale != null) return stale;
         if (profile == null) {
+            // "Not found" is a claim about the DATABASE, and this read is answered by a Mango
+            // selector plus one id-addressed fallback — both of which can miss a row that is
+            // there while an index rebuilds. Ask index-free before saying it. The first fix
+            // for this was a pre-check in executeWithAutoResolve; a review pointed out the
+            // window simply moved here, where every caller of execute() passes.
+            try {
+                if (importProfileDefinitionService.existsIndexFree(request.getProfileId(),
+                        request.getRepositoryId())) {
+                    return ExternalIngestResult.error(requestId, "import profile "
+                            + request.getProfileId() + " exists but could not be read for this"
+                            + " import; retry shortly");
+                }
+            } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+                return ExternalIngestResult.error(requestId, "whether import profile "
+                        + request.getProfileId() + " exists could not be established; retry"
+                        + " shortly: " + e.getMessage());
+            }
             return ExternalIngestResult.error(requestId, "Import profile not found: " + request.getProfileId());
         }
         if (!profile.isEnabled()) {
             return ExternalIngestResult.error(requestId, "Import profile is disabled: " + request.getProfileId());
         }
-        // Enforce repository scope: profile must match the request's repository
+        // Enforce repository scope: profile must match the request's repository.
+        //
+        // Defence in depth, unreachable by construction: the resolution above is a
+        // repository-confined index-free read, so what reaches here either belongs to this
+        // repository or is null — including a row that names NO repository, which the walk
+        // does not return for anyone. Nothing can drive this branch, so nothing measures it.
+        // (It has been mis-described twice: once as reachable for foreign rows, once as
+        // reachable for unowned ones. Both were written against an earlier resolution.)
         String repositoryId = request.getRepositoryId();
-        if (profile.getRepositoryId() != null && !profile.getRepositoryId().equals(repositoryId)) {
+        // A row that names NO repository is not a wildcard. The guard used to pass it
+        // through (null fails the != null test), so a corrupt or half-migrated row acted
+        // as a profile for EVERY repository — invisible to the admin API, which is
+        // repository-confined, while the runtime happily used it as configuration. The
+        // service that lets an administrator delete such a row says plainly that it
+        // "belongs to none"; this is the other half of that sentence. A review found the
+        // two disagreeing.
+        if (profile.getRepositoryId() == null
+                || !profile.getRepositoryId().equals(repositoryId)) {
             return ExternalIngestResult.error(requestId,
                     "Profile '" + profile.getProfileId() + "' is scoped to repository '"
                     + profile.getRepositoryId() + "', not '" + repositoryId + "'");
         }
 
         // 2. Resolve connector
-        ConnectorDefinition connector = connectorDefinitionService.get(request.getConnectorId());
+        ConnectorDefinition connector;
+        try {
+            connector = connectorDefinitionService.get(request.getConnectorId());
+        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+            return ExternalIngestResult.error(requestId, "connector "
+                    + request.getConnectorId()
+                    + " exists but could not be read for this import; retry shortly: "
+                    + e.getMessage());
+        }
+        if (connector != null && request.getConnectorId() != null
+                && !request.getConnectorId().equals(connector.getConnectorId())) {
+            return ExternalIngestResult.error(requestId, "connector "
+                    + request.getConnectorId()
+                    + " exists but could not be read as that connector");
+        }
+        if (connector != null) {
+            // get() returns the selector's first row. A pair was run by index order; a
+            // walk miss (count 0) was still imported from that leftover. The profile
+            // door already refuses the same disagreement.
+            try {
+                int seen = connectorDefinitionService.countIndexFree(request.getConnectorId());
+                if (seen > 1) {
+                    return ExternalIngestResult.error(requestId, "connector "
+                            + request.getConnectorId()
+                            + " has more than one definition row");
+                }
+                if (seen < 1) {
+                    return ExternalIngestResult.error(requestId, "connector "
+                            + request.getConnectorId()
+                            + " exists but could not be read for this import; retry shortly");
+                }
+            } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+                return ExternalIngestResult.error(requestId, "whether connector "
+                        + request.getConnectorId() + " is unique could not be established;"
+                        + " retry shortly: " + e.getMessage());
+            }
+        }
         if (connector == null) {
+            // The connector half of the same split as the profile above: "not found" is a
+            // claim about the DATABASE, and this read is a Mango selector plus one
+            // id-addressed fallback. A review found this branch left behind when the profile
+            // one was fixed — the adjacent line, the identical defect.
+            try {
+                if (connectorDefinitionService.existsIndexFree(request.getConnectorId())) {
+                    return ExternalIngestResult.error(requestId, "connector "
+                            + request.getConnectorId() + " exists but could not be read for"
+                            + " this import; retry shortly");
+                }
+            } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+                return ExternalIngestResult.error(requestId, "whether connector "
+                        + request.getConnectorId() + " exists could not be established; retry"
+                        + " shortly: " + e.getMessage());
+            }
             return ExternalIngestResult.error(requestId, "Connector not found: " + request.getConnectorId());
         }
         if (!connector.isEnabled()) {
@@ -2536,13 +3392,55 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
 
         // 4. Resolve target folder
         // (needed for both dry-run and real execution)
-        String targetFolderId = (request.getTargetFolderOverride() != null && !request.getTargetFolderOverride().isBlank())
-                ? request.getTargetFolderOverride()
-                : resolveTargetFolderId(profile, repositoryId, callContext);
+        String targetFolderId;
+        try {
+            targetFolderId = (request.getTargetFolderOverride() != null && !request.getTargetFolderOverride().isBlank())
+                    ? request.getTargetFolderOverride()
+                    : resolveTargetFolderId(profile, repositoryId, callContext);
+        } catch (TargetFolderUnreadableException couldNotResolve) {
+            // Not "the profile configured neither field". Said as what it is, and said in a
+            // way the caller can retry.
+            // "; retry shortly" ONLY when a retry can help. It was appended to every
+            // refusal, so "this path resolves to a document; fix the profile" — a standing
+            // misconfiguration the read ANSWERED — came back as a retry, and the status
+            // classifier two layers up turned that substring into a 503. Two reviewers found
+            // the caller still doing it after the exception's own wording was corrected.
+            return ExternalIngestResult.error(requestId, couldNotResolve.getMessage()
+                    + (couldNotResolve.isRetryable() ? "; retry shortly" : ""));
+        }
         if (targetFolderId == null || targetFolderId.isBlank()) {
             return ExternalIngestResult.error(requestId,
                     "Profile has no resolvable target folder (neither targetFolderId nor targetFolderPath)");
         }
+
+        // The folder cmis:all was checked on must be the folder this writes into. The
+        // fingerprint above compares the ROW, and a row can name a path instead of an id: the
+        // path re-resolves here, so moving the authorised folder away and putting another at
+        // the same path leaves the row — and its fingerprint — identical. A review found the
+        // gap. Absent stamp means no gate ran and this check does not apply.
+        String authorizedFolder = request.getAuthorizedTargetFolderId();
+        if (authorizedFolder != null && !authorizedFolder.equals(targetFolderId)) {
+            return ExternalIngestResult.error(requestId, "import profile "
+                    + request.getProfileId() + " now resolves to a different target folder than"
+                    + " the one this import was authorised against. Retry shortly.");
+        }
+
+        // And for a DELEGATED profile, ask the authorisation itself — against the folder this
+        // write lands in AND the connector it goes through, not the ones some earlier step
+        // read. The stamps above only reach requests the manual gate built; the scheduler, the
+        // webhook and IDLE authorise a profile and then construct their own requests in a
+        // dozen orchestrators, so anything that moved between their check and this write was
+        // never re-examined. A review enumerated those paths.
+        //
+        // A null context does NOT skip this. The first version guarded on
+        // `callContext != null`, which meant an admin profile that a long automatic fetch had
+        // started under — and that became delegated while that fetch ran — arrived here
+        // delegated, with no context, and went straight through. A second review found the
+        // hole in the fix. There is nothing to authorise a delegated write against without a
+        // context, so it is refused.
+        ExternalIngestResult noLongerAuthorized = refuseIfDelegationNoLongerAuthorizes(
+                requestId, profile, connector, callContext, repositoryId, targetFolderId);
+        if (noLongerAuthorized != null) return noLongerAuthorized;
 
         // Everything the row must carry is known by now, and nothing has been written yet.
         // Resolved ONCE; the same instance reaches the intent row here and the lineage emit
@@ -2595,6 +3493,13 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 }
                 bufferedContent = contentBytes; // retain for DLQ if this import fails
 
+                // Ask again. Reading the stream is the long part of this method, and the
+                // check above happened before it: a revoke that landed while a large
+                // attachment downloaded was authorised by a decision taken minutes earlier.
+                // A review pointed out that one check before the read is a snapshot, not a
+                // write-point check. This does not make it atomic — the gap between here and
+                // the write itself stays, and the store has no transaction to close it with.
+
                 // Skip empty attachments. A 0-byte download — e.g. a macOS
                 // .textClipping placeholder uploaded to Notion, or an
                 // expired/empty file URL from any chat/mail connector — would
@@ -2639,53 +3544,133 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     connector.getSourceSystem(), request.getSourceObjectId(), request.getSourceObjectType(),
                     dedupeMatchBy);
 
-            // 5b. Idempotency check: skip if same key already succeeded
+            // 5a-bis. The resync deletion PLAN, formed here as a read. Enumeration used to
+            // happen inside the deletion loop, after the authorisation had been re-asked — the
+            // last read left in the write phase. A review found it.
+            java.util.List<String> resyncPlan = null;
+            String resyncPlanError = null;
+            if ("replace_relationships_on_resync".equals(dedupePolicy) && existingDoc != null) {
+                try {
+                    resyncPlan = collectExistingRelationshipIds(
+                            callContext, repositoryId, existingDoc.getId());
+                } catch (Exception e) {
+                    logger.warn("Failed to query relationships for {}: {}",
+                            existingDoc.getId(), e.getMessage());
+                    // Named as a surviving-edge failure, because that is what it is: the
+                    // policy promises the object keeps ONLY the incoming relationships, and a
+                    // listing that could not be completed means it did not remove the ones
+                    // that are there. The combined version reported this through the deletion
+                    // counter; the split has to say it here.
+                    // Not "stale edges remain": the listing failed, so whether any remain is
+                    // exactly what could not be established. Saying they do would be the same
+                    // substitution this batch is about, in the other direction. A review
+                    // caught the wording asserting an unknown.
+                    resyncPlanError = "Resync did not remove the existing relationship(s) of "
+                            + existingDoc.getId() + ": they could not be listed, so whether any"
+                            + " stale edges remain alongside the re-imported ones was not"
+                            + " established (" + e.getMessage() + ")";
+                }
+            }
+
+            // 5b. Idempotency: READ the record and decide, without acting on it yet. The
+            // decision (skip / expired / proceed) is formed here; the authorisation is asked
+            // after it, and only then is anything deleted or returned. Reading and acting used
+            // to be one block, so the record could be deleted on a decision taken before this
+            // read. A review named the interval.
+            String idempKey = null;
+            String idempExistingObjectId = null;
+            boolean idempSkip = false;
+            boolean idempExpired = false;
             if (request.getIdempotencyKey() != null && !request.getIdempotencyKey().isBlank()) {
-                // Check persisted idempotency record (works for all dedupe modes).
                 // Value format: "objectId|epochMillis" — TTL is 7 days.
                 // Namespace by repository + profile to prevent cross-scope collisions
-                String idempKey = "ingest.idempotency." + repositoryId + "." + profile.getProfileId()
+                idempKey = "ingest.idempotency." + repositoryId + "." + profile.getProfileId()
                         + "." + request.getIdempotencyKey();
                 try {
                     if (integrationSettingsService != null) {
-                        String existing = integrationSettingsService.readSetting(idempKey);
+                        // readSettingOrRefuse, not readSetting: a failed configuration read
+                        // used to arrive here as "no such record", and idempSkip stayed false.
+                        // With dedupePolicy=replace the request then DELETED the document a
+                        // previous run of the SAME request had committed. The refusal is
+                        // caught below and turned into a retry, not into a decision.
+                        String existing = integrationSettingsService.readSettingOrRefuse(idempKey);
                         if (existing != null && !existing.isBlank()) {
-                            String existingObjectId = existing;
-                            // Parse TTL: if value contains "|", extract objectId and timestamp
+                            idempExistingObjectId = existing;
                             int sep = existing.indexOf('|');
                             if (sep > 0) {
-                                existingObjectId = existing.substring(0, sep);
+                                idempExistingObjectId = existing.substring(0, sep);
                                 try {
                                     long savedAt = Long.parseLong(existing.substring(sep + 1));
                                     long ageMs = System.currentTimeMillis() - savedAt;
                                     if (ageMs > IDEMPOTENCY_TTL_MS) {
                                         logger.info("Idempotency key expired after {}h, allowing re-import: {}",
                                                 ageMs / 3_600_000, request.getIdempotencyKey());
-                                        // NOT on a dry run. This block runs BEFORE the dry-run
-                                        // gate below, so a preview used to durably delete the
-                                        // idempotency record (external review).
-                                        if (!request.isDryRun()) {
-                                            integrationSettingsService.deleteSettings(java.util.Set.of(idempKey));
-                                        }
-                                        // Fall through to normal import
+                                        idempExpired = true;
                                     } else {
-                                        return ExternalIngestResult.skipped(requestId, existingObjectId,
-                                                "Idempotent: request '" + request.getIdempotencyKey() + "' already completed");
+                                        idempSkip = true;
                                     }
                                 } catch (NumberFormatException nfe) {
-                                    // Legacy value without timestamp — honour it
-                                    return ExternalIngestResult.skipped(requestId, existingObjectId,
-                                            "Idempotent: request '" + request.getIdempotencyKey() + "' already completed");
+                                    idempSkip = true;   // legacy value without timestamp — honour it
                                 }
                             } else {
-                                // Legacy value without "|" separator
-                                return ExternalIngestResult.skipped(requestId, existingObjectId,
-                                        "Idempotent: request '" + request.getIdempotencyKey() + "' already completed");
+                                idempSkip = true;       // legacy value without "|" separator
                             }
                         }
+                    } else {
+                        // Unwired is not "no record": with dedupePolicy=replace the request
+                        // would delete the earlier run's document on the strength of a read
+                        // that never happened. The same answer as a read that failed (R28).
+                        return ExternalIngestResult.error(requestId, "the idempotency record for"
+                                + " key '" + request.getIdempotencyKey() + "' could not be"
+                                + " established: the settings service is not wired on this"
+                                + " node; retry shortly against a node that runs it");
                     }
+                } catch (jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                        .SettingUnreadableException couldNotAsk) {
+                    // Whether this request already completed could not be established. Every
+                    // continuation from here asserts that it did not — and one of them
+                    // deletes. Answer the caller instead. "; retry shortly" puts it on the
+                    // 503 arm rather than the 500 fallback.
+                    logger.warn("the idempotency record for {} could not be read: {}",
+                            request.getIdempotencyKey(), couldNotAsk.getMessage());
+                    return ExternalIngestResult.error(requestId,
+                            "whether request '" + request.getIdempotencyKey()
+                                    + "' has already been completed could not be established"
+                                    + " (" + couldNotAsk.getMessage() + "); retry shortly");
                 } catch (Exception e) {
                     logger.debug("Idempotency check failed: {}", e.getMessage());
+                }
+            }
+
+            // Ask the delegated authorisation again, here — after the content buffer, the
+            // dedupe listing, the idempotency record and the resync plan, and before the
+            // writes those decide. The relationship-existence check further down re-asks on
+            // its own. The first call happens before the content
+            // stream is drained (the long part for a large attachment). Two earlier versions
+            // of this second call were both too early: one sat inside the stream branch, so a
+            // content-less import got a single check; the next ran before the dedupe listing
+            // and the idempotency record were read, so a revoke landing during THOSE reads was
+            // not seen by the deletions and writes that follow. Reviews found each in turn.
+            //
+            // Still not atomic: a revoke landing between here and the write is not caught, and
+            // no number of checks makes it so — that needs fencing shared with the revoke
+            // path, or a transaction the store does not offer.
+            ExternalIngestResult revoked = refuseIfDelegationNoLongerAuthorizes(
+                    requestId, profile, connector, callContext, repositoryId, targetFolderId);
+            if (revoked != null) return revoked;
+
+            // Now act on what was decided above.
+            if (idempSkip) {
+                return ExternalIngestResult.skipped(requestId, idempExistingObjectId,
+                        "Idempotent: request '" + request.getIdempotencyKey() + "' already completed");
+            }
+            if (idempExpired && !request.isDryRun() && integrationSettingsService != null) {
+                // NOT on a dry run: this runs BEFORE the dry-run gate below, so a preview used
+                // to durably delete the idempotency record (external review).
+                try {
+                    integrationSettingsService.deleteSettings(java.util.Set.of(idempKey));
+                } catch (Exception e) {
+                    logger.debug("Idempotency record removal failed: {}", e.getMessage());
                 }
             }
 
@@ -2749,11 +3734,16 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         existingDoc = null; // Fall through to create new
                     }
                 } else if ("replace_relationships_on_resync".equals(dedupePolicy) && existingDoc != null) {
-                    // Delete existing relationships before re-import
-                    String relRemovalError = removeExistingRelationships(captureScope, callContext, repositoryId,
-                            existingDoc.getId());
-                    if (relRemovalError != null) {
-                        dedupeWarnings.add(relRemovalError);
+                    // Delete the plan formed BEFORE the authorisation was re-asked. Nothing is
+                    // listed here; a revoke during the listing was caught by that check.
+                    if (resyncPlanError != null) {
+                        dedupeWarnings.add(resyncPlanError);
+                    } else {
+                        String relRemovalError = removeRelationshipsById(captureScope, callContext,
+                                repositoryId, existingDoc.getId(), resyncPlan);
+                        if (relRemovalError != null) {
+                            dedupeWarnings.add(relRemovalError);
+                        }
                     }
                 }
 
@@ -2966,7 +3956,7 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             if (ingestJobService != null && autonomousExecution(callContext)
                     && !request.isDryRun()) {
                 try {
-                    ingestJobService.saveToDlq(request,
+                    ingestJobService.saveSourceReadToDlq(request,
                             (isTransient ? "[transient] " : "[permanent] ") + e.getMessage(),
                             bufferedContent);
                 } catch (Exception dlqErr) {
@@ -3012,22 +4002,29 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         private final List<String> warnings = new ArrayList<>();
     }
 
+    /**
+     * The failure exit of every archetype entry point except FILE_SHARE.
+     *
+     * <p>The transient/permanent verdict goes into the ANSWER as well as into the DLQ row. It
+     * used to go only into the row, so the four archetype paths — mail, note, business record,
+     * chat — answered 500 for a condition {@link #isTransientError} had just called retryable,
+     * while {@code execute()}'s own catch answered 503 for the same cause. A review found the
+     * marker measured on that one path and absent from the other four.
+     */
     private ExternalIngestResult failedAfterEntry(CallContext callContext,
             ExternalIngestRequest request, String requestId,
             String committedObjectId, List<String> warnings, String prefix, Exception e) {
+        String verdict = isTransientError(e) ? "[transient] " : "[permanent] ";
         if (ingestJobService != null && autonomousExecution(callContext)
                 && !request.isDryRun()) {
             try {
-                ingestJobService.saveToDlq(request,
-                        (isTransientError(e) ? "[transient] " : "[permanent] ") + prefix
-                                + e.getMessage(),
-                        null);
+                ingestJobService.saveSourceReadToDlq(request, verdict + prefix + e.getMessage(), null);
             } catch (Exception dlqErr) {
                 logger.warn("Failed to save to DLQ — item may be lost: {}", dlqErr.getMessage());
             }
         }
-        return ExternalIngestResult.error(requestId, committedObjectId, prefix + e.getMessage(),
-                warnings);
+        return ExternalIngestResult.error(requestId, committedObjectId,
+                verdict + prefix + e.getMessage(), warnings);
     }
 
     /**
@@ -3323,8 +4320,10 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         // Route through the idempotent helper so a re-run (e.g. a webhook-
         // triggered incremental fetch of an already-imported object) does not
         // create a duplicate parent→child edge.
-        return createDirectRelationship(callContext, repositoryId, parentObjectId, objectId,
-                "cmis:relationship", captureScope);
+        // Carries the profile and connector: this is an in-ingest link, so it is
+        // authorisable, and the overload that does not carry them skips the re-check.
+        return createDirectRelationshipAuthorized(callContext, repositoryId, parentObjectId,
+                objectId, "cmis:relationship", captureScope, profile, request);
     }
 
     /**
@@ -3349,7 +4348,16 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
     private Content findExistingDocument(String repositoryId, String targetFolderId,
                                          String fileName, String sourceSystem, String sourceObjectId,
                                          String sourceObjectType, String dedupeMatchBy) {
-        if (contentDaoService == null) return null;
+        if (contentDaoService == null) {
+            // NOT "there is no existing document": the caller reads that as permission to
+            // CREATE one. The catch fourteen lines below already refuses an unanswered
+            // enumeration for exactly this reason, and lookUpRelationship refuses its own
+            // unwired arm with "Wiring, not a read — but 'could not ask' all the same".
+            // This arm answered the opposite. A review found the two helpers disagreeing.
+            throw new IllegalStateException("the content store is not wired on this node, so"
+                    + " whether this object was already imported cannot be established;"
+                    + " retry shortly against a node that runs it");
+        }
 
         boolean trySourceId = !"filename".equals(dedupeMatchBy);
         boolean tryFilename = "filename".equals(dedupeMatchBy) || "source_id_or_filename".equals(dedupeMatchBy);
@@ -3360,11 +4368,41 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
             try {
                 children = contentDaoService.getChildren(repositoryId, targetFolderId);
             } catch (Exception e) {
-                logger.debug("Dedupe: failed to load children for {}: {}", targetFolderId, e.getMessage());
-                return null;
+                // NOT null. The caller reads null as "no existing document" and goes on to
+                // CREATE one — so a folder that could not be enumerated produced a duplicate,
+                // reported the import as successful, and left one line at DEBUG. The store was
+                // changed to refuse an unanswered view rather than report an empty folder;
+                // this catch turned that refusal straight back into the empty answer, one
+                // layer up, which is the shape this project keeps finding.
+                //
+                // Refusing costs a retry. Not refusing costs a duplicate document that nobody
+                // is told about, and dedupe is the one operation whose whole job is to not do
+                // that. The idempotency key stops a repeat of the SAME request; it does not
+                // stop a re-sync whose key differs.
+                logger.warn("Dedupe could not enumerate {} ({}), so whether this document is "
+                        + "already there is UNKNOWN; refusing rather than importing a possible "
+                        + "duplicate", targetFolderId, e.getMessage());
+                throw new IllegalStateException("the target folder could not be enumerated, so "
+                        + "it is unknown whether this document is already there; the import was "
+                        + "refused rather than risking a duplicate", e);
             }
         }
         if (children == null) return null;
+        // The throw above covers "the view did not answer". A child row the store RETURNED and
+        // could not decode does not throw — it is counted and left out of the list — so a
+        // duplicate whose row is undecodable is simply not seen here, and the caller creates a
+        // second document. Same outcome, the door next to the one just closed.
+        //
+        int unreadableChildren = contentDaoService.lastUnreadableChildCount();
+        if (unreadableChildren > 0) {
+            String detail = unreadableChildren + " child row(s) could not be read";
+            logger.warn("Dedupe for {} in {} was made against an incomplete listing ({}), so "
+                    + "refusing rather than importing a possible duplicate", fileName,
+                    targetFolderId, detail);
+            throw new IllegalStateException("the target folder's listing is incomplete ("
+                    + detail + "), so it is unknown whether this document is already there; the "
+                    + "import was refused rather than risking a duplicate");
+        }
 
         // Pass 1: search by sourceObjectId (unless filename-only mode)
         if (trySourceId && sourceObjectId != null && !sourceObjectId.isBlank()) {
@@ -3464,20 +4502,87 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                     String baseType = baseTypeId instanceof org.apache.chemistry.opencmis.commons.data.PropertyData<?> pd
                             ? String.valueOf(pd.getFirstValue()) : null;
                     if (baseType != null && !"cmis:folder".equals(baseType)) {
+                        // The read ANSWERED, and answered something that is neither "no such
+                        // path" nor a failure. Returning null made the caller say the profile
+                        // configured neither field — the sentence the other arm of this method
+                        // was just corrected for. A review found the two arms left behind.
                         logger.warn("targetFolderPath '{}' resolved to a {} ({}), not a folder",
                                 folderPath, baseType, objectData.getId());
-                        return null;
+                        throw new TargetFolderUnreadableException("the target folder path '"
+                                + folderPath + "' of this profile resolves to a " + baseType
+                                + ", not a folder; fix the profile", null, false);
                     }
                     logger.debug("Resolved targetFolderPath '{}' to folderId '{}'", folderPath, objectData.getId());
                     folderPathCache.put(cacheKey, new CachedFolderId(objectData.getId(), System.currentTimeMillis()));
                     return objectData.getId();
                 }
+                // The store answered with no object and no exception. That is not "the
+                // profile configured neither field" either.
+                // The suffix is the CALLER's, added from `retryable`. Baking it in here too
+                // produced "...; retry shortly; retry shortly".
+                throw new TargetFolderUnreadableException("the target folder path '" + folderPath
+                        + "' of this profile could not be resolved: the store answered with no"
+                        + " object", null);
+            } catch (TargetFolderUnreadableException alreadySaid) {
+                // The two arms above throw from INSIDE this try, and the generic catch below
+                // re-wrapped them: an ANSWERED "this path is a document, fix the profile"
+                // came out as "could not be resolved", and execute() then appended "retry
+                // shortly" to a permanent misconfiguration. The sibling written in the same
+                // batch (getDlqEntry) has this guard; this method did not. Two reviewers
+                // found it in the round that added the arms.
+                throw alreadySaid;
+            } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException absent) {
+                // The store ANSWERED: there is no such path. That is the one outcome the
+                // caller's "the profile configured neither field" message may stand for.
+                logger.warn("targetFolderPath '{}' does not exist in repository '{}'",
+                        folderPath, repositoryId);
+                return null;
+            } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException denied) {
+                // The store ANSWERED: the importing user may not read this path. Not a retry
+                // — every retry answers the same — and not "the profile has no folder". It
+                // was folded into the arm below and came back as "; retry shortly" / 503 (R31).
+                logger.warn("targetFolderPath '{}' in repository '{}' is not readable by the"
+                        + " importing user: {}", folderPath, repositoryId, denied.getMessage());
+                throw new TargetFolderUnreadableException("the target folder path '" + folderPath
+                        + "' of this profile is not readable: permission denied for the importing"
+                        + " user (" + denied.getMessage() + ")", denied, false);
             } catch (Exception e) {
+                // Everything else — a store failure — used to answer the
+                // same null, and the caller then said the profile has NEITHER field
+                // configured, which is provably false: control only reaches here because
+                // targetFolderPath IS set. Worse, that return happens before the try that
+                // saves to the DLQ, so the source item left no trace at all. A review found
+                // both halves.
                 logger.warn("Failed to resolve targetFolderPath '{}' in repository '{}': {}",
                         folderPath, repositoryId, e.getMessage());
+                throw new TargetFolderUnreadableException("the target folder path '" + folderPath
+                        + "' of this profile could not be resolved: " + e.getMessage(), e);
             }
         }
         return null;
+    }
+
+    /**
+     * A target folder path this node could not resolve — not "the profile has no folder".
+     *
+     * <p>{@code retryable} separates the two kinds. A read that did not answer is a retry; a
+     * path that ANSWERED with a document is a standing misconfiguration, and the caller used
+     * to append "; retry shortly" to both — telling an operator to retry something no retry
+     * fixes, and making the endpoint answer 503 for it. Two reviewers found the caller still
+     * doing that after the wording of the exception itself had been corrected.
+     */
+    public static class TargetFolderUnreadableException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        private final boolean retryable;
+        public TargetFolderUnreadableException(String message, Throwable cause) {
+            this(message, cause, true);
+        }
+        public TargetFolderUnreadableException(String message, Throwable cause,
+                boolean retryable) {
+            super(message, cause);
+            this.retryable = retryable;
+        }
+        public boolean isRetryable() { return retryable; }
     }
 
     // buildCanonicalSourceUri, isAttachmentObjectType, resolveProcessType

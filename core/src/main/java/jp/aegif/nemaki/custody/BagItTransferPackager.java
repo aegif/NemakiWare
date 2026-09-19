@@ -38,24 +38,70 @@ import java.util.zip.ZipOutputStream;
  *
  * <p><b>It does not make the receiving system understand the package.</b> Archivematica's
  * transfer types are {@code standard / zipfile / unzipped bag / zipped bag / dspace / maildir /
- * TRIM / dataverse} — there is no E-ARK type. A {@code zipped bag} is therefore how the bytes
- * get across, and on the far side the SIP is a file inside a payload: its METS is not read, its
- * structure is not honoured, and nothing about this step makes an Archivematica AIP an E-ARK
- * one. Anyone reading "we have a BagIt connector" as "Archivematica ingests our E-ARK SIPs"
- * has been told something this code does not do, so {@link #LIMITS} travels with every bag.
+ * TRIM / dataverse} — there is no E-ARK type. A {@code zipped bag} is how the bytes get across,
+ * and on the far side the SIP is never interpreted: its METS is not read, its structure is not
+ * honoured, and nothing about this step makes an Archivematica AIP an E-ARK one. Anyone reading
+ * "we have a BagIt connector" as "Archivematica ingests our E-ARK SIPs" has been told something
+ * this code does not do, so {@link #LIMITS} travels with every bag.
+ *
+ * <p><b>The payload does not necessarily stay whole.</b> Archivematica 1.18.0's
+ * {@code automated} processing config extracts the SIP zip and files its tree under the AIP's
+ * {@code objects/} (measured — p3-4 §12). An earlier version of this javadoc said the SIP stays
+ * "a file inside a payload"; that was a guess, and it was wrong. <b>Unpacked is not
+ * understood</b> — the tree is just files to AM, and the AIP is still an AM AIP.
+ *
+ * <p><b>And a bag is not the only way in.</b> Measured the same day: the same E-ARK SIP ingests
+ * as {@code zipfile}, and as an unzipped directory under {@code standard}. So this layer is not
+ * "the only route" — what it uniquely buys is that {@code zipped bag} is the one transfer type
+ * that runs {@code Verify bag}, checking the payload manifests this product ships.
  *
  * <p>Nor is this "an IP enclosed in a bag for transport". RFC 8493 does not specify a
  * serialization, so that phrasing describes a guarantee the standard does not make. What is
  * true is narrower: a directory with a payload and manifests, zipped, which is what the
  * receiving system's {@code zipped bag} transfer type reads.
  *
- * <h2>SHA-512, and SHA-256 beside it</h2>
+ * <h2>TWO payload manifests — SHA-512 and SHA-256</h2>
  *
- * <p>Two manifests, not one. SHA-512 because it is what a receiving system is most likely to
- * prefer today, SHA-256 because the rest of this product's evidence is SHA-256 and a receiver
- * reconciling a bag manifest against our chain should not have to compute a second digest to do
- * it. RFC 8493 §2.1.3 allows several manifests, and the cost is one extra pass over bytes that
- * are already being read.
+ * <p>The second one is why this product can hand a receiver a bag and have the receiver's own
+ * verification cover the digest this product's evidence chain uses. Without it the SHA-256 is
+ * still <i>stated</i>, in {@code bag-info.txt}'s {@code External-Description} — but that is free
+ * text no bag verifier reads, so reconciling a receipt against the chain means recomputing.
+ *
+ * <h3>It was one manifest for a day, and that was the wrong default</h3>
+ *
+ * <p>On 2026-08-26 this wrote SHA-512 only, because a two-manifest bag could not be ingested by
+ * RODA 6.3.0's {@code BagitToAIPPlugin}: the payload is created twice, the second create fails
+ * with "Binary already exists", and the whole ingest transaction rolls back. Measured against a
+ * live instance; the identical bag with one manifest produced an AIP.
+ *
+ * <p>The mechanism is in the library, not in RODA's plugin: {@code BagitSIP.parse} — commons-ip
+ * <i>v1</i>, which ships inside the commons-ip2 jar — walks {@code Bag.getPayLoadManifests()}
+ * and, per manifest, adds an {@code IPFile} for every entry of {@code getFileToChecksumMap()},
+ * with no dedupe. {@code BagitToAIPPluginUtils} then hands each one to
+ * {@code ModelService.createFile}. {@link TwoPayloadManifestsBreakTheLegacyBagParserTest} pins
+ * that, and it is still true.
+ *
+ * <p><b>But that receiver is not this layer's receiver.</b> On 2026-08-27 the E-ARK route into
+ * RODA 6.3.0 was measured working ({@code EARKSIP2ToAIPPlugin} — p3-4 §10), so there is no
+ * reason to send RODA a bag at all. This layer exists for receivers with no E-ARK transfer type;
+ * the one whose transfer types include a BagIt verifier is Archivematica. Keeping one manifest
+ * would have let <b>a parser defect in a receiver we do not use</b> go on deciding the format
+ * for the receiver we do. That, not "the reason expired", is why it is two again.
+ *
+ * <p><b>Archivematica 1.18.0 ingested this two-manifest shape</b> ({@code zipped bag},
+ * {@code Verify bag} COMPLETE, AIP {@code UPLOADED} — p3-4 §12). That is not "two works
+ * everywhere": RODA's {@code BagitToAIPPlugin} still rolls it back, and AM also accepted the
+ * same E-ARK SIP as {@code zipfile} and as an unzipped {@code standard} directory, so BagIt is
+ * not required to get an AIP. What the bag path uniquely did was run the verifier against both
+ * manifests. One manifest remains unmeasured on AM.
+ *
+ * <p><b>Do not send this bag to RODA's {@code BagitToAIPPlugin}.</b> It will roll back. RODA
+ * takes the SIP directly.
+ *
+ * <p>Note that {@code External-Description} is only written when a caller supplies
+ * {@code sipDigest} (unlike {@code submissionId}, which is refused when absent). The export
+ * endpoint always supplies it. With two manifests that is no longer the only place the SHA-256
+ * appears, but it is still the line a receipt is discussed against.
  *
  * <p>Design: {@code docs/design/p3-4-custody-transfer.md} §6.
  */
@@ -71,10 +117,17 @@ public final class BagItTransferPackager {
      * time: the sentence has to be where the decision is made.
      */
     public static final String LIMITS =
-            "This bag is a TRANSFER FORMAT, not an interpretation. The receiving system reads "
-                    + "it as a payload of opaque files; it does not read the E-ARK SIP's METS, "
-                    + "honour its structure, or produce an E-ARK AIP because of it. Nothing "
-                    + "here establishes that the receiver accepted, understood or kept "
+            "This bag is a TRANSFER FORMAT, not an interpretation. A receiving system reading "
+                    + "THIS BAG AS A BAG does not read the E-ARK SIP's METS, honour its "
+                    + "structure, or produce an E-ARK AIP because of it. It may well UNPACK the "
+                    + "payload — Archivematica 1.18.0's automated config extracts the SIP zip "
+                    + "and files its tree under the AIP's objects/ — but unpacked is not "
+                    + "understood. (The same system may have an E-ARK route that does read it — "
+                    + "RODA 6.3.0 does — and where one exists it is the better route.) This bag "
+                    + "carries TWO payload manifests, which RFC 8493 allows and which "
+                    + "Archivematica verified; RODA 6.3.0's BagitToAIPPlugin ROLLS BACK the "
+                    + "ingest of such a bag, so do not send it there — send RODA the SIP. "
+                    + "Nothing here establishes that the receiver accepted, understood or kept "
                     + "anything — those are its own processes, reported in a receipt.";
 
     /** The bag, what it holds, and what that does not mean. */
@@ -90,6 +143,40 @@ public final class BagItTransferPackager {
      *        the package digest a receipt has to match. Without it, a bag and a receipt can
      *        only be tied together through a system that has both.
      */
+    /**
+     * The bag's file, guaranteed to be INSIDE {@code workDir}.
+     *
+     * <p>{@code submissionId} arrives from the caller — {@code @RequestParam} on the bag
+     * endpoint — and went straight into {@code workDir.resolve(submissionId + ".zip")}. A value
+     * of {@code ../../x} wrote {@code x.zip} outside the working directory, over whatever was
+     * there. The endpoint is admin-only, which is not the same thing as confinement: an admin
+     * asking for a bag is not asking to overwrite a file somewhere else, and the code should
+     * not be the reason a typo can.
+     *
+     * <p>Two steps, because either alone leaves a hole. The NAME is reduced to the character
+     * set {@code EarkSipExporter.sipId} already uses for the same reason ({@code /} and
+     * {@code \} are not in it, so no separator survives). Then the resolved path is checked to
+     * still start at {@code workDir} — the check that holds even if the character set is ever
+     * widened. A submission id that reduces to nothing gets a fixed name; it is the
+     * {@code External-Identifier} inside {@code bag-info.txt} that has to carry the caller's
+     * own text, and that one is written unchanged.
+     */
+    static Path zipUnder(Path workDir, String submissionId) throws IOException {
+        String name = submissionId.replaceAll("[^A-Za-z0-9._-]", "-");
+        if (name.isBlank() || name.equals(".") || name.equals("..")) {
+            name = "bag";
+        }
+        Path root = workDir.toAbsolutePath().normalize();
+        Path zip = root.resolve(name + ".zip").normalize();
+        if (!zip.startsWith(root)) {
+            // Cannot happen with the character set above; kept because the next person to widen
+            // it should get a refusal rather than a write outside the directory.
+            throw new IOException("the bag file for submission id '" + submissionId
+                    + "' would be written outside the working directory");
+        }
+        return zip;
+    }
+
     public static Bagged bag(Path sip, Path workDir, String submissionId, String sipDigest)
             throws IOException {
         if (sip == null || !Files.isRegularFile(sip)) {
@@ -116,11 +203,16 @@ public final class BagItTransferPackager {
             metadata.add("External-Description",
                     "E-ARK SIP; package digest (SHA-256) " + sipDigest);
         }
-        // Both manifests. See the class javadoc for why two.
+        // TWO manifests. SHA-512 because receivers ask for it, SHA-256 because that is the
+        // digest this product's evidence chain uses -- and in a manifest it is a path->digest
+        // binding the receiver's own verification covers, which bag-info.txt is not.
+        //
+        // RODA 6.3.0's BagitToAIPPlugin cannot ingest this (see the class javadoc). That is a
+        // reason not to send RODA a bag -- it takes the SIP directly -- not a reason to ship
+        // every receiver the shape that suits its parser.
         try {
-            BagCreator.bagInPlace(bagRoot,
-                    List.of(StandardSupportedAlgorithms.SHA512, StandardSupportedAlgorithms.SHA256),
-                    false, metadata);
+            BagCreator.bagInPlace(bagRoot, List.of(StandardSupportedAlgorithms.SHA512,
+                    StandardSupportedAlgorithms.SHA256), false, metadata);
         } catch (java.security.NoSuchAlgorithmException e) {
             // Not swallowed into a generic failure: a JVM without SHA-512 is a deployment
             // problem with a specific fix, and "the bag could not be written" sends whoever
@@ -140,7 +232,7 @@ public final class BagItTransferPackager {
 
         long bytes = Files.size(carried);
         String oxum = bytes + ".1";
-        Path zip = workDir.resolve(submissionId + ".zip");
+        Path zip = zipUnder(workDir, submissionId);
         zipDirectory(bagRoot, zip);
         return new Bagged(zip, oxum, bytes, LIMITS);
     }

@@ -19,6 +19,7 @@ package jp.aegif.nemaki.dao.impl.couch.delegate;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -169,16 +170,28 @@ class AttachmentBodyOpenCountTest {
         verify(client, times(1)).getAttachment(eq(ID), eq("content"));
     }
 
+    /**
+     * This test used to assert the opposite: that a failed body read still handed back the
+     * node, with its metadata intact and a null stream. That is the answer item 5 of the
+     * fail-closed batch removed — a node with a null stream is read by every caller as "this
+     * document has no content", and the exporters wrote a metadata sidecar with no bytes
+     * beside it on the strength of it. Nothing is lost by refusing: a caller that wants the
+     * metadata WITHOUT the body has {@code getAttachmentRef}, which is the door this class
+     * was written to establish, and it is measured two tests above.
+     */
     @Test
-    @DisplayName("ボディ取得が失敗しても ref 相当のメタデータは返る")
-    void aFailedBodyStillReturnsTheMetadata() throws Exception {
+    @DisplayName("ボディ取得が失敗したら拒否する (メタデータだけ欲しいなら ref を使う)")
+    void aFailedBodyRefusesRatherThanReportingNoContent() throws Exception {
         when(client.getAttachment(eq(ID), eq("content")))
                 .thenThrow(new RuntimeException("connection reset"));
 
-        AttachmentNode full = delegate.getAttachment(REPO, ID);
+        assertThrows(IllegalStateException.class, () -> delegate.getAttachment(REPO, ID),
+                "a body that could not be read came back as a document with no content");
 
-        assertNotNull(full, "the metadata was already read; losing the body must not lose it too");
-        assertEquals(4096L, full.getLength());
-        assertNull(full.getInputStream());
+        // The metadata-only door is unaffected by the same failure.
+        AttachmentNode ref = delegate.getAttachmentRef(REPO, ID);
+        assertNotNull(ref);
+        assertEquals(4096L, ref.getLength());
+        assertNull(ref.getInputStream());
     }
 }

@@ -77,7 +77,7 @@ class BagItTransferPackagerTest {
     }
 
     @Test
-    @DisplayName("it is a bag: declaration, both manifests, and bag-info")
+    @DisplayName("it is a bag: declaration, both payload manifests, and bag-info")
     void itIsActuallyABag(@TempDir Path tmp) throws Exception {
         BagItTransferPackager.Bagged bagged = BagItTransferPackager.bag(
                 sip(Files.createDirectories(tmp.resolve("in")), "x"),
@@ -85,12 +85,48 @@ class BagItTransferPackagerTest {
 
         Map<String, byte[]> entries = entriesOf(bagged.zippedBag());
         assertTrue(entries.containsKey("bagit.txt"), entries.keySet().toString());
-        assertTrue(entries.containsKey("manifest-sha512.txt"), entries.keySet().toString());
-        assertTrue(entries.containsKey("manifest-sha256.txt"),
-                "only one manifest: a receiver reconciling against this product's SHA-256 "
-                        + "evidence has to recompute a second digest to do it: "
-                        + entries.keySet());
+        // SHA-512 because receivers ask for it, SHA-256 because that is the digest this
+        // product's evidence chain uses. In a manifest it is a path->digest binding the
+        // receiver's own verification covers; in bag-info.txt it is free text nobody checks.
+        //
+        // This spent 2026-08-26 as ONE manifest, because RODA 6.3.0's BagitToAIPPlugin rolls
+        // back a two-manifest ingest (commons-ip v1 adds the payload once per manifest --
+        // TwoPayloadManifestsBreakTheLegacyBagParserTest pins that, and it is still true).
+        // It is two again because RODA takes the SIP directly, so a parser defect in a
+        // receiver this layer does not serve should not pick the format for the one it does.
+        //
+        // Enumerate rather than forbid a name: an assertion that only forbade manifest-sha1.txt
+        // would pass if the SHA-256 one silently disappeared, which is the loss that matters.
+        List<String> payloadManifests = entries.keySet().stream()
+                .filter(name -> name.startsWith("manifest-") && name.endsWith(".txt"))
+                .sorted()
+                .toList();
+        assertEquals(List.of("manifest-sha256.txt", "manifest-sha512.txt"), payloadManifests,
+                "the payload manifests are not SHA-256 + SHA-512. If the SHA-256 one is gone, "
+                        + "the digest this product's chain uses is no longer something a "
+                        + "receiver's bag verification checks: " + entries.keySet());
+
+        // A file called manifest-sha256.txt is not the point -- an EMPTY one would satisfy the
+        // check above. The point is that the line in it binds data/sip.zip to the SHA-256 a
+        // receiver would compute, because that binding is the whole reason the second manifest
+        // is here. So compute it and look for the actual line.
+        String expected = hex("SHA-256", entries.get("data/sip.zip"));
+        List<String> sha256Lines = new String(entries.get("manifest-sha256.txt"),
+                StandardCharsets.UTF_8).lines().filter(line -> !line.isBlank()).toList();
+        assertEquals(List.of(expected + "  data/sip.zip"), sha256Lines,
+                "manifest-sha256.txt does not bind data/sip.zip to its actual SHA-256, so a "
+                        + "receiver's bag verification does not cover the digest this product's "
+                        + "chain uses -- which is the only reason this manifest exists");
+
         assertTrue(entries.containsKey("bag-info.txt"), entries.keySet().toString());
+    }
+
+    private static String hex(String algorithm, byte[] bytes) throws Exception {
+        StringBuilder out = new StringBuilder();
+        for (byte b : java.security.MessageDigest.getInstance(algorithm).digest(bytes)) {
+            out.append(String.format("%02x", b));
+        }
+        return out.toString();
     }
 
     @Test
@@ -107,7 +143,9 @@ class BagItTransferPackagerTest {
         assertTrue(info.contains("External-Identifier: " + SUBMISSION), info);
         assertTrue(info.contains(DIGEST),
                 "the bag does not name the package digest, so a bag and a receipt can only be "
-                        + "tied together through a system that holds both: " + info);
+                        + "tied together through a system that holds both. manifest-sha256.txt "
+                        + "carries the same value as a verified path→digest binding; this line "
+                        + "is what a conversation about the transfer quotes: " + info);
     }
 
     @Test
@@ -172,8 +210,7 @@ class BagItTransferPackagerTest {
     @DisplayName("the limits say the receiver does not read the SIP")
     void theLimitsRefuseTheObviousMisreading() {
         // "We have a BagIt connector" is read as "Archivematica ingests our E-ARK SIPs". It
-        // does not: there is no E-ARK transfer type, so on the far side the SIP is a file
-        // inside a payload.
+        // does not: there is no E-ARK transfer type, so the far side never interprets the SIP.
         String limits = BagItTransferPackager.LIMITS;
 
         assertTrue(limits.contains("TRANSFER FORMAT"), limits);
@@ -182,6 +219,18 @@ class BagItTransferPackagerTest {
         // And it must not describe itself as enclosing an IP for transport: RFC 8493 specifies
         // no serialization, so that phrasing claims a guarantee the standard does not make.
         assertFalse(limits.contains("enclos"), limits);
+
+        // The measured correction has to be IN the string, not just in a design document.
+        // This said "a payload of opaque files" until 2026-08-27, when Archivematica 1.18.0's
+        // automated config was measured extracting the SIP zip and filing its tree under the
+        // AIP's objects/. Without these two lines, deleting that clause leaves the test green
+        // and puts a falsified sentence back on every bag.
+        assertFalse(limits.contains("opaque"), limits);
+        assertTrue(limits.contains("unpacked is not understood"),
+                "the limits no longer say that unpacking is not understanding. A receiver may "
+                        + "well extract the payload -- Archivematica does -- and a reader who is "
+                        + "only told 'it stays opaque' will read the extracted tree as the "
+                        + "receiver having honoured the package: " + limits);
     }
 
     @Test
@@ -191,5 +240,68 @@ class BagItTransferPackagerTest {
 
         assertThrows(IllegalArgumentException.class,
                 () -> BagItTransferPackager.bag(missing, tmp, SUBMISSION, DIGEST));
+    }
+
+    // ── the submission id names the bag, and names nothing outside the working directory ──
+
+    @Test
+    @DisplayName("a submission id that walks out of the working directory does not")
+    void aSubmissionIdCannotWalkOutOfTheWorkingDirectory(@TempDir Path tmp) throws Exception {
+        // submissionId arrives on the bag endpoint as a @RequestParam and went straight into
+        // workDir.resolve(submissionId + ".zip"). '../../escaped' wrote escaped.zip two levels
+        // up, over whatever was there. Admin-only is not confinement (CodeQL java/path-injection,
+        // confirmed by reading the flow: request param -> resolve -> Files.newOutputStream).
+        // The working directory sits TWO levels down inside this test's own @TempDir, so the
+        // escape this measures lands inside the temp dir too. Pointing the assertion at the
+        // shared temp ROOT instead made the sabotaged run leave escaped.zip behind, and the
+        // restored run then failed on someone else's litter — the runner caught it as "the
+        // tree is NOT green after restore".
+        Path work = Files.createDirectories(tmp.resolve("a/b/work"));
+        Path source = sip(Files.createDirectories(tmp.resolve("in")), "x");
+
+        BagItTransferPackager.Bagged bagged = BagItTransferPackager.bag(source, work,
+                "../../escaped", DIGEST);
+
+        Path written = bagged.zippedBag().toAbsolutePath().normalize();
+        assertTrue(written.startsWith(work.toAbsolutePath().normalize()),
+                "the bag was written outside the working directory: " + written);
+        assertTrue(Files.exists(written), "no bag was written at all");
+        assertFalse(Files.exists(tmp.resolve("a/escaped.zip")),
+                "a file was created outside the working directory");
+    }
+
+    @Test
+    @DisplayName("the bag's file name carries no path separator of its own")
+    void theBagFileNameCarriesNoSeparator(@TempDir Path tmp) throws Exception {
+        // zipUnder directly, because the two layers cover each other through bag(): with the
+        // character reduction removed the confinement check still refuses, so a test that goes
+        // through bag() fails on an exception rather than on its own assertion and measures
+        // nothing about the reduction (the runner named it: "FIRED FOR THE WRONG REASON").
+        // Here the reduction is the only thing between the id and the name.
+        Path work = Files.createDirectories(tmp.resolve("work"));
+
+        Path zip = BagItTransferPackager.zipUnder(work, "sub/2026 0001");
+
+        assertEquals(work.toAbsolutePath().normalize(), zip.getParent(),
+                "the name put the bag in a directory of the caller's choosing: " + zip);
+        assertFalse(zip.getFileName().toString().contains("/"),
+                "a separator survived into the file name: " + zip.getFileName());
+    }
+
+    @Test
+    @DisplayName("the caller's own submission id still reaches bag-info.txt unchanged")
+    void theRawSubmissionIdStillReachesBagInfo(@TempDir Path tmp) throws Exception {
+        // The over-throw guard: only the FILE NAME is reduced. External-Identifier is the field
+        // a later receipt refers to, so it must carry what the caller wrote, separators and all.
+        Path work = Files.createDirectories(tmp.resolve("work"));
+        Path source = sip(Files.createDirectories(tmp.resolve("in")), "x");
+
+        BagItTransferPackager.Bagged bagged = BagItTransferPackager.bag(source, work,
+                "sub/2026 0001", DIGEST);
+
+        Map<String, byte[]> entries = entriesOf(bagged.zippedBag());
+        String bagInfo = new String(entries.get("bag-info.txt"), StandardCharsets.UTF_8);
+        assertTrue(bagInfo.contains("External-Identifier: sub/2026 0001"),
+                "the submission id was rewritten inside the bag: " + bagInfo);
     }
 }

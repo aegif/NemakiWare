@@ -46,7 +46,9 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -122,7 +124,7 @@ class EarkSipExporterTest {
         EarkSipExporter.Exported exported = exporterOver(
                 reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
                 "the minutes".getBytes(StandardCharsets.UTF_8))
-                .export(REPO, OBJECT, EarkSipExporter.Options.withholdingPersonalData(), tmp);
+                .export(REPO, OBJECT, EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp);
 
         // The exporter now validates its own output, so this asserts what it FOUND rather
         // than re-running the validator beside it. A test that validates independently proves
@@ -208,7 +210,7 @@ class EarkSipExporterTest {
         EarkSipExporter.Exported exported = exporterOver(
                 reportWith(Map.of("nemaki:sourceSystem", "acme"), 3),
                 "the minutes".getBytes(StandardCharsets.UTF_8))
-                .export(REPO, OBJECT, EarkSipExporter.Options.withholdingPersonalData(), tmp);
+                .export(REPO, OBJECT, EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp);
 
         assertEquals(3, exported.withheldPropertyCount(),
                 "the package does not know what it is missing");
@@ -230,7 +232,7 @@ class EarkSipExporterTest {
         EarkSipExporter.Exported exported = exporterOver(
                 reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
                 "the minutes".getBytes(StandardCharsets.UTF_8))
-                .export(REPO, OBJECT, EarkSipExporter.Options.withholdingPersonalData(), tmp);
+                .export(REPO, OBJECT, EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp);
 
         String report = entriesOf(exported.sip()).entrySet().stream()
                 .filter(e -> e.getKey().endsWith("nemaki-authenticity-report.json"))
@@ -264,7 +266,7 @@ class EarkSipExporterTest {
         EarkSipExporter.ExportRefusedException refused = assertThrows(
                 EarkSipExporter.ExportRefusedException.class,
                 () -> exporter.export(REPO, OBJECT,
-                        EarkSipExporter.Options.withholdingPersonalData(), tmp));
+                        EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp));
 
         assertTrue(refused.getMessage().contains("no "),
                 "the refusal does not say what was missing: " + refused.getMessage());
@@ -297,7 +299,7 @@ class EarkSipExporterTest {
         exporter.setContentService(contentService);
         exporter.setReportAssembler(assembler);
 
-        exporter.export(REPO, OBJECT, EarkSipExporter.Options.withholdingPersonalData(), tmp);
+        exporter.export(REPO, OBJECT, EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp);
 
         org.mockito.ArgumentCaptor<Boolean> asked =
                 org.mockito.ArgumentCaptor.forClass(Boolean.class);
@@ -356,7 +358,7 @@ class EarkSipExporterTest {
                 reportWith(Map.of("nemaki:sourceSystem", "acme",
                         "nemaki:sourceObjectId", "SRC-42"), 0),
                 "the minutes".getBytes(StandardCharsets.UTF_8))
-                .export(REPO, OBJECT, EarkSipExporter.Options.withholdingPersonalData(), tmp);
+                .export(REPO, OBJECT, EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp);
 
         String dc = entriesOf(exported.sip()).entrySet().stream()
                 .filter(e -> e.getKey().endsWith("dc.xml"))
@@ -407,7 +409,7 @@ class EarkSipExporterTest {
         exporter.setReportAssembler(assembler);
 
         EarkSipExporter.Exported exported = exporter.export(REPO, OBJECT,
-                EarkSipExporter.Options.withholdingPersonalData(), tmp);
+                EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp);
 
         String dc = entriesOf(exported.sip()).entrySet().stream()
                 .filter(e -> e.getKey().endsWith("dc.xml"))
@@ -432,7 +434,7 @@ class EarkSipExporterTest {
         EarkSipExporter.Exported exported = exporterOver(
                 reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
                 "x".getBytes(StandardCharsets.UTF_8))
-                .export(REPO, OBJECT, EarkSipExporter.Options.withholdingPersonalData(), tmp);
+                .export(REPO, OBJECT, EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         assertTrue(new EARKSIPValidator(new ValidationReportOutputJson(exported.sip(), out),
                         "2.2.0").validate("2.2.0"),
@@ -496,7 +498,7 @@ class EarkSipExporterTest {
         exporter.setContentService(contentService);
         exporter.setReportAssembler(assembler);
         return exporter.export(REPO, OBJECT,
-                EarkSipExporter.Options.withholdingPersonalData(), tmp);
+                EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp);
     }
 
     @Test
@@ -528,7 +530,7 @@ class EarkSipExporterTest {
         exporter.setReportAssembler(assembler);
 
         EarkSipExporter.Exported exported = exporter.export(REPO, OBJECT,
-                EarkSipExporter.Options.withholdingPersonalData(), tmp);
+                EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp);
 
         String dc = entriesOf(exported.sip()).entrySet().stream()
                 .filter(e -> e.getKey().endsWith("dc.xml"))
@@ -578,7 +580,7 @@ class EarkSipExporterTest {
         exporter.setReportAssembler(assembler);
 
         EarkSipExporter.Exported exported = exporter.export(REPO, OBJECT,
-                EarkSipExporter.Options.withholdingPersonalData(), tmp);
+                EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp);
 
         String dc = entriesOf(exported.sip()).entrySet().stream()
                 .filter(e -> e.getKey().endsWith("dc.xml"))
@@ -664,13 +666,21 @@ class EarkSipExporterTest {
         Map<String, Object> evidence = (Map<String, Object>) evidencePackage.invoke(exporter,
                 REPO, OBJECT, new java.util.ArrayList<String>());
 
-        assertEquals("success", evidence.get("status"),
-                "a record whose capture IS in the chain was reported as not chained: "
-                        + evidence.get("message"));
         @SuppressWarnings("unchecked")
         Map<String, Object> proof = (Map<String, Object>) evidence.get("inclusionProof");
+        // What this test is about: the proof is over the CAPTURE, found through its intent.
         assertEquals("CAPTURE_COMPLETED", proof.get("provesEntry"), String.valueOf(proof));
         assertEquals("intent-7", proof.get("provesSubjectId"), String.valueOf(proof));
+        // The outer status FOLLOWS the proof, and this fixture's ledger cannot build one -- so
+        // it must NOT be "success". It asserted exactly that until 2026-08-28: inclusionProof
+        // reports its refusals in its returned map, evidencePackage merged that map into a
+        // nested key and left the outer status alone, and this assertion pinned the result.
+        // The package is written into the SIP as nemaki-evidence.json, so "success" over a
+        // proof that does not exist travels to the receiving organisation permanently.
+        assertEquals(proof.get("status"), evidence.get("status"),
+                "the package's status disagrees with the proof it carries: " + evidence);
+        assertNotNull(evidence.get("inclusionProofFailed"),
+                "the package carries no audit path and does not say so: " + evidence);
     }
 
     @Test
@@ -747,5 +757,373 @@ class EarkSipExporterTest {
         assertNotNull(evidence.get("captureProof"),
                 "there is no capture entry and the package does not say the proof is over "
                         + "something else: " + evidence);
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("no factory claims to withhold personal data")
+    void noFactoryClaimsToWithholdPersonalData() {
+        // The flag selects METADATA PROPERTIES; writePayload adds the document body
+        // unconditionally. The response header that used to say
+        // X-Nemaki-Includes-Personal-Data: false is locked by an assertNull; the method that
+        // used to be called withholdingPersonalData() was renamed and NOT locked, so the old
+        // name could come back beside the new one and every test would stay green. A method
+        // name is read by callers and concluded from, exactly like the header.
+        for (java.lang.reflect.Method method : EarkSipExporter.Options.class.getDeclaredMethods()) {
+            String name = method.getName().toLowerCase(java.util.Locale.ROOT);
+            org.junit.jupiter.api.Assertions.assertFalse(
+                    name.contains("personaldata") || name.contains("withhold"),
+                    "EarkSipExporter.Options." + method.getName() + " claims to control personal "
+                            + "data. includeInternalOnly does not: the document body is always "
+                            + "written, and its content is not inspected.");
+        }
+    }
+
+    @Test
+    @DisplayName("ledger rows that could not be read are not 'no entry names this object'")
+    void undecodableLedgerRowsAreNotAnUnchainedRecord() throws Exception {
+        // This sentence does not stay in a response: it is written into nemaki-evidence.json
+        // inside the package that leaves the organisation, where it cannot be corrected. The
+        // read that THREW was already handled; the read that partly succeeded was not -- the
+        // store drops rows it cannot decode, so an all-undecodable read looks like an empty
+        // chain.
+        EvidenceLedgerStore store = mock(EvidenceLedgerStore.class);
+        when(store.isActive()).thenReturn(true);
+        when(store.findBySubject(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of());
+        when(store.unreadableCount()).thenReturn(2);
+        EarkSipExporter exporter = exporterOver(
+                reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
+                "bytes".getBytes(StandardCharsets.UTF_8));
+        EvidenceLedgerService service = new EvidenceLedgerService();
+        service.setStore(store);
+        exporter.setLedgerStore(store);
+        exporter.setLedgerService(service);
+
+        java.lang.reflect.Method evidencePackage = EarkSipExporter.class.getDeclaredMethod(
+                "evidencePackage", String.class, String.class, List.class);
+        evidencePackage.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> evidence = (Map<String, Object>) evidencePackage.invoke(exporter,
+                REPO, OBJECT, new java.util.ArrayList<String>());
+
+        assertEquals(2, evidence.get("undecodableEntries"), String.valueOf(evidence));
+        assertNotEquals("not-chained", evidence.get("status"),
+                "rows nobody could read were shipped as 'this record was never chained': "
+                        + evidence);
+        assertTrue(String.valueOf(evidence.get("message")).contains("NOT a statement"),
+                "the package does not say what its silence is not: " + evidence);
+    }
+
+    @Test
+    @DisplayName("a chain that really holds nothing still says not-chained — the control")
+    void aGenuinelyUnchainedRecordStillSaysSo() throws Exception {
+        // Without this, hedging every empty read would satisfy the test above and no package
+        // could ever state the ordinary fact that a record predates the chain.
+        EvidenceLedgerStore store = mock(EvidenceLedgerStore.class);
+        when(store.isActive()).thenReturn(true);
+        when(store.findBySubject(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of());
+        when(store.unreadableCount()).thenReturn(0);
+        EarkSipExporter exporter = exporterOver(
+                reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
+                "bytes".getBytes(StandardCharsets.UTF_8));
+        EvidenceLedgerService service = new EvidenceLedgerService();
+        service.setStore(store);
+        exporter.setLedgerStore(store);
+        exporter.setLedgerService(service);
+
+        java.lang.reflect.Method evidencePackage = EarkSipExporter.class.getDeclaredMethod(
+                "evidencePackage", String.class, String.class, List.class);
+        evidencePackage.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> evidence = (Map<String, Object>) evidencePackage.invoke(exporter,
+                REPO, OBJECT, new java.util.ArrayList<String>());
+
+        assertEquals("not-chained", evidence.get("status"), String.valueOf(evidence));
+        assertNull(evidence.get("undecodableEntries"), String.valueOf(evidence));
+    }
+
+    @Test
+    @DisplayName("dropped rows are disclosed even when some entries WERE read")
+    void droppedRowsAreDisclosedBesideTheEntriesThatWereRead() throws Exception {
+        // The first version of this disclosure only fired when BOTH lists came back empty, so
+        // ONE decodable row was enough to ship status:"success" with the dropped rows nowhere
+        // in the package. "All of them were unreadable" and "some of them were" are the same
+        // fact about what the list does not contain, and this map is written into
+        // nemaki-evidence.json, which leaves the organisation.
+        EvidenceLedgerStore store = mock(EvidenceLedgerStore.class);
+        when(store.isActive()).thenReturn(true);
+        when(store.findBySubject(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of(
+                        EvidenceLedgerEntry.of(REPO, 1,
+                                EvidenceLedgerEntry.SubjectKind.FIXITY_RESULT, OBJECT,
+                                "mh1:fixity", "2026-08-26T00:00:00Z", null)));
+        when(store.unreadableCount()).thenReturn(4);
+        EvidenceLedgerService service = new EvidenceLedgerService();
+        service.setStore(store);
+        EarkSipExporter exporter = exporterOver(
+                reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
+                "bytes".getBytes(StandardCharsets.UTF_8));
+        exporter.setLedgerStore(store);
+        exporter.setLedgerService(service);
+
+        java.lang.reflect.Method evidencePackage = EarkSipExporter.class.getDeclaredMethod(
+                "evidencePackage", String.class, String.class, List.class);
+        evidencePackage.setAccessible(true);
+        java.util.List<String> notes = new java.util.ArrayList<>();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> evidence = (Map<String, Object>) evidencePackage.invoke(exporter,
+                REPO, OBJECT, notes);
+
+        assertEquals(4, evidence.get("undecodableEntries"), String.valueOf(evidence));
+        assertTrue(String.valueOf(evidence.get("undecodableEntriesNote")).contains("NOT a "
+                        + "statement"),
+                "the package does not say what its short list is not: " + evidence);
+        assertTrue(notes.stream().anyMatch(n -> n.contains("incomplete")),
+                "the notes that travel beside the package say nothing about the gap: " + notes);
+    }
+
+    @Test
+    @DisplayName("a complete read carries no gap disclosure — the control")
+    void aCompleteReadCarriesNoGapDisclosure() throws Exception {
+        EvidenceLedgerStore store = mock(EvidenceLedgerStore.class);
+        when(store.isActive()).thenReturn(true);
+        when(store.findBySubject(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of(
+                        EvidenceLedgerEntry.of(REPO, 1,
+                                EvidenceLedgerEntry.SubjectKind.FIXITY_RESULT, OBJECT,
+                                "mh1:fixity", "2026-08-26T00:00:00Z", null)));
+        when(store.unreadableCount()).thenReturn(0);
+        EvidenceLedgerService service = new EvidenceLedgerService();
+        service.setStore(store);
+        EarkSipExporter exporter = exporterOver(
+                reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
+                "bytes".getBytes(StandardCharsets.UTF_8));
+        exporter.setLedgerStore(store);
+        exporter.setLedgerService(service);
+
+        java.lang.reflect.Method evidencePackage = EarkSipExporter.class.getDeclaredMethod(
+                "evidencePackage", String.class, String.class, List.class);
+        evidencePackage.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> evidence = (Map<String, Object>) evidencePackage.invoke(exporter,
+                REPO, OBJECT, new java.util.ArrayList<String>());
+
+        assertNull(evidence.get("undecodableEntries"),
+                "a complete read was reported as incomplete: " + evidence);
+    }
+
+    @Test
+    @DisplayName("both failures are reported when both happened, not just the first")
+    void twoFailuresAreNotAlternatives() throws Exception {
+        // Undecodable ledger rows and a capture lookup that threw are INDEPENDENT — and a
+        // repository with damaged rows is exactly the one whose views are struggling, so both
+        // together is the likely case, not the exotic one. Written as `else if`, the
+        // undecodableEntries key was left out of the package whenever the capture read had also
+        // failed, and what shipped was "no ledger entry names this object" while N rows naming
+        // it sat unread. This map becomes nemaki-evidence.json and leaves the organisation.
+        EvidenceLedgerStore store = mock(EvidenceLedgerStore.class);
+        when(store.isActive()).thenReturn(true);
+        when(store.findBySubject(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of());
+        when(store.unreadableCount()).thenReturn(2);
+        jp.aegif.nemaki.rest.ingest.capture.CaptureMaintenanceStore captureStore =
+                mock(jp.aegif.nemaki.rest.ingest.capture.CaptureMaintenanceStore.class);
+        when(captureStore.listCapturedForObject(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.anyInt()))
+                .thenThrow(new RuntimeException("the capture view did not answer"));
+        EarkSipExporter exporter = exporterOver(
+                reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
+                "bytes".getBytes(StandardCharsets.UTF_8));
+        EvidenceLedgerService twoFailuresService = new EvidenceLedgerService();
+        twoFailuresService.setStore(store);
+        exporter.setLedgerStore(store);
+        exporter.setLedgerService(twoFailuresService);
+        exporter.setCaptureMaintenanceStore(captureStore);
+
+        java.lang.reflect.Method evidencePackage = EarkSipExporter.class.getDeclaredMethod(
+                "evidencePackage", String.class, String.class, List.class);
+        evidencePackage.setAccessible(true);
+        List<String> notes = new java.util.ArrayList<>();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> evidence = (Map<String, Object>) evidencePackage.invoke(exporter,
+                REPO, OBJECT, notes);
+
+        assertEquals("error", evidence.get("status"), String.valueOf(evidence));
+        assertEquals(2, evidence.get("undecodableEntries"),
+                "the rows that could not be read vanished from the package because the capture "
+                        + "read had ALSO failed: " + evidence);
+        assertNotNull(evidence.get("captureLookupFailed"),
+                "the capture failure is not in the package either: " + evidence);
+        // And a note, because a caller streaming the zip to disk never sees the JSON. These are
+        // the heaviest arms here — nothing at all was established — and they were the only ones
+        // with no note, so the light failure was announced and the total one was not.
+        assertEquals(2, notes.size(),
+                "the two failures produced " + notes.size() + " note(s): " + notes);
+    }
+
+    @Test
+    @DisplayName("a package with no audit path does not claim one proves anything")
+    void aPackageWithoutAPathDoesNotClaimOne() throws Exception {
+        // `limits` is written once near the top, so every arm has one — and that made "The
+        // audit path proves that the entry named here was in the span its checkpoint sealed"
+        // travel with packages that have no inclusionProof at all. The comment beside the
+        // proof-failed arm had NAMED this defect; the correction there stopped at the status.
+        //
+        // Fixed by flipping the default rather than by patching arms: the weak sentence is what
+        // every package starts with, and the strong one is earned where a proof succeeds.
+        EvidenceLedgerStore store = mock(EvidenceLedgerStore.class);
+        when(store.isActive()).thenReturn(true);
+        when(store.findBySubject(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of());
+        EarkSipExporter exporter = exporterOver(
+                reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
+                "bytes".getBytes(StandardCharsets.UTF_8));
+        EvidenceLedgerService noPathService = new EvidenceLedgerService();
+        noPathService.setStore(store);
+        exporter.setLedgerStore(store);
+        exporter.setLedgerService(noPathService);
+
+        java.lang.reflect.Method evidencePackage = EarkSipExporter.class.getDeclaredMethod(
+                "evidencePackage", String.class, String.class, List.class);
+        evidencePackage.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> evidence = (Map<String, Object>) evidencePackage.invoke(exporter,
+                REPO, OBJECT, new java.util.ArrayList<String>());
+
+        assertEquals("not-chained", evidence.get("status"),
+                "fixture check: this package HAS a path, so it is not the case under test: "
+                        + evidence);
+        assertEquals(EarkSipExporter.EVIDENCE_PACKAGE_LIMITS_NO_PATH, evidence.get("limits"),
+                "a package with no audit path tells the receiving organisation that its audit "
+                        + "path proves something: " + evidence.get("limits"));
+    }
+
+    @Test
+    @DisplayName("capture rows with no intent are counted, not skipped in silence")
+    void captureRowsWithoutAnIntentAreCounted() throws Exception {
+        // Skipped in silence, a set of capture rows that ALL lacked an intentId produced "no
+        // capture entry was found for it either" — the confident negative, drawn from rows that
+        // were right there in front of the loop. The accumulation ten lines below it was added
+        // for exactly this and did not cover this arm.
+        EvidenceLedgerStore store = mock(EvidenceLedgerStore.class);
+        when(store.isActive()).thenReturn(true);
+        when(store.findBySubject(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of());
+        jp.aegif.nemaki.rest.ingest.capture.CaptureMaintenanceStore captureStore =
+                mock(jp.aegif.nemaki.rest.ingest.capture.CaptureMaintenanceStore.class);
+        when(captureStore.listCapturedForObject(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(List.of(new java.util.HashMap<String, Object>()));
+        EvidenceLedgerService service = new EvidenceLedgerService();
+        service.setStore(store);
+        EarkSipExporter exporter = exporterOver(
+                reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
+                "bytes".getBytes(StandardCharsets.UTF_8));
+        exporter.setLedgerStore(store);
+        exporter.setLedgerService(service);
+        exporter.setCaptureMaintenanceStore(captureStore);
+
+        java.lang.reflect.Method evidencePackage = EarkSipExporter.class.getDeclaredMethod(
+                "evidencePackage", String.class, String.class, List.class);
+        evidencePackage.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> evidence = (Map<String, Object>) evidencePackage.invoke(exporter,
+                REPO, OBJECT, new java.util.ArrayList<String>());
+
+        assertNotEquals("not-chained", evidence.get("status"),
+                "a capture row this build could not use was dropped without a trace, so the "
+                        + "package tells the receiving organisation no capture entry exists: "
+                        + evidence);
+        assertEquals(1, evidence.get("undecodableEntries"), String.valueOf(evidence));
+    }
+
+    @Test
+    @DisplayName("a package that read SOME rows and lost others is not a 'success'")
+    void aPartiallyReadPackageIsNotASuccess() throws Exception {
+        // The both-empty arm was corrected a round earlier; the arm where something WAS read
+        // kept the defect. The lost rows were disclosed in their own key while
+        // evidence.put("status", "success") ran unconditionally underneath — so the word a
+        // reader takes first said the opposite of the key beside it, in nemaki-evidence.json,
+        // which leaves the organisation and cannot be corrected afterwards.
+        EvidenceLedgerStore store = mock(EvidenceLedgerStore.class);
+        when(store.isActive()).thenReturn(true);
+        when(store.findBySubject(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of(
+                        EvidenceLedgerEntry.of(REPO, 1,
+                                EvidenceLedgerEntry.SubjectKind.FIXITY_RESULT, OBJECT,
+                                "mh1:fixity", "2026-08-25T00:00:00Z", null)));
+        when(store.unreadableCount()).thenReturn(3);
+        // The proof must SUCCEED. With the real service this fixture has no checkpoint, so the
+        // proof fails and its status overwrites the outer one — which made the first version of
+        // this test pass no matter what the arm under test did. The negative control caught it:
+        // reverting the fix changed nothing and the test stayed green.
+        EvidenceLedgerService service = mock(EvidenceLedgerService.class);
+        when(service.inclusionProof(anyString(), org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(Map.of("status", "success"));
+        EarkSipExporter exporter = exporterOver(
+                reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
+                "bytes".getBytes(StandardCharsets.UTF_8));
+        exporter.setLedgerStore(store);
+        exporter.setLedgerService(service);
+
+        java.lang.reflect.Method evidencePackage = EarkSipExporter.class.getDeclaredMethod(
+                "evidencePackage", String.class, String.class, List.class);
+        evidencePackage.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> evidence = (Map<String, Object>) evidencePackage.invoke(exporter,
+                REPO, OBJECT, new java.util.ArrayList<String>());
+
+        assertEquals(3, evidence.get("undecodableEntries"),
+                "fixture check: nothing was lost, so this is not the case under test: " + evidence);
+        assertNotEquals("success", evidence.get("status"),
+                "a package that could not read 3 of this record's chain rows calls itself a "
+                        + "success: " + evidence);
+    }
+
+    @Test
+    @DisplayName("a capture lookup that failed reaches the HEADER too, not only the JSON")
+    void aFailedCaptureLookupIsAnnouncedInANote() throws Exception {
+        // notes become X-Nemaki-Export-Note headers, and the controller chose that route
+        // because "a caller streaming the zip to disk would never see a JSON note". When the
+        // object HAD entries, the capture failure was kept in the JSON and announced nowhere.
+        EvidenceLedgerStore store = mock(EvidenceLedgerStore.class);
+        when(store.isActive()).thenReturn(true);
+        when(store.findBySubject(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of(
+                        EvidenceLedgerEntry.of(REPO, 1,
+                                EvidenceLedgerEntry.SubjectKind.FIXITY_RESULT, OBJECT,
+                                "mh1:fixity", "2026-08-25T00:00:00Z", null)));
+        jp.aegif.nemaki.rest.ingest.capture.CaptureMaintenanceStore captureStore =
+                mock(jp.aegif.nemaki.rest.ingest.capture.CaptureMaintenanceStore.class);
+        when(captureStore.listCapturedForObject(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.anyInt()))
+                .thenThrow(new RuntimeException("the capture view did not answer"));
+        // A SUCCEEDING proof, so the status assertion below is about the capture failure and
+        // not about a proof that would have overwritten it anyway.
+        EvidenceLedgerService service = mock(EvidenceLedgerService.class);
+        when(service.inclusionProof(anyString(), org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(Map.of("status", "success"));
+        EarkSipExporter exporter = exporterOver(
+                reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
+                "bytes".getBytes(StandardCharsets.UTF_8));
+        exporter.setLedgerStore(store);
+        exporter.setLedgerService(service);
+        exporter.setCaptureMaintenanceStore(captureStore);
+
+        java.lang.reflect.Method evidencePackage = EarkSipExporter.class.getDeclaredMethod(
+                "evidencePackage", String.class, String.class, List.class);
+        evidencePackage.setAccessible(true);
+        List<String> notes = new java.util.ArrayList<>();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> evidence = (Map<String, Object>) evidencePackage.invoke(exporter,
+                REPO, OBJECT, notes);
+
+        assertNotEquals("success", evidence.get("status"),
+                "a package whose capture evidence could not be read calls itself a success: "
+                        + evidence);
+        assertTrue(notes.stream().anyMatch(n -> n.contains("capture rows")),
+                "the capture failure never reached the header, so a caller writing the zip "
+                        + "straight to disk is not told: " + notes);
     }
 }

@@ -336,4 +336,204 @@ class LongTermValidityTest {
                 "the anchors were silently reported as needing nothing; an unreadable source "
                         + "is not an empty one");
     }
+
+    @Test
+    @DisplayName("a store that could not be ASKED is UNDETERMINED too, not silently empty")
+    void anUnreachableStoreDoesNotReportZero() {
+        // The unwired branch was right and the wired-but-unanswerable one emitted NO ROW, so
+        // the response read `undetermined: 0` and the WIRED case got less honesty than the
+        // unwired one. A CouchDB view still building returns [] rather than throwing, so
+        // "the store said nothing" and "there is nothing" were the same answer.
+        //
+        // This is the fifth instance of one mechanic in this audit: a correction applied to one
+        // arm of a fan-out, with the test written for that arm.
+        LongTermValidityService service = new LongTermValidityService();
+        service.setReceiptStore(storeThatIsNotActive());
+
+        Map<String, Object> body = service.assess("bedroom", TODAY);
+
+        assertEquals(1, body.get("undetermined"),
+                "a store that could not be reached was reported as holding nothing to renew: "
+                        + body);
+    }
+
+    @Test
+    @DisplayName("a store that WAS asked and is empty says so — the control")
+    void anEmptyStoreSaysItWasAsked() {
+        // Without this, answering UNDETERMINED for everything would satisfy both tests above
+        // and no deployment could ever read "nothing needs renewing".
+        LongTermValidityService service = new LongTermValidityService();
+        service.setReceiptStore(storeWithNoReceipts());
+
+        Map<String, Object> body = service.assess("bedroom", TODAY);
+
+        assertEquals(0, body.get("undetermined"),
+                "an answered, empty store was reported as unreadable: " + body);
+    }
+
+    private static jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore storeThatIsNotActive() {
+        return new StubStore() {
+            @Override
+            public boolean isActive() {
+                return false;
+            }
+        };
+    }
+
+    private static jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore storeWithNoReceipts() {
+        return new StubStore();
+    }
+
+    /** Answers everything emptily; subclasses change the one thing under test. */
+    private static class StubStore
+            implements jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore {
+        @Override
+        public SaveOutcome save(String domain, long toSequence,
+                jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt r) {
+            return SaveOutcome.STORED;
+        }
+
+        @Override
+        public List<jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt> forCheckpoint(
+                String domain, long toSequence) {
+            return List.of();
+        }
+
+        @Override
+        public List<PendingReceipt> pending(String domain, int limit) {
+            return List.of();
+        }
+
+        @Override
+        public List<PendingReceipt> confirmed(String domain, int limit) {
+            return List.of();
+        }
+
+        @Override
+        public boolean isActive() {
+            return true;
+        }
+    }
+
+    @Test
+    @DisplayName("'was everything assessed?' does not answer yes after assessing nothing")
+    void truncationIsNotAnsweredByAStoreThatWasNeverAsked() {
+        // receiptsTruncated was computed from the NEEDS list, not from the rows read. Each of
+        // the four "could not ask" arms produces exactly ONE need, so 1 >= 1000 is false and the
+        // response said `receiptsTruncated: false` -- "everything was looked at" -- for a
+        // deployment whose receipt store is not wired at all.
+        //
+        // Both arms in one loop: the unwired store and the unreachable one produce that single
+        // need by different routes, and a lock naming one of them passes while the other stays
+        // broken.
+        List<LongTermValidityService> blind = new java.util.ArrayList<>();
+        LongTermValidityService unwired = new LongTermValidityService();
+        blind.add(unwired);
+        LongTermValidityService unreachable = new LongTermValidityService();
+        unreachable.setReceiptStore(new jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore() {
+            @Override
+            public SaveOutcome save(String domain, long toSequence,
+                    jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt receipt) {
+                return SaveOutcome.STORED;
+            }
+
+            @Override
+            public List<jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt> forCheckpoint(
+                    String domain, long toSequence) {
+                return List.of();
+            }
+
+            @Override
+            public List<PendingReceipt> pending(String domain, int limit) {
+                return List.of();
+            }
+
+            @Override
+            public List<PendingReceipt> confirmed(String domain, int limit) {
+                return List.of();
+            }
+
+            @Override
+            public boolean isActive() {
+                return false;
+            }
+        });
+        blind.add(unreachable);
+
+        for (LongTermValidityService service : blind) {
+            Map<String, Object> body = service.assess("bedroom", TODAY);
+
+            assertNotEquals(Boolean.FALSE, body.get("receiptsTruncated"),
+                    "a service that read no receipt at all reported that it had read them "
+                            + "all: " + body);
+            assertTrue(String.valueOf(body.get("receiptsTruncatedNote")).contains("NOT"),
+                    "the answer does not say what it is not: " + body);
+        }
+    }
+
+    @Test
+    @DisplayName("a store that answered with fewer rows than the cap is not truncated — control")
+    void anAnsweredStoreUnderTheCapIsNotTruncated() {
+        // Without this, answering "unknown" everywhere would satisfy the test above and every
+        // report would disclaim its own completeness.
+        LongTermValidityService service = new LongTermValidityService();
+        service.setReceiptStore(storeHolding(jp.aegif.nemaki.rest.purview.anchor.AnchorReceipts
+                .confirmed(jp.aegif.nemaki.rest.purview.anchor.AnchorKind.RFC3161_TSA,
+                        "abc", java.time.Instant.parse("2026-08-24T00:00:00Z"),
+                        new byte[] { 1 },
+                        Map.of("digestAlgorithm", "SHA-256"))));
+
+        assertEquals(Boolean.FALSE, service.assess("bedroom", TODAY).get("receiptsTruncated"),
+                "one confirmed receipt, well under the cap, was reported as a truncated scan");
+    }
+
+    @Test
+    @DisplayName("receipt rows nobody could account for are not 'nothing is anchored'")
+    void unaccountedReceiptRowsAreNotAnUnanchoredRepository() {
+        // The same store's THIRD caller. AnchorService reads this count in both of its verbs
+        // and EvidenceRecordService was corrected for it in this batch; this one answered
+        // Kind.NONE with "which also means nothing is anchored" for a view that had simply not
+        // answered — and its output is where an operator decides whether a renewal is due.
+        LongTermValidityService service = new LongTermValidityService();
+        service.setReceiptStore(new jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore() {
+            @Override
+            public SaveOutcome save(String domain, long toSequence,
+                    jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt receipt) {
+                return SaveOutcome.STORED;
+            }
+
+            @Override
+            public List<jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt> forCheckpoint(
+                    String domain, long toSequence) {
+                return List.of();
+            }
+
+            @Override
+            public List<PendingReceipt> pending(String domain, int limit) {
+                return List.of();
+            }
+
+            @Override
+            public List<PendingReceipt> confirmed(String domain, int limit) {
+                return List.of();
+            }
+
+            @Override
+            public int unreadableCount() {
+                return 2;
+            }
+
+            @Override
+            public boolean isActive() {
+                return true;
+            }
+        });
+
+        Map<String, Object> body = service.assess("bedroom", TODAY);
+
+        assertTrue(String.valueOf(body.get("needs")).contains("NOT a finding"),
+                "a view that did not answer was reported as 'nothing is anchored': " + body);
+        assertNotEquals(0, body.get("undetermined"),
+                "the gap is not carried as an undetermined need: " + body);
+    }
 }

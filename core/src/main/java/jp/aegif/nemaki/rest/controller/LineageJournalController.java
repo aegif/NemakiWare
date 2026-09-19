@@ -232,6 +232,10 @@ public class LineageJournalController {
             events = journalStore.findAll(fetchLimit, safeOffset);
         }
 
+        // Rows the store returned without a usable document are NOT in `events`, so the page
+        // below presents itself as what the journal holds. Read straight after the query: the
+        // count is per-read and the next store call resets it.
+        int undecodableRows = journalStore.lastUnreadableRowCount();
         boolean hasMore = events.size() > cappedLimit;
         List<jp.aegif.nemaki.rest.purview.journal.LineageJournalRow> pageEvents =
                 hasMore ? events.subList(0, cappedLimit) : events;
@@ -247,6 +251,12 @@ public class LineageJournalController {
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("events", eventList);
+        if (undecodableRows > 0) {
+            response.put("undecodableRows", undecodableRows);
+            response.put("undecodableRowsNote", undecodableRows + " row(s) came back without a "
+                    + "usable document and are NOT in the list above. This is NOT a finding "
+                    + "that they are absent.");
+        }
         response.put("total", estimatedTotal);
         response.put("hasMore", hasMore);
         response.put("limit", cappedLimit);

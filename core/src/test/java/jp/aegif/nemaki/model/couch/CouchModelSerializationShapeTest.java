@@ -76,7 +76,8 @@ class CouchModelSerializationShapeTest {
                 }
             }
         } catch (ClassNotFoundException e) {
-            throw new AssertionError("model class missing for a source file", e);
+            throw new jp.aegif.nemaki.util.test.HarnessBroken(
+                    "model class missing for a source file", e);
         }
         models.sort(java.util.Comparator.comparing(Class::getSimpleName));
         assertTrue(models.size() > 15, "the model package should not have shrunk: " + models);

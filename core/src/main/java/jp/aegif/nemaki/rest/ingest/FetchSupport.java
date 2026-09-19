@@ -124,6 +124,72 @@ public class FetchSupport {
     }
 
     /**
+     * The same read, but a configuration database that did not ANSWER is not "no token".
+     *
+     * <p>{@link #resolvePassword} returns {@code null} for three different things: the
+     * connector names no credential, the named credential has no stored value, and the store
+     * could not be asked. Callers state the first two as facts — "No token for X", which the
+     * folder-connector endpoint turns into {@code authError: true} and an offer to overwrite a
+     * credential that was never wrong, and which the scheduler counts towards opening the
+     * connector's circuit breaker. The IMAP IDLE monitor compares the resolved password with
+     * the one the session started on, so a failed read made it report "connector connection
+     * changed" — a fact about the connector that nothing established — and tear the session
+     * down permanently. A review traced both.
+     *
+     * @throws IntegrationSettingsService.SettingUnreadableException when the connector names a
+     *         credential, nothing resolved it, AND the configuration database did not answer.
+     */
+    public String resolvePasswordOrRefuse(ConnectorDefinition connector) {
+        String credentialRef = connector.getCredentialRef();
+        if (credentialRef == null || credentialRef.isBlank()) return null;
+        if (propertyManager == null) {
+            // Not "this connector has no token". The reader is not wired on this node, and the
+            // callers state the null as a fact — "No token for X" — which opens the connector's
+            // circuit breaker and invites an admin to overwrite a credential that is fine. A
+            // review found this arm still fail-open after the rest of the method was converted.
+            throw new jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                    .SettingUnreadableException("the credential '" + credentialRef + "' of"
+                            + " connector " + connector.getConnectorId() + " cannot be read on"
+                            + " this node: no property manager is wired; retry shortly against"
+                            + " a node that has one");
+        }
+        String value;
+        try {
+            value = resolvePassword(connector);
+        } catch (RuntimeException couldNotRead) {
+            // A read that THREW is a failed read. It used to leave this method as a raw
+            // exception, which the scheduler counts against the connector's circuit breaker
+            // and the folder door answers 500 for.
+            throw new jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                    .SettingUnreadableException("the credential '" + credentialRef + "' of"
+                            + " connector " + connector.getConnectorId() + " could not be read: "
+                            + couldNotRead.getMessage() + "; retry shortly");
+        }
+        if (value != null) return value;
+        {
+            jp.aegif.nemaki.model.Configuration conf;
+            try {
+                conf = propertyManager.getConfiguration(
+                        jp.aegif.nemaki.util.constant.SystemConst.NEMAKI_CONF_DB);
+            } catch (RuntimeException couldNotAsk) {
+                throw new jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                        .SettingUnreadableException("whether the credential '" + credentialRef
+                                + "' of connector " + connector.getConnectorId() + " is stored"
+                                + " could not be established: " + couldNotAsk.getMessage()
+                                + "; retry shortly");
+            }
+            if (conf != null && conf.isLoadFailed()) {
+                throw new jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                        .SettingUnreadableException("the credential '" + credentialRef
+                                + "' of connector " + connector.getConnectorId()
+                                + " could not be read: the configuration database did not"
+                                + " answer; retry shortly");
+            }
+        }
+        return null;
+    }
+
+    /**
      * ThreadLocal carrying the current job record for progress-based heartbeat.
      * Set by pollScheduledProfiles before executeFetch, read by throttle() on every item.
      */
@@ -163,6 +229,65 @@ public class FetchSupport {
     }
 
     /**
+     * As {@link #saveToDlq}, for a failure raised before the import service was reached.
+     *
+     * @return whether the row was written. Callers that have ALREADY told the operator the
+     *         item was recorded must check this: the usual trigger for dead-lettering is the
+     *         configuration database being unreachable, and that is the same database the row
+     *         goes into. A review found the IDLE monitor claiming the record before the fact.
+     */
+    public boolean saveSourceNeverReadToDlq(ExternalIngestRequest request, String errorMessage) {
+        if (ingestJobService == null) {
+            return false;
+        }
+        try {
+            // The service's ANSWER, not "the call returned". saveToDlq swallows every
+            // persistence failure by design — it is the last-resort record and must not take
+            // its caller down — so "did not throw" said nothing about whether a row exists.
+            // Two reviewers found the previous round's fix resting on exactly that.
+            return ingestJobService.saveSourceNeverReadToDlq(request, errorMessage);
+        } catch (Exception e) {
+            logger.warn("Failed to save to DLQ — item may be lost: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * As {@link #saveSourceNeverReadToDlq}, for a failure raised AFTER the source item was read
+     * — the import ran and answered that it did not import. Metadata-only: the bytes were
+     * consumed by the import, so the row is a record of the miss, not a replayable item.
+     *
+     * @return whether the row was written, for the same reason as above
+     */
+    public boolean saveSourceReadToDlq(ExternalIngestRequest request, String errorMessage) {
+        if (ingestJobService == null) {
+            return false;
+        }
+        try {
+            return ingestJobService.saveToDlqReporting(request, errorMessage, null, false, true);
+        } catch (Exception e) {
+            logger.warn("Failed to save to DLQ — item may be lost: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * A row that RECORDS webhook deliveries accepted and not fetched — marked as such by the
+     * service, not by anything the request carries (R10). Same boolean contract as above.
+     */
+    public boolean saveWebhookDeliveryRecordToDlq(ExternalIngestRequest request, String errorMessage) {
+        if (ingestJobService == null) {
+            return false;
+        }
+        try {
+            return ingestJobService.saveWebhookDeliveryRecordToDlq(request, errorMessage);
+        } catch (Exception e) {
+            logger.warn("Failed to save to DLQ — item may be lost: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Sleep for the throttle delay, if configured. Also sends a progress-based
      * heartbeat at most once per 5 minutes.
      */
@@ -186,12 +311,29 @@ public class FetchSupport {
         }
     }
 
-    /** Create a direct relationship, logging errors instead of throwing. */
+    /**
+     * Create a direct relationship after the import that produced the objects has returned,
+     * logging errors instead of throwing.
+     *
+     * <p>{@code profile} and {@code request} are what the link is AUTHORISED against (R4).
+     * They used to not be passed at all: the entry point had no profile, so the delegation
+     * re-check never ran and a fetch whose authorisation was revoked while it ran still wrote
+     * its edges. With neither in hand there is nothing to re-ask, so the link is REFUSED and
+     * the refusal is reported — a link written with no authority is the thing this closes, and
+     * an orchestrator that passes nulls must not get it by default.
+     */
     public void createRelationshipSafe(org.apache.chemistry.opencmis.commons.server.CallContext callContext,
                                        String repositoryId, String sourceId, String targetId,
+                                       ImportProfileDefinition profile, ExternalIngestRequest request,
                                        List<String> errors) {
+        if (profile == null && request == null) {
+            addError(errors, "Relationship " + sourceId + " → " + targetId + ": not created —"
+                    + " nothing was passed to authorise it against");
+            return;
+        }
         try {
-            String err = canonicalImportService.createDirectRelationship(callContext, repositoryId, sourceId, targetId);
+            String err = canonicalImportService.createDirectRelationship(callContext, repositoryId,
+                    sourceId, targetId, profile, request);
             if (err != null) addError(errors, err);
         } catch (Exception e) {
             addError(errors, "Relationship " + sourceId + " → " + targetId + ": " + e.getMessage());

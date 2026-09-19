@@ -34,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -311,5 +312,349 @@ class AnchorControllerTest {
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, code,
                 "an unwired ledger answered " + code + "; absence of the store must not read "
                         + "as an empty but successful result");
+    }
+
+    /** A receipt store that answers and holds nothing. */
+    private static jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore emptyStore() {
+        jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore empty =
+                mock(jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore.class);
+        when(empty.isActive()).thenReturn(true);
+        when(empty.forCheckpoint(anyString(), org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(List.of());
+        return empty;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static java.util.Map<String, Object> statusBodyWith(
+            jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore receipts) throws Exception {
+        return statusBodyWith(receipts, 9L);
+    }
+
+    /**
+     * @param highest what the ledger reports as its highest sequence. A PARAMETER, not a static
+     *        latch: the first version used one and left it set, so whether a later test saw 9
+     *        or -1 depended on execution order.
+     */
+    @SuppressWarnings("unchecked")
+    private static java.util.Map<String, Object> statusBodyWith(
+            jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore receipts, long highest)
+            throws Exception {
+        AnchorController controller = controllerFor(true);
+        jp.aegif.nemaki.evidence.EvidenceLedgerStore store =
+                mock(jp.aegif.nemaki.evidence.EvidenceLedgerStore.class);
+        when(store.latestCheckpoint(anyString())).thenReturn(
+                jp.aegif.nemaki.evidence.EvidenceCheckpoint.of("bedroom", 0, 5, ROOT, null,
+                        "2026-08-25T00:00:00Z"));
+        when(store.highestSequence(anyString())).thenReturn(highest);
+        setField(controller, "ledgerStore", store);
+        setField(controller, "receiptStore", receipts);
+        Object response = AnchorController.class.getDeclaredMethod("status", String.class)
+                .invoke(controller, "bedroom");
+        return (java.util.Map<String, Object>) response.getClass().getMethod("getBody").invoke(response);
+    }
+
+    @Test
+    @DisplayName("a SEALED but never-anchored checkpoint does not report zero exposure")
+    void aSealedButUnanchoredCheckpointIsFullyExposed() throws Exception {
+        // unanchoredEntries was `highest - latest.toSequence()` off the last SEALED checkpoint,
+        // which says nothing about whether anything anchored it. With no rung configured, or
+        // one that FAILED, that answered 0 while every entry was unanchored -- and this is the
+        // single number an operator uses to size the window in which the ledger is still
+        // quietly rewritable (p2-0 §0). No test named this field before.
+        jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore empty =
+                mock(jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore.class);
+        when(empty.isActive()).thenReturn(true);
+        when(empty.forCheckpoint(anyString(), org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(List.of());
+
+        java.util.Map<String, Object> body = statusBodyWith(empty);
+
+        // TEN, not nine. Sequences are 0-based, so highestSequence()==9 means ten entries --
+        // and the first version of this assertion said 9 because that is what the code
+        // produced. A lock written against the output pins the output, off-by-one included.
+        assertEquals(10L, body.get("unanchoredEntries"),
+                "a checkpoint nothing anchored reported " + body.get("unanchoredEntries")
+                        + " entries exposed; the ledger holds ten and every one of them is held "
+                        + "only by this database");
+        assertNull(body.get("unanchoredEntriesRung"));
+        // An empty ledger answers -1 from highestSequence; the exposure must not go negative.
+        assertEquals(0L, statusBodyWith(emptyStore(), -1L).get("unanchoredEntries"),
+                "an empty ledger reported a negative number of exposed entries");
+        assertEquals(4L, body.get("entriesAfterLatestCheckpoint"),
+                "the seal-relative count is gone, so the two facts can no longer be told apart");
+    }
+
+    @Test
+    @DisplayName("an unanswerable receipt store does not report zero exposure either")
+    void anUnreachableReceiptStoreDoesNotReportZeroExposure() throws Exception {
+        // "We could not ask" is not "nothing is exposed" -- the rule the receipts list in this
+        // same response already follows. Both store-unavailable arms, because the audit that
+        // found this named "one arm of a fan-out was fixed and one arm was tested" as the
+        // mechanic behind five separate defects.
+        for (jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore store : new java.util.ArrayList<
+                jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore>() {{
+                    add(null);
+                    jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore down =
+                            mock(jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore.class);
+                    when(down.isActive()).thenReturn(false);
+                    add(down);
+                }}) {
+            java.util.Map<String, Object> body = statusBodyWith(store);
+
+            assertNull(body.get("unanchoredEntries"),
+                    "a store that could not be asked produced a number for how much is exposed: "
+                            + body.get("unanchoredEntries"));
+            assertNotNull(body.get("unanchoredEntriesUnavailable"),
+                    "nothing says why the exposure could not be computed");
+        }
+    }
+
+    @Test
+    @DisplayName("the rung quoted beside the exposure is the STRONGEST confirmed one")
+    void theRungQuotedIsTheStrongestConfirmed() throws Exception {
+        // The picker was called newestConfirmed and returned the first CONFIRMED row the store
+        // yielded. CouchAnchorReceiptStore.forCheckpoint reads a view keyed by
+        // (domain, toSequence) with NO time ordering, so "newest" was unsupported -- and with
+        // two rungs settled it could name ATLAS_CATALOG, whose own enum comment says it must
+        // not be presented as a time proof at all, as the rung backing unanchoredEntries.
+        //
+        // The catalog rung is deliberately FIRST in the list, so a picker that takes the first
+        // CONFIRMED row fails this.
+        // Minted through the real targets: AnchorReceipt.confirmed is package-private, and a
+        // final class cannot be mocked here. CatalogAnchorTarget produces a genuine
+        // NOT_A_TIME_PROOF receipt; the codec round-trip supplies the stronger one, so both are
+        // objects the product actually builds rather than test-only shapes.
+        jp.aegif.nemaki.rest.purview.anchor.CatalogAnchorTarget minter =
+                new jp.aegif.nemaki.rest.purview.anchor.CatalogAnchorTarget();
+        minter.setEnabled(true);
+        minter.setPublisher(digest -> "entity-1");
+        jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt catalog = minter.anchor(ROOT);
+        java.util.Map<String, Object> asTsa = jp.aegif.nemaki.rest.purview.anchor
+                .AnchorReceiptCodec.toDocument(catalog);
+        asTsa.put("kind", "RFC3161_TSA");
+        asTsa.put("timeSemantics", "BIDIRECTIONAL_WITHIN_ACCURACY");
+        jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt tsa =
+                jp.aegif.nemaki.rest.purview.anchor.AnchorReceiptCodec.fromDocument(asTsa);
+
+        jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore store =
+                mock(jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore.class);
+        when(store.isActive()).thenReturn(true);
+
+        // BOTH orders. Asserting only [catalog, tsa] distinguishes the fix from
+        // first-CONFIRMED-wins, and passes equally for last-CONFIRMED-wins -- which is exactly
+        // as arbitrary as what was replaced, since the store's view has no ordering.
+        for (List<jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt> order
+                : List.of(List.of(catalog, tsa), List.of(tsa, catalog))) {
+            when(store.forCheckpoint(anyString(), org.mockito.ArgumentMatchers.anyLong()))
+                    .thenReturn(order);
+
+            java.util.Map<String, Object> body = statusBodyWith(store);
+
+            assertEquals("RFC3161_TSA", body.get("unanchoredEntriesRung"),
+                    "with the rungs in this order the exposure number is quoted beside "
+                            + body.get("unanchoredEntriesRung")
+                            + ", not the strongest anchor that covers it");
+        }
+    }
+
+    @Test
+    @DisplayName("an OLDER confirmed checkpoint still counts as cover")
+    void anOlderConfirmedCheckpointStillCovers() throws Exception {
+        // The exposure was measured only from the LATEST checkpoint's receipts. With
+        // checkpoint 5 confirmed, checkpoint 10 sealed but pending and the head at 12, every
+        // entry was reported exposed -- the safe direction, but not what the field says it
+        // counts, and it never shrinks when an older anchor settles, which reads to an operator
+        // as anchoring not working at all.
+        jp.aegif.nemaki.rest.purview.anchor.CatalogAnchorTarget minter =
+                new jp.aegif.nemaki.rest.purview.anchor.CatalogAnchorTarget();
+        minter.setEnabled(true);
+        minter.setPublisher(digest -> "entity-1");
+        jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt older = minter.anchor(ROOT);
+
+        jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore store =
+                mock(jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore.class);
+        when(store.isActive()).thenReturn(true);
+        // Nothing settled on the latest checkpoint...
+        when(store.forCheckpoint(anyString(), org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(List.of());
+        // ...but an older one, through sequence 5, has.
+        when(store.confirmed(anyString(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(List.of(
+                        new jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore.PendingReceipt(
+                                "bedroom", 5L, older)));
+
+        java.util.Map<String, Object> body = statusBodyWith(store, 12L);
+
+        assertEquals(7L, body.get("unanchoredEntries"),
+                "entries 6..12 are exposed and " + body.get("unanchoredEntries")
+                        + " was reported; an older confirmed anchor still covers its own span");
+        assertEquals(5L, body.get("unanchoredEntriesThroughSequence"));
+        assertEquals("ATLAS_CATALOG", body.get("unanchoredEntriesRung"));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    @DisplayName("a REFUSED anchor is not answered 200 success")
+    void aRefusedAnchorIsNotSuccess() throws Exception {
+        // `status: "success"` is written before anything is attempted, and AnchorService reports
+        // refusal in its RETURNED Outcome rather than by throwing. So a refused anchor came back
+        // 200 success -- and AnchorService.store is a plain setter with no @Autowired, so a
+        // mis-wired bean refuses every call while every call answers success.
+        //
+        // The comment in this method says this exact defect was fixed. It was: for
+        // closeCheckpoint's returned map. The second producer in the same method, following the
+        // same convention, was not. The sibling endpoint has always mapped it.
+        AnchorController controller = controllerFor(true);
+        jp.aegif.nemaki.evidence.EvidenceLedgerService ledger =
+                mock(jp.aegif.nemaki.evidence.EvidenceLedgerService.class);
+        when(ledger.closeCheckpoint(anyString(), anyString()))
+                .thenReturn(java.util.Map.of("status", "success", "toSequence", 5L));
+        setField(controller, "ledgerService", ledger);
+        jp.aegif.nemaki.evidence.EvidenceLedgerStore store =
+                mock(jp.aegif.nemaki.evidence.EvidenceLedgerStore.class);
+        when(store.latestCheckpoint(anyString())).thenReturn(
+                jp.aegif.nemaki.evidence.EvidenceCheckpoint.of("bedroom", 0, 5, ROOT, null,
+                        "2026-08-25T00:00:00Z"));
+        setField(controller, "ledgerStore", store);
+        jp.aegif.nemaki.evidence.anchor.AnchorService anchors =
+                mock(jp.aegif.nemaki.evidence.anchor.AnchorService.class);
+        when(anchors.anchor(org.mockito.ArgumentMatchers.any())).thenReturn(
+                new jp.aegif.nemaki.evidence.anchor.AnchorService.Outcome("bedroom", 5, ROOT,
+                        List.of(), "the receipt store is not wired, so nothing was anchored"));
+        setField(controller, "anchorService", anchors);
+
+        Object response = AnchorController.class
+                .getDeclaredMethod("checkpointAndAnchor", String.class)
+                .invoke(controller, "bedroom");
+        HttpStatus code = (HttpStatus) response.getClass().getMethod("getStatusCode")
+                .invoke(response);
+        java.util.Map<String, Object> body = (java.util.Map<String, Object>)
+                response.getClass().getMethod("getBody").invoke(response);
+
+        assertTrue(code != HttpStatus.OK,
+                "a refused anchor answered " + code + "; the caller reads that as anchored");
+        org.junit.jupiter.api.Assertions.assertNotEquals("success", body.get("status"),
+                "the outer status says success over an inner refusal: " + body);
+    }
+
+    @Test
+    @DisplayName("receipts the store could not read are not silently missing from /status")
+    void droppedReceiptRowsAreDisclosed() throws Exception {
+        // The store drops a row it cannot decode and counts it -- the counter exists precisely
+        // so "a row that cannot be read is not an absent receipt" survives the read. Both of
+        // AnchorService's verbs consult it. /status, the one an operator actually looks at, did
+        // not: the list presented itself as complete and the rung whose receipt was dropped read
+        // as unanchored below it.
+        jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore lossy =
+                mock(jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore.class);
+        when(lossy.isActive()).thenReturn(true);
+        when(lossy.forCheckpoint(anyString(), org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(List.of());
+        when(lossy.unreadableCount()).thenReturn(2);
+
+        java.util.Map<String, Object> body = statusBodyWith(lossy);
+
+        assertEquals(2, body.get("receiptsUnreadable"),
+                "rows the store could not decode are missing from the response with no trace: "
+                        + body);
+        assertTrue(String.valueOf(body.get("receiptsUnavailable")).contains("NOT a finding"),
+                "the disclosure does not say what it is not: " + body);
+    }
+
+    @Test
+    @DisplayName("a clean read carries no unreadable disclosure — the control")
+    void aCleanReadIsNotCalledLossy() throws Exception {
+        // Without this, emitting the disclosure unconditionally would satisfy the test above and
+        // make every status response claim receipts had been lost.
+        java.util.Map<String, Object> body = statusBodyWith(emptyStore());
+
+        assertNull(body.get("receiptsUnreadable"),
+                "a store that dropped nothing was reported as lossy: " + body);
+        assertNull(body.get("receiptsUnavailable"), String.valueOf(body));
+    }
+
+    @Test
+    @DisplayName("/status answers a ledger read it could not make, rather than a bare 500")
+    void statusReportsALedgerReadItCouldNotMake() throws Exception {
+        // The store was changed to REFUSE a read it could not make rather than answer "there is
+        // nothing". This method never wrapped either call, so the refusal became a bare 500
+        // whose body carries neither `limits` nor the reason — on the one endpoint whose whole
+        // job is to say what is and is not anchored. Its sibling /retry-unsettled has wrapped
+        // the same call all along: one arm of one class.
+        //
+        // Both reads are driven, because they are separate calls and a wrap on one leaves the
+        // other bare.
+        // THREE arms, because there are three throwing reads and each has its own wrap:
+        // latestCheckpoint; highestSequence on the no-checkpoint path; and highestSequence on
+        // the path where a checkpoint EXISTS. The first version drove only the first two — its
+        // highestSequence fixture forced latestCheckpoint to null — so removing the third wrap
+        // left it green. Two calls to the same method are two arms when they sit in different
+        // branches.
+        for (String arm : new String[] { "checkpoint", "head-without-checkpoint",
+                "head-with-checkpoint" }) {
+            AnchorController controller = controllerFor(true);
+            jp.aegif.nemaki.evidence.EvidenceLedgerStore store =
+                    mock(jp.aegif.nemaki.evidence.EvidenceLedgerStore.class);
+            switch (arm) {
+                case "checkpoint" -> when(store.latestCheckpoint(anyString()))
+                        .thenThrow(new IllegalStateException("the view did not answer"));
+                case "head-without-checkpoint" -> {
+                    when(store.latestCheckpoint(anyString())).thenReturn(null);
+                    when(store.highestSequence(anyString()))
+                            .thenThrow(new IllegalStateException("the view did not answer"));
+                }
+                default -> {
+                    when(store.latestCheckpoint(anyString())).thenReturn(
+                            jp.aegif.nemaki.evidence.EvidenceCheckpoint.of("bedroom", 0, 5, ROOT,
+                                    null, "2026-08-25T00:00:00Z"));
+                    when(store.highestSequence(anyString()))
+                            .thenThrow(new IllegalStateException("the view did not answer"));
+                }
+            }
+            setField(controller, "ledgerStore", store);
+
+            Object response = AnchorController.class.getDeclaredMethod("status", String.class)
+                    .invoke(controller, "bedroom");
+            HttpStatus code = (HttpStatus) response.getClass().getMethod("getStatusCode")
+                    .invoke(response);
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> body = (java.util.Map<String, Object>)
+                    response.getClass().getMethod("getBody").invoke(response);
+
+            assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, code, arm + ": " + body);
+            assertNotNull(body.get("limits"),
+                    arm + ": the refusal carries no statement of what a status answer "
+                            + "establishes: " + body);
+            assertTrue(String.valueOf(body.get("message")).contains("NOT a statement"),
+                    arm + ": the refusal does not say what it is not: " + body);
+        }
+    }
+
+    @Test
+    @DisplayName("upgradePending's 'could not ask' reaches the RESPONSE as 503, not as success")
+    void anUnaskableUpgradeIsNotAnEmptyOne() throws Exception {
+        // Pinned in the service and nowhere else. The harm the service test names happens HERE:
+        // reverting this arm answers 200 with status:"success", upgradedCount:0 and the note
+        // "nothing had settled yet ... do not re-anchor", so a deployment whose receipt store
+        // is unreachable is advised to leave a commitment unupgraded for ever — from a question
+        // nobody managed to ask.
+        jp.aegif.nemaki.evidence.anchor.AnchorService anchors =
+                mock(jp.aegif.nemaki.evidence.anchor.AnchorService.class);
+        when(anchors.upgradePending(anyString(), anyInt())).thenReturn(
+                new jp.aegif.nemaki.evidence.anchor.AnchorService.Upgraded(java.util.List.of(),
+                        "the receipt store could not be read, so which rungs have settled is "
+                                + "unknown"));
+        AnchorController controller = controllerFor(true);
+        setField(controller, "anchorService", anchors);
+
+        org.springframework.http.ResponseEntity<java.util.Map<String, Object>> response =
+                controller.upgradePending("bedroom", 10);
+        java.util.Map<String, Object> body = response.getBody();
+
+        assertEquals(503, response.getStatusCode().value(),
+                "a store that could not be read was answered as a completed upgrade: " + body);
+        assertEquals("unavailable", body.get("status"), String.valueOf(body));
+        assertNotNull(body.get("limits"),
+                "the refusal carries no statement of what it does not establish: " + body);
     }
 }

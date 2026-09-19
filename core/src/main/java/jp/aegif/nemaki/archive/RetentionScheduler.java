@@ -305,6 +305,10 @@ public class RetentionScheduler {
                     }
 
                 } catch (Exception e) {
+                    // Counted, not just logged: the persisted migration log is the record of
+                    // what this sweep did, and a repository whose candidates could not even
+                    // be listed must not read there as a sweep that found nothing to do.
+                    result.incrementFailed();
                     log.error("Error during local-archive for repository " + repositoryId + ": " + e.getMessage(), e);
                 }
 

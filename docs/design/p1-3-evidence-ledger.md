@@ -61,7 +61,17 @@ P1-2 (保存バイト列の再検証)。
 EvidenceLedgerEntry {
   domain          // 連鎖のドメイン = repositoryId (§3)
   sequence        // sequencer が確定した順序。時計順ではない
-  subjectKind     // CAPTURE_COMPLETED / LINEAGE_EVENT / FIXITY_RESULT / DISPOSITION
+  subjectKind     // CAPTURE_COMPLETED / LINEAGE_EVENT / FIXITY_RESULT / DISPOSITION /
+                  // FORMAT_DUPLICATION / CUSTODY_RECEIPT / GENESIS
+                  // (P3-2 と P3-4 で 2 種増えた。正典は EvidenceLedgerEntry.SubjectKind)
+                  //
+                  // GENESIS は名前と意味が食い違っている (2026-08-28 発見・未改名):
+                  // javadoc もテストも「**意図的な連鎖の切断**」— 法的要求などで span を
+                  // 取り除いたときに、繋がっているように見せず切断として残す種別 — と
+                  // 言っている。GENESIS という語は監査人に「ここが始まり」と読ませ、
+                  // 「ここで区間が消えた」の逆に近い。**改名していないのは CouchDB の行に
+                  // 文字列として永続化されているから**で、読み側の別名を用意しない改名は
+                  // 既存の台帳を読めなくする。次に台帳の移行を触るときの候補として残す。
   subjectId       // その事実を後から引くための id (intentId / eventId / objectId)
   payloadDigest   // その事実の正準 digest (mh1 / creationPayloadDigest / fixity digest)
   occurredAt      // 中身。順序の根拠ではない

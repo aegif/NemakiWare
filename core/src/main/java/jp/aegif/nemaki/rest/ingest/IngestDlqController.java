@@ -37,19 +37,41 @@ public class IngestDlqController {
 
     // ── Job History ────────────────────────────────────────────────
 
+    // A row the mapper refuses is dropped from the listing. Returning the list bare made a
+    // PARTIAL or FAILED run written by a newer node look like it never happened. The DLQ
+    // listing in this same controller says how many rows it could not decode; a review found
+    // the job listing silent. The shape stays an array when nothing was dropped, so existing
+    // clients are unaffected.
     @GetMapping("/jobs")
     public ResponseEntity<?> listJobs(@RequestParam(defaultValue = "50") int limit) {
         if (!isAdmin()) return forbidden();
-        return ResponseEntity.ok(ingestJobService.listJobs(limit));
+        return jobsOrEnvelope(ingestJobService.listJobsPage(limit));
     }
 
     @GetMapping("/jobs/profile/{profileId}")
     public ResponseEntity<?> listJobsByProfile(@PathVariable String profileId) {
         if (!isAdmin()) return forbidden();
-        return ResponseEntity.ok(ingestJobService.listJobsByProfile(profileId));
+        return jobsOrEnvelope(ingestJobService.listJobsByProfilePage(profileId));
+    }
+
+    private ResponseEntity<?> jobsOrEnvelope(IngestJobService.JobPage page) {
+        if (page.unreadable() == 0) return ResponseEntity.ok(page.entries());
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("jobs", page.entries());
+        response.put("unreadableEntries", page.unreadable());
+        response.put("unreadableNote", "rows this node could not decode are not in 'jobs';"
+                + " they are named in the server log by document id");
+        return ResponseEntity.ok(response);
     }
 
     // ── Dead-Letter Queue ──────────────────────────────────────────
+
+    /**
+     * The largest page this endpoint will return. Named, not repeated, so the refusal note below
+     * cannot advise a page size the endpoint refuses to serve — a review found it doing exactly
+     * that.
+     */
+    private static final int MAX_LIMIT = 500;
 
     /**
      * A page of dead-letter entries.
@@ -62,17 +84,53 @@ public class IngestDlqController {
     public ResponseEntity<?> listDlq(@RequestParam(defaultValue = "100") int limit,
                                      @RequestParam(defaultValue = "0") int offset) {
         if (!isAdmin()) return forbidden();
-        int cappedLimit = Math.min(Math.max(limit, 1), 500);
+        int cappedLimit = Math.min(Math.max(limit, 1), MAX_LIMIT);
         int safeOffset = Math.max(offset, 0);
         // Fetch one extra to say whether more exist without a second count query.
-        List<IngestDeadLetterRecord> page = ingestJobService.listDlq(cappedLimit + 1, safeOffset);
-        boolean hasMore = page.size() > cappedLimit;
-        List<IngestDeadLetterRecord> entries = hasMore ? page.subList(0, cappedLimit) : page;
+        // The service decodes exactly this page and answers "is there more" from a probe row
+        // it does NOT put in the page. Counting the probe row into the page made a page cover
+        // a different span of raw rows than the caller's next offset assumes, so entries were
+        // repeated or skipped across pages; and counting only DECODED rows made a page whose
+        // probe row was the broken one answer "hasMore: false", which told the operator the
+        // queue ended there. Two reviewers built both halves.
+        IngestJobService.DlqPage fetched = ingestJobService.listDlqPage(cappedLimit, safeOffset, true);
+        List<IngestDeadLetterRecord> entries = fetched.entries();
+        boolean hasMore = fetched.hasMore();
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("count", entries.size());
         response.put("limit", cappedLimit);
         response.put("offset", safeOffset);
         response.put("hasMore", hasMore);
+        // Advance by the PAGE, not by the number of entries returned: some rows on this page
+        // may not have decoded, and paging by count would re-read them for ever. Only when
+        // there IS a next page — a continuation token on the last page walks a client through
+        // an endless run of empty ones. A review found it.
+        if (hasMore) response.put("nextOffset", safeOffset + cappedLimit);
+        if (!fetched.stablyOrdered()) {
+            // Only when it is false, like unreadableEntries below. The page is still served —
+            // each row is the only record that a source item was lost, so refusing the whole
+            // listing would deny the operator the very thing they came for — but it must not
+            // pass for an ordered one: with no order, this offset can hand back a row an
+            // earlier page showed and pass over one no page shows (R13).
+            response.put("stableOrder", false);
+            // Says only what the store's refusal established — no index here can serve that
+            // order — not that a particular index is unregistered, and points at a remedy this
+            // endpoint can actually perform: 'limit' is capped at 500 above, so "read it in one
+            // page" is advice that runs out. A review found both.
+            response.put("stableOrderNote", "no index on this database can serve the"
+                    + " (type, dlqId, _id) order, so 'offset' may repeat or pass over entries"
+                    + " across pages. A page read in one request (limit up to " + MAX_LIMIT
+                    + ") is unaffected; beyond that, re-read from offset 0 before acting on"
+                    + " what is missing");
+        }
+        if (fetched.unreadable() > 0) {
+            // Or "count" reads as the whole page. Each of these is the only record that a
+            // source item was lost, so their absence has to be said, not left in the log.
+            response.put("unreadableEntries", fetched.unreadable());
+            response.put("unreadableNote", "rows this node could not decode are not in"
+                    + " 'entries' and are not counted in 'count'; they are named in the server"
+                    + " log by document id. Page with 'nextOffset', not with 'count'");
+        }
         response.put("entries", entries);
         return ResponseEntity.ok(response);
     }
@@ -94,7 +152,17 @@ public class IngestDlqController {
         }
         java.time.Instant cutoff = java.time.Instant.now()
                 .minus(java.time.Duration.ofDays(olderThanDays));
-        int deleted = ingestJobService.purgeDlqOlderThan(cutoff);
+        int deleted;
+        try {
+            deleted = ingestJobService.purgeDlqOlderThan(cutoff);
+        } catch (IngestJobService.DlqPurgeIncompleteException stopped) {
+            Map<String, Object> partial = new LinkedHashMap<>();
+            partial.put("status", "error");
+            partial.put("message", stopped.getMessage());
+            partial.put("deleted", stopped.getDeletedBeforeStopping());
+            partial.put("cutoff", cutoff.toString());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(partial);
+        }
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", "success");
         response.put("deleted", deleted);
@@ -126,9 +194,15 @@ public class IngestDlqController {
         // lastRetryAt in CouchDB using _rev as an optimistic lock.
         // If two concurrent retries race, only one wins the write;
         // the loser gets a 409 and returns 429 to the caller.
-        if (!ingestJobService.reserveDlqRetry(dlq)) {
-            return errorResponse(HttpStatus.TOO_MANY_REQUESTS,
-                    "Retry already in progress for this entry (concurrent request)");
+        try {
+            if (!ingestJobService.reserveDlqRetry(dlq)) {
+                return errorResponse(HttpStatus.TOO_MANY_REQUESTS,
+                        "Retry already in progress for this entry (concurrent request)");
+            }
+        } catch (IngestJobService.DlqRetryNotReservableException couldNotAsk) {
+            // "Could not attempt the reservation" is not "someone else holds it".
+            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, couldNotAsk.getMessage()
+                    + "; the entry is kept and nothing was imported");
         }
 
         CallContext callContext = getCallContext();
@@ -141,18 +215,118 @@ public class IngestDlqController {
             ExternalIngestRequest request = MAPPER.readValue(
                     dlq.getOriginalRequestJson(), ExternalIngestRequest.class);
 
+            // Declared here rather than after the dispatch: the payload-restore block below
+            // has something to say about how it resolved the entry's recorded state.
+            Map<String, Object> response = new LinkedHashMap<>();
+
+            // Bytes this entry HAD but that were never stored are not "this item has no
+            // content". Replaying without them creates an empty document, reports success and
+            // DELETES the row — the only record that the source item was lost. payloadDropReason
+            // is written when encryption refused the bytes (a missing NEMAKI_ENCRYPTION_KEY does
+            // exactly this), and nothing read it: the whole codebase had no reader for the field.
+            // The item has to come back through the connector, not through here. A review traced
+            // the chain end to end.
+            // Keyed on the RESERVED source id this controller writes, not on
+            // sourceObjectType — that is an unrestricted caller-supplied string, so a genuine
+            // item whose type happened to be "webhook_event" was refused for ever as if it
+            // were the synthetic marker. Codex found the over-throw.
+            // By the row's own mark, not by the shape of sourceObjectId: that string is the
+            // caller's, so a genuine item named "webhook-deliveries:…" was refused for ever
+            // while nothing stopped a caller from naming one so (R10).
+            if (dlq.isWebhookDeliveryRecord()) {
+                // This row RECORDS that deliveries were accepted and not fetched. It carries no
+                // delivery — the webhook body and the event scope were never stored — so
+                // dispatching it would create an empty "imported-webhook:..." document and,
+                // depending on the archetype, report success and delete the record. A review
+                // traced the replay path. Recovery is a connector re-fetch.
+                return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId + " records"
+                        + " webhook deliveries that were accepted but never fetched. It carries"
+                        + " no delivery and cannot be replayed; re-fetch through the connector,"
+                        + " then delete this entry");
+            }
+            if (dlq.getPayloadWriteToken() != null) {
+                // A payload write for this attempt was started and never confirmed. The row's
+                // attachment — if any — cannot be attributed to THIS attempt: it may be the
+                // previous attempt's bytes, which the unfinished write never replaced.
+                //
+                // Three rounds tried to do better than refuse here and each reopened the same
+                // hybrid — old bytes replayed under new metadata: a self-heal that read the
+                // attachment as proof the write landed (it is not), then a lease that fell
+                // through to the ordinary payload path after 15 minutes (the same replay, on
+                // a timer). A parallel review named the timer for what it was. This is the
+                // second time a fix of a fix in this area was a P1, so it is FROZEN at the
+                // simplest safe state: refuse, and say what to do. A later save with bytes
+                // overwrites the token with its own and attaches fresh bytes, which resolves
+                // it; nothing else does, and that is recorded.
+                return errorResponse(HttpStatus.CONFLICT, "a payload write for DLQ entry "
+                        + dlqId + " was started and never confirmed, or this entry was written"
+                        + " over a row this node could not read, so the stored payload"
+                        + " cannot be attributed to the attempt this entry describes; the"
+                        + " entry is kept and nothing was imported. Re-fetch the source item"
+                        + " through its connector (a fresh failure with bytes replaces this"
+                        + " entry), then delete this entry if the item is confirmed present");
+            }
+            if (dlq.getPayloadDropReason() != null) {
+                // NOT gated on hasContent. A row can carry an OLDER attempt's attachment
+                // (hasContent=true) while THIS attempt's bytes were refused — the request JSON
+                // on the row is the newer attempt's, so replaying pairs the old payload with
+                // the new metadata and calls the hybrid the recovered item. Codex named that
+                // inverse in the round after the first version of this guard, which tested
+                // !hasContent and let it through.
+                return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId
+                        + " describes an attempt whose content was never stored ("
+                        + dlq.getPayloadDropReason() + ")"
+                        + (dlq.isHasContent()
+                                ? ", and the payload on this row is from an EARLIER attempt, so"
+                                        + " replaying would pair those bytes with this"
+                                        + " attempt's metadata"
+                                : ", so replaying it would import an empty document in place of"
+                                        + " the original")
+                        + "; the entry is kept and nothing was imported. Re-fetch the source"
+                        + " item through its connector instead");
+            }
+
             // Restore content stream from CouchDB attachment if available
             if (dlq.isHasContent()) {
-                byte[] content = ingestJobService.loadDlqContent(dlqId);
+                // A read that could not answer must not become "this entry had nothing to
+                // restore": the retry would import a content-less document, report success,
+                // and DELETE the row that is the only record the source item was lost.
+                byte[] content;
+                try {
+                    content = ingestJobService.loadDlqContent(dlqId);
+                } catch (IngestJobService.DlqContentUnreadableException unreadable) {
+                    return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, unreadable.getMessage()
+                            + "; the entry is kept and nothing was imported");
+                }
                 if (content != null) {
                     request.setContentStream(new java.io.ByteArrayInputStream(content));
+                } else if (dlq.isPayloadPresenceAssumed()) {
+                    // hasContent on this row was ASSUMED, not read — set while writing over a
+                    // row this node could not decode, when the attachment probe could not
+                    // answer either. loadDlqContent has now READ the row and found no
+                    // attachment (it refuses instead of answering null when it cannot see the
+                    // row at all), so the assumption is disproven and this entry genuinely has
+                    // no payload. Refusing here made the flag a fixed point: a metadata-only
+                    // entry — which is every orchestrator's shape — could never be retried
+                    // again, and deleting the row was the only way out. Two reviewers derived
+                    // it. Replay it, and say the flag was cleared by an answer.
+                    response.put("payloadPresenceAssumptionCleared", true);
+                    response.put("payloadPresenceNote", "this entry was recorded as carrying a"
+                            + " payload while the store could not be asked; the store has now"
+                            + " answered that it carries none, so it was replayed without one");
+                } else {
+                    // The record says it HAS content and the store says there is none. Not a
+                    // retry: importing without it would record an empty document as the
+                    // recovered item.
+                    return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId
+                            + " is recorded as carrying content, but no stored payload came"
+                            + " back; the entry is kept and nothing was imported");
                 }
             }
 
             // Route through the correct archetype-specific flow
             ExternalIngestResult result = dispatchByArchetype(callContext, request);
 
-            Map<String, Object> response = new LinkedHashMap<>();
             if (dlq.getRequestBinaryStrippedCount() > 0) {
                 // The stored request is byte-free by rule; say so, or a "success" here reads as
                 // "everything came back" when the attachments did not.
@@ -160,22 +334,77 @@ public class IngestDlqController {
                 response.put("strippedBinaryNote", "attachment bytes were not stored with this "
                         + "entry and were not replayed; the next connector poll re-fetches them");
             }
+            if (result.skipped() && dlq.isSourceNeverRead()) {
+                // A skip is an idempotent RESOLUTION only when the item is actually in the
+                // repository. On a row whose source was never read, the replay can report
+                // "nothing to import" — the Notion page arm does exactly this under the
+                // default files_only policy when the attachment list was never fetched — and
+                // deleting on that destroys the only record that the item was lost, using the
+                // tool that exists to recover it. A review traced the chain. The row stays.
+                response.put("status", "skipped");
+                response.put("entryKept", true);
+                response.put("skipReason", result.skipReason());
+                response.put("entryKeptNote", "this entry records a source item that was never"
+                        + " read, so 'nothing to import' is not evidence that it was recovered."
+                        + " The entry is kept. Re-fetch through the connector, then delete this"
+                        + " entry if the item is confirmed present");
+                return ResponseEntity.ok(response);
+            }
             if (result.skipped()) {
                 // Idempotent outcome — object already exists, remove from DLQ
-                ingestJobService.deleteDlqEntry(dlqId);
-                response.put("status", "resolved");
+                IngestJobService.DlqDeletion removed = cleanupAfterReplay(dlqId, response);
+                response.put("status", fullyGone(removed) ? "resolved" : "resolved-entry-kept");
+                if (!fullyGone(removed)) {
+                    // The delete walks a Mango selector; a rebuilding index removes nothing.
+                    // Saying "resolved" alone left the row to reappear in the next listing
+                    // with no hint of why. A review found the return value ignored here.
+                    response.putIfAbsent("entryKeptNote", "the import was resolved but no stored"
+                            + " row was returned to delete, or the store did not confirm the"
+                            + " delete; the entry may reappear until the index catches up");
+                }
                 if (result.objectId() != null) response.put("objectId", result.objectId());
                 response.put("skipReason", result.skipReason());
             } else if (result.isSuccess()) {
-                ingestJobService.deleteDlqEntry(dlqId);
-                response.put("status", "success");
+                IngestJobService.DlqDeletion removed = cleanupAfterReplay(dlqId, response);
+                response.put("status", fullyGone(removed) ? "success" : "success-entry-kept");
+                if (!fullyGone(removed)) {
+                    response.putIfAbsent("entryKeptNote", "the import succeeded but no stored row"
+                            + " was returned to delete, or the store did not confirm the delete;"
+                            + " the entry may reappear until the index catches up");
+                }
                 response.put("objectId", result.objectId());
             } else {
+                // A PERMANENT refusal must not read as a failed attempt. "200 + failed +
+                // retryCount" says "try again"; an authorisation refusal will answer the same
+                // way forever. The branch's write-point re-authorisation made this reachable:
+                // this door is bound to the DEFAULT repository (AuthenticationFilter maps
+                // /v1/admin/* that way), the replayed request carries its ORIGINAL one, and
+                // the confinement check runs before the admin short-circuit — so replaying a
+                // delegated entry of another repository is refused every time. A review found
+                // it answering 200. The same classifier the ingest door uses decides, so the
+                // two doors cannot drift apart.
+                HttpStatus refusal = ExternalIngestController.classifyErrorStatus(result);
+                if (refusal == HttpStatus.FORBIDDEN) {
+                    return errorResponse(HttpStatus.FORBIDDEN, (result.errors() == null
+                            || result.errors().isEmpty() ? "the retry was refused"
+                                    : result.errors().get(0))
+                            + "; the entry is kept and nothing was imported");
+                }
                 response.put("status", "failed");
                 response.put("errors", result.errors());
-                response.put("retryCount", dlq.getRetryCount() + 1);
+                // reserveDlqRetry already incremented this object AND persisted it, so adding
+                // one again reported N+2 for a row that stores N+1 — the answer was stronger
+                // than the stored fact. Two reviewers found it.
+                response.put("retryCount", dlq.getRetryCount());
             }
             return ResponseEntity.ok(response);
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException
+                | ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused) {
+            // This catch-all made the handler below unreachable: the one call in this
+            // controller that can raise a typed refusal sits inside it, so a retry of an
+            // entry whose connector row cannot be read answered 500, "our bug", for a
+            // condition a retry fixes. A review found the handler was dead code.
+            throw refused;
         } catch (Exception e) {
             return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
                     "Retry failed: " + e.getMessage());
@@ -185,9 +414,29 @@ public class IngestDlqController {
     @DeleteMapping("/dlq/{dlqId}")
     public ResponseEntity<?> deleteDlqEntry(@PathVariable String dlqId) {
         if (!isAdmin()) return forbidden();
-        ingestJobService.deleteDlqEntry(dlqId);
+        // "success" used to be unconditional. The delete walks a Mango selector, so an index
+        // that is rebuilding returns no row, nothing is deleted, and the operator is told the
+        // entry is gone — while it is still there and will be back in the next listing. The
+        // purge sibling was given this exact distinction a round earlier; a review found the
+        // single delete still asserting it.
+        IngestJobService.DlqDeletion deleted = ingestJobService.deleteDlqEntry(dlqId);
         Map<String, Object> response = new LinkedHashMap<>();
+        if (!deleted.complete()) {
+            // Rows the store did not confirm gone are still there. Not success, and not "no
+            // such row": a retry settles it. Codex found the twin-row case still answering
+            // success after single rows were fixed.
+            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, "the store did not confirm the"
+                    + " delete of " + deleted.unconfirmed() + " row(s) of DLQ entry " + dlqId
+                    + " (" + deleted.confirmed() + " confirmed); the entry is not gone, retry"
+                    + " shortly");
+        }
+        if (deleted.confirmed() == 0) {
+            return errorResponse(HttpStatus.NOT_FOUND, "no stored row of DLQ entry " + dlqId
+                    + " was returned to delete; nothing was deleted. If the entry is still"
+                    + " listed, the index has not caught up with it yet");
+        }
         response.put("status", "success");
+        response.put("deleted", deleted.confirmed());
         return ResponseEntity.ok(response);
     }
 
@@ -204,6 +453,22 @@ public class IngestDlqController {
         }
         ConnectorDefinition connector = connectorDefinitionService.get(request.getConnectorId());
         if (connector == null) {
+            // A retry that answers "not found" for a connector the rebuilding index cannot
+            // show records a wrong reason against the entry — it stays in the queue (only a
+            // skip or a success takes it out), but the operator reads "no such connector" for
+            // one that is there. Ask index-free before saying it. (The first version of this
+            // comment said the entry would be moved out; a review checked and it is not.)
+            try {
+                if (connectorDefinitionService.existsIndexFree(request.getConnectorId())) {
+                    return ExternalIngestResult.error(request.getRequestId(), "connector '"
+                            + request.getConnectorId() + "' exists but could not be read;"
+                            + " retry shortly");
+                }
+            } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException e) {
+                return ExternalIngestResult.error(request.getRequestId(), "whether connector '"
+                        + request.getConnectorId() + "' exists could not be established;"
+                        + " retry shortly: " + e.getMessage());
+            }
             return ExternalIngestResult.error(request.getRequestId(),
                     "Connector '" + request.getConnectorId() + "' not found — cannot determine import flow for retry");
         }
@@ -250,5 +515,58 @@ public class IngestDlqController {
     private ResponseEntity<?> errorResponse(HttpStatus status, String message) {
         return ResponseEntity.status(status)
                 .body(Map.of("status", "error", "message", message));
+    }
+
+    /** Gone only when at least one row was confirmed deleted and none was left unconfirmed. */
+    private static boolean fullyGone(IngestJobService.DlqDeletion removed) {
+        return removed.confirmed() > 0 && removed.complete();
+    }
+
+    /**
+     * The cleanup after a replay the import has ALREADY resolved or succeeded. A store that
+     * did not answer it used to fall into this method's catch-all and answer 500 "Retry
+     * failed" — for an import that landed, with the row still there to be resolved by the next
+     * replay. Not a failure of the retry: the entry is kept, and the answer says why (R37).
+     */
+    private IngestJobService.DlqDeletion cleanupAfterReplay(String dlqId,
+            Map<String, Object> response) {
+        try {
+            return ingestJobService.deleteDlqEntry(dlqId);
+        } catch (IngestJobService.IngestStoreDidNotAnswerException couldNotAsk) {
+            response.put("entryKeptNote", "the import landed, but the store did not answer the"
+                    + " cleanup of this entry (" + couldNotAsk.getMessage() + "); the entry is"
+                    + " kept and the next replay resolves it");
+            return new IngestJobService.DlqDeletion(0, 1);
+        }
+    }
+
+    /**
+     * A stored entry this node could not read is a retry, never "there is no such entry" —
+     * and so is a store that answered without a document list (the listings, the jobs
+     * endpoints and the single delete all read through {@code findRawDocs}).
+     *
+     * <p>Inserted between the block below and the method it documents, this handler took that
+     * block's javadoc and left {@code definitionRowsCouldNotBeRead} with none — Java attaches
+     * the last preceding doc comment. A review caught it in the round that added this method,
+     * and the sibling paragraph in the scheduler controller carries the same warning: if you
+     * insert a method here, check which comment its neighbour ends up with.
+     */
+    @ExceptionHandler({IngestJobService.DlqEntryUnreadableException.class,
+            IngestJobService.IngestStoreDidNotAnswerException.class})
+    public ResponseEntity<?> dlqEntryCouldNotBeRead(RuntimeException e) {
+        return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
+    }
+
+    /**
+     * The typed "this row could not be read" refusals reach this controller from the
+     * connector and profile services with nothing catching them, and Spring answers 500 —
+     * "our bug" for a condition whose whole point is that a retry fixes it. The definition
+     * APIs have had this floor since the batch began; a review found the DLQ, ingest and
+     * webhook controllers without it. Endpoints that map these themselves keep their mapping.
+     */
+    @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+            ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})
+    public ResponseEntity<?> definitionRowsCouldNotBeRead(RuntimeException e) {
+        return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
     }
 }

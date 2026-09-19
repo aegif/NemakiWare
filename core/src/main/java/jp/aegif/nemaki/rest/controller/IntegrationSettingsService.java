@@ -44,6 +44,75 @@ public class IntegrationSettingsService {
 	}
 
 	/**
+	 * A stored setting this node could not read is never the same answer as "no such setting".
+	 *
+	 * <p>{@code readSetting} returns {@code null} for both, because {@code
+	 * ContentDaoServiceImpl} answers a failed {@code nemaki_conf} read with an EMPTY
+	 * {@code Configuration} carrying {@code loadFailed=true}, and {@code PropertyManager}
+	 * ignores that flag. Two callers then state a fact the read never established: the ingest
+	 * idempotency record ("this request has not been completed before" — after which a
+	 * {@code dedupePolicy=replace} request DELETES the document a previous run committed) and
+	 * the connector checkpoints ("this profile has never polled" — after which the poll takes
+	 * only the first page, treats every item as new, and advances the checkpoint past the
+	 * older items it never listed, filtering them out for good). Three reviews reported the
+	 * pair; the first two rounds recorded it as a residual for a later batch.
+	 *
+	 * <p>The flag is consulted ONLY when the value could not be resolved at all. A key
+	 * satisfied by a system property, an environment variable or the properties file is
+	 * answered from there and never reaches the store, so an outage must not refuse it.
+	 *
+	 * <p>SCOPE. A previous version of this note said {@code readValue} consults
+	 * {@code nemaki_conf} only for the five admin-managed prefixes. THAT IS FALSE, and a review
+	 * caught it: the admin-managed check is only the FIRST of two dynamic reads, and the second
+	 * runs for every key that no system property or environment variable answered. So
+	 * {@code loadFailed} is about this key's own read after all — which is what the second arm
+	 * below assumes. The note was written from reading the top of the method and not the rest.
+	 *
+	 * @throws SettingUnreadableException when the key resolved nowhere AND the configuration
+	 *         database did not answer. Callers that would otherwise assert an absence must let
+	 *         it out.
+	 */
+	public String readSettingOrRefuse(String key) {
+		// Through readSetting, not straight to the PropertyManager: test doubles and any
+		// future subclass override the one read path, and going around it made seven test
+		// classes NPE on a manager they never needed.
+		String value;
+		try {
+			value = readSetting(key);
+		} catch (RuntimeException couldNotRead) {
+			// A read that THREW is a failed read. Only the loadFailed sentinel was converted,
+			// so an exception fell through to the caller's generic catch — and the idempotency
+			// caller's catch leaves idempSkip=false, after which a dedupePolicy=replace request
+			// DELETES the document a previous run committed. That is the batch's own headline
+			// defect, reached through the arm added to close it. Codex found it.
+			throw new SettingUnreadableException("the stored value of '" + key
+					+ "' could not be read: " + couldNotRead.getMessage() + "; retry shortly");
+		}
+		if (value != null) return value;
+		if (propertyManager == null) return null;
+		jp.aegif.nemaki.model.Configuration conf;
+		try {
+			conf = propertyManager.getConfiguration(SystemConst.NEMAKI_CONF_DB);
+		} catch (RuntimeException couldNotAsk) {
+			throw new SettingUnreadableException("whether '" + key + "' is stored could not be"
+					+ " established: " + couldNotAsk.getMessage() + "; retry shortly");
+		}
+		if (conf != null && conf.isLoadFailed()) {
+			throw new SettingUnreadableException("the stored value of '" + key
+					+ "' could not be read: the configuration database did not answer");
+		}
+		return value;
+	}
+
+	/** A setting this node could not read — never the same answer as "there is none". */
+	public static class SettingUnreadableException extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+		public SettingUnreadableException(String message) {
+			super(message);
+		}
+	}
+
+	/**
 	 * Determines the source of the current effective value for a given key.
 	 *
 	 * @return one of "system_property", "environment", "couchdb", "properties_file", or "none"

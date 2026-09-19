@@ -108,6 +108,18 @@ public class ArchiveResource {
             
             while (filteredArchives.size() <= maxItems) {
                 List<Archive> batch = contentService.getArchives(repositoryId, fetchSkip, fetchSize, desc);
+                // The listing COUNTS undecodable rows instead of throwing; the consumer must
+                // read the counter (same contract as getChildren). Without this, one broken
+                // row shortened the batch, "batch.size() < fetchSize" read as the last page,
+                // and the response presented the remainder as the WHOLE trash with
+                // hasMoreItems=false — one row's damage amplified into hiding everything
+                // after it. emptyTrash in this same file reads the counter; the listing arm
+                // did not.
+                if (contentService.lastUnreadableArchiveCount() > 0) {
+                    throw new IllegalStateException(contentService.lastUnreadableArchiveCount()
+                            + " archive row(s) could not be read; serving this page as the"
+                            + " trash would hide every archive behind the broken row");
+                }
                 if (batch == null || batch.isEmpty()) {
                     break;
                 }
@@ -367,6 +379,11 @@ public class ArchiveResource {
         
         try {
             List<Archive> allArchives = contentService.getArchives(repositoryId, null, null, false);
+            // Rows the archive view returned and the DAO could not decode are archives that
+            // EXIST. Destroying only the visible ones and answering "Trash emptied
+            // successfully" reports a bin as empty while it still holds them — the operator
+            // stops looking exactly because the message said done.
+            int unreadable = contentService.lastUnreadableArchiveCount();
             int deletedCount = 0;
             
             if (CollectionUtils.isNotEmpty(allArchives)) {
@@ -382,7 +399,10 @@ public class ArchiveResource {
             
             EmptyTrashResponse response = new EmptyTrashResponse();
             response.setDeletedCount(deletedCount);
-            response.setMessage("Trash emptied successfully");
+            response.setMessage(unreadable > 0
+                    ? "Trash partially emptied: " + unreadable + " archive row(s) could not be"
+                            + " read and were NOT destroyed; they are still in the trash"
+                    : "Trash emptied successfully");
             
             return Response.ok(response).build();
             

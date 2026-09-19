@@ -124,6 +124,19 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
             return;
         }
 
+        // Declare the provisioning window rather than letting the store layer guess it from
+        // thread names: inside it a missing database or design document is expected, outside
+        // it the same answer is a failure that must not read as "no data".
+        StartupPhase.begin();
+        try {
+            provisionDatabases(event);
+        } finally {
+            StartupPhase.end();
+        }
+    }
+
+    private void provisionDatabases(ContextRefreshedEvent event) {
+
         // CRITICAL: If Setup Wizard is active, defer database initialization.
         // The Setup Wizard will create databases via the apply endpoint instead.
         try {

@@ -1557,6 +1557,15 @@ public class AuthTokenResource extends ResourceBase{
 			// Search for existing users folder
 			java.util.List<jp.aegif.nemaki.model.Content> children =
 					contentService.getChildren(repositoryId, systemFolder.getId());
+			// Same find-or-create rule as ContentServiceImpl.getOrCreateSystemSubFolder: a
+			// short listing may be hiding the very folder this scan is looking for, and
+			// creating a second one on that blindness is the duplicate-.system shape again.
+			if (contentService.lastUnreadableChildCount() > 0) {
+				throw new IllegalStateException("the .system folder's listing is incomplete ("
+						+ contentService.lastUnreadableChildCount() + " child row(s) could not"
+						+ " be read), so whether a 'users' folder already exists is unknown;"
+						+ " refusing to create a possible duplicate");
+			}
 			if (children != null) {
 				for (jp.aegif.nemaki.model.Content child : children) {
 					if ("users".equals(child.getName()) && child instanceof Folder) {

@@ -15,7 +15,11 @@ import { AuthService } from './auth';
 
 export interface RAGReindexStatus {
   repositoryId: string;
-  status: 'idle' | 'running' | 'completed' | 'error' | 'cancelled';
+  // 'completed_with_errors': the walk finished but dropped folders, so the index was cleared
+  // and rebuilt WITHOUT part of the repository. Not 'completed' — the server stopped calling
+  // that outcome complete, and a UI that renders it as a bare unstyled tag hands the operator
+  // the same reassurance the server just took away.
+  status: 'idle' | 'running' | 'completed' | 'completed_with_errors' | 'error' | 'cancelled';
   totalDocuments: number;
   indexedCount: number;
   skippedCount: number;

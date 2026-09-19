@@ -1959,6 +1959,7 @@
       "idle": "待機中",
       "running": "実行中",
       "completed": "完了",
+      "completedWithErrors": "一部を残して完了",
       "error": "エラー",
       "cancelled": "キャンセル"
     },
@@ -2941,6 +2942,7 @@
       "disabledNotice": "Microsoft Purview 連携は現在無効です。"
     },
     "lineage": {
+      "undecodableRows": "{{count}} 件の行が読めず、この一覧に入っていません。「存在しない」という判定ではありません。",
       "mode": "Lineageモード",
       "modeDisabled": "無効 (保存なし)",
       "modeDirect": "ダイレクト (直送のみ)",

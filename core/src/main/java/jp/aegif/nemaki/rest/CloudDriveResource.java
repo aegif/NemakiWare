@@ -871,6 +871,16 @@ public class CloudDriveResource extends ResourceBase {
 
 			String existingObjectId = null;
 			List<jp.aegif.nemaki.model.Content> children = contentService.getChildren(repositoryId, folderId);
+			// A short listing turns this update-or-create into a duplicate CREATE: the row that
+			// would not decode may be the very document this name-match is looking for. Same
+			// rule as BulkCheckInResource and the canonical import.
+			if (contentService.lastUnreadableChildCount() > 0) {
+				throw new IllegalStateException("the target folder's listing is incomplete ("
+						+ contentService.lastUnreadableChildCount() + " child row(s) could not"
+						+ " be read), so whether '" + finalFileName + "' already exists is"
+						+ " unknown; the cloud-drive save was refused rather than risking a"
+						+ " duplicate");
+			}
 			if (children != null) {
 				for (jp.aegif.nemaki.model.Content child : children) {
 					if (child != null && finalFileName.equals(child.getName())) {

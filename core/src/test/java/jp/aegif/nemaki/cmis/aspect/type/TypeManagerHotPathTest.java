@@ -168,7 +168,8 @@ class TypeManagerHotPathTest {
                 }
             }
         }
-        throw new AssertionError("unbalanced braces after " + signature);
+        throw new jp.aegif.nemaki.util.test.HarnessBroken(
+                "unbalanced braces after " + signature);
     }
 
     private static int count(String haystack, String needle) {

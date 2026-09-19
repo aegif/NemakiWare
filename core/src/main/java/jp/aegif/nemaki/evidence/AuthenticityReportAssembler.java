@@ -126,7 +126,22 @@ public class AuthenticityReportAssembler {
         }
 
         sections.add(identitySection(content, includeInternalOnly));
-        sections.add(contentSection(repositoryId, content));
+        // Wrapped. Every other section catches its own failures and answers UNAVAILABLE;
+        // this one does not, and its work includes opening the attachment stream — so one
+        // unreadable attachment took the WHOLE report down, and an operator asking "what do we
+        // know about this record" got an exception instead of the eight sections that had
+        // nothing to do with the bytes.
+        try {
+            sections.add(contentSection(repositoryId, content));
+        } catch (RuntimeException e) {
+            logger.warn("The content section of the authenticity report for {} failed: {}",
+                    repositoryId, e.getMessage());
+            sections.add(new Section("content", Verdict.UNAVAILABLE,
+                    Map.of("reason", String.valueOf(e.getMessage())),
+                    "The stored bytes could not be examined, so they were not checked. This is "
+                            + "NOT a finding that they are damaged, and the other sections of "
+                            + "this report were built normally."));
+        }
         sections.add(custodySection(repositoryId, objectId));
         sections.add(ledgerSection(repositoryId));
         sections.add(duplicationSection(repositoryId, objectId));
@@ -337,14 +352,40 @@ public class AuthenticityReportAssembler {
         long highest;
         try {
             highest = ledgerStore.highestSequence(domain);
+            // LIMIT + 1, not LIMIT. The window is exactly LEDGER_ENTRY_LIMIT sequences wide, so
+            // at a full window a FORK — two rows at one sequence, which is what this section
+            // exists to report — makes LIMIT + 1 rows, CouchDB returns the first LIMIT, and the
+            // extra arm is cut off. The verifier only compares ADJACENT entries, so it sees an
+            // unbroken chain and this section answers VERIFIED over a forked ledger.
+            //
+            // EvidenceLedgerService fixed this in closeCheckpoint and in inclusionProof, with a
+            // comment saying so. This is the third arm and it did not get it. Any repository
+            // with LEDGER_ENTRY_LIMIT entries or more is permanently in the condition.
             entries = highest < 0 ? List.of()
                     : ledgerStore.range(domain, Math.max(0, highest - LEDGER_ENTRY_LIMIT + 1),
-                            highest, LEDGER_ENTRY_LIMIT);
+                            highest, LEDGER_ENTRY_LIMIT + 1);
         } catch (Exception e) {
             logger.warn("Authenticity report could not read the ledger for {}: {}", repositoryId,
                     e.getMessage());
             return new Section("ledger", Verdict.UNAVAILABLE, Map.of("reason", e.getMessage()),
                     "The ledger could not be read, so it was not checked. " + notIndependent);
+        }
+        // Rows the store returned and could not decode are NOT in `entries`. With all of them
+        // undecodable the section says "this ledger has no entries"; with some of them, the
+        // verifier runs over a list that is missing links and can answer VERIFIED. Both are
+        // findings about the chain drawn from a read that lost part of it.
+        //
+        // Only when `range` was actually called. The counter is per-read and is reset at the
+        // START of findBySubject/range — highestSequence does not touch it — so on the
+        // `highest < 0` path this would report whatever the previous operation on this pooled
+        // request thread had left behind, and name rows nobody in this request had read.
+        int undecodable = highest < 0 ? 0 : ledgerStore.unreadableCount();
+        if (undecodable > 0) {
+            return new Section("ledger", Verdict.UNAVAILABLE,
+                    Map.of("domain", domain, "undecodableEntries", undecodable),
+                    undecodable + " ledger row(s) could not be read, so the chain was not "
+                            + "checked. This is NOT a statement that it is broken, and NOT a "
+                            + "statement that it is intact. " + notIndependent);
         }
         if (entries == null || entries.isEmpty()) {
             return new Section("ledger", Verdict.ABSENT, Map.of("domain", domain),
@@ -421,6 +462,17 @@ public class AuthenticityReportAssembler {
         // not in what we read. Answering ABSENT there would say "no copy of this record in
         // another format is recorded" with the PDF sitting beside it, which is the reading
         // this whole section exists to prevent.
+        // Same rule as the ledger section. A duplication row that would not decode is missing
+        // from `entries`, and the ABSENT verdict below says "no copy of this record in another
+        // format is recorded" — with the copy sitting beside it.
+        int undecodable = ledgerStore.unreadableCount();
+        if (undecodable > 0) {
+            return new Section("duplications", Verdict.UNAVAILABLE,
+                    Map.of("undecodableEntries", undecodable),
+                    undecodable + " chain row(s) for this record could not be read, so it is "
+                            + "unknown whether copies of it exist in other formats. This is NOT "
+                            + "a statement that none do.");
+        }
         boolean truncated = entries.size() >= LEDGER_ENTRY_LIMIT;
         List<Map<String, Object>> rows = new java.util.ArrayList<>();
         for (EvidenceLedgerEntry entry : entries) {
@@ -450,13 +502,22 @@ public class AuthenticityReportAssembler {
         // The disclosure FIRST, before the rows. A reader skimming a block about derived copies
         // has to meet "these are not the record" before the identifiers, not after them.
         body.put("disclosure", DUPLICATION_DISCLOSURE);
-        List<Map<String, Object>> present = renditionsNow(repositoryId, objectId);
-        if (!present.isEmpty()) {
+        RenditionsNow now = renditionsNow(repositoryId, objectId);
+        if (now.unreadable()) {
+            body.put("renditionsNow", null);
+            body.put("renditionsNowUnavailable", now.unavailable());
+        } else {
             // Where these came from, BEFORE the values. They are read from the rendition rows,
             // which the chain does not cover — so a reader must not take them for chained
             // facts, and the sentence saying so has to arrive first.
             body.put("renditionsNowSource", RENDITIONS_NOW_SOURCE);
-            body.put("renditionsNow", present);
+            // The key is written even when the list is empty. It used to be omitted, which put
+            // the answered-and-empty case back where the three no-answer paths had just been
+            // taken out of: a MISSING key. A consumer that does not know this emitter's
+            // convention — the portable schema's checker, the ja/en renderer, anyone reading
+            // the stored JSON later — cannot tell an absent key from a question never asked,
+            // and the whole section exists to keep ABSENT and UNAVAILABLE apart.
+            body.put("renditionsNow", now.rows());
         }
         body.put("duplications", rows);
         body.put("count", rows.size());
@@ -475,30 +536,6 @@ public class AuthenticityReportAssembler {
         return new Section("duplications", Verdict.REPORTED, body, limits);
     }
 
-    /**
-     * What every recorded duplication is, said once where a reader will meet it.
-     *
-     * <h2>Why it does not name a format</h2>
-     *
-     * <p>The first version said "this product converts to PDF without requesting or validating
-     * a PDF/A profile". That was true while the only recorded path produced PDF. It stopped
-     * being true the moment the REST rendition stacks were wired, because two of them also
-     * produce SVG — and a reader looking at a drawing's SVG copy would have been told about
-     * PDF/A, which is not a thing an SVG could have had. Fixing the per-converter disclosure
-     * in the recorder did not reach here: this section is built from the LEDGER, and the entry
-     * carries a digest.
-     *
-     * <p>So the honest form names no format at all. What the entry does is <b>commit</b> to the
-     * converter and the target format — they are inputs to the digest — without carrying them
-     * in the clear. A party who holds those values can check this entry against them; this
-     * report cannot recover them, and saying so is better than picking the one that used to be
-     * the only possibility.
-     *
-     * <p>Putting them in the clear would mean a second field in {@link EvidenceLedgerEntry},
-     * which changes what the entry hash covers and invalidates every stored hash. Adding it
-     * OUTSIDE the hash would be worse than not having it: an annotation the chain does not
-     * commit to, presented in a report next to things it does.
-     */
     /**
      * Where the in-the-clear rendition facts come from, and what that costs them.
      *
@@ -531,19 +568,70 @@ public class AuthenticityReportAssembler {
                     + "then these are a claim by this repository, and a row edited after the fact "
                     + "would appear here exactly like an honest one.";
 
+    /**
+     * What every recorded duplication is, said once where a reader will meet it.
+     *
+     * <h2>Why it does not name a format</h2>
+     *
+     * <p>The first version said "this product converts to PDF without requesting or validating
+     * a PDF/A profile". That was true while the only recorded path produced PDF. It stopped
+     * being true the moment the REST rendition stacks were wired, because two of them also
+     * produce SVG — and a reader looking at a drawing's SVG copy would have been told about
+     * PDF/A, which is not a thing an SVG could have had. Fixing the per-converter disclosure
+     * in the recorder did not reach here: this section is built from the LEDGER, and the entry
+     * carries a digest.
+     *
+     * <p>So the honest form names no format at all. What the entry does is <b>commit</b> to the
+     * converter and the target format — they are inputs to the digest — without carrying them
+     * in the clear. A party who holds those values can check this entry against them; this
+     * report cannot recover them, and saying so is better than picking the one that used to be
+     * the only possibility.
+     *
+     * <p>Putting them in the clear would mean a second field in {@link EvidenceLedgerEntry},
+     * which changes what the entry hash covers and invalidates every stored hash. Adding it
+     * OUTSIDE the hash would be worse than not having it: an annotation the chain does not
+     * commit to, presented in a report next to things it does.
+     *
+     * What the duplications section does and does not establish.
+     *
+     * <h2>It used to deny, in this string, what the section carries two keys later</h2>
+     *
+     * <p>This said "no output format produced here is requested or validated against an archival
+     * profile" and "This report therefore does NOT say a copy failed such a check, and does NOT
+     * say one passed". Both became false when P3-2 §10–§12 wired {@code
+     * rendition.pdfa.validate.flavour} and veraPDF: the section's own rows now carry
+     * {@code archivalProfileChecked} / {@code archivalProfileOutcome} / {@code
+     * archivalProfileFlavour} in the clear, so one map said {@code CONFORMS} beside a sentence
+     * saying it does not say that.
+     *
+     * <p>P3-2 §10's rule is that a disclosure REPLACES rather than accumulates — only one of two
+     * sentences is true of any one copy — and §9 records this exact split (converter side fixed,
+     * report side not) happening once before. It happened again, which is why the wording below
+     * is written as a description of the KEYS the section emits rather than as a standing denial.
+     */
     static final String DUPLICATION_DISCLOSURE =
             "These are CONVENIENCE COPIES, not preservation formats and not additional records. "
                     + "What a copy preserves depends on the converter and on the format it was "
                     + "produced in: layout, fonts, comments, tracked changes, embedded objects, "
                     + "CAD layers and diagram structure are among the things that may not "
-                    + "survive, and no output format produced here is requested or validated "
-                    + "against an archival profile. The chain entry COMMITS to which converter "
-                    + "and which format — they are inputs to its digest — but does not carry "
-                    + "them in the clear, so this report cannot tell you which applied to any "
-                    + "one copy below — and the same is true of whether a copy was checked "
-                    + "against an archival profile such as PDF/A, and of what that check found. "
-                    + "This report therefore does NOT say a copy failed such a check, and does "
-                    + "NOT say one passed. The ORIGINAL is unchanged and remains the record.";
+                    + "survive. The chain entry COMMITS to which converter and which format — "
+                    + "they are inputs to its digest — but does not carry them in the clear, so "
+                    + "this report cannot tell you which applied to any one copy below. An "
+                    + "archival-profile check (PDF/A via veraPDF) runs only where this "
+                    + "deployment configures one; where it ran, each copy below carries its "
+                    + "verdict as archivalProfileOutcome, and where archivalProfileChecked is "
+                    + "false NOTHING WAS CHECKED — which is a statement about this deployment's "
+                    + "configuration, not a finding about the copy. A verdict here is veraPDF's "
+                    + "on the bytes produced, and says nothing about whether a convenience copy "
+                    + "is a suitable preservation copy. The ORIGINAL is unchanged and remains "
+                    + "the record.";
+
+    /** Rows, or the reason there are none — the two are not the same answer. */
+    private record RenditionsNow(List<Map<String, Object>> rows, String unavailable) {
+        boolean unreadable() {
+            return unavailable != null;
+        }
+    }
 
     /**
      * The derived copies this object carries now, with what was found about each.
@@ -551,9 +639,14 @@ public class AuthenticityReportAssembler {
      * <p>Deliberately separate from the chained entries above: those are what was recorded,
      * these are what is here. Merging them would let a mutable row borrow the chain's standing.
      */
-    private List<Map<String, Object>> renditionsNow(String repositoryId, String objectId) {
+    private RenditionsNow renditionsNow(String repositoryId, String objectId) {
+        // Both no-answer paths used to return List.of(), so the `renditionsNow` key was simply
+        // omitted -- and "could not read them" was indistinguishable from "there are none", in
+        // the one section built entirely around that distinction (ABSENT vs UNAVAILABLE).
         if (contentService == null) {
-            return List.of();
+            return new RenditionsNow(List.of(), "the content service is not wired on this node, "
+                    + "so the copies this object carries NOW could not be listed. That is NOT a "
+                    + "finding that it carries none");
         }
         List<jp.aegif.nemaki.model.Rendition> renditions;
         try {
@@ -561,10 +654,16 @@ public class AuthenticityReportAssembler {
         } catch (RuntimeException e) {
             logger.warn("The renditions of {}/{} could not be read for the report: {}",
                     repositoryId, objectId, e.getMessage());
-            return List.of();
+            return new RenditionsNow(List.of(), "the copies this object carries now could not "
+                    + "be read (" + e.getMessage() + "). That is NOT a finding that it carries "
+                    + "none");
         }
         if (renditions == null) {
-            return List.of();
+            // A null answer is the service declining to say, not a statement that there are
+            // none -- the third of three no-answer paths, and the one easiest to read as empty.
+            return new RenditionsNow(List.of(), "the content service returned no answer about "
+                    + "the copies this object carries now. That is NOT a finding that it "
+                    + "carries none");
         }
         List<Map<String, Object>> rows = new java.util.ArrayList<>();
         for (jp.aegif.nemaki.model.Rendition rendition : renditions) {
@@ -578,22 +677,37 @@ public class AuthenticityReportAssembler {
             row.put("archivalProfileFlavour", rendition.getPdfaFlavour());
             rows.add(row);
         }
-        return rows;
+        return new RenditionsNow(rows, null);
     }
 
     private Section versionsSection(Content content) {
+        if (content == null) {
+            // NOT ABSENT. `null instanceof Document` is false, so a CouchDB outage or an
+            // unwired content service used to come out here as ABSENT -- which this report
+            // defines as "there is genuinely nothing of this kind for this object". The report
+            // affirmed the object is not a document, on the strength of a database failure.
+            // identity and content both treat the same input as UNAVAILABLE; versions was the
+            // one arm of the fan-out that was missed, and the test that covers this input
+            // asserts on identity only (p1-4 AC6).
+            return new Section("versions", Verdict.UNAVAILABLE, Map.of(),
+                    "This object could not be read, so nothing is known about a version series "
+                            + "for it. That is NOT a finding that it has none.");
+        }
         if (!(content instanceof Document document)) {
             return new Section("versions", Verdict.ABSENT, Map.of(),
-                    "Only documents carry a version series.");
+                    "Only documents carry a version series, and this object was read and is "
+                            + "not one.");
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("versionSeriesId", document.getVersionSeriesId());
         body.put("versionLabel", document.getVersionLabel());
         body.put("latestVersion", document.isLatestVersion());
         return new Section("versions", Verdict.REPORTED, body,
-                "The version series as this repository holds it. This lists WHICH versions "
-                        + "exist; it does not say what changed between them, and it does not "
-                        + "establish that no version was removed.");
+                // "This lists WHICH versions exist" was here, and this body holds one label for
+                // the one object asked about -- it lists nothing.
+                "Where this object sits in its version series, as this repository holds it. "
+                        + "It does NOT list the other versions, does not say what changed "
+                        + "between them, and does not establish that none was removed.");
     }
 
     private Section environmentSection() {

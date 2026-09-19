@@ -31,6 +31,15 @@ class CanonicalImportServiceTest {
     @BeforeEach
     void setUp() {
         service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to create
+        // one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolderDao =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolderDao.getChildren(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolderDao);
         connectorService = mock(ConnectorDefinitionService.class);
         profileService = mock(ImportProfileDefinitionService.class);
         objectService = mock(ObjectService.class);
@@ -45,6 +54,15 @@ class CanonicalImportServiceTest {
         service.setContentService(contentService);
         service.setVersioningService(versioningService);
         service.setIngestMetadataService(ingestMetadataService);
+        lenient().when(connectorService.countIndexFree(anyString())).thenReturn(1);
+        lenient().doAnswer(inv -> {
+            ImportProfileDefinition row = profileService.get(inv.getArgument(0));
+            String repo = inv.getArgument(1);
+            if (row != null && repo != null && repo.equals(row.getRepositoryId())) {
+                return row;
+            }
+            return null;
+        }).when(profileService).getForRepository(anyString(), anyString());
     }
 
     @Test
@@ -66,6 +84,7 @@ class CanonicalImportServiceTest {
         ImportProfileDefinition profile = new ImportProfileDefinition();
         profile.setProfileId("p1");
         profile.setEnabled(false);
+        profile.setRepositoryId("bedroom");
         when(profileService.get("p1")).thenReturn(profile);
 
         ExternalIngestRequest req = new ExternalIngestRequest();
@@ -84,6 +103,10 @@ class CanonicalImportServiceTest {
         ImportProfileDefinition profile = new ImportProfileDefinition();
         profile.setProfileId("p1");
         profile.setEnabled(true);
+        // A profile bound to no repository is no longer usable from one: the confinement
+        // check read "repositoryId != null && !equals(caller)", so a row with none acted as a
+        // wildcard for every repository. These fixtures were relying on that.
+        profile.setRepositoryId("bedroom");
         when(profileService.get("p1")).thenReturn(profile);
         when(connectorService.get("no-conn")).thenReturn(null);
 
@@ -151,6 +174,670 @@ class CanonicalImportServiceTest {
     }
 
     @Test
+    void testDelegatedImportReAsksTheAuthorizationAtTheWrite() {
+        // The stamps only reach requests the manual gate built. The scheduler, the webhook and
+        // IDLE authorise a delegated profile and then construct their own requests in a dozen
+        // orchestrators, so a target that moved between their check and this write was never
+        // re-examined. A review enumerated those paths; the authorisation is re-asked here,
+        // against the folder the write actually lands in.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(false);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(),
+                "a delegated import wrote into a folder the caller no longer holds cmis:all on");
+        assertTrue(result.errors().get(0).contains("cmis:all"),
+                "the refusal does not name the authorisation: " + result.errors().get(0));
+        verify(contentService, never()).update(any(), any(), any());
+    }
+
+    @Test
+    void testAnAdministratorOfAnotherRepositoryIsStillRefused() {
+        // The administrator exemption was wider than the one it was copied from:
+        // canManageProfileForFolder checks repository confinement BEFORE its own admin
+        // short-circuit, and returning early skipped it — so an administrator authenticated in
+        // one repository passed for a delegated profile requested in another. A review found
+        // the difference.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAdmin(any())).thenReturn(true);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(false);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(true);
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(),
+                "an administrator of another repository imported into this one");
+        assertTrue(result.errors().get(0).contains("not the repository this caller"),
+                "the refusal does not name the confinement: " + result.errors().get(0));
+    }
+
+    @Test
+    void testAnUnresolvableConnectorRefusesTheLinkInsteadOfSkippingTheCheck() {
+        // get() answers null for an absent connector and for a read that failed alike, and
+        // that null used to be passed on — which SKIPPED the connector half of the link's
+        // authorisation. A review named the fail-open my own fix had left.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        when(connectorService.get("c1")).thenReturn(null);   // absent, or unreadable
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(true);
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+
+        String error = service.createDirectRelationshipAuthorizedForTest(testContext(), "bedroom",
+                "src-1", "tgt-1", "cmis:relationship",
+                jp.aegif.nemaki.rest.ingest.capture.CaptureScope.inactive(), null, req);
+
+        assertTrue(error != null && error.contains("could not be resolved"),
+                "a link was created with the connector half of the check skipped: " + error);
+        verify(objectService, never()).createRelationship(any(), anyString(), any(), any(),
+                any(), any(), any());
+    }
+
+    @Test
+    void testAProfileGoneDuringTheImportIsAWarningNotA500() {
+        // The resolution refusal used to escape to the wrapper's top-level catch, so a link
+        // that could not be authorised turned the whole import into a 500 — after the object
+        // was already committed. Relationship failures are reported as warnings; this is one.
+        doReturn(null).when(profileService).getForRepository("p1", "bedroom");
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setRepositoryId("bedroom");
+
+        String error = org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> service.createDirectRelationshipAuthorizedForTest(testContext(), "bedroom",
+                        "src-1", "tgt-1", "cmis:relationship",
+                        jp.aegif.nemaki.rest.ingest.capture.CaptureScope.inactive(), null, req),
+                "a link that could not be authorised took the whole import down");
+
+        assertTrue(error != null && error.contains("no longer has a row"),
+                "the refusal does not say why the link was not created: " + error);
+    }
+
+    @Test
+    void testARevokedDelegationStopsTheRelationshipCreation() {
+        // The existence check inside createDirectRelationship is a read and the creation is a
+        // write, and nothing re-asked in between — a review called that a release blocker,
+        // because it is not the irreducible instant before a write but an avoidable database
+        // read placed after the last authorisation. The link now authorises against the row
+        // that is current at the moment it is created.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(false);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setRepositoryId("bedroom");
+
+        String error = service.createDirectRelationshipAuthorizedForTest(testContext(), "bedroom",
+                "src-1", "tgt-1", "cmis:relationship",
+                jp.aegif.nemaki.rest.ingest.capture.CaptureScope.inactive(),
+                service.relationshipAuthorizingProfileForTest(req), req);
+
+        assertTrue(error != null && error.contains("cmis:all"),
+                "a link was created for a delegation that had been revoked: " + error);
+        verify(objectService, never()).createRelationship(any(), anyString(), any(), any(),
+                any(), any(), any());
+    }
+
+    @Test
+    void testARevokeDuringTheRelationshipListingStillStopsTheWrite() {
+        // The last read inside the write phase: replace_relationships_on_resync enumerated a
+        // page and deleted from it in the same loop, so a revoke landing during the listing
+        // was not seen by the deletions that followed. The plan is now formed as a read, the
+        // authorisation is re-asked, and only then is the snapshot deleted. A review found it.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        delegated.setDedupePolicy("replace_relationships_on_resync");
+        delegated.setDedupeMatchBy("filename");   // the child below matches by name
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+
+        // An existing document, so the resync branch is taken at all.
+        jp.aegif.nemaki.model.Document existing = new jp.aegif.nemaki.model.Document();
+        existing.setId("doc-1");
+        existing.setName("a.txt");
+        existing.setObjectType("cmis:document");
+        jp.aegif.nemaki.dao.ContentDaoService dao =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        service.setContentDaoService(dao);
+        when(dao.getChildren(anyString(), anyString())).thenReturn(List.of(existing));
+
+        java.util.concurrent.atomic.AtomicBoolean revoked =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        jp.aegif.nemaki.cmis.service.RelationshipService rels =
+                mock(jp.aegif.nemaki.cmis.service.RelationshipService.class);
+        // The revoke lands WHILE the relationships are enumerated.
+        when(rels.getObjectRelationships(any(), anyString(), anyString(), anyBoolean(), any(),
+                any(), any(), anyBoolean(), any(), any(), any())).thenAnswer(inv -> {
+                    revoked.set(true);
+                    return null;
+                });
+        service.setRelationshipService(rels);
+
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString()))
+                .thenAnswer(inv -> !revoked.get());
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+        req.setFileName("a.txt");
+        req.setMimeType("text/plain");
+        req.setContentStream(new java.io.ByteArrayInputStream("hello".getBytes()));
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(),
+                "a revoke that landed during the relationship listing did not stop the write");
+        verify(objectService, never()).deleteObject(any(), anyString(), anyString(),
+                anyBoolean(), any());
+    }
+
+    @Test
+    void testARevokeDuringTheDedupeReadStillStopsTheWrite() {
+        // Placement, not presence. The check was moved out of the content-stream branch but
+        // still ran BEFORE the dedupe listing and the idempotency record were read, so a
+        // revoke landing during those reads was not seen by the deletions and writes that
+        // follow them. A review named the interval. The revoke here is triggered by the
+        // dedupe read itself, so the test fails if the check moves back above it.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+
+        java.util.concurrent.atomic.AtomicBoolean revoked =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        // The revoke lands WHILE the dedupe listing is read.
+        jp.aegif.nemaki.dao.ContentDaoService dao =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        service.setContentDaoService(dao);
+        when(dao.getChildren(anyString(), anyString())).thenAnswer(inv -> {
+            revoked.set(true);
+            return java.util.List.of();
+        });
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString()))
+                .thenAnswer(inv -> !revoked.get());
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+        req.setFileName("a.txt");
+        req.setMimeType("text/plain");
+        req.setContentStream(new java.io.ByteArrayInputStream("hello".getBytes()));
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(),
+                "a revoke that landed during the dedupe read did not stop the write");
+        assertTrue(String.valueOf(result.errors()).contains("cmis:all"),
+                "the refusal does not name the authorisation: " + result.errors());
+        verify(contentService, never()).update(any(), any(), any());
+    }
+
+    @Test
+    void testAnImportWithNoContentStreamIsAlsoReChecked() {
+        // The second call sat inside the content-stream branch, so an import with no stream
+        // got only the first check — and the mutations after it (idempotency-record deletion,
+        // document deletion, checkout, creation) ran on that one decision. A review named the
+        // branch. The check now runs after the content buffer, the dedupe listing, the
+        // idempotency record and the resync plan, and before the writes those decide —
+        // stream or no stream. (The relationship path re-asks separately.)
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString()))
+                .thenReturn(true).thenReturn(false);   // revoked after the reads
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");   // no content stream
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(),
+                "a content-less import was written on a decision taken before the reads");
+        assertTrue(String.valueOf(result.errors()).contains("cmis:all"),
+                "the refusal does not name the authorisation: " + result.errors());
+        verify(contentService, never()).update(any(), any(), any());
+    }
+
+    @Test
+    void testAnAdministratorIsNotSubjectToTheDelegatedRecheck() {
+        // The REST gate bypasses delegated authorisation for administrators on purpose, and
+        // canUseConnectorForDelegatedProfile has no administrator shortcut — it applies
+        // allowedPrincipalIds to them. Sending every delegated profile through it refused
+        // admin-only paths: the folder Run endpoint and DLQ replay. A review measured the
+        // over-throw my own fix had introduced.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.isAdmin(any())).thenReturn(true);
+        // Both would refuse a non-admin. The administrator must not reach them at all.
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(false);
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(false);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(String.valueOf(result.errors()).contains("no longer delegated"),
+                "an administrator was refused by the delegated re-check: " + result.errors());
+        assertFalse(String.valueOf(result.errors()).contains("cmis:all"),
+                "an administrator was refused by the delegated re-check: " + result.errors());
+    }
+
+    @Test
+    void testTheDelegationIsReAskedAfterTheContentIsRead() {
+        // One check before the stream is read is a snapshot, not a write-point check: reading
+        // a large attachment is the long part of this method, and a revoke that lands during
+        // it was authorised by a decision taken minutes earlier. A review said so. This does
+        // not make it atomic — the gap between the second check and the write remains.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString()))
+                .thenReturn(true).thenReturn(false);   // revoked while the stream was read
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+        req.setFileName("a.txt");
+        req.setMimeType("text/plain");
+        req.setContentStream(new java.io.ByteArrayInputStream("hello".getBytes()));
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(),
+                "a revoke that landed while the content was read did not stop the write");
+        assertTrue(String.valueOf(result.errors()).contains("cmis:all"),
+                "the refusal does not name the authorisation: " + result.errors());
+        verify(contentService, never()).update(any(), any(), any());
+    }
+
+    @Test
+    void testDelegatedImportWithNoCallerIsRefused() {
+        // The first version of the write-point check was guarded on callContext != null, so an
+        // admin profile that a long automatic fetch had started under — and that became
+        // delegated while that fetch ran — arrived here delegated, with no caller, and went
+        // straight through. A verification round found the hole in the fix. There is nothing
+        // to authorise a delegated write against without a caller.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(true);
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(null, req);
+
+        assertFalse(result.isSuccess(),
+                "a delegated write ran with no caller to authorise it");
+        assertTrue(result.errors().get(0).contains("no caller"),
+                "the refusal does not say why: " + result.errors().get(0));
+    }
+
+    @Test
+    void testDelegatedImportReAsksTheConnectorDelegation() {
+        // The automatic paths check connector delegation BEFORE the fetch. Revoking it during
+        // the fetch left the subsequent write unexamined: this point re-read the connector but
+        // only for existence, enabled state, allow-listing and archetype.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(true);
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(false);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(),
+                "a write went through a connector whose delegation had been revoked");
+        assertTrue(result.errors().get(0).contains("no longer delegated"),
+                "the refusal does not name the connector: " + result.errors().get(0));
+        verify(contentService, never()).update(any(), any(), any());
+    }
+
+    @Test
+    void testDelegatedImportRefusesWhenTheAuthorizationIsNotWired() {
+        // Missing wiring refuses rather than permits: a context that stripped the service
+        // would otherwise turn every delegated import into an unchecked one.
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+        service.setIngestAuthorizationService(null);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(), "an unwired authorisation let a delegated import run");
+        assertTrue(result.errors().get(0).contains("not available"),
+                "the refusal does not say the service is missing: " + result.errors().get(0));
+    }
+
+    @Test
+    void testExecuteRefusesWhenTheAuthorizedFolderIsNotTheOneResolved() {
+        // The fingerprint compares the ROW, and a row may name a PATH instead of an id: the
+        // path re-resolves at import time, so moving the authorised folder away and putting
+        // another at the same path leaves the row identical. cmis:all was checked on an
+        // object, so the object is what is carried. A review found the gap.
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setRepositoryId("bedroom");
+        profile.setTargetFolderId("folder-now");
+        doReturn(profile).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+        req.setAuthorizedProfileFingerprint(
+                CanonicalImportServiceImpl.authorizationFingerprint(profile));
+        req.setAuthorizedTargetFolderId("folder-that-was-authorized");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(), "the write landed in a folder that was never authorised");
+        assertTrue(result.errors().get(0).contains("different target folder"),
+                "the refusal does not name the folder change: " + result.errors().get(0));
+    }
+
+    @Test
+    void testExecuteRefusesARowThatIsNotTheOneAuthorized() {
+        // The delegated gate checks cmis:all on the target folder of the row IT read; this
+        // service resolves the profile again and used whatever it found. A PUT landing
+        // between the two moves the target folder, and the updater need not be this caller —
+        // so nothing about that update authorises this caller for the new folder. The batch
+        // had deferred this on the reasoning that "the update itself required cmis:all",
+        // which answers about the wrong person; a review said so and it is closed here.
+        ImportProfileDefinition authorized = new ImportProfileDefinition();
+        authorized.setProfileId("p1");
+        authorized.setEnabled(true);
+        authorized.setRepositoryId("bedroom");
+        authorized.setTargetFolderId("folder-authorized");
+        ImportProfileDefinition moved = new ImportProfileDefinition();
+        moved.setProfileId("p1");
+        moved.setEnabled(true);
+        moved.setRepositoryId("bedroom");
+        moved.setTargetFolderId("folder-somewhere-else");
+        doReturn(moved).when(profileService).getForRepository("p1", "bedroom");
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+        req.setAuthorizedProfileFingerprint(
+                CanonicalImportServiceImpl.authorizationFingerprint(authorized));
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(),
+                "the import ran against a row the caller was never authorised for");
+        assertTrue(result.errors().get(0).contains("between authorisation and execution"),
+                "the refusal does not name the change: " + result.errors().get(0));
+        verify(contentService, never()).update(any(), any(), any());
+    }
+
+    @Test
+    void testExecuteRunsWhenTheRowIsStillTheAuthorizedOne() {
+        // The counterpart: with the fingerprint matching, the check must not refuse. Without
+        // this the fix could be "always refuse when a fingerprint is present" and the lock
+        // above would still pass.
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setRepositoryId("bedroom");
+        profile.setTargetFolderId("folder-1");
+        doReturn(profile).when(profileService).getForRepository("p1", "bedroom");
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("no-such-connector");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+        req.setAuthorizedProfileFingerprint(
+                CanonicalImportServiceImpl.authorizationFingerprint(profile));
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        // It gets past the fingerprint and fails later, on the connector — which is the point.
+        assertFalse(result.isSuccess());
+        assertFalse(result.errors().get(0).contains("between authorisation and execution"),
+                "a row that had not changed was refused as changed: " + result.errors().get(0));
+    }
+
+    @Test
+    void testExecuteRefusesAProfileBoundToNoRepository() {
+        // The non-admin gate locks this; execute() is the door an ADMIN import comes through,
+        // and it had the same hole with no lock of its own. A row with repositoryId == null is
+        // not a wildcard: the confinement check read "repositoryId != null && !equals(caller)",
+        // so it passed and served as configuration for every repository while staying
+        // invisible to the repository-confined admin API.
+        //
+        // The answer is "not found", not "scoped to repository": this door now resolves
+        // through the repository-confined index-free walk, which does not hand back an
+        // unowned row at all. What matters to the lock is that the import does not run.
+        ImportProfileDefinition unowned = new ImportProfileDefinition();
+        unowned.setProfileId("p1");
+        unowned.setEnabled(true);
+        unowned.setTargetFolderId("folder-1");
+        unowned.setRepositoryId(null);
+        when(profileService.get("p1")).thenReturn(unowned);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(), "a profile bound to no repository was used by one");
+        assertTrue(result.errors().get(0).contains("not found"),
+                "the unowned row was resolved as this repository's: " + result.errors().get(0));
+        verify(contentService, never()).update(any(), any(), any());
+    }
+
+    @Test
     void testExecuteProfileRepositoryMismatch() {
         ImportProfileDefinition profile = new ImportProfileDefinition();
         profile.setProfileId("p1");
@@ -166,7 +853,150 @@ class CanonicalImportServiceTest {
 
         ExternalIngestResult result = service.execute(testContext(), req);
         assertFalse(result.isSuccess());
-        assertTrue(result.errors().get(0).contains("scoped to repository"));
+        // The answer is now "not found", not "scoped to repository 'canopy'". The import
+        // resolves the profile for the REQUESTED repository (the same id can exist in two,
+        // and the selector returns an arbitrary one), so a repository with no row of its own
+        // is told the profile is not there — instead of being told which other repository
+        // holds it. The old wording disclosed another repository's row, which the confinement
+        // rule elsewhere in this batch deliberately avoids.
+        assertTrue(result.errors().get(0).contains("not found"),
+                "a repository with no row of this profile was told about another repository's: "
+                        + result.errors().get(0));
+    }
+
+    @Test
+    void anUnownedProfile_isReResolvedForTheCallerRepository() {
+        // get() can hand back a row with no repositoryId (the leftover migration leaves).
+        // Treating that as "already resolved" skipped getForRepository, so a valid row in
+        // the caller's repository was never used. A review named the shadow.
+        ImportProfileDefinition unowned = new ImportProfileDefinition();
+        unowned.setProfileId("p1");
+        unowned.setEnabled(true);
+        unowned.setRepositoryId(null);
+        ImportProfileDefinition mine = new ImportProfileDefinition();
+        mine.setProfileId("p1");
+        mine.setEnabled(true);
+        mine.setRepositoryId("bedroom");
+        when(profileService.get("p1")).thenReturn(unowned);
+        doReturn(mine).when(profileService).getForRepository("p1", "bedroom");
+        when(connectorService.get("no-conn")).thenReturn(null);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("no-conn");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+        assertFalse(result.isSuccess());
+        assertTrue(result.errors().get(0).contains("not found"),
+                "the caller's own row was not used after get() returned an unowned leftover: "
+                        + result.errors().get(0));
+        verify(profileService).getForRepository("p1", "bedroom");
+    }
+
+    @Test
+    void aSameRepositoryTwinPair_isRefusedNotChosenBySelectorOrder() {
+        // get() returning the caller's own repository skipped getForRepository, so a
+        // standing pair in that repository was resolved by index order. A review named it.
+        ImportProfileDefinition one = new ImportProfileDefinition();
+        one.setProfileId("p1");
+        one.setEnabled(true);
+        one.setRepositoryId("bedroom");
+        when(profileService.get("p1")).thenReturn(one);
+        doThrow(new ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException(
+                "import profile p1 has more than one definition row in repository"
+                        + " 'bedroom'; resolve the pair first"))
+                .when(profileService).getForRepository("p1", "bedroom");
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+        assertFalse(result.isSuccess());
+        assertTrue(result.errors().get(0).contains("more than one definition row"),
+                "a same-repository pair was chosen by selector order: " + result.errors().get(0));
+    }
+
+    @Test
+    void aWalkMissDoesNotResurrectASelectorRow() {
+        // resolveProfileForRepository used to return the selector row when the walk
+        // answered null. The gate treats that disagreement as retry; execute imported
+        // with a deleted or stale definition. A review named the fallback.
+        ImportProfileDefinition stale = new ImportProfileDefinition();
+        stale.setProfileId("p1");
+        stale.setEnabled(true);
+        stale.setRepositoryId("bedroom");
+        when(profileService.get("p1")).thenReturn(stale);
+        doReturn(null).when(profileService).getForRepository("p1", "bedroom");
+        when(profileService.existsIndexFree("p1", "bedroom")).thenReturn(true);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+        assertFalse(result.isSuccess());
+        assertTrue(result.errors().get(0).contains("retry shortly"),
+                "a walk miss resurrected the selector row: " + result.errors().get(0));
+    }
+
+    @Test
+    void aConnectorTwinPair_isRefusedNotChosenBySelectorOrder() {
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setRepositoryId("bedroom");
+        profile.setTargetFolderId("folder-1");
+        when(profileService.get("p1")).thenReturn(profile);
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        when(connectorService.get("c1")).thenReturn(connector);
+        when(connectorService.countIndexFree("c1")).thenReturn(2);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+        assertFalse(result.isSuccess());
+        assertTrue(result.errors().get(0).contains("more than one definition row"),
+                "a connector pair was chosen by selector order: " + result.errors().get(0));
+    }
+
+    @Test
+    void aConnectorSelectorHitWithWalkMiss_isRetryNotTheSelectorRow() {
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setRepositoryId("bedroom");
+        profile.setTargetFolderId("folder-1");
+        when(profileService.get("p1")).thenReturn(profile);
+        ConnectorDefinition leftover = new ConnectorDefinition();
+        leftover.setConnectorId("c1");
+        leftover.setEnabled(true);
+        when(connectorService.get("c1")).thenReturn(leftover);
+        when(connectorService.countIndexFree("c1")).thenReturn(0);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+        assertFalse(result.isSuccess());
+        assertTrue(result.errors().get(0).contains("retry shortly"),
+                "a selector leftover was imported after the walk said none: "
+                        + result.errors().get(0));
     }
 
     @Test
@@ -207,6 +1037,8 @@ class CanonicalImportServiceTest {
         profile.setProfileId("p1");
         profile.setEnabled(true);
         profile.setTargetFolderId(null);
+        // See the note above: a profile bound to no repository is no longer a wildcard.
+        profile.setRepositoryId("bedroom");
         when(profileService.get("p1")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();
@@ -522,7 +1354,8 @@ class CanonicalImportServiceTest {
         googleConn.setEnabled(true);
         googleConn.setSourceArchetype(SourceArchetype.FILE_SHARE);
         googleConn.setSourceSystem("google");
-        when(connectorService.findBySystemAndArchetype("google", SourceArchetype.FILE_SHARE)).thenReturn(googleConn);
+        when(connectorService.findBySystemsAndArchetype(List.of("google", "google_drive"),
+                SourceArchetype.FILE_SHARE)).thenReturn(googleConn);
         when(connectorService.get("google-drive-default")).thenReturn(googleConn);
 
         // Set up profile that can be found by repository + archetype + connectorId
@@ -570,8 +1403,11 @@ class CanonicalImportServiceTest {
         googleDriveConn.setEnabled(true);
         googleDriveConn.setSourceArchetype(SourceArchetype.FILE_SHARE);
         googleDriveConn.setSourceSystem("google_drive");
-        when(connectorService.findBySystemAndArchetype("google", SourceArchetype.FILE_SHARE)).thenReturn(null);
-        when(connectorService.findBySystemAndArchetype("google_drive", SourceArchetype.FILE_SHARE)).thenReturn(googleDriveConn);
+        // ONE call with the ordered alias list: the resolver walks once and applies the
+        // caller's key preference itself (a review found per-key resolution both costing a
+        // walk per key and hiding a pair that matched two different keys).
+        when(connectorService.findBySystemsAndArchetype(List.of("google", "google_drive"),
+                SourceArchetype.FILE_SHARE)).thenReturn(googleDriveConn);
         when(connectorService.get("gd-conn")).thenReturn(googleDriveConn);
 
         ImportProfileDefinition profile = new ImportProfileDefinition();
@@ -600,7 +1436,8 @@ class CanonicalImportServiceTest {
         ExternalIngestResult result = service.executeWithAutoResolve(
                 testContext(), req, "google", SourceArchetype.FILE_SHARE);
         assertTrue(result.isSuccess(), () -> String.valueOf(result.errors()));
-        verify(connectorService).findBySystemAndArchetype("google_drive", SourceArchetype.FILE_SHARE);
+        verify(connectorService).findBySystemsAndArchetype(List.of("google", "google_drive"),
+                SourceArchetype.FILE_SHARE);
     }
 
     /**
@@ -613,8 +1450,8 @@ class CanonicalImportServiceTest {
         odConn.setEnabled(true);
         odConn.setSourceArchetype(SourceArchetype.FILE_SHARE);
         odConn.setSourceSystem("onedrive");
-        when(connectorService.findBySystemAndArchetype("microsoft", SourceArchetype.FILE_SHARE)).thenReturn(null);
-        when(connectorService.findBySystemAndArchetype("onedrive", SourceArchetype.FILE_SHARE)).thenReturn(odConn);
+        when(connectorService.findBySystemsAndArchetype(List.of("microsoft", "onedrive"),
+                SourceArchetype.FILE_SHARE)).thenReturn(odConn);
         when(connectorService.get("od-conn")).thenReturn(odConn);
 
         ImportProfileDefinition profile = new ImportProfileDefinition();
@@ -643,7 +1480,8 @@ class CanonicalImportServiceTest {
         ExternalIngestResult result = service.executeWithAutoResolve(
                 testContext(), req, "microsoft", SourceArchetype.FILE_SHARE);
         assertTrue(result.isSuccess(), () -> String.valueOf(result.errors()));
-        verify(connectorService).findBySystemAndArchetype("onedrive", SourceArchetype.FILE_SHARE);
+        verify(connectorService).findBySystemsAndArchetype(List.of("microsoft", "onedrive"),
+                SourceArchetype.FILE_SHARE);
     }
 
     // ── ExternalIngestResult contract tests ──────────────────────
@@ -1393,13 +2231,15 @@ class CanonicalImportServiceTest {
     }
 
     @Test
-    void createDirectRelationship_failsOpen_whenExistenceCheckThrows() {
+    void createDirectRelationship_createsAndSaysSo_whenExistenceCheckThrows() {
         noteProfile("files_and_body");
         when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
                 any(), any(), isNull(), isNull(), isNull(), isNull()))
                 .thenReturn("page-obj-id", "att-obj-id");
-        // Existence check fails — must fail open (still create the link), not
-        // block the first legitimate relationship.
+        // The existence check does not answer. The link is still created — a transient read
+        // must not block the first legitimate relationship — but the caller is TOLD. The
+        // check used to fail open to "no such edge" in silence: a duplicate edge could exist
+        // with nothing in the result saying the check had not happened.
         when(contentService.getRelationsipsOfObject(eq("bedroom"), eq("page-obj-id"), any()))
                 .thenThrow(new RuntimeException("view unavailable"));
 
@@ -1408,6 +2248,84 @@ class CanonicalImportServiceTest {
 
         assertTrue(result.isSuccess(), "errors: " + result.errors());
         verify(objectService, times(1)).createRelationship(any(), any(), any(), any(), any(), any(), any());
+        assertTrue(result.warnings() != null && result.warnings().stream()
+                        .anyMatch(w -> w.contains("without its duplicate check")),
+                "the duplicate check did not answer and the result does not say so — the "
+                        + "same value as an answered check: " + result.warnings());
+    }
+
+    @Test
+    void thePublicEntryPointAnswersNullForALinkCreatedWithoutItsCheck() {
+        // The public entry point is what the fetch orchestrators call after their
+        // import has returned, and FetchSupport puts every non-null answer into the fetch's
+        // ERRORS — which records a fetch that imported nothing as FAILED and advances the
+        // connector's circuit breaker. A created link is not a failure: it answers null
+        // here (the fact is logged), and only the in-import overload reports it as a warning.
+        when(contentService.getRelationsipsOfObject(eq("bedroom"), eq("src-1"), any()))
+                .thenThrow(new RuntimeException("view unavailable"));
+
+        String answer = service.createDirectRelationship(testContext(), "bedroom", "src-1", "tgt-1",
+                null, null);
+
+        verify(objectService, times(1)).createRelationship(any(), any(), any(), any(), any(), any(), any());
+        assertNull(answer, "a link that was created was reported as an error to a caller that"
+                + " records it as a failed fetch: " + answer);
+    }
+
+    @Test
+    void theCaptureRecordCarriesTheUnansweredCheck() {
+        // The release notes say the capture record carries the same fact as the warning.
+        // Nothing observed the record — a two-argument record() would have passed the
+        // suite. A review found the claim unlocked.
+        when(contentService.getRelationsipsOfObject(eq("bedroom"), eq("src-1"), any()))
+                .thenThrow(new RuntimeException("view unavailable"));
+        jp.aegif.nemaki.rest.ingest.capture.CaptureScope scope =
+                mock(jp.aegif.nemaki.rest.ingest.capture.CaptureScope.class);
+
+        service.createDirectRelationshipAuthorizedForTest(testContext(), "bedroom", "src-1",
+                "tgt-1", "cmis:relationship", scope, null, null);
+
+        verify(scope).record(eq("createRelationship"),
+                eq(jp.aegif.nemaki.rest.ingest.capture.MutationOutcome.SUCCEEDED),
+                contains("without its duplicate check"));
+    }
+
+    @Test
+    void aMissingContentServiceIsAnUnansweredCheckNotAnAbsentEdge() {
+        // The arm for a service that is not wired answered "absent" — "could not ask" with
+        // the value of "asked, none". The in-import overload reports it like any other read
+        // that did not answer.
+        service.setContentService(null);
+
+        String note = service.createDirectRelationshipAuthorizedForTest(testContext(), "bedroom",
+                "src-1", "tgt-1", "cmis:relationship",
+                jp.aegif.nemaki.rest.ingest.capture.CaptureScope.inactive(), null, null);
+
+        verify(objectService, times(1)).createRelationship(any(), any(), any(), any(), any(), any(), any());
+        assertTrue(note != null && note.contains("without its duplicate check"),
+                "a check that could not be asked was reported as answered: " + note);
+    }
+
+    @Test
+    void createDirectRelationship_saysNothing_whenExistenceCheckAnswersNoEdge() {
+        // The control for the warning above: an ANSWERED "no such edge" is the ordinary
+        // first link. Reporting it as an unanswered check would make every first link look
+        // suspect — the over-report is the twin defect.
+        noteProfile("files_and_body");
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                any(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenReturn("page-obj-id", "att-obj-id");
+        when(contentService.getRelationsipsOfObject(eq("bedroom"), eq("page-obj-id"), any()))
+                .thenReturn(List.of());
+
+        ExternalIngestResult result = service.executeNoteImport(
+                testContext(), notePageReq("files_and_body", true));
+
+        assertTrue(result.isSuccess(), "errors: " + result.errors());
+        verify(objectService, times(1)).createRelationship(any(), any(), any(), any(), any(), any(), any());
+        assertTrue(result.warnings() == null || result.warnings().stream()
+                        .noneMatch(w -> w.contains("duplicate check")),
+                "an answered check was reported as unanswered: " + result.warnings());
     }
     private static CallContext testContext() {
         CallContext ctx = mock(CallContext.class);
@@ -1415,4 +2333,1113 @@ class CanonicalImportServiceTest {
         return ctx;
     }
 
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("dedupe refuses on an incomplete listing rather than importing a duplicate")
+    void dedupeRefusesOnAnIncompleteListing() throws Exception {
+        // findExistingDocument answering null means "no existing document", and the caller's
+        // response is to CREATE one. Two ways to get a null it cannot stand behind:
+        //
+        //   * the enumeration THROWS — closed first, because it was the loud one; and
+        //   * the enumeration SUCCEEDS but the store could not decode some rows. No exception,
+        //     a short list, and the duplicate simply is not in it.
+        //
+        // The second is the door beside the one that was just closed, and it is the one an
+        // undecodable row actually takes.
+        //
+        // This drove -1 as well, for a "cache cannot vouch for itself" answer that was
+        // retracted: it made a warm cache hit — the ordinary state — refuse every import. The
+        // test outlived the behaviour by one pass, which is a lock on something the product no
+        // longer does.
+        for (int count : new int[] { 3, 12 }) {
+            jp.aegif.nemaki.dao.ContentDaoService dao =
+                    org.mockito.Mockito.mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+            org.mockito.Mockito.when(dao.getChildren(org.mockito.ArgumentMatchers.anyString(),
+                            org.mockito.ArgumentMatchers.anyString()))
+                    .thenReturn(java.util.List.of());
+            org.mockito.Mockito.when(dao.lastUnreadableChildCount()).thenReturn(count);
+            CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+            // The duplicate check refuses an unwired content store now (it used to answer
+            // "there is no existing document", which the caller reads as permission to create
+            // one). An empty folder is what these fixtures mean.
+            jp.aegif.nemaki.dao.ContentDaoService emptyFolderDao =
+                    org.mockito.Mockito.mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+            org.mockito.Mockito.when(emptyFolderDao.getChildren(
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                    .thenReturn(java.util.List.of());
+            service.setContentDaoService(emptyFolderDao);
+            setPrivateField(service, "contentDaoService", dao);
+
+            java.lang.reflect.Method finder = CanonicalImportServiceImpl.class
+                    .getDeclaredMethod("findExistingDocument", String.class, String.class,
+                            String.class, String.class, String.class, String.class, String.class);
+            finder.setAccessible(true);
+
+            java.lang.reflect.InvocationTargetException thrown =
+                    org.junit.jupiter.api.Assertions.assertThrows(
+                            java.lang.reflect.InvocationTargetException.class,
+                            () -> finder.invoke(service, "bedroom", "f-1", "a.pdf", "acme",
+                                    "src-1", "mail", "source_id"),
+                            "an incomplete listing (" + count + ") answered 'there is no "
+                                    + "existing document', and the caller creates one on that");
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    String.valueOf(thrown.getCause().getMessage()).contains("unknown"),
+                    "the refusal does not say the answer is unknown: " + thrown.getCause());
+        }
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("a complete listing with no match still imports — the control")
+    void aCompleteListingStillImports() throws Exception {
+        // Without this, refusing on every listing would satisfy the test above and no document
+        // could ever be imported into a folder.
+        jp.aegif.nemaki.dao.ContentDaoService dao =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(dao.getChildren(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(dao.lastUnreadableChildCount()).thenReturn(0);
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to create
+        // one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolderDao =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolderDao.getChildren(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolderDao);
+        setPrivateField(service, "contentDaoService", dao);
+
+        java.lang.reflect.Method finder = CanonicalImportServiceImpl.class
+                .getDeclaredMethod("findExistingDocument", String.class, String.class,
+                        String.class, String.class, String.class, String.class, String.class);
+        finder.setAccessible(true);
+
+        org.junit.jupiter.api.Assertions.assertNull(
+                finder.invoke(service, "bedroom", "f-1", "a.pdf", "acme", "src-1", "mail",
+                        "source_id"),
+                "a folder that was read in full and holds no match was refused, so nothing "
+                        + "could ever be imported");
+    }
+
+    private static void setPrivateField(Object target, String name, Object value)
+            throws Exception {
+        java.lang.reflect.Field f = target.getClass().getDeclaredField(name);
+        f.setAccessible(true);
+        f.set(target, value);
+    }
+
+    @Test
+    void aLinkWhoseFolderReadRefusesIsNotLinked_notAnEscapingException() throws Exception {
+        // The guard added for the relationship-type fallback rethrew the folder refusal, and
+        // that escaped createLink into the import's top-level catch — so ONE unauthorisable
+        // link turned a document that was already committed into an error result and a DLQ
+        // row. That is the over-throw this class's own
+        // testAProfileGoneDuringTheImportIsAWarningNotA500 and control VW forbid, reopened
+        // through a different arm; a review found it, and the control did not fire until
+        // this lock existed because the older one drives the other arm.
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolderDao =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolderDao.getChildren(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolderDao);
+        // objectService deliberately unwired: the delegated re-check's folder read refuses.
+
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setRepositoryId("bedroom");
+        delegated.setDelegated(true);
+        delegated.setTargetFolderPath("/a/b");
+
+        java.lang.reflect.Method createLink = CanonicalImportServiceImpl.class
+                .getDeclaredMethod("createLink",
+                        org.apache.chemistry.opencmis.commons.server.CallContext.class,
+                        String.class, String.class, String.class, String.class,
+                        jp.aegif.nemaki.rest.ingest.capture.CaptureScope.class,
+                        ImportProfileDefinition.class, ConnectorDefinition.class);
+        createLink.setAccessible(true);
+
+        Object outcome = org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> createLink.invoke(service, null, "bedroom", "src-1", "tgt-1",
+                        "nemaki:relationship", null, delegated, null),
+                "a link whose folder read refused escaped the method, so the whole import "
+                        + "fails after the object was committed");
+        java.lang.reflect.Method linked = outcome.getClass().getDeclaredMethod("linked");
+        linked.setAccessible(true);
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.FALSE, linked.invoke(outcome),
+                "the link was reported as created");
+    }
+
+    @Test
+    void aStandingTargetFolderMisconfigurationIsNotToldToRetry() throws Exception {
+        // The CALL SITE. The lock added with this fix asserted `isRetryable` on the exception
+        // the private resolver throws, and the one after that stubbed the import service, so
+        // restoring the unconditional "; retry shortly" here left both green. Two reviewers
+        // named it as the project's own sabotage-the-call-site-not-the-helper shape, in the
+        // round that fixed an instance of it. This one goes through execute().
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p-path");
+        profile.setRepositoryId("bedroom");
+        profile.setEnabled(true);
+        profile.setTargetFolderPath("/a/not-a-folder");
+        when(profileService.get("p-path")).thenReturn(profile);
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("conn1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("conn1")).thenReturn(connector);
+        when(connectorService.countIndexFree("conn1")).thenReturn(1);
+
+        org.apache.chemistry.opencmis.commons.data.ObjectData doc =
+                mock(org.apache.chemistry.opencmis.commons.data.ObjectData.class);
+        when(doc.getId()).thenReturn("obj-1");
+        org.apache.chemistry.opencmis.commons.data.Properties props =
+                mock(org.apache.chemistry.opencmis.commons.data.Properties.class);
+        @SuppressWarnings("rawtypes")
+        org.apache.chemistry.opencmis.commons.data.PropertyData baseType =
+                mock(org.apache.chemistry.opencmis.commons.data.PropertyData.class);
+        when(baseType.getFirstValue()).thenReturn("cmis:document");
+        when(props.getProperties()).thenReturn(java.util.Map.of("cmis:baseTypeId", baseType));
+        when(doc.getProperties()).thenReturn(props);
+        when(objectService.getObjectByPath(any(), anyString(), anyString(), any(), any(),
+                any(), any(), any(), any(), any())).thenReturn(doc);
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p-path");
+        req.setConnectorId("conn1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess());
+        String said = String.join(" ", result.errors());
+        assertTrue(said.contains("not a folder"),
+                "the caller did not say what was actually found: " + said);
+        // The token the status classifier keys on. It is a contract between this file and
+        // ExternalIngestController, and nothing joined the two: dropping it here answers 500
+        // at the endpoint with every test green. A review found the gap.
+        assertTrue(said.contains("fix the profile"),
+                "the message lost the token the endpoint matches to answer 400: " + said);
+        assertFalse(said.contains("retry shortly"),
+                "the caller told the operator to retry a standing misconfiguration: " + said);
+    }
+
+    @Test
+    void aTargetFolderReadThatCouldNotAnswerKeepsItsRetryMarker() {
+        // The OTHER half of the pair. The permanent arm is locked (the suffix must be
+        // absent); nothing locked the retryable arm at the call site, so deleting the true
+        // branch of `isRetryable() ? "; retry shortly" : ""` left all 6862 tests green while
+        // the endpoint fell from 503 to the 500 fallback — the classifier matches no other
+        // arm for that message. Two reviewers found the gap in the round after the 400 half
+        // was closed the same way.
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p-unanswered");
+        profile.setRepositoryId("bedroom");
+        profile.setEnabled(true);
+        profile.setTargetFolderPath("/a/b");
+        when(profileService.get("p-unanswered")).thenReturn(profile);
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("conn1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("conn1")).thenReturn(connector);
+        when(connectorService.countIndexFree("conn1")).thenReturn(1);
+        // getObjectByPath is left unstubbed: the mock answers null, which is the store
+        // answering with no object — a read that did not answer.
+
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p-unanswered");
+        req.setConnectorId("conn1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess());
+        String said = String.join(" ", result.errors());
+        assertTrue(said.contains("could not be resolved"),
+                "the caller did not say the read could not answer: " + said);
+        assertTrue(said.contains("retry shortly"),
+                "the marker ExternalIngestController.classifyErrorStatus matches to answer "
+                        + "503 is gone, so this falls to the 500 fallback: " + said);
+        // Asserting the token alone leaves the OTHER half of the contract unmeasured: delete
+        // the arm from classifyErrorStatus and this stayed green. Run the real message
+        // through the real classifier instead.
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                ExternalIngestController.classifyErrorStatus(result),
+                "a read that could not answer was delivered as a server fault: " + said);
+    }
+
+    // ---- the write-point re-check of the delegation, and the status the door gives it ----
+    //
+    // refuseIfDelegationNoLongerAuthorizes re-asks at the write point what the controller's
+    // gate asked before the fetch. The two must AGREE about what kind of answer a refusal is:
+    // the gate answers 403 for a repository mismatch, for cmis:all not held and for a
+    // connector no longer delegated, and 503 when the authorization service is not wired.
+    // This door answered 500 for three of those and 400 for the fourth, by the accident of
+    // its wording containing "is required" — so a denial arrived as a server fault, and a
+    // denial arrived as the caller's bad request. A review found the split.
+    //
+    // Each of these drives the REAL refusal out of execute() and feeds it to the REAL
+    // classifier. Asserting the message text alone would not measure the classifier at all.
+
+    private ImportProfileDefinition delegatedProfileForReCheck() {
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+        return delegated;
+    }
+
+    private ExternalIngestRequest requestForReCheck() {
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj1");
+        return req;
+    }
+
+    @Test
+    void aWriteInAnotherRepositoryThanTheCallerAuthenticatedIn_is403NotAServerError() {
+        delegatedProfileForReCheck();
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(false);
+        // Every LATER gate is stubbed to PASS. Without that, deleting the confinement arm
+        // simply fell through to the cmis:all arm, which is also 403 — so the lock stayed
+        // green while the protection it names was gone. A review found all three of these
+        // measuring "some refusal, and it is 403" rather than this one.
+        when(auth.isAdmin(any())).thenReturn(false);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(true);
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
+
+        assertFalse(result.isSuccess(), "the confinement did not refuse");
+        assertTrue(result.errors().get(0).contains("not the repository this caller authenticated"),
+                "a different refusal fired, so this lock is not measuring the confinement: "
+                        + result.errors());
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
+                ExternalIngestController.classifyErrorStatus(result),
+                "the gate answers 403 (PROFILE_REPO_MISMATCH) for this state; this door said "
+                        + "something else: " + result.errors());
+    }
+
+    @Test
+    void aWriteWithoutCmisAllOnTheTargetFolder_is403NotABadRequest() {
+        delegatedProfileForReCheck();
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.isAdmin(any())).thenReturn(false);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(false);
+        // The connector gate is stubbed to PASS so only the cmis:all arm can refuse; without
+        // it, deleting this arm fell through to the connector arm, also 403, and the lock
+        // stayed green.
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
+
+        assertFalse(result.isSuccess(), "the cmis:all re-check did not refuse");
+        assertTrue(result.errors().get(0).contains("was not held when this import ran"),
+                "a different refusal fired, so this lock is not measuring cmis:all: "
+                        + result.errors());
+        // This one landed on 400 rather than 500, purely because the sentence contains
+        // "is required". The 403 arm has to stay ABOVE that arm for it to stay 403.
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
+                ExternalIngestController.classifyErrorStatus(result),
+                "the gate answers 403 (CMIS_ALL_REQUIRED) for this state; this door said "
+                        + "something else: " + result.errors());
+    }
+
+    @Test
+    void aWriteWithARevokedConnectorDelegation_is403NotAServerError() {
+        delegatedProfileForReCheck();
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.isAdmin(any())).thenReturn(false);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(true);
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(false);
+        service.setIngestAuthorizationService(auth);
+
+        ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
+
+        assertFalse(result.isSuccess(), "the connector re-check did not refuse");
+        // This one is already the LAST arm, so nothing can stand in for it — but say which
+        // refusal fired anyway, so the lock keeps meaning this arm if an arm is added after.
+        assertTrue(result.errors().get(0).contains("no longer delegated"),
+                "a different refusal fired, so this lock is not measuring the connector "
+                        + "re-check: " + result.errors());
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
+                ExternalIngestController.classifyErrorStatus(result),
+                "the gate answers 403 (CONNECTOR_NOT_DELEGATED) for this state; this door "
+                        + "said something else: " + result.errors());
+    }
+
+    @Test
+    void aWriteWhoseAuthorizationServiceIsNotWired_is503NotAServerError() {
+        delegatedProfileForReCheck();
+        // Left unwired on purpose. This is "could not ask", not "asked and was told no".
+        service.setIngestAuthorizationService(null);
+
+        ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
+
+        assertFalse(result.isSuccess(), "an unwired authorization service let the write run");
+        assertTrue(result.errors().get(0).contains("the authorization service is not available"),
+                "a different refusal fired, so this lock is not measuring the unwired arm: "
+                        + result.errors());
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                ExternalIngestController.classifyErrorStatus(result),
+                "the gate answers 503 (SERVICES_UNAVAILABLE) for this state; this door said "
+                        + "something else: " + result.errors());
+    }
+
+    // ---- the three statuses that were 500 on master and stayed 500 through this branch ----
+    //
+    // Same shape as the four above and measured the same way: drive the REAL message out of
+    // execute() and hand it to the REAL classifier. Two reviewers found these while checking
+    // the four; each is a condition the product had already classified correctly for itself
+    // and then answered 500 for.
+
+    private ImportProfileDefinition plainProfileReachingTheWrite() {
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        when(profileService.get("p1")).thenReturn(profile);
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        when(connectorService.get("c1")).thenReturn(connector);
+        return profile;
+    }
+
+    @Test
+    void aTransientStoreFailureDuringTheWrite_is503NotAServerError() {
+        plainProfileReachingTheWrite();
+        // isTransientError() reads "Read timed out" as retryable and the product marks the
+        // message "[transient] ". That verdict was then thrown away at the door.
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                isNull(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenThrow(new RuntimeException("Read timed out"));
+
+        ExternalIngestRequest req = requestForReCheck();
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(), "the write did not fail");
+        assertTrue(result.errors().get(0).contains("[transient]"),
+                "the product no longer marks its own verdict, so the arm below keys on "
+                        + "nothing: " + result.errors());
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                ExternalIngestController.classifyErrorStatus(result),
+                "a condition the product itself called transient was answered as our bug: "
+                        + result.errors());
+    }
+
+    @Test
+    void aPermissionDeniedDuringTheWrite_is403NotAServerError() {
+        plainProfileReachingTheWrite();
+        // The THIRD checkpoint: the CMIS ACL evaluation inside the write. Revoking cmis:all
+        // one millisecond after the re-check landed here, and it answered 500 where both
+        // earlier checkpoints answer 403.
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                isNull(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenThrow(new org.apache.chemistry.opencmis.commons.exceptions
+                        .CmisPermissionDeniedException(
+                                "Permission Denied! repositoryId=bedroom key=cmis:all"));
+
+        ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
+
+        assertFalse(result.isSuccess(), "the denied write reported success");
+        assertTrue(result.errors().get(0).toLowerCase().contains("permission denied"),
+                "a different refusal fired, so this lock is not measuring the write's own "
+                        + "ACL evaluation: " + result.errors());
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
+                ExternalIngestController.classifyErrorStatus(result),
+                "a permission denial was answered as our bug: " + result.errors());
+    }
+
+    @Test
+    void aFailedProfileReadWhoseCauseSaysNotFound_isStill503NotA404() {
+        // The 503 arm sits ABOVE the 404 arm, and that ordering is load-bearing: ten of these
+        // wrappers splice a FOREIGN e.getMessage() in after "retry shortly", so a store error
+        // that happens to say "not found" carries both tokens. Swap the two arms and a read
+        // that FAILED answers 404 — "there is no such profile" — which is the exact defect
+        // this whole batch is about. A review found the ordering measured on the 403/400 pair
+        // and not on this one.
+        doThrow(new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(
+                        "the design document was not found on this node"))
+                .when(profileService).getForRepository("p1", "bedroom");
+
+        ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
+
+        assertFalse(result.isSuccess(), "a failed profile read was treated as a resolution");
+        String said = result.errors().get(0);
+        assertTrue(said.contains("retry shortly"), "the retry marker is gone: " + said);
+        assertTrue(said.toLowerCase().contains("not found"),
+                "this lock needs BOTH tokens present to measure the ordering; the cause's "
+                        + "wording no longer reaches the caller: " + said);
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                ExternalIngestController.classifyErrorStatus(result),
+                "a read that could not answer was reported as an absence: " + said);
+    }
+
+    @Test
+    void aDenialWhoseTextHappensToCarry503_isStill403() {
+        plainProfileReachingTheWrite();
+        // isTransientError tests "503" against the RAW message BEFORE it tests "403", and the
+        // CMIS denial interpolates the repository id, the object id and the object NAME. So a
+        // folder called "err-503" made a denial come back marked "[transient]", and the
+        // classifier's retryable arm answered 503 for it. A denial is never a retry, so the
+        // denial arm has to be asked FIRST. A review found it in the round that added the
+        // transient arm.
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                isNull(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenThrow(new org.apache.chemistry.opencmis.commons.exceptions
+                        .CmisPermissionDeniedException(
+                                "Permission Denied! repositoryId=bedroom key=cmis:all acl=null"
+                                        + "  content={id:d1, name:err-503} "));
+
+        ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
+
+        assertFalse(result.isSuccess(), "the denied write reported success");
+        assertTrue(result.errors().get(0).contains("[transient]"),
+                "this lock needs the product to still MIS-mark the denial for the ordering to "
+                        + "be what is measured: " + result.errors());
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
+                ExternalIngestController.classifyErrorStatus(result),
+                "a denial was answered as a retry because its text carried '503': "
+                        + result.errors());
+    }
+
+    @Test
+    void aTopLevelFolderDenial_is403NotAServerError() {
+        plainProfileReachingTheWrite();
+        // ExceptionServiceImpl builds TWO denial formats. Matching only the first left every
+        // top-level-folder denial on 500 — the one a delegated profile targeting the
+        // repository root produces on every single import.
+        when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                isNull(), any(), isNull(), isNull(), isNull(), isNull()))
+                .thenThrow(new org.apache.chemistry.opencmis.commons.exceptions
+                        .CmisPermissionDeniedException(
+                                "Permission Denied to top level folders for non-admin user!"
+                                        + " repositoryId=bedroom key=cmis:all userId=u1"
+                                        + " content={id:d1, name:root} "));
+
+        ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
+
+        assertFalse(result.isSuccess());
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
+                ExternalIngestController.classifyErrorStatus(result),
+                "the second denial format was answered as our bug: " + result.errors());
+    }
+
+    @Test
+    void aTransientFailureInAnArchetypePath_alsoCarriesTheVerdictIntoTheAnswer() {
+        plainProfileReachingTheWrite();
+        // failedAfterEntry is the failure exit of mail, note, business-record and chat — four
+        // of the five entry points. It put the transient/permanent verdict in the DLQ ROW and
+        // not in the ANSWER, so those four answered 500 for a condition the product had just
+        // called retryable, while execute()'s own catch answered 503. The lock that measured
+        // the marker only ever drove execute(). A review found the other four.
+        // The failure has to ESCAPE the internal method. A createDocument that throws does
+        // not: execute() catches it and puts its OWN marker on the message, so the first
+        // version of this lock measured execute()'s catch a second time and stayed green when
+        // failedAfterEntry's answer lost the verdict. The control said so.
+        //
+        // A stream that fails while the mail parser drains it does escape, and "Read timed
+        // out" is what isTransientError calls retryable.
+        ExternalIngestRequest req = requestForReCheck();
+        req.setFileName("m.eml");
+        req.setContentStream(new java.io.InputStream() {
+            @Override public int read() throws java.io.IOException {
+                throw new java.io.IOException("Read timed out");
+            }
+        });
+        ExternalIngestResult result = service.executeMailImport(testContext(), req);
+
+        assertFalse(result.isSuccess(), "the mail import reported success");
+        assertTrue(result.errors().get(0).contains("[transient]"),
+                "the archetype path dropped the verdict from its answer: " + result.errors());
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                ExternalIngestController.classifyErrorStatus(result),
+                "a retryable failure on an archetype path was answered as our bug: "
+                        + result.errors());
+    }
+
+    @Test
+    void anIdempotencyRecordThatCouldNotBeReadRefuses_ratherThanReplacing() {
+        // The policy lives on the PROFILE, not the request.
+        plainProfileReachingTheWrite().setDedupePolicy("replace");
+        // "No such record" is what lets a dedupePolicy=replace request DELETE the document a
+        // previous run of the SAME request committed. A failed configuration read used to
+        // arrive here with exactly that value, because ContentDaoServiceImpl answers a failed
+        // nemaki_conf read with an EMPTY Configuration carrying loadFailed=true and
+        // PropertyManager drops the flag. Three reviews reported it; the first two rounds
+        // recorded it as a residual.
+        jp.aegif.nemaki.rest.controller.IntegrationSettingsService settings =
+                mock(jp.aegif.nemaki.rest.controller.IntegrationSettingsService.class);
+        when(settings.readSettingOrRefuse(anyString())).thenThrow(
+                new jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                        .SettingUnreadableException("the configuration database did not answer"));
+        service.setIntegrationSettingsService(settings);
+
+        ExternalIngestRequest req = requestForReCheck();
+        req.setIdempotencyKey("k-1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(), "an unreadable idempotency record let the write run");
+        assertTrue(result.errors().get(0).contains("could not be established"),
+                "the refusal does not say the read failed: " + result.errors());
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                ExternalIngestController.classifyErrorStatus(result),
+                "a read that could not answer was reported as our bug: " + result.errors());
+        verify(objectService, never()).deleteObject(any(), anyString(), anyString(),
+                anyBoolean(), any());
+    }
+
+    @Test
+    void aMetadataPayloadOverTheCap_is400NotAServerError() {
+        plainProfileReachingTheWrite();
+        ExternalIngestRequest req = requestForReCheck();
+        req.setMetadata(Map.of("blob", "x".repeat(1_100_000)));
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(), "the oversized metadata was accepted");
+        assertTrue(result.errors().get(0).contains("exceeds max size"),
+                "a different refusal fired: " + result.errors());
+        // The SAME endpoint answers 400 for the sibling mistake one layer up ("File exceeds
+        // maximum size (100MB)"). One door, one answer for "your request was too big".
+        assertEquals(org.springframework.http.HttpStatus.BAD_REQUEST,
+                ExternalIngestController.classifyErrorStatus(result),
+                "a caller mistake was answered as our bug: " + result.errors());
+    }
+
+    @Test
+    void anUnwiredSettingsServiceIsNotNoIdempotencyRecord() {
+        // Unwired answered "no record", and a dedupePolicy=replace request then DELETED the
+        // document the earlier run of the same request had committed (R28).
+        plainProfileReachingTheWrite().setDedupePolicy("replace");
+        service.setIntegrationSettingsService(null);
+        ExternalIngestRequest req = requestForReCheck();
+        req.setIdempotencyKey("k-1");
+
+        ExternalIngestResult result = service.execute(testContext(), req);
+
+        assertFalse(result.isSuccess(), "an unwired settings service let the write run as 'no record'");
+        assertTrue(result.errors().get(0).contains("not wired"),
+                "the refusal does not say the service is unwired: " + result.errors());
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                ExternalIngestController.classifyErrorStatus(result),
+                "an unwired node was reported as our bug: " + result.errors());
+        verify(objectService, never()).deleteObject(any(), anyString(), anyString(),
+                anyBoolean(), any());
+    }
+
+    // ── R4: the link made AFTER the import is authorised too ──
+
+    private ImportProfileDefinition delegatedProfileRow() {
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        return delegated;
+    }
+
+    private ExternalIngestRequest linkRequest() {
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setRepositoryId("bedroom");
+        return req;
+    }
+
+    @Test
+    void aRevokedDelegationRefusesTheLinkMadeAfterTheImport() {
+        // The fetch orchestrators link an attachment to its message AFTER the import that
+        // produced them has returned, through the public entry point — which passed NO
+        // profile, so the delegation re-check every in-import link makes was not failed here,
+        // it was never made. A fetch whose authorisation was revoked while it ran still wrote
+        // its edges (R4).
+        ImportProfileDefinition delegated = delegatedProfileRow();
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(false);
+        service.setIngestAuthorizationService(auth);
+
+        String error = service.createDirectRelationship(testContext(), "bedroom",
+                "src-1", "tgt-1", delegated, linkRequest());
+
+        assertTrue(error != null && error.contains("cmis:all"),
+                "a link was written after the import for a delegation that had been revoked: "
+                        + error);
+        verify(objectService, never()).createRelationship(any(), anyString(), any(), any(),
+                any(), any(), any());
+    }
+
+    @Test
+    void aDelegationThatStillAuthorizesStillLinksAfterTheImport() {
+        // The over-throw guard: re-asking must not stop the ordinary case. A fetch that still
+        // holds cmis:all links its attachment and answers null, as it always did.
+        ImportProfileDefinition delegated = delegatedProfileRow();
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString())).thenReturn(true);
+        service.setIngestAuthorizationService(auth);
+
+        String answer = service.createDirectRelationship(testContext(), "bedroom",
+                "src-1", "tgt-1", delegated, linkRequest());
+
+        assertNull(answer, "a link that was authorised was reported as not created: " + answer);
+        verify(objectService, times(1)).createRelationship(any(), anyString(), any(), any(),
+                any(), any(), any());
+    }
+
+    @Test
+    void aNonDelegatedProfileIsNotReAskedAfterTheImport() {
+        // The other over-throw guard: the delegated gate is the only thing re-asked. A profile
+        // that is not delegated has no folder authorisation to lose, and asking anyway would
+        // fail every fetch of an ordinary profile whose caller holds no cmis:all.
+        ImportProfileDefinition plain = new ImportProfileDefinition();
+        plain.setProfileId("p1");
+        plain.setEnabled(true);
+        plain.setRepositoryId("bedroom");
+        plain.setTargetFolderId("folder-1");
+        plain.setDelegated(false);
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        service.setIngestAuthorizationService(auth);
+
+        String answer = service.createDirectRelationship(testContext(), "bedroom",
+                "src-1", "tgt-1", plain, linkRequest());
+
+        assertNull(answer, "a link of a profile that is not delegated was refused: " + answer);
+        verify(objectService, times(1)).createRelationship(any(), anyString(), any(), any(),
+                any(), any(), any());
+        verify(auth, never()).canManageProfileForFolder(any(), anyString(), anyString());
+    }
+
+    // ── R25: refusals that fell onto the 500 fallback of the import door's classifier ──
+
+    /**
+     * The message the PRODUCT built, run through the PRODUCT's classifier. A test that typed
+     * the message itself would stay green while the import changed its wording and the arm
+     * stopped applying — the shape this project has been caught by before.
+     */
+    private org.springframework.http.HttpStatus statusFor(ExternalIngestResult result) {
+        return ExternalIngestController.classifyErrorStatus(result);
+    }
+
+    /** A dao wired into the service, so the dedupe listing below is the one under test. */
+    private jp.aegif.nemaki.dao.ContentDaoService dedupeDao() {
+        jp.aegif.nemaki.dao.ContentDaoService dao =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        service.setContentDaoService(dao);
+        return dao;
+    }
+
+    private ExternalIngestRequest dedupeRequest() {
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setEnabled(true);
+        profile.setTargetFolderId("folder-1");
+        profile.setRepositoryId("bedroom");
+        when(profileService.get("p1")).thenReturn(profile);
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        connector.setSourceSystem("slack");
+        when(connectorService.get("c1")).thenReturn(connector);
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("obj-1");
+        req.setSourceObjectType("file");
+        req.setFileName("a.txt");
+        req.setMimeType("text/plain");
+        req.setContentStream(new java.io.ByteArrayInputStream("hello".getBytes()));
+        return req;
+    }
+
+    @Test
+    void aDedupeListingThatDidNotAnswerIsRetryableNot500() {
+        // The refusal says the view did not answer and the import was not risked; a retry
+        // reads it again. The door answered 500 — "our bug" — for the one refusal that says
+        // exactly what happened and what fixes it.
+        jp.aegif.nemaki.dao.ContentDaoService dao = dedupeDao();
+        when(dao.getChildren("bedroom", "folder-1"))
+                .thenThrow(new RuntimeException("view unavailable"));
+
+        ExternalIngestResult result = service.execute(testContext(), dedupeRequest());
+
+        assertFalse(result.isSuccess(), "the import reported success: " + result.errors());
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, statusFor(result),
+                "a read that did not answer was reported as a server fault: " + result.errors());
+    }
+
+    @Test
+    void aDedupeListingThatCameBackIncompleteIsAConflictNot500() {
+        // Its sibling: the rows came back and some could not be decoded. A retry reads the
+        // same broken row, so this is not retryable — but it is not our bug either.
+        jp.aegif.nemaki.dao.ContentDaoService dao = dedupeDao();
+        when(dao.getChildren("bedroom", "folder-1")).thenReturn(java.util.List.of());
+        when(dao.lastUnreadableChildCount()).thenReturn(2);
+
+        ExternalIngestResult result = service.execute(testContext(), dedupeRequest());
+
+        assertFalse(result.isSuccess(), "the import reported success: " + result.errors());
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, statusFor(result),
+                "an incomplete listing was reported as a server fault: " + result.errors());
+    }
+
+    @Test
+    void anImportFailureWithNoArmStill500s() {
+        // The over-throw guard for both arms above: a failure the classifier has no arm for
+        // is still 500. Widening an arm until everything matched would make every server
+        // fault look like a configuration the operator should fix.
+        ExternalIngestResult result = ExternalIngestResult.error("req-1",
+                "something nobody has classified");
+
+        assertEquals(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR, statusFor(result));
+    }
+
+    // ── R5: the window between the gate and the write ──
+
+    /**
+     * A delegated profile, a connector, and an authorisation that is revoked the moment the
+     * dedupe listing is read. The FILE_SHARE entry point has had this lock since the round
+     * that moved the re-check below the read; the archetype entry points did not, and they
+     * reach their writes through {@code execute} — a change that gave one of them a write of
+     * its own would pass every lock here (R5).
+     */
+    private void revokeWhenTheDedupeListingIsRead(SourceArchetype archetype) {
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        when(profileService.get("p1")).thenReturn(delegated);
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(archetype);
+        connector.setSourceSystem("slack");
+        when(connectorService.get("c1")).thenReturn(connector);
+
+        java.util.concurrent.atomic.AtomicBoolean revoked =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        jp.aegif.nemaki.dao.ContentDaoService dao =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        service.setContentDaoService(dao);
+        when(dao.getChildren(anyString(), anyString())).thenAnswer(inv -> {
+            revoked.set(true);
+            return java.util.List.of();
+        });
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString()))
+                .thenAnswer(inv -> !revoked.get());
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
+        service.setIngestAuthorizationService(auth);
+    }
+
+    @Test
+    void aRevokeDuringTheDedupeReadStopsTheChatImport() {
+        revokeWhenTheDedupeListingIsRead(SourceArchetype.CHAT_CONTEXT);
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("slack-msg-1");
+        req.setSourceObjectType("message");
+        req.setFileName("message.txt");
+        req.setContentStream(new java.io.ByteArrayInputStream("data".getBytes()));
+        java.util.Map<String, Object> meta = new java.util.HashMap<>();
+        meta.put("channelId", "C123");
+        req.setMetadata(meta);
+
+        ExternalIngestResult result = service.executeChatContextImport(testContext(), req);
+
+        assertFalse(result.isSuccess(),
+                "a revoke that landed during the dedupe read did not stop the chat write");
+        assertTrue(String.valueOf(result.errors()).contains("cmis:all"),
+                "the refusal does not name the authorisation: " + result.errors());
+        verify(objectService, never()).createDocument(any(), any(), any(), any(), any(), any(),
+                any(), any(), any(), any());
+    }
+
+    @Test
+    void aRevokeDuringTheDedupeReadStopsTheNoteImport() {
+        revokeWhenTheDedupeListingIsRead(SourceArchetype.COMPOUND_NOTE);
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("page-1");
+        req.setSourceObjectType("page");
+        // files_and_body: without it the page body is not imported at all, the dedupe listing
+        // is never read, and the revoke this lock arranges never lands.
+        req.setImportPolicy("files_and_body");
+        req.setFileName("page.html");
+        req.setMimeType("text/html");
+        req.setContentStream(new java.io.ByteArrayInputStream("<p>body</p>".getBytes()));
+
+        ExternalIngestResult result = service.executeNoteImport(testContext(), req);
+
+        assertFalse(result.isSuccess(),
+                "a revoke that landed during the dedupe read did not stop the note write");
+        assertTrue(String.valueOf(result.errors()).contains("cmis:all"),
+                "the refusal does not name the authorisation: " + result.errors());
+        verify(objectService, never()).createDocument(any(), any(), any(), any(), any(), any(),
+                any(), any(), any(), any());
+    }
+
+    @Test
+    void theWriteIsReAskedTwiceAndTheArchetypeDoorsHaveNoWriteOfTheirOwn() throws Exception {
+        // The structural half of R5. The window is irreducible — a revoke landing between the
+        // second re-ask and the write is not caught, and no number of checks changes that —
+        // but WHICH points re-ask, and that no entry point writes outside them, is a standing
+        // property and is measurable. Both re-asks are needed: the first covers the reads that
+        // decide, the second covers the content drain, which for a large attachment is the
+        // long part.
+        String source = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java"));
+        String execute = jp.aegif.nemaki.util.test.JavaSource.methodBody(source,
+                "ExternalIngestResult execute(CallContext callContext, ExternalIngestRequest request,\n"
+                        + "            CaptureScope captureScope, BeforeEmitHook beforeEmitHook) {");
+        int reAsks = execute.split("refuseIfDelegationNoLongerAuthorizes\\(", -1).length - 1;
+        assertEquals(2, reAsks,
+                "the write path no longer re-asks the delegation twice; it asks " + reAsks
+                        + " time(s)");
+        // The four entry points hold their logic in ...Internal; the public wrappers are a
+        // capture scope and a try. A lock pointed at the wrappers reads none of the code it
+        // claims to be about — a review found this one doing exactly that.
+        for (String door : java.util.List.of(
+                "private ExternalIngestResult executeMailImportInternal(",
+                "private ExternalIngestResult executeChatContextImportInternal(",
+                "private ExternalIngestResult executeNoteImportInternal(",
+                "private ExternalIngestResult executeBusinessRecordImportInternal(")) {
+            String body = jp.aegif.nemaki.util.test.JavaSource.methodBody(source, door);
+            for (String write : java.util.List.of("objectService.createDocument(",
+                    "objectService.createFolder(", "objectService.createRelationship(",
+                    "versioningService.checkIn(", "contentService.update(")) {
+                assertFalse(body.contains(write),
+                        door + " calls " + write + " itself, outside the re-asked path");
+            }
+        }
+
+        // The INVENTORY, by count. "Every write is inside a re-asked path" is only as good as
+        // the list of writes it was checked against, and the first version of this lock looked
+        // at two call shapes in four bodies that hold no code. The numbers below are what the
+        // audit counted (R5); a write added or removed anywhere in these two files changes
+        // them, and then a human decides whether the new one is inside the re-asked path or
+        // belongs in the residual table beside R47.
+        assertEquals(9, writeCallSites(source),
+                "the write call sites of CanonicalImportServiceImpl have changed");
+        String metadataService = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/rest/ingest/IngestMetadataService.java"));
+        assertEquals(4, writeCallSites(metadataService),
+                "the write call sites of IngestMetadataService have changed — the helpers the"
+                        + " entry points call AFTER execute returns (R47) live here");
+    }
+
+    /** How many times this source creates, versions or updates an object. */
+    private static int writeCallSites(String source) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                "objectService\\.create(?:Document|Folder|Relationship)\\("
+                        + "|contentService\\.update\\(|versioningService\\.checkIn\\(").matcher(source);
+        int n = 0;
+        while (m.find()) n++;
+        return n;
+    }
+
+    // ── R47: the decoration written AFTER execute returned ──
+
+    /**
+     * A delegated profile, an object already in the folder (so the pass is a dedupe SKIP and
+     * the door's gap-filling decoration runs), and an authorisation that answers yes to the
+     * two re-asks {@code execute} makes and no to the third. The revoke therefore lands in
+     * exactly the window R47 is about: after the last check the import makes, before the
+     * decoration writes.
+     *
+     * @param askedTimes how many times the folder authorisation is allowed to answer yes
+     */
+    private java.util.concurrent.atomic.AtomicInteger revokeAfterTheImportReturned(
+            SourceArchetype archetype, int askedTimes) {
+        ImportProfileDefinition delegated = new ImportProfileDefinition();
+        delegated.setProfileId("p1");
+        delegated.setEnabled(true);
+        delegated.setRepositoryId("bedroom");
+        delegated.setTargetFolderId("folder-1");
+        delegated.setDelegated(true);
+        delegated.setDedupePolicy("skip_if_same_version");
+        doReturn(delegated).when(profileService).getForRepository("p1", "bedroom");
+        when(profileService.get("p1")).thenReturn(delegated);
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setEnabled(true);
+        connector.setSourceArchetype(archetype);
+        connector.setSourceSystem("slack");
+        when(connectorService.get("c1")).thenReturn(connector);
+
+        jp.aegif.nemaki.dao.ContentDaoService dao =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        service.setContentDaoService(dao);
+        Content existing = createMockContent("chat-obj-1");
+        existing.setName("message.txt");
+        Aspect ext = new Aspect();
+        ext.setName("nemaki:externalIntegration");
+        ext.setProperties(List.of(
+                new Property("nemaki:sourceObjectId", "slack-msg-1"),
+                new Property("nemaki:sourceSystem", "slack"),
+                new Property("nemaki:sourceObjectType", "message")));
+        existing.setAspects(List.of(ext));
+        when(dao.getChildren("bedroom", "folder-1")).thenReturn(List.of(existing));
+
+        IngestAuthorizationService auth = mock(IngestAuthorizationService.class);
+        when(auth.isAuthenticatedRepository(any(), anyString())).thenReturn(true);
+        when(auth.canUseConnectorForDelegatedProfile(any(), anyString(), any(), anyString()))
+                .thenReturn(true);
+        java.util.concurrent.atomic.AtomicInteger asked =
+                new java.util.concurrent.atomic.AtomicInteger();
+        when(auth.canManageProfileForFolder(any(), anyString(), anyString()))
+                .thenAnswer(inv -> asked.incrementAndGet() <= askedTimes);
+        service.setIngestAuthorizationService(auth);
+        return asked;
+    }
+
+    private ExternalIngestRequest chatSkipRequest() {
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId("p1");
+        req.setConnectorId("c1");
+        req.setRepositoryId("bedroom");
+        req.setSourceObjectId("slack-msg-1");
+        req.setSourceObjectType("message");
+        req.setFileName("message.txt");
+        req.setContentStream(new java.io.ByteArrayInputStream("data".getBytes()));
+        java.util.Map<String, Object> meta = new java.util.HashMap<>();
+        meta.put("channelId", "C123");
+        req.setMetadata(meta);
+        return req;
+    }
+
+    @Test
+    void aRevokeAfterTheImportReturnedStopsTheDecoration() {
+        // The gap-filling pass writes properties onto an object that is already there, and it
+        // runs after execute's last re-ask. createLink answers the same shape by re-asking;
+        // this door did not, so a delegation revoked while the poll ran still wrote.
+        revokeAfterTheImportReturned(SourceArchetype.CHAT_CONTEXT, 2);
+
+        ExternalIngestResult result = service.executeChatContextImport(
+                testContext(), chatSkipRequest());
+
+        verify(ingestMetadataService, never()).fillMissingArchetypeMetadata(any(), any(), any(),
+                any(), any(), any(), any());
+        assertTrue(String.valueOf(result.warnings()).contains("was not applied"),
+                "the refused decoration was not reported: " + result.warnings());
+        assertTrue(result.errors() == null || result.errors().isEmpty(),
+                "a refused decoration was reported as a failed import, which would enrol a"
+                        + " completed capture in the DLQ: " + result.errors());
+    }
+
+    @Test
+    void aDecorationIsStillWrittenWhileTheDelegationHolds() {
+        // The over-throw guard. The pass that fills gaps on an already-imported object is the
+        // ordinary case on every poll; refusing it whenever the profile is delegated would
+        // stop all of them.
+        revokeAfterTheImportReturned(SourceArchetype.CHAT_CONTEXT, Integer.MAX_VALUE);
+
+        ExternalIngestResult result = service.executeChatContextImport(
+                testContext(), chatSkipRequest());
+
+        verify(ingestMetadataService).fillMissingArchetypeMetadata(any(), any(), any(), any(),
+                any(), any(), any());
+        assertFalse(String.valueOf(result.warnings()).contains("was not applied"),
+                "an authorised decoration was refused: " + result.warnings());
+    }
+
+    @Test
+    void everyPostExecuteDecorationReAsksTheDelegation() throws Exception {
+        // The inventory half, in the shape R5 settled on: count, do not sample. What each
+        // number catches, stated exactly, because two rounds of review caught this comment
+        // claiming more than it does:
+        //   - the first catches a re-ask REMOVED from one of the five doors (BU3);
+        //   - the second catches a door added that decorates THROUGH THE METADATA SERVICE,
+        //     which all five do (chat writes its capture window directly as well).
+        // What neither catches: a door that writes its decoration DIRECTLY, the way chat's
+        // capture window does (applyCaptureWindow calls contentService.update itself — its
+        // own comment says that is how it was missed once before). Such a door arrives with
+        // both numbers unchanged. R48 records that hole rather than this comment hiding it.
+        String source = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java"));
+        int guards = source.split("refuseDecorationIfNoLongerAuthorized\\(", -1).length - 1;
+        assertEquals(6, guards,
+                "a post-execute decoration lost its re-ask: " + guards
+                        + " mentions (5 call sites + the declaration)");
+        int metadataWrites = source.split("ingestMetadataService\\.", -1).length - 1;
+        assertEquals(15, metadataWrites,
+                "the metadata service is used in a new place (" + metadataWrites + "); if that"
+                        + " is a decoration written after execute returned, it needs the"
+                        + " re-ask the five above make");
+    }
+
+    @Test
+    void aDecorationIsRefusedWhenTheConnectorCannotBeResolved() {
+        // get() answers null for a connector row that is not there AND for a read that did not
+        // answer, and refuseIfDelegationNoLongerAuthorizes only asks about a non-null
+        // connector — so passing that null on skips the connector half of the delegation
+        // without saying so. createLinkAuthorized refuses for exactly this; the first version
+        // of the decoration's re-ask copied its resolution and not its refusal.
+        java.util.concurrent.atomic.AtomicInteger asked =
+                revokeAfterTheImportReturned(SourceArchetype.CHAT_CONTEXT, Integer.MAX_VALUE);
+        // The connector reads while the import runs and stops answering before the decoration:
+        // execute has made both of its re-asks by then, so the counter marks the window. A
+        // connector left unreadable from the start never gets there — the door refuses it as
+        // "Connector not found" long before the decoration.
+        ConnectorDefinition readable = new ConnectorDefinition();
+        readable.setConnectorId("c1");
+        readable.setEnabled(true);
+        readable.setSourceArchetype(SourceArchetype.CHAT_CONTEXT);
+        readable.setSourceSystem("slack");
+        when(connectorService.get("c1")).thenAnswer(inv -> asked.get() >= 2 ? null : readable);
+
+        ExternalIngestResult result = service.executeChatContextImport(
+                testContext(), chatSkipRequest());
+
+        verify(ingestMetadataService, never()).fillMissingArchetypeMetadata(any(), any(), any(),
+                any(), any(), any(), any());
+        assertTrue(String.valueOf(result.warnings()).contains("could not be resolved"),
+                "a connector this node could not read was passed on as \"no connector\";"
+                        + " skipped=" + result.skipped() + " errors=" + result.errors()
+                        + " warnings=" + result.warnings());
+    }
 }

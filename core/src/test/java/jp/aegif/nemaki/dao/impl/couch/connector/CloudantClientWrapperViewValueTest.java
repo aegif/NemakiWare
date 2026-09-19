@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -65,10 +66,16 @@ import jp.aegif.nemaki.model.couch.CouchDocument;
  * <h2>Why a number is in the fixture</h2>
  *
  * <p>Reading the value means the fields arrive as the Cloudant SDK's Gson parsed them, so numbers
- * are {@code LazilyParsedNumber}. Jackson treats that as an unknown bean rather than a number, and
- * <b>it does not throw</b> — it produces a document whose dates are quietly wrong. That is the one
- * way this change can fail without anything looking broken, so the fixture carries a real
- * {@code LazilyParsedNumber} and the assertion is on the converted value.
+ * are {@code LazilyParsedNumber} and not the boxed types a Java fixture would carry. A conversion
+ * that mishandles that type does not have to throw — it can produce a document whose dates are
+ * quietly wrong, which is the one way this change can fail without anything looking broken. So the
+ * fixture carries a real {@code LazilyParsedNumber} and the assertion is on the converted value.
+ * With the mapper this test wires ({@code ObjectMapperFactory.createDefaultObjectMapper}, the
+ * production one) the value converts correctly — that is what the assertion measures, and an
+ * earlier version of this note asserted the opposite as if it were the mapper's behaviour. What
+ * IS measured about this type elsewhere: the ingest migration locks read a {@code
+ * LazilyParsedNumber} into a String field as its digits, and a primitive {@code boolean} refuses
+ * it. Neither is the same question as this one; do not carry one answer over to the other.
  */
 public class CloudantClientWrapperViewValueTest {
 
@@ -89,6 +96,16 @@ public class CloudantClientWrapperViewValueTest {
 		when(call.execute()).thenReturn(response);
 		captor = ArgumentCaptor.forClass(PostViewOptions.class);
 		when(client.postView(captor.capture())).thenReturn(call);
+		// The id fallback reads a document that is genuinely NOT THERE. Modelled explicitly:
+		// leaving getDocument unstubbed used to work only because an unstubbed mock NPEs and
+		// the wrapper swallowed that as "startup", which is exactly the grace that is now
+		// declared rather than guessed. A not-found is the answer this test means.
+		ServiceCall<com.ibm.cloud.cloudant.v1.model.Document> docCall = mock(ServiceCall.class);
+		Response<com.ibm.cloud.cloudant.v1.model.Document> docResponse = mock(Response.class);
+		when(docResponse.getResult()).thenReturn(null);
+		when(docCall.execute()).thenReturn(docResponse);
+		when(client.getDocument(any(com.ibm.cloud.cloudant.v1.model.GetDocumentOptions.class)))
+				.thenReturn(docCall);
 		return new CloudantClientWrapper(client, DB, ObjectMapperFactory.createDefaultObjectMapper());
 	}
 
@@ -144,14 +161,20 @@ public class CloudantClientWrapperViewValueTest {
 		CloudantClientWrapper wrapper = wrapperReturning(new ArrayList<>(List.of(row)));
 
 		// The read by id goes back to the same mocked client, which has no document to answer
-		// with; the point is that the projection was REFUSED rather than converted into a
-		// half-populated object.
-		List<CouchDocument> found =
-				wrapper.queryView("_repo", "versionSeries", "vs-1", CouchDocument.class);
-
-		assertTrue(found == null || found.isEmpty(),
-				"a projection converted into a partial document is worse than no answer — it "
-						+ "looks like a real object with fields silently missing");
+		// with. Two things must hold, and only the first one used to: the projection was
+		// REFUSED rather than converted into a half-populated object, AND the caller is told.
+		// This assertion used to accept an empty list — which is how a row that EXISTS and
+		// could not be read reached getPropertyDefinitionCoreByPropertyId as "that property
+		// is not defined", and a patch created a second core for it.
+		org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException refused =
+				org.junit.jupiter.api.Assertions.assertThrows(
+						org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException.class,
+						() -> wrapper.queryView("_repo", "versionSeries", "vs-1",
+								CouchDocument.class),
+						"a row the store could not turn into a document was dropped, and the "
+								+ "shortened list reads exactly like a complete one");
+		assertTrue(refused.getMessage().contains("could not be read"),
+				"refused for some other reason: " + refused.getMessage());
 	}
 
 	/**

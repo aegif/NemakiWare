@@ -84,13 +84,17 @@ class DelegatedCallContextFactoryTest {
     }
 
     @Test
-    void buildOrNull_failsClosedOnLookupException() {
-        // CouchDB hiccup / network blip MUST be treated as inactive, not as
-        // a free pass. Fail-closed semantics are the whole point of the gate.
+    void buildOrNull_refusesRatherThanCallingAFailureInactive() {
+        // Still fail-CLOSED — the scheduler denies the run either way — but no longer
+        // fail-SILENT: a CouchDB hiccup used to be reported as CREATOR_USER_INACTIVE, a
+        // statement about the user, and fed the streak that auto-disables a profile after
+        // three of them. The caller now distinguishes the two answers.
         when(contentService.getUserItemById(any(), any()))
                 .thenThrow(new RuntimeException("boom"));
 
-        assertNull(factory.buildOrNull(REPO, USER));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> factory.buildOrNull(REPO, USER),
+                "a failed lookup was answered as 'the creator is inactive'");
     }
 
     @Test

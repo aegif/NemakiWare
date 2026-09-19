@@ -1429,7 +1429,17 @@ public class SolrUtil implements ApplicationContextAware {
 				// Length comes from the node that was just read, and survives an extraction that
 				// produced no text (unsupported MIME, empty document): losing the length there is
 				// what the removed second read used to paper over.
-				doc.addField("content_length", attachmentContent.length);
+				//
+				// A length that could not be read is NOT indexed. Writing 0 for it made the
+				// index state a size the document does not have — the one thing worse than an
+				// absent field, because a range query answers it confidently.
+				if (attachmentContent.length != AttachmentContent.LENGTH_UNKNOWN) {
+					doc.addField("content_length", attachmentContent.length);
+				} else {
+					log.warn("content_length is NOT indexed for document {}: the attachment's "
+							+ "length could not be read, and indexing 0 would state a size it "
+							+ "does not have", content.getId());
+				}
 			}
 			
 			// Versioning fields
@@ -2288,8 +2298,14 @@ public class SolrUtil implements ApplicationContextAware {
 
 		ContentService contentService = getContentServiceSafely();
 		if (contentService == null) {
-			log.debug("readAttachment: ContentService not available for {}", attachmentId);
-			return AttachmentContent.NONE;
+			// NOT NONE. This method is only reached when the document HAS an attachment
+			// (createSolrDocument checks getAttachmentNodeId() first), so NONE's length of 0
+			// would index "this document is 0 bytes" for a document with content — the same
+			// wrong number lengthFromMetadata was just changed to stop producing, one arm
+			// over. Found by a sibling sweep of this batch's own change.
+			log.warn("readAttachment: ContentService not available for {}; the length is "
+					+ "UNKNOWN, not zero", attachmentId);
+			return new AttachmentContent(null, AttachmentContent.LENGTH_UNKNOWN);
 		}
 
 		// Nothing to extract — read metadata only rather than opening a body that cannot be used.
@@ -2365,19 +2381,34 @@ public class SolrUtil implements ApplicationContextAware {
 		}
 	}
 
-	/** The metadata-only read — never opens the attachment body (F3). */
+	/**
+	 * The metadata-only read — never opens the attachment body (F3).
+	 *
+	 * <p>Returns {@link AttachmentContent#LENGTH_UNKNOWN} when the length could not be read.
+	 * It used to return {@code 0L}, which is not "unknown" but a WRONG NUMBER: the index then
+	 * carried {@code content_length=0} for a document with content, and a query for small
+	 * documents matched it while a query on its real size did not. A field that is absent is
+	 * answered honestly by Solr; a field that is zero is answered wrongly.
+	 */
 	private long lengthFromMetadata(ContentService contentService, String repositoryId, String attachmentId) {
 		try {
 			AttachmentNode ref = contentService.getAttachmentRef(repositoryId, attachmentId);
-			return (ref != null) ? ref.getLength() : 0L;
+			// ref == null means the document NAMES an attachment node that is not there. That
+			// is not a document of zero bytes — it is a document whose length nobody can
+			// state. Only the catch below was changed first; a ledger audit found this half
+			// still indexing content_length=0 for a document that declares content.
+			return (ref != null) ? ref.getLength() : AttachmentContent.LENGTH_UNKNOWN;
 		} catch (Exception e) {
 			log.warn("Could not read the length of attachment {}: {}", attachmentId, e.getMessage());
-			return 0L;
+			return AttachmentContent.LENGTH_UNKNOWN;
 		}
 	}
 
 	/** The text to index and the length to index, from a single attachment read. */
 	static final class AttachmentContent {
+		/** The length could not be read. Distinct from a genuine zero-byte attachment. */
+		static final long LENGTH_UNKNOWN = -1L;
+
 		static final AttachmentContent NONE = new AttachmentContent(null, 0L);
 
 		/** Extracted text, or null when there is nothing to index. */

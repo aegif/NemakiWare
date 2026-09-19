@@ -22,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.List;
 
 /**
@@ -37,7 +38,7 @@ import java.util.List;
  *
  * <p>{@link #passCustody} is that caller. It records first, and moves only if the recording
  * took. Custody is the one move in this machine that is worth refusing over a ledger failure:
- * everything before it is a note about what the far end said, and this one is where we stop
+ * everything before it is a note somebody recorded, and this one is where we stop
  * being answerable for the record.
  *
  * <h2>Saving is part of the move</h2>
@@ -66,15 +67,37 @@ public class CustodyTransferService {
         this.ledgerRecorder = ledgerRecorder;
     }
 
-    /** What happened, and what to tell whoever asked. */
-    public record Outcome(boolean done, CustodyTransfer transfer, String refusedReason) {
+    /**
+     * What happened, and what to tell whoever asked.
+     *
+     * @param signatureCheck what the signature check found, when one was made. Null on every
+     *        path that did not examine a receipt.
+     *        <p><b>Carried because the receipt cannot carry it.</b>
+     *        {@code CustodyReceipt.signatureVerified} is one boolean and false has three
+     *        producers — no key, a check that RAN and did not match, an unreadable signature.
+     *        The verifier distinguishes all three and this service used to drop the result on
+     *        the floor: {@code Checked.asMap()} had no caller anywhere in main, and a signature
+     *        made with the wrong key left nothing behind but a WARN in the log. The operator was
+     *        told the deployment held no key.
+     */
+    public record Outcome(boolean done, CustodyTransfer transfer, String refusedReason,
+                          Map<String, Object> signatureCheck) {
 
         static Outcome done(CustodyTransfer transfer) {
-            return new Outcome(true, transfer, null);
+            return new Outcome(true, transfer, null, null);
+        }
+
+        static Outcome done(CustodyTransfer transfer, Map<String, Object> signatureCheck) {
+            return new Outcome(true, transfer, null, signatureCheck);
         }
 
         static Outcome refused(CustodyTransfer transfer, String reason) {
-            return new Outcome(false, transfer, reason);
+            return new Outcome(false, transfer, reason, null);
+        }
+
+        static Outcome refused(CustodyTransfer transfer, String reason,
+                Map<String, Object> signatureCheck) {
+            return new Outcome(false, transfer, reason, signatureCheck);
         }
     }
 
@@ -87,8 +110,18 @@ public class CustodyTransferService {
         CustodyTransfer transfer = new CustodyTransfer(transferId, repositoryId, objectId,
                 sipDigest, receivingSystem, Instant.now().toString());
         if (!store.save(transfer)) {
-            return Outcome.refused(null, "the transfer was not written, so it does not exist. "
-                    + "Nothing was sent and nothing is in flight.");
+            // "so it does not exist. Nothing was sent and nothing is in flight." was here. The
+            // commonest way this branch is reached is a transferId that is ALREADY STORED --
+            // the id is caller-supplied, so re-POSTing one is ordinary, and the store logs that
+            // case as "already stored under this id by another writer". The operator was told
+            // the transfer does not exist BECAUSE one does, plus an assertion about the world
+            // ("Nothing was sent") this node cannot make. notFound() eight methods along has
+            // the careful version: "NOT a statement that the handover did not happen; it is a
+            // statement about what is stored here."
+            return Outcome.refused(null, "this transfer was not written. Either a transfer is "
+                    + "already stored under this id, or the write did not take. Nothing is "
+                    + "stored HERE for this attempt — which is not a statement about whether "
+                    + "anything was sent.");
         }
         return Outcome.done(transfer);
     }
@@ -123,18 +156,29 @@ public class CustodyTransferService {
         if (transfer == null) {
             return Outcome.refused(null, whyNotFound(transferId));
         }
+        // The forged-mapping check is NOT here. It lives on CustodyReceipt and is applied by
+        // CustodyTransfer.verifyReceipt and by restore() -- because a row read back out of the
+        // database is the other place a forged pair could arrive, and a check that only guarded
+        // this method would have left that open.
+        //
         // The signature is checked HERE, at the moment the receipt is examined — not read back
         // out of a row later. The stored flag is deliberately not trusted on reload (anything
         // with database access could set it), so the finding has to be made where the receipt
         // arrives and chained from there.
         ReceiptSignatureVerifier.Checked checked = checkSignature(receipt);
+        // The finding travels. Dropping it was how a check that RAN and FAILED became
+        // indistinguishable, to everyone outside this JVM, from a deployment with no key.
+        Map<String, Object> signatureCheck = checked.asMap();
         CustodyTransfer.Moved moved = transfer.verifyReceipt(checked.receipt(),
                 Instant.now().toString());
         if (!moved.accepted()) {
-            return Outcome.refused(transfer, moved.refusedReason());
+            return Outcome.refused(transfer, moved.refusedReason(), signatureCheck);
         }
-        return persist(transfer, "the receipt was checked but the result was not written, so "
-                + "this transfer is still where it was");
+        Outcome persisted = persist(transfer, "the receipt was checked but the result was not "
+                + "written, so this process does not know where this transfer is now");
+        return persisted.done()
+                ? Outcome.done(persisted.transfer(), signatureCheck)
+                : Outcome.refused(persisted.transfer(), persisted.refusedReason(), signatureCheck);
     }
 
     /**
@@ -230,6 +274,16 @@ public class CustodyTransferService {
                     + "same as there being no transfers");
         }
         int unread = store.unreadableCount();
+        // Two different sentences, because they are two different facts. "At least N" was the
+        // first attempt and it still asserted an existence: one or more IS a claim that a
+        // transfer is there, and when the view simply did not answer there may be none. The
+        // store now says which case it is instead of folding both into the count.
+        if (store.lastQueryFailed()) {
+            return new Listed(found, false, "the stored history for this record could NOT BE "
+                    + "QUERIED, so this list is empty because nothing could be read, not "
+                    + "because nothing was sent. How many transfers exist is unknown — this is "
+                    + "not a finding that there are any, and not a finding that there are none");
+        }
         return new Listed(found, unread == 0, unread == 0 ? null
                 : unread + " stored transfer(s) for this record could not be read and are NOT "
                         + "in this list, so it is not a complete answer about where this record "
@@ -296,8 +350,10 @@ public class CustodyTransferService {
         try {
             saved = store.save(transfer);
         } catch (RuntimeException e) {
-            // The store can throw before it reaches its own retry loop — getting a client,
-            // reading the current revision. On the passCustody path the ledger entry is already
+            // The store can throw before it reaches its own conflict handling — getting a
+            // client, building the document. (It no longer reads the current revision at write
+            // time, and it does not retry; see CouchCustodyTransferStore.save and design §15.)
+            // On the passCustody path the ledger entry is already
             // written by then, so letting this propagate would replace the one message an
             // operator needs (the chain and the transfer disagree) with a stack trace, and a
             // retry would append a second custody entry.

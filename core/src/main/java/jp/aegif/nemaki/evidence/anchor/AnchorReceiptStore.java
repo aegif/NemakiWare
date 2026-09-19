@@ -78,6 +78,38 @@ public interface AnchorReceiptStore {
     List<PendingReceipt> pending(String domain, int limit);
 
     /**
+     * Rows the most recent read on THIS THREAD could not decode.
+     *
+     * <p>Default 0, because a store that cannot fail to decode has none. On the INTERFACE rather
+     * than on the implementation so a caller need not know which store it has —
+     * {@code AnchorService} used {@code instanceof} for exactly one line, and a rule that
+     * depends on the concrete type cannot be measured against a stub.
+     *
+     * <p><b>Why it exists.</b> A row that cannot be read is not an absent receipt.
+     * {@code retryUnsettled} treats a rung with no receipt as unanchored and contacts it again,
+     * so one undecodable row could mint a second OpenTimestamps commitment or buy a second
+     * RFC 3161 token.
+     */
+    default int unreadableCount() {
+        return 0;
+    }
+
+    /**
+     * Whether the last read on THIS thread could not be asked at all.
+     *
+     * <p>Separate from {@link #unreadableCount()}, for the same reason the custody store was
+     * split a round earlier and this sibling was not: a view that did not answer was counted as
+     * ONE unreadable row, and every consumer renders that count as "N receipt row(s) could not
+     * be read" — which asserts a row exists. There may be none. The count keeps the guards
+     * working (anything unaccounted for still refuses); this says which kind of unaccounted-for
+     * it was, so the sentence shown to an operator does not claim an existence nobody
+     * established.
+     */
+    default boolean lastQueryFailed() {
+        return false;
+    }
+
+    /**
      * CONFIRMED receipts, oldest first.
      *
      * <p>Separate from {@link #pending} because the two are used by different jobs and the

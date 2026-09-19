@@ -2205,6 +2205,7 @@
       "idle": "Idle",
       "running": "Running",
       "completed": "Completed",
+      "completedWithErrors": "Completed with errors",
       "error": "Error",
       "cancelled": "Cancelled"
     },
@@ -3187,6 +3188,7 @@
       "disabledNotice": "Microsoft Purview integration is currently disabled."
     },
     "lineage": {
+      "undecodableRows": "{{count}} row(s) could not be read and are NOT in this list. This is NOT a finding that they are absent.",
       "mode": "Lineage Mode",
       "modeDisabled": "Disabled (no storage)",
       "modeDirect": "Direct (publish only)",

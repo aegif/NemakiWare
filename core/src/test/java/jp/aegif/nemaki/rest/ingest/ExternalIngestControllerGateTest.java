@@ -164,6 +164,7 @@ class ExternalIngestControllerGateTest {
         ImportProfileDefinition p = delegatedProfile();
         p.setAllowedConnectorIds(List.of()); // simulate corrupted record
         when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
 
         ResponseEntity<ExternalIngestResult> res = ingest(baseRequest());
         assertEquals(HttpStatus.FORBIDDEN, res.getStatusCode());
@@ -178,6 +179,7 @@ class ExternalIngestControllerGateTest {
         ImportProfileDefinition p = delegatedProfile();
         p.setAllowedConnectorIds(null); // simulate corrupted record
         when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
 
         ResponseEntity<ExternalIngestResult> res = ingest(baseRequest());
         assertEquals(HttpStatus.FORBIDDEN, res.getStatusCode());
@@ -193,6 +195,7 @@ class ExternalIngestControllerGateTest {
         CallContext ctx = nonAdminContext();
         ImportProfileDefinition p = delegatedProfile();
         when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
 
         // cmis:all on folder — passes
         when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
@@ -214,6 +217,7 @@ class ExternalIngestControllerGateTest {
         CallContext ctx = nonAdminContext();
         ImportProfileDefinition p = delegatedProfile();
         when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
 
         // No explicit connectorId on the request → fall back to profile default
         ExternalIngestRequest req = baseRequest();
@@ -242,6 +246,7 @@ class ExternalIngestControllerGateTest {
         CallContext ctx = nonAdminContext();
         ImportProfileDefinition p = delegatedProfile();
         when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
 
         ExternalIngestRequest req = baseRequest();
         req.setConnectorId(null);   // ← the omission case
@@ -277,6 +282,7 @@ class ExternalIngestControllerGateTest {
         p.setDefaultConnectorId("rogue-conn");                 // not in allowed list
         p.setAllowedConnectorIds(java.util.List.of(CONN));     // canonical list
         when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
 
         ExternalIngestRequest req = baseRequest();
         req.setConnectorId(null);
@@ -302,6 +308,7 @@ class ExternalIngestControllerGateTest {
         ImportProfileDefinition p = delegatedProfile();
         p.setDefaultConnectorId(null);
         when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
 
         ExternalIngestRequest req = baseRequest();
         req.setConnectorId(null);
@@ -319,10 +326,218 @@ class ExternalIngestControllerGateTest {
     // ──────────────────────────────────────────────────────────────────
 
     @Test
+    void twoRowsOfOneProfileInThisRepository_isRefusedBeforeAnyImport() {
+        // The gate authorises a folder and a connector from the row it reads; the import
+        // service reads the profile AGAIN. With two rows of one profileId in one repository
+        // the selector can hand each side a different row, so the folder that was authorised
+        // and the folder that receives the content need not be the same. The gate resolves
+        // index-free and refuses the pair, so no second read can differ. A review showed the
+        // authorisation boundary was wider than the DELETE verb.
+        nonAdminContext();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(delegatedProfile());
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenThrow(
+                new ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException(
+                        "import profile " + PROF + " has more than one definition row"));
+
+        ResponseEntity<ExternalIngestResult> res = ingest(baseRequest());
+
+        assertEquals(HttpStatus.CONFLICT, res.getStatusCode(),
+                "a profile with two rows in this repository was authorised from one of them");
+        verifyNoInteractions(canonicalImportService);
+    }
+
+    @Test
+    void aProfileBoundToNoRepository_isRefused() {
+        // A row with repositoryId == null is not a wildcard. The confinement check read
+        // "repositoryId != null && !equals(caller)", so null slipped through and a corrupt or
+        // half-migrated row acted as a profile for EVERY repository — invisible to the admin
+        // API, which is repository-confined, while the runtime used it as configuration. The
+        // service that lets an administrator delete such a row calls it "belonging to none".
+        nonAdminContext();
+        ImportProfileDefinition unowned = delegatedProfile();
+        unowned.setRepositoryId(null);
+        when(importProfileDefinitionService.get(PROF)).thenReturn(unowned);
+
+        ResponseEntity<ExternalIngestResult> res = ingest(baseRequest());
+
+        assertEquals(HttpStatus.FORBIDDEN, res.getStatusCode(),
+                "a profile bound to no repository was accepted as this repository's");
+        verifyNoInteractions(canonicalImportService);
+    }
+
+    @Test
+    void aRetryableImportRefusal_is503NotAServerError() {
+        // Every refusal this batch added to the import path ends in "retry shortly", and the
+        // status mapper matched none of its substrings — so a rebuilding index answered 500,
+        // the status the admin controller's own comment calls "what opens tickets for a
+        // condition a retry resolves". A review measured the split: the same twin state was
+        // 409 through this gate and 500 through the import.
+        CallContext ctx = nonAdminContext();
+        ImportProfileDefinition p = delegatedProfile();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER)).thenReturn(true);
+        ConnectorDefinition c = delegatedConnector();
+        when(connectorDefinitionService.get(CONN)).thenReturn(c);
+        when(ingestAuthorizationService.canUseConnectorForDelegatedProfile(ctx, REPO, c, FOLDER))
+                .thenReturn(true);
+        when(canonicalImportService.execute(eq(ctx), any(ExternalIngestRequest.class)))
+                .thenReturn(ExternalIngestResult.error("src-1", "import profile " + PROF
+                        + " exists but could not be read for this import; retry shortly"));
+
+        ResponseEntity<ExternalIngestResult> res = ingest(baseRequest());
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
+                "a read that could not be answered was reported as a server fault");
+    }
+
+    @Test
+    void aStandingTwinPairFromTheImport_is409NotAServerError() {
+        // The admin import path reaches the same state the gate refuses with 409. It answered
+        // 500 — one condition, two statuses, depending on which door the caller used.
+        CallContext ctx = nonAdminContext();
+        ImportProfileDefinition p = delegatedProfile();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER)).thenReturn(true);
+        ConnectorDefinition c = delegatedConnector();
+        when(connectorDefinitionService.get(CONN)).thenReturn(c);
+        when(ingestAuthorizationService.canUseConnectorForDelegatedProfile(ctx, REPO, c, FOLDER))
+                .thenReturn(true);
+        when(canonicalImportService.execute(eq(ctx), any(ExternalIngestRequest.class)))
+                .thenReturn(ExternalIngestResult.error("src-1", "import profile " + PROF
+                        + " has 2 definition rows; an update would write to one of them"));
+
+        ResponseEntity<ExternalIngestResult> res = ingest(baseRequest());
+
+        assertEquals(HttpStatus.CONFLICT, res.getStatusCode(),
+                "a standing pair an administrator must resolve was reported as a server fault");
+    }
+
+    @Test
+    void aGetForRepositoryTwinMessage_is409NotAServerError() {
+        // The production getForRepository wording is "more than one definition row"
+        // (singular). Matching only "definition rows" left this door at 500. A review
+        // measured the split.
+        CallContext ctx = nonAdminContext();
+        ImportProfileDefinition p = delegatedProfile();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER)).thenReturn(true);
+        ConnectorDefinition c = delegatedConnector();
+        when(connectorDefinitionService.get(CONN)).thenReturn(c);
+        when(ingestAuthorizationService.canUseConnectorForDelegatedProfile(ctx, REPO, c, FOLDER))
+                .thenReturn(true);
+        when(canonicalImportService.execute(eq(ctx), any(ExternalIngestRequest.class)))
+                .thenReturn(ExternalIngestResult.error("src-1",
+                        "import profile " + PROF
+                                + " has more than one definition row in repository '"
+                                + REPO + "'; resolve the pair first"));
+
+        ResponseEntity<ExternalIngestResult> res = ingest(baseRequest());
+
+        assertEquals(HttpStatus.CONFLICT, res.getStatusCode(),
+                "the import-path twin wording was reported as a server fault");
+    }
+
+    @Test
+    void aMailRepositoryMismatch_is403NotAServerError() {
+        // Mail early validation used to answer "Profile repository mismatch", which the
+        // status mapper did not match — 500 on the mail door, 403 through execute(). A
+        // review measured the split. The short wording is still recognised so a leftover
+        // message cannot reopen the ticket.
+        CallContext ctx = mock(CallContext.class);
+        when(ctx.getUsername()).thenReturn("admin");
+        when(httpRequest.getAttribute("CallContext")).thenReturn(ctx);
+        when(ingestAuthorizationService.isAdmin(ctx)).thenReturn(true);
+
+        ExternalIngestRequest req = baseRequest();
+        req.setSourceObjectType("message");
+        req.setFileName("note.eml");
+        req.setConnectorId(null);
+        when(canonicalImportService.executeMailImport(eq(ctx), any(ExternalIngestRequest.class)))
+                .thenReturn(ExternalIngestResult.error("src-1", "Profile repository mismatch"));
+
+        ResponseEntity<ExternalIngestResult> res = ingest(req);
+
+        assertEquals(HttpStatus.FORBIDDEN, res.getStatusCode(),
+                "a mail-path repository mismatch was reported as a server fault");
+    }
+
+    @Test
+    void theGateStampsTheRowItAuthorized() {
+        // The import resolves the profile again and refuses when the row is not the one that
+        // was authorised — which measures nothing unless the gate actually says which row
+        // that was. This is the other half of that pair.
+        CallContext ctx = nonAdminContext();
+        ImportProfileDefinition p = delegatedProfile();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER)).thenReturn(true);
+        ConnectorDefinition c = delegatedConnector();
+        when(connectorDefinitionService.get(CONN)).thenReturn(c);
+        when(ingestAuthorizationService.canUseConnectorForDelegatedProfile(ctx, REPO, c, FOLDER))
+                .thenReturn(true);
+        when(canonicalImportService.execute(eq(ctx), any(ExternalIngestRequest.class)))
+                .thenReturn(ExternalIngestResult.success("src-1", "obj-1", "1.0", false, null));
+
+        ingest(baseRequest());
+
+        org.mockito.ArgumentCaptor<ExternalIngestRequest> sent =
+                org.mockito.ArgumentCaptor.forClass(ExternalIngestRequest.class);
+        verify(canonicalImportService).execute(eq(ctx), sent.capture());
+        assertEquals(CanonicalImportServiceImpl.authorizationFingerprint(p),
+                sent.getValue().getAuthorizedProfileFingerprint(),
+                "the import was dispatched without saying which row had been authorised");
+    }
+
+    @Test
+    void aStampTheCallerSuppliedIsOverwrittenByTheGate() {
+        // The stamps cannot be set from the wire (AuthorizationStampsAreNotAcceptedFromTheWire
+        // measures that). This is the layer behind it: even a request that arrives already
+        // stamped — a caller inside the JVM, a future binding change — is stamped AGAIN with
+        // what the gate itself checked, so the import compares against the gate's own reading
+        // and not the caller's. A review found only the "the gate sets it" half measured, and
+        // only for the profile: the folder id had nothing.
+        CallContext ctx = nonAdminContext();
+        ImportProfileDefinition p = delegatedProfile();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER)).thenReturn(true);
+        ConnectorDefinition c = delegatedConnector();
+        when(connectorDefinitionService.get(CONN)).thenReturn(c);
+        when(ingestAuthorizationService.canUseConnectorForDelegatedProfile(ctx, REPO, c, FOLDER))
+                .thenReturn(true);
+        when(canonicalImportService.execute(eq(ctx), any(ExternalIngestRequest.class)))
+                .thenReturn(ExternalIngestResult.success("src-1", "obj-1", "1.0", false, null));
+
+        ExternalIngestRequest forged = baseRequest();
+        forged.setAuthorizedProfileFingerprint("forged-by-the-caller");
+        forged.setAuthorizedTargetFolderId("F-forged");
+
+        ingest(forged);
+
+        org.mockito.ArgumentCaptor<ExternalIngestRequest> sent =
+                org.mockito.ArgumentCaptor.forClass(ExternalIngestRequest.class);
+        verify(canonicalImportService).execute(eq(ctx), sent.capture());
+        assertEquals(CanonicalImportServiceImpl.authorizationFingerprint(p),
+                sent.getValue().getAuthorizedProfileFingerprint(),
+                "the caller's own fingerprint reached the import");
+        assertEquals(FOLDER, sent.getValue().getAuthorizedTargetFolderId(),
+                "the caller's own folder id reached the import");
+    }
+
+    @Test
     void allGatesPass_dispatchesToCanonicalImportService() {
         CallContext ctx = nonAdminContext();
         ImportProfileDefinition p = delegatedProfile();
         when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
 
         when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
         when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER)).thenReturn(true);
@@ -427,5 +642,436 @@ class ExternalIngestControllerGateTest {
                 "expected PROFILE_ID_REQUIRED in " + reasons);
         org.junit.jupiter.api.Assertions.assertTrue(reasons.contains("PROFILE_NOT_FOUND"),
                 "expected PROFILE_NOT_FOUND in " + reasons);
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // A connector read that did not answer must not become "no connector"
+    // ──────────────────────────────────────────────────────────────────
+
+    private CallContext adminContext() {
+        CallContext ctx = mock(CallContext.class);
+        when(ctx.getUsername()).thenReturn("admin");
+        when(httpRequest.getAttribute("CallContext")).thenReturn(ctx);
+        when(ingestAuthorizationService.isAdmin(ctx)).thenReturn(true);
+        return ctx;
+    }
+
+    /** A request that names a connector and whose type alone would route it to the mail flow. */
+    private ExternalIngestRequest messageOnANamedConnector() {
+        ExternalIngestRequest req = baseRequest();
+        req.setSourceObjectType("message");
+        req.setConnectorId(CONN);
+        return req;
+    }
+
+    @Test
+    void aFailedConnectorReadDoesNotPickTheImportFlowFromTheFileName() {
+        // resolveConnectorArchetype answered null for a FAILED read, and null is what the
+        // dispatch reads as "no connector context" — so the request was committed through the
+        // flow the file name and sourceObjectType suggest. On a CHAT_CONTEXT connector,
+        // "message" is parsed as mail, and the chosen flow does not re-check the archetype.
+        adminContext();
+        when(connectorDefinitionService.get(CONN))
+                .thenThrow(new RuntimeException("connection reset"));
+
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> ingest(messageOnANamedConnector()),
+                "a connector read that failed was answered as 'no connector context'");
+        verifyNoInteractions(canonicalImportService);
+    }
+
+    @Test
+    void aHiddenConnectorRowDoesNotPickTheImportFlowFromTheFileName() {
+        // The other half: get() answers null for a row the selector cannot show while its
+        // index rebuilds, exactly as it does for an absent connector. Only the index-free
+        // walk separates them, and only this one may not fall through.
+        adminContext();
+        when(connectorDefinitionService.get(CONN)).thenReturn(null);
+        when(connectorDefinitionService.existsIndexFree(CONN)).thenReturn(true);
+
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> ingest(messageOnANamedConnector()),
+                "a connector row the index could not show was answered as 'no connector'");
+        verifyNoInteractions(canonicalImportService);
+    }
+
+    @Test
+    void aConnectorTheWalkSaysIsAbsentStillFallsThroughToTheHeuristics() {
+        // The over-throw control. An unknown connectorId must keep behaving as it always has;
+        // turning absence into a 503 would make every mistyped id a retry loop.
+        CallContext ctx = adminContext();
+        when(connectorDefinitionService.get(CONN)).thenReturn(null);
+        when(connectorDefinitionService.existsIndexFree(CONN)).thenReturn(false);
+        when(canonicalImportService.executeMailImport(eq(ctx), any(ExternalIngestRequest.class)))
+                .thenReturn(ExternalIngestResult.error("src-1", "downstream said no"));
+
+        assertDoesNotThrow(() -> ingest(messageOnANamedConnector()),
+                "an absent connector started refusing — every unknown id becomes a 503");
+        verify(canonicalImportService).executeMailImport(eq(ctx), any(ExternalIngestRequest.class));
+    }
+
+    @Test
+    void theMultipartDoorAnswersTheSameRefusalAsTheJsonDoor() throws Exception {
+        // ingestMultipart USED TO wrap parsing AND the whole ingest in one catch(Exception)
+        // -> 400 "Invalid request", so the same ingest answered 503 as JSON and 400 as
+        // multipart — the 400 asserting something about the caller's request that no read
+        // established. The rethrow arm that closed it for these three types is gone with R33:
+        // the ingest now sits outside the parse catch, so nothing it raises can reach it.
+        adminContext();
+        when(connectorDefinitionService.get(CONN))
+                .thenThrow(new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                        "connector " + CONN + " exists but could not be read as that connector"));
+        String json = "{\"profileId\":\"" + PROF + "\",\"connectorId\":\"" + CONN
+                + "\",\"sourceObjectId\":\"src-1\",\"sourceObjectType\":\"message\"}";
+
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> controller.ingestMultipart(REPO, json, null),
+                "the multipart door swallowed a read refusal as \"Invalid request\" (400)");
+        verifyNoInteractions(canonicalImportService);
+    }
+
+    @Test
+    void aConnectorRowWithNoArchetypeDoesNotPickTheFlowFromTheFileName() {
+        // The other arm of the same hole: the row READS, and says nothing about what it is.
+        // Returning null there reaches the identical wrong dispatch — an audit of the first
+        // fix found the arm still open, and the sibling DLQ replay refuses this same input
+        // with the same reasoning.
+        CallContext ctx = adminContext();
+        ConnectorDefinition noArchetype = new ConnectorDefinition();
+        noArchetype.setConnectorId(CONN);
+        noArchetype.setEnabled(true);
+        when(connectorDefinitionService.get(CONN)).thenReturn(noArchetype);
+
+        ExternalIngestController.ConnectorArchetypeUnusableException refused = assertThrows(
+                ExternalIngestController.ConnectorArchetypeUnusableException.class,
+                () -> ingest(messageOnANamedConnector()),
+                "a connector that does not say what it is was answered as 'no connector'");
+        assertTrue(refused.getMessage().contains("sourceArchetype"),
+                "the refusal does not tell the operator what to fix: " + refused.getMessage());
+        verifyNoInteractions(canonicalImportService);
+        // Not a retry: the walk is not even consulted, because the row was read.
+        verify(connectorDefinitionService, never()).existsIndexFree(CONN);
+        assertEquals(HttpStatus.CONFLICT,
+                controller.connectorCannotSayWhatItIs(refused).getStatusCode(),
+                "a row an operator has to fix was answered as a retry");
+        assertNotNull(ctx);
+    }
+
+    @Test
+    void anUnwiredConnectorServiceDoesNotPickTheFlowFromTheFileName() throws Exception {
+        // The third arm, found by two reviewers independently after the first two were
+        // closed: an unwired service answered null, and the dispatch reads null as "no
+        // connector context". Latent behind Spring's required wiring, but this class exists
+        // to exercise exactly the "service is null" modes, and the non-admin path already
+        // refuses on this one.
+        adminContext();
+        inject("connectorDefinitionService", null);
+
+        ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused = assertThrows(
+                ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> ingest(messageOnANamedConnector()),
+                "an unwired connector service was answered as 'no connector context'");
+        // On the MESSAGE, because the refusal alone does not discriminate: without the guard
+        // the very next line dereferences the null service, the NullPointerException lands on
+        // the failed-read arm, and the caller still gets a refusal — with a reason that names
+        // a read failure instead of the wiring. The control measured that and did not fire
+        // until this assertion was added.
+        assertTrue(refused.getMessage().contains("not wired on this node"),
+                "an unwired node was reported as a failed read: " + refused.getMessage());
+        verifyNoInteractions(canonicalImportService);
+    }
+
+    @Test
+    void aDelegatedIngestRefusedByAReadIsStillAudited() throws Exception {
+        // A delegated attempt that leaves by exception left NO audit entry, while the same
+        // input was audited before those refusals existed — and the javadoc said the trail
+        // covered every outcome. A review found the gap; the note that followed said closing
+        // it would mean touching the authorisation gate, and the next review showed the
+        // dispatch call site already holds everything the audit needs.
+        CallContext ctx = nonAdminContext();
+        jp.aegif.nemaki.audit.AuditLogger auditLogger =
+                mock(jp.aegif.nemaki.audit.AuditLogger.class);
+        inject("auditLogger", auditLogger);
+        ImportProfileDefinition p = delegatedProfile();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER))
+                .thenReturn(true);
+        when(ingestAuthorizationService.canUseConnectorForDelegatedProfile(
+                any(), any(), any(), any())).thenReturn(true);
+        // The gate reads the connector and does not look at its archetype; the dispatch
+        // reads it and refuses. One row serves both, so the gate passes and the refusal is
+        // raised exactly where the audit used to be lost.
+        ConnectorDefinition noArchetype = delegatedConnector();
+        noArchetype.setSourceArchetype(null);
+        when(connectorDefinitionService.get(CONN)).thenReturn(noArchetype);
+
+        assertThrows(ExternalIngestController.ConnectorArchetypeUnusableException.class,
+                () -> ingest(messageOnANamedConnector()),
+                "the dispatch accepted a connector that does not say what it is");
+
+        verify(auditLogger).logOperation(
+                any(jp.aegif.nemaki.audit.AuditOperation.class), any(), any(), any(),
+                eq(false), any(), any());
+        assertNotNull(ctx);
+    }
+
+    @Test
+    void theRefusalAnswersTheEndpointsOwnDocument() {
+        // The handler returned a bare map while every other answer from this endpoint is an
+        // ExternalIngestResult, so a client parsing requestId / success / errors got a shape
+        // it does not know from the one path that refuses. A review found the undescribed
+        // change.
+        ResponseEntity<ExternalIngestResult> res = controller.definitionRowsCouldNotBeRead(
+                new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException("nope"));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode());
+        assertNotNull(res.getBody(), "the refusal answered no document at all");
+        assertFalse(res.getBody().isSuccess(), "a refusal reported success");
+    }
+
+    @Test
+    void aDelegatedIngestRefusedInsideTheGateIsAlsoAudited() throws Exception {
+        // The gate READS the connector too, and its two reads sit outside the catch the
+        // previous round added around the dispatch — so this half of the audit gap stayed
+        // open while the javadoc and the release notes said every outcome was recorded. The
+        // control for the other half stayed green under this one's sabotage, which is how it
+        // was found to need its own lock.
+        CallContext ctx = nonAdminContext();
+        jp.aegif.nemaki.audit.AuditLogger auditLogger =
+                mock(jp.aegif.nemaki.audit.AuditLogger.class);
+        inject("auditLogger", auditLogger);
+        ImportProfileDefinition p = delegatedProfile();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(p);
+        when(importProfileDefinitionService.getForRepository(PROF, REPO)).thenReturn(p);
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER))
+                .thenReturn(true);
+        // The GATE's own read is the one that refuses.
+        when(connectorDefinitionService.get(CONN)).thenThrow(
+                new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                        "connector " + CONN + " exists but could not be read as that connector"));
+
+        assertThrows(ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+                () -> ingest(messageOnANamedConnector()));
+
+        verify(auditLogger).logOperation(
+                any(jp.aegif.nemaki.audit.AuditOperation.class), any(), any(), any(),
+                eq(false), any(), any());
+    }
+
+    @Test
+    void aStandingProfileMisconfigurationIsA400_notARetryAndNotOurBug() {
+        // What this measures: the STATUS the classifier gives that message. The service is
+        // stubbed here, so the message itself is the test's own — the producer's side is
+        // measured in CanonicalImportServiceTest and IngestEvidenceSnapshotTest, which assert
+        // that the product emits the token this arm keys on. An earlier version of this
+        // comment claimed it measured the caller's suffix; a review pointed out that the
+        // stub makes that unfalsifiable.
+        CallContext ctx = adminContext();
+        ExternalIngestRequest req = baseRequest();
+        req.setConnectorId(null);
+        when(canonicalImportService.execute(eq(ctx), any(ExternalIngestRequest.class)))
+                .thenReturn(ExternalIngestResult.error("src-1",
+                        "the target folder path '/a/b' of this profile resolves to a"
+                                + " cmis:document, not a folder; fix the profile"));
+
+        ResponseEntity<ExternalIngestResult> res = ingest(req);
+
+        assertEquals(HttpStatus.BAD_REQUEST, res.getStatusCode(),
+                "a standing profile misconfiguration was answered as our bug (500) or as a "
+                        + "retry (503)");
+        assertNotNull(res.getBody());
+    }
+
+    @Test
+    void aTargetFolderReadThatCouldNotAnswerIsStillA503() {
+        // What this measures: the STATUS the classifier gives a message that carries the
+        // retry marker. The service is stubbed, so the marker is the test's own — that the
+        // PRODUCT still emits it is measured in
+        // CanonicalImportServiceTest.aTargetFolderReadThatCouldNotAnswerKeepsItsRetryMarker.
+        // An earlier comment here claimed this lock kept the suffix honest; a review pointed
+        // out the stub makes that unfalsifiable, as its 400 twin had already been corrected.
+        CallContext ctx = adminContext();
+        ExternalIngestRequest req = baseRequest();
+        req.setConnectorId(null);
+        when(canonicalImportService.execute(eq(ctx), any(ExternalIngestRequest.class)))
+                .thenReturn(ExternalIngestResult.error("src-1",
+                        "the target folder path '/a/b' of this profile could not be resolved:"
+                                + " connection reset; retry shortly"));
+
+        ResponseEntity<ExternalIngestResult> res = ingest(req);
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
+                "a read that could not answer stopped being a retry");
+    }
+
+    // ── R33: "Invalid request" is a claim about the request, not about the ingest ──
+
+    /** The JSON of {@link #baseRequest()}, for the multipart door's request part. */
+    private static String baseRequestJson() {
+        return "{\"profileId\":\"" + PROF + "\",\"connectorId\":\"" + CONN
+                + "\",\"sourceObjectId\":\"src-1\",\"sourceObjectType\":\"file\"}";
+    }
+
+    @Test
+    void theMultipartDoorAnswersAnIngestFailureTheWayTheJsonDoorDoes() {
+        // The arm exists for a malformed multipart body. It also held the whole ingest, so a
+        // failure that says nothing about the caller's request — here the import service
+        // itself throwing — answered 400 "Invalid request" as multipart and left as an
+        // exception (500) as JSON. The 400 asserts something no read established (R33).
+        adminContext();
+        when(connectorDefinitionService.get(CONN)).thenReturn(delegatedConnector());
+        when(canonicalImportService.execute(any(), any(ExternalIngestRequest.class)))
+                .thenThrow(new IllegalStateException("the import flow blew up"));
+
+        RuntimeException fromJson = assertThrows(RuntimeException.class,
+                () -> controller.ingestJson(REPO, baseRequest()));
+        RuntimeException fromMultipart = assertThrows(RuntimeException.class,
+                () -> controller.ingestMultipart(REPO, baseRequestJson(), null),
+                "the multipart door answered an ingest failure as \"Invalid request\" (400)");
+        assertEquals(fromJson.getClass(), fromMultipart.getClass(),
+                "the two doors answer the same ingest failure with different types");
+        assertEquals(fromJson.getMessage(), fromMultipart.getMessage(),
+                "the two doors answer the same ingest failure differently");
+    }
+
+    @Test
+    void theMultipartDoorStill400sAMalformedRequestPart() {
+        // The over-throw guard, and the reason the arm exists: a request part that is not
+        // this document IS a claim about the caller's request.
+        adminContext();
+
+        ResponseEntity<ExternalIngestResult> res = assertDoesNotThrow(
+                () -> controller.ingestMultipart(REPO, "{not json", null),
+                "a malformed request part escaped instead of answering 400");
+        assertEquals(HttpStatus.BAD_REQUEST, res.getStatusCode());
+        assertTrue(String.valueOf(res.getBody().errors()).contains("Invalid request"),
+                "the malformed body lost its answer: " + res.getBody().errors());
+        verifyNoInteractions(canonicalImportService);
+    }
+
+    @Test
+    void theMultipartDoorStill400sAnOversizedFile() {
+        // The other over-throw guard: the size limit is about the request too, and it must
+        // keep its own message rather than becoming the generic one.
+        adminContext();
+        org.springframework.web.multipart.MultipartFile big =
+                mock(org.springframework.web.multipart.MultipartFile.class);
+        when(big.isEmpty()).thenReturn(false);
+        when(big.getSize()).thenReturn(200L * 1024 * 1024);
+
+        ResponseEntity<ExternalIngestResult> res = assertDoesNotThrow(
+                () -> controller.ingestMultipart(REPO, baseRequestJson(), big),
+                "an oversized upload escaped instead of answering 400");
+        assertEquals(HttpStatus.BAD_REQUEST, res.getStatusCode());
+        assertTrue(String.valueOf(res.getBody().errors()).contains("maximum size"),
+                "the size refusal lost its message: " + res.getBody().errors());
+        verifyNoInteractions(canonicalImportService);
+    }
+
+    @Test
+    void theMultipartDoorStill400sARequestPartThatIsJsonNull() {
+        // "null" PARSES — Jackson answers it with null instead of throwing — so narrowing the
+        // catch to parsing sent it on to the ingest, which died on it (500) while the JSON
+        // door answers 400 for the same input. The over-throw guard for the arm that closed
+        // it, and the reason it is not covered by the malformed-body lock above.
+        adminContext();
+
+        ResponseEntity<ExternalIngestResult> res = assertDoesNotThrow(
+                () -> controller.ingestMultipart(REPO, "null", null),
+                "a request part that parsed to nothing escaped as a server fault");
+        assertEquals(HttpStatus.BAD_REQUEST, res.getStatusCode());
+        verifyNoInteractions(canonicalImportService);
+    }
+
+    // ── R46: opening the part WE stored is not a claim about the caller's request ──
+
+    @Test
+    void aStoredPartThisNodeCannotOpenIsNotTheCallersBadRequest() throws Exception {
+        // The other three refusals of this door are claims the caller's own bytes made: the
+        // part does not parse, it parses to nothing, it is too large. This one is ours — the
+        // container has already stored the part by the time the method runs, so opening it
+        // fails for our reasons (the temp directory, the disk). It answered 400 "Invalid
+        // request" for a read that had established nothing about the request.
+        adminContext();
+        org.springframework.web.multipart.MultipartFile unreadable =
+                mock(org.springframework.web.multipart.MultipartFile.class);
+        when(unreadable.isEmpty()).thenReturn(false);
+        when(unreadable.getSize()).thenReturn(12L);
+        when(unreadable.getInputStream())
+                .thenThrow(new java.io.IOException("stored part is gone"));
+
+        ResponseEntity<ExternalIngestResult> res = assertDoesNotThrow(
+                () -> controller.ingestMultipart(REPO, baseRequestJson(), unreadable),
+                "a stored part this node could not open escaped as a server fault");
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
+                "a read that FAILED on our side was answered as the caller's bad request");
+        // R49: the refusal is still identifiable — it says which failure this is — but the
+        // underlying reason stays in the log. This answer is given BEFORE doIngest's delegation
+        // gate, so a caller authenticated but not authorised for any profile receives it, and
+        // a failure opening a stored part names a path on this host.
+        assertTrue(String.valueOf(res.getBody().errors())
+                        .contains(ExternalIngestController.STORED_PART_UNREADABLE),
+                "the refusal stopped naming which failure it is: " + res.getBody().errors());
+        assertFalse(String.valueOf(res.getBody().errors()).contains("stored part is gone"),
+                "the store's own words reached the caller: " + res.getBody().errors());
+        // And it must not be reported as an ingest that happened.
+        verifyNoInteractions(canonicalImportService);
+    }
+
+    @Test
+    void theDefinitionRowRefusalDoesNotHandTheCallerTheStoresWords() {
+        // R49's other half. These refusals carry the store's own message — "the ingest store
+        // did not answer the query for [type]; retry shortly: <SDK message>" — and the SDK
+        // names the host it could not reach. The handler answers before the delegation gate.
+        ResponseEntity<ExternalIngestResult> res = controller.definitionRowsCouldNotBeRead(
+                new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException(
+                        "the ingest store did not answer: couchdb.internal:5984 refused"));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode());
+        assertFalse(String.valueOf(res.getBody().errors()).contains("couchdb.internal"),
+                "the store's own words reached the caller: " + res.getBody().errors());
+        assertTrue(String.valueOf(res.getBody().errors())
+                        .contains(ExternalIngestController.DEFINITION_ROW_UNREADABLE),
+                "the refusal stopped saying which failure it is: " + res.getBody().errors());
+    }
+
+    @Test
+    void aStoredPartThisNodeCanOpenStillReachesTheIngest() throws Exception {
+        // The over-throw guard for the arm above: a part that opens must not refuse. Without
+        // it, widening the refusal to every upload would still leave the lock above green.
+        adminContext();
+        when(connectorDefinitionService.get(CONN)).thenReturn(delegatedConnector());
+        org.springframework.web.multipart.MultipartFile readable =
+                mock(org.springframework.web.multipart.MultipartFile.class);
+        when(readable.isEmpty()).thenReturn(false);
+        when(readable.getSize()).thenReturn(4L);
+        when(readable.getInputStream())
+                .thenReturn(new java.io.ByteArrayInputStream("data".getBytes()));
+        when(readable.getOriginalFilename()).thenReturn("a.txt");
+        when(readable.getContentType()).thenReturn("text/plain");
+        when(canonicalImportService.execute(any(), any(ExternalIngestRequest.class)))
+                .thenReturn(ExternalIngestResult.success("src-1", "obj-1", "1.0", false, null));
+
+        ResponseEntity<ExternalIngestResult> res = assertDoesNotThrow(
+                () -> controller.ingestMultipart(REPO, baseRequestJson(), readable),
+                "a readable upload escaped");
+        assertEquals(HttpStatus.OK, res.getStatusCode(),
+                "a part that opens was refused: " + res.getBody());
+        // Not "execute was called": that is the cheap substitute for the claim this lock's
+        // name makes. What the arm must leave behind is the OPENED stream on the request the
+        // ingest receives — setContentStream(null) past an uncaught read would satisfy a bare
+        // verify(). A review found the substitution.
+        org.mockito.ArgumentCaptor<ExternalIngestRequest> dispatched =
+                org.mockito.ArgumentCaptor.forClass(ExternalIngestRequest.class);
+        verify(canonicalImportService).execute(any(), dispatched.capture());
+        assertNotNull(dispatched.getValue().getContentStream(),
+                "the ingest was reached without the bytes this door opened");
+        assertEquals("a.txt", dispatched.getValue().getFileName(),
+                "the filename the part carried did not travel with it");
+        assertEquals("text/plain", dispatched.getValue().getMimeType(),
+                "the content type the part carried did not travel with it");
     }
 }

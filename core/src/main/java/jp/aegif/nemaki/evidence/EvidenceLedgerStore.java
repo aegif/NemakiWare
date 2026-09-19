@@ -46,6 +46,17 @@ public interface EvidenceLedgerStore {
     /** The highest sequence in this domain, or {@code -1} when the domain has no entries. */
     long highestSequence(String domain);
 
+    /**
+     * Rows the last read on this thread returned and could not decode.
+     *
+     * <p>Zero from a store that does not track it. A caller that reads an empty list as "the
+     * chain holds nothing about this" must consult it: a row the view returned and the store
+     * could not read is an entry that exists and is NOT in the list.
+     */
+    default int unreadableCount() {
+        return 0;
+    }
+
     /** Entries in ascending sequence order, inclusive. Duplicates at one sequence are RETURNED
      *  rather than collapsed — that is what a fork looks like, and hiding it here would make
      *  the verifier unable to see it. */

@@ -16,6 +16,8 @@
  */
 package jp.aegif.nemaki.util;
 
+import jp.aegif.nemaki.util.test.HarnessBroken;
+
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -188,7 +190,7 @@ class SolrClientWiringTest {
 			f.setAccessible(true);
 			f.set(target, value);
 		} catch (ReflectiveOperationException e) {
-			throw new AssertionError("could not set " + field + " — the field was renamed?", e);
+			throw new HarnessBroken("could not set " + field + " — the field was renamed?", e);
 		}
 	}
 }

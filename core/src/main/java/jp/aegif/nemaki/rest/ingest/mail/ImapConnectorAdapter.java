@@ -195,11 +195,27 @@ public class ImapConnectorAdapter {
         if (store == null || !store.isConnected()) {
             throw new MessagingException("Not connected — call connect() first");
         }
-
-        idleRunning = true;
+        // stopIdle can run after the session was registered and before this loop is
+        // entered. Writing idleRunning=true here used to re-arm a stopped adapter, so a
+        // DELETE that had already taken the session out of the registry left a live
+        // connection nobody could stop. A review named the window.
+        if (!armIdle()) {
+            throw new MessagingException("IDLE was stopped before start");
+        }
         Folder folder = store.getFolder(folderName);
         folder.open(Folder.READ_ONLY);
         idleFolder = folder;
+        // Arming and publishing the folder are two steps, and a stop can land between them:
+        // it then has no folder to close, waits ten seconds for a thread that has not started
+        // its loop, and gives up — after which this method would go on to install the
+        // listener and import messages the caller was told had been stopped. Re-checking
+        // after publication closes that window; the folder is now visible to stopIdle either
+        // way. A review measured the ordering.
+        if (!idleRunning) {
+            try { folder.close(false); } catch (Exception ignored) { /* already stopped */ }
+            idleFolder = null;
+            throw new MessagingException("IDLE was stopped while the mailbox was opening");
+        }
 
         long uidValidity = folder instanceof UIDFolder uf ? uf.getUIDValidity() : 0;
         final long uidV = uidValidity;
@@ -208,6 +224,13 @@ public class ImapConnectorAdapter {
             @Override
             public void messagesAdded(MessageCountEvent e) {
                 for (Message msg : e.getMessages()) {
+                    if (!idleRunning) {
+                        // A stop that arrived while this batch was in flight. Delivering the
+                        // rest would import mail after stopIdle() returned to its caller.
+                        logger.info("IDLE: stopped; dropping {} remaining notification(s)",
+                                e.getMessages().length);
+                        return;
+                    }
                     try {
                         String messageId = msg instanceof MimeMessage mm ? mm.getMessageID() : null;
                         String from = msg.getFrom() != null && msg.getFrom().length > 0
@@ -267,6 +290,7 @@ public class ImapConnectorAdapter {
 
     /** Stop the IDLE loop and wait for the thread to exit. */
     public void stopIdle() {
+        stopRequested.set(true);
         idleRunning = false;
         if (idleFolder != null && idleFolder.isOpen()) {
             try { idleFolder.close(false); } catch (Exception e) { /* triggers FolderClosedException in idle loop */ }
@@ -282,8 +306,30 @@ public class ImapConnectorAdapter {
     }
 
     private volatile boolean idleRunning;
+    private final java.util.concurrent.atomic.AtomicBoolean stopRequested =
+            new java.util.concurrent.atomic.AtomicBoolean();
     private volatile Thread idleThread;
     private volatile Folder idleFolder;
+
+    /**
+     * Claim the loop. False when {@link #stopIdle()} has already run — the only thing
+     * that keeps a late {@link #startIdle} from writing {@code idleRunning} back to true.
+     */
+    boolean armIdle() {
+        if (stopRequested.get()) {
+            return false;
+        }
+        idleRunning = true;
+        if (stopRequested.get()) {
+            idleRunning = false;
+            return false;
+        }
+        return true;
+    }
+
+    boolean isIdleRunning() {
+        return idleRunning;
+    }
 
     /** Set the thread running the IDLE loop (called by scheduler after thread start). */
     public void setIdleThread(Thread thread) { this.idleThread = thread; }

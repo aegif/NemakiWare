@@ -51,6 +51,26 @@ C = requests.Session()
 C.auth = ("admin", "password")
 
 
+# The reindex ends on one of these. "completed_with_errors" is the newest and was added to
+# the server on both the CMIS and RAG sides; a poller that waits for "completed" alone runs to
+# its deadline instead, and for THIS probe that is not merely slow — it keeps sampling after the
+# run is over and dilutes the peak it exists to measure.
+#
+# Unknown statuses stop the wait too, loudly. An accept-list breaks when a value is ADDED (this
+# is the second time), and `!= "running"` breaks when a non-terminal value is added, which is
+# worse for a probe because it ends early and reports a partial measurement as a whole one.
+TERMINAL = ("completed", "completed_with_errors", "error", "cancelled")
+
+
+def is_terminal(status):
+    if status == "running":
+        return False
+    if status in TERMINAL:
+        return True
+    raise SystemExit(f"the reindex reported a status this probe does not know: {status!r}. "
+                     f"Add it to TERMINAL if it is an end state; measuring against an "
+                     f"unrecognised status would report whatever the last poll happened to see.")
+
 def couch_latencies(samples=60):
     """Time the three CouchDB reads the indexing phase makes per document."""
     r = C.post(f"{COUCH}/_design/_repo/_view/documents",
@@ -97,7 +117,7 @@ def reindex_with_breakdown():
     while time.time() - t0 < 36000:
         st = S.get(f"{BASE}/api/v1/cmis/repositories/{REPO}/search-engine/status",
                    timeout=120).json()
-        if st.get("status") in ("completed", "error", "cancelled"):
+        if is_terminal(st.get("status")):
             break
         time.sleep(5)
     st["_wallMs"] = int((time.time() - t0) * 1000)

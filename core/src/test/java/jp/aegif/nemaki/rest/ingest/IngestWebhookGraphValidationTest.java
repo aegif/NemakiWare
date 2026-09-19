@@ -71,7 +71,8 @@ class IngestWebhookGraphValidationTest {
         teams.setConnectorId("c-teams");
         teams.setEnabled(true);
         teams.setSourceSystem("teams");
-        when(connectorDefinitionService.get("c-teams")).thenReturn(teams);
+        when(connectorDefinitionService.resolveOrRefuse("c-teams"))
+                .thenReturn(new ConnectorDefinitionService.Resolution(teams, true));
 
         mockMvc.perform(post("/v1/ingest-webhook/c-teams")
                         .contentType("text/plain;charset=UTF-8")
@@ -87,7 +88,8 @@ class IngestWebhookGraphValidationTest {
         m.setConnectorId("c-mail");
         m.setEnabled(true);
         m.setSourceSystem("m365_mail");
-        when(connectorDefinitionService.get("c-mail")).thenReturn(m);
+        when(connectorDefinitionService.resolveOrRefuse("c-mail"))
+                .thenReturn(new ConnectorDefinitionService.Resolution(m, true));
 
         mockMvc.perform(post("/v1/ingest-webhook/c-mail")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -103,7 +105,8 @@ class IngestWebhookGraphValidationTest {
         slack.setConnectorId("c-slack");
         slack.setEnabled(true);
         slack.setSourceSystem("slack");
-        when(connectorDefinitionService.get("c-slack")).thenReturn(slack);
+        when(connectorDefinitionService.resolveOrRefuse("c-slack"))
+                .thenReturn(new ConnectorDefinitionService.Resolution(slack, true));
 
         mockMvc.perform(post("/v1/ingest-webhook/c-slack")
                         .contentType("text/plain;charset=UTF-8")

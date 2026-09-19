@@ -382,7 +382,7 @@ CMIS 作成は lineage を出さず、発行は現状 fail-open で outbox も�
 `.ots` の upgrade を定期実行するスケジューラをどちらに置くか、オフライン環境での縮退動作。
 | **P2-1** ✅ 2026-08-25 — sidecar (`docker/ots/`) と `OpenTimestampsAnchorTarget` は 2026-08-18 実装済み。本日**受領証の永続化**を足して `upgrade()` が成立するようにした (保留中 proof のバイト列が再起動を越えないと、カレンダーは commitment を持つのにこちらは proof を出せない) | **OpenTimestamps アンカー** | D をカレンダーサーバへ送信 (HTTP POST のみ、鍵・ウォレット・暗号資産保有なし)。**公式クライアントは nonce 付き commitment を送る** — 生の D すら外に出ない (privacy 特性として明記・踏襲する)。**証明は二段階** — 送信直後は pending、Bitcoin ブロック確定後 (**数時間かかり得る**) にジョブが `.ots` を upgrade (dead-letter/リトライの既存パターン)。複数カレンダー併用。`.ots` の commitment とブロックヘッダの対応**だけ**は、`.ots` + 信頼できる Bitcoin ブロックヘッダ列で**当社にもカレンダーにも依存せず**照合できる。**それ以上は独立に検証できない** — 捕獲の網羅性・メタデータの真実性・最初のハッシュが正しく取られたことは、この照合では担保されない。証明の意味は「**そのコミットメントがそのブロック時刻までに存在した**」という上限側の存在証明であり、対称な誤差幅の時刻証明ではない。**主語はコミットメントであって記録ではない** |
 | **P2-2** ✅ 2026-08-25 — `Rfc3161AnchorTarget` は 2026-08-18 実装済み (BouncyCastle の落とし穴 6 件を明示的に処理)。本日 `AnchorWiringConfig` で設定可能にした。**認定 TSA の選定と契約は運用判断** | RFC 3161 タイムスタンプ (段 3) | 日次アンカー + 必要ならアーカイブ遷移時に TSA トークンを取得し保存。認定 TSA / フリー TSA をプラガブルに。**TSA policy OID・証明書/失効情報 (CRL/OCSP)・nonce・accuracy の保存**まで含めて「検証可能なトークン」とする (長期検証情報は P2-3) |
-| **P2-3** 第 2 段 2026-08-26 ([`p2-3-long-term-validity.md`](p2-3-long-term-validity.md)) — 第 1 段でアルゴリズム失効レジストリと renewal 種別判定 (これが無いと renewal 実装があっても発火せず、しかも**破れた後の renewal は元の時刻を救えない**ので監視が先)。第 2 段で **RFC 4998 evidence record の生成と検証を実装** (`ErsRecord` / `ErsVerifier`、§8)。**ただし data object は checkpoint hash であって文書ではない** — RFC 4998 §4.2 の縮約規則 (ソート連結・domain separation 無し) と本製品の RFC 6962 型 Merkle 木は別物なので、こちらの audit path を `reducedHashtree` に載せると標準ツールが必ず落とす。文書と checkpoint を結ぶのは本製品の inclusion proof で、標準 ERS 検証器はそれを見ない。アンカーからの組み立てと SIP 同梱まで実装済み (§9)。**未**: TSA 署名・証明書鎖・失効の検証 (trust anchor を持たない) | 長期有効性 | **timestamp renewal と hash-tree renewal は発火条件が異なる別操作** — 「再タイムスタンプ」の一語で潰さない。ERS は RFC 4998 (ASN.1/CMS) と RFC 6283 (XMLERS) が**表現形式の選択肢**で、採用可否と形式を設計判断として比較。`.ots`・TSA トークンは SIP (P3-1) に同梱して保全 |
+| **P2-3** 第 2 段 2026-08-26 ([`p2-3-long-term-validity.md`](p2-3-long-term-validity.md)) — 第 1 段でアルゴリズム失効レジストリと renewal 種別判定 (これが無いと renewal 実装があっても発火せず、しかも**破れた後の renewal は元の時刻を救えない**ので監視が先)。第 2 段で **RFC 4998 evidence record の生成と検証を実装** (`ErsRecord` / `ErsVerifier`、§8)。**ただし data object は checkpoint の正規化バイト列であって文書ではない** (`h = H(d)` が checkpoint hash である。**この行は 2026-08-26 まで「data object は checkpoint hash」と書いていた** — p2-3 §8 が「それをやると標準ツールが読めない記録になる」と記録して直した当の誤りで、**同じファイルの 31 行目は直されたのにこの行は残っていた**。2026-08-28 訂正) — RFC 4998 §4.2 の縮約規則 (ソート連結・domain separation 無し) と本製品の RFC 6962 型 Merkle 木は別物なので、こちらの audit path を `reducedHashtree` に載せると標準ツールが必ず落とす。文書と checkpoint を結ぶのは本製品の inclusion proof で、標準 ERS 検証器はそれを見ない。アンカーからの組み立てと SIP 同梱まで実装済み (§9)。**未**: TSA 署名・証明書鎖・失効の検証 (trust anchor を持たない) | 長期有効性 | **timestamp renewal と hash-tree renewal は発火条件が異なる別操作** — 「再タイムスタンプ」の一語で潰さない。ERS は RFC 4998 (ASN.1/CMS) と RFC 6283 (XMLERS) が**表現形式の選択肢**で、採用可否と形式を設計判断として比較。`.ots`・TSA トークンは SIP (P3-1) に同梱して保全 |
 
 **採らないもの**: Ethereum 系 (ガス代が発生)・プライベート/コンソーシアムチェーン
 (信頼の依存先がコンソーシアムに戻り、アンカーの目的を壊す)。
@@ -391,10 +391,10 @@ CMIS 作成は lineage を出さず、発行は現状 fail-open で outbox も�
 
 | ID | 何を | 具体 |
 |---|---|---|
-| **P3-1** 第 1 段 2026-08-25 ([`p3-1-eark-sip.md`](p3-1-eark-sip.md)) — CSIP 2.2.0 で生成。PREMIS クロスウォークは LoC 語彙から**弁護できる語だけ**宣言。**`export()` が同梱の `EARKSIPValidator` を必ず通す** (2026-08-26)。**バリデータが動いて却下した package は返さない** (fail-closed)。バリデータ自体が動かなかった場合は拒否せず「検査できなかった」と明記して返す — 「検査していない」と「不正」は別の答えで、無関係なローカル障害を記録の欠陥に見せない。判定は `X-Nemaki-Csip-Validated` ヘッダにも載る。ERS も `metadata/preservation/ers.der` に同梱する (P2-3 §9)。**未**: 実機受入試験 | **E-ARK SIP エクスポート** (Producer の一次成果物) | **E-ARK SIP (CSIP 2.2.0 を対象に生成し、成果物ごとに検証: METS 1.12 構造記述 + PREMIS in METS Guidelines 2017)** — 使用する仕様版・profile・バリデータとルールセットの**版を固定して宣言**する。journal イベント → PREMIS イベント (クロスウォーク表で語彙を確定)、チャット文脈 → 記述メタデータ。evidence package (`.ots`・TSA トークン含む) は CSIP 規約に従う置き場所に同梱 (正位置は着手時に要確認)。既存 `ImportExportResource` を土台に。**出力はバリデータ通過を CI テストとして固定** (§6)。AIP/DIP の生成は「軽量 Archive」責務を定義してから別途判断 (§3.1)。BagIt は **Archivematica 接続層の transfer 形式としてのみ** (P3-4) |
+| **P3-1** 第 1 段 2026-08-25 ([`p3-1-eark-sip.md`](p3-1-eark-sip.md)) — CSIP 2.2.0 で生成。PREMIS クロスウォークは LoC 語彙から**弁護できる語だけ**宣言。**`export()` が同梱の `EARKSIPValidator` を必ず通す** (2026-08-26)。**バリデータが動いて却下した package は返さない** (fail-closed)。バリデータ自体が動かなかった場合は拒否せず「検査できなかった」と明記して返す — 「検査していない」と「不正」は別の答えで、無関係なローカル障害を記録の欠陥に見せない。判定は `X-Nemaki-Csip-Validated` ヘッダにも載る。ERS も **`metadata/other/ers.der`** に同梱する (P2-3 §9。2026-08-27 に `metadata/preservation` から移した — 下記)。**SIP→AIP プラグイン試験 実施済み** (2026-08-27、[`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §10): **RODA 6.3.0 の `EARKSIP2ToAIPPlugin` が AIP object を作った** — 本文が `representations/rep1/data/` に入り、`AIP.ingestSIPIds` は我々の METS `OBJID` になる (METS が読まれている)。**ただし我々の `premis.xml` は生成された AIP の PREMIS metadata に無く** (値が非 PREMIS フィールドへ写されたかは未調査)、**PREMIS クロスウォークがこの受け手に届く保証は無い**。**`ers.der` は `metadata/other` なら取り込まれて残る** (AIP では `metadata/descriptive/` へ移される。**投げたのはスタブの DER で、本物の RFC 3161 ベース ERS では未測定**)。**`addPreservationMetadata` で出すと package ごと rollback する** — その呼び出しは METS の `<digiprovMD>` に宣言を書き、CSIP32 がそこを PREMIS の枠と定めているためで、DER をそこに載せていたのは我々の読み違いだった (CSIP32 も SHOULD で、片方向の文。p3-4 §11)。2026-08-27 に `metadata/other` へ移した (p3-4 §11)。旧版プラグイン `EARKSIPToAIPPlugin` (E-ARK SIP 1.x) は同じ package を拒否する。**未**: 受入承認を含む full ingest workflow、他版の RODA。Archivematica は p3-4 §12 (E-ARK 専用 type は無く、`zipfile` / bag / 展開 `standard` で AM の AIP になった) | **E-ARK SIP エクスポート** (Producer の一次成果物) | **E-ARK SIP (CSIP 2.2.0 を対象に生成し、成果物ごとに検証: METS 1.12 構造記述 + PREMIS in METS Guidelines 2017)** — 使用する仕様版・profile・バリデータとルールセットの**版を固定して宣言**する。journal イベント → PREMIS イベント (クロスウォーク表で語彙を確定)、チャット文脈 → 記述メタデータ。evidence package (`.ots`・TSA トークン含む) は CSIP 規約に従う置き場所に同梱 (**2026-08-27 に `metadata/other` で決着** — p3-4 §11)。既存 `ImportExportResource` を土台に。**出力はバリデータ通過を CI テストとして固定** (§6)。AIP/DIP の生成は「軽量 Archive」責務を定義してから別途判断 (§3.1)。BagIt は **Archivematica 接続層の transfer 形式としてのみ** (P3-4) |
 | **P3-2** 第 1 段 2026-08-26 ([`p3-2-format-duplication.md`](p3-2-format-duplication.md)) — 永続化される rendition **4 経路** (CMIS の `createPreview` と REST 3 本) を配線済み。REST 3 本は 2026-08-26 に、「変換済みストリームを渡して永続化する」API を消して**記録せずに永続化できない形**にすることで通した (§7)。SVG も対象で、開示文は変換器と**出力形式**から組み立てる。台帳追記に加えて開示文が真正性報告の `duplications` section に乗る。`copyRenditions` (チェックアウト時の複製) も配線済みで、そこで「戻り値の id を捨てていて孤児の rendition を作っていた」欠陥も直した (§8)。**PDF/A は部分実装** — veraPDF 判定を変換経路に配線し、判定は複製 entry の digest に**コミット**する (§10)。entry は平文を持たないが、判定は **rendition 行にも平文で入り、報告が出所付きで表示する** (§11)。ただし digest の他の入力 (変換器・両 digest・実行者) は報告にも entry にも無いので、**報告だけを見る読み手は照合できない** — そう書いてある。PDF/A 要求は変換経路に配線し、**LibreOffice 24.2.7.2 で実測した — 2b / 3b は適合、1b は 1 件 (§6.7.3-1 の日付不一致) で落ちる** (§12)。cloud drive 経路は**該当する経路が存在しない**ことを確認済み (§5)。**未**: 実機受入試験。したがって **B.2 は「実装済み」ではない** — 1 経路について、しかも**「取得記録との関係」は外部取込由来の文書でしか埋まらない**まま満たしている (通常の CMIS アップロードでは常に null。[`p3-2-format-duplication.md`](p3-2-format-duplication.md) §0) | 保存フォーマット複製の証跡化 | PDF/A 変換を「複製イベント」として journal に記録 — B.2 の要求どおり **hash だけでなく日時・責任者・取得記録との関係・影響・不完全性の開示**まで。**現行 jodconverter は PDF/A profile の指定・検証を持たない** (rendition 基盤のみ) — PDF/A 出力と検証 (veraPDF 等) は新規要素。**これは利便コピーであって保存計画の代替ではない** (下記の非目標) |
 | **P3-3** 第 1 段 2026-08-26 ([`p3-3-disposition-trail.md`](p3-3-disposition-trail.md)) — **記録できない処分は行わない** (capture の逆で fail-CLOSED)。retention の cold move に配線済み。**未**: CMIS 直接削除・版削除・purge 経路 | 処分証跡 | retention による削除を disposition イベントとして残す (何を・いつ・どの規則で)。**置き場は evidence ledger 側** — 配送 journal は purge 対象、Atlas は独立して永続ではないので、そこだけでは証跡にならない。保持期間と inclusion proof も定義する |
-| **P3-4** 第 2 段 2026-08-26 ([`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)) — 状態機械・受領証・連鎖への追記に加えて、**BagIt 接続層** (§6)・**永続化** (§7)・**fail-closed を執行する呼び出し元** `passCustody` (§7)・**署名検証の機構** (§9)・REST。保存行は `restore` を通り、履歴が合法な歩みでなければ読んだ時点で拒否される。submission agreement の雛形は [`docs/operations/custody-submission-agreement.md`](../operations/custody-submission-agreement.md)。**未**: 実際の送信 (HTTP クライアント)、鍵の入手と信頼、`reportsSuccess()` 語彙の実機確認、実機受入試験 | **保存システムへの移管 (custody transfer プロトコル)** | 「双方向参照」は時系列で成立させる — **SIP 作成時点で先方 AIP ID は存在しない**ので、SIP には連鎖抜粋を入れ、先方の受領・AIP 生成**後**に受領証を journal へ追記して次アンカーに含める (以後の不整合が検出可能になる。凍結ではない)。状態機械で管理: `PACKAGE_CREATED → SENT → RECEIVED → VALIDATED → INGEST_ACCEPTED → AIP_CREATED → RECEIPT_VERIFIED → CUSTODY_TRANSFERRED → LOCAL_DISPOSITION`。受領証の中身は AIP checksum だけでなく **署名付き受領・submission ID・AIP ID・対象 SIP digest・検証結果・先方 agent** まで。失敗・再送・重複取込・部分受入・先方 AIP 再生成の扱いを submission agreement として明文化。**RODA は E-ARK 対応** (公式に「E-ARK SIP/AIP/DIP と 100% compatible」。ただし**受入 profile/版の対応表は未確認**で相互運用の保証には実機受入試験が要る — §9-3)。**Archivematica は E-ARK SIP を直接取り込めないことが確定** (transfer type は 8 種のみで E-ARK 相当が無い — §9-4) → **BagIt (`zipped bag`) に包む接続層が必須**。API 仕様と落とし穴は §9-4 |
+| **P3-4** 第 2 段 2026-08-26 ([`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)) — 状態機械・受領証・連鎖への追記に加えて、**BagIt 接続層** (§6)・**永続化** (§7)・**fail-closed を執行する呼び出し元** `passCustody` (§7)・**署名検証の機構** (§9)・REST。保存行は `restore` を通り、履歴が合法な歩みでなければ読んだ時点で拒否される。submission agreement の雛形は [`docs/operations/custody-submission-agreement.md`](../operations/custody-submission-agreement.md)。**RODA 6.3.0 の SIP→AIP プラグイン試験 実施済み** (2026-08-27 に再測定、p3-4 §10): **E-ARK SIP は AIP object になった**。bag は **manifest 1 本のときに** AIP object になり、**現行の出荷形 (2 本) は RODA の bag 経路では rollback する** (2026-08-27 実測)。RODA には bag ではなく SIP を送るので実害は無い。**同じ 2 本は AM 1.18.0 の `zipped bag` で AIP `UPLOADED` になった** (p3-4 §12)。E-ARK は `EARKSIP2ToAIPPlugin` で通る (旧版の `EARKSIPToAIPPlugin` は commons-ip **v1** = METS 1.11 を使うため CSIP 2.2 を拒否する — 初回はこちらを叩いて「取り込めない」と誤結論した)。**AIP object ができた ≠ 受け入れられた・保持される**: 走らせたのは SIP→AIP プラグインだけで **受入承認を含む ingest workflow は未実施**、AIP は `INGEST_PROCESSING` 止まり。**我々の PREMIS 文書は生成された AIP の PREMIS metadata に無い** (値が非 PREMIS フィールドへ写されたかは未調査)。**`ers.der` は `metadata/other` なら残る** (p3-4 §11 で移した)。**RODA の v2 API 26 本に、受領証と分かるリソースは無い** (job report 等が代役になり得るかは未検証) — 語彙は `Report.pluginState` なら `reportsSuccess()` と噛み、同じ `Report` の `outcomeObjectState` を入れると受入完了の `ACTIVE` が落ちる。**応答フィールドに SIP の checksum が無いので、それだけで組み立てると `sipDigest` が自分の値との比較になる。ただし `/transfers/{uuid}/download` で先方の bytes を取ってハッシュする口は在る** (p3-4 §10 追試 3)。bag 経路は E-ARK 相当の transfer type を持たない受け手 (Archivematica) 用に残る — **必須ではない** (`zipfile` でも AIP になる)。**受領証の組み立ては実装済み** (2026-08-27、`jp.aegif.nemaki.custody.connector` — p3-4 §14): 受け手ごとの読む欄と写像、受け手が持つ物からの digest 回収、一致しなければ組まない。**両受け手で実機一周した** (2026-08-27、p3-4 §16 RODA / §17 AM): 回収値は送った物と一致し、受領証は組み上がり、状態機械が `RECEIPT_VERIFIED` を受理した。**実機でしか出ない欠陥が 2 件出た** — `aipChecksum` 必須で成功した RODA 受領証が必ず拒否されていた、AIP ルートに AM 自身の manifest という囮が在った。**未**: 実際の送信 (HTTP クライアント)、鍵の入手と信頼、他版、AM の `default` processing config | **保存システムへの移管 (custody transfer プロトコル)** | 「双方向参照」は時系列で成立させる — **SIP 作成時点で先方 AIP ID は存在しない**ので、SIP には連鎖抜粋を入れ、先方の受領・AIP 生成**後**に受領証を journal へ追記して次アンカーに含める (以後の不整合が検出可能になる。凍結ではない)。状態機械で管理: `PACKAGE_CREATED → SENT → RECEIVED → VALIDATED → INGEST_ACCEPTED → AIP_CREATED → RECEIPT_VERIFIED → CUSTODY_TRANSFERRED → LOCAL_DISPOSITION`。受領証の中身は AIP checksum だけでなく **submission ID・AIP ID・対象 SIP digest・検証結果・先方 agent** まで。~~署名付き受領~~ **署名は必須にしなかった** (2026-08-27、p3-4 §21): この製品は先方の鍵を持たないので、必須にすると**検証できない署名文字列を必須にする**ことになる。運ぶし、鍵が在れば検査するが、**無いことは不正ではなく「検査していない」**であり、`limits()` が受領証ごとにそう述べる。`aipChecksum` も同じ理由で必須から外した (**RODA の取込は返さない**)。失敗・再送・重複取込・部分受入・先方 AIP 再生成の扱いを submission agreement として明文化。**RODA は E-ARK 対応** (公式に「E-ARK SIP/AIP/DIP と 100% compatible」)。**「受入 profile/版の対応表が未確認」という懸念は当たっていた** — 6.3.0 は E-ARK 取込を **2 版ぶん**持ち、CSIP 2.2 を読むのは `EARKSIP2ToAIPPlugin` の方だけである (2026-08-27 実測、p3-4 §10)。**Archivematica 1.18 の標準 transfer type 一覧に E-ARK/CSIP 専用のものは無い** (8 種 — §9-4)。`zipped bag` は実装可能な候補経路で、**2026-08-27 に出荷形 (manifest 2 本) が AIP になることを測った** (p3-4 §12)。**`zipfile` でも同じ SIP は AIP になるので BagIt は必須ではない。** RODA には要らない — E-ARK 経路で AIP object になることを実測した。API 仕様と落とし穴は §9-4 |
 
 #### Phase 3 の前提モデル: リテンション終端の 3 つの出口 (2026-08-17 オーナー議論)
 
@@ -829,8 +829,20 @@ RODA 側は「PREMIS 3」と明記している。**一次文書で要裏取り�
 
 **RODA**: 公式ドキュメントが「E-ARK SIP/AIP/DIP と 100% compatible」「保存メタデータは
 PREMIS 3」と明記。取込時に SIP 形式 (素のファイル / E-ARK / BagIt) を選ぶ設計。
-IP 操作には commons-ip を使用。**未確認**: RODA の特定リリースがどの CSIP 版を受け入れるかの
-対応表は取得できていない (同梱 commons-ip 版に依存するはず) — **相互運用の保証には実機受入試験が必要**。
+IP 操作には commons-ip を使用。
+
+**この「対応表が未確認」は 6.3.0 について解けた** (2026-08-27 実測、
+[`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §10)。予想どおり**同梱 commons-ip 版に依存**し、
+しかも**版ごとに別のプラグイン**として同居していた:
+
+| RODA 6.3.0 の取込プラグイン | 呼ぶパーサ | 我々の CSIP 2.2.0 |
+|---|---|---|
+| `EARKSIP2ToAIPPlugin` | `commons_ip2` (METS 1.12) | **取り込む** |
+| `EARKSIPToAIPPlugin` | `commons_ip` = **v1** (METS 1.11) | **拒否する** |
+
+v1 API は commons-ip2 の jar の**中に同居している**ので、「同梱版は 2.11.3 だから CSIP 2.x を読む」
+とは言えない。**他版の RODA については依然として未確認**で、相互運用の保証にはその版で
+実機受入試験が要る。
 
 #### 実機受入試験は**ローカルで立てられる** (2026-08-25 実測)
 
@@ -859,23 +871,29 @@ publish する。検証用オーバーレイでは remap するか publish し�
 | `artefactual/archivematica-{dashboard,mcp-server,mcp-client,storage-service}:v1.18.0` | **✗ amd64 のみ** |
 | 依存 (percona 8.4 / gearmand / nginx / elasticsearch 8.19) | ✅ いずれも arm64 あり |
 
-**アプリ側 4 イメージだけが amd64 単独**。`hack/docker-compose.yml` は
-ubuntu:24.04 (multi-arch) から**ソースビルドする**ので arm64 で通る可能性はあるが、
-**未検証** (保存ツール群の apt / wheel が arm64 で揃うかは確かめていない)。
-なお **P3-1 に必要なのは RODA 側**であり、Archivematica は P3-4 (custody transfer) の
-話で、そこは**どのみち BagIt に包む接続層が要る** (§9-4)。
+**アプリ側 4 イメージだけが amd64 単独**。公開イメージを `platform: linux/amd64` で
+QEMU エミュレーションすれば **aarch64 ホストでも AM 1.18.0 は起動し、受入試験まで
+通った** (2026-08-27、p3-4 §12)。`hack/docker-compose.yml` からのソースビルドは
+**しなかった** (受入試験に要らなかった)。「arm64 ネイティブで動くか」は別の問。
 
 ### §9-4. Archivematica 受入 API (P3-4 の前提確認)
 
 **版**: Archivematica **1.18.0** (2025-09-26) / Storage Service **0.24.0** (2025-10-07)。
 docs に 1.19 ブランチはあるが tag 未リリース。
 
-**E-ARK SIP の直接取込は不可 — 前提は正しかった**。転送 type は
+**転送 type の一覧に E-ARK/CSIP 専用のものは無い**。転送 type は
 `standard / zipfile / unzipped bag / zipped bag / dspace / maildir / TRIM / dataverse` の
 **8 種のみ** (ソース `PACKAGE_TYPE_STARTING_POINTS` と公式 API リファレンスが一致)。
-E-ARK/CSIP に相当するものは無く、未知の type は `ValueError` で拒否される。
-→ **BagIt (`zipped bag`) に包む接続層が要る**という §4 の設計判断は裏付けられた。
-なお「E-ARK 非対応」と明言した公式ステートメントは無く、上記は**型リストの網羅による消去法**。
+**未知の type 名は `ValueError` で拒否される**ので、`--transfer-type=eark` のような
+指定はできない。
+
+> **2026-08-27 に測った** ([`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §12)。
+> 同じ E-ARK SIP を `zipfile` に投げても AIP `UPLOADED`。展開ディレクトリを
+> `standard` に投げても AIP。zip のまま `standard` に渡すと `FAILED` (ディレクトリを
+> 期待する)。**BagIt は必須ではない。** `zipped bag` を選ぶ積極的な理由は残った —
+> その type だけが `Verify bag` を走り、出荷形の SHA-256 が照合される。
+> AM の AIP であって E-ARK AIP ではない。公式に「E-ARK 非対応」と明言した
+> ステートメントも無く、型リストの網羅は今も正しい。
 
 **採用すべき API** (旧 `/api/transfer/start_transfer/` は transfer UUID を返さず追加往復が
 要るので使わない):
@@ -910,9 +928,38 @@ POST /api/v2beta/package
 
 **受領証に載せられるもの**: transfer UUID / AIP UUID (= sip_uuid) / `status=="UPLOADED"` /
 `stored_date` / size / 保存先パス / fixity 結果と実施時刻 / マイクロサービス粒度のジョブ記録。
-**送った SIP 自体の checksum は API から返らない**ので接続層で保持する — ただし bag 検証に
-失敗すると転送が FAILED になるため「COMPLETE したこと」自体がマニフェスト一致の証拠になり、
-送った bag の `manifest-*.txt` は AIP 内 `metadata/` に保存されるので `extract_file` で回収できる。
+**送った SIP 自体の checksum は API から返らない。**
+
+> **この段落は 2 巡目まで 2 つの取り下げ済みの主張を書いていた** (2026-08-27、p3-4 §21 で訂正)。
+> **次の一段の指示書がこれなので、直さないと送信経路がそのまま誤る。**
+>
+> - ~~「接続層で保持する」~~ — それは `sipDigest` を**こちらの記録から埋める**ことで、
+>   `CustodyReceiptAssembler` が拒否する「**落ちない検査**」そのものである。
+>   正しくは**先方が持っている物から回収して照合する** (p3-4 §14 / §17)
+> - ~~「COMPLETE したこと自体がマニフェスト一致の証拠になり」~~ — 状態語から
+>   「マニフェストが一致した」を導くのは、受領証がそう記録していない推論である。
+>   成立には**先方が `Verify bag` を走らせたこと**が要り、測ったのは
+>   `automated` 設定の 1 構成だけで、**受領証はそれを記録しない**
+
+送った bag の `manifest-*.txt` は AIP 内
+`{name}-{AIP uuid}/data/objects/metadata/transfers/{name}-{TRANSFER uuid}/` に残るので
+`extract_file` で回収できる (2026-08-27 実測、p3-4 §17)。
+**AIP ルート直下の同名 manifest は AM 自身のもので、読むと別物を証拠にする。**
+
+> **2026-08-27 — SHA-256 の cross-check は AM 1.18.0 で裏付けた。**
+> `BagItTransferPackager` は **`manifest-sha512.txt` と `manifest-sha256.txt` の 2 本**を
+> 書く ([`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §6)。AM の `Verify bag` は
+> その 2 本で COMPLETE (exit 0) し、AIP 内
+> `metadata/transfers/.../manifest-sha256.txt` に残った。
+>
+> **判断の履歴**: 8-26 に一度 1 本 (SHA-512 のみ) にした。RODA 6.3.0 の
+> `BagitToAIPPlugin` が 2 本の bag を rollback したためである (commons-ip v1 の
+> `BagitSIP.parse` が manifest ごとに payload を足す)。8-27 に E-ARK 経路が通ることを
+> 実測し、**RODA に bag を送る理由が無くなった**ので 2 本へ戻した — 使わせない受け手の
+> パーサ欠陥が、AM 向けの形式を決めるべきではない。
+>
+> **AM 1.18.0 は 2 本を取り込んだ。** 1 本は AM では未測定。RODA の bag 経路では
+> 2 本は rollback、1 本は 1 件だけ成功 (使わない経路)。
 
 **ポーリング回避**: Storage Service の **Service callbacks** (post-store AIP 等) で任意の
 REST エンドポイントを叩ける (`<package_uuid>` / `<package_name>` がプレースホルダ置換)。

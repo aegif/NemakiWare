@@ -290,7 +290,7 @@ class SipVerifierTest {
         exporter.setContentService(contentService);
         exporter.setReportAssembler(assembler);
         EarkSipExporter.Exported exported = exporter.export("bedroom", "doc-1",
-                EarkSipExporter.Options.withholdingPersonalData(), tmp);
+                EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp);
 
         SipVerifier.Result result = SipVerifier.verify(exported.sip());
 

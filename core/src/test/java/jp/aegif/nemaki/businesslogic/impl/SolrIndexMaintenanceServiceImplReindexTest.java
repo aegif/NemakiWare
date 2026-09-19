@@ -400,8 +400,13 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
         when(contentService.getFolder(TEST_REPO_ID, "sub-folder-1")).thenReturn(subFolder);
         when(contentService.getChildren(TEST_REPO_ID, "sub-folder-1")).thenReturn(new ArrayList<>());
         
+        // Derived from the ACTUAL batch, like the sibling above. Hard-coded, this said "1 of
+        // the batch was written" while the walk flushes TWO (the sub-folder is added to
+        // subFolders AND to the batch buffer), so it quietly asserted that one document failed
+        // — in a test about recursion. That stray count is what a status change was once
+        // withdrawn over.
         when(solrUtil.indexDocumentsBatch(eq(TEST_REPO_ID), anyList(), anyInt(), anyBoolean()))
-                .thenReturn(batchOutcome(1));
+                .thenAnswer(inv -> batchOutcome(((List<?>) inv.getArgument(1)).size()));
 
         boolean started = service.startFullReindex(TEST_REPO_ID);
         assertTrue(started);
@@ -453,5 +458,137 @@ public class SolrIndexMaintenanceServiceImplReindexTest {
         fail("Reindex did not complete within " + timeoutSeconds + " seconds. " +
              "Current status: " + finalStatus.getStatus() + 
              ", indexed: " + finalStatus.getIndexedCount() + "/" + finalStatus.getTotalDocuments());
+    }
+
+    @Test
+    public void aRunThatFailedToIndexDocumentsIsNotReportedAsCompleted() throws Exception {
+        // The status is what the UI colours green. A reindex that could not index some of the
+        // documents it walked used to end on the same word as one that indexed everything, so
+        // an operator running the REQUIRED upgrade reindex (CLAUDE.md) saw "Completed" over a
+        // partial index — and the count that contradicts it is one field away, unread.
+        //
+        // Batch of 2, one written: one document failed.
+        Folder root = mock(Folder.class);
+        when(root.getId()).thenReturn(ROOT_FOLDER_ID);
+        when(contentService.getFolder(TEST_REPO_ID, ROOT_FOLDER_ID)).thenReturn(root);
+        Document doc1 = mock(Document.class);
+        when(doc1.getId()).thenReturn("doc-1");
+        Document doc2 = mock(Document.class);
+        when(doc2.getId()).thenReturn("doc-2");
+        when(contentService.getChildren(TEST_REPO_ID, ROOT_FOLDER_ID))
+                .thenReturn(Arrays.asList(doc1, doc2));
+        when(solrUtil.indexDocumentsBatch(eq(TEST_REPO_ID), anyList(), anyInt(), anyBoolean()))
+                .thenReturn(batchOutcome(1));
+
+        assertTrue(service.startFullReindex(TEST_REPO_ID));
+        awaitReindexCompletion(TEST_REPO_ID, 5);
+
+        ReindexStatus status = service.getReindexStatus(TEST_REPO_ID);
+        assertEquals(1, status.getErrorCount(),
+                "fixture check: no document failed, so this test is not looking at the case it "
+                        + "exists for");
+        assertEquals("completed_with_errors", status.getStatus(),
+                "a reindex that failed on " + status.getErrorCount() + " document(s) reported "
+                        + "itself as a clean completion: " + status.getErrors());
+    }
+
+    @Test
+    public void anErrorListThatWasCutOffSaysSo() throws Exception {
+        // The cap was silent: a run with thousands of failures showed the full count beside a
+        // hundred messages, with nothing explaining the difference — so a reader either doubts
+        // the count or takes the hundred for all of them. The sibling in this same change,
+        // FixityScanReport's findingsTruncated, reached the opposite conclusion about the
+        // identical problem, and its reason applies word for word: a reader COULD infer the cap
+        // by comparing two numbers, and nobody reads a report that way.
+        java.lang.reflect.Method noted = SolrIndexMaintenanceServiceImpl.class
+                .getDeclaredMethod("withTruncationNoted", List.class, long.class);
+        noted.setAccessible(true);
+
+        List<String> short_ = new ArrayList<>(List.of("one failure"));
+        @SuppressWarnings("unchecked")
+        List<String> unchanged = (List<String>) noted.invoke(null, short_, 1L);
+        assertEquals(1, unchanged.size(),
+                "a list that was NOT cut off gained a note saying it was: " + unchanged);
+
+        // The boundary. EXACTLY 100 failures fit in exactly 100 messages, so nothing was
+        // dropped and claiming otherwise is an overclaim in the direction of doubt. The first
+        // version keyed on the list SIZE and said "only the first 100 are kept" here.
+        List<String> exactly = new ArrayList<>();
+        for (int i = 0; i < 100; i++) {
+            exactly.add("failure " + i);
+        }
+        @SuppressWarnings("unchecked")
+        List<String> untouched = (List<String>) noted.invoke(null, exactly, 100L);
+        assertEquals(100, untouched.size(),
+                "a full-but-complete list was told it had been cut off: "
+                        + untouched.get(untouched.size() - 1));
+
+        List<String> full = new ArrayList<>();
+        for (int i = 0; i < 100; i++) {
+            full.add("failure " + i);
+        }
+        @SuppressWarnings("unchecked")
+        List<String> capped = (List<String>) noted.invoke(null, full, 5000L);
+        assertEquals(101, capped.size(), "the cut-off list gained no note at all");
+        String note = capped.get(capped.size() - 1);
+        assertTrue(note.contains("4900"),
+                "the note does not say how many failures are counted but not described: " + note);
+
+        // ...and the reindex has to USE it. Driving the helper alone let the production call
+        // sites be reverted with the suite still green — a helper nothing calls is not a
+        // protection, and silent truncation would be back. Reaching 100 messages through a real
+        // reindex would need 100 BATCHES (the list gains one message per batch, not per
+        // document), so the wiring is checked where it is written.
+        String impl = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/businesslogic/impl/"
+                                + "SolrIndexMaintenanceServiceImpl.java"));
+        // Scoped to the calls that hand over the ACCUMULATED list. The first version counted
+        // every setErrors and failed on the two that install a fresh empty one at the start of
+        // a run — correct code, and wrapping them would mean nothing. An assertion that flags
+        // right code teaches the next reader to widen it until it flags nothing at all.
+        // Any setErrors whose argument is a bare identifier -- not "errors" by name, which
+        // pinned a local variable's spelling: renaming it to errorMessages would have made the
+        // count zero and switched this assertion off in silence.
+        int raw = (int) java.util.regex.Pattern
+                .compile("setErrors\\(\\s*[a-zA-Z_][a-zA-Z0-9_]*\\s*\\)")
+                .matcher(impl).results().count();
+        int wrapped = impl.split("setErrors\\(withTruncationNoted\\(", -1).length - 1;
+        assertTrue(wrapped >= 3,
+                "only " + wrapped + " setErrors call(s) go through the truncation note; the "
+                        + "production call sites can be reverted with this suite still green, "
+                        + "and silent truncation is back");
+        assertEquals(0, raw,
+                raw + " setErrors call(s) hand over the raw accumulated list, so a run that "
+                        + "lost messages to the cap reports a short list as the whole of it");
+    }
+
+    @Test
+    public void aShortListingIsAReindexFailureNotASmallerFolder() throws Exception {
+        // Rows the repository cannot decode are absent from getChildren without any exception,
+        // so the walk passed them in silence: not indexed, not counted, run "completed". The
+        // documents stay missing from search until the folder is reindexed for some unrelated
+        // reason — and nothing tells anyone to do that.
+        Folder root = mock(Folder.class);
+        when(root.getId()).thenReturn(ROOT_FOLDER_ID);
+        when(contentService.getFolder(TEST_REPO_ID, ROOT_FOLDER_ID)).thenReturn(root);
+        Document doc1 = mock(Document.class);
+        when(doc1.getId()).thenReturn("doc-1");
+        when(contentService.getChildren(TEST_REPO_ID, ROOT_FOLDER_ID))
+                .thenReturn(java.util.Collections.singletonList(doc1));
+        when(contentService.lastUnreadableChildCount()).thenReturn(2);
+        when(solrUtil.indexDocumentsBatch(eq(TEST_REPO_ID), anyList(), anyInt(), anyBoolean()))
+                .thenAnswer(inv -> batchOutcome(((List<?>) inv.getArgument(1)).size()));
+
+        assertTrue(service.startFullReindex(TEST_REPO_ID));
+        awaitReindexCompletion(TEST_REPO_ID, 5);
+
+        ReindexStatus status = service.getReindexStatus(TEST_REPO_ID);
+        assertEquals(2, status.getErrorCount(),
+                "two children the repository could not decode left no trace on the run: "
+                        + status.getErrors());
+        assertEquals("completed_with_errors", status.getStatus(),
+                "a reindex that silently walked past unreadable children reported a clean "
+                        + "completion: " + status.getErrors());
     }
 }

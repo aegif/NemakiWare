@@ -82,11 +82,58 @@ public enum ErsFormat {
     /**
      * Where an evidence record goes in a CSIP package.
      *
-     * <p>{@code metadata/preservation}, beside PREMIS — an evidence record is preservation
-     * metadata, not descriptive metadata and not documentation. Stated here rather than left to
-     * whoever writes the exporter, so the answer does not get decided twice.
+     * <p>{@code metadata/other}. <b>This was {@code metadata/preservation} until 2026-08-27,
+     * and the directory was never the point.</b>
+     *
+     * <p>What DECIDES both the directory and the METS is which commons-ip2 call the exporter
+     * makes. {@code addPreservationMetadata} declares the file in
+     * {@code <amdSec><digiprovMD><mdRef>}; {@code addOtherMetadata} declares it in
+     * {@code <dmdSec>}. CSIP 2.2.0's <b>CSIP32</b> — in commons-ip2's
+     * {@code ConstantsCSIPspec}, at {@code mets/amdSec/digiprovMD} — reads: "<i>For recording
+     * information about preservation</i> the standard PREMIS is used. It is mandatory to include
+     * one {@code <digiprovMD>} element for each piece of PREMIS metadata." An RFC 4998 evidence
+     * record is an ASN.1 DER blob, so putting it in that slot was unwise on this product's side.
+     *
+     * <p><b>State that at its real strength.</b> CSIP32's level is <b>SHOULD</b>, cardinality
+     * {@code 0..n} — the same level as CSIPSTR6, the folder rule. And its second sentence runs
+     * one way only (PREMIS ⇒ a {@code digiprovMD}); it does not say every {@code digiprovMD}
+     * must be PREMIS. So <b>this is not a requirement violation</b>, and an earlier version of
+     * this javadoc that said our shape "broke CSIP32" was overstating it. What holds is that we
+     * put a non-PREMIS object in the slot CSIP names for PREMIS.
+     *
+     * <p><b>The folder was never the issue either.</b> CSIPSTR6 is SHOULD and CSIPSTR8 names
+     * {@code other} as an <i>example</i> at MAY. An earlier version said CSIP makes
+     * {@code metadata/preservation} the PREMIS-only place; the requirement text does not.
+     *
+     * <p><b>Why {@code other} and not another section:</b> commons-ip2 couples section to
+     * folder, so escaping {@code digiprovMD} means choosing among {@code addDescriptiveMetadata}
+     * / {@code addOtherMetadata} / {@code addTechnical|Source|RightsMetadata}. {@code other} is
+     * the only one of those whose category label does not assert something false about an
+     * evidence record.
+     *
+     * <p>How it surfaced: RODA 6.3.0 reads {@code amdSec/digiprovMD} into
+     * {@code SIP.getPreservationMetadata()} and hands each entry to
+     * {@code PremisV3Utils.binaryToGenericPremis} — {@code Failed to load PREMIS}, transaction
+     * rolled back, not one file kept. Measured with controls: the same package without the
+     * record ingests, and the same package declared through {@code addOtherMetadata} ingests and
+     * keeps it. That reading is <b>consistent with CSIP32's intent, not required by it</b> —
+     * nothing obliges a consumer to ignore {@code MDTYPE} or to fail the whole transaction.
+     *
+     * <p><b>Contrast with the BagIt decision in the same increment,</b> where a receiver's
+     * parser defect was deliberately NOT allowed to pick this product's format. The directions
+     * differ: there our shape was what RFC 8493 §2.1.3 <i>explicitly allows</i> and the receiver
+     * contradicted it; here our shape departed from a SHOULD and the receiver's reading is a
+     * defensible one. The alternative's cost differs too — one payload manifest would have cost
+     * the SHA-256 its verified path→digest binding, while {@code addOtherMetadata} costs nothing
+     * at the package level (though RODA then files the record under {@code metadata/descriptive},
+     * so the "sitting with the preservation evidence" reading is lost).
+     *
+     * <p><b>Changing this constant is not enough</b> — on its own it changes nothing, because it
+     * DESCRIBES where the file lands rather than deciding it. (An attempted control that edited
+     * only the working directory left the package byte-identical; that is a tautology, not a
+     * measured control.) Change the {@code add*Metadata} call, and keep this in step.
      */
-    public static final String CSIP_LOCATION = "metadata/preservation";
+    public static final String CSIP_LOCATION = "metadata/other";
 
     private final String specification;
     private final String mediaType;
@@ -104,7 +151,14 @@ public enum ErsFormat {
     }
 
     /**
-     * The media type the file would be declared as.
+     * The media type this format WOULD be declared as, if the packager could declare it.
+     *
+     * <p><b>It is not what the METS says today.</b> commons-ip2 probes the file and writes what
+     * it guesses into {@code mdRef/@MIMETYPE}; {@code IPFile} exposes no setter, so this value
+     * never reaches the package. Measured 2026-08-27: a stub record came out as
+     * {@code application/x-x509-ca-cert}. Kept because the decision below is still the one this
+     * project would state, and because a constant that silently does nothing is worse than one
+     * that says so.
      *
      * <p>{@code application/octet-stream} for the DER blob, deliberately. The first version
      * said {@code application/vnd.etsi.asic-e+zip}, which is the type of an ASiC-E container —
@@ -126,14 +180,35 @@ public enum ErsFormat {
      * What a reader must not conclude from this declaration.
      *
      * <p>Travels with the format wherever it is reported. A product that names a standard is
-     * routinely read as implementing it, and this one does not.
+     * routinely read as implementing it, and what this one implements is narrower than the
+     * standard — which is what the text below says, one item at a time.
      */
     public static final String LIMITS =
-            "This product produces and checks RFC 4998 evidence records whose DATA OBJECT is a "
-                    + "checkpoint hash of its evidence ledger — not a document. Naming RFC 4998 "
+            // Three sentences here described an artefact this build does not produce, and this
+            // string ships to callers as `renewalFormatLimits`. p2-3 §8 records that calling
+            // the checkpoint HASH the data object produced records no standard tool could read:
+            // the data object is the checkpoint's canonical BYTES and h = H(d) is its hash --
+            // which is what ErsRecord.LIMITS has always said, so the two shipped strings
+            // disagreed. §8 also rejected the one-node-tree alternative (it needs a second
+            // token) and ErsRecord.first() passes List.of(): the
+    // FIRST timestamp has no reduced hash tree. A later one DOES -- withHashTreeRenewal builds
+    // a one-node tree -- so this is a statement about the first timestamp, not about the record. And
+            // "nothing generates a record automatically" was contradicted by this string's own
+            // next sentence.
+            "This product produces and checks RFC 4998 evidence records whose DATA OBJECT is "
+                    + "the canonical serialisation of a checkpoint of its evidence ledger — not "
+                    + "a document. Naming RFC 4998 "
                     + "is not a claim of conformance to everything the standard covers: the "
-                    + "reduced hash tree carries one node, the timestamp authority's signature "
-                    + "and certificate are not verified here, and nothing generates a record "
-                    + "automatically or puts one into a package. See ErsRecord.LIMITS, which "
-                    + "travels with every record.";
+                    + "first Archive Timestamp carries no reduced hash tree, the timestamp "
+                    + "authority's signature "
+                    + "and certificate are not verified here, and a record exists only where "
+                    + "this node has a CONFIRMED external anchor to build one from -- there is "
+                    + "no setting that turns generation on or off, which the earlier wording "
+                    + "here ('configured to') implied. A record IS put into an E-ARK SIP when "
+                    + "this node has one, "
+                    + "at metadata/other -- but where it ENDS UP is the receiver's decision, not "
+                    + "this product's: RODA 6.3.0 keeps the record and files it under "
+                    + "metadata/descriptive instead (measured 2026-08-27 with a STUB record, not "
+                    + "a real timestamped one). Whether any other archive keeps it at all is "
+                    + "unmeasured. See ErsRecord.LIMITS, which travels with every record.";
 }

@@ -59,16 +59,64 @@ public class ZipExporter {
 
     private static final Log log = LogFactory.getLog(ZipExporter.class);
 
+    /**
+     * Raised instead of finishing an archive that would be read as a complete export.
+     *
+     * <p>The ZIP is the response BODY, streamed after the 200 has been committed, so there is
+     * no status code left to change once the first bytes are out. Until now a document whose
+     * content could not be read was logged and skipped, and the archive still unpacked — with
+     * the document's {@code .meta} sidecar present and its bytes absent, which reads as "this
+     * record had no content".
+     *
+     * <p>What throwing actually achieves, stated precisely because the first version of this
+     * note overstated it: the walk stops, so nothing after the failure is written. Whether the
+     * CLIENT can tell depends on how far the response has got. While it is still buffered the
+     * container turns the exception into a 500 and the body is not an archive at all
+     * (measured). Past that point the only signal left is a stream that ends without its
+     * central directory. {@code close()} calls {@code finish()}, so closing in a plain
+     * {@code finally} would write that directory for a refused export and hand back an
+     * archive that opens with its last entry truncated — while NOT closing leaks the native
+     * deflater. {@code ImportExportResource} therefore always closes, into a sink that has
+     * stopped forwarding. This note described the intermediate shape ("closes on the success
+     * path only") for a round after that changed.
+     *
+     * <p>{@link jp.aegif.nemaki.rest.eark.EarkSipExporter.ExportRefusedException} is the same
+     * decision on the SIP side; this is the pair of it for the NemakiWare ZIP format.
+     */
+    public static class ExportRefusedException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        public ExportRefusedException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
     // ========== Type Definition Export ==========
 
     @SuppressWarnings("unchecked")
     public void exportTypeDefinitions(String repositoryId, Set<String> customTypeIds,
             ZipOutputStream zos) throws Exception {
+        exportTypeDefinitions(repositoryId, customTypeIds, zos, getTypeService());
+    }
 
-        TypeService ts = getTypeService();
+    /**
+     * The same export with an explicit type service, so its refusals can be measured.
+     *
+     * <p>Fetching the service from the Spring context inside the walk put these arms out of
+     * reach of any test that does not stand a container up — and they are the arms that decide
+     * whether an archive that cannot be restored is handed over as if it could.
+     */
+    @SuppressWarnings("unchecked")
+    void exportTypeDefinitions(String repositoryId, Set<String> customTypeIds,
+            ZipOutputStream zos, TypeService ts) throws Exception {
+
         if (ts == null) {
-            log.warn("TypeService not available, skipping type definition export");
-            return;
+            // The archive names custom types in every object's metadata sidecar. Shipping it
+            // without .nemaki-types/ produces a package the importer cannot restore — and it
+            // unpacks cleanly, so nothing says the definitions are missing.
+            throw new ExportRefusedException("the type service is not wired on this node, so "
+                    + "the custom type definitions this export refers to cannot be written",
+                    null);
         }
 
         // Also collect parent types that are custom
@@ -88,8 +136,12 @@ public class ZipExporter {
         for (String typeId : allTypeIds) {
             NemakiTypeDefinition typeDef = ts.getTypeDefinition(repositoryId, typeId);
             if (typeDef == null) {
-                log.warn("Type definition not found for export: " + typeId);
-                continue;
+                // The id came from an object IN this export, so the type is in use. "Not
+                // found" here is the store failing to produce it, and skipping leaves the
+                // archive describing objects of a type it does not carry.
+                throw new ExportRefusedException("type '" + typeId + "' is used by an object in"
+                        + " this export and its definition could not be read; the package would"
+                        + " describe objects of a type it does not carry", null);
             }
 
             JSONObject typeJson = buildTypeDefinitionJson(repositoryId, typeDef, ts);
@@ -127,9 +179,19 @@ public class ZipExporter {
             for (String propertyDetailId : propertyIds) {
                 try {
                     NemakiPropertyDefinitionDetail detail = ts.getPropertyDefinitionDetail(repositoryId, propertyDetailId);
-                    if (detail != null) {
+                    if (detail == null) {
+                        throw new ExportRefusedException("type " + typeDef.getTypeId()
+                                + " declares property detail " + propertyDetailId
+                                + ", which does not exist", null);
+                    }
+                    {
                         NemakiPropertyDefinitionCore core = ts.getPropertyDefinitionCore(repositoryId, detail.getCoreNodeId());
-                        if (core != null) {
+                        if (core == null) {
+                            throw new ExportRefusedException("the property definition core "
+                                    + detail.getCoreNodeId() + " of type "
+                                    + typeDef.getTypeId() + " does not exist", null);
+                        }
+                        {
                             JSONObject propJson = new JSONObject();
                             propJson.put("id", core.getPropertyId());
                             propJson.put("localName", core.getPropertyId());
@@ -142,8 +204,17 @@ public class ZipExporter {
                             propertiesArray.add(propJson);
                         }
                     }
+                } catch (ExportRefusedException e) {
+                    throw e;
                 } catch (Exception e) {
-                    log.warn("Failed to export property definition: " + propertyDetailId, e);
+                    // A property the type declares, absent from the exported definition: on
+                    // re-import the type comes back MISSING that property, and the values the
+                    // objects carry for it have nowhere to land. The reads below refuse now
+                    // rather than answering null, which is how a failure reaches here.
+                    throw new ExportRefusedException("the property definition "
+                            + propertyDetailId + " of type " + typeDef.getTypeId()
+                            + " could not be read; a type exported without one of its declared"
+                            + " properties loses that property's values on import", e);
                 }
             }
         }
@@ -174,6 +245,17 @@ public class ZipExporter {
 
         ContentService cs = getContentService();
         List<Content> children = cs.getChildren(repositoryId, folder.getId());
+        // Same rule as FilesystemExporter, but this method STREAMS into a zip and has no
+        // error channel — by the time a short listing is discovered, headers are sent and a
+        // note cannot reach the caller. So it throws: a visibly broken download beats a
+        // well-formed zip that silently misrepresents the folder's contents, because the
+        // second one gets restored from.
+        if (cs.lastUnreadableChildCount() > 0) {
+            throw new IllegalStateException("folder '" + folder.getName() + "' ("
+                    + folder.getId() + "): " + cs.lastUnreadableChildCount() + " child row(s) "
+                    + "could not be decoded, so this export would be missing content while "
+                    + "presenting itself as complete; the export was aborted");
+        }
 
         if (exportedObjectIds != null) {
             exportedObjectIds.add(folder.getId());
@@ -222,22 +304,7 @@ public class ZipExporter {
                 }
 
                 if (doc.getAttachmentNodeId() != null) {
-                    try {
-                        var attachment = cs.getAttachment(repositoryId, doc.getAttachmentNodeId());
-                        if (attachment != null && attachment.getInputStream() != null) {
-                            zos.putNextEntry(new ZipEntry(childPath));
-                            byte[] buffer = new byte[8192];
-                            int len;
-                            try (InputStream is = attachment.getInputStream()) {
-                                while ((len = is.read(buffer)) != -1) {
-                                    zos.write(buffer, 0, len);
-                                }
-                            }
-                            zos.closeEntry();
-                        }
-                    } catch (Exception e) {
-                        log.warn("Failed to export content for: " + childPath, e);
-                    }
+                    writeContent(repositoryId, doc.getAttachmentNodeId(), childPath, zos, cs);
                 }
 
                 JSONObject metadata = buildDocumentMetadata(repositoryId, doc, callContext);
@@ -257,22 +324,7 @@ public class ZipExporter {
     public void exportSingleDocument(String repositoryId, Document doc, String path,
             ZipOutputStream zos, CallContext callContext, ContentService cs) throws Exception {
         if (doc.getAttachmentNodeId() != null) {
-            try {
-                var attachment = cs.getAttachment(repositoryId, doc.getAttachmentNodeId());
-                if (attachment != null && attachment.getInputStream() != null) {
-                    zos.putNextEntry(new ZipEntry(path));
-                    byte[] buffer = new byte[8192];
-                    int len;
-                    try (InputStream is = attachment.getInputStream()) {
-                        while ((len = is.read(buffer)) != -1) {
-                            zos.write(buffer, 0, len);
-                        }
-                    }
-                    zos.closeEntry();
-                }
-            } catch (Exception e) {
-                log.warn("Failed to export content for: " + path, e);
-            }
+            writeContent(repositoryId, doc.getAttachmentNodeId(), path, zos, cs);
         }
 
         JSONObject metadata = buildDocumentMetadata(repositoryId, doc, callContext);
@@ -464,22 +516,7 @@ public class ZipExporter {
 
                 String versionPath = basePath + VERSION_PREFIX + versionNum;
                 if (version.getAttachmentNodeId() != null) {
-                    try {
-                        var attachment = cs.getAttachment(repositoryId, version.getAttachmentNodeId());
-                        if (attachment != null && attachment.getInputStream() != null) {
-                            zos.putNextEntry(new ZipEntry(versionPath));
-                            byte[] buffer = new byte[8192];
-                            int len;
-                            try (InputStream is = attachment.getInputStream()) {
-                                while ((len = is.read(buffer)) != -1) {
-                                    zos.write(buffer, 0, len);
-                                }
-                            }
-                            zos.closeEntry();
-                        }
-                    } catch (Exception e) {
-                        log.warn("Failed to export version content: " + versionPath, e);
-                    }
+                    writeContent(repositoryId, version.getAttachmentNodeId(), versionPath, zos, cs);
                 }
 
                 JSONObject versionMeta = new JSONObject();
@@ -495,8 +532,71 @@ public class ZipExporter {
                 versionNum++;
             }
 
+        } catch (ExportRefusedException e) {
+            throw e;
         } catch (Exception e) {
-            log.warn("Failed to export version history for: " + basePath, e);
+            // The version history is part of the record, not an extra: an archive whose
+            // earlier versions were dropped because the series could not be read is an
+            // archive that says this document has only ever had one.
+            throw new ExportRefusedException("the version history of " + doc.getId()
+                    + " could not be exported to " + basePath + ", and an archive without it"
+                    + " would be read as a document that was never revised", e);
+        }
+    }
+
+    /**
+     * The content arm on its own, for tests.
+     *
+     * <p>The three public entry points all build metadata through the Spring context, so
+     * driving them in a unit test measures the container rather than this decision.
+     */
+    void writeContentForTest(String repositoryId, String attachmentNodeId, String entryPath,
+            ZipOutputStream zos, ContentService cs) {
+        writeContent(repositoryId, attachmentNodeId, entryPath, zos, cs);
+    }
+
+    /**
+     * Writes one attachment into the archive, or refuses the archive.
+     *
+     * <p>The three call sites — a document inside a folder, a single document, and each
+     * earlier version — used to hold three copies of the same swallow. They are one method
+     * now so that the next reader cannot close two of them and leave the third.
+     */
+    private void writeContent(String repositoryId, String attachmentNodeId, String entryPath,
+            ZipOutputStream zos, ContentService cs) {
+        try {
+            var attachment = cs.getAttachment(repositoryId, attachmentNodeId);
+            if (attachment == null) {
+                // What null means here, precisely. The delegate now refuses a failed read,
+                // so null is the OTHER thing: the attachment node the document names is not
+                // in the store. The archive still cannot be finished — the document declares
+                // content and there is none to write — but the message used to assert the
+                // opposite of what the value means, which a reviewer caught.
+                throw new ExportRefusedException("the document at " + entryPath + " names"
+                        + " attachment " + attachmentNodeId + ", which is not in the store."
+                        + " Its content cannot be written, and an archive whose metadata"
+                        + " describes bytes it does not carry would be read as complete.",
+                        null);
+            }
+            zos.putNextEntry(new ZipEntry(entryPath));
+            try (InputStream is = attachment.getInputStream()) {
+                if (is == null) {
+                    throw new ExportRefusedException("the attachment " + attachmentNodeId
+                            + " of " + entryPath + " produced no stream", null);
+                }
+                byte[] buffer = new byte[8192];
+                int len;
+                while ((len = is.read(buffer)) != -1) {
+                    zos.write(buffer, 0, len);
+                }
+            }
+            zos.closeEntry();
+        } catch (ExportRefusedException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ExportRefusedException("the content of " + entryPath + " could not be"
+                    + " written to the archive; finishing it would hand over a package whose"
+                    + " metadata describes bytes that are not in it", e);
         }
     }
 

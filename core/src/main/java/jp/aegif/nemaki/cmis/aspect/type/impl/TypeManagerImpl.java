@@ -37,6 +37,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import jp.aegif.nemaki.businesslogic.TypeService;
 import jp.aegif.nemaki.dao.ContentDaoService;
+import jp.aegif.nemaki.init.StartupPhase;
 import jp.aegif.nemaki.cmis.aspect.type.TypeManager;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfo;
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
@@ -134,6 +135,15 @@ public class TypeManagerImpl implements TypeManager {
 	// CRITICAL FIX: TYPES must be static to be shared across all instances for TCK compliance
 	private static Map<String, Map<String, TypeDefinitionContainer>> TYPES;
 
+	/**
+	 * Repositories whose type system could not be loaded, and why.
+	 *
+	 * <p>Static beside {@code TYPES} because it qualifies {@code TYPES}: an entry here means
+	 * that repository's map in {@code TYPES} holds only the base types installed before the
+	 * load failed, so answering from it would report a base-only type system.
+	 */
+	private static final Map<String, String> typeLoadFailures = new ConcurrentHashMap<>();
+
 	// Map of all base types
 	// CRITICAL FIX: basetypes must be static to be shared across all instances for TCK compliance
 	private static Map<String, TypeDefinitionContainer> basetypes;
@@ -150,6 +160,27 @@ public class TypeManagerImpl implements TypeManager {
 	// Flag to track initialization
 	// CRITICAL FIX: initialized flag must be static to be shared across all instances for TCK compliance
 	private static volatile boolean initialized = false;
+
+	/**
+	 * Whether a full type load has COMPLETED once in this process.
+	 *
+	 * <p>Written by two places: init()'s success path, and refreshTypes(), which also
+	 * completes a load. Naming only init() here was accurate until the second writer was
+	 * added in the same round — a field's doc lagging its behaviour is the failure this
+	 * ledger keeps recording.
+	 *
+	 * <p>Completion, not attempt. It was set in the finally at first, which let a FAILED
+	 * first init spend the bootstrap grace — so the ordinary response to a failed startup,
+	 * retrying in the same JVM, ran strict against a store whose design documents still did
+	 * not exist. A review caught it, and this line said "or failure" for a round after the
+	 * behaviour changed.
+	 *
+	 * <p>Separate from {@code initialized}, which is reset deliberately by refreshTypes() and
+	 * the dynamic-repository path to force a rebuild. Only the FIRST run happens before the
+	 * design documents are provisioned; every later one is a re-read of a provisioned store,
+	 * on whatever thread asked for it.
+	 */
+	private static volatile boolean everInitialized = false;
 	private static final Object initLock = new Object();
 	
 	// CRITICAL FIX: Track types being deleted to prevent infinite recursion during cache refresh
@@ -223,6 +254,29 @@ public class TypeManagerImpl implements TypeManager {
 				return;
 			}
 			
+			// This bean's FIRST init runs BEFORE the design documents are provisioned —
+			// DatabasePreInitializer does that work on an application event, which arrives
+			// later. So the type registry legitimately reads a view that may not exist yet,
+			// and the store layer is right to refuse an undeployed view everywhere else:
+			// a request that reads a missing view as "no data" is what the whole fail-closed
+			// batch is about. Declaring the window here is what tells the two apart.
+			//
+			// Found by starting a repository that had never been provisioned: the store
+			// refused, init() failed, and the Spring context died — taking the ALREADY
+			// healthy repositories down with it. bedroom alone would never have shown it,
+			// which is the same blind spot that let the base-type regression through.
+			//
+			// ONLY the first one. init() is also reached lazily: refreshTypes() and the
+			// dynamic-repository path in getTypeById() set initialized=false, and the next
+			// ensureInitialized() re-enters here ON A REQUEST THREAD. The window is
+			// process-wide, so opening it there would hand the provisioning grace to every
+			// request being served at that moment — which is the defect StartupPhase was
+			// built to remove, arriving through a different door. By then the design
+			// documents exist, so a missing view really is a failure.
+			boolean firstInitialization = !everInitialized;
+			if (firstInitialization) {
+				StartupPhase.begin();
+			}
 			try {
 				log.info("Starting TypeManagerImpl initialization process");
 				initGlobalTypes();
@@ -256,6 +310,9 @@ public class TypeManagerImpl implements TypeManager {
 				}
 				
 				initialized = true;
+				// Here, not in the finally: only a completed first initialization spends the
+				// bootstrap grace.
+				everInitialized = true;
 				if (log.isDebugEnabled()) {
 					log.debug("INITIALIZATION MARKED COMPLETE");
 				}
@@ -263,6 +320,21 @@ public class TypeManagerImpl implements TypeManager {
 			} catch (Exception e) {
 				log.error("INITIALIZATION FAILED WITH EXCEPTION: " + e.getMessage(), e);
 				throw e;
+			} finally {
+				// finally, not after the try: a begin() whose end() is skipped by a throw
+				// would leave the grace on for the life of the process, and every request
+				// would then read a missing view as "no data".
+				//
+				// The WINDOW closes either way; the FLAG is set on the success path ABOVE,
+				// beside `initialized = true`. Setting it here consumed the bootstrap grace with a
+				// failed attempt, so a retry in the same JVM — the ordinary thing to do when
+				// the first init failed — was treated as a request-time refresh and ran
+				// strict against a store whose design documents still do not exist. A review
+				// found it; the two facts are "a first init has completed" and "a first init
+				// was attempted", and only the first one may spend the grace.
+				if (firstInitialization) {
+					StartupPhase.end();
+				}
 			}
 		}
 		log.info("TypeManagerImpl.init() completed successfully");
@@ -392,7 +464,22 @@ public class TypeManagerImpl implements TypeManager {
 				// CRITICAL FIX: Use ConcurrentHashMap for thread safety
 				TYPES.put(key, new ConcurrentHashMap<String, TypeDefinitionContainer>());
 			}
-			generate(key);
+			// Per repository, and isolated per repository. The refusal inside generate() is
+			// right — a type system that could not be read must not be served as a base-only
+			// one — but this loop covers the WHOLE deployment, so letting the first refusal
+			// escape made one unprovisioned repository fail startup, type creation and type
+			// listing for every other repository. Measured on the running stack: registering
+			// a type in bedroom was refused with a message naming a different repository.
+			try {
+				generate(key);
+				typeLoadFailures.remove(key);
+			} catch (RuntimeException e) {
+				typeLoadFailures.put(key,
+						e.getMessage() == null ? e.getClass().getName() : e.getMessage());
+				log.error("The type system of '" + key + "' could not be generated. Other"
+						+ " repositories continue; every type read for THIS one is refused"
+						+ " until a later refresh succeeds.", e);
+			}
 		}
 		
 		// Debug: Log final state
@@ -664,6 +751,14 @@ public class TypeManagerImpl implements TypeManager {
 			}
 			
 			initialized = true;
+			// The invariant the startup window rests on: `initialized` implies
+			// `everInitialized`. refreshTypes() completed a load without recording it, so a
+			// later reset of `initialized` — which this same method and the dynamic
+			// repository path both do — re-entered init() believing it was the FIRST one and
+			// opened the process-wide provisioning window ON A REQUEST THREAD. That is the
+			// defect StartupPhase exists to remove, reached through the door the fix left
+			// open. A review found it while the reachability was still latent.
+			everInitialized = true;
 		}
 	}
 
@@ -1563,11 +1658,26 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	}
 
 	
-	private void addSubTypes(){
-		for(String key : repositoryInfoMap.keys()){
-			RepositoryInfo info = repositoryInfoMap.get(key);
-			String repositoryId = info.getId();
-			addSubTypes(repositoryId);
+	// The no-argument addSubTypes() that used to sit here had NO CALLERS, and a review
+	// found that the per-repository isolation added to it in this batch was therefore dead
+	// code: generate() calls addSubTypes(repositoryId) directly, and the isolation that
+	// actually runs is the try/catch around generate(key) in the loop above. Carrying a
+	// second copy of the same rule in an unreachable method is how two copies drift apart.
+
+	/**
+	 * Refuses reads for a repository whose type system is not loaded.
+	 *
+	 * <p>Without this, isolating the load failure above would reintroduce exactly what the
+	 * refusal exists to prevent: {@code refreshTypes} clears the registry and installs the
+	 * base types before the read, so a repository that failed to load holds a base-only map
+	 * that answers "that custom type does not exist".
+	 */
+	private void assertRepositoryTypesLoaded(String repositoryId) {
+		String reason = typeLoadFailures.get(repositoryId);
+		if (reason != null) {
+			throw new IllegalStateException("the type system of '" + repositoryId + "' is not"
+					+ " loaded (" + reason + "); answering type questions for it would report"
+					+ " a base-only type system");
 		}
 	}
 	
@@ -1584,30 +1694,62 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				log.debug("Retrieved " + (subtypes != null ? subtypes.size() : 0) + " type definitions from database");
 			}
 		} catch (Exception e) {
+			// Returning here rebuilt, one layer up, exactly the fallback the DAO withdrew:
+			// refreshTypes() has already CLEARED the registry and installed the base types,
+			// so swallowing this failure completes initialization (initialized=true) with a
+			// base-only type system — every custom type absent for every client until the
+			// next refresh, reported as a successful startup. "Unknown means no" is the
+			// project's startup rule (CouchDbVersionRequirement); a type system that could
+			// not be read is unknown.
 			log.error("Failed to get type definitions for repository: " + repositoryId, e);
-			return;
+			throw new IllegalStateException("the type definitions of '" + repositoryId
+					+ "' could not be loaded into the type registry; refusing to serve a"
+					+ " base-only type system", e);
 		}
 		
 		List<NemakiTypeDefinition> firstGeneration = new ArrayList<NemakiTypeDefinition>();
 		if(CollectionUtils.isNotEmpty(subtypes)){
+			// Every skip here drops ONE type from the registry that the repository actually
+			// has. Smaller than the two-type synthesis this method's catch was fixed for,
+			// but the same direction: the type-definition sync diffs the registry's answer
+			// and reads the missing type as gone. A type system that could not be assembled
+			// in full is not a smaller type system.
 			for (NemakiTypeDefinition subtype : subtypes) {
 				if (subtype == null) {
-					log.warn("Null subtype found in type definitions");
-					continue;
+					throw new IllegalStateException("a null type definition came back for '"
+							+ repositoryId + "'; refusing to assemble the registry around it");
 				}
 				
-				// Skip subtypes with null BaseId (prevents NullPointerException)
-				if (subtype.getBaseId() != null && subtype.getParentId() != null) {
-					try {
-						if (subtype.getBaseId().value().equals(subtype.getParentId())) {
-							firstGeneration.add(subtype);
-						}
-					} catch (Exception e) {
-						log.warn("Error processing type definition " + subtype.getTypeId() + ": " + e.getMessage());
+				if (subtype.getBaseId() == null) {
+					throw new IllegalStateException("type definition '"
+							+ (subtype.getTypeId() != null ? subtype.getTypeId() : "unknown")
+							+ "' in '" + repositoryId + "' has no BaseId; refusing to serve a"
+							+ " registry that silently omits it");
+				}
+				if (subtype.getParentId() == null) {
+					// A BASE type legitimately has no parent — in CMIS that is what makes it
+					// a base type — and generate() has already installed it. Demanding a
+					// parentId of every definition refused the empty-view bootstrap, which
+					// emits exactly these two: a fresh repository could not start. Anything
+					// else with no parent cannot be placed in the hierarchy at all, and
+					// dropping it silently is what this arm exists to stop.
+					if (subtype.getTypeId() != null
+							&& subtype.getTypeId().equals(subtype.getBaseId().value())) {
+						continue;
 					}
-				} else {
-					log.warn("Skipping type definition with null BaseId or ParentId: " + 
-						(subtype.getTypeId() != null ? subtype.getTypeId() : "unknown"));
+					throw new IllegalStateException("type definition '"
+							+ (subtype.getTypeId() != null ? subtype.getTypeId() : "unknown")
+							+ "' in '" + repositoryId + "' has no ParentId and is not a base"
+							+ " type; refusing to serve a registry that silently omits it");
+				}
+				try {
+					if (subtype.getBaseId().value().equals(subtype.getParentId())) {
+						firstGeneration.add(subtype);
+					}
+				} catch (Exception e) {
+					throw new IllegalStateException("type definition '" + subtype.getTypeId()
+							+ "' in '" + repositoryId + "' could not be placed in the"
+							+ " hierarchy; refusing to serve a registry that omits it", e);
 				}
 			}
 
@@ -1632,10 +1774,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	private void addSubTypesInternal(String repositoryId,
 			List<NemakiTypeDefinition> subtypes, NemakiTypeDefinition type, Set<String> processingTypes) {
 		
-		// CRITICAL FIX: Circular reference detection
+		// The assembly half of the arms addSubTypes refuses: returning here drops this type
+		// (and its whole subtree) from the registry, then initialization completes and the
+		// type-definition sync reads the missing types as gone. Same direction, one method in.
 		if (type == null || type.getTypeId() == null) {
-			log.warn("Null type or typeId detected, skipping processing");
-			return;
+			throw new IllegalStateException("a type definition with no typeId came back for '"
+					+ repositoryId + "'; refusing to assemble the registry around it");
 		}
 		
 		String typeId = type.getTypeId();
@@ -1656,13 +1800,18 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			try {
 				AbstractTypeDefinition typeDefinition = buildTypeDefinitionFromDB(repositoryId, type);
 				if (typeDefinition == null) {
-					log.warn("buildTypeDefinitionFromDB returned null for type: " + typeId);
-					return;
+					throw new IllegalStateException("type '" + typeId + "' in '" + repositoryId
+							+ "' could not be built; refusing to serve a registry that omits"
+							+ " it and its subtypes");
 				}
 				container.setTypeDefinition(typeDefinition);
+			} catch (IllegalStateException e) {
+				throw e;
 			} catch (Exception e) {
 				log.error("Failed to build type definition for type: " + typeId, e);
-				return;
+				throw new IllegalStateException("type '" + typeId + "' in '" + repositoryId
+						+ "' could not be built; refusing to serve a registry that omits it"
+						+ " and its subtypes", e);
 			}
 			
 			container.setChildren(new ArrayList<TypeDefinitionContainer>());
@@ -1703,8 +1852,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			if (subtypes != null) {
 				for (NemakiTypeDefinition subtype : subtypes) {
 					if (subtype == null) {
-						log.warn("Null subtype detected, skipping");
-						continue;
+						throw new IllegalStateException("a null type definition is in the"
+								+ " subtype list for '" + repositoryId + "'; refusing to"
+								+ " assemble the registry around it");
 					}
 					
 					// CRITICAL FIX: Add null safety check for subtype.getParentId()
@@ -2782,6 +2932,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	@Override
 	public TypeDefinitionContainer getTypeById(String repositoryId, String typeId) {
 		ensureInitialized();
+		assertRepositoryTypesLoaded(repositoryId);
 
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 
@@ -2810,8 +2961,14 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 							return null;
 						}
 					} catch (Exception e) {
+						// refreshTypes() clears the registry before rebuilding it, so a
+						// failure here leaves it BASE-ONLY and this null tells the caller
+						// "no such type" — the registry-level twin of the arms that were
+						// closed inside addSubTypes. The startup path already rethrows.
 						log.error("Exception during dynamic repository initialization for " + repositoryId, e);
-						return null;
+						throw new IllegalStateException("the type registry of '" + repositoryId
+								+ "' could not be initialized; this is NOT a finding that the"
+								+ " type does not exist", e);
 					}
 				}
 			}
@@ -2823,6 +2980,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	@Override
 	public TypeDefinition getTypeByQueryName(String repositoryId, String typeQueryName) {
 		ensureInitialized();
+		// The CMIS-visible listings read the same map as the four readers that were
+		// guarded first, and generate() installs the base types BEFORE addSubTypes()
+		// can fail — so a repository whose type system did not load holds a base-only
+		// map, and these are exactly the methods that would report it as the
+		// repository's type system. Found by a sibling sweep: four guarded, four not.
+		assertRepositoryTypesLoaded(repositoryId);
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 		if (types == null) {
 			log.error("CRITICAL: TYPES map is null for repository: " + repositoryId + " in getTypeByQueryName()");
@@ -2843,6 +3006,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	@Override
 	public Collection<TypeDefinitionContainer> getTypeDefinitionList(String repositoryId) {
 		ensureInitialized();
+		assertRepositoryTypesLoaded(repositoryId);
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 		
 		List<TypeDefinitionContainer> typeRoots = new ArrayList<TypeDefinitionContainer>();
@@ -2858,6 +3022,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	@Override
 	public List<TypeDefinitionContainer> getRootTypes(String repositoryId) {
 		ensureInitialized();
+		assertRepositoryTypesLoaded(repositoryId);
 		List<TypeDefinitionContainer> rootTypes = new ArrayList<TypeDefinitionContainer>();
 		for (Map.Entry<String, TypeDefinitionContainer> entry : basetypes.entrySet()) {
 			rootTypes.add(entry.getValue());
@@ -2941,6 +3106,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			}
 		}
 		ensureInitialized();
+		assertRepositoryTypesLoaded(repositoryId);
 		
 		// DEBUG: Check TYPES state after ensureInitialized
 		if (log.isDebugEnabled()) {
@@ -3034,9 +3200,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 					}
 				}
 			} catch (Exception e) {
+				// The forced refresh clears the registry first. Swallowing left it
+				// base-only and answered the caller "no such type" — the same statement
+				// the arms inside addSubTypes were closed against, made one level up.
 				log.error("NEMAKI TYPE ERROR: Exception during forced refresh", e);
-				log.error("Exception during forced refresh: " + e.getMessage());
-				e.printStackTrace();
+				throw new IllegalStateException("the type registry of '" + repositoryId
+						+ "' could not be refreshed while looking up '" + typeId + "'; this"
+						+ " is NOT a finding that the type does not exist", e);
 			}
 			
 			return null;
@@ -3252,6 +3422,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	public TypeDefinitionList getTypesChildren(CallContext context,
 			String repositoryId, String typeId,
 			boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount) {
+		// The CMIS-visible listings read the same map as the four readers that were
+		// guarded first, and generate() installs the base types BEFORE addSubTypes()
+		// can fail — so a repository whose type system did not load holds a base-only
+		// map, and these are exactly the methods that would report it as the
+		// repository's type system. Found by a sibling sweep: four guarded, four not.
+		assertRepositoryTypesLoaded(repositoryId);
 		
 		if (log.isDebugEnabled()) {
 			log.debug("getTypesChildren ENTRY: repositoryId=" + repositoryId + ", typeId=" + typeId + 
@@ -3291,9 +3467,13 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 						generate(repositoryId);
 						log.info("*** DYNAMIC INIT: Successfully generated base types for repository: " + repositoryId + " ***");
 					} catch (Exception e) {
+						// Continuing here left TYPES holding whatever generate() managed
+						// before it failed, and every later lookup answered from that
+						// partial registry as if it were the type system.
 						log.error("*** DYNAMIC INIT ERROR: Failed to generate base types for repository: " + repositoryId + " - error: " + e.getMessage() + " ***");
-						log.warn("*** DYNAMIC INIT ERROR: Failed to generate base types for: " + repositoryId + " - " + e.getMessage());
-						e.printStackTrace(System.err);
+						throw new IllegalStateException("the base types of '" + repositoryId
+								+ "' could not be generated; refusing to serve a partial type"
+								+ " registry", e);
 					}
 					
 					// Re-get the types after generation
@@ -3319,12 +3499,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		TypeDefinitionListImpl result = new TypeDefinitionListImpl(
 				new ArrayList<TypeDefinition>());
 
-		int skip = (skipCount == null ? 0 : skipCount.intValue());
+		int skip = clampSkip(skipCount);
 		if (skip < 0) {
 			skip = 0;
 		}
 
-		int max = (maxItems == null ? Integer.MAX_VALUE : maxItems.intValue());
+		int max = clampPage(maxItems);
 		if (max < 1) {
 			return result;
 		}
@@ -3381,7 +3561,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			// CRITICAL FIX: Correct hasMoreItems calculation for base types paging
 			// hasMoreItems should be true only if there are more items beyond what we've returned
 			int totalItems = basetypes.size();
-			int originalSkip = (skipCount == null ? 0 : skipCount.intValue());
+			int originalSkip = clampSkip(skipCount);
 			boolean hasMore = (originalSkip + result.getList().size()) < totalItems;
 			result.setHasMoreItems(hasMore);
 			result.setNumItems(BigInteger.valueOf(totalItems));
@@ -3478,6 +3658,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	@Override
 	public List<TypeDefinitionContainer> getTypesDescendants(String repositoryId,
 			String typeId, BigInteger depth, Boolean includePropertyDefinitions) {
+		// The CMIS-visible listings read the same map as the four readers that were
+		// guarded first, and generate() installs the base types BEFORE addSubTypes()
+		// can fail — so a repository whose type system did not load holds a base-only
+		// map, and these are exactly the methods that would report it as the
+		// repository's type system. Found by a sibling sweep: four guarded, four not.
+		assertRepositoryTypesLoaded(repositoryId);
 		
 		if (log.isDebugEnabled()) {
 			log.debug("getTypesDescendants ENTRY: repositoryId=" + repositoryId + 
@@ -3490,7 +3676,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		List<TypeDefinitionContainer> result = new ArrayList<TypeDefinitionContainer>();
 
 		// check depth
-		int d = (depth == null ? -1 : depth.intValue());
+		int d = clampDepth(depth);
 		if (d == 0) {
 			throw new CmisInvalidArgumentException("Depth must not be 0!");
 		} else if (d < -1) {
@@ -4143,17 +4329,27 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	private List<String> findChildTypes(String repositoryId, String typeId) {
 		List<String> childTypes = new ArrayList<>();
 		
-		try {
-			List<NemakiTypeDefinition> allTypes = getNemakiTypeDefinitions(repositoryId);
-			if (allTypes != null) {
-				for (NemakiTypeDefinition type : allTypes) {
-					if (type != null && type.getParentId() != null && type.getParentId().equals(typeId)) {
-						childTypes.add(type.getTypeId());
-					}
-				}
+		// Every arm here refuses, because an empty answer is read by checkTypeDependencies as
+		// "this type is nobody's parent" and deleteType then removes a type that still has
+		// subtypes. checkTypeHasInstances — the question next to this one — was already made
+		// to throw for exactly this reason, and checkTypeDependencies' outer catch turns a
+		// throw into a dependency ISSUE, which refuses the delete. The three arms are: an
+		// unanswered list, a null element, and the read itself failing.
+		List<NemakiTypeDefinition> allTypes = getNemakiTypeDefinitions(repositoryId);
+		if (allTypes == null) {
+			throw new IllegalStateException("the type definitions of '" + repositoryId
+					+ "' did not answer, so whether '" + typeId + "' is a parent cannot be"
+					+ " established");
+		}
+		for (NemakiTypeDefinition type : allTypes) {
+			if (type == null) {
+				throw new IllegalStateException("a null type definition is in the list for '"
+						+ repositoryId + "', so whether '" + typeId + "' is a parent cannot be"
+						+ " established");
 			}
-		} catch (Exception e) {
-			log.error("findChildTypes: Error finding child types for parentId=" + typeId, e);
+			if (type.getParentId() != null && type.getParentId().equals(typeId)) {
+				childTypes.add(type.getTypeId());
+			}
 		}
 		
 		return childTypes;
@@ -4265,6 +4461,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			try {
 				log.info("invalidateTypeDefinitionCache: Regenerating types for repository=" + repositoryId);
 				generate(repositoryId);
+				// A repository that loads cleanly is no longer refused. Without this the
+				// failure marker outlived the failure: the repair path (patches deploy the
+				// views, then invalidate) regenerated the types correctly and every read for
+				// that repository went on refusing until a full refresh happened to run.
+				typeLoadFailures.remove(repositoryId);
 
 				// Log the newly loaded types for verification
 				Map<String, TypeDefinitionContainer> newTypes = TYPES.get(repositoryId);
@@ -4279,7 +4480,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 						.count();
 					log.info("invalidateTypeDefinitionCache: Found " + secondaryCount + " custom/secondary types");
 				}
-			} catch (Exception e) {
+			} catch (RuntimeException e) {
+				// And a regeneration that FAILED marks it, rather than being swallowed while
+				// the caller is told the invalidation succeeded. The map's whole purpose is
+				// that a base-only map is not served as the type system.
+				typeLoadFailures.put(repositoryId,
+						e.getMessage() == null ? e.getClass().getName() : e.getMessage());
 				log.error("invalidateTypeDefinitionCache: Failed to regenerate types for repository=" + repositoryId, e);
 			}
 
@@ -4534,6 +4740,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		if (repositoryId == null || propertyQueryName == null) {
 			return null;
 		}
+		// The CMIS-visible listings read the same map as the four readers that were
+		// guarded first, and generate() installs the base types BEFORE addSubTypes()
+		// can fail — so a repository whose type system did not load holds a base-only
+		// map, and these are exactly the methods that would report it as the
+		// repository's type system. Found by a sibling sweep: four guarded, four not.
+		assertRepositoryTypesLoaded(repositoryId);
 
 		try {
 			// CRITICAL FIX (2025-12-18): Get ALL types from the TYPES map, not just root types
@@ -4626,4 +4838,53 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 
 		return null;
 	}
+	/** The largest page of type definitions this server serves in one response. */
+	private static final int MAX_TYPE_PAGE = 10_000;
+
+	/** A non-positive maxItems is not "nothing": it is the ordinary default page. */
+	private static final int DEFAULT_TYPE_PAGE_FOR_NON_POSITIVE = 100;
+
+	/**
+	 * Converts a client's maxItems for a type listing without truncating it.
+	 *
+	 * <p>The same {@code intValue()} trap the children listing was fixed for, one service
+	 * over: 2^32 became 0 and the type list came back EMPTY. The clamp is here rather than at
+	 * the caller because getTypeChildren and getTypeDescendants both read these.
+	 */
+	private static int clampPage(java.math.BigInteger maxItems) {
+		if (maxItems == null) {
+			return MAX_TYPE_PAGE;
+		}
+		if (maxItems.signum() <= 0) {
+			// The DEFAULT page, not an empty one — the same input must not mean "100 items"
+			// at the children listing and "nothing" here. Answering 0 made maxItems=0 return
+			// an empty type list, which is the shape the 2^32 truncation was fixed for,
+			// reached by a value a client can send on purpose.
+			return DEFAULT_TYPE_PAGE_FOR_NON_POSITIVE;
+		}
+		return maxItems.compareTo(java.math.BigInteger.valueOf(MAX_TYPE_PAGE)) >= 0
+				? MAX_TYPE_PAGE
+				: maxItems.intValue();
+	}
+
+	/** A skip count is a position: never negative, never truncated. */
+	private static int clampSkip(java.math.BigInteger skipCount) {
+		if (skipCount == null || skipCount.signum() <= 0) {
+			return 0;
+		}
+		return skipCount.compareTo(java.math.BigInteger.valueOf(Integer.MAX_VALUE)) >= 0
+				? Integer.MAX_VALUE
+				: skipCount.intValue();
+	}
+
+	/** Depth keeps CMIS's -1 (unlimited); a huge depth must not truncate to 0. */
+	private static int clampDepth(java.math.BigInteger depth) {
+		if (depth == null || depth.signum() < 0) {
+			return -1;
+		}
+		return depth.compareTo(java.math.BigInteger.valueOf(Integer.MAX_VALUE)) >= 0
+				? Integer.MAX_VALUE
+				: depth.intValue();
+	}
+
 }

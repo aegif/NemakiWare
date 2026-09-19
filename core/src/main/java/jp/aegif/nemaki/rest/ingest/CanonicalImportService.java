@@ -76,8 +76,28 @@ public interface CanonicalImportService {
     /**
      * Create a CMIS relationship between two objects.
      *
-     * @return error message if failed, null on success
+     * <p>Used by the fetch orchestrators after their import has returned; carries no capture
+     * scope. A link whose duplicate check could not be answered is still created and still
+     * answers {@code null} — the fact is logged at WARN, because the callers put every
+     * non-null answer into their fetch errors and a created link is not one. Inside an import
+     * the same case is reported as a relationship warning.
+     *
+     * <p>The link IS authorised (R4). It used to be created with no profile at all, so a
+     * delegated profile whose authorisation had been revoked while the fetch ran still got its
+     * edges written — the check was not failed, it was never made. {@code authorizingProfile}
+     * is the profile the fetch is running, and {@code request} names the connector its import
+     * used; the delegation is re-asked against the folder's CURRENT ACL and the connector row
+     * as it is now. The profile ROW is not re-read on this path — it is the row the fetch
+     * started with — so {@code isDelegated} and {@code targetFolderId} are that row's values;
+     * an in-import caller that passes no profile does re-read it. Passing null for both means the caller has nothing to authorise
+     * against and no re-check happens, which is why {@code FetchSupport} refuses rather than
+     * calling it that way.
+     *
+     * @return a message when the relationship was NOT created, null when it was (or already
+     *         existed)
      */
     String createDirectRelationship(CallContext callContext, String repositoryId,
-                                    String sourceId, String targetId);
+                                    String sourceId, String targetId,
+                                    ImportProfileDefinition authorizingProfile,
+                                    ExternalIngestRequest request);
 }

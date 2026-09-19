@@ -231,4 +231,38 @@ class EvidenceChainVerifierTest {
         assertTrue(limits.contains("outside this database"), limits);
         assertTrue(limits.contains("after the last checkpoint"), limits);
     }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("an empty span does not read as a chain that was checked")
+    void anEmptySpanSaysItWalkedNothing() {
+        // intact is vacuously true for an empty span: nothing was found wrong because nothing
+        // was looked at. Every caller guards the empty case today, so this is latent -- but it
+        // is a public static answering "is the chain intact" about a span nobody walked, which
+        // is the shape of every COMPLETE/EMPTY_INDEX trap this repository has hit.
+        //
+        // intact stays true (flipping it would make an empty ledger report a break). What must
+        // not happen is a reader taking `intact: true, verifiedEntries: 0` for a finding.
+        java.util.Map<String, Object> body = EvidenceChainVerifier.verify(java.util.List.of())
+                .asMap();
+
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.FALSE, body.get("walkedAnything"),
+                "an empty span claims it walked something: " + body);
+        org.junit.jupiter.api.Assertions.assertTrue(
+                String.valueOf(body.get("limits")).contains("NOTHING WAS WALKED"),
+                "the verdict travels without saying nothing was examined: " + body);
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("a walked span does not carry the empty-span caveat")
+    void aWalkedSpanDoesNotSayItWalkedNothing() {
+        // Without this, stamping the caveat on every report would satisfy the test above and
+        // make the one sentence that matters unreadable through repetition.
+        java.util.Map<String, Object> body =
+                EvidenceChainVerifier.verify(chain(1)).asMap();
+
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.TRUE, body.get("walkedAnything"));
+        org.junit.jupiter.api.Assertions.assertFalse(
+                String.valueOf(body.get("limits")).contains("NOTHING WAS WALKED"),
+                "a span that WAS walked carries the empty-span caveat: " + body);
+    }
 }

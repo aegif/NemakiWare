@@ -221,4 +221,28 @@ class CopyRenditionsAreRecordedTest {
                 "it implies the earlier converter is known: " + text);
         assertTrue(text.contains("ORIGINAL is unchanged"), text);
     }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("a node without the recorder says so — the WARN is load-bearing")
+    void anUnwiredRecorderIsNotSilent() throws Exception {
+        // The javadoc used to say a null recorder was "SILENT by design", and for one round the
+        // body WARNed while that sentence stood — so the next reader would have deleted the
+        // WARN as a design violation, and a node producing renditions with no duplication
+        // record would have gone back to looking healthy. The sentence was withdrawn; this pins
+        // the WARN so the withdrawal cannot be reverted by tidying.
+        String arm = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                jp.aegif.nemaki.util.test.JavaSource.methodBody(
+                        jp.aegif.nemaki.util.test.JavaSource.read(
+                                "src/main/java/jp/aegif/nemaki/businesslogic/impl/"
+                                        + "ContentServiceImpl.java"),
+                        "private void recordFormatDuplication"));
+        int nullCheck = arm.indexOf("formatDuplicationRecorder == null");
+        org.junit.jupiter.api.Assertions.assertTrue(nullCheck >= 0,
+                "fixture check: the unwired-bean arm is gone, so this test guards nothing");
+        String beforeReturn = arm.substring(nullCheck, arm.indexOf("return;", nullCheck));
+        org.junit.jupiter.api.Assertions.assertTrue(beforeReturn.contains("log.warn"),
+                "the unwired-recorder arm returns in silence again, so a node that produces "
+                        + "renditions with NO duplication record is indistinguishable from a "
+                        + "healthy one: " + beforeReturn);
+    }
 }

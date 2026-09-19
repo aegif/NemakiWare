@@ -73,6 +73,24 @@ public class FolderConnectorController {
     }
 
     /**
+     * A listing the service could not complete escaped as a Spring 500 (this package is
+     * outside {@code GlobalExceptionHandler}); the typed refusals answer 503, "retry".
+     */
+    @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+            ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+            // The "Run now" door answered 500 for the configuration refusal while its sibling
+            // POST .../scheduler/trigger/{id} answered 503 for the same condition — one
+            // outage, two doors, two kinds of answer. A review found the pair.
+            jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                    .SettingUnreadableException.class})
+    public ResponseEntity<Map<String, Object>> definitionRowsCouldNotBeRead(RuntimeException e) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("status", "error");
+        body.put("message", e.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
+    /**
      * List the runnable connector profiles whose target is {@code folderId}.
      * Returns only profiles the caller may run (write + delegation/admin),
      * so an empty list means "don't show the run button".
@@ -96,12 +114,28 @@ public class FolderConnectorController {
         boolean admin = ingestAuthorizationService.isAdmin(ctx);
 
         List<Map<String, Object>> runnable = new ArrayList<>();
+        List<String> unresolved = new ArrayList<>();
         if (canWrite || admin) {
             for (ImportProfileDefinition profile : importProfileDefinitionService.listByRepository(repositoryId)) {
                 if (!profile.isEnabled()) continue;
                 if (!folderId.equals(profile.getTargetFolderId())) continue;
-                ConnectorDefinition connector = schedulerService.resolveConnectorForProfile(profile);
-                if (connector == null) continue;
+                IngestSchedulerService.ConnectorForProfile resolution =
+                        schedulerService.resolveConnectorFor(profile);
+                ConnectorDefinition connector = resolution.connector();
+                if (connector == null) {
+                    // An empty list here is an instruction to the UI ("do not show the run
+                    // button"), so dropping a profile whose connector could not be READ told
+                    // the user there is nothing to run — while POST .../run for the same
+                    // profile answers 503. One controller said both. A review found it.
+                    if (!resolution.answered()) {
+                        unresolved.add(profile.getProfileId());
+                        logger.warn("profile {} is not shown as runnable on folder {} because"
+                                + " its connector could not be resolved ({}); this is not a"
+                                + " statement that it has no connector",
+                                profile.getProfileId(), folderId, resolution.why());
+                    }
+                    continue;
+                }
                 if (!mayRun(ctx, repositoryId, folderId, connector, admin)) continue;
                 runnable.add(describe(profile, connector));
             }
@@ -110,6 +144,14 @@ public class FolderConnectorController {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("canWrite", canWrite || admin);
         body.put("connectors", runnable);
+        if (!unresolved.isEmpty()) {
+            // Named, not counted: the caller can ask about each one and be told what is
+            // wrong with it, rather than reading the short list as "nothing to run here".
+            // The answer to that ask is 503 for a read that failed and 404 when the walk
+            // establishes the connector is gone — this list does no walk, so it cannot tell
+            // them apart, which is why it names rather than explains.
+            body.put("connectorsUnresolved", unresolved);
+        }
         return ResponseEntity.ok(body);
     }
 
@@ -144,18 +186,35 @@ public class FolderConnectorController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
         }
 
-        ImportProfileDefinition profile = importProfileDefinitionService.get(profileId);
+        // The caller's repository decides which row: get() selects on profileId alone, so a
+        // shared profileId (or a profile that only has a legacy generated-id row) answered a
+        // false "no runnable profile". The admin API resolves this way; a review found these
+        // two paths still on the selector. (Run path.)
+        ImportProfileDefinition profile;
+        try {
+            profile = importProfileDefinitionService.getForRepository(profileId, repositoryId);
+        } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException pair) {
+            body.put("status", "error");
+            body.put("message", pair.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+            body.put("status", "error");
+            body.put("message", "import profile " + profileId + " could not be read; retry shortly");
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+        }
         if (!profileBelongsToFolder(profile, repositoryId, folderId)) {
             body.put("status", "error");
             body.put("message", "No runnable profile for this folder: " + profileId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
         }
 
-        ConnectorDefinition connector = schedulerService.resolveConnectorForProfile(profile);
+        IngestSchedulerService.ConnectorForProfile resolution =
+                schedulerService.resolveConnectorFor(profile);
+        ConnectorDefinition connector = resolution.connector();
         if (connector == null) {
-            body.put("status", "error");
-            body.put("message", "No connector resolved for profile: " + profileId);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+            // "No connector resolved" (400) was the answer for all five reasons, three of
+            // which say nothing about the connector. A review found the family.
+            return unresolvedConnector(profile, resolution, body);
         }
 
         if (!mayRun(ctx, repositoryId, folderId, connector, admin)) {
@@ -169,6 +228,14 @@ public class FolderConnectorController {
         FetchResult result;
         try {
             result = schedulerService.executeFetch(ctx, profile, connector, params);
+        } catch (jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                .SettingUnreadableException couldNotAsk) {
+            // Adding the type to this class's @ExceptionHandler was not enough: THIS catch runs
+            // first and turns the refusal into 500, so the handler was unreachable for the one
+            // call that can raise it. The sibling POST .../scheduler/trigger/{id} answers 503
+            // for the same condition. Two reviewers found the pair in the round after the
+            // handler was extended. Let it out.
+            throw couldNotAsk;
         } catch (Exception e) {
             logger.warn("Manual connector run failed for profile {}: {}", profileId, e.getMessage());
             body.put("status", "error");
@@ -193,6 +260,71 @@ public class FolderConnectorController {
         body.put("connectorId", connector.getConnectorId());
         body.put("sourceSystem", connector.getSourceSystem());
         return ResponseEntity.ok(body);
+    }
+
+    /**
+     * The answer for a profile whose connector did not resolve — 400 only when the store said
+     * so. The twin of the scheduler controller's; the {@code ABSENT_OR_HIDDEN} arm does the
+     * one index-free walk that separates "no such connector" (404) from "the index cannot
+     * show it" (503), which is affordable because this is one profile per request.
+     */
+    private ResponseEntity<Map<String, Object>> unresolvedConnector(
+            ImportProfileDefinition profile,
+            IngestSchedulerService.ConnectorForProfile resolution,
+            Map<String, Object> body) {
+        body.put("status", "error");
+        String id = profile.getDefaultConnectorId();
+        switch (resolution.why()) {
+            case NOT_WIRED -> {
+                body.put("message", "the connector service is not wired on this node; retry"
+                        + " shortly against a node that runs it");
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+            }
+            case LISTING_REFUSED -> {
+                // Without this arm the default below answered 400 "no connector" for a
+                // listing that never ran (R29).
+                body.put("message", "the connectors of profile " + profile.getProfileId()
+                        + " could not be listed while the index is not ready; retry shortly");
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+            }
+            case NOT_READ -> {
+                body.put("message", "connector " + id + " exists but could not be read as that"
+                        + " connector; retry shortly");
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+            }
+            case ABSENT_OR_HIDDEN -> {
+                if (connectorDefinitionService == null) {
+                    // Without the walk there is no way to tell absence from a hidden row, and
+                    // the arm below would answer "does not exist" — a claim no read made. A
+                    // review found the short-circuit fabricating absence for an unwired node.
+                    body.put("message", "the connector service is not wired on"
+                            + " this node, so whether connector " + id + " exists cannot be"
+                            + " established; retry shortly against a node that runs it");
+                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                            .body(body);
+                }
+                boolean rowIsThere;
+                try {
+                    rowIsThere = connectorDefinitionService.existsIndexFree(id);
+                } catch (RuntimeException couldNotAsk) {
+                    body.put("message", "whether connector " + id + " exists could not be"
+                            + " established; retry shortly: " + couldNotAsk.getMessage());
+                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+                }
+                if (rowIsThere) {
+                    body.put("message", "connector " + id + " exists but the index cannot show"
+                            + " it; retry shortly");
+                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+                }
+                body.put("message", "connector " + id + " does not exist");
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+            }
+            default -> {
+                body.put("message", "No connector resolved for profile: "
+                        + profile.getProfileId());
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+            }
+        }
     }
 
     /**
@@ -230,18 +362,35 @@ public class FolderConnectorController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
         }
 
-        ImportProfileDefinition profile = importProfileDefinitionService.get(profileId);
+        // The caller's repository decides which row: get() selects on profileId alone, so a
+        // shared profileId (or a profile that only has a legacy generated-id row) answered a
+        // false "no runnable profile". The admin API resolves this way; a review found these
+        // two paths still on the selector. (Credential path.)
+        ImportProfileDefinition profile;
+        try {
+            profile = importProfileDefinitionService.getForRepository(profileId, repositoryId);
+        } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException pair) {
+            body.put("status", "error");
+            body.put("message", pair.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+            body.put("status", "error");
+            body.put("message", "import profile " + profileId + " could not be read; retry shortly");
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+        }
         if (!profileBelongsToFolder(profile, repositoryId, folderId)) {
             body.put("status", "error");
             body.put("message", "No runnable profile for this folder: " + profileId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
         }
 
-        ConnectorDefinition connector = schedulerService.resolveConnectorForProfile(profile);
+        IngestSchedulerService.ConnectorForProfile resolution =
+                schedulerService.resolveConnectorFor(profile);
+        ConnectorDefinition connector = resolution.connector();
         if (connector == null) {
-            body.put("status", "error");
-            body.put("message", "No connector resolved for profile: " + profileId);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+            // "No connector resolved" (400) was the answer for all five reasons, three of
+            // which say nothing about the connector. A review found the family.
+            return unresolvedConnector(profile, resolution, body);
         }
 
         String credentialRef = connector.getCredentialRef();

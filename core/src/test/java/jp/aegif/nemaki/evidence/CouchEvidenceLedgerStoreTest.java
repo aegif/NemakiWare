@@ -312,4 +312,204 @@ class CouchEvidenceLedgerStoreTest {
         when(client.queryView(anyString(), anyString(), anyMap())).thenReturn(result);
         return client;
     }
+
+    @Test
+    @DisplayName("a view that did not answer is not 'the chain is empty'")
+    void anUnansweredViewIsNotAnEmptyChain() {
+        // highestSequence returned -1 for THREE things: an empty domain (correct), a view that
+        // answered with nothing at all, and a row whose key it could not read. The callers act
+        // on -1: AnchorController prints `unanchoredEntries: 0` ("no exposure" -- the number an
+        // operator sizes the rewritable window by), and EvidenceLedgerService.append reads it as
+        // "no previous hash to link to" and starts a fresh chain at sequence 0.
+        ViewResult nullRows = mock(ViewResult.class);
+        when(nullRows.getRows()).thenReturn(null);
+        ViewResult unreadableKey = mock(ViewResult.class);
+        ViewResultRow row = mock(ViewResultRow.class);
+        when(row.getKey()).thenReturn("not-a-two-part-key");
+        when(unreadableKey.getRows()).thenReturn(List.of(row));
+
+        for (ViewResult answer : new ViewResult[] { null, nullRows, unreadableKey }) {
+            CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+            when(client.queryView(anyString(), anyString(), anyMap())).thenReturn(answer);
+
+            IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                    () -> storeWith(client).highestSequence(DOMAIN),
+                    "a view that could not be read answered as though the chain were empty");
+            assertTrue(thrown.getMessage().contains("NOT a finding that the chain is empty"),
+                    thrown.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("EVERY read here refuses to answer 'the chain holds nothing' for a failed view")
+    void noReadTurnsAFailedViewIntoAnEmptyChain() {
+        // The first version of this fix reached highestSequence only, and its test with it. The
+        // neighbours in this same file kept the collapse, and their consumers are the worse
+        // ones: findBySubject feeds the authenticity report's ABSENT verdict ("no copy of this
+        // record in another format is recorded"), the E-ARK exporter's "no capture entry was
+        // found" — written INTO the SIP that leaves the organisation — and the custody duplicate
+        // check, which reads empty as "not already recorded" and appends a second entry.
+        //
+        // Iterating the reads is the cheap defence against fixing one arm of a fan-out: with one
+        // read named explicitly, reverting the shared line still goes red on THAT read and the
+        // lock passes while the others stay broken.
+        ViewResult nullRows = mock(ViewResult.class);
+        when(nullRows.getRows()).thenReturn(null);
+
+        for (ViewResult answer : new ViewResult[] { null, nullRows }) {
+            CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+            when(client.queryView(anyString(), anyString(), anyMap())).thenReturn(answer);
+            CouchEvidenceLedgerStore store = storeWith(client);
+
+            assertThrows(IllegalStateException.class,
+                    () -> store.findBySubject(DOMAIN, "obj-1", 10),
+                    "findBySubject reported an unreadable view as 'the chain holds nothing "
+                            + "about this record'");
+            assertThrows(IllegalStateException.class, () -> store.range(DOMAIN, 0, 9, 10),
+                    "range reported an unreadable view as an empty span");
+        }
+    }
+
+    @Test
+    @DisplayName("an answered, empty view is still an empty answer for both — the control")
+    void anAnsweredEmptyViewIsStillEmptyForEveryRead() {
+        ViewResult empty = mock(ViewResult.class);
+        when(empty.getRows()).thenReturn(List.of());
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.queryView(anyString(), anyString(), anyMap())).thenReturn(empty);
+        CouchEvidenceLedgerStore store = storeWith(client);
+
+        assertTrue(store.findBySubject(DOMAIN, "obj-1", 10).isEmpty(),
+                "a record with genuinely no entries was reported as unreadable");
+        assertTrue(store.range(DOMAIN, 0, 9, 10).isEmpty(),
+                "a genuinely empty span was reported as unreadable");
+    }
+
+    @Test
+    @DisplayName("an empty domain still answers -1, it does not throw — the control")
+    void anEmptyDomainStillAnswersMinusOne() {
+        // Without this, throwing on every no-row answer would satisfy the test above and make a
+        // brand-new repository unable to write its first entry at all.
+        ViewResult empty = mock(ViewResult.class);
+        when(empty.getRows()).thenReturn(List.of());
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.queryView(anyString(), anyString(), anyMap())).thenReturn(empty);
+
+        assertEquals(-1L, storeWith(client).highestSequence(DOMAIN),
+                "an empty domain was reported as unreadable");
+    }
+
+    @Test
+    @DisplayName("a checkpoint read that failed is not 'no checkpoint has been sealed'")
+    void aFailedCheckpointReadIsNotAnUnsealedChain() {
+        // The same substitution as above, one method over, with a worse consumer:
+        // closeCheckpoint reads null as "start the span at 0" and would seal a second
+        // checkpoint over a range already sealed and buy a second timestamp token for it.
+        ViewResult nullRows = mock(ViewResult.class);
+        when(nullRows.getRows()).thenReturn(null);
+        ViewResult undecodableRow = mock(ViewResult.class);
+        ViewResultRow row = mock(ViewResultRow.class);
+        when(row.getDoc()).thenReturn(null);
+        when(undecodableRow.getRows()).thenReturn(List.of(row));
+
+        for (ViewResult answer : new ViewResult[] { null, nullRows, undecodableRow }) {
+            CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+            when(client.queryView(anyString(), anyString(), anyMap())).thenReturn(answer);
+
+            IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                    () -> storeWith(client).latestCheckpoint(DOMAIN),
+                    "a checkpoint read that failed answered as though nothing were sealed");
+            assertTrue(thrown.getMessage().contains("NOT a finding that none has"),
+                    thrown.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("a chain with no checkpoint still answers null — the control")
+    void anUnsealedChainStillAnswersNull() {
+        ViewResult empty = mock(ViewResult.class);
+        when(empty.getRows()).thenReturn(List.of());
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.queryView(anyString(), anyString(), anyMap())).thenReturn(empty);
+
+        assertEquals(null, storeWith(client).latestCheckpoint(DOMAIN),
+                "a chain that has genuinely never been checkpointed was reported as unreadable");
+    }
+
+    @Test
+    @DisplayName("rows this store cannot decode are counted, not silently dropped")
+    void anUndecodableRowIsCounted() {
+        // The policy was split inside this one class: highestSequence THREW for a key it could
+        // not read, while these two list reads skipped the row in silence. With every row
+        // undecodable the answer is an empty list -- "the chain holds nothing about this
+        // subject" -- which is the substitution the throws above exist to stop, one loop
+        // further in. Its consumers are the ones the throw's own comment names: the SIP's "no
+        // ledger entry names this object", written into a package that leaves the organisation,
+        // and the custody duplicate check that appends when it reads nothing.
+        //
+        // Both reads are driven. One shared decode call feeds them, so a test naming only
+        // findBySubject goes red when that call is reverted and passes while range stays broken.
+        ViewResult rows = mock(ViewResult.class);
+        ViewResultRow undecodable = mock(ViewResultRow.class);
+        when(undecodable.getDoc()).thenReturn(null);
+        when(rows.getRows()).thenReturn(List.of(undecodable));
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.queryView(anyString(), anyString(), anyMap())).thenReturn(rows);
+
+        CouchEvidenceLedgerStore bySubject = storeWith(client);
+        assertTrue(bySubject.findBySubject(DOMAIN, "obj-1", 10).isEmpty());
+        assertEquals(1, bySubject.unreadableCount(),
+                "findBySubject returned a short list with nothing recording the drop");
+
+        CouchEvidenceLedgerStore byRange = storeWith(client);
+        assertTrue(byRange.range(DOMAIN, 0, 9, 10).isEmpty());
+        assertEquals(1, byRange.unreadableCount(),
+                "range returned a short list with nothing recording the drop");
+    }
+
+    @Test
+    @DisplayName("a read whose rows all decode counts none unreadable — the control")
+    void aCleanReadCountsNothingUnreadable() {
+        ViewResult empty = mock(ViewResult.class);
+        when(empty.getRows()).thenReturn(List.of());
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.queryView(anyString(), anyString(), anyMap())).thenReturn(empty);
+        CouchEvidenceLedgerStore store = storeWith(client);
+
+        store.findBySubject(DOMAIN, "obj-1", 10);
+        assertEquals(0, store.unreadableCount(),
+                "a read that dropped nothing was reported as lossy");
+    }
+
+    @Test
+    @DisplayName("a read that returns early leaves no count behind for the next caller")
+    void anEarlyReturnDoesNotHandOnTheLastCount() {
+        // The counter is a ThreadLocal on a Spring singleton and the threads are pooled, so a
+        // path that returns before resetting it hands the NEXT request on that thread whatever
+        // the previous one left. findBySubject's guard against a blank subject sat ABOVE the
+        // reset, and its consumer reads the counter straight after the call: the authenticity
+        // report would mark the duplications section UNAVAILABLE with "undecodableEntries: 1"
+        // naming rows that this read never looked at.
+        //
+        // Reachable without any corruption at all: the objectId is an unvalidated request
+        // parameter, so ?objectId= is enough.
+        ViewResult rows = mock(ViewResult.class);
+        ViewResultRow undecodable = mock(ViewResultRow.class);
+        when(undecodable.getDoc()).thenReturn(null);
+        when(rows.getRows()).thenReturn(List.of(undecodable));
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.queryView(anyString(), anyString(), anyMap())).thenReturn(rows);
+        CouchEvidenceLedgerStore store = storeWith(client);
+
+        store.findBySubject(DOMAIN, "obj-1", 10);
+        assertEquals(1, store.unreadableCount(),
+                "fixture check: nothing was counted, so the leak this test looks for could not "
+                        + "happen either way");
+
+        // Same store, same thread — the shape a pooled request thread arrives in.
+        assertTrue(store.findBySubject(DOMAIN, "  ", 10).isEmpty());
+        assertEquals(0, store.unreadableCount(),
+                "a read that looked at nothing reported the PREVIOUS read's unreadable rows as "
+                        + "its own");
+    }
 }

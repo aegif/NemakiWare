@@ -71,7 +71,38 @@ public enum AnchorKind {
         /** A point in time, good to the accuracy the token states. */
         BIDIRECTIONAL_WITHIN_ACCURACY,
         /** Records receipt, not existence. Must not be presented as a time proof at all. */
-        NOT_A_TIME_PROOF
+        NOT_A_TIME_PROOF;
+
+        /**
+         * The weaker of two claims — used wherever a value could not be read and one has to be
+         * chosen without strengthening anything.
+         *
+         * <p>Weakest first: {@link #NOT_A_TIME_PROOF}, then {@link #UPPER_BOUND_ONLY}, then
+         * {@link #BIDIRECTIONAL_WITHIN_ACCURACY}. Declaration order is NOT that order and must
+         * not be relied on — this method exists so nobody has to notice that.
+         *
+         * <p><b>Why it exists.</b> {@code AnchorReceiptCodec} fell back to
+         * {@code UPPER_BOUND_ONLY} on an unreadable field, which is a downgrade for an RFC 3161
+         * token and a <b>promotion</b> for a catalog anchor, whose honest claim is that it is
+         * not a time proof at all. A corrupt row could therefore make an in-organization
+         * catalog receipt render as "the commitment existed no later than that time". The
+         * codec's own contract is that reload must not be able to strengthen a receipt.
+         */
+        public static TimeSemantics weakerOf(TimeSemantics a, TimeSemantics b) {
+            if (a == NOT_A_TIME_PROOF || b == NOT_A_TIME_PROOF) {
+                return NOT_A_TIME_PROOF;
+            }
+            if (a == UPPER_BOUND_ONLY || b == UPPER_BOUND_ONLY) {
+                return UPPER_BOUND_ONLY;
+            }
+            return BIDIRECTIONAL_WITHIN_ACCURACY;
+        }
+
+        /** The stronger of two claims — for choosing which rung to quote a number beside. */
+        public static TimeSemantics strongerOf(TimeSemantics a, TimeSemantics b) {
+            return weakerOf(a, b) == a ? b : a;
+        }
+
     }
 
     private final TimeSemantics timeSemantics;

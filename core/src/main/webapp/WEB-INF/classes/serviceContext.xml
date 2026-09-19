@@ -1004,6 +1004,7 @@
         <property name="auditLogger" ref="auditLogger" />
         <property name="ingestMetadataService" ref="ingestMetadataService" />
         <property name="ingestLineageEmitter" ref="ingestLineageEmitter" />
+        <property name="ingestAuthorizationService" ref="ingestAuthorizationService" />
     </bean>
 
     <bean id="ingestJobService" class="jp.aegif.nemaki.rest.ingest.IngestJobService">

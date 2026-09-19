@@ -413,7 +413,23 @@ def main():
         # "completed", not "idle": idle is also the state before anything ever ran, and
         # accepting it accepts "never started" as "finished". A changed startTime makes it
         # THIS run, and indexedCount == DOCS makes it THIS folder.
-        return (j.get("status") == "completed"
+        #
+        # Every OTHER ending is named too, and each one stops the wait instead of failing to
+        # satisfy it. Unnamed, a run that ended as "error", "cancelled" or
+        # "completed_with_errors" simply never made this function true, so the seed sat out its
+        # full 900-second timeout and then said the reindex had not finished — which is true and
+        # useless: it had finished, badly, 890 seconds earlier.
+        #
+        # None of them is acceptable as a fixture. A seed built from a walk that dropped
+        # folders, or was cancelled, or errored, is not the repository this measurement claims
+        # to be measuring.
+        status = j.get("status")
+        if status in ("completed_with_errors", "error", "cancelled"):
+            raise SystemExit(f"the folder RAG reindex ended as {status!r} "
+                             f"(errorCount={j.get('errorCount')}, "
+                             f"indexed={j.get('indexedCount')}/{DOCS}): the seed is incomplete, "
+                             "so T4 must not be measured against it. Fix the cause and re-seed.")
+        return (status == "completed"
                 and j.get("startTime") != previous_start
                 and j.get("indexedCount") == DOCS)
 

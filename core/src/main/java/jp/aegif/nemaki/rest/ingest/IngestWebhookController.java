@@ -104,6 +104,34 @@ public class IngestWebhookController {
     private jp.aegif.nemaki.util.PropertyManager propertyManager;
 
     /**
+     * Optional: without it an unfetched delivery cannot be recorded, only logged. The sender
+     * has already been told "accepted" by then, so the row is the only thing that can carry
+     * the delivery forward.
+     */
+    @Autowired(required = false)
+    private FetchSupport fetchSupport;
+
+    /**
+     * Deliveries this node accepted, did not fetch, and could not record, per profile.
+     *
+     * <p>In memory, like the IMAP twin's counter and for the same reason: what produces one is
+     * the configuration database being unreachable. The sender has already had its 200 and
+     * will not retry, so without this the state is a log line. A review found the two arms
+     * diverged again — the IMAP one was given a counter and a status field a round earlier.
+     */
+    private final java.util.Map<String, java.util.concurrent.atomic.AtomicInteger>
+            undeliveredWebhooks = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Deliveries accepted but neither fetched nor recorded, for the admin status endpoint. */
+    public java.util.Map<String, Integer> undeliveredWebhookCounts() {
+        java.util.Map<String, Integer> out = new LinkedHashMap<>();
+        undeliveredWebhooks.forEach((profileId, n) -> {
+            if (n.get() > 0) out.put(profileId, n.get());
+        });
+        return out;
+    }
+
+    /**
      * Receive webhook from external source.
      * Handles Slack url_verification, Graph validationToken, and actual event payloads.
      */
@@ -126,10 +154,43 @@ public class IngestWebhookController {
 
         // 1. Resolve connector — return uniform 401 for not-found/disabled to prevent
         // connector ID enumeration via status code differences
-        ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
+        ConnectorDefinition connector;
+        boolean selectorAnswered;
+        try {
+            // getOrRefuse, not get: get() answers null for a failed id-addressed read as
+            // well as for absence, and this receiver answered 401 for both — "your
+            // signature is wrong", which in the sender's logs is indistinguishable from a
+            // real signature failure and sends an operator after the wrong secret. A read
+            // that did not answer is 503 here; absence stays 401. No index-free walk is
+            // made for that: this runs before the signature is verified, and a walk of the
+            // configuration database per unauthenticated request is an amplifier (the walk
+            // that establishes uniqueness is step 5, after the signature and the rate
+            // limit). What
+            // this leaves as 401 is a legacy-id row the selector answered WITHOUT (see
+            // getOrRefuse's contract): one the startup migration could not rewrite, or one
+            // written after its last pass and not reported until the next. What the 503
+            // discloses (that something this read refuses — an unreadable row, two or more
+            // rows — exists at the id, OR that a read failed; and, only while the selector
+            // is failing, that a non-503 means a readable deterministic row exists) is
+            // stated in that contract and in the release notes as the classes it separates.
+            // The Graph validationToken echo below (see isMicrosoftGraphSubscriptionValidation)
+            // and the Dropbox GET challenge (recorded on that GET's javadoc) disclose an
+            // enabled connector's existence without a signature — protocol requirements
+            // that predate this read.
+            ConnectorDefinitionService.Resolution resolved =
+                    connectorDefinitionService.resolveOrRefuse(connectorId);
+            connector = resolved.connector();
+            // Kept for the refusable answers below: while the selector is down, a 401 beside
+            // this read's 503 separates present from absent (R3).
+            selectorAnswered = resolved.selectorAnswered();
+        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotRead) {
+            // A row that exists and could not be read as this connector, or a read that
+            // did not answer. This sat outside the try below and escaped as a Spring 500.
+            return connectorCouldNotBeRead(connectorId, couldNotRead.getMessage());
+        }
         if (connector == null || !connector.isEnabled()) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "Signature verification failed"));
+            return unauthorizedUnlessTheSelectorWasDown(connectorId, selectorAnswered,
+                    "no connector, or a disabled one, at this id");
         }
 
         String system = connector.getSourceSystem();
@@ -138,23 +199,53 @@ public class IngestWebhookController {
         // Graph sends validationToken during subscription creation — server must echo it back.
         // Only Graph-backed connectors use this handshake; Slack/Chatwork/generic must not bypass verifySignature.
         if (isMicrosoftGraphSubscriptionValidation(system, validationToken)) {
+            // Bounded and nosniff, like the Dropbox challenge eighty lines below — this is the
+            // same thing: an unauthenticated echo of caller-controlled text. Only one of the
+            // two was bounded, and a review found the pair. Graph's own token is a short
+            // opaque string; anything longer is not one.
+            if (validationToken.length() > 1024) {
+                logger.warn("Graph validation token for connector {} was {} characters;"
+                        + " refusing to echo it", connectorId, validationToken.length());
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(Map.of("error", "validationToken too long"));
+            }
             logger.info("Graph subscription validation for connector {}", connectorId);
             return ResponseEntity.ok()
                     .contentType(MediaType.TEXT_PLAIN)
+                    .header("X-Content-Type-Options", "nosniff")
                     .body(validationToken);
         }
 
         // 3. Verify signature FIRST (before processing any payload)
         if (!verifySignature(connector, rawBody)) {
             logger.warn("Webhook signature verification failed for connector {}", connectorId);
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "Signature verification failed"));
+            return unauthorizedUnlessTheSelectorWasDown(connectorId, selectorAnswered,
+                    "the signature did not verify");
         }
 
         // 4. Rate limit AFTER signature verification to prevent unauthenticated exhaustion
         if (isWebhookRateLimited(connectorId)) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                     .body(Map.of("error", "Webhook rate limit exceeded"));
+        }
+
+        // 5. Only now — authenticated and rate limited — establish that the row this request
+        // was verified against is the ONLY row defining the connector. Step 1 answered
+        // whichever row the index showed; a pair of which one row is hidden, or a legacy-id
+        // row beside the deterministic one, would run with that row's secret and enabled
+        // state by the accident of index order (R2). The walk is not made before the
+        // signature: one unauthenticated request must not cost a walk of the configuration
+        // database (dece81f7d withdrew exactly that) — which is also why an event signed
+        // with the HIDDEN row's secret still answers 401 above, not 503.
+        try {
+            connectorDefinitionService.refuseUnlessUniquelyDefined(connectorId);
+        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException notAlone) {
+            // Not "retry shortly": a standing pair stays until an administrator repairs it,
+            // and a walk that did not answer is the store, not the sender. The reason is in
+            // the log, not in the body.
+            logger.error("Webhook for {} not dispatched: {}", connectorId, notAlone.getMessage());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("error", "Connector definition could not be resolved"));
         }
 
         // 4. Parse and dispatch payload
@@ -178,6 +269,25 @@ public class IngestWebhookController {
                 default -> handleGenericWebhook(connector, payload);
             };
 
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException couldNotList) {
+            // The recipients could not be enumerated. Not "no profile" (200 tells the sender
+            // the event was delivered) and not the 500 below (our bug, nothing to wait for):
+            // 503 leaves the sender room to retry — whether and how often it does is the
+            // sender's own policy.
+            logger.error("Webhook for {} not dispatched: the import profiles could not be"
+                    + " listed ({})", connectorId, couldNotList.getMessage());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("error", "Import profiles could not be read; retry shortly"));
+        } catch (RecipientUnreadableException recipientBroken) {
+            // A profile row that names this connector could not be read as a profile. The
+            // readable rows alone would have said "no profile" (200) or dispatched to the
+            // others with this one silently left out. Standing until the row is repaired or
+            // the node that can read it takes over, so "retry" here is "retry later".
+            logger.error("Webhook for {} not dispatched: {}", connectorId,
+                    recipientBroken.getMessage());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("error", "An import profile of this connector could not be"
+                            + " read; retry later"));
         } catch (Exception e) {
             logger.error("Webhook processing failed for {}: {}", connectorId, e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -206,11 +316,31 @@ public class IngestWebhookController {
     public ResponseEntity<?> verifyWebhook(
             @PathVariable String connectorId,
             @RequestParam(value = "challenge", required = false) String challenge) {
-        ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
+        ConnectorDefinition connector;
+        boolean selectorAnswered;
+        try {
+            // As in receiveWebhook: a read that did not answer is not "no such connector",
+            // and a 404 here fails the operator's URL verification as if the id were wrong.
+            ConnectorDefinitionService.Resolution resolved =
+                    connectorDefinitionService.resolveOrRefuse(connectorId);
+            connector = resolved.connector();
+            selectorAnswered = resolved.selectorAnswered();
+        } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotReadOnVerify) {
+            return connectorCouldNotBeRead(connectorId, couldNotReadOnVerify.getMessage());
+        }
         if (connector == null || !connector.isEnabled()
                 || !"dropbox".equals(connector.getSourceSystem())
                 || challenge == null || challenge.isBlank()
                 || challenge.length() > 1024) {
+            if (!selectorAnswered) {
+                // The same window, for the same reason: while the selector is down this 404
+                // stood beside the read's own 503 and separated present from absent. The
+                // answer is made the read's, body and all (R3). The echo below is unchanged —
+                // an enabled Dropbox connector answers the challenge in this window as
+                // outside it, which is the handshake's own disclosure and predates this.
+                return connectorCouldNotBeRead(connectorId,
+                        "the connector selector was down when the handshake was answered");
+            }
             // Uniform 404 — don't reveal connector existence/type, and bound the
             // echoed value so it can't be used for response amplification.
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
@@ -474,11 +604,47 @@ public class IngestWebhookController {
      * semantics of {@link ImportProfileDefinition#isConnectorAllowed(String)}
      * is intentionally NOT used here to prevent unrelated profiles from
      * receiving webhook events.
+     *
+     * <p>Read through the {@code _all_docs} walk, not the selector. Whenever the selector
+     * did not show a row the receiver said {@code no_profile} with a 200 — the sender's event
+     * consumed, nothing captured — and the selector's single page showed no row past the
+     * 200th, every time. (Whether a rebuilding index shows an existing row as absent is not
+     * measured on a real CouchDB; a listing that failed outright was a 500.) A listing that
+     * cannot be completed now throws, and {@link #receiveWebhook} answers 503. Rows that
+     * name no repository are not recipients: the import resolves no row for them in any
+     * repository, so dispatching to one was a fetch that could only fail. A row that was
+     * addressed to this connector — names it and, as far as its raw archetype list can be
+     * read, admits its archetype — and could not be read is a recipient this receiver cannot
+     * establish: refused, not left out. A broken row that a readable row with the same
+     * fields would have been filtered out on (another connector's name, or an archetype
+     * list that plainly excludes this one) does not stop the dispatch.
      */
     private List<ImportProfileDefinition> findAllProfilesForConnector(ConnectorDefinition connector) {
-        if (profileService == null) return List.of();
+        if (profileService == null) {
+            // Wiring, not a read — and not "no profile" either: the rule this batch applies
+            // to an unwired service everywhere else. A review found the arm still answering
+            // an empty list.
+            throw new RecipientUnreadableException("the import profile service is not wired,"
+                    + " so the recipients of connector " + connector.getConnectorId()
+                    + " cannot be established");
+        }
         String connId = connector.getConnectorId();
-        return profileService.list().stream()
+        ImportProfileDefinitionService.OwnedProfiles owned = profileService.listOwnedIndexFree();
+        for (ImportProfileDefinitionService.UninterpretableRow broken : owned.uninterpretable()) {
+            if (broken.addressedTo(connId, connector.getSourceArchetype())) {
+                // Answering from the readable rows alone would say "no profile" (200) when
+                // this was the only one, or dispatch to the others with this one silently
+                // left out. A broken row that names another connector is that connector's
+                // problem and does not stop this dispatch.
+                throw new RecipientUnreadableException("the recipients of connector " + connId
+                        + " could not be established: profile row " + broken.docId()
+                        + (broken.addresseeUnknown()
+                                ? " may name it (its connector fields cannot be read)"
+                                : " names it")
+                        + " and could not be read as a profile (" + broken.reason() + ")");
+            }
+        }
+        return owned.profiles().stream()
                 .filter(ImportProfileDefinition::isEnabled)
                 .filter(p -> connId.equals(p.getDefaultConnectorId())
                         || (p.getAllowedConnectorIds() != null
@@ -486,6 +652,53 @@ public class IngestWebhookController {
                             && p.getAllowedConnectorIds().contains(connId)))
                 .filter(p -> p.isArchetypeAllowed(connector.getSourceArchetype()))
                 .toList();
+    }
+
+    /** A recipient row this receiver could not read; {@link #receiveWebhook} answers 503. */
+    private static final class RecipientUnreadableException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        RecipientUnreadableException(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * The receiver's uniform 401 — unless the Mango selector was DOWN when this connector was
+     * read (R3). While it is, absence REFUSES (a legacy-id row cannot be excluded), so a 401
+     * standing next to that 503 told an unauthenticated caller that a readable
+     * deterministic-id row exists at the id. In that window the refusable answers are made ONE
+     * answer, with the same status and the same body as a read that could not be answered, so
+     * the pair no longer separates present from absent. Outside the window nothing changes:
+     * absence and a failed signature are both 401, as they always were.
+     *
+     * <p>The cost, since it is a real one: while the selector is down, a sender whose signature
+     * is genuinely wrong — and a sender addressing a disabled connector — is told "retry
+     * shortly" instead of "unauthorized"; whether and how often it retries is its own policy.
+     * A sender holding the right secret is not stopped, and the protocol handshakes (Graph's
+     * validationToken echo, the Dropbox GET challenge) disclose an enabled connector's
+     * existence in this window exactly as outside it, so the window is not made silent for
+     * those two systems. Refusing every webhook while the index is down would be; that is the
+     * price this avoids.
+     */
+    private ResponseEntity<?> unauthorizedUnlessTheSelectorWasDown(
+            String connectorId, boolean selectorAnswered, String why) {
+        if (selectorAnswered) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Signature verification failed"));
+        }
+        logger.warn("Webhook for {}: {} — answered as \"could not be read\" because the"
+                + " connector selector was down when it was read, so this answer does not say"
+                + " whether a row exists at the id", connectorId, why);
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(Map.of("error", "Connector could not be read; retry shortly"));
+    }
+
+    private ResponseEntity<?> connectorCouldNotBeRead(String connectorId, String why) {
+        logger.error("Webhook for {} not dispatched: the connector could not be read ({})",
+                connectorId, why);
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(Map.of("error", "Connector could not be read; retry shortly"));
     }
 
     /**
@@ -621,6 +834,28 @@ public class IngestWebhookController {
         IngestSchedulerService.DelegatedAuthorization auth =
                 schedulerService.authorizeDelegatedFetch(profile, connector);
         if (!auth.isAllowed()) {
+            // The sender has already been told "accepted". A SETTLED denial is the profile's
+            // answer and the event is genuinely not for it; a denial this node could not ASK is
+            // not, and dropping it there loses the delivery — the sender does not retry a 200.
+            // The IMAP twin was given a dead-letter row and a miss counter for exactly this a
+            // round ago; a review found the two arms diverged again.
+            // The null check is on the RECORDING, not on the classification. Folding them
+            // together sent an unwired node's could-not-ask down the "refused" log line below —
+            // the exact mis-statement this arm exists to remove. A review found it.
+            if (IngestSchedulerService.denialCouldNotAsk(auth.getDenialReason())) {
+                boolean recorded = recordUndeliveredWebhook(profile, connector,
+                        "[transient] webhook deliveries were accepted but not fetched: the"
+                                + " delegated authorisation could not be established ("
+                                + auth.getDenialReason() + "). This row RECORDS the misses;"
+                                + " it carries no delivery and is not replayable — re-fetch"
+                                + " through the connector");
+                logger.error("Webhook-triggered fetch for delegated profile {} (connector {})"
+                        + " could not be AUTHORISED ({}), which is not a denial. The sender was"
+                        + " told 'accepted'; the delivery {} recorded",
+                        profile.getProfileId(), connector.getConnectorId(),
+                        auth.getDenialReason(), recorded ? "was" : "could NOT be");
+                return;
+            }
             logger.warn("Webhook-triggered fetch refused for delegated profile {} (connector {}): {}",
                     profile.getProfileId(), connector.getConnectorId(), auth.getDenialReason());
             return;
@@ -629,11 +864,61 @@ public class IngestWebhookController {
         Thread.ofVirtual().name("webhook-fetch-" + profile.getProfileId()).start(() -> {
             try {
                 schedulerService.executeFetch(fetchCtx, profile, connector, params);
+            } catch (jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                    .SettingUnreadableException couldNotAsk) {
+                // The sender has its 200 and will not retry. A fetch that could not read its
+                // own configuration or checkpoint fetched nothing; the authorisation arm above
+                // records the same class and this one only logged (R30).
+                boolean recorded = recordUndeliveredWebhook(profile, connector,
+                        "[transient] webhook deliveries were accepted but not fetched: the"
+                                + " fetch could not read its configuration ("
+                                + couldNotAsk.getMessage() + "). This row RECORDS the misses;"
+                                + " it carries no delivery and is not replayable — re-fetch"
+                                + " through the connector");
+                logger.error("Webhook-triggered fetch for profile {} (connector {}) could not"
+                        + " read its configuration: {}. The sender was told 'accepted'; the"
+                        + " delivery {} recorded", profile.getProfileId(),
+                        connector.getConnectorId(), couldNotAsk.getMessage(),
+                        recorded ? "was" : "could NOT be");
             } catch (Exception e) {
                 logger.error("Webhook-triggered fetch failed for profile {}: {}",
                         profile.getProfileId(), e.getMessage());
             }
         });
+    }
+
+    /**
+     * Record deliveries this node accepted and did not fetch: a dead-letter row marked as a
+     * RECORD (it carries no delivery), or, when that row cannot be written, the in-memory
+     * counter the status endpoint shows.
+     *
+     * @return whether the row was written
+     */
+    private boolean recordUndeliveredWebhook(ImportProfileDefinition profile,
+            ConnectorDefinition connector, String why) {
+        boolean recorded = false;
+        if (fetchSupport != null) {
+            ExternalIngestRequest missed = new ExternalIngestRequest();
+            missed.setProfileId(profile.getProfileId());
+            missed.setConnectorId(connector.getConnectorId());
+            missed.setRepositoryId(profile.getRepositoryId());
+            // DETERMINISTIC, like the IMAP twin's msg.stableKey(). A timestamp made the
+            // dead-letter id new on every delivery, and this runs once per notification per
+            // matching profile behind a 100/minute limiter — thousands of unresolvable rows a
+            // minute into nemaki_conf during one outage. The string is only the id now; the
+            // row's meaning is carried by its own mark (R10).
+            missed.setSourceObjectId("webhook-deliveries:" + profile.getProfileId()
+                    + ":" + connector.getConnectorId());
+            missed.setSourceObjectType("webhook_event");
+            missed.setExecutionMode("webhook");
+            recorded = fetchSupport.saveWebhookDeliveryRecordToDlq(missed, why);
+        }
+        if (!recorded) {
+            undeliveredWebhooks.computeIfAbsent(profile.getProfileId(),
+                    k -> new java.util.concurrent.atomic.AtomicInteger())
+                    .incrementAndGet();
+        }
+        return recorded;
     }
 
     /**
@@ -709,6 +994,17 @@ public class IngestWebhookController {
             JsonNode payload = MAPPER.readTree(rawBody);
             JsonNode notifications = payload.path("value");
             if (!notifications.isArray()) return false;
+            if (notifications.isEmpty()) {
+                // An empty array verified NOTHING: the loop below never ran and the method
+                // answered true, so {"value":[]} reached this connector's rate limiter without
+                // presenting a secret. The comment at the call site says the limiter is
+                // "AFTER signature verification to prevent unauthenticated exhaustion" — for
+                // Graph connectors that was false, and a hundred empty posts locked out a
+                // minute of genuine change notifications. A review found the pair.
+                logger.warn("Graph notification carried no entries, so its clientState could"
+                        + " not be verified; refusing");
+                return false;
+            }
             for (JsonNode notification : notifications) {
                 String clientState = notification.path("clientState").asText(null);
                 if (clientState == null || !java.security.MessageDigest.isEqual(
@@ -870,8 +1166,16 @@ public class IngestWebhookController {
     public ResponseEntity<?> createSubscription(@PathVariable String connectorId,
                                                  @RequestBody Map<String, String> params) {
         if (!isAdmin()) return forbidden();
-        ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
+        // getOrRefuse, not get(): get() answers null for a failed selector, a failed
+        // deterministic-id read AND a genuine absence alike, so a CouchDB outage during a
+        // subscription change was answered "Connector not found" — 404, a settled claim about
+        // the catalogue made from an outage. The release notes already say unreadable rows
+        // become 503 here. Recorded as a residual since round 3; two reviewers raised it again.
+        ConnectorDefinition connector = connectorDefinitionService.getOrRefuse(connectorId);
         if (connector == null) return notFound("Connector not found: " + connectorId);
+        // Admin-gated, so the walk is afforded here: a subscription made with whichever row
+        // the index showed is the choice R2 closes. A refusal is the class handler's 503.
+        connectorDefinitionService.refuseUnlessUniquelyDefined(connectorId);
 
         String system = connector.getSourceSystem();
         if (!"teams".equals(system) && !"m365_mail".equals(system)) {
@@ -964,8 +1268,10 @@ public class IngestWebhookController {
     public ResponseEntity<?> deleteSubscription(@PathVariable String connectorId,
                                                  @RequestParam String subscriptionId) {
         if (!isAdmin()) return forbidden();
-        ConnectorDefinition connector = connectorDefinitionService.get(connectorId);
+        // getOrRefuse: see createSubscription. A failed read is not "not found".
+        ConnectorDefinition connector = connectorDefinitionService.getOrRefuse(connectorId);
         if (connector == null) return notFound("Connector not found");
+        connectorDefinitionService.refuseUnlessUniquelyDefined(connectorId); // see createSubscription
 
         String token = resolveToken(connector);
         if (token == null) return badRequest("No access token");
@@ -990,11 +1296,57 @@ public class IngestWebhookController {
         }
     }
 
+    /**
+     * @throws jp.aegif.nemaki.rest.controller.IntegrationSettingsService.SettingUnreadableException when the connector names a
+     *         credential, nothing resolved it, and the configuration database did not answer.
+     *         The callers state the null as "No access token for connector" and answer 400 —
+     *         the request blamed for a store outage, and an admin invited to overwrite a
+     *         credential that was never wrong. This is the one credential read in the ingest
+     *         tree that the conversion missed; a review found it.
+     */
     private String resolveToken(ConnectorDefinition connector) {
-        if (connector.getCredentialRef() == null) return null;
+        String ref = connector.getCredentialRef();
+        if (ref == null) return null;
+        if (propertyManager == null) {
+            // Unwired answered null, and the caller said "No access token" (400) — a claim
+            // about the credential made by a node that cannot read any (R28).
+            throw new jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                    .SettingUnreadableException("the credential '" + ref + "' of connector "
+                            + connector.getConnectorId() + " cannot be read on this node: the"
+                            + " property manager is not wired; retry shortly against a node"
+                            + " that runs it");
+        }
         if (propertyManager != null) {
-            try { return propertyManager.readValue(connector.getCredentialRef()); }
-            catch (Exception e) { /* ignore */ }
+            try {
+                String value = propertyManager.readValue(ref);
+                if (value != null) return value;
+            } catch (Exception couldNotRead) {
+                // A read that THREW is a failed read, whatever a later getConfiguration says.
+                // Discarding it and relying on the loadFailed sentinel left a cached-but-stale
+                // configuration answering "no access token" for an exception. A review found it.
+                throw new jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                        .SettingUnreadableException("the credential '" + ref + "' of connector "
+                                + connector.getConnectorId() + " could not be read: "
+                                + couldNotRead.getMessage() + "; retry shortly");
+            }
+            jp.aegif.nemaki.model.Configuration conf;
+            try {
+                conf = propertyManager.getConfiguration(
+                        jp.aegif.nemaki.util.constant.SystemConst.NEMAKI_CONF_DB);
+            } catch (Exception couldNotAsk) {
+                // Raw, this became a Spring 500 — the class handler does not list it.
+                throw new jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                        .SettingUnreadableException("whether the credential '" + ref + "' of"
+                                + " connector " + connector.getConnectorId() + " is stored could"
+                                + " not be established: " + couldNotAsk.getMessage()
+                                + "; retry shortly");
+            }
+            if (conf != null && conf.isLoadFailed()) {
+                throw new jp.aegif.nemaki.rest.controller.IntegrationSettingsService.SettingUnreadableException(
+                        "the credential '" + ref + "' of connector "
+                                + connector.getConnectorId() + " could not be read: the"
+                                + " configuration database did not answer; retry shortly");
+            }
         }
         return null;
     }
@@ -1017,5 +1369,34 @@ public class IngestWebhookController {
 
     private ResponseEntity<?> badRequest(String msg) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", msg));
+    }
+
+    /**
+     * The typed "this row could not be read" refusals reach the subscription endpoints (and
+     * any other verb here that resolves a definition) with nothing catching them, and Spring
+     * answers 500 — "our bug" for a condition whose whole point is that a retry fixes it. The
+     * definition APIs have had this floor since the batch began; a review found the webhook,
+     * DLQ and ingest controllers without it. The receiver's own POST and GET keep their
+     * mapping: they catch the refusal themselves and answer 503 with nothing about the row.
+     */
+    @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+            ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class,
+            jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                    .SettingUnreadableException.class})
+    public ResponseEntity<?> definitionRowsCouldNotBeRead(RuntimeException e) {
+        // The reason is logged, not sent. This is a CLASS-level handler and this class has an
+        // unauthenticated front door (the receiver's POST and GET), whose refusal texts say
+        // whether a row exists at the id — the one thing the receiver's disclosure analysis
+        // (see ConnectorDefinitionService#getOrRefuse) keeps out of the answer. A handler that
+        // echoed getMessage() would put it back on whichever path reached it.
+        //
+        // The cost, since a review named it: the endpoints this handler can actually serve are
+        // the admin-gated /subscribe POST and DELETE, and their administrator loses the reason
+        // from the response body. It is in the log line below. Splitting the two would take a
+        // per-endpoint catch, and the receiver's front door is the one that must not be wrong.
+        logger.warn("a definition row could not be read while serving a webhook request: {}",
+                e.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(Map.of("error", "temporarily unavailable"));
     }
 }

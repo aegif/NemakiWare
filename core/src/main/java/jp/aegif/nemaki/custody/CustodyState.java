@@ -37,9 +37,15 @@ import java.util.Set;
  * into "not yet". The state an operator is stuck in IS the diagnosis.
  *
  * <p>In particular {@link #AIP_CREATED} and {@link #RECEIPT_VERIFIED} are kept apart. The first
- * is what the far end SAYS; the second is what we CHECKED. Collapsing them would make this
- * repository's record depend on an unverified assertion by the party taking over — which is the
- * one place in a custody transfer where that must not happen.
+ * is what was RECORDED; the second is what we CHECKED. Collapsing them would make this
+ * repository's record depend on an unverified assertion — which is the one place in a custody
+ * transfer where that must not happen.
+ *
+ * <p>"What the far end SAYS" is what this said, and {@link #limits()} was corrected for exactly
+ * that: this release has no sending path, so every state before {@code RECEIPT_VERIFIED} is
+ * reached by an operator calling {@code /advance} and nothing here has heard from a receiver.
+ * The contrast is still the right one; until there is a sending path, its left-hand side is
+ * "somebody recorded" rather than "they said".
  *
  * <h2>Local disposition is last, and it is a separate step</h2>
  *
@@ -51,33 +57,64 @@ import java.util.Set;
  */
 public enum CustodyState {
 
-    /** A SIP exists here. Nothing has left. */
+    /**
+     * SOMEBODY RECORDED that a package exists here, and named its digest. Nothing has left.
+     *
+     * <p>Not "a SIP exists here": a transfer is opened with a caller-supplied digest, and
+     * nothing in this release builds a package on the way in or reads one to check the digest
+     * against. The first arm of the switch in {@link #limits()}, and the last of its arms to
+     * lose this attribution — four of the others were corrected a round earlier.
+     */
     PACKAGE_CREATED,
 
-    /** Handed to the receiving system. We do not know that it arrived. */
+    /**
+     * SOMEBODY RECORDED that the package was handed to the receiving system.
+     *
+     * <p>Not "handed to the receiving system" as a finding: <b>this release has no sending
+     * path</b>. Reaching this state is an operator calling {@code POST /advance}, exactly as for
+     * the four states after it.
+     */
     SENT,
 
-    /** The far end says it has the package. Still says nothing about its contents. */
+    /**
+     * SOMEBODY RECORDED that the receiving system has the package.
+     *
+     * <p>Not "the far end says it has the package": this release has no sending path, so this
+     * state is reached by an operator calling {@code POST /advance} and nothing here has heard
+     * from a receiver. {@link #limits()} was corrected for exactly this; leaving the javadoc
+     * saying the stronger thing invites the next reader to treat the doc as canon and put the
+     * old sentence back.
+     */
     RECEIVED,
 
-    /** The far end checked the package against its own rules and accepted the structure. */
+    /** SOMEBODY RECORDED that the receiving system accepted the package's structure. */
     VALIDATED,
 
-    /** The far end started ingest and did not refuse it. */
+    /** SOMEBODY RECORDED that ingest started and was not refused. */
     INGEST_ACCEPTED,
 
     /**
-     * The far end says an AIP exists, and names it.
+     * SOMEBODY RECORDED that an AIP exists, and named it.
      *
-     * <p><b>Their claim, not our finding.</b> The distinction is the reason the next state
-     * exists.
+     * <p><b>An unchecked claim, not our finding.</b> The distinction is the reason the next state
+     * exists — and it is wider than "theirs vs ours": this release has no sending path, so what
+     * reached this state is an operator's {@code POST /advance}, and even whose claim it is has
+     * not been established. {@link #limits()} says so; this javadoc used to say the stronger
+     * thing beside it.
      */
     AIP_CREATED,
 
     /**
      * We checked the receipt: it is about OUR package, and it says what we require.
      *
-     * <p>This is the first state in which anything has been established rather than reported.
+     * <p>This is the first state in which this repository CHECKED something rather than simply
+     * recording what it was told: the receipt names the package we sent.
+     *
+     * <p><b>Not "established rather than reported", which is what this said.</b> Without a
+     * verified signature, nothing establishes that the receipt came from the receiving system at
+     * all — {@link #limits()} says so on the same enum constant, and the two disagreed. What was
+     * checked is the tie between a report and our package; who made the report is a separate
+     * question with its own answer.
      */
     RECEIPT_VERIFIED,
 
@@ -153,8 +190,11 @@ public enum CustodyState {
     /**
      * Whether custody has actually passed.
      *
-     * <p>Only two states qualify, and {@link #AIP_CREATED} is not one of them: the far end
-     * saying an AIP exists is not the same as our having checked that it is about our package.
+     * <p>Only two states qualify, and {@link #AIP_CREATED} is not one of them: a RECORD that an
+     * AIP exists is not the same as our having checked that it is about our package. (Not "the
+     * far end saying" — this release has no sending path, so that state is reached by an
+     * operator calling {@code /advance}. The third javadoc in this one file to carry that
+     * attribution after {@link #limits()} was corrected for it.)
      */
     public boolean custodyHasPassed() {
         return this == CUSTODY_TRANSFERRED || this == LOCAL_DISPOSITION;
@@ -169,24 +209,49 @@ public enum CustodyState {
     /** What this state does and does not establish, in the words an operator needs. */
     public String limits() {
         return switch (this) {
-            case PACKAGE_CREATED -> "A package exists here. Nothing has been sent and no other "
-                    + "party knows about it.";
-            case SENT -> "The package was handed over. This is NOT a statement that it arrived: "
-                    + "nothing has been heard back.";
-            case RECEIVED -> "The receiving system says it has the package. That says nothing "
-                    + "about whether the contents are what we sent, or whether it will accept "
-                    + "them.";
-            case VALIDATED -> "The receiving system accepted the package's structure against "
-                    + "its own rules. Those rules are theirs, and passing them is not a "
-                    + "statement that the record is intact.";
-            case INGEST_ACCEPTED -> "Ingest started and was not refused. No preservation copy "
-                    + "is known to exist yet.";
-            case AIP_CREATED -> "The receiving system REPORTS that a preservation copy exists "
-                    + "and names it. This repository has not checked that claim — it is their "
-                    + "assertion, and custody has NOT passed on the strength of it.";
+            // These two are the first arms of this switch and the last to keep the
+            // attribution the other four lost. A transfer is OPENED with a digest its caller
+            // supplies; nothing builds a package, and nothing sends one. So neither "a package
+            // exists" nor "it was handed over" is established here either.
+            case PACKAGE_CREATED -> "SOMEBODY RECORDED that a package exists for this record and "
+                    + "named its digest. Nothing here built or read that package, nothing has "
+                    + "been sent, and no other party knows about it.";
+            case SENT -> "SOMEBODY RECORDED that the package was handed over. This release has "
+                    + "no sending path, so nothing here did the handing over; and it is NOT a "
+                    + "statement that it arrived — nothing has been heard back.";
+            // These three used to say "The receiving system says / accepted / REPORTS ...".
+            // Nothing establishes any of that: every one of these states is reached by an
+            // operator calling POST /advance, and this release has no sending path, so the
+            // product never hears from a receiver at all. RECEIPT_VERIFIED's text was corrected
+            // for exactly this and its neighbours in the same switch were not — the claim's
+            // next exits were three case arms away.
+            case RECEIVED -> "SOMEBODY RECORDED that the receiving system has the package. "
+                    + "Nothing here checked that, and it says nothing about whether the contents "
+                    + "are what we sent, or whether they will accept them.";
+            case VALIDATED -> "SOMEBODY RECORDED that the receiving system accepted the "
+                    + "package's structure against its own rules. Those rules are theirs, "
+                    + "passing them is not a statement that the record is intact, and this "
+                    + "repository did not witness it.";
+            case INGEST_ACCEPTED -> "SOMEBODY RECORDED that ingest started and was not refused. "
+                    + "No preservation copy is known to exist yet.";
+            case AIP_CREATED -> "SOMEBODY RECORDED that a preservation copy exists and named it. "
+                    + "This repository has not checked that — neither the claim nor who made it "
+                    + "— and custody has NOT passed on the strength of it.";
+            // "This establishes that the far end received and processed OUR package" used to
+            // stand here. It is the SAME claim CustodyReceipt.limits() was weakened to remove,
+            // and it survived because grep found the receipt's wording and not this one -- split
+            // across a string concatenation, in a file the change never touched. Both texts go
+            // into ONE response body (stateLimits/stateMeans beside receipt.limits), so a reader
+            // was handed the retracted claim and its retraction together.
+            //
+            // Why the weaker sentence is the true one: on the Archivematica route the recovered
+            // value is a line from a manifest THIS product wrote and the receiver merely stored
+            // (design §17), and an unsigned receipt posted to the REST endpoint establishes
+            // nothing about the far end at all.
             case RECEIPT_VERIFIED -> "The receipt was checked: it refers to the package we sent "
-                    + "and carries what we require. This establishes that the far end received "
-                    + "and processed OUR package. It does NOT establish that their copy is "
+                    + "and carries what we require. That ties the report to our package. It is "
+                    + "NOT a finding that the far end holds it — an unsigned receipt is an "
+                    + "unauthenticated statement — and it does NOT establish that their copy is "
                     + "intact now, or that they will keep it.";
             case CUSTODY_TRANSFERRED -> "Responsibility for the record has passed to the "
                     + "receiving organisation. The local copy may still exist; this says "

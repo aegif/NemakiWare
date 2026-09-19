@@ -65,6 +65,28 @@ public class SetupAdminResource {
         String couchUrl = System.getProperty("db.couchdb.url", "http://couchdb:5984");
         String couchUser = System.getProperty("db.couchdb.auth.username", "admin");
         String couchPass = System.getProperty("db.couchdb.auth.password", "password");
+
+        // Validated HERE too, not only where it was stored. The system property is not a trust
+        // boundary: SetupApplyResource takes this URL from a request body and writes it here
+        // (SetupApplyResource:137 -> :167), and this endpoint then sends Basic credentials to
+        // whatever it names. Reading it back without a check meant the only validation was the
+        // one that ran at /apply time, against a value that may since have been replaced by a
+        // later /apply — or may resolve somewhere else now.
+        //
+        // What this does NOT close: the window between this check and the connection below.
+        // Validation resolves the host; a DNS answer that changes in between still sends the
+        // credentials to the new address. Closing that needs the resolved address to be pinned
+        // through to the connection, which is a change to how every setup call connects, not
+        // to this method. Recorded as a residual rather than claimed here.
+        String urlRefusal = jp.aegif.nemaki.api.setup.filter.UrlValidator.validate(couchUrl, true);
+        if (urlRefusal != null) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("{\"error\":\"" + CouchDbConfigWriter.escapeJson(
+                            "the configured CouchDB URL is not one this node will connect to: "
+                                    + urlRefusal) + "\"}")
+                    .build();
+        }
+
         String authHeader = CouchDbConfigWriter.basicAuth(couchUser, couchPass);
 
         // Same CouchDB floor the main /apply enforces — this endpoint writes admin documents
