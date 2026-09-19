@@ -185,16 +185,16 @@ public class NotionConnectorAdapter {
                 // listing raised the caller's checkpoint over rows it had read and thrown away
                 // (subagent review, P1).
                 if (hasMore || leftOnThePage > 0) {
-                    return PageListing.cutShort(allPages, "the caller's limit of " + limit
+                    return logged(query, limit, PageListing.cutShort(allPages, "the caller's limit of " + limit
                             + " was reached" + (leftOnThePage > 0
                                     ? " part-way through a page, leaving " + leftOnThePage
                                             + " already-read page(s) out"
-                                    : " and Notion says there are more pages"));
+                                    : " and Notion says there are more pages")));
                 }
-                return PageListing.whole(allPages);
+                return logged(query, limit, PageListing.whole(allPages));
             }
             if (!hasMore) {
-                return PageListing.whole(allPages);
+                return logged(query, limit, PageListing.whole(allPages));
             }
             if (nextCursor == null || nextCursor.isEmpty()) {
                 // has_more with nowhere to go. Ending here quietly reported the rest of the
@@ -206,15 +206,29 @@ public class NotionConnectorAdapter {
             cursor = nextCursor;
         }
 
-        logger.info("Notion searchPages: query='{}', fetched={}, limit={}", query, allPages.size(), limit);
         if (nothingMore) {
-            return PageListing.whole(allPages);
+            return logged(query, limit, PageListing.whole(allPages));
         }
         // The 50-page cap: Notion offered another cursor and this method stopped asking. Counting
         // that as a whole listing is what let the caller raise its checkpoint over pages it had
         // never been shown.
-        return PageListing.cutShort(allPages, "the 50-page pagination cap was reached with "
-                + allPages.size() + " page(s) read and more still offered");
+        return logged(query, limit, PageListing.cutShort(allPages,
+                "the 50-page pagination cap was reached with " + allPages.size()
+                        + " page(s) read and more still offered"));
+    }
+
+    /**
+     * One logging point for every way {@link #searchPages} ends.
+     *
+     * <p>The line used to run on every call. Restructuring the exits left it reachable from two
+     * of six, so the ordinary case stopped logging and the truncation cases — the ones worth
+     * investigating — logged nothing either (subagent review, P3).
+     */
+    private PageListing logged(String query, int limit, PageListing listing) {
+        logger.info("Notion searchPages: query='{}', fetched={}, limit={}, complete={}{}",
+                query, listing.pages().size(), limit, listing.complete(),
+                listing.complete() ? "" : " (" + listing.truncatedBecause() + ")");
+        return listing;
     }
 
     /**
