@@ -82,11 +82,11 @@ rollback は検出するが、それは「最新である」証明ではない)�
 | T4 | A3 が古い正当 checkpoint を提示する | **検出できない。** package 外の expected checkpoint を受け取る口が無い | **Phase 5** (P2 の rollback 検出) |
 | T5 | A3 が package 内の root を信頼根拠にさせる | `SipVerifier` の `limits` が「独立性には外部 anchor が要る / この package はそれを運んでいない」と**書いてはいる** (`SipVerifier.LIMITS`)。ただし**文言であって検査ではない** | **Phase 5** (profile で必須にする) |
 | T6 | A3 が別文書の proof を組み合わせる | **検出できない** (T3 と同じ理由) | **Phase 4 / 5** |
-| T7 | A5 が ZIP bomb / 巨大 entry を渡す | **無防備。** `SipVerifier.read`:336 は全 entry を `ByteArrayOutputStream` に**無制限に**読み込む。件数・サイズ・圧縮率のどれも見ていない | **Phase 5** (`RESOURCE_LIMIT`) |
-| T8 | A5 が entry 名を重複させる / 未参照の entry を足す | **検出できない。** `read`:346 は `Map#put` なので**後勝ちで黙って上書き**する。`textOf`:360 は suffix 一致の**最初の 1 件**を返す。`payloadDigestCheck` は payload の**どれか 1 つ**が記録 digest に一致すれば PASSED を返す (:234-240) ので、**無関係な payload を並べても通る** | **Phase 2 / 5** (P0 の一対一) |
+| T7 | A5 が ZIP bomb / 巨大 entry を渡す | **無防備。** `SipVerifier.read`（:374）は全 entry を `ByteArrayOutputStream` に**無制限に**読み込む。件数・サイズ・圧縮率のどれも見ていない | **Phase 5** (`RESOURCE_LIMIT`) |
+| T8 | A5 が entry 名を重複させる / 未参照の entry を足す | **検出できない。** `read` の `entries.put(entry.getName(), ...)`（:384）は `Map#put` なので**後勝ちで黙って上書き**する。`textOf`（:398）は suffix 一致の**最初の 1 件**を返す。`payloadDigestCheck` は payload の**どれか 1 つ**が記録 digest に一致すれば PASSED を返す（`payloadDigestCheck` の :234 のループ）ので、**無関係な payload を並べても通る** | **Phase 2 / 5** (P0 の一対一) |
 | T9 | A4 が TSA を差し替える / 応答を偽造する | 署名検証と trust anchor 時の PKIX はある。**発行時の失効材料 (CRL / OCSP) を保存していない** (`AnchorReceiptCodec` に `revocation` / `OCSP` / `CRL` の語が 0 件) ので、後から「発行時に有効だったか」を offline で言えない | **Phase 6** |
 | T10 | 時刻の主張を過大に読む | `AnchorKind` が `TimeSemantics` を型で持ち (`NOT_A_TIME_PROOF` / `UPPER_BOUND_ONLY` / `BIDIRECTIONAL_WITHIN_ACCURACY`)、`AnchorService` が限界文をそこから導く。**テキストで渡させない** | 済 |
-| T11 | 検証器が「確かめられなかった」を成功として返す | 検査ごとに 4 値、全体は 3 値 (`VERIFIED` / `FAILED` / `INDETERMINATE`)。必須検査は payload digest と audit path の**両方** (`SipVerifier.Result.verdict()`)。`verified` は `VERIFIED` のときだけ true | 済 (2026-09-19) |
+| T11 | 検証器が「確かめられなかった」を成功として返す | 検査ごとに 4 値、全体は 3 値 (`VERIFIED` / `FAILED` / `INDETERMINATE`)。必須検査は payload digest と audit path の**両方** (`SipVerifier.Result.verdict()`)。`verified` は `VERIFIED` のときだけ true。`auditPath` は「無い」「読めない」「在って空」を分け、**空は `UNAVAILABLE`**（空の path は leaf と root を比べるだけで、どちらも package が書いた値） | 済 (2026-09-19。ただし T8 が開いている間は、entry 名の重複で本物の証拠ファイルを隠せる) |
 | T12 | 検証器を package の中から供給する | `SipVerifier` は core の中にあり、**第三者は WAR を取らないと動かせない**。配布物ではない | **Phase 5** (独立 CLI) |
 
 ---

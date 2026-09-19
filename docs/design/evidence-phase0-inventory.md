@@ -39,26 +39,38 @@
 | W4 | `checkIn` | stream 無し → `copyAttachmentOrRefuse`（:1844） / stream 有り → **`createAttachment`（:1847、atomic ではない）** | `VersioningServiceImpl.checkIn` | PWC を版にする |
 | W5 | `updateWithoutCheckInOut` | **`createAttachment`（:1925、atomic ではない）** | `BulkCheckInResource`（REST） | checkOut を経ない更新 |
 | W6 | `createDocumentFromSource` | `copyAttachmentAtomic`（:1316） | `ObjectServiceImpl.createDocumentFromSource` | 複製 |
-| W7 | `appendAttachment` | **`updateAttachment`（:4566、その場）** | `ObjectServiceImpl.appendContentStream` | 追記 |
+| W7 | `appendAttachment` | **`updateAttachment`（:4571、その場）** | `ObjectServiceImpl.appendContentStream` | 追記 |
 | W8 | `checkOut`（PWC 作成） | `copyAttachmentOrRefuse`（:1665） | `VersioningServiceImpl.checkOut` | PWC へ複製 |
 | **W9** | **`replacePwc`** | **`updateAttachment`（:1488、その場）** | `ObjectServiceImpl.setContentStream`（対象が PWC のとき、:799） | PWC の内容差し替え |
+| **W10** | **アーカイブ（削除）** | `ArchiveDaoDelegate.createAttachmentArchive`（:481。bytes を **archive DB へ複製**、:546） | `deleteContentStream` / `deleteDocument` → `deleteAttachment`（`ContentServiceImpl:3601` / :3788） | 本番からは消え、archive に残る |
+| **W11** | **復元** | `ArchiveDaoDelegate.restoreAttachment`（:714。attachment 行を作り直し、:792 で **本番へ body を PUT**） | `ContentServiceImpl.restoreArchive`（:4805）/ `restoreArchiveGuarded` | bytes が本番に戻る |
 
 **外部取込は独自の書き込み経路を持たない。** `CanonicalImportServiceImpl` は
 `versioningService.checkIn`（2 か所）と `objectService.createDocument`（1 か所）を呼ぶので、
 W1 と W4 に合流する。取込のために E1 を別に作る必要はない。
 
-**その場書き換えは W3 / W7 / W9 の 3 本**である（E1 の設計でここが効く — ADR §4）。
+**その場書き換えは W3 / W7 / W9 の 3 本**である。
+
+> **W10 / W11 は 2 巡目の確認レビューで 2 名が別々に指摘して足した。** 初版の表は
+> `createAttachment` / `copyAttachment` / `updateAttachment` の 3 つを最下層としていたが、
+> **archive / restore はそのどれも通らない** — `CloudantClientWrapper` を直接叩く。
+> W9 を落としたのと同じ形で、**同じ文書の中で 2 度数え違えた**。表どおりに E1 を配線すると
+> **ゴミ箱から戻した文書の内容状態が記録されない**。
+>
+> **W11 には過剰拒否の窓もある**: 復元は「文書を戻す → attachment 行を作る → body を PUT」
+> の順で、最後の 2 つは別の書き込みである。その間に checkOut が入ると、行はあって body が
+> 無い状態を読む。R54 の追加処置はこの窓のために 1 度だけ読み直す（[`fail-closed-reads.md`](fail-closed-reads.md) の R54 / R56）。
 
 ### 読んで決めた（2026-09-19 追記）
 
 **W7 の追記は「新しい attachment」ではない。** `appendAttachment`
-（`ContentServiceImpl:4546`）は `contentDaoService.updateAttachment` で**同じ attachment 行を
+（`ContentServiceImpl:4551`）は `contentDaoService.updateAttachment`（:4571） で**同じ attachment 行を
 その場で書き換える**。新しい行も新しい版も作らない。bytes は
 `SequenceInputStream(既存, 追記分)` で、**意図的に一度もメモリに載せない**（巨大ファイル用）。
 したがって digest を取るなら書き込みの流れに `DigestInputStream` を挟むしかない
 （1 パスで済むが、値が分かるのは書き終えた後）。
 
-`isLastChunk` は**引数にあるだけで本体で使われていない**（:4547 の宣言以外に出現 0）。
+`isLastChunk` は**引数にあるだけで本体で使われていない**（:4552 の宣言以外に出現 0）。
 **製品は中間チャンクと最終状態を区別できない。**
 
 → **決定**: W7 は E1 の対象にする。statement は **1 回の追記呼び出しごと**に 1 本
@@ -76,7 +88,7 @@ W1 と W4 に合流する。取込のために E1 を別に作る必要はない
 `stripEvidenceForNewObject`、`ContentServiceImpl:1312`。）
 
 **`deleteContentStream` は bytes を消す。** attachment 行を削除し、参照を null にする
-（`ContentServiceImpl:3593-3600`）。版を作らないので、非 versionable では戻せない。
+（`deleteAttachment` は :3601、参照を null にするのは :3605）。版を作らないので、非 versionable では戻せない。
 
 → **決定**: 対象にする。内容状態の遷移として「この時点で内容が無くなった」を書く。
 書かないと、台帳の最後の statement が**もう存在しない bytes** を指したままになり、
@@ -123,7 +135,8 @@ E1 が新設するのは「**CMIS 経由で書かれた content についての 
 
 ## 2. mapper の定義
 
-計画 A-1（R52）の対象。**定義は 3 つある。**
+計画 A-1（R52）の対象。**CouchDB 永続化の族は 3 つ**だが、`JsonMapper` を組む場所は
+**main だけで 6 か所**ある（2026-09-19 に grep で数え直した。初版は 3 と書いていた）。
 
 | 定義 | 場所 | 何を復号するか | R51 の deserializer |
 |---|---|---|---|
@@ -131,9 +144,25 @@ E1 が新設するのは「**CMIS 経由で書かれた content についての 
 | `DaoHelper.createConfiguredObjectMapper` | `dao/impl/couch/delegate/DaoHelper.java:27` | archive / usergroup / attachment / changeevent / typedefinition の delegate | **有り** |
 | `ContentDaoServiceImpl.createConfiguredObjectMapper` | `dao/impl/couch/ContentDaoServiceImpl.java:201` | content（folder / document / item ほか）。private な複製 | 無し |
 
+残る 3 か所は**永続化の族ではない**が、「唯一の定義」を名乗る以上は数に入れる:
+
+| 場所 | 何のため | 寄せるか |
+|---|---|---|
+| `TypeDefinitionDaoDelegate:495` | view 行の復号。**メソッドの中で組んでいる**ので「定義」として grep に出ない | **寄せる**（永続化の族） |
+| `AuditLogger:191` | 監査レコードの直列化。日付・並び順の設定が別 | 寄せない（理由を書く） |
+| `LineageSpoolCodec:45` | spool JSON。`STRICT_DUPLICATE_DETECTION` が要る | 寄せない（理由を書く） |
+
 **`ObjectMapperFactory` の javadoc は既に「The one place NemakiWare's mapper configurations
 are defined」と書いている**（:31）。コードがそれを満たしていない。文書がコードより強い、
 このブランチが潰してきた形そのものである。
+
+**`ContentDaoServiceImpl` の複製に R51 の module が無くても実害が出ていない理由**も読んで
+確かめた: この mapper が復号する `Couch*` モデルは日時を**自分で解釈する**
+（`CouchNodeBase.setCreated(Object)` → `parseDateTime`、`Number` を受けるので SDK が広げた
+`Double` も通る）。GregorianCalendar 型の mutator を持つのは archive / change / apikey /
+webauthn 側で、そちらが `DaoHelper` の mapper を通る。**つまり両者は偶然すみ分けている**。
+なお 2 つの方針は食い違っている — module は端数・範囲外を**拒否**し、`parseDateTime` は
+`longValue()` で**黙って切り捨てる**。一本化のときに揃える対象。
 
 A-1 は**定義元を `ObjectMapperFactory` に寄せる**。`DaoHelper` へ寄せない理由は、
 そちらの javadoc が「唯一」を主張していないことと、profile を混ぜないためである
@@ -218,10 +247,10 @@ Phase 6 の「ERS persistence」はここを指す。
 
 ## 5. この文書で決めたこと
 
-- E1 の対象は **W1〜W9 と `deleteContentStream`**。2026-09-19 に実装を読んで
+- E1 の対象は **W1〜W11 と `deleteContentStream`**（W10 = アーカイブ、W11 = 復元）。2026-09-19 に実装を読んで
   W6 / W7 / W8 / 消去の扱いを決め、確認レビューを受けて数え直したときに W9 を足した（§1）。
   **列挙できたのはここまで**であり、ここに書いていない経路について
-  「記録した」とは後段のどこにも書かない。**1 度数え違えている**という事実も含めて読むこと。
+  「記録した」とは後段のどこにも書かない。**2 度数え違えている**（W9、そして W10 / W11）という事実も含めて読むこと。
 - W7（追記）は 1 呼び出しごとに 1 statement。**どれが最終かは書かない** —
   製品が `isLastChunk` を使っていないので知らない。limits に明記する。
 - W6 / W8（複製）は**自分の digest**を持ち、元の entry を引き継がない。

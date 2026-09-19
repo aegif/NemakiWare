@@ -306,6 +306,20 @@ CSIP 版を落とす)。**うち「非 ASCII を潰す」は 1 度目の細工�
    - 奇数のときは**複製せず 1 段繰り上げ**る (CVE-2012-2459 型の可鍛性を持たせない)
    - `auditPath` を下から順に適用し、`siblingIsLeft` なら sibling が左
 
+   **`auditPath` は 4 通りに読み分ける** (2026-09-19。ここを 1 通りにしたのが実際の欠陥だった):
+
+   | 読み | 答え |
+   |---|---|
+   | key が無い | `NOT_PRESENT`。**空の path として歩かない** — 歩けば `leaf(leafHash)` と `merkleRoot` を直接比べることになり、どちらも package 自身が書いた値である |
+   | key は在るが値が配列でない / 閉じていない / step が読めない (siblingHash が無い、どちら側かが無い) | `UNAVAILABLE`。**`FAILED` にしない** — 「その entry は封じた span に入っていない」と言ったことになるが、実際に起きたのは「読めなかった」である |
+   | 配列が**空** | `UNAVAILABLE`。単一 entry を封じた checkpoint は本当にこの形を作るが、**leaf とその hash を書けば誰でも同じ形が作れる**。package の中だけでは分けられない。分けるには checkpoint の span が要る |
+   | 配列に step がある | 歩いて `merkleRoot` と比べる。一致で `PASSED`、不一致で `FAILED` |
+
+   値は**キーの直後を読む** (`"auditPath": null` の後ろにある無関係な配列を拾わない。
+   `"leafHash": 42` で次のキー名を値として返さない)。`siblingIsLeft` は `true` / `false`
+   として読み、**読めなければ step ごと `UNAVAILABLE`** — 既定 false に倒すと、整形し直した
+   だけの本物の package を「別の root に着いた」と報告する。
+
 `leafHash` は**エントリの生ハッシュ**であって葉ハッシュではない。
 最初の実装はここを取り違えていて、**本物のパッケージを全部「壊れている」と報告する**
 ところだった (ラウンドトリップのテストが捕まえた)。

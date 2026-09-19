@@ -1,7 +1,7 @@
 # ADR: E1 — content 状態を台帳へ結ぶときの境界
 
 2026-09-19。**決定: 案 B（先行する耐久 intent）。** 実測は
-`core/src/test/java/jp/aegif/nemaki/evidence/spike/E1CommitmentSpikeTest.java`（7 本）。
+`core/src/test/java/jp/aegif/nemaki/evidence/spike/E1CommitmentSpikeTest.java`（8 本）。
 計画 [`v3.4.0-evidence-and-residuals-plan.md`](v3.4.0-evidence-and-residuals-plan.md) §8 の
 「Phase 0 の architecture spike で案 A か案 B を fault injection で選ぶ」に対する答え。
 
@@ -40,60 +40,70 @@ statement の記録は必ず 2 段になり、**その間の窓をどう扱う�
 
 ---
 
-## 3. 実測（`E1CommitmentSpikeTest`）
+## 3. 実測（`E1CommitmentSpikeTest`、8 本）
+
+> **初版は案 A を弱く作って比べていた。** 単数の marker と、marker の言い分をそのまま
+> 書く sweeper。確認レビュー 2 名がそれぞれ「どちらも設計が強いる形ではない」と指摘した。
+> **比べる相手を弱く作った比較は何も決めない**ので、A に両方を与えて測り直した —
+> marker は**その場書き換えが持ち越すリスト**にし、sweeper は B の resolver と同じく
+> **保管庫の bytes を hash し直して**から書く。以下は測り直した後の結果である。
 
 5 つの選定条件（計画 §8）を、crash 注入と ledger 不応答で両案に当てた。
 
-| 条件 | 案 A | 案 B |
+| 条件 | 案 A（強化後） | 案 B |
 |---|---|---|
 | C1 bytes と statement が別物を指さない | 通る | 通る |
-| C2 write 成功後の gap が永続的に観測できる | 通る（**ただし §4**） | 通る |
+| C2 write 成功後の gap が永続的に観測できる | 通る | 通る |
 | C3 retry が同じ statement を二重記録しない | 通る | 通る |
 | C4 失敗を業務の失敗へ誤変換しない | 通る | 通る |
 | C5 次の版へ進んだあとに古い intent を新しい bytes で閉じない | 通る | 通る |
 
-**新しい attachment を作る経路（W1 / W2 / W4 / W6 / W8）では両案とも 5 条件を満たす。**
-差が出るのは次の 1 点だけで、それが決定を決めた。
+**その場書き換え（W3 / W7 / W9）でも差は出なくなった。** 初版で「決め手」としていた
+「2 回目のその場書き換えが 1 回目の未処理 marker を消す」は、**リストにすれば消えない**。
+`inPlaceRewriteNoLongerSeparatesThem` が両案とも gap を残すことを実測している
+（**否定的な結果として残してある**。初版の決定は、A の書き方の産物だった）。
 
 ---
 
-## 4. 決め手 — その場で書き換える経路
+## 4. 決め手 — C6: 無関係な書き手
 
-その場で書き換える経路は **3 本**ある（inventory §1 の W3 / W7 / W9）:
-`setContentStream`（非 versionable、`ContentServiceImpl:1591`）、
-`appendContentStream`（同 :4566）、`replacePwc`（同 :1488、PWC への `setContentStream`）。
-いずれも**同じ attachment 行を書き換える**。新しい行も新しい版も作らない。
+計画の 5 条件では分かれない。分かれるのは、**この製品が強いる 6 つ目の性質**である。
+
+> **C6**: 同じ content 文書を書く**無関係な書き手**（改名、ACL 変更、version series の
+> フラグ、そして content を書く 9 経路そのもの）が、記録の手がかりを落としてはならない。
 
 marker は content 文書の上に載る。**文書の書き込みは文書を置き換える**ので、
-2 回目のその場書き換えは、1 回目の未処理 marker を消す。実測:
+marker を知らない書き手が 1 つでもあれば、そこで落ちる。実測（`anUnrelatedWriterDoesNotDropTheGap`）:
 
 ```
-v1 を書く（記録済み）→ v2 を書いて doc-written の直後に落ちる（v2 は在る、statement は無い）
-→ v3 を書く → 回復を走らせる
-案 A: openGaps = 空。v2 の statement は無い。**何も残っていない**
-案 B: openGaps = v2 の intent が残る（SUPERSEDED として）
+content を書く → statement の前に落ちる（bytes は在る、statement は無い、gap は見える）
+→ 改名 1 回 → 回復を走らせる
+
+案 A: openGaps = 空。statement も無い。**改名がそれをやった**
+案 B: statement 1 本。intent は別の store に在るので改名は触れない
 ```
 
-**v2 は実在し、記録されず、その後「記録されなかった」という事実まで消える。**
-計画 §8 が禁じている silent gap そのもので、回復では見つけられない。
+**bytes は在り、記録されず、記録されなかったという事実も無い。** 計画 §8 が禁じている
+silent gap で、引き金が「利用者が名前を直した」である。
 
-> **案 A の変種（marker を単数でなくリストにする）は測っていない。**
-> リストにすれば gap は残ると考えられるが、**測っていないので通ったとは書かない**。
-> 測ったとしても採らない理由が別にある（§5）。
+この製品の content 文書は多くの場所から書かれる（Phase 0 の棚卸しで数えた content 書き込み
+だけで 9 経路、ほかにプロパティ更新・ACL・版フラグ）。**そのすべてに marker の持ち越しを
+配線し、以後も落とさない**ことが案 A の前提になる。案 B の intent は別 DB の行なので、
+content 文書を書く側は何も知らなくてよい。
 
 ---
 
-## 5. なぜ B か — 「書いたつもり」と「今も見えている」の違い
+## 5. 案 B の代償（測って書く）
 
-案 A の sweeper は **marker が言っていること**を台帳に書く。案 B の resolver は
-**保管庫に今ある bytes を hash し直して**、intent が名指した digest と一致したときだけ書く。
-一致しなければ `SUPERSEDED` にして、**statement は書かない**。
+- **書き込みが 1 回増える**（content の前に intent 行）。
+- **content が来なかった intent が残る。** 「書かなかった」のか「書いたが記録できなかった」
+  のかは**この段では判定しない** — `capture-outbox.md` が `UNRESOLVED` で止めたのと同じ
+  理由である。実測 `anIntentWithNoContentIsNotAClaimThatContentExists`:
+  statement は書かず、gap としては残す（黙って消さない）。
+- **resolver は保管庫を読み直す**（digest の突き合わせ）。案 A も強化版では同じことをするので、
+  これは差ではない。
 
-証拠台帳にとってこの差は決定的である。A は「書こうとした状態」を記録しうる — 添付 PUT が
-実は永続していなかった場合でも marker は文書の上に在るので、sweeper は在りもしない状態を
-記録する。**証拠が実際より強くなる**。B はそれができない。
-
-そしてこれが `capture-outbox.md` §3.3 が刻印を要るとした問題への、E1 の範囲での答えである:
+そして `capture-outbox.md` §3.3 が刻印を要るとした問題への、E1 の範囲での答え:
 
 > **content については、digest が刻印そのものである。**
 > 識別子を content 文書に書き込まなくても、intent が持つ digest と保管庫の bytes を
@@ -128,9 +138,16 @@ E1 の statement が主張するのは**内容状態**であって書き込み�
 ## 7. spike が測っていないこと
 
 `E1CommitmentSpikeTest` はモデルである。**モデル化していないもの**: CouchDB の revision
-競合とその再試行、attachment PUT（本体が文書と別に書かれること）、multi-replica の順序、
+競合とその再試行（案 A の marker を持ち越す書き込みは競合したときに読み直して併合する
+必要があり、その手間はここに出ていない）、attachment PUT が文書と別に書かれること
+（そのため「marker と bytes が同じ revision で原子的」という案 A の定義上の強みも、
+逆にその PUT だけが落ちた場合の振る舞いも、ここでは測れない）、multi-replica の順序、
 view の遅延、性能。したがってここで言えるのは**2 つの設計の形**についてであって、
 製品の実測ではない。
+
+**C6 は計画の条件ではない。** この製品の content 文書が多くの書き手を持つという事実から
+足したもので、その事実は Phase 0 の棚卸し（content 書き込み 9 経路）で数えている。
+書き手が 1 か所しかない製品なら C6 は効かず、決定も変わりうる。
 
 書き込み順序だけは製品から読み出した（作る系は attachment → 文書、その場系は同じ行を
 書き換えてから文書）。
