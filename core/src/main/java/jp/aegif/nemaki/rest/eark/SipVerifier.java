@@ -194,15 +194,6 @@ public final class SipVerifier {
         return new Result(List.copyOf(checks), LIMITS);
     }
 
-    /** "leafHash is not written" / "merkleRoot is not a readable string" / "leafHash is read". */
-    private static String fieldState(String evidence, String field, String value) {
-        if (value != null) {
-            return field + " is read";
-        }
-        return hasKey(evidence, field) ? field + " is not a readable string"
-                : field + " is not written";
-    }
-
     /**
      * Do the packaged bytes hash to the digest PREMIS records for them?
      *
@@ -270,31 +261,33 @@ public final class SipVerifier {
             return new Check("audit path", Outcome.NOT_PRESENT,
                     "the package carries no evidence package");
         }
-        String leaf = jsonString(evidence, "leafHash");
-        String root = jsonString(evidence, "merkleRoot");
-        if (leaf == null || root == null) {
-            if (hasKey(evidence, "leafHash") || hasKey(evidence, "merkleRoot")) {
-                // Written, but not readable as a pair of strings. Not the same sentence as "no
-                // proof was written", and it used to come out as that one. The two shapes are
-                // named separately because a message that merges them asserts something this
-                // check did not establish (review).
-                // Both fields are described, each in its own words. Naming only the first
-                // problem said "the rest is fine" about a field that might be unreadable too
-                // — the same conflation one level down (review, 2026-09-20).
-                return new Check("audit path", Outcome.UNAVAILABLE,
-                        "the evidence package's inclusion proof cannot be read: "
-                                + fieldState(evidence, "leafHash", leaf) + ", "
-                                + fieldState(evidence, "merkleRoot", root)
-                                + ". Nothing about the entry's inclusion is established "
-                                + "either way.");
-            }
-            return new Check("audit path", Outcome.NOT_PRESENT,
-                    "the evidence package carries no inclusion proof. The chain only holds what "
-                            + "was written to it, with no back-fill, so this says nothing about "
-                            + "whether the record is genuine.");
+        Map<String, Object> document;
+        try {
+            document = readJsonObject(evidence);
+        } catch (Exception malformed) {
+            return new Check("audit path", Outcome.UNAVAILABLE,
+                    "the evidence package is not readable JSON (" + malformed.getMessage()
+                            + "). Nothing about the entry's inclusion is established either way.");
         }
-        AuditPath path = auditPath(evidence);
-        if (!path.present()) {
+        Object proofValue = document.get("inclusionProof");
+        if (!(proofValue instanceof Map)) {
+            return noProofCheck(document, proofValue);
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> proof = (Map<String, Object>) proofValue;
+        String leaf = asString(proof.get("leafHash"));
+        String root = asString(proof.get("merkleRoot"));
+        if (leaf == null || root == null) {
+            // Both fields are described, each in its own words. Naming only the first problem
+            // said "the rest is fine" about a field that might be unusable too — the same
+            // conflation one level down (review, 2026-09-20).
+            return new Check("audit path", Outcome.UNAVAILABLE,
+                    "the evidence package's inclusion proof cannot be read: "
+                            + fieldState(proof, "leafHash") + ", "
+                            + fieldState(proof, "merkleRoot")
+                            + ". Nothing about the entry's inclusion is established either way.");
+        }
+        if (!proof.containsKey("auditPath")) {
             // An absent path walked as an empty one compares leaf(leafHash) with merkleRoot
             // directly, so a package carrying a leaf and a root it computed FROM that leaf comes
             // back PASSED without carrying a proof of anything. "There is no path" is not "the
@@ -304,12 +297,38 @@ public final class SipVerifier {
                             + "there is nothing to walk. A root that equals the leaf's own hash "
                             + "says only that the two were written together.");
         }
-        if (path.unreadable() != null) {
+        if (!(proof.get("auditPath") instanceof List)) {
             return new Check("audit path", Outcome.UNAVAILABLE,
-                    "the auditPath could not be read: " + path.unreadable()
-                            + ". Nothing about the entry's inclusion is established either way.");
+                    "the auditPath could not be read: it is not a JSON array. Nothing about the "
+                            + "entry's inclusion is established either way.");
         }
-        if (path.steps().isEmpty()) {
+        List<Map<String, Object>> steps = new ArrayList<>();
+        for (Object element : (List<?>) proof.get("auditPath")) {
+            if (!(element instanceof Map)) {
+                return new Check("audit path", Outcome.UNAVAILABLE,
+                        "the auditPath could not be read: a step is not an object. Nothing about "
+                                + "the entry's inclusion is established either way.");
+            }
+            Map<?, ?> step = (Map<?, ?>) element;
+            String sibling = asString(step.get("siblingHash"));
+            Object side = step.get("siblingIsLeft");
+            if (sibling == null || !(side instanceof Boolean)) {
+                // Dropping the step silently shortens the path, lands on a different root and
+                // reports FAILED — "the entry was not in that span" — about a package this
+                // verifier did not manage to read.
+                return new Check("audit path", Outcome.UNAVAILABLE,
+                        "the auditPath could not be read: a step "
+                                + (sibling == null ? "carries no readable siblingHash"
+                                        : "does not say which side its sibling is on")
+                                + ". Nothing about the entry's inclusion is established "
+                                + "either way.");
+            }
+            Map<String, Object> read = new LinkedHashMap<>();
+            read.put("siblingHash", sibling);
+            read.put("siblingIsLeft", side);
+            steps.add(read);
+        }
+        if (steps.isEmpty()) {
             // An empty path makes the check arithmetic-free: it would compare leaf(leafHash)
             // with merkleRoot, and BOTH are values the package supplies. A checkpoint that
             // sealed a single entry genuinely produces this shape (MerkleTree.root of one leaf
@@ -329,7 +348,7 @@ public final class SipVerifier {
         // would report every genuine package as broken, which is the failure mode a verifier
         // can least afford.
         String current = leaf(leaf);
-        for (Map<String, Object> step : path.steps()) {
+        for (Map<String, Object> step : steps) {
             String sibling = String.valueOf(step.get("siblingHash"));
             boolean siblingIsLeft = Boolean.TRUE.equals(step.get("siblingIsLeft"));
             current = siblingIsLeft ? node(sibling, current) : node(current, sibling);
@@ -429,168 +448,84 @@ public final class SipVerifier {
         return end < 0 ? null : text.substring(start + open.length(), end);
     }
 
-    /** Is this field written at all? Distinguishes "absent" from "present and unreadable". */
-    static boolean hasKey(String json, String field) {
-        return json.contains("\"" + field + "\"");
+    /**
+     * The evidence document, read with a JSON parser.
+     *
+     * <p>This used to be hand-rolled string scanning, on the argument that a verifier a third
+     * party is meant to reimplement should not need our object mapper. That argument was about
+     * the wrong dependency. The independence that matters is {@link MerkleTree}: the Merkle rule
+     * is RESTATED here so the verifier does not agree with the product by construction. Reading
+     * JSON is not part of the specification — a third party uses whatever parser they have.
+     *
+     * <p>What the hand-rolled version cost: a P1 in three consecutive review rounds, each a
+     * different way of answering "could not read that" with a value. The first key with a
+     * matching name anywhere in the document won, so a proof nested under {@code inclusionProof}
+     * could be shadowed by loose keys beside it; a non-string value returned the NEXT KEY'S
+     * NAME; {@code true} was matched by prefix; a {@code null} in the step array was absorbed
+     * into its neighbour; and escapes were not decoded, so a legitimate value came back
+     * truncated. A parser has none of these, and the shape checks below are explicit.
+     */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> readJsonObject(String json) {
+        Object parsed = tools.jackson.databind.json.JsonMapper.builder().build()
+                .readValue(json, Object.class);
+        if (!(parsed instanceof Map)) {
+            throw new IllegalArgumentException("the evidence package is not a JSON object");
+        }
+        return (Map<String, Object>) parsed;
+    }
+
+    /** The value when it is a string, null when it is absent, null, a number or an object. */
+    static String asString(Object value) {
+        return value instanceof String ? (String) value : null;
+    }
+
+    /** "leafHash is read" / "leafHash is not written" / "leafHash is not a string". */
+    private static String fieldState(Map<String, Object> proof, String field) {
+        if (asString(proof.get(field)) != null) {
+            return field + " is read";
+        }
+        return proof.containsKey(field) ? field + " is not a string"
+                : field + " is not written";
     }
 
     /**
-     * The index of the first non-space character of the value that follows {@code "field":},
-     * or -1 when the field is absent or has no value after its colon.
-     */
-    private static int valueStart(String json, String field) {
-        String needle = "\"" + field + "\"";
-        int at = json.indexOf(needle);
-        if (at < 0) {
-            return -1;
-        }
-        int colon = json.indexOf(':', at + needle.length());
-        if (colon < 0) {
-            return -1;
-        }
-        int i = colon + 1;
-        while (i < json.length() && Character.isWhitespace(json.charAt(i))) {
-            i++;
-        }
-        return i < json.length() ? i : -1;
-    }
-
-    /**
-     * One string field out of the JSON, without a JSON library.
+     * What to say when the package carries no usable {@code inclusionProof}.
      *
-     * <p>Deliberately dependency-free: a verifier a third party is meant to reimplement should
-     * not need our object mapper, and the shapes read here are flat.
-     *
-     * <p>It reads THE VALUE AFTER THE COLON and nothing else. The first version searched forward
-     * for the next quote, so a field whose value was not a string — {@code "leafHash": 42} —
-     * returned the NEXT KEY'S NAME as the value, and {@code "leafHash": null} did the same.
-     * Answering "could not read that" with a plausible-looking string is the defect this whole
-     * branch is about, in the verifier itself (review, 2026-09-19). Null now means only
-     * "absent, or present and not a string", which {@link #hasKey} separates.
+     * <p>Four different states used to come out as one sentence about the chain — including the
+     * two where the EXPORTER had written, in as many words, "This is NOT a statement that the
+     * record was never chained" (review, 2026-09-20). The package says which one it is; the
+     * verifier only had to read it.
      */
-    static String jsonString(String json, String field) {
-        int start = valueStart(json, field);
-        if (start < 0 || json.charAt(start) != '"') {
-            return null;
+    private static Check noProofCheck(Map<String, Object> document, Object proofValue) {
+        String couldNotBuild = asString(document.get("inclusionProofFailed"));
+        if (couldNotBuild != null) {
+            return new Check("audit path", Outcome.UNAVAILABLE,
+                    "the package says the audit path could not be built: " + couldNotBuild);
         }
-        int end = json.indexOf('"', start + 1);
-        return end < 0 ? null : json.substring(start + 1, end);
-    }
-
-    /**
-     * One boolean field: {@code TRUE}, {@code FALSE}, or null when it is absent or is neither.
-     *
-     * <p>The audit path used to read this by substring — two exact spellings of
-     * {@code "siblingIsLeft" : true}, everything else silently FALSE. A path reformatted by any
-     * JSON tool (a single space after the colon instead of around it) therefore combined every
-     * sibling on the wrong side, landed on a different root, and was reported FAILED: "the entry
-     * named in this package was not in the span that checkpoint sealed", about a package the
-     * verifier had not managed to read.
-     */
-    static Boolean jsonBoolean(String json, String field) {
-        int start = valueStart(json, field);
-        if (start < 0) {
-            return null;
+        String status = asString(document.get("status"));
+        String message = asString(document.get("message"));
+        if ("unavailable".equals(status) || "error".equals(status)) {
+            return new Check("audit path", Outcome.UNAVAILABLE,
+                    "the package says its own evidence could not be read"
+                            + (message == null ? "" : ": " + message));
         }
-        if (isLiteral(json, start, "true")) {
-            return Boolean.TRUE;
+        if (proofValue != null) {
+            return new Check("audit path", Outcome.UNAVAILABLE,
+                    "the evidence package's inclusionProof is not an object, so there is "
+                            + "nothing to read. Nothing about the entry's inclusion is "
+                            + "established either way.");
         }
-        return isLiteral(json, start, "false") ? Boolean.FALSE : null;
-    }
-
-    /**
-     * Does the literal start here AND end here?
-     *
-     * <p>Without the end check {@code truegarbage} read as TRUE, so a step whose side was
-     * unreadable combined on a side the verifier had invented — and a package built around that
-     * reading reached PASSED (review, 2026-09-19).
-     */
-    private static boolean isLiteral(String json, int start, String literal) {
-        if (!json.startsWith(literal, start)) {
-            return false;
+        if ("not-chained".equals(status)) {
+            return new Check("audit path", Outcome.NOT_PRESENT,
+                    message != null ? message
+                            : "the package says no ledger entry names this object. The chain "
+                                    + "only holds what was written to it, with no back-fill, so "
+                                    + "this says nothing about whether the record is genuine.");
         }
-        int after = start + literal.length();
-        // Whitespace may follow, but only whitespace and then a delimiter. The first version
-        // stopped at "the next character is a space", so `true garbage` read as true while
-        // `truegarbage` did not — a distinction with no meaning, and the lock only measured the
-        // second one (review, 2026-09-20).
-        while (after < json.length() && Character.isWhitespace(json.charAt(after))) {
-            after++;
-        }
-        if (after >= json.length()) {
-            return true;
-        }
-        char next = json.charAt(after);
-        return next == ',' || next == '}' || next == ']';
-    }
-
-    /**
-     * What the evidence package says about the audit path. Three readings, not one list.
-     *
-     * <p>A single list cannot carry them: "there is no auditPath", "there is one and it is
-     * empty" and "there is one and it cannot be read" all came out as zero steps, and zero steps
-     * walked from the leaf lands exactly on {@code leaf(leafHash)} — which a package can put in
-     * its own {@code merkleRoot}.
-     */
-    record AuditPath(List<Map<String, Object>> steps, boolean present, String unreadable) {
-
-        static AuditPath absent() {
-            return new AuditPath(List.of(), false, null);
-        }
-
-        static AuditPath unreadable(String why) {
-            return new AuditPath(List.of(), true, why);
-        }
-
-        static AuditPath of(List<Map<String, Object>> steps) {
-            return new AuditPath(List.copyOf(steps), true, null);
-        }
-    }
-
-    /**
-     * The audit path steps, in order, read out of the flat JSON.
-     *
-     * <p>The array has to be THE VALUE of {@code auditPath}. Taking the next {@code [} anywhere
-     * after the key let {@code "auditPath": null} followed by any other array in the document —
-     * {@code "notes": []} — be read as an empty path, which is a "could not read" answered with
-     * a value (review, 2026-09-19).
-     */
-    static AuditPath auditPath(String json) {
-        if (!hasKey(json, "auditPath")) {
-            return AuditPath.absent();
-        }
-        int open = valueStart(json, "auditPath");
-        if (open < 0 || json.charAt(open) != '[') {
-            return AuditPath.unreadable("the auditPath field is not a JSON array");
-        }
-        int close = json.indexOf(']', open);
-        if (close < 0) {
-            return AuditPath.unreadable("the auditPath array is not closed");
-        }
-        List<Map<String, Object>> steps = new ArrayList<>();
-        String body = json.substring(open + 1, close);
-        for (String chunk : body.split("\\}")) {
-            String sibling = jsonString(chunk, "siblingHash");
-            if (sibling == null) {
-                // Separators and the tail after the last '}' are not steps. A chunk with
-                // content but no siblingHash is a step this verifier cannot read, and dropping
-                // it silently shortens the path — which lands on a different root and reports
-                // FAILED, i.e. "the entry was not in that span", about a package we did not
-                // manage to read.
-                if (chunk.replaceAll("[\\s,\\[\\]]", "").isEmpty()) {
-                    continue;
-                }
-                return AuditPath.unreadable("a step carries no readable siblingHash");
-            }
-            Boolean siblingIsLeft = jsonBoolean(chunk, "siblingIsLeft");
-            if (siblingIsLeft == null) {
-                return AuditPath.unreadable("a step does not say which side its sibling is on");
-            }
-            Map<String, Object> step = new LinkedHashMap<>();
-            step.put("siblingHash", sibling);
-            step.put("siblingIsLeft", siblingIsLeft);
-            steps.add(step);
-        }
-        return AuditPath.of(steps);
+        return new Check("audit path", Outcome.NOT_PRESENT,
+                "the evidence package carries no inclusion proof, and does not say why. The "
+                        + "chain only holds what was written to it, with no back-fill, so this "
+                        + "says nothing about whether the record is genuine.");
     }
 }
