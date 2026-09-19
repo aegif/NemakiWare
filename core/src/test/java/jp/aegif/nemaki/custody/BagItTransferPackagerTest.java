@@ -241,4 +241,67 @@ class BagItTransferPackagerTest {
         assertThrows(IllegalArgumentException.class,
                 () -> BagItTransferPackager.bag(missing, tmp, SUBMISSION, DIGEST));
     }
+
+    // ── the submission id names the bag, and names nothing outside the working directory ──
+
+    @Test
+    @DisplayName("a submission id that walks out of the working directory does not")
+    void aSubmissionIdCannotWalkOutOfTheWorkingDirectory(@TempDir Path tmp) throws Exception {
+        // submissionId arrives on the bag endpoint as a @RequestParam and went straight into
+        // workDir.resolve(submissionId + ".zip"). '../../escaped' wrote escaped.zip two levels
+        // up, over whatever was there. Admin-only is not confinement (CodeQL java/path-injection,
+        // confirmed by reading the flow: request param -> resolve -> Files.newOutputStream).
+        // The working directory sits TWO levels down inside this test's own @TempDir, so the
+        // escape this measures lands inside the temp dir too. Pointing the assertion at the
+        // shared temp ROOT instead made the sabotaged run leave escaped.zip behind, and the
+        // restored run then failed on someone else's litter — the runner caught it as "the
+        // tree is NOT green after restore".
+        Path work = Files.createDirectories(tmp.resolve("a/b/work"));
+        Path source = sip(Files.createDirectories(tmp.resolve("in")), "x");
+
+        BagItTransferPackager.Bagged bagged = BagItTransferPackager.bag(source, work,
+                "../../escaped", DIGEST);
+
+        Path written = bagged.zippedBag().toAbsolutePath().normalize();
+        assertTrue(written.startsWith(work.toAbsolutePath().normalize()),
+                "the bag was written outside the working directory: " + written);
+        assertTrue(Files.exists(written), "no bag was written at all");
+        assertFalse(Files.exists(tmp.resolve("a/escaped.zip")),
+                "a file was created outside the working directory");
+    }
+
+    @Test
+    @DisplayName("the bag's file name carries no path separator of its own")
+    void theBagFileNameCarriesNoSeparator(@TempDir Path tmp) throws Exception {
+        // zipUnder directly, because the two layers cover each other through bag(): with the
+        // character reduction removed the confinement check still refuses, so a test that goes
+        // through bag() fails on an exception rather than on its own assertion and measures
+        // nothing about the reduction (the runner named it: "FIRED FOR THE WRONG REASON").
+        // Here the reduction is the only thing between the id and the name.
+        Path work = Files.createDirectories(tmp.resolve("work"));
+
+        Path zip = BagItTransferPackager.zipUnder(work, "sub/2026 0001");
+
+        assertEquals(work.toAbsolutePath().normalize(), zip.getParent(),
+                "the name put the bag in a directory of the caller's choosing: " + zip);
+        assertFalse(zip.getFileName().toString().contains("/"),
+                "a separator survived into the file name: " + zip.getFileName());
+    }
+
+    @Test
+    @DisplayName("the caller's own submission id still reaches bag-info.txt unchanged")
+    void theRawSubmissionIdStillReachesBagInfo(@TempDir Path tmp) throws Exception {
+        // The over-throw guard: only the FILE NAME is reduced. External-Identifier is the field
+        // a later receipt refers to, so it must carry what the caller wrote, separators and all.
+        Path work = Files.createDirectories(tmp.resolve("work"));
+        Path source = sip(Files.createDirectories(tmp.resolve("in")), "x");
+
+        BagItTransferPackager.Bagged bagged = BagItTransferPackager.bag(source, work,
+                "sub/2026 0001", DIGEST);
+
+        Map<String, byte[]> entries = entriesOf(bagged.zippedBag());
+        String bagInfo = new String(entries.get("bag-info.txt"), StandardCharsets.UTF_8);
+        assertTrue(bagInfo.contains("External-Identifier: sub/2026 0001"),
+                "the submission id was rewritten inside the bag: " + bagInfo);
+    }
 }
