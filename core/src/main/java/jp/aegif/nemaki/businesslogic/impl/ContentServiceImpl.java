@@ -91,6 +91,7 @@ import org.apache.chemistry.opencmis.commons.exceptions.CmisContentAlreadyExists
 import org.apache.chemistry.opencmis.commons.exceptions.CmisNotSupportedException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisStorageException;
 import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 // CmisException import removed due to Jakarta EE compatibility issues
@@ -1659,8 +1660,9 @@ public class ContentServiceImpl implements ContentService {
 		Document latest = getDocument(repositoryId, objectId);
 		Document pwc = buildCopyDocument(callContext, repositoryId, latest, null, null);
 
-		// Create PWC attachment
-		String attachmentId = copyAttachment(callContext, repositoryId, latest.getAttachmentNodeId());
+		// Create PWC attachment. OrRefuse: a document whose attachment row is gone must not be
+		// checked out into a working copy that reports itself as having no content.
+		String attachmentId = copyAttachmentOrRefuse(callContext, repositoryId, latest.getAttachmentNodeId());
 		pwc.setAttachmentNodeId(attachmentId);
 
 		// Set other properties
@@ -1835,7 +1837,11 @@ public class ContentServiceImpl implements ContentService {
 
 		// When PWCUpdatable is true
 		if (contentStream == null) {
-			checkedIn.setAttachmentNodeId(copyAttachment(callContext, repositoryId, pwc.getAttachmentNodeId()));
+			// OrRefuse: this is the flow where the client edited the working copy in place, so
+			// the PWC's bytes ARE the new version's bytes. Copying "nothing" because the row is
+			// missing would make a version with no content the latest one.
+			checkedIn.setAttachmentNodeId(
+					copyAttachmentOrRefuse(callContext, repositoryId, pwc.getAttachmentNodeId()));
 			// When PWCUpdatable is false
 		} else {
 			checkedIn.setAttachmentNodeId(createAttachment(callContext, repositoryId, contentStream));
@@ -2509,6 +2515,38 @@ public class ContentServiceImpl implements ContentService {
 	private String copyAttachment(CallContext callContext, String repositoryId, String attachmentId) {
 		initDelegates();
 		return attachmentDelegate.copyAttachment(callContext, repositoryId, attachmentId);
+	}
+
+	/**
+	 * Copies an attachment, refusing when the source names one the store does not have.
+	 *
+	 * <p>{@code copyAttachment} answers null for two different things: the source genuinely has
+	 * no content, and the attachment document the source NAMES is gone. {@code checkOut} and
+	 * {@code checkIn} wrote that answer straight onto the copy, so a document with a dangling
+	 * reference was checked out — and then checked in — as a document with no content. Nobody
+	 * established that, and on check-in the version that did have content stops being the latest
+	 * one. {@code createDocumentFromSource} refuses in exactly this situation, one method away.
+	 *
+	 * <p>A blank source id still answers null, because a content-less document is a real thing
+	 * and copying one has to keep working. The refusal is only for "the source says it has
+	 * content and the store does not have it".
+	 *
+	 * <p>A read that FAILED never arrives here as null: {@code AttachmentDaoDelegate.getAttachment}
+	 * throws for that and says so in its message. Null below is genuine absence.
+	 */
+	private String copyAttachmentOrRefuse(CallContext callContext, String repositoryId,
+			String sourceAttachmentId) {
+		if (StringUtils.isBlank(sourceAttachmentId)) {
+			return null;
+		}
+		String copied = copyAttachment(callContext, repositoryId, sourceAttachmentId);
+		if (copied == null) {
+			throw new CmisStorageException("the attachment '" + sourceAttachmentId
+					+ "' this document names is not in '" + repositoryId + "', so its content "
+					+ "could not be copied. This is NOT a finding that the document has no "
+					+ "content.");
+		}
+		return copied;
 	}
 
 	/**
@@ -5197,8 +5235,10 @@ public class ContentServiceImpl implements ContentService {
 	private String copyAttachmentAtomic(CallContext callContext, String repositoryId, String originalAttachmentId) {
 		log.debug("Copying attachment atomically: {}", originalAttachmentId);
 		
-		// Copy attachment using existing method
-		String attachmentId = copyAttachment(callContext, repositoryId, originalAttachmentId);
+		// Copy attachment using existing method. Through the refusing one so the message an
+		// operator gets is the same wherever the store is missing the row — this path used to
+		// answer "attachment not accessible: null", which names nothing.
+		String attachmentId = copyAttachmentOrRefuse(callContext, repositoryId, originalAttachmentId);
 		
 		// ATOMIC VERIFICATION: Ensure copied attachment exists and is accessible (metadata only)
 		AttachmentNode verification = getAttachmentRef(repositoryId, attachmentId);
