@@ -136,7 +136,8 @@ class CopyingContentRefusesAMissingRowTest {
     void checkOutRefusesADanglingReference() throws Exception {
         jp.aegif.nemaki.dao.ContentDaoService dao = dao();
         when(dao.getDocument("bedroom", "doc-1")).thenReturn(document("doc-1", "att-9"));
-        // Genuine absence of the attachment DOCUMENT. The delegate's other arms throw.
+        // Genuine absence of the attachment DOCUMENT, on BOTH reads — not a restore in
+        // flight. The delegate's other arms throw.
         when(dao.getAttachment(anyString(), anyString())).thenReturn(null);
         ContentServiceImpl service = serviceOn(dao);
 
@@ -211,6 +212,35 @@ class CopyingContentRefusesAMissingRowTest {
                         + refusal.getMessage());
         verify(dao, never()).createAttachment(anyString(), any(AttachmentNode.class), any());
         verify(dao, never()).create(anyString(), any(Document.class));
+    }
+
+    @Test
+    @DisplayName("a ROW that arrives between the two reads is copied, not refused")
+    void aRestoreThatHasNotReachedTheRowYetIsNotRefused() throws Exception {
+        // Restore puts the DOCUMENT back first (ArchiveDaoDelegate:853) and the attachment
+        // after it — the row at :772, the body at :792. So the window has two shapes, and the
+        // first one is "no row at all". Refusing on the first read answered a legitimate
+        // operation in progress with a 500 (review, 2026-09-19).
+        jp.aegif.nemaki.dao.ContentDaoService dao = dao();
+        when(dao.getDocument("bedroom", "doc-1")).thenReturn(document("doc-1", "att-9"));
+        when(dao.getAttachment("bedroom", "att-9")).thenReturn(null, stored("the minutes"));
+        when(dao.createAttachment(eq("bedroom"), any(AttachmentNode.class), any()))
+                .thenReturn("att-copy");
+        when(dao.create(eq("bedroom"), any(Document.class))).thenAnswer(inv -> {
+            Document copy = inv.getArgument(1);
+            copy.setId("pwc-1");
+            return copy;
+        });
+        when(dao.update(eq("bedroom"), any(Document.class)))
+                .thenAnswer(inv -> inv.getArgument(1));
+        when(dao.getVersionSeries(anyString(), anyString())).thenReturn(null);
+        ContentServiceImpl service = serviceOn(dao);
+
+        Document pwc = assertDoesNotThrow(
+                () -> service.checkOut(mock(CallContext.class), "bedroom", "doc-1", null),
+                "a check-out before the restore reached the attachment row was refused");
+
+        assertEquals("att-copy", pwc.getAttachmentNodeId());
     }
 
     @Test

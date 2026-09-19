@@ -301,6 +301,71 @@ class SipVerifierTest {
     }
 
     @Test
+    @DisplayName("the proof as THIS PRODUCT serialises it verifies")
+    void theProductsOwnSerialisationIsRead(@TempDir Path tmp) throws Exception {
+        // Every other fixture here is hand-written with spaces around the colons. The exporter
+        // writes COMPACT JSON (ObjectMapperFactory.createDefaultObjectMapper, EarkSipExporter
+        // :1000), so none of them measured the shape the product actually produces — and the
+        // round-trip test cannot, because with no ledger wired it has no inclusion proof at all
+        // (review, 2026-09-19). The proof is built here and then serialised BY THE PRODUCT'S
+        // OWN MAPPER, so a change to that mapper turns this red instead of going unnoticed.
+        List<String> leaves = List.of("e0hash", "e1hash", "e2hash", "e3hash");
+        List<Map<String, Object>> steps = new java.util.ArrayList<>();
+        for (MerkleTree.ProofStep step : MerkleTree.proof(leaves, 1)) {
+            Map<String, Object> one = new LinkedHashMap<>();
+            one.put("siblingHash", step.siblingHash());
+            one.put("siblingIsLeft", step.siblingIsLeft());
+            steps.add(one);
+        }
+        Map<String, Object> inclusionProof = new LinkedHashMap<>();
+        inclusionProof.put("leafHash", "e1hash");
+        inclusionProof.put("merkleRoot", MerkleTree.root(leaves));
+        inclusionProof.put("auditPath", steps);
+        Map<String, Object> evidence = new LinkedHashMap<>();
+        evidence.put("status", "success");
+        evidence.put("inclusionProof", inclusionProof);
+        String json = jp.aegif.nemaki.config.ObjectMapperFactory.createDefaultObjectMapper()
+                .writeValueAsString(evidence);
+        assertTrue(json.contains("\"siblingIsLeft\":"),
+                "the product's mapper no longer writes compact JSON — this fixture has stopped "
+                        + "measuring what it says it measures: " + json);
+
+        String payload = "the minutes";
+        Path sip = zip(tmp, "compact.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", json));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Verdict.VERIFIED, result.verdict(), result.asMap().toString());
+    }
+
+    @Test
+    @DisplayName("a literal with something stuck to it is not that literal")
+    void aTruncatedLiteralIsNotRead(@TempDir Path tmp) throws Exception {
+        // `startsWith("true", …)` accepted `truegarbage`, so a step whose side could not be read
+        // combined on a side the verifier had invented — and a package built around THAT reading
+        // reached PASSED (review, 2026-09-19).
+        Map<String, String> proof = realProofFor(3);
+        String broken = proof.get("json").replaceFirst(
+                "\"siblingIsLeft\" : (true|false)", "\"siblingIsLeft\" : truegarbage");
+        assertFalse(broken.equals(proof.get("json")), "the fixture was not altered");
+        String payload = "the minutes";
+        Path sip = zip(tmp, "truegarbage.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", broken));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"),
+                result.asMap().toString());
+    }
+
+    @Test
     @DisplayName("a step that does not say which side its sibling is on is UNAVAILABLE")
     void aStepWithNoSideIsUnavailable(@TempDir Path tmp) throws Exception {
         Map<String, String> proof = realProofFor(0);

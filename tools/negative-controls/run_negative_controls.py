@@ -8803,8 +8803,8 @@ CONTROLS = [
     # ── 確認レビューが出した P1 / P2 の処置 (2026-09-19) ──
     dict(
         id="CY3",
-        what="an ABSENT auditPath is walked as an empty one again, so a package carrying a leaf "
-             "and a root it computed from that leaf passes the inclusion check",
+        what="an ABSENT auditPath stops being distinguished from a present one, so 'no proof "
+             "was written' is reported as 'the proof is there and could not be used'",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
         find='        if (!path.present()) {',
         replace='        if (false) {',
@@ -8919,10 +8919,12 @@ CONTROLS = [
         what="the bodyless attachment is refused on the first read, so a check-out during an "
              "archive restore (row created, body not PUT yet) fails instead of retrying",
         file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/delegate/AttachmentServiceDelegate.java',
-        find='\t\t\tAttachmentNode reread = contentDaoService.getAttachment(repositoryId, attachmentId);',
-        replace='\t\t\tAttachmentNode reread = original;',
+        find='\t\t\toriginal = contentDaoService.getAttachment(repositoryId, attachmentId);',
+        replace='\t\t\t// the second read is gone',
         test='CopyingContentRefusesAMissingRowTest',
-        expect_fail=['aRestoreInFlightIsNotRefused'],
+        # Removing the second read takes BOTH shapes of the restore window with it.
+        expect_fail=['aRestoreInFlightIsNotRefused',
+                     'aRestoreThatHasNotReachedTheRowYetIsNotRefused'],
     ),
     dict(
         id="DI3",
@@ -8933,6 +8935,46 @@ CONTROLS = [
         replace='\t\treturn node != null && node.getInputStream() != null && node.getLength() > 0;',
         test='CopyingContentRefusesAMissingRowTest',
         expect_fail=['aZeroByteAttachmentIsStillCopied'],
+    ),
+    # ── 3 巡目のレビューが出した P1 の処置 (2026-09-20) ──
+    dict(
+        id="DJ3",
+        what="a JSON literal is matched by prefix again, so `truegarbage` reads as true and a "
+             "step whose side is unreadable combines on a side the verifier invented",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='        if (isLiteral(json, start, "true")) {\n'
+             '            return Boolean.TRUE;\n'
+             '        }\n'
+             '        return isLiteral(json, start, "false") ? Boolean.FALSE : null;',
+        replace='        if (json.startsWith("true", start)) {\n'
+                '            return Boolean.TRUE;\n'
+                '        }\n'
+                '        return json.startsWith("false", start) ? Boolean.FALSE : null;',
+        test='SipVerifierTest',
+        expect_fail=['aTruncatedLiteralIsNotRead'],
+    ),
+    dict(
+        id="DK3",
+        what="the missing attachment row is refused on the first read, so a check-out during "
+             "the first half of an archive restore (document back, row not created yet) fails",
+        file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/delegate/AttachmentServiceDelegate.java',
+        find='\t\tif (original == null || !hasBody(original)) {',
+        replace='\t\tif (original != null && !hasBody(original)) {',
+        test='CopyingContentRefusesAMissingRowTest',
+        expect_fail=['aRestoreThatHasNotReachedTheRowYetIsNotRefused'],
+    ),
+    dict(
+        id="DL3",
+        what="the audit path is read by a rule that only matches hand-spaced JSON, so the "
+             "compact form this product's own mapper writes stops verifying",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='        int i = colon + 1;\n'
+             '        while (i < json.length() && Character.isWhitespace(json.charAt(i))) {\n'
+             '            i++;\n'
+             '        }',
+        replace='        int i = colon + 2;',
+        test='SipVerifierTest',
+        expect_fail=['theProductsOwnSerialisationIsRead'],
     ),
 ]
 

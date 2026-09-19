@@ -619,9 +619,16 @@ class E1CommitmentSpikeTest {
     void anUnrelatedWriterDoesNotDropTheGap() {
         // The property this codebase actually forces, and where the two designs part. The
         // content document is written from many places — renames, ACL changes, version-series
-        // flags, the nine content-write paths themselves — and each builds its fields from a
-        // model. A writer that does not know about content-state bookkeeping drops whatever
-        // rides on the document. Nothing can drop a row in the other store.
+        // flags, the twelve content-write paths themselves — and every service-layer update
+        // rebuilds the stored model FROM THE DOMAIN MODEL
+        // (ContentDaoServiceImpl.update: `new CouchDocument(document)`), which carries only
+        // its declared fields. The stored-JSON carrier (CouchNodeBase's @JsonAnySetter into
+        // additionalProperties) does not survive that hop.
+        //
+        // This is not hypothetical here. CouchContent's own comment records the product losing
+        // `contentIncarnation` exactly this way: "the model round-trip used to LOSE
+        // contentIncarnation … each ordinary rename silently started a new lifetime". A
+        // rename did that. Nothing can drop a row in the other store.
         Store storeA = new Store();
         OutboxMarker a = new OutboxMarker();
         try {
