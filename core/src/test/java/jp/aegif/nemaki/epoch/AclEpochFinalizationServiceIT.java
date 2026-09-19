@@ -244,7 +244,10 @@ public class AclEpochFinalizationServiceIT {
                 .db(contentDb).docId("d-att").document(d).build()).execute();
 
         Document hint = getContent("d-att");
-        hint.setAttachments(null); // simulate a _find hint that lacks attachment stubs
+        // A stub-less hint — the WORST case, not the ordinary one. A real Mango _find row does
+        // carry the stubs (measured per supported CouchDB line by StoreBehaviourFactsIT); a
+        // hand-built snapshot does not, and finalize must preserve the binary either way.
+        hint.setAttachments(null);
         FinalizeOutcome o = svc.finalizePending(contentDb, hint);
         assertEquals(FinalizeResult.FINALIZED, o.result);
 
