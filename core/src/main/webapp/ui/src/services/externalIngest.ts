@@ -502,6 +502,14 @@ export interface IngestJobRecord {
   skipped: number;
   failed: number;
   errors?: string[];
+  /**
+   * Why the run did not see everything there was to see.
+   *
+   * Not errors. A run that stopped at its limit imported what it read and failed at nothing —
+   * but it is PARTIAL, and without this the only thing on screen would be a warning tag whose
+   * legend says "some succeeded, some failed".
+   */
+  incompleteReads?: string[];
 }
 
 export interface DlqEntry {

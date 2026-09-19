@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Button, Tag, Space, Card, App, Popconfirm, Tabs, Typography } from 'antd';
+import { Table, Button, Tag, Space, Card, App, Popconfirm, Tabs, Typography, Tooltip } from 'antd';
 import { ReloadOutlined, DeleteOutlined, RedoOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import {
@@ -68,7 +68,18 @@ export function IngestJobsTab() {
     { title: t('ingestJobs.columns.jobId'), dataIndex: 'jobId', key: 'jobId', width: 120 },
     { title: t('ingestJobs.columns.profileId'), dataIndex: 'profileId', key: 'profileId' },
     { title: t('ingestJobs.columns.status'), dataIndex: 'status', key: 'status', width: 100,
-      render: (s: string) => <Tag color={STATUS_COLORS[s] || 'default'}>{s}</Tag> },
+      render: (s: string, record: IngestJobRecord) => {
+        const tag = <Tag color={STATUS_COLORS[s] || 'default'}>{s}</Tag>;
+        // PARTIAL no longer means only "some items failed": a run that stopped at its limit is
+        // partial with failed=0. Without the reason on screen, the operator sees a warning tag
+        // and a row of zeros.
+        if (!record.incompleteReads?.length) return tag;
+        return (
+          <Tooltip title={`${t('ingestJobs.incompleteReads')}: ${record.incompleteReads.join('; ')}`}>
+            {tag}
+          </Tooltip>
+        );
+      } },
     { title: t('ingestJobs.columns.fetched'), dataIndex: 'fetched', key: 'fetched', width: 80 },
     { title: t('ingestJobs.columns.imported'), dataIndex: 'imported', key: 'imported', width: 80 },
     { title: t('ingestJobs.columns.skipped'), dataIndex: 'skipped', key: 'skipped', width: 80 },

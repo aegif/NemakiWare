@@ -406,7 +406,7 @@
       "ingestJobManagement": "Job Management & Checkpoints",
       "ingestJobManagementDesc": "A job record is created for each scheduler execution, with progress tracked in real-time.",
       "ingestJobStatus": "Job Status",
-      "ingestJobStatusDesc": "RUNNING: In progress (monitored via heartbeat). COMPLETED: Successfully finished. PARTIAL: Some succeeded, some failed. FAILED: All items failed. Fetch timeout (default 30 minutes, configurable via ingest.scheduler.fetchTimeoutMinutes) interrupts the thread and marks the job FAILED. Consecutive connector failures trigger the circuit breaker, skipping until the next cycle.",
+      "ingestJobStatusDesc": "RUNNING: In progress (monitored via heartbeat). COMPLETED: Finished, and saw the whole source. PARTIAL: Either some items failed, OR nothing failed but the run did not see the whole source (it stopped at a limit) — the reason is on the status badge and failed stays 0. FAILED: All items failed. Fetch timeout (default 30 minutes, configurable via ingest.scheduler.fetchTimeoutMinutes) interrupts the thread and marks the job FAILED. Consecutive connector failures trigger the circuit breaker, skipping until the next cycle.",
       "ingestCheckpoint": "Checkpoint",
       "ingestCheckpointDesc": "Remembers the last successfully ingested position for each profile. Next execution ingests only from this position. Checkpoints vary by adapter (Gmail: date, Slack: message ts, IMAP: UID, etc.). Checkpoints can be reset via the admin API for full re-ingestion.",
       "ingestContentHash": "Content Hash",
@@ -3560,6 +3560,7 @@
     }
   },
   "ingestJobs": {
+    "incompleteReads": "Not seen by this run",
     "title": "Ingest Job History & Dead-Letter Queue",
     "tabs": {
       "history": "Job History",
