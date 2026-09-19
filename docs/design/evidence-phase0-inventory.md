@@ -8,6 +8,11 @@
 残件 1 行であり、成功扱いにしない」と定めているので、ここに書いていない経路について
 「記録した」とは後段のどこでも書かない。
 
+> **行番号は動く。** このバッチの中だけで 2 度ずれ、1 度は「直した」方向が逆だった。
+> **同じコミットで触るファイルの行番号は引かない** — メソッド名で引く。
+> 残っている行番号は 2026-09-20 時点のもので、ずれていたら識別子で探すこと
+> （`capture-outbox.md` の冒頭と同じ注意）。
+
 **読んで確かめた結果だけを書く。** 台帳の文言ではなくコードを根拠にする、という
 計画 §0 の指示に従っている。
 
@@ -39,11 +44,12 @@
 | W4 | `checkIn` | stream 無し → `copyAttachmentOrRefuse`（:1844） / stream 有り → **`createAttachment`（:1847、atomic ではない）** | `VersioningServiceImpl.checkIn` | PWC を版にする |
 | W5 | `updateWithoutCheckInOut` | **`createAttachment`（:1925、atomic ではない）** | `BulkCheckInResource`（REST） | checkOut を経ない更新 |
 | W6 | `createDocumentFromSource` | `copyAttachmentAtomic`（:1316） | `ObjectServiceImpl.createDocumentFromSource` | 複製 |
-| W7 | `appendAttachment` | **`updateAttachment`（:4571、その場）** | `ObjectServiceImpl.appendContentStream` | 追記 |
+| W7 | `appendAttachment` | **`updateAttachment`（`appendAttachment` の中。その場）** | `ObjectServiceImpl.appendContentStream` | 追記 |
 | W8 | `checkOut`（PWC 作成） | `copyAttachmentOrRefuse`（:1665） | `VersioningServiceImpl.checkOut` | PWC へ複製 |
 | **W9** | **`replacePwc`** | **`updateAttachment`（:1488、その場）** | `ObjectServiceImpl.setContentStream`（対象が PWC のとき、:799） | PWC の内容差し替え |
-| **W10** | **アーカイブ（削除）** | `ArchiveDaoDelegate.createAttachmentArchive`（:481。bytes を **archive DB へ複製**、:545） | `deleteContentStream` / `deleteDocument` → `deleteAttachment`（`ContentServiceImpl:3601` / :3788） | 本番からは消え、archive に残る |
-| **W11** | **復元** | `ArchiveDaoDelegate.restoreAttachment`（:714。attachment 行を作り直し、:792 で **本番へ body を PUT**） | `ContentServiceImpl.restoreArchive`（:4805）/ `restoreArchiveGuarded` | bytes が本番に戻る |
+| **W10** | **アーカイブ（削除）** | `ArchiveDaoDelegate.createAttachmentArchive`（:481。bytes を **archive DB へ複製**、:545） | `deleteContentStream` / `deleteDocument` → `deleteAttachment`（`ContentServiceImpl` の両メソッド内） | 本番からは消え、archive に残る |
+| **W11** | **復元** | `ArchiveDaoDelegate.restoreAttachment`（:714。attachment 行を作り直し、:792 で **本番へ body を PUT**） | `ContentServiceImpl.restoreArchive` / `restoreArchiveGuarded` | bytes が本番に戻る |
+| **W13** | **アーカイブの物理削除** | `ArchiveServiceDelegate.destroyArchive` → `destroyDocument`（:502 付近。**body を持つ attachment archive 行そのものを削除**） | `ArchiveResource.destroyArchive`（api/v1、管理者） | bytes が完全に消える |
 | **W12** | **cold 移送**（COPY / MOVE） | `RetentionScheduler.moveToCold` → `LongTermStorageAdapter.put`（:599。**外部保管へ bytes を書く**）。MOVE なら `contentService.deleteArchiveContent`（:666 → `ArchiveDaoDelegate:1133`）で**ローカルの bytes を消す** | 保持ポリシーのスケジューラ | COPY は二重化、MOVE は所在の移動 |
 
 **外部取込は独自の書き込み経路を持たない。** `CanonicalImportServiceImpl` は
@@ -52,13 +58,15 @@ W1 と W4 に合流する。取込のために E1 を別に作る必要はない
 
 **その場書き換えは W3 / W7 / W9 の 3 本**である。
 
-> **W12 は 3 巡目で 2 名が別々に指摘して足した。** 判定基準を「`createAttachment` /
+> **W13 は 4 巡目、W12 は 3 巡目の指摘で足した。**（W13 = archive の物理削除。W10 で archive へ移した bytes を管理者が完全削除する経路で、`deleteContentStream` と同じ理由で対象になる。） 判定基準を「`createAttachment` /
 > `copyAttachment` / `updateAttachment` のどれも通らない」に広げた結果として W10 / W11 を
 > 足したのに、**同じ基準に当てはまる cold 移送を見落とした**。`deleteContentStream` を対象に
 > した理由（「台帳の最後の statement がもう存在しない bytes を指したままになる」）は
 > MOVE にもそのまま当てはまる。**なお cold から本番へ bytes を戻す経路は無い**
-> （`adapter.get` で本番へ書き戻す呼び出しは main に 0 件。`restoreAttachment` は archive に
-> binary が無ければ「no binary content」で終わる）ので、**cold 化した文書は W11 で戻せない**。
+> （`adapter.get` の呼び出しは main に **0 件**。定義はあるが誰も呼ばない。`restoreAttachment` は
+> archive に binary が無ければ「no binary content」で終わる）ので、**cold 化した文書は W11 で
+> 戻せない** — より正確には、**MOVE した bytes は製品からは一切読み戻せず、外部ツールでしか
+> 取れない**（4 巡目の指摘）。運用文書に書く対象である。
 > これも表に書いていなかった。
 >
 > **W10 / W11 は 2 巡目の確認レビューで 2 名が別々に指摘して足した。** 初版の表は
@@ -74,13 +82,13 @@ W1 と W4 に合流する。取込のために E1 を別に作る必要はない
 ### 読んで決めた（2026-09-19 追記）
 
 **W7 の追記は「新しい attachment」ではない。** `appendAttachment`
-（`ContentServiceImpl:4551`）は `contentDaoService.updateAttachment`（:4571） で**同じ attachment 行を
+（`ContentServiceImpl.appendAttachment`）は `contentDaoService.updateAttachment` で**同じ attachment 行を
 その場で書き換える**。新しい行も新しい版も作らない。bytes は
 `SequenceInputStream(既存, 追記分)` で、**意図的に一度もメモリに載せない**（巨大ファイル用）。
 したがって digest を取るなら書き込みの流れに `DigestInputStream` を挟むしかない
 （1 パスで済むが、値が分かるのは書き終えた後）。
 
-`isLastChunk` は**引数にあるだけで本体で使われていない**（:4552 の宣言以外に出現 0）。
+`isLastChunk` は**引数にあるだけで本体で使われていない**（宣言以外に出現 0）。
 **製品は中間チャンクと最終状態を区別できない。**
 
 → **決定**: W7 は E1 の対象にする。statement は **1 回の追記呼び出しごと**に 1 本
@@ -257,10 +265,10 @@ Phase 6 の「ERS persistence」はここを指す。
 
 ## 5. この文書で決めたこと
 
-- E1 の対象は **W1〜W12 と `deleteContentStream`**（W10 = アーカイブ、W11 = 復元、W12 = cold 移送）。2026-09-19 に実装を読んで
+- E1 の対象は **W1〜W13 と `deleteContentStream`**（W10 = アーカイブ、W11 = 復元、W12 = cold 移送、W13 = archive の物理削除）。2026-09-19 に実装を読んで
   W6 / W7 / W8 / 消去の扱いを決め、確認レビューを受けて数え直したときに W9 を足した（§1）。
   **列挙できたのはここまで**であり、ここに書いていない経路について
-  「記録した」とは後段のどこにも書かない。**3 度数え違えている**（W9 / W10・W11 / W12。いずれもレビューの指摘）という事実も含めて読むこと。**この表を「全部数えた」と読まないこと。**
+  「記録した」とは後段のどこにも書かない。**4 度数え違えている**（W9 / W10・W11 / W12 / W13。いずれもレビューの指摘で、毎回「今度こそ数え切った」と書いていた）という事実も含めて読むこと。**この表を「全部数えた」と読まないこと。**
 - W7（追記）は 1 呼び出しごとに 1 statement。**どれが最終かは書かない** —
   製品が `isLastChunk` を使っていないので知らない。limits に明記する。
 - W6 / W8（複製）は**自分の digest**を持ち、元の entry を引き継がない。

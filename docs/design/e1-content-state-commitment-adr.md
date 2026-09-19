@@ -1,6 +1,8 @@
 # ADR: E1 — content 状態を台帳へ結ぶときの境界
 
-2026-09-19。**決定: 案 B（先行する耐久 intent）。** 実測は
+2026-09-19（4 巡目のレビューを受けて 2026-09-20 に §4 / §5 を書き直した）。
+**決定: 案 B（先行する耐久 intent）。ただし spike は 2 案を分けなかった** — 決定は
+測定ではなく §5 の判断による。実測は
 `core/src/test/java/jp/aegif/nemaki/evidence/spike/E1CommitmentSpikeTest.java`（8 本）。
 計画 [`v3.4.0-evidence-and-residuals-plan.md`](v3.4.0-evidence-and-residuals-plan.md) §8 の
 「Phase 0 の architecture spike で案 A か案 B を fault injection で選ぶ」に対する答え。
@@ -65,57 +67,66 @@ statement の記録は必ず 2 段になり、**その間の窓をどう扱う�
 
 ---
 
-## 4. 決め手 — C6: 無関係な書き手
+## 4. spike は**決めなかった** — 2 度、決め手を取り下げた
 
-計画の 5 条件では分かれない。分かれるのは、**この製品が強いる 6 つ目の性質**である。
+**初版の決め手**「その場書き換えが未処理 marker を消す」は、案 A を単数 marker で
+モデル化した産物だった（2 巡目の指摘、§3）。
 
-> **C6**: 同じ content 文書を書く**無関係な書き手**（改名、ACL 変更、version series の
-> フラグ、そして content を書く 9 経路そのもの）が、記録の手がかりを落としてはならない。
+**2 版目の決め手 C6**「同じ文書を書く無関係な書き手（改名）が marker を落とす」も
+**取り下げる**（4 巡目の指摘）。取り下げの根拠:
 
-marker は content 文書の上に載る。**文書の書き込みは文書を置き換える**ので、
-marker を知らない書き手が 1 つでもあれば、そこで落ちる。
+- ドメイン `Content` には **verbatim carrier がある** — `aclEpochFields`
+  （`model/Content.java:65-76`）。そのコメントが理由をそのまま書いている:
+  「The DAO update path builds a FRESH CouchDocument from this model object, so any stored
+  field the model does not carry is ERASED by an ordinary rename/property update.
+  **These carriers exist ONLY so that unrelated updates stop being destructive**」
+- 往復は閉じている: 読み `CouchContent.readAclEpochFieldsVerbatim`（:82-118）→ ドメイン
+  （`convert()` :389-394）→ 書き（:253-256 で `additionalProperties` に戻す）。
+  コピー構築子も明示的に運ぶ（`Content(NodeBase)` :86-97、「Copy-constructor chains
+  must not drop the verbatim carriers」）
+- したがって E1 の marker を足す費用は **キー一覧に 1 行**であって、
+  「13 経路すべての配線」ではない
 
-> **「それは案 A を不完全に実装しただけだ」という反論が 3 巡目に出た。** 保存 JSON 側には
-> 未知フィールドの carrier がある（`CouchNodeBase` の `@JsonAnySetter` / `@JsonAnyGetter` →
-> `additionalProperties`）ので、marker もそこに乗れば改名で落ちない、という指摘である。
->
-> **コードを読んで確かめた結果、落ちる。** サービス層の更新は
-> `ContentDaoServiceImpl.update(repositoryId, Document)`（:2379-2380）で
-> **ドメインモデルから `new CouchDocument(document)` を組み直す**。そして
-> ドメインの `NodeBase` / `Content` / `Document` に `additionalProperties` は**無い**
-> （grep で 0 件）。carrier は「保存 JSON → Couch モデル → 保存 JSON」の往復しか守らず、
-> 製品が実際に通る「保存 JSON → Couch モデル → **ドメインモデル** → Couch モデル → 保存 JSON」
-> では消える。
->
-> **この製品はその形で 1 度焼かれている。** `CouchContent` の :241-245 のコメント —
-> 「model round-trip used to LOSE `contentIncarnation`（convert() never copied it and the model
-> had no field）, so the mint below fired on EVERY update — each ordinary rename silently
-> started a new "lifetime"」。**普通の改名が記録を壊した**という、C6 そのものの実例である。
-> 直し方は「ドメインモデルにフィールドを足す」で、案 A の marker も同じことが要る —
-> つまり **`Document` を新しく組む書き手すべて**（`buildCopyDocument` を含む）が
-> marker を運ぶ責任を負う。
+**私はここを「ドメインに carrier は無い（grep で 0 件）」と書いていた。探索語が
+`additionalProperties` だけで、`aclEpochFields` を探していない。**
+[[count-the-whole-inventory-not-one-file]] と同じ誤り方である。
 
-実測（`anUnrelatedWriterDoesNotDropTheGap`）:
+> **`contentIncarnation` の先例の読み方も片面だった。** 「普通の改名が記録を壊した」は
+> 事実だが、製品はその後 **同じ問題を carrier 方式で一般化して解いている**。
+> 片面だけ引いて「だから A は危うい」と書いたのは、証拠の選び方の誤りである。
 
-```
-content を書く → statement の前に落ちる（bytes は在る、statement は無い、gap は見える）
-→ 改名 1 回 → 回復を走らせる
-
-案 A: openGaps = 空。statement も無い。**改名がそれをやった**
-案 B: statement 1 本。intent は別の store に在るので改名は触れない
-```
-
-**bytes は在り、記録されず、記録されなかったという事実も無い。** 計画 §8 が禁じている
-silent gap で、引き金が「利用者が名前を直した」である。
-
-この製品の content 文書は多くの場所から書かれる（Phase 0 の棚卸しで数えた content 書き込み
-だけで **12 経路**、ほかにプロパティ更新・ACL・版フラグ）。**そのすべてに marker の持ち越しを
-配線し、以後も落とさない**ことが案 A の前提になる。案 B の intent は別 DB の行なので、
-content 文書を書く側は何も知らなくてよい。
+**結論: 5 条件でも、その場書き換えでも、無関係な書き手でも、2 案は分かれない。**
+spike が言えるのは「**どちらも成立する**」までで、決定は spike の外にある。
 
 ---
 
-## 5. 案 B の代償（測って書く）
+## 5. それでも B を採る理由（spike の外。測定ではなく判断）
+
+1. **同じ class の問題を、この製品は既に B の形で解いて出荷している。**
+   取込の content commit → journal write は先行 intent で閉じてあり
+   （`capture-outbox.md`、外部レビュー 11 巡、`CaptureIntent` / `CaptureState` /
+   `CaptureIntentSweeper` が実装済み）。A を採ると、**同じ製品の中に同じ class の問題に
+   対する 2 つ目の仕組み**が生まれる — 別の sweeper、別の失敗様式、別の運用手順。
+2. **A は carrier という不変条件に依存する。** carrier は在るが、**それを守らせる錠は無い**
+   （`aclEpochFields` を落とす書き手が現れても赤くなるテストは無い）。B の intent は
+   別 DB の行なので、content 文書を書く側の作法に依存しない。
+   なお `contentIncarnation` の件は、その不変条件が**実際に破れたときに何が起きるか**の実例である。
+3. **A の marker は content 文書の revision を 1 つ余分に使う**（書いて、掃いて、消す）。
+   B の intent 行は別 DB なので content 文書の revision 履歴を増やさない。
+
+**判断であって測定ではない、と明記する。** 1 は「一貫性」という設計上の選好であり、
+2 は「守られていない不変条件への依存を避ける」という保守性の判断である。
+**A を選んでも 5 条件は満たせる** — その事実をここに残しておく。
+
+### 何が決定を覆すか
+
+- capture-outbox の先行 intent が取り下げられる（そのとき 1 の根拠は消える）
+- carrier の不変条件に錠が付く（そのとき 2 の根拠は弱まる）
+- content 文書の revision 数が問題になる規模が出る（そのとき 3 が効く）
+
+---
+
+## 5.1 案 B の代償（測って書く）
 
 - **書き込みが 1 回増える**（content の前に intent 行）。
 - **content が来なかった intent が残る。** 「書かなかった」のか「書いたが記録できなかった」
@@ -167,9 +178,9 @@ E1 の statement が主張するのは**内容状態**であって書き込み�
 view の遅延、性能。したがってここで言えるのは**2 つの設計の形**についてであって、
 製品の実測ではない。
 
-**C6 は計画の条件ではない。** この製品の content 文書が多くの書き手を持つという事実から
-足したもので、その事実は Phase 0 の棚卸し（content 書き込み 12 経路）で数えている。
-書き手が 1 か所しかない製品なら C6 は効かず、決定も変わりうる。
+**C6 は計画の条件ではなく、決め手でもなくなった**（§4）。spike に残してあるのは、
+**carrier に載っていない marker が無関係な書き込みで落ちる**ことの実測としてであり、
+それは「この製品が carrier を作った理由」そのものである。決定の根拠として読まないこと。
 
 書き込み順序だけは製品から読み出した（作る系は attachment → 文書、その場系は同じ行を
 書き換えてから文書）。
