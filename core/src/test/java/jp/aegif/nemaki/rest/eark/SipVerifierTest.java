@@ -118,6 +118,7 @@ class SipVerifierTest {
         SipVerifier.Result result = SipVerifier.verify(sip);
 
         assertTrue(result.allPassed(), result.asMap().toString());
+        assertEquals(SipVerifier.Verdict.VERIFIED, result.verdict(), result.asMap().toString());
         assertEquals(SipVerifier.Outcome.PASSED, outcomeOf(result, "payload digest"),
                 result.asMap().toString());
         assertEquals(SipVerifier.Outcome.PASSED, outcomeOf(result, "audit path"),
@@ -184,6 +185,99 @@ class SipVerifierTest {
     }
 
     @Test
+    @DisplayName("bytes that hash, with no proof they were ever recorded, is INDETERMINATE")
+    void aDigestWithoutAnAuditPathIsIndeterminate(@TempDir Path tmp) throws Exception {
+        // Half the sentence. The digest says the packaged bytes are the bytes PREMIS was written
+        // over — by the same hand, at the same moment, inside the same package. It says nothing
+        // about whether a chain outside this zip ever held them. Reporting that as verified is
+        // this verifier committing the error it exists to catch, one level up: an absent check
+        // read as assurance.
+        String payload = "the minutes";
+        Path sip = zip(tmp, "digestonly.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8)))));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.PASSED, outcomeOf(result, "payload digest"),
+                result.asMap().toString());
+        assertEquals(SipVerifier.Outcome.NOT_PRESENT, outcomeOf(result, "audit path"),
+                result.asMap().toString());
+        assertEquals(SipVerifier.Verdict.INDETERMINATE, result.verdict(),
+                "a package carrying no inclusion proof was verified on its payload digest "
+                        + "alone: " + result.asMap());
+        assertFalse(result.allPassed(), result.asMap().toString());
+    }
+
+    @Test
+    @DisplayName("a proof with no digest of the bytes it covers is INDETERMINATE")
+    void anAuditPathWithoutADigestIsIndeterminate(@TempDir Path tmp) throws Exception {
+        // The other half, and the one easier to miss. The path proves an ENTRY was in the span a
+        // checkpoint sealed. Nothing in it reaches the bytes lying next to it in the package, so
+        // the payload here could be any file at all.
+        Map<String, String> proof = realProofFor(3);
+        Path sip = zip(tmp, "proofonly.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", "any bytes at all",
+                "sip/metadata/other/nemaki-evidence.json", proof.get("json")));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.PASSED, outcomeOf(result, "audit path"),
+                result.asMap().toString());
+        assertEquals(SipVerifier.Outcome.NOT_PRESENT, outcomeOf(result, "payload digest"),
+                result.asMap().toString());
+        assertEquals(SipVerifier.Verdict.INDETERMINATE, result.verdict(),
+                "a package whose bytes were never checked was verified on its inclusion proof "
+                        + "alone: " + result.asMap());
+        assertFalse(result.allPassed(), result.asMap().toString());
+    }
+
+    @Test
+    @DisplayName("a finding is not diluted into INDETERMINATE by an absent check")
+    void aFindingOutranksAnAbsence(@TempDir Path tmp) throws Exception {
+        // The tri-state runs both ways. Having taught the verdict that "we could not tell" is
+        // not success, the next error is letting it swallow "we found this wrong": a package
+        // whose bytes DISAGREE with their digest must read as FAILED even though the other
+        // required check never ran. FAILED and INDETERMINATE are acted on differently — one is
+        // a reason to go looking, the other a reason to go collecting.
+        Path sip = zip(tmp, "failedandabsent.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", "the minutes, edited",
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(
+                        "the minutes".getBytes(StandardCharsets.UTF_8)))));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.FAILED, outcomeOf(result, "payload digest"));
+        assertEquals(SipVerifier.Outcome.NOT_PRESENT, outcomeOf(result, "audit path"));
+        assertEquals(SipVerifier.Verdict.FAILED, result.verdict(),
+                "a package whose bytes do not match their digest was reported as merely "
+                        + "inconclusive: " + result.asMap());
+    }
+
+    @Test
+    @DisplayName("the reported verdict is the one a reader gets from the body")
+    void theBodyCarriesTheVerdict(@TempDir Path tmp) throws Exception {
+        // `verified` is a boolean and cannot carry three values, so a caller reading only that
+        // key sees INDETERMINATE and FAILED as the same answer. The body has to state the
+        // verdict itself, and state the same one the object does.
+        String payload = "the minutes";
+        Path sip = zip(tmp, "body.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8)))));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+        Map<String, Object> body = result.asMap();
+
+        assertEquals(result.verdict().name(), body.get("verdict"),
+                "the body reports a different verdict than the result: " + body);
+        assertEquals(SipVerifier.Verdict.INDETERMINATE.name(), body.get("verdict"), body.toString());
+        assertEquals(Boolean.FALSE, body.get("verified"), body.toString());
+    }
+
+    @Test
     @DisplayName("an unreadable package is UNAVAILABLE, not failed and not verified")
     void anUnreadablePackageSaysSo(@TempDir Path tmp) throws Exception {
         Path notAZip = Files.writeString(tmp.resolve("broken.zip"), "this is not a zip");
@@ -244,8 +338,8 @@ class SipVerifierTest {
     }
 
     @Test
-    @DisplayName("a package this product actually built passes its own verifier")
-    void aRealExportedPackageVerifies(@TempDir Path tmp) throws Exception {
+    @DisplayName("a package this product actually built is read by its own verifier")
+    void aRealExportedPackageIsRead(@TempDir Path tmp) throws Exception {
         // The round trip, and the only test here that proves the two halves agree. Every other
         // fixture is hand-built, so all of them could pass while the real exporter wrote
         // something the verifier cannot read — a verifier that only verifies its own fixtures.
@@ -299,6 +393,12 @@ class SipVerifierTest {
         // No ledger was wired, so there IS no inclusion proof, and saying so is the right
         // answer — not a failure, and not a pass either.
         assertEquals(SipVerifier.Outcome.NOT_PRESENT, outcomeOf(result, "audit path"),
+                result.asMap().toString());
+        // And therefore the package this exporter produces here is INDETERMINATE, not verified.
+        // Worth pinning at the round trip rather than only on hand-built fixtures: this is the
+        // shape a real deployment without a ledger ships, and under the old rule it came back
+        // `verified: true`.
+        assertEquals(SipVerifier.Verdict.INDETERMINATE, result.verdict(),
                 result.asMap().toString());
     }
 

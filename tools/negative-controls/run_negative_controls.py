@@ -8708,6 +8708,57 @@ CONTROLS = [
                      'aConnectorListIsNotConfusableWithOneLongerId',
                      'anUnsetFieldIsNotTheStringNull'],
     ),
+    # ── SIP 検証器の verdict が 3 値であること (計画 §4.3 / §15) ──
+    dict(
+        id="CR3",
+        what="the SIP verifier goes back to 'at least one check passed and none failed', so a "
+             "package with a matching digest and NO inclusion proof is reported as verified",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='            for (String required : REQUIRED_CHECKS) {\n'
+             '                boolean passed = checks.stream()\n'
+             '                        .anyMatch(c -> required.equals(c.name()) && c.outcome() == Outcome.PASSED);\n'
+             '                if (!passed) {\n'
+             '                    return Verdict.INDETERMINATE;\n'
+             '                }\n'
+             '            }\n'
+             '            return Verdict.VERIFIED;',
+        replace='            for (Check check : checks) {\n'
+                '                if (check.outcome() == Outcome.PASSED) {\n'
+                '                    return Verdict.VERIFIED;\n'
+                '                }\n'
+                '            }\n'
+                '            return Verdict.INDETERMINATE;',
+        test='SipVerifierTest',
+        # Four, and the fourth is the one that matters most: the ROUND TRIP. Under the old rule
+        # the package this product's own exporter builds without a ledger came back verified.
+        expect_fail=['aDigestWithoutAnAuditPathIsIndeterminate',
+                     'anAuditPathWithoutADigestIsIndeterminate',
+                     'theBodyCarriesTheVerdict',
+                     'aRealExportedPackageIsRead'],
+    ),
+    dict(
+        id="CS3",
+        what="a FAILED check stops outranking an absent one, so a package whose bytes do not "
+             "match their digest is reported as merely inconclusive",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='                if (check.outcome() == Outcome.FAILED) {\n'
+             '                    return Verdict.FAILED;',
+        replace='                if (check.outcome() == null) {\n'
+                '                    return Verdict.FAILED;',
+        test='SipVerifierTest',
+        expect_fail=['aFindingOutranksAnAbsence'],
+    ),
+    dict(
+        id="CT3",
+        what="the serialised body drops the verdict, leaving a reader with a boolean that reads "
+             "INDETERMINATE and FAILED as the same answer",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='            body.put("verified", allPassed());\n'
+             '            body.put("verdict", verdict().name());',
+        replace='            body.put("verified", allPassed());',
+        test='SipVerifierTest',
+        expect_fail=['theBodyCarriesTheVerdict'],
+    ),
 ]
 
 
