@@ -709,6 +709,30 @@ class SipVerifierTest {
     }
 
     @Test
+    @DisplayName("the 'part of it is unreadable' note is on every answer, not one of four")
+    void theUnreadablePartIsNotedOnEveryArm(@TempDir Path tmp) throws Exception {
+        // The note hung off the unknown-status arm alone, so a package whose status IS known
+        // (`unavailable`, `not-chained`, `success`) dropped the fact that a message was there
+        // and could not be read — the same loss as 10 巡目, on the other side (both reviews).
+        String payload = "the minutes";
+        for (String status : List.of("unavailable", "not-chained", "success")) {
+            String evidence = "{ \"inclusionProof\" : null, \"status\" : \"" + status
+                    + "\", \"message\" : { \"en\" : \"why\" } }";
+            Path sip = zip(tmp, "note-" + status + ".zip", Map.of(
+                    "sip/representations/rep1/data/minutes.txt", payload,
+                    "sip/metadata/preservation/premis.xml",
+                    premisWithDigest(
+                            SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                    "sip/metadata/other/nemaki-evidence.json", evidence));
+
+            String detail = detailOf(SipVerifier.verify(sip), "audit path");
+
+            assertTrue(detail.contains("Part of what the package says is not a readable string"),
+                    "status " + status + ": the unreadable message was dropped: " + detail);
+        }
+    }
+
+    @Test
     @DisplayName("an EMPTY proof object is not 'there is no proof to read'")
     void anEmptyProofObjectIsNotAnAbsentOne(@TempDir Path tmp) throws Exception {
         // `proof.isEmpty()` stood in for "there is no proof object", so a package carrying an
@@ -716,6 +740,15 @@ class SipVerifierTest {
         // proof to read", which is false, and the diagnosis of its fields disappeared
         // (both reviewers, 2026-09-20).
         String payload = "the minutes";
+        // An EMPTY one first — the case the canon's "空でも" names and the one a revert to
+        // `proof == null || proof.isEmpty()` would break. The earlier version of this test used
+        // a three-key proof and therefore never measured it (both reviews, 2026-09-20).
+        String empty = "{ \"status\" : \"success\", \"inclusionProof\" : { } }";
+        Path emptyProof = zip(tmp, "emptyproof.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", empty));
         String evidence = "{ \"inclusionProof\" : { \"provesSequence\" : 7, "
                 + "\"status\" : \"success\", \"merkleRoot\" : 42 } }";
         Path sip = zip(tmp, "successbutunreadable.zip", Map.of(
@@ -723,6 +756,13 @@ class SipVerifierTest {
                 "sip/metadata/preservation/premis.xml",
                 premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
                 "sip/metadata/other/nemaki-evidence.json", evidence));
+
+        String emptyDetail = detailOf(SipVerifier.verify(emptyProof), "audit path");
+        assertFalse(emptyDetail.contains("carries no proof to read"),
+                "a package carrying an EMPTY proof object was told it carries none: "
+                        + emptyDetail);
+        assertTrue(emptyDetail.contains("is not written"),
+                "the empty proof's own fields were not described: " + emptyDetail);
 
         SipVerifier.Result result = SipVerifier.verify(sip);
         String detail = detailOf(result, "audit path");

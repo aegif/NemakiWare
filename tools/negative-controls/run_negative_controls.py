@@ -8871,7 +8871,8 @@ CONTROLS = [
                      'aRealExportedPackageWithALedgerVerifies', 'aReformattedProofStillVerifies',
                      'aSilentPackageIsNotPresent', 'anAuditPathWithoutADigestIsIndeterminate',
                      'anEmptyProofObjectIsNotAnAbsentOne',
-                     'looseKeysDoNotShadowTheProof', 'theReasonRuleIsOneRule'],
+                     'looseKeysDoNotShadowTheProof', 'theReasonRuleIsOneRule',
+                     'theUnreadablePartIsNotedOnEveryArm'],
     ),
     dict(
         id="DD3",
@@ -8885,7 +8886,8 @@ CONTROLS = [
                      'aHalfWrittenProofDescribesBothFields',
                      'anUnreadableReasonSaysItIsUnreadable',
                      'aPartlyReadableReasonKeepsWhatItRead',
-                     'anEmptyProofObjectIsNotAnAbsentOne'],
+                     'anEmptyProofObjectIsNotAnAbsentOne',
+                     'theUnreadablePartIsNotedOnEveryArm'],
     ),
     dict(
         id="DE3",
@@ -8993,12 +8995,14 @@ CONTROLS = [
                      'theReasonRuleIsOneRule', 'aSuccessWithNoProofIsNotSilence',
                      'anUnreadableReasonSaysItIsUnreadable',
                      'aPartlyReadableReasonKeepsWhatItRead',
-                     'aProofWithOnlyAMessageTakesTheReasonWithIt'],
+                     'aProofWithOnlyAMessageTakesTheReasonWithIt',
+                     'theUnreadablePartIsNotedOnEveryArm'],
     ),
     dict(
         id="DW3",
-        what="a package that says nothing at all is reported as one that gave a reason this "
-             "verifier does not recognise, so an absent proof becomes an unusable one",
+        what="a package that says nothing at all is reported as one whose reason could not be "
+             "read, so an absent proof becomes an unreadable one (the arm order changed in the "
+             "same batch that last rewrote this line — measured, not derived)",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
         find='        if (!source.containsKey("status") && !source.containsKey("message")) {\n'
              '            return null;\n'
@@ -9040,7 +9044,7 @@ CONTROLS = [
         find='            if (proof == null) {',
         replace='            if (false) {',
         test='SipVerifierTest',
-        expect_fail=['aSuccessWithNoProofIsNotSilence'],
+        expect_fail=['aSuccessWithNoProofIsNotSilence', 'theUnreadablePartIsNotedOnEveryArm'],
     ),
     dict(
         id="EA3",
@@ -9081,7 +9085,29 @@ CONTROLS = [
         find='        if (status == null && message == null) {',
         replace='        if (partlyUnreadable) {',
         test='SipVerifierTest',
-        expect_fail=['aPartlyReadableReasonKeepsWhatItRead'],
+        expect_fail=['aPartlyReadableReasonKeepsWhatItRead',
+                     'theUnreadablePartIsNotedOnEveryArm'],
+    ),
+    dict(
+        id="EE3",
+        what="the 'part of it is unreadable' note goes back to hanging off one arm, so a "
+             "package whose status IS known drops the fact that something was unreadable",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='        return new Check("audit path", outcome, partlyUnreadable',
+        replace='        return new Check("audit path", outcome, false',
+        test='SipVerifierTest',
+        expect_fail=['theUnreadablePartIsNotedOnEveryArm',
+                     'aPartlyReadableReasonKeepsWhatItRead'],
+    ),
+    dict(
+        id="EF3",
+        what="an EMPTY proof object is treated as an absent one again — the exact regression "
+             "the previous round's lock could not see",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='            if (proof == null) {',
+        replace='            if (proof == null || proof.isEmpty()) {',
+        test='SipVerifierTest',
+        expect_fail=['anEmptyProofObjectIsNotAnAbsentOne'],
     ),
     dict(
         id="DQ3",
@@ -9152,7 +9178,8 @@ CONTROLS = [
         test='SipVerifierTest',
         expect_fail=['thePackagesOwnReasonIsUsed', 'aRealExportedPackageIsRead',
                      'anUnreadableReasonIsStillAReason', 'anUnrecognisedReasonIsUnavailable',
-                     'aSuccessWithNoProofIsNotSilence', 'anUnreadableReasonSaysItIsUnreadable'],
+                     'aSuccessWithNoProofIsNotSilence', 'anUnreadableReasonSaysItIsUnreadable',
+                     'theUnreadablePartIsNotedOnEveryArm'],
     ),
     dict(
         id="DL3",
