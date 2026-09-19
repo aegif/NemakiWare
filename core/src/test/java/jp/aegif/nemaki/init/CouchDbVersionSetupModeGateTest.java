@@ -201,6 +201,42 @@ class CouchDbVersionSetupModeGateTest {
 	}
 
 	/**
+	 * The stored CouchDB URL is validated where it is USED, not only where it was written.
+	 *
+	 * <p>The system property is not a trust boundary: {@code SetupApplyResource} takes this URL
+	 * from a request body and stores it, and {@code changePassword} then sends Basic credentials
+	 * to whatever it names. CodeQL raised {@code java/user-controlled-bypass} on the read; the
+	 * first reading of that alert — "a system property is not remote input" — was wrong, and a
+	 * review traced the path that makes it remote.
+	 *
+	 * <p>What this measures is the refusal, not confinement of the whole flow: the window
+	 * between this check and the connection is still open (see the residual).
+	 */
+	@Test
+	void changePasswordRefusesAStoredUrlItWouldNotConnectTo() throws Exception {
+		jp.aegif.nemaki.api.setup.resource.SetupAdminResource resource =
+				new jp.aegif.nemaki.api.setup.resource.SetupAdminResource();
+
+		jp.aegif.nemaki.api.setup.model.AdminSetupRequest request =
+				new jp.aegif.nemaki.api.setup.model.AdminSetupRequest();
+		request.setNewPassword("longenoughpassword");
+
+		String previous = System.getProperty("db.couchdb.url");
+		System.setProperty("db.couchdb.url", "file:///etc/passwd");
+		Response response;
+		try {
+			response = resource.changePassword(request);
+		} finally {
+			restore("db.couchdb.url", previous);
+		}
+
+		assertEquals(400, response.getStatus(),
+				"credentials were about to be sent to a URL this node would not accept at /apply");
+		assertTrue(String.valueOf(response.getEntity()).contains("will connect to"),
+				"the refusal does not say what was wrong: " + response.getEntity());
+	}
+
+	/**
 	 * 3.3.1 #11: a PARTIAL admin-password update must not report a bare success. The stubbed
 	 * update succeeds for one repository and fails for the other; the response must carry the
 	 * per-DB outcome and a warning naming what was left on the old password.

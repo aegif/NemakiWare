@@ -8674,6 +8674,18 @@ CONTROLS = [
         test='CoercionLogsDoNotCarryTheValueTest',
         expect_fail=['theBlanketPropertyDumpsAreGone'],
     ),
+    dict(
+        id="CP3",
+        what="the stored CouchDB URL is used without being validated where it is used — the "
+             "system property is not a trust boundary, /apply writes it from a request body",
+        file='core/src/main/java/jp/aegif/nemaki/api/setup/resource/SetupAdminResource.java',
+        find='        String urlRefusal = jp.aegif.nemaki.api.setup.filter.UrlValidator.validate(couchUrl, true);\n'
+             '        if (urlRefusal != null) {',
+        replace='        String urlRefusal = null;\n'
+                '        if (urlRefusal != null) {',
+        test='CouchDbVersionSetupModeGateTest',
+        expect_fail=['changePasswordRefusesAStoredUrlItWouldNotConnectTo'],
+    ),
 ]
 
 
