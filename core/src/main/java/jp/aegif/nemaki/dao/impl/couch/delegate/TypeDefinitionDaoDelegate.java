@@ -492,9 +492,10 @@ public class TypeDefinitionDaoDelegate {
 			int unreadableRows = 0;
 
 			if (result != null && result.getRows() != null) {
-				tools.jackson.databind.ObjectMapper mapper = tools.jackson.databind.json.JsonMapper.builderWithJackson2Defaults()
-						.configure(tools.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-						.build();
+				// From the factory, not built here: a mapper defined inside a method is a
+				// definition that no search for "where are the mappers" finds (R52).
+				tools.jackson.databind.ObjectMapper mapper =
+						jp.aegif.nemaki.config.ObjectMapperFactory.createLenientReadObjectMapper();
 				for (ViewResultRow row : result.getRows()) {
 					if (row.getDoc() == null) {
 						unreadableRows++;

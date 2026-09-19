@@ -45,10 +45,6 @@ import org.springframework.stereotype.Component;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.DeserializationFeature;
-import tools.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.annotation.PropertyAccessor;
-import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
 
 import jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap;
 import jp.aegif.nemaki.dao.ContentDaoService;
@@ -195,24 +191,16 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	/**
-	 * Creates a properly configured ObjectMapper for Cloudant/CouchDB serialization
-	 * This ensures all fields from the object hierarchy are properly serialized
+	 * The DAO-delegate mapper, from the one place it is defined.
+	 *
+	 * <p>This WAS a private copy of {@code DaoHelper}'s, identical except that it missed the
+	 * stored-timestamps module — so the R51 fix reached the delegates and not this class. No
+	 * harm was ever observed because the {@code Couch*} models this decodes parse their own
+	 * dates ({@code CouchNodeBase.setCreated(Object)} takes a {@code Number}), but "the next
+	 * fix will not reach here either" is the defect R52 names.
 	 */
 	private ObjectMapper createConfiguredObjectMapper() {
-		// Configure Jackson to ignore unknown properties during Cloudant migration
-		// CRITICAL FIX: PropertyDefinitionCore contamination prevention
-		// CHANGED: Use SETTER access instead of FIELD access to enforce validation
-		// This ensures @JsonCreator constructors and setter methods are called
-		// preventing contamination during deserialization
-		return JsonMapper.builderWithJackson2Defaults()
-				.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-				.changeDefaultVisibility(vc -> vc
-						.withVisibility(PropertyAccessor.ALL, Visibility.NONE)
-						.withVisibility(PropertyAccessor.SETTER, Visibility.ANY)
-						.withVisibility(PropertyAccessor.CREATOR, Visibility.ANY)
-						.withVisibility(PropertyAccessor.GETTER, Visibility.ANY)
-						.withVisibility(PropertyAccessor.IS_GETTER, Visibility.ANY))
-				.build();
+		return jp.aegif.nemaki.config.ObjectMapperFactory.createDaoDelegateObjectMapper();
 	}
 
 	// ///////////////////////////////////////
