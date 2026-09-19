@@ -57,8 +57,9 @@
 - **repository の `latest`** — 提示時点の最新は、当時の最新ではない
 - **operator の accreditation 文字列**
 - **未アンカー区間** — checkpoint の連鎖は外部固定まで届いて初めて A1 に耐える
-- **`nemaki:contentHash` 単独** — これは**外部取込元が申告した値**であって、
-  サーバが保存 bytes について計算した値ではない
+- **`nemaki:contentHash` 単独** — これはサーバが計算した値だが、**取込が取得した bytes**
+  についての digest（`DigestSubject.INPUT`）であって、**保存された bytes** の digest では
+  ない。保存 bytes の読み直しは `FixityVerifier` の `SUBJECT_STORED_REVERIFIED` が別に持つ
   ([`evidence-phase0-inventory.md`](../design/evidence-phase0-inventory.md) §1)
 
 ### 証明しない (どの profile でも)
@@ -75,7 +76,7 @@ rollback は検出するが、それは「最新である」証明ではない)�
 
 | # | 脅威 | 今のコード | 閉じるのは |
 |---|---|---|---|
-| T1 | A1 が anchor の後に文書 bytes を差し替える | **検出できない。** 台帳 entry の `payloadDigest` は取込事実と適用済みメタデータの hash で、**文書 bytes の digest を含まない** (`EvidenceLedgerRecorder.recordCaptureCompleted` → `captureDigest`:231)。さらに主経路はそもそも bytes を hash していない | **E1** (Phase 3) |
+| T1 | A1 が anchor の後に文書 bytes を差し替える | **台帳では検出できない。** 台帳 entry の `payloadDigest` は取込事実と適用済みメタデータの hash で、**文書 bytes の digest を含まない** (`EvidenceLedgerRecorder.recordCaptureCompleted` → `captureDigest`:231)。fixity scan は保存 bytes を読み直して `nemaki:contentHash` と突き合わせるが、**それは取込した文書だけ**で、CMIS 経由で書かれた content には比較対象が無い | **E1** (Phase 3) |
 | T2 | A2 が SIP の payload を差し替える | `SipVerifier` の payload digest 検査が PREMIS の記録値と突き合わせる (`SipVerifier.payloadDigestCheck`) | 済 (ただし T7 / T8 の穴あり) |
 | T3 | A2 が payload と PREMIS の digest を**同時に**差し替える | **検出できない** — 両方とも package の中にあり、外の材料と結び付いていない。inclusion proof がある package なら、proof の対象 entry と結び付けることで検出できるはずだが、**今は payload digest と audit path を別々に見ているだけで、両者が同じ entry を指すことを見ていない** (計画 §3) | **Phase 4 / 5** (binding) |
 | T4 | A3 が古い正当 checkpoint を提示する | **検出できない。** package 外の expected checkpoint を受け取る口が無い | **Phase 5** (P2 の rollback 検出) |

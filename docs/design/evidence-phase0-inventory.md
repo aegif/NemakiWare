@@ -15,38 +15,50 @@
 
 ## 1. content bytes を書く経路
 
-最下層は 2 つだけで、どちらも `ContentServiceImpl` の private メソッドである。
+> **初版の表は誤っていた。** 「最下層は `createAttachmentAtomic` と `copyAttachmentAtomic`
+> の 2 つだけ」と書いたが、**`checkIn` / `updateWithoutCheckInOut` は atomic 版を通さず
+> `createAttachment` を直接呼び、その場書き換えの経路は 3 つ目の最下層
+> （`contentDaoService.updateAttachment`）を使う**。確認レビューが指摘し、数え直したら
+> **表に無い経路が 1 本出た**（W9 `replacePwc`）。E1 をこの表どおりに実装していたら
+> W4 / W5 / W9 は計測を迂回していた。以下は数え直した後の表である。
 
-- `createAttachmentAtomic(...)` — 新しい bytes を書く
-- `copyAttachmentAtomic(...)` — 既存の attachment を複製する
+最下層は **3 つ**あり、`ContentServiceImpl` の wrapper（`…Atomic`）は**常に通るわけではない**。
 
-grep で呼び出し元を数え、囲みメソッドと、その CMIS / REST 入口まで辿った。
+- `createAttachment(...)` — 新しい行に bytes を書く（wrapper: `createAttachmentAtomic`）
+- `copyAttachment(...)` — 既存の attachment を新しい行に複製する
+  （wrapper: `copyAttachmentAtomic` / 拒否付き: `copyAttachmentOrRefuse`）
+- `contentDaoService.updateAttachment(...)` — **同じ行の bytes をその場で書き換える**（wrapper 無し）
 
-| # | bytes を書くサービス API | 最下層 | 入口 | 版の扱い |
+各呼び出しの囲みメソッドは行番号から機械的に引いた（目視の帰属はしていない）。
+
+| # | bytes を書くサービス API | 最下層（行） | 入口 | 版の扱い |
 |---|---|---|---|---|
-| W1 | `createDocument` | `createAttachmentAtomic` | `ObjectServiceImpl.createDocument`、`Patch_InitialContentSetup`（2 か所） | 新規 |
-| W2 | `createDocumentWithNewStream` | `createAttachmentAtomic` | `ObjectServiceImpl.setContentStream` | 新しい版を作る側 |
-| W3 | `updateDocumentWithNewStream` | `createAttachmentAtomic` | `ObjectServiceImpl.setContentStream` | 既存の版を書き換える側 |
-| W4 | `checkIn` | `createAttachmentAtomic` | `VersioningServiceImpl.checkIn` | PWC を版にする |
-| W5 | `updateWithoutCheckInOut` | `createAttachmentAtomic` | `BulkCheckInResource`（REST） | checkOut を経ない更新 |
-| W6 | `createDocumentFromSource` | `copyAttachmentAtomic` | `ObjectServiceImpl.createDocumentFromSource` | 複製 |
-| W7 | `appendAttachment` | （別経路） | `ObjectServiceImpl.appendContentStream` | 追記 |
-| W8 | `checkOut`（PWC 作成） | `copyAttachmentAtomic` | `VersioningServiceImpl.checkOut` | PWC へ複製 |
+| W1 | `createDocument` | `createAttachmentAtomic`（:1186） | `ObjectServiceImpl.createDocument`、`Patch_InitialContentSetup`（2 か所） | 新規 |
+| W2 | `createDocumentWithNewStream` | `createAttachmentAtomic`（:1414） | `ObjectServiceImpl.setContentStream` | 新しい版を作る側 |
+| W3 | `updateDocumentWithNewStream` | **`updateAttachment`（:1591、その場）** / 内容が無かった文書には `createAttachmentAtomic`（:1594） | `ObjectServiceImpl.setContentStream` | 既存の版を書き換える側 |
+| W4 | `checkIn` | stream 無し → `copyAttachmentOrRefuse`（:1844） / stream 有り → **`createAttachment`（:1847、atomic ではない）** | `VersioningServiceImpl.checkIn` | PWC を版にする |
+| W5 | `updateWithoutCheckInOut` | **`createAttachment`（:1925、atomic ではない）** | `BulkCheckInResource`（REST） | checkOut を経ない更新 |
+| W6 | `createDocumentFromSource` | `copyAttachmentAtomic`（:1316） | `ObjectServiceImpl.createDocumentFromSource` | 複製 |
+| W7 | `appendAttachment` | **`updateAttachment`（:4566、その場）** | `ObjectServiceImpl.appendContentStream` | 追記 |
+| W8 | `checkOut`（PWC 作成） | `copyAttachmentOrRefuse`（:1665） | `VersioningServiceImpl.checkOut` | PWC へ複製 |
+| **W9** | **`replacePwc`** | **`updateAttachment`（:1488、その場）** | `ObjectServiceImpl.setContentStream`（対象が PWC のとき、:799） | PWC の内容差し替え |
 
 **外部取込は独自の書き込み経路を持たない。** `CanonicalImportServiceImpl` は
 `versioningService.checkIn`（2 か所）と `objectService.createDocument`（1 か所）を呼ぶので、
 W1 と W4 に合流する。取込のために E1 を別に作る必要はない。
 
+**その場書き換えは W3 / W7 / W9 の 3 本**である（E1 の設計でここが効く — ADR §4）。
+
 ### 読んで決めた（2026-09-19 追記）
 
 **W7 の追記は「新しい attachment」ではない。** `appendAttachment`
-（`ContentServiceImpl:4508`）は `contentDaoService.updateAttachment` で**同じ attachment 行を
+（`ContentServiceImpl:4546`）は `contentDaoService.updateAttachment` で**同じ attachment 行を
 その場で書き換える**。新しい行も新しい版も作らない。bytes は
 `SequenceInputStream(既存, 追記分)` で、**意図的に一度もメモリに載せない**（巨大ファイル用）。
 したがって digest を取るなら書き込みの流れに `DigestInputStream` を挟むしかない
 （1 パスで済むが、値が分かるのは書き終えた後）。
 
-`isLastChunk` は**引数にあるだけで本体で使われていない**（:4509 の宣言以外に出現 0）。
+`isLastChunk` は**引数にあるだけで本体で使われていない**（:4547 の宣言以外に出現 0）。
 **製品は中間チャンクと最終状態を区別できない。**
 
 → **決定**: W7 は E1 の対象にする。statement は **1 回の追記呼び出しごと**に 1 本
@@ -61,10 +73,10 @@ W1 と W4 に合流する。取込のために E1 を別に作る必要はない
 → **決定**: W6 / W8 も対象。statement は**複製自身の digest**を持ち、元の台帳 entry を
 引き継がない。元の attachment と文書を「由来」として名指すだけにする。
 （`createDocumentFromSource` が evidence aspect を剥がすのと同じ向き —
-`stripEvidenceForNewObject`、`ContentServiceImpl:1311`。）
+`stripEvidenceForNewObject`、`ContentServiceImpl:1312`。）
 
 **`deleteContentStream` は bytes を消す。** attachment 行を削除し、参照を null にする
-（`ContentServiceImpl:3555-3562`）。版を作らないので、非 versionable では戻せない。
+（`ContentServiceImpl:3593-3600`）。版を作らないので、非 versionable では戻せない。
 
 → **決定**: 対象にする。内容状態の遷移として「この時点で内容が無くなった」を書く。
 書かないと、台帳の最後の statement が**もう存在しない bytes** を指したままになり、
@@ -81,23 +93,31 @@ W1 と W4 に合流する。取込のために E1 を別に作る必要はない
 `copyAttachmentOrRefuse` を 1 か所に置いて 3 呼び出し側を通した。詳細と錠は
 [`fail-closed-reads.md`](fail-closed-reads.md) の **R54**。
 
-### E1 にとって決定的な事実 — **現状どこも bytes を hash していない**
+### E1 にとって決定的な事実 — **CMIS 書き込み主経路に digest が無い**
 
-主経路（`createAttachment` → `AttachmentServiceDelegate` → CouchDB）に digest の計算は
-**無い**。SHA-256 を取っているのは rendition / 複製記録の側（`createRendition`、
-`FormatDuplicationRecorder`）だけで、`nemaki:contentHash` は**外部取込元が申告した値**であり
-サーバが保存 bytes について計算した値ではない。
+> **初版はここを「現状どこも bytes を hash していない」と書いていた。誤りで、確認レビュー
+> 2 名が別々に反例を出した。** 訂正して残す（取り下げの記録も記録である）。
 
-したがって E1 は「既にある digest を台帳へ結ぶ」のではなく、**hash そのものを新設する**。
-案は 2 つあり、Phase 0 の ADR で fault injection で選ぶ:
+真なのは狭い方だけである: **CMIS の書き込み主経路**
+（`createAttachment` → `AttachmentServiceDelegate` → `AttachmentDaoDelegate` → CouchDB）に
+digest の計算は無い。ここは読んで確かめた。
 
-- **書きながら取る**（`DigestInputStream` で 1 パス）— 追加の読みは無いが、
-  測っているのは「送った bytes」であって「保存された bytes」ではない
-- **書いた後に読み直して取る**（2 パス）— 保存された bytes そのものを測るが、
-  大きな添付で全再読のコストがかかる
+**既にある hash は 2 つある。**
 
-この選択は計画 §8 の案 A / 案 B（outbox marker / durable commitment intent）と**別の軸**で、
-両方を決める必要がある。
+| 何を hash するか | どこ | 語彙 |
+|---|---|---|
+| 取込が**取得した** bytes | `CanonicalImportServiceImpl.computeContentHash`（:2468、呼び出し :3568）→ `nemaki:contentHash` | `DigestSubject.INPUT` |
+| **保存された** bytes を読み直して | `FixityScanService` → `FixityVerifier.verify(content, attachment.getInputStream())` | `SUBJECT_STORED_REVERIFIED`（`FixityVerifier:65`） |
+
+したがって `nemaki:contentHash` は「外部取込元が申告した値」ではない — **サーバが取得した
+bytes について自分で計算した値**である（`FixityVerifier` の javadoc がそう書いている）。
+弱いのは別の点で、**取得した bytes であって保存された bytes ではない**。
+
+E1 が新設するのは「**CMIS 経由で書かれた content についての digest**」であり、
+取込経由のものについては既存の値と語彙（INPUT / STORED）に合流させる。
+どこで取るか（書きながら 1 パス / 書いた後に読み直す）は ADR
+[`e1-content-state-commitment-adr.md`](e1-content-state-commitment-adr.md) §6 で未決のまま。
+**読み直す側は `FixityVerifier` として既に出荷されている**ので、新設ではなく配線になる。
 
 ---
 
@@ -198,13 +218,15 @@ Phase 6 の「ERS persistence」はここを指す。
 
 ## 5. この文書で決めたこと
 
-- E1 の対象は **W1〜W8 と `deleteContentStream`**。2026-09-19 に実装を読んで
-  W6 / W7 / W8 / 消去の扱いを決めた（§1）。**列挙できたのはここまで**であり、
-  ここに書いていない経路について「記録した」とは後段のどこにも書かない。
+- E1 の対象は **W1〜W9 と `deleteContentStream`**。2026-09-19 に実装を読んで
+  W6 / W7 / W8 / 消去の扱いを決め、確認レビューを受けて数え直したときに W9 を足した（§1）。
+  **列挙できたのはここまで**であり、ここに書いていない経路について
+  「記録した」とは後段のどこにも書かない。**1 度数え違えている**という事実も含めて読むこと。
 - W7（追記）は 1 呼び出しごとに 1 statement。**どれが最終かは書かない** —
   製品が `isLastChunk` を使っていないので知らない。limits に明記する。
 - W6 / W8（複製）は**自分の digest**を持ち、元の entry を引き継がない。
 - `deleteContentStream` は「内容が無くなった」遷移として書く。
-- **hash は新設する。** 主経路は現在 bytes を hash していない（§1 末尾）。
-  「書きながら 1 パス」か「書いた後に読み直す」かは ADR で fault injection で決める。
+- **hash は CMIS 主経路にだけ新設する。** 取込は既に取得 bytes を hash しており
+  （`DigestSubject.INPUT`）、保存 bytes の読み直し hash も `FixityVerifier` として
+  出荷済みである（§1 末尾）。「書きながら 1 パス」か「読み直す」かは ADR で未決。
 - A-1 の寄せ先は `ObjectMapperFactory`。

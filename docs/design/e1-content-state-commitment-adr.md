@@ -59,9 +59,10 @@ statement の記録は必ず 2 段になり、**その間の窓をどう扱う�
 
 ## 4. 決め手 — その場で書き換える経路
 
-`setContentStream`（非 versionable、`ContentServiceImpl:1588-1591`）と
-`appendContentStream`（同 :4528）は**同じ attachment 行を書き換える**。新しい行も新しい版も
-作らない（[`evidence-phase0-inventory.md`](evidence-phase0-inventory.md) §1）。
+その場で書き換える経路は **3 本**ある（inventory §1 の W3 / W7 / W9）:
+`setContentStream`（非 versionable、`ContentServiceImpl:1591`）、
+`appendContentStream`（同 :4566）、`replacePwc`（同 :1488、PWC への `setContentStream`）。
+いずれも**同じ attachment 行を書き換える**。新しい行も新しい版も作らない。
 
 marker は content 文書の上に載る。**文書の書き込みは文書を置き換える**ので、
 2 回目のその場書き換えは、1 回目の未処理 marker を消す。実測:
@@ -110,7 +111,12 @@ E1 の statement が主張するのは**内容状態**であって書き込み�
 
 - **digest をどこで取るか。** 「書きながら 1 パス（`DigestInputStream`）」か
   「書いた後に読み直す」か。inventory §1 の 2 つ目の軸で、**この ADR では決めない**。
-  主経路は現在 bytes を hash していないので、どちらにせよ新設である。
+  読み直す側は**既に出荷されている** — `FixityVerifier` が保存 bytes を読み直して
+  `SUBJECT_STORED_REVERIFIED` を返し、`FixityScanService` から配線済みである
+  （確認レビューの指摘で訂正。初版は「どちらにせよ新設」と書いていたが誤り）。
+  取込経路の `nemaki:contentHash` も**サーバが取得 bytes を hash した値**
+  （`DigestSubject.INPUT`）で、申告値ではない。E1 が足すのは
+  **CMIS 主経路のぶんと、その値を台帳へ結ぶ配線**である。
 - **`RECORD_CONTENT_STATE` の正準化 field**（Phase 2 で凍結する）。
 - **W7 の「どれが最終チャンクか」。** 製品が `isLastChunk` を使っていないので分からない。
   記録しないことを limits に書く（inventory §1）。

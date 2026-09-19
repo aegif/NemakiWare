@@ -326,11 +326,16 @@ CSIP 版を落とす)。**うち「非 ASCII を潰す」は 1 度目の細工�
 
 1. `FAILED` の検査が 1 つでもあれば `FAILED`
 2. **必須の検査 (`payload digest` と `audit path`) が両方 `PASSED`** なら `VERIFIED`
-3. それ以外 (必須のどれかが `NOT_PRESENT` / `UNAVAILABLE`) は `INDETERMINATE`
+3. それ以外は `INDETERMINATE` — 必須のどれかが `NOT_PRESENT` / `UNAVAILABLE` のとき、
+   および**必須の検査そのものが結果に無いとき**（package が読めず検査に入れなかった場合、
+   結果は `package readable` の 1 行だけになる）
 
 `verified` (boolean) は `VERIFIED` のときだけ true で、**`FAILED` でないこと**ではない。
-応答の body は `verdict` も返す — boolean は 3 値を運べないので、それだけを読む
+`Result.asMap()` は `verdict` も入れる — boolean は 3 値を運べないので、それだけを読む
 呼び手は「壊れている」と「確かめられなかった」を同じ答えとして受け取る。
+**なお `SipVerifier` に本番の呼び出し元は無い**（下の「公開ツールとして配布していない」の
+とおり）。この規則は、第三者が再実装するときの仕様であり、独立 verifier（3.4 の Phase 5）
+が実装するものである。
 
 > **元の規則は「1 つでも `PASSED` があり `FAILED` が無い」だった。**
 > そのため **digest が一致し inclusion proof が無いパッケージが `verified` になる**。
