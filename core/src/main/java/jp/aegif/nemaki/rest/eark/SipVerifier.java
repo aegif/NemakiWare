@@ -80,28 +80,70 @@ public final class SipVerifier {
         UNAVAILABLE
     }
 
+    /**
+     * What the whole set of checks amounts to. Three values, because two cannot carry it:
+     * "we found something wrong" and "we could not tell" are different answers and a reader
+     * acts differently on each.
+     */
+    public enum Verdict {
+        /** Every REQUIRED check ran and passed. */
+        VERIFIED,
+        /** A check ran and found the package inconsistent. */
+        FAILED,
+        /** Something required was absent, unreadable or unsupported. Not a finding either way. */
+        INDETERMINATE
+    }
+
+    /**
+     * The checks this verifier will not call a package verified without.
+     *
+     * <p>Both of the substantive checks are required: a payload whose digest matches says
+     * nothing about whether the audit path ties it to a checkpoint, and an audit path that
+     * resolves says nothing about whether the bytes are the ones it covers. Either alone is
+     * half a sentence.
+     */
+    private static final List<String> REQUIRED_CHECKS = List.of("payload digest", "audit path");
+
     /** Everything checked, plus what the set of it amounts to. */
     public record Result(List<Check> checks, String limits) {
 
-        /** True only when at least one check ran and none failed. */
-        public boolean allPassed() {
-            boolean any = false;
+        /**
+         * The verdict for the set.
+         *
+         * <p>It used to be "at least one check passed and none failed", which promoted a
+         * package whose audit path was NOT_PRESENT to success on the strength of its payload
+         * digest alone. That is the failure this whole verifier exists to prevent, one level
+         * up: absence read as assurance.
+         */
+        public Verdict verdict() {
             for (Check check : checks) {
                 if (check.outcome() == Outcome.FAILED) {
-                    return false;
-                }
-                if (check.outcome() == Outcome.PASSED) {
-                    any = true;
+                    return Verdict.FAILED;
                 }
             }
-            // An all-NOT_PRESENT package must not report success. "Nothing was wrong" and
-            // "nothing was checked" are the same sentence with opposite meanings.
-            return any;
+            for (String required : REQUIRED_CHECKS) {
+                boolean passed = checks.stream()
+                        .anyMatch(c -> required.equals(c.name()) && c.outcome() == Outcome.PASSED);
+                if (!passed) {
+                    return Verdict.INDETERMINATE;
+                }
+            }
+            return Verdict.VERIFIED;
+        }
+
+        /**
+         * Kept for the callers that read a boolean, and true for exactly one verdict.
+         *
+         * <p>Not "not FAILED": that is how INDETERMINATE becomes success.
+         */
+        public boolean allPassed() {
+            return verdict() == Verdict.VERIFIED;
         }
 
         public Map<String, Object> asMap() {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("verified", allPassed());
+            body.put("verdict", verdict().name());
             List<Map<String, Object>> rows = new ArrayList<>();
             for (Check check : checks) {
                 Map<String, Object> row = new LinkedHashMap<>();
