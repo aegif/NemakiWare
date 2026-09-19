@@ -491,7 +491,10 @@ public final class SipVerifier {
      */
     @SuppressWarnings("unchecked")
     static Map<String, Object> readJsonObject(String json) {
-        String text = json.startsWith("\uFEFF") ? json.substring(1) : json;
+        String text = json;
+        while (text.startsWith("\uFEFF")) {
+            text = text.substring(1);
+        }
         Object parsed = tools.jackson.databind.json.JsonMapper.builder()
                 .enable(tools.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION)
                 .build()
@@ -525,6 +528,11 @@ public final class SipVerifier {
      * verifier only had to read it.
      */
     private static Check noProofCheck(Map<String, Object> document, Object proofValue) {
+        // NOTE: this arm is for THIRD-PARTY packages. This product's exporter writes
+        // `inclusionProofFailed` only after putting a Map into `inclusionProof`, so its own
+        // packages reach the copy of this check inside auditPathCheck instead. Kept because the
+        // canon now states that a reason is written in both places, and a partial implementation
+        // of that is a package a reader will hand us (review, 2026-09-20).
         String couldNotBuild = asString(document.get("inclusionProofFailed"));
         if (couldNotBuild != null) {
             return new Check("audit path", Outcome.UNAVAILABLE,
@@ -550,10 +558,21 @@ public final class SipVerifier {
                                     + "only holds what was written to it, with no back-fill, so "
                                     + "this says nothing about whether the record is genuine.");
         }
+        if (status != null || message != null) {
+            // It says SOMETHING, and it is not one of the states this verifier knows. Calling
+            // that "no proof is present" would classify a sentence we did not understand — a
+            // third-party or older package saying "ledger temporarily unreachable" is not a
+            // package saying the record was never chained (review, 2026-09-20).
+            return new Check("audit path", Outcome.UNAVAILABLE,
+                    "the evidence package carries no inclusion proof and gives a reason this "
+                            + "verifier does not recognise"
+                            + (status == null ? "" : " (status " + status + ")")
+                            + (message == null ? "" : ": " + message)
+                            + ". Nothing about the entry's inclusion is established either way.");
+        }
         return new Check("audit path", Outcome.NOT_PRESENT,
-                "the evidence package carries no inclusion proof"
-                        + (message == null ? ", and does not say why" : ": " + message)
-                        + ". The chain only holds what was written to it, with no back-fill, so "
-                        + "this says nothing about whether the record is genuine.");
+                "the evidence package carries no inclusion proof, and does not say why. The "
+                        + "chain only holds what was written to it, with no back-fill, so this "
+                        + "says nothing about whether the record is genuine.");
     }
 }
