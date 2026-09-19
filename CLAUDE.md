@@ -171,6 +171,53 @@ reconcile re-drive は必ず epoch fence を通ります**。切替スイッチ�
 
 ---
 
+## 作業の進め方 (この木で踏んだこと)
+
+### すぐに全テストを通そうとしない
+
+**1 つの ID を直す → 錠を書く → 負のコントロールで revert→fail を測る → その ID だけ
+再実測**。ここまでを 1 バッチにして、全ゲート (全ユニット / TCK / Playwright / 通し
+negative-control) は**まとめて最後に 1 回**流します。理由は速さではなく、まとめて走らせると
+**失敗の帰属が取れなくなる**ことです。
+
+- **`mvn test` をクラス指定なしで叩かない。** Jetty が起動します。全ユニットは
+  `-Dtest='!MultiThreadTest,!InheritedFlagTest,!*IT,!jp.aegif.nemaki.cmis.tck.**,!AtlasManualDataLoader'`。
+- **負のコントロールの runner は引数ゼロで全数スイープに入ります** (704 本・約 7 時間)。
+  バッチ中は `run_negative_controls.py <ID> ...` で狙った本数だけ。
+- **錠は「自分の assertion で落ちる」ときだけ発火と認められます。** 例外が素通りする形は
+  `assertDoesNotThrow` で包む。結果だけを見る錠は、無関係な分岐が同じ結果を作ると
+  守りを外しても緑のままです (実例: 拒否の錠が fallback 側の拒否で満たされていた)。
+
+### Codex とサブエージェントのレビューを使う
+
+1 バッチごとに **Codex (`/codex:rescue`) と general-purpose subagent の 2 名**に確認レビューを
+回します。依頼文には範囲・凍結・判定基準を明示し、`REVIEW ONLY` として runner と maven と
+docker を禁じます (**subagent は書き込めます。「REVIEW ONLY」は錠ではないので、レビュー中は
+どの木でも runner を走らせないこと**)。
+
+効き目と限界の両方が実測で出ています。
+
+- 2 名が**独立に同じ穴**を指摘したことがあります (`(type, dlqId)` は全順序でない)。
+- 自分では見つけられなかった欠陥を拾います (javadoc の孤児化で既存の錠が赤になる、
+  委譲の戻り値が特定ロケールで「読めた値」を null にする、範囲検査の抜け)。
+- **鵜呑みにしない。** 「UI のゴミ箱も壊れている」という指摘は、実際に叩いたら
+  `totalItems` 352,293 を返して再現しませんでした。**指摘の前提は自分で確かめる。**
+
+### リリース成果物はこの作業コピーでビルドしない
+
+Cursor の JDT LS が `core/target` を共有するため、この木では
+
+- `testCompile` が `CompilerException: Concurrent...` や
+  「`RssToken.Builder` にアクセスできません」で落ちる (再実行で解消)
+- **`mvn clean package` が BUILD SUCCESS のまま UI 無しの WAR を作ることがある**
+  (`ui/assets` と `ui/index.html` が落ち、`/core/ui/` が 404。`war:war` を単独で
+  流し直すと正しく入る)
+
+ので、**タグを打つ WAR は `git worktree` を切ってそこでビルド**してください。成果物を
+信じる前に `unzip -l core.war | grep -c ui/assets` を見ること。
+
+---
+
 ## どこを読むか
 
 | 目的 | 参照先 |
