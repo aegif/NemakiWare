@@ -8608,6 +8608,49 @@ CONTROLS = [
         # 閉じ込め検査が例外で捕まえ、錠は自分の assertion では落ちない (実測)。
         expect_fail=['theBagFileNameCarriesNoSeparator'],
     ),
+    # ── CodeQL の user-controlled-bypass 15 件が指していた保護 (stamp は線から入らない) ──
+    dict(
+        id="CM3",
+        what="the authorisation stamps become bindable from the request body again — a caller "
+             "can hand the import the identity of a row the gate never looked at",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/ExternalIngestRequest.java',
+        # 1 プロパティにつき field / getter / setter の 3 か所に @JsonIgnore があり、Jackson は
+        # 1 つでも残れば論理プロパティ全体を無視する。1 行外す細工では錠が緑のままになるので、
+        # 2 つの stamp の一式をまとめて外す span にしてある (確認レビューの指摘)。
+        find_span=('    @JsonIgnore\n    private String authorizedProfileFingerprint;',
+                   '    @JsonIgnore\n    public void setAuthorizedProfileFingerprint(String authorizedProfileFingerprint) {\n'
+                   '        this.authorizedProfileFingerprint = authorizedProfileFingerprint;\n'
+                   '    }'),
+        replace='    private String authorizedProfileFingerprint;\n'
+                '\n'
+                '    private String authorizedTargetFolderId;\n'
+                '\n'
+                '    public ExternalIngestRequest() {\n'
+                '        this.requestId = UUID.randomUUID().toString();\n'
+                '    }\n'
+                '\n'
+                '    public String getAuthorizedTargetFolderId() { return authorizedTargetFolderId; }\n'
+                '\n'
+                '    public void setAuthorizedTargetFolderId(String authorizedTargetFolderId) {\n'
+                '        this.authorizedTargetFolderId = authorizedTargetFolderId;\n'
+                '    }\n'
+                '\n'
+                '    public void copyAuthorizationStampsTo(ExternalIngestRequest derived) {\n'
+                '        if (derived == null) return;\n'
+                '        derived.setAuthorizedProfileFingerprint(this.authorizedProfileFingerprint);\n'
+                '        derived.setAuthorizedTargetFolderId(this.authorizedTargetFolderId);\n'
+                '    }\n'
+                '\n'
+                '    public String getAuthorizedProfileFingerprint() { return authorizedProfileFingerprint; }\n'
+                '\n'
+                '    public void setAuthorizedProfileFingerprint(String authorizedProfileFingerprint) {\n'
+                '        this.authorizedProfileFingerprint = authorizedProfileFingerprint;\n'
+                '    }',
+        test='AuthorizationStampsAreNotAcceptedFromTheWireTest',
+        expect_fail=['theDefaultMapperDoesNotTakeTheStamps',
+                     'theNemakiMapperDoesNotTakeTheStamps',
+                     'theStampsDoNotTravelOutInJson'],
+    ),
 ]
 
 
