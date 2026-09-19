@@ -185,7 +185,8 @@ class IngestStoreAnswersAreNotAbsenceTest {
         when(cloudant.deleteDocument(any())).thenReturn(delete);
         IngestJobService jobs = serviceOn(cloudant);
 
-        int deleted = jobs.purgeDlqOlderThan(java.time.Instant.parse("2025-01-01T00:00:00Z"));
+        int deleted = jobs.purgeDlqOlderThan(java.time.Instant.parse("2025-01-01T00:00:00Z"))
+                .rowsPurged();
 
         assertEquals(0, deleted, "a row that changed since the walk was counted as purged");
     }
@@ -300,7 +301,8 @@ class IngestStoreAnswersAreNotAbsenceTest {
         when(cloudant.deleteDocument(any())).thenReturn(delete);
         IngestJobService jobs = serviceOn(cloudant);
 
-        assertEquals(1, jobs.purgeDlqOlderThan(java.time.Instant.parse("2025-01-01T00:00:00Z")),
+        assertEquals(1, jobs.purgeDlqOlderThan(java.time.Instant.parse("2025-01-01T00:00:00Z"))
+                        .rowsPurged(),
                 "a delete the store confirmed was not counted");
     }
     @Test

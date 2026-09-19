@@ -9147,6 +9147,38 @@ CONTROLS = [
         test='MapperDefinitionsAreInOnePlaceTest',
         expect_fail=['theProfilesAreNotMerged'],
     ),
+    # ── A-2 (R20): purge の走査上限を応答が述べる ──
+    dict(
+        id="EJ3",
+        what="the purge asks for exactly its limit again, so 'there may be more' has to be "
+             "guessed from 'we read the limit' — which the plan rules out",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='                    Map.of("type", IngestDeadLetterRecord.DOC_TYPE), PURGE_SCAN_LIMIT + 1, 0);',
+        replace='                    Map.of("type", IngestDeadLetterRecord.DOC_TYPE), PURGE_SCAN_LIMIT, 0);',
+        test='ThePurgeSaysWhatItDidNotSeeTest',
+        expect_fail=['aRowBeyondTheLimitIsReported'],
+    ),
+    dict(
+        id="EK3",
+        what="'there may be more' is inferred from reaching the limit, so a queue that ends "
+             "exactly at the limit is reported as truncated",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='            moreRowsMayExist = docs.size() > PURGE_SCAN_LIMIT;',
+        replace='            moreRowsMayExist = docs.size() >= PURGE_SCAN_LIMIT;',
+        test='ThePurgeSaysWhatItDidNotSeeTest',
+        expect_fail=['exactlyTheLimitIsNotTruncation'],
+    ),
+    dict(
+        id="EL3",
+        what="a row whose failedAt cannot be read is skipped in silence again, so 'nothing "
+             "older was found' covers rows the cutoff was never applied to",
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java',
+        find='                    unreadable++;\n'
+             '                    continue;',
+        replace='                    continue;',
+        test='ThePurgeSaysWhatItDidNotSeeTest',
+        expect_fail=['anUnreadableRowIsCounted'],
+    ),
     dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
