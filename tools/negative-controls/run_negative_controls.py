@@ -8813,22 +8813,23 @@ CONTROLS = [
     ),
     dict(
         id="CZ3",
-        what="an empty-but-present auditPath is treated as a missing one, so a checkpoint that "
-             "sealed a single entry can no longer be verified",
+        what="a path that is present but unusable (empty, unreadable, a decoy array) is reported "
+             "as ABSENT, collapsing 'nothing was written' into 'this cannot be told apart'",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
         find='        if (!path.present()) {',
         replace='        if (!path.present() || path.steps().isEmpty()) {',
         test='SipVerifierTest',
-        # The unreadable-step lock goes down with it: an unreadable path also has zero steps, so
-        # the sabotage answers NOT_PRESENT before the unreadable arm is reached.
-        expect_fail=['anEmptyAuditPathIsNotAMissingOne', 'anUnreadableStepIsNotAFailure'],
+        # Everything that ends with zero steps goes down with it: the sabotage answers
+        # NOT_PRESENT before the empty and unreadable arms are reached.
+        expect_fail=['anEmptyAuditPathEstablishesNothing', 'anUnreadableStepIsNotAFailure',
+                     'aStepWithNoSideIsUnavailable', 'anotherArrayIsNotTheAuditPath'],
     ),
     dict(
         id="DA3",
         what="a step this verifier cannot read is dropped silently again, shortening the path "
              "and reporting FAILED about a package it did not manage to read",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='                return AuditPath.unreadable("a step carries no siblingHash");',
+        find='                return AuditPath.unreadable("a step carries no readable siblingHash");',
         replace='                continue;',
         test='SipVerifierTest',
         expect_fail=['anUnreadableStepIsNotAFailure'],
@@ -8838,10 +8839,100 @@ CONTROLS = [
         what="an attachment row with no content body is copied again, producing a second empty "
              "row that the caller records as a successful copy",
         file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/delegate/AttachmentServiceDelegate.java',
-        find='\t\tif (original.getInputStream() == null) {',
+        find='\t\tif (!hasBody(original)) {',
         replace='\t\tif (false) {',
         test='CopyingContentRefusesAMissingRowTest',
         expect_fail=['checkOutRefusesARowWithNoBody'],
+    ),
+    # ── 2 巡目のレビューが出した P1 の処置 (2026-09-19) ──
+    dict(
+        id="DC3",
+        what="the auditPath array is taken from anywhere after the key again, so `auditPath: "
+             "null` plus any other array in the document reads as an empty path",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find="        int open = valueStart(json, \"auditPath\");\n"
+             "        if (open < 0 || json.charAt(open) != '[') {",
+        replace="        int open = json.indexOf('[', json.indexOf(\"\\\"auditPath\\\"\"));\n"
+                "        if (open < 0) {",
+        test='SipVerifierTest',
+        expect_fail=['anotherArrayIsNotTheAuditPath'],
+    ),
+    dict(
+        id="DD3",
+        what="a string field is read by searching forward for the next quote again, so a "
+             "non-string value returns the NEXT KEY'S NAME as the value",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find="        if (start < 0 || json.charAt(start) != '\"') {\n"
+             "            return null;\n"
+             "        }\n"
+             "        int end = json.indexOf('\"', start + 1);\n"
+             "        return end < 0 ? null : json.substring(start + 1, end);",
+        replace="        if (start < 0) {\n"
+                "            return null;\n"
+                "        }\n"
+                "        int quote = json.indexOf('\"', start);\n"
+                "        if (quote < 0) {\n"
+                "            return null;\n"
+                "        }\n"
+                "        int end = json.indexOf('\"', quote + 1);\n"
+                "        return end < 0 ? null : json.substring(quote + 1, end);",
+        test='SipVerifierTest',
+        expect_fail=['aNonStringFieldIsNotReadAsTheNextKey'],
+    ),
+    dict(
+        id="DE3",
+        what="siblingIsLeft goes back to matching two exact spellings, so a proof reformatted "
+             "by any JSON tool combines every sibling on the wrong side and reports FAILED",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='            Boolean siblingIsLeft = jsonBoolean(chunk, "siblingIsLeft");',
+        replace='            Boolean siblingIsLeft = chunk.contains("\\"siblingIsLeft\\" : true")\n'
+                '                    || chunk.contains("\\"siblingIsLeft\\":true");',
+        test='SipVerifierTest',
+        # The substring version never answers null, so the "no side" arm stops firing too.
+        expect_fail=['aReformattedProofStillVerifies', 'aStepWithNoSideIsUnavailable'],
+    ),
+    dict(
+        id="DF3",
+        what="an empty audit path is walked and reported PASSED again — the arithmetic-free "
+             "comparison of leaf(leafHash) with a merkleRoot the same package supplies",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='        if (path.steps().isEmpty()) {',
+        replace='        if (false) {',
+        test='SipVerifierTest',
+        expect_fail=['anEmptyAuditPathEstablishesNothing'],
+    ),
+    dict(
+        id="DG3",
+        what="a step that does not say which side its sibling is on defaults to false again",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='            if (siblingIsLeft == null) {\n'
+             '                return AuditPath.unreadable("a step does not say which side its sibling is on");\n'
+             '            }',
+        replace='            if (siblingIsLeft == null) {\n'
+                '                siblingIsLeft = Boolean.FALSE;\n'
+                '            }',
+        test='SipVerifierTest',
+        expect_fail=['aStepWithNoSideIsUnavailable'],
+    ),
+    dict(
+        id="DH3",
+        what="the bodyless attachment is refused on the first read, so a check-out during an "
+             "archive restore (row created, body not PUT yet) fails instead of retrying",
+        file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/delegate/AttachmentServiceDelegate.java',
+        find='\t\t\tAttachmentNode reread = contentDaoService.getAttachment(repositoryId, attachmentId);',
+        replace='\t\t\tAttachmentNode reread = original;',
+        test='CopyingContentRefusesAMissingRowTest',
+        expect_fail=['aRestoreInFlightIsNotRefused'],
+    ),
+    dict(
+        id="DI3",
+        what="the bodyless guard keys on the recorded length as well, so a zero-byte attachment "
+             "is refused as if its body were missing",
+        file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/delegate/AttachmentServiceDelegate.java',
+        find='\t\treturn node != null && node.getInputStream() != null;',
+        replace='\t\treturn node != null && node.getInputStream() != null && node.getLength() > 0;',
+        test='CopyingContentRefusesAMissingRowTest',
+        expect_fail=['aZeroByteAttachmentIsStillCopied'],
     ),
 ]
 

@@ -99,6 +99,25 @@ class CopyingContentRefusesAMissingRowTest {
                 org.mockito.Mockito.RETURNS_DEEP_STUBS);
     }
 
+    /** What getAttachment returns when the CouchDB document carries no `content` attachment. */
+    private static AttachmentNode bodyless() {
+        AttachmentNode node = new AttachmentNode();
+        node.setName("minutes.txt");
+        node.setMimeType("text/plain");
+        node.setLength(11L);
+        return node;
+    }
+
+    /** A node whose body is there. An EMPTY body is still a body. */
+    private static AttachmentNode stored(String bytes) {
+        AttachmentNode node = new AttachmentNode();
+        node.setName("minutes.txt");
+        node.setMimeType("text/plain");
+        node.setLength(bytes.length());
+        node.setInputStream(new ByteArrayInputStream(bytes.getBytes(StandardCharsets.UTF_8)));
+        return node;
+    }
+
     private static Document document(String id, String attachmentNodeId) {
         Document document = new Document();
         document.setId(id);
@@ -163,13 +182,23 @@ class CopyingContentRefusesAMissingRowTest {
         // id as a success, so the copy looked like it worked. Found by review.
         jp.aegif.nemaki.dao.ContentDaoService dao = dao();
         when(dao.getDocument("bedroom", "doc-1")).thenReturn(document("doc-1", "att-9"));
-        AttachmentNode bodyless = new AttachmentNode();
-        bodyless.setName("minutes.txt");
-        bodyless.setMimeType("text/plain");
-        bodyless.setLength(11L);
         // No setInputStream: this is what getAttachment returns when the CouchDB document
-        // carries no `content` attachment.
-        when(dao.getAttachment("bedroom", "att-9")).thenReturn(bodyless);
+        // carries no `content` attachment. Both reads answer it — the row is permanently
+        // bodyless, not caught mid-restore.
+        when(dao.getAttachment("bedroom", "att-9")).thenReturn(bodyless(), bodyless());
+        // Stubbed so that REMOVING the guard produces the real defect — a check-out that
+        // succeeds with an empty copy — rather than falling into the older missing-row refusal.
+        // Without this the control fires on a different sentence than the one it names.
+        when(dao.createAttachment(eq("bedroom"), any(AttachmentNode.class), any()))
+                .thenReturn("att-copy");
+        when(dao.create(eq("bedroom"), any(Document.class))).thenAnswer(inv -> {
+            Document copy = inv.getArgument(1);
+            copy.setId("pwc-1");
+            return copy;
+        });
+        when(dao.update(eq("bedroom"), any(Document.class)))
+                .thenAnswer(inv -> inv.getArgument(1));
+        when(dao.getVersionSeries(anyString(), anyString())).thenReturn(null);
         ContentServiceImpl service = serviceOn(dao);
 
         CmisStorageException refusal = assertThrows(CmisStorageException.class,
@@ -177,8 +206,68 @@ class CopyingContentRefusesAMissingRowTest {
 
         assertTrue(refusal.getMessage().contains("no content body"),
                 "the refusal does not say what was actually missing: " + refusal.getMessage());
+        assertTrue(refusal.getMessage().contains("retry shortly"),
+                "the refusal does not tell the caller the state can be transient: "
+                        + refusal.getMessage());
         verify(dao, never()).createAttachment(anyString(), any(AttachmentNode.class), any());
         verify(dao, never()).create(anyString(), any(Document.class));
+    }
+
+    @Test
+    @DisplayName("a body that arrives between the two reads is copied, not refused")
+    void aRestoreInFlightIsNotRefused() throws Exception {
+        // Restoring from the archive publishes the document, creates the attachment row, and
+        // PUTs the body in a separate write (ArchiveDaoDelegate:772 → :792). A check-out landing
+        // between the last two reads a row with no body — a legitimate operation in progress,
+        // not a broken document. The second read is what tells them apart.
+        jp.aegif.nemaki.dao.ContentDaoService dao = dao();
+        when(dao.getDocument("bedroom", "doc-1")).thenReturn(document("doc-1", "att-9"));
+        when(dao.getAttachment("bedroom", "att-9")).thenReturn(bodyless(), stored("the minutes"));
+        when(dao.createAttachment(eq("bedroom"), any(AttachmentNode.class), any()))
+                .thenReturn("att-copy");
+        when(dao.create(eq("bedroom"), any(Document.class))).thenAnswer(inv -> {
+            Document copy = inv.getArgument(1);
+            copy.setId("pwc-1");
+            return copy;
+        });
+        when(dao.update(eq("bedroom"), any(Document.class)))
+                .thenAnswer(inv -> inv.getArgument(1));
+        when(dao.getVersionSeries(anyString(), anyString())).thenReturn(null);
+        ContentServiceImpl service = serviceOn(dao);
+
+        Document pwc = assertDoesNotThrow(
+                () -> service.checkOut(mock(CallContext.class), "bedroom", "doc-1", null),
+                "a check-out during an archive restore was refused instead of retried");
+
+        assertEquals("att-copy", pwc.getAttachmentNodeId());
+    }
+
+    @Test
+    @DisplayName("a zero-byte attachment is copied — an empty body is not a missing one")
+    void aZeroByteAttachmentIsStillCopied() throws Exception {
+        // The guard keys on a null stream, and CouchDB answers a zero-byte attachment with an
+        // EMPTY stream. Nothing in the guard says so, so it is measured rather than asserted in
+        // a comment (review P3).
+        jp.aegif.nemaki.dao.ContentDaoService dao = dao();
+        when(dao.getDocument("bedroom", "doc-1")).thenReturn(document("doc-1", "att-9"));
+        when(dao.getAttachment("bedroom", "att-9")).thenReturn(stored(""));
+        when(dao.createAttachment(eq("bedroom"), any(AttachmentNode.class), any()))
+                .thenReturn("att-copy");
+        when(dao.create(eq("bedroom"), any(Document.class))).thenAnswer(inv -> {
+            Document copy = inv.getArgument(1);
+            copy.setId("pwc-1");
+            return copy;
+        });
+        when(dao.update(eq("bedroom"), any(Document.class)))
+                .thenAnswer(inv -> inv.getArgument(1));
+        when(dao.getVersionSeries(anyString(), anyString())).thenReturn(null);
+        ContentServiceImpl service = serviceOn(dao);
+
+        Document pwc = assertDoesNotThrow(
+                () -> service.checkOut(mock(CallContext.class), "bedroom", "doc-1", null),
+                "a zero-byte attachment was treated as a missing body");
+
+        assertEquals("att-copy", pwc.getAttachmentNodeId());
     }
 
     @Test
@@ -220,13 +309,7 @@ class CopyingContentRefusesAMissingRowTest {
         // the ordinary check-out of an ordinary document with content.
         jp.aegif.nemaki.dao.ContentDaoService dao = dao();
         when(dao.getDocument("bedroom", "doc-1")).thenReturn(document("doc-1", "att-9"));
-        AttachmentNode stored = new AttachmentNode();
-        stored.setName("minutes.txt");
-        stored.setMimeType("text/plain");
-        stored.setLength(11L);
-        stored.setInputStream(
-                new ByteArrayInputStream("the minutes".getBytes(StandardCharsets.UTF_8)));
-        when(dao.getAttachment("bedroom", "att-9")).thenReturn(stored);
+        when(dao.getAttachment("bedroom", "att-9")).thenReturn(stored("the minutes"));
         when(dao.createAttachment(eq("bedroom"), any(AttachmentNode.class), any()))
                 .thenReturn("att-copy");
         when(dao.create(eq("bedroom"), any(Document.class))).thenAnswer(inv -> {

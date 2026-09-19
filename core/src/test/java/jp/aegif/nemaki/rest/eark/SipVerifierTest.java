@@ -192,13 +192,21 @@ class SipVerifierTest {
     }
 
     @Test
-    @DisplayName("an EMPTY audit path from a single-entry checkpoint still verifies")
-    void anEmptyAuditPathIsNotAMissingOne(@TempDir Path tmp) throws Exception {
-        // The over-throw guard for the fix above. A checkpoint that sealed one entry produces a
-        // genuinely empty path, and the root IS the leaf's hash. Refusing that would report a
-        // real package as unverifiable.
+    @DisplayName("an EMPTY audit path is UNAVAILABLE — the package cannot tell the two apart")
+    void anEmptyAuditPathEstablishesNothing(@TempDir Path tmp) throws Exception {
+        // This test used to assert VERIFIED, on the reasoning that a checkpoint which sealed a
+        // single entry genuinely produces an empty path. That is true — MerkleTree.root of one
+        // leaf IS that leaf's hash — and it is also exactly what a package gets by writing a
+        // leaf and hashing it into its own merkleRoot. One public function call. Both values
+        // come from the package, so an empty path makes the check arithmetic-free, and the
+        // lock was PINNING THE HOLE OPEN (review, 2026-09-19).
+        //
+        // Not FAILED either: the package may be perfectly genuine. Whoever holds the checkpoint
+        // settles it in one look at its span; this verifier cannot, and says so.
         List<String> oneLeaf = List.of("e0hash");
         String root = MerkleTree.root(oneLeaf);
+        assertEquals(SipVerifier.leaf("e0hash"), root,
+                "the premise of this test is gone: a one-leaf root is no longer the leaf's hash");
         String payload = "the minutes";
         String evidence = "{ \"status\" : \"success\", \"inclusionProof\" : { \"leafHash\" : "
                 + "\"e0hash\", \"merkleRoot\" : \"" + root + "\", \"auditPath\" : [ ] } }";
@@ -210,9 +218,105 @@ class SipVerifierTest {
 
         SipVerifier.Result result = SipVerifier.verify(sip);
 
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"),
+                result.asMap().toString());
+        assertEquals(SipVerifier.Verdict.INDETERMINATE, result.verdict(),
+                result.asMap().toString());
+    }
+
+    @Test
+    @DisplayName("an array elsewhere in the document is not the audit path")
+    void anotherArrayIsNotTheAuditPath(@TempDir Path tmp) throws Exception {
+        // `auditPath: null` plus any other array reached the same arithmetic-free comparison,
+        // because the reader took the next '[' anywhere after the key. "Could not read it"
+        // answered with a value — in the verifier whose whole job is not to do that.
+        String payload = "the minutes";
+        // The decoy is STEP-SHAPED on purpose: an empty decoy would land on the empty-path
+        // arm, which now answers UNAVAILABLE for its own reason, and the control would measure
+        // nothing. With a usable step in it, taking the wrong array walks somewhere and reports
+        // FAILED — a different sentence from the one this test pins.
+        String evidence = "{ \"inclusionProof\" : { \"leafHash\" : \"e0hash\", "
+                + "\"merkleRoot\" : \"" + SipVerifier.leaf("e0hash") + "\", "
+                + "\"auditPath\" : null }, \"chainedEntries\" : [ { \"siblingHash\" : \""
+                + "0".repeat(64) + "\", \"siblingIsLeft\" : false } ] }";
+        Path sip = zip(tmp, "decoyarray.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", evidence));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"),
+                result.asMap().toString());
+        assertEquals(SipVerifier.Verdict.INDETERMINATE, result.verdict(),
+                result.asMap().toString());
+    }
+
+    @Test
+    @DisplayName("a leafHash that is not a string does not become the next key's name")
+    void aNonStringFieldIsNotReadAsTheNextKey(@TempDir Path tmp) throws Exception {
+        // The reader searched forward for the next quote, so `"leafHash": 42` returned
+        // "merkleRoot" — the NAME of the following field — and the verifier walked the path
+        // from a leaf it had invented.
+        Map<String, String> proof = realProofFor(1);
+        String payload = "the minutes";
+        String evidence = proof.get("json").replaceFirst(
+                "\"leafHash\" : \"[^\"]+\"", "\"leafHash\" : 42");
+        assertFalse(evidence.equals(proof.get("json")), "the fixture was not actually altered");
+        Path sip = zip(tmp, "numericleaf.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", evidence));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"),
+                result.asMap().toString());
+    }
+
+    @Test
+    @DisplayName("a proof reformatted by an ordinary JSON tool still verifies")
+    void aReformattedProofStillVerifies(@TempDir Path tmp) throws Exception {
+        // The over-throw side of the same fix. `siblingIsLeft` used to be read by matching two
+        // exact spellings; every other layout was silently FALSE, which combined the siblings
+        // on the wrong side and reported FAILED — "the entry was not in that span" — about a
+        // genuine package that had merely been through `jq`.
+        Map<String, String> proof = realProofFor(2);
+        String reformatted = proof.get("json").replace("\" : ", "\": ");
+        assertFalse(reformatted.equals(proof.get("json")), "the fixture was not reformatted");
+        String payload = "the minutes";
+        Path sip = zip(tmp, "reformatted.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", reformatted));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
         assertEquals(SipVerifier.Outcome.PASSED, outcomeOf(result, "audit path"),
                 result.asMap().toString());
         assertEquals(SipVerifier.Verdict.VERIFIED, result.verdict(), result.asMap().toString());
+    }
+
+    @Test
+    @DisplayName("a step that does not say which side its sibling is on is UNAVAILABLE")
+    void aStepWithNoSideIsUnavailable(@TempDir Path tmp) throws Exception {
+        Map<String, String> proof = realProofFor(0);
+        String stripped = proof.get("json").replaceAll(",\\s*\"siblingIsLeft\" : (true|false)", "");
+        assertFalse(stripped.equals(proof.get("json")), "the fixture still has its flags");
+        String payload = "the minutes";
+        Path sip = zip(tmp, "noside.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", stripped));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"),
+                result.asMap().toString());
     }
 
     @Test
@@ -222,9 +326,16 @@ class SipVerifierTest {
         // root, and report FAILED — "the entry was not in that span" — about a package we did
         // not manage to read.
         String payload = "the minutes";
+        // One READABLE step and one unreadable one. With only the unreadable step, dropping it
+        // leaves an empty path — which the empty-path arm answers UNAVAILABLE for its own
+        // reason, so the control could not tell the two apart. With a readable step beside it,
+        // dropping the other one walks a shorter path onto a different root: FAILED.
+        Map<String, String> real = realProofFor(0);
+        String firstStep = real.get("json").substring(real.get("json").indexOf("{ \"siblingHash\""));
+        firstStep = firstStep.substring(0, firstStep.indexOf("}") + 1);
         String evidence = "{ \"inclusionProof\" : { \"leafHash\" : \"e0hash\", "
                 + "\"merkleRoot\" : \"" + SipVerifier.leaf("e0hash") + "\", "
-                + "\"auditPath\" : [ { \"siblingIsLeft\" : false } ] } }";
+                + "\"auditPath\" : [ " + firstStep + ", { \"siblingIsLeft\" : false } ] } }";
         Path sip = zip(tmp, "unreadablestep.zip", Map.of(
                 "sip/representations/rep1/data/minutes.txt", payload,
                 "sip/metadata/preservation/premis.xml",

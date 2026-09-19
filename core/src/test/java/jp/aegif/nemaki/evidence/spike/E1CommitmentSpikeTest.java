@@ -36,7 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>The plan (`docs/design/v3.4.0-evidence-and-residuals-plan.md` §8) says to choose between
  * them "by fault injection", against five criteria. This is that measurement. The ADR that
- * records the outcome is `docs/design/adr/0001-e1-content-state-commitment.md`.
+ * records the outcome is `docs/design/e1-content-state-commitment-adr.md`.
  *
  * <h2>What this models, and what it does not</h2>
  *
@@ -162,6 +162,13 @@ class E1CommitmentSpikeTest {
         void writeInPlace(Store store, String docId, String bytes, String intentId,
                 Crasher crash);
 
+        /**
+         * An unrelated writer of the SAME content document: a property update (a rename, an
+         * ACL change, a version-series flag) built from a model that knows nothing about
+         * content-state bookkeeping. This codebase has many of them.
+         */
+        void writeUnrelated(Store store, String docId);
+
         /** Reads only the stores. Runs after a restart. */
         void recover(Store store);
 
@@ -174,8 +181,18 @@ class E1CommitmentSpikeTest {
      *
      * <p>Its appeal is that the marker and the bytes-reference land in ONE write, so there is no
      * window in which the content exists without a marker.
+     *
+     * <h2>Written at its strongest, on purpose</h2>
+     *
+     * <p>The first version of this spike modelled A with a SINGLE marker field and a sweeper
+     * that copied what the marker said. Both reviews pointed out that neither is forced by the
+     * design: the marker can be a LIST that each write carries forward (the in-place path
+     * already reads the document), and the sweeper can re-hash the stored bytes exactly as B's
+     * resolver does. A comparison against a weakened opponent decides nothing, so A gets both
+     * here. It then meets all five of the plan's criteria — and the decision moves to C6.
      */
     static final class OutboxMarker implements Strategy {
+
         public String name() {
             return "A (outbox marker on the document)";
         }
@@ -184,60 +201,107 @@ class E1CommitmentSpikeTest {
                 String bytes, String intentId, Crasher crash) {
             store.putAttachment(attachmentId, bytes);
             crash.step("attachment-written");
-            Map<String, Object> fields = new LinkedHashMap<>();
-            fields.put("attachmentId", attachmentId);
-            fields.put("pendingStatement", Map.of("intentId", intentId,
-                    "attachmentId", attachmentId, "digest", digest(bytes)));
-            store.putDoc(docId, fields);
+            writeDocWithPending(store, docId, attachmentId, intentId, digest(bytes));
             crash.step("doc-written");
             sweep(store, docId);
         }
 
         public void writeInPlace(Store store, String docId, String bytes, String intentId,
                 Crasher crash) {
-            Map<String, Object> current = store.doc(docId);
-            String attachmentId = (String) current.get("attachmentId");
+            String attachmentId = (String) store.doc(docId).get("attachmentId");
             store.putAttachment(attachmentId, bytes);
             crash.step("attachment-written");
-            Map<String, Object> fields = new LinkedHashMap<>();
-            fields.put("attachmentId", attachmentId);
-            fields.put("pendingStatement", Map.of("intentId", intentId,
-                    "attachmentId", attachmentId, "digest", digest(bytes)));
-            store.putDoc(docId, fields);
+            writeDocWithPending(store, docId, attachmentId, intentId, digest(bytes));
             crash.step("doc-written");
             sweep(store, docId);
+        }
+
+        /** An unrelated writer: a property update that knows nothing about markers. */
+        public void writeUnrelated(Store store, String docId) {
+            Map<String, Object> fields = new LinkedHashMap<>();
+            fields.put("attachmentId", store.doc(docId).get("attachmentId"));
+            fields.put("title", "renamed");
+            store.putDoc(docId, fields);
+        }
+
+        /** Carries forward whatever is still pending — the list variant, not a single slot. */
+        @SuppressWarnings("unchecked")
+        private void writeDocWithPending(Store store, String docId, String attachmentId,
+                String intentId, String digest) {
+            Map<String, Object> current = store.doc(docId);
+            List<Map<String, Object>> pending = new ArrayList<>();
+            if (current != null && current.get("pendingStatements") != null) {
+                pending.addAll((List<Map<String, Object>>) current.get("pendingStatements"));
+            }
+            pending.add(Map.of("intentId", intentId, "attachmentId", attachmentId,
+                    "digest", digest));
+            Map<String, Object> fields = new LinkedHashMap<>();
+            if (current != null) {
+                fields.putAll(current);
+                fields.remove("_rev");
+            }
+            fields.put("attachmentId", attachmentId);
+            fields.put("pendingStatements", pending);
+            store.putDoc(docId, fields);
         }
 
         @SuppressWarnings("unchecked")
         private void sweep(Store store, String docId) {
             Map<String, Object> current = store.doc(docId);
-            Map<String, Object> pending = (Map<String, Object>) current.get("pendingStatement");
-            if (pending == null) {
+            if (current == null || current.get("pendingStatements") == null) {
                 return;
             }
-            if (alreadyRecorded(store, docId, (String) pending.get("intentId"))) {
-                clearMarker(store, docId, current);
-                return;
+            List<Map<String, Object>> pending =
+                    new ArrayList<>((List<Map<String, Object>>) current.get("pendingStatements"));
+            List<Map<String, Object>> remaining = new ArrayList<>();
+            for (Map<String, Object> entry : pending) {
+                String intentId = (String) entry.get("intentId");
+                String attachmentId = (String) entry.get("attachmentId");
+                if (alreadyRecorded(store, docId, intentId)) {
+                    continue;
+                }
+                // Verified against the store, exactly as B's resolver does. Writing what the
+                // marker SAYS would record a state nobody can still see.
+                String stored = store.attachments.get(attachmentId);
+                if (stored == null || !digest(stored).equals(entry.get("digest"))) {
+                    remaining.add(supersede(entry));
+                    continue;
+                }
+                Map<String, Object> statement = new LinkedHashMap<>();
+                statement.put("docId", docId);
+                statement.put("intentId", intentId);
+                statement.put("attachmentId", attachmentId);
+                statement.put("digest", entry.get("digest"));
+                try {
+                    store.appendLedger(statement);
+                } catch (LedgerUnavailable unavailable) {
+                    // Criterion 4. The content write has already landed; turning this into a
+                    // business failure would fail an operation that succeeded. Everything not
+                    // yet swept stays on the document.
+                    remaining.add(entry);
+                    remaining.addAll(pending.subList(pending.indexOf(entry) + 1, pending.size()));
+                    rewritePending(store, docId, remaining);
+                    return;
+                }
             }
-            Map<String, Object> statement = new LinkedHashMap<>();
-            statement.put("docId", docId);
-            statement.put("intentId", pending.get("intentId"));
-            statement.put("attachmentId", pending.get("attachmentId"));
-            statement.put("digest", pending.get("digest"));
-            try {
-                store.appendLedger(statement);
-            } catch (LedgerUnavailable unavailable) {
-                // Criterion 4. The content write has already landed; turning this into a
-                // business failure would fail an operation that succeeded. The marker stays,
-                // so the gap is still there for a later sweep.
-                return;
-            }
-            clearMarker(store, docId, store.doc(docId));
+            rewritePending(store, docId, remaining);
         }
 
-        private void clearMarker(Store store, String docId, Map<String, Object> current) {
-            Map<String, Object> fields = new LinkedHashMap<>(current);
-            fields.remove("pendingStatement");
+        private Map<String, Object> supersede(Map<String, Object> entry) {
+            Map<String, Object> superseded = new LinkedHashMap<>(entry);
+            superseded.put("state", "SUPERSEDED");
+            return superseded;
+        }
+
+        private void rewritePending(Store store, String docId,
+                List<Map<String, Object>> remaining) {
+            Map<String, Object> fields = new LinkedHashMap<>(store.doc(docId));
+            fields.remove("_rev");
+            if (remaining.isEmpty()) {
+                fields.remove("pendingStatements");
+            } else {
+                fields.put("pendingStatements", remaining);
+            }
             store.putDoc(docId, fields);
         }
 
@@ -256,10 +320,13 @@ class E1CommitmentSpikeTest {
         public List<String> openGaps(Store store) {
             List<String> gaps = new ArrayList<>();
             for (Map.Entry<String, Map<String, Object>> entry : store.docs.entrySet()) {
-                Map<String, Object> pending =
-                        (Map<String, Object>) entry.getValue().get("pendingStatement");
+                List<Map<String, Object>> pending =
+                        (List<Map<String, Object>>) entry.getValue().get("pendingStatements");
                 if (pending != null) {
-                    gaps.add(entry.getKey() + ":" + pending.get("intentId"));
+                    for (Map<String, Object> one : pending) {
+                        gaps.add(entry.getKey() + ":" + one.get("intentId")
+                                + (one.get("state") == null ? "" : ":" + one.get("state")));
+                    }
                 }
             }
             return gaps;
@@ -311,6 +378,14 @@ class E1CommitmentSpikeTest {
             store.putDoc(docId, Map.of("attachmentId", attachmentId));
             crash.step("doc-written");
             resolve(store, intentId);
+        }
+
+        /** The same unrelated property update. It cannot touch what is in the other store. */
+        public void writeUnrelated(Store store, String docId) {
+            Map<String, Object> fields = new LinkedHashMap<>();
+            fields.put("attachmentId", store.doc(docId).get("attachmentId"));
+            fields.put("title", "renamed");
+            store.putDoc(docId, fields);
         }
 
         /**
@@ -511,51 +586,73 @@ class E1CommitmentSpikeTest {
     // ------------------------------------------------- the difference the criteria expose
 
     @Test
-    @DisplayName("the in-place path: A loses the gap, B keeps it")
-    void inPlaceRewriteIsWhereTheDesignsDiffer() {
-        // setContentStream on a non-versionable document and appendContentStream both rewrite
-        // the SAME attachment row and then write the document (ContentServiceImpl:1588-1596,
-        // :4528). A marker lives on the document, and a document write replaces the document —
-        // so the second in-place change overwrites an unswept marker from the first. The bytes
-        // that were never recorded are gone AND so is the only record that they were not.
+    @DisplayName("the in-place path: strengthened, BOTH designs keep the gap")
+    void inPlaceRewriteNoLongerSeparatesThem() {
+        // This test used to be the decisive one, because design A was modelled with a single
+        // marker slot that the next in-place write overwrote. With the list variant — which the
+        // in-place path can carry forward, since it already reads the document — A keeps the
+        // gap here too. Recorded as a NEGATIVE result: the first version of this spike decided
+        // the ADR on a difference that was an artefact of how A was written.
+        for (Strategy strategy : BOTH) {
+            Store store = new Store();
+            strategy.writeNewAttachment(store, "doc-1", "att-1", "v1", "i-1", new Crasher("none"));
+            try {
+                strategy.writeInPlace(store, "doc-1", "v2", "i-2", new Crasher("doc-written"));
+            } catch (Crash expected) {
+                // v2 landed, no statement for it.
+            }
+            strategy.writeInPlace(store, "doc-1", "v3", "i-3", new Crasher("none"));
+            strategy.recover(store);
+
+            assertTrue(strategy.openGaps(store).stream().anyMatch(gap -> gap.contains("i-2")),
+                    strategy.name() + ": the content state that was never recorded left no "
+                            + "trace: " + strategy.openGaps(store));
+            assertTrue(store.statementsFor("doc-1").stream()
+                            .noneMatch(s -> "i-2".equals(s.get("intentId"))),
+                    strategy.name() + ": v2's bytes are gone, so no statement about them can be "
+                            + "written — one was: " + store.statementsFor("doc-1"));
+        }
+    }
+
+    @Test
+    @DisplayName("C6: an unrelated writer of the same document must not drop the record")
+    void anUnrelatedWriterDoesNotDropTheGap() {
+        // The property this codebase actually forces, and where the two designs part. The
+        // content document is written from many places — renames, ACL changes, version-series
+        // flags, the nine content-write paths themselves — and each builds its fields from a
+        // model. A writer that does not know about content-state bookkeeping drops whatever
+        // rides on the document. Nothing can drop a row in the other store.
         Store storeA = new Store();
         OutboxMarker a = new OutboxMarker();
-        a.writeNewAttachment(storeA, "doc-1", "att-1", "v1", "i-1", new Crasher("none"));
         try {
-            a.writeInPlace(storeA, "doc-1", "v2", "i-2", new Crasher("doc-written"));
+            a.writeNewAttachment(storeA, "doc-1", "att-1", "the minutes", "i-1",
+                    new Crasher("doc-written"));
         } catch (Crash expected) {
-            // v2 landed, no statement for it.
+            // Content landed; the statement did not.
         }
-        a.writeInPlace(storeA, "doc-1", "v3", "i-3", new Crasher("none"));
+        assertFalse(a.openGaps(storeA).isEmpty(), "the fixture did not leave a gap");
+        a.writeUnrelated(storeA, "doc-1");
         a.recover(storeA);
 
-        assertTrue(a.openGaps(storeA).isEmpty(),
-                "the model no longer matches design A — re-derive the conclusion below");
-        assertTrue(storeA.statementsFor("doc-1").stream()
-                        .noneMatch(s -> "i-2".equals(s.get("intentId"))),
-                "the model no longer matches design A");
-        // So: v2 existed, was never recorded, and after the third write NOTHING says so. That is
-        // the silent gap §8 forbids, and no amount of recovery finds it.
+        assertTrue(a.openGaps(storeA).isEmpty(), "design A no longer loses the marker to an "
+                + "unrelated write — re-derive the ADR's decision");
+        assertTrue(storeA.statementsFor("doc-1").isEmpty(), "design A recorded it after all");
+        // So: the bytes are there, no statement is, and nothing says so. A rename did that.
 
         Store storeB = new Store();
         CommitmentIntent b = new CommitmentIntent();
-        b.writeNewAttachment(storeB, "doc-1", "att-1", "v1", "i-1", new Crasher("none"));
         try {
-            b.writeInPlace(storeB, "doc-1", "v2", "i-2", new Crasher("doc-written"));
+            b.writeNewAttachment(storeB, "doc-1", "att-1", "the minutes", "i-1",
+                    new Crasher("doc-written"));
         } catch (Crash expected) {
-            // v2 landed, no statement for it.
+            // Same state.
         }
-        b.writeInPlace(storeB, "doc-1", "v3", "i-3", new Crasher("none"));
+        b.writeUnrelated(storeB, "doc-1");
         b.recover(storeB);
 
-        assertFalse(b.openGaps(storeB).isEmpty(),
-                "design B lost the unrecorded in-place write too — the ADR's reason for choosing "
-                        + "it is gone");
-        assertTrue(b.openGaps(storeB).stream().anyMatch(gap -> gap.contains("i-2")),
-                "the surviving gap is not the one that was actually missed: " + b.openGaps(storeB));
-        // B cannot say WHAT v2 was — those bytes are overwritten in both designs. It can say
-        // that a content state went unrecorded, which is the difference between a known gap and
-        // no gap at all.
+        assertEquals(1, storeB.statementsFor("doc-1").size(),
+                "design B lost the intent to an unrelated write, so the ADR's reason is gone");
+        assertTrue(b.openGaps(storeB).isEmpty(), b.openGaps(storeB).toString());
     }
 
     @Test
