@@ -113,6 +113,32 @@ public class AttachmentServiceDelegate {
 
 		AttachmentNode original = contentDaoService.getAttachment(repositoryId, attachmentId);
 
+		// Read once more before answering "there is nothing here", for either shape of nothing.
+		//
+		// Restoring from the archive puts the DOCUMENT back first (ArchiveDaoDelegate:853) and
+		// only then the attachment — its row at :772, its body at :792. A check-out landing in
+		// that window reads no row at all for a moment, and a row with no body for another.
+		// Both are a legitimate operation in progress. One retry narrows the window; it does
+		// not close it (the body PUT takes as long as the attachment is big), which is why the
+		// refusal says to retry rather than pretending this cannot happen. Same shape as
+		// ContentServiceImpl.getAttachmentRef's "minimal retry for async scenarios".
+		if (original == null || !hasBody(original)) {
+			try {
+				Thread.sleep(25);
+			} catch (InterruptedException interrupted) {
+				// Restore the flag and answer from what the FIRST read already told us: a
+				// blocking read on an interrupted thread can fail with a different sentence
+				// than the one this method means to say.
+				Thread.currentThread().interrupt();
+				if (original == null) {
+					return null;
+				}
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisStorageException(
+						bodyMissing(repositoryId, attachmentId));
+			}
+			original = contentDaoService.getAttachment(repositoryId, attachmentId);
+		}
+
 		// CRITICAL FIX (2025-12-16): Handle null attachment (corrupted or deleted)
 		if (original == null) {
 			log.warn("copyAttachment: Could not retrieve attachment with ID '{}', returning null", attachmentId);
@@ -137,24 +163,8 @@ public class AttachmentServiceDelegate {
 		// narrows that window; it does not close it, so the refusal says to retry (review,
 		// 2026-09-19).
 		if (!hasBody(original)) {
-			try {
-				Thread.sleep(25);
-			} catch (InterruptedException interrupted) {
-				Thread.currentThread().interrupt();
-			}
-			AttachmentNode reread = contentDaoService.getAttachment(repositoryId, attachmentId);
-			if (reread == null) {
-				log.warn("copyAttachment: attachment '{}' disappeared between reads", attachmentId);
-				return null;
-			}
-			if (!hasBody(reread)) {
-				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisStorageException(
-						"the attachment '" + attachmentId + "' in '" + repositoryId + "' has a row "
-								+ "but no content body, so there is nothing to copy. This is NOT a "
-								+ "finding that the document has no content. If a restore from the "
-								+ "archive is in progress for this document, retry shortly.");
-			}
-			original = reread;
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisStorageException(
+					bodyMissing(repositoryId, attachmentId));
 		}
 
 		String mimeType = original.getMimeType();
@@ -182,6 +192,13 @@ public class AttachmentServiceDelegate {
 		nemakiCachePool.get(repositoryId).getAttachmentCache().remove(attachmentId);
 
 		return newAttachmentId;
+	}
+
+	private static String bodyMissing(String repositoryId, String attachmentId) {
+		return "the attachment '" + attachmentId + "' in '" + repositoryId + "' has a row but no "
+				+ "content body, so there is nothing to copy. This is NOT a finding that the "
+				+ "document has no content. If a restore from the archive is in progress for "
+				+ "this document, retry shortly.";
 	}
 
 	/**

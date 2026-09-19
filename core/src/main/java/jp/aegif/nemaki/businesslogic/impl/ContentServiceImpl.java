@@ -2549,7 +2549,8 @@ public class ContentServiceImpl implements ContentService {
 			throw new CmisStorageException("the attachment '" + sourceAttachmentId
 					+ "' this document names is not in '" + repositoryId + "', so its content "
 					+ "could not be copied. This is NOT a finding that the document has no "
-					+ "content.");
+					+ "content. If a restore from the archive is in progress for this document, "
+					+ "retry shortly.");
 		}
 		return copied;
 	}

@@ -265,12 +265,21 @@ public final class SipVerifier {
         String root = jsonString(evidence, "merkleRoot");
         if (leaf == null || root == null) {
             if (hasKey(evidence, "leafHash") || hasKey(evidence, "merkleRoot")) {
-                // Written, but not as a string this verifier can read. Not the same sentence as
-                // "no proof was written", and it used to come out as that one.
+                // Written, but not readable as a pair of strings. Not the same sentence as "no
+                // proof was written", and it used to come out as that one. The two shapes are
+                // named separately because a message that merges them asserts something this
+                // check did not establish (review).
+                String missing = leaf == null && !hasKey(evidence, "leafHash") ? "leafHash"
+                        : root == null && !hasKey(evidence, "merkleRoot") ? "merkleRoot" : null;
                 return new Check("audit path", Outcome.UNAVAILABLE,
-                        "the evidence package carries an inclusion proof whose leafHash or "
-                                + "merkleRoot is not a readable string. Nothing about the "
-                                + "entry's inclusion is established either way.");
+                        missing != null
+                                ? "the evidence package carries half an inclusion proof: "
+                                        + missing + " is not written. Nothing about the entry's "
+                                        + "inclusion is established either way."
+                                : "the evidence package carries an inclusion proof whose "
+                                        + "leafHash or merkleRoot is not a readable string. "
+                                        + "Nothing about the entry's inclusion is established "
+                                        + "either way.");
             }
             return new Check("audit path", Outcome.NOT_PRESENT,
                     "the evidence package carries no inclusion proof. The chain only holds what "
@@ -476,10 +485,29 @@ public final class SipVerifier {
         if (start < 0) {
             return null;
         }
-        if (json.startsWith("true", start)) {
+        if (isLiteral(json, start, "true")) {
             return Boolean.TRUE;
         }
-        return json.startsWith("false", start) ? Boolean.FALSE : null;
+        return isLiteral(json, start, "false") ? Boolean.FALSE : null;
+    }
+
+    /**
+     * Does the literal start here AND end here?
+     *
+     * <p>Without the end check {@code truegarbage} read as TRUE, so a step whose side was
+     * unreadable combined on a side the verifier had invented — and a package built around that
+     * reading reached PASSED (review, 2026-09-19).
+     */
+    private static boolean isLiteral(String json, int start, String literal) {
+        if (!json.startsWith(literal, start)) {
+            return false;
+        }
+        int after = start + literal.length();
+        if (after >= json.length()) {
+            return true;
+        }
+        char next = json.charAt(after);
+        return Character.isWhitespace(next) || next == ',' || next == '}' || next == ']';
     }
 
     /**
