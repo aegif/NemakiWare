@@ -357,7 +357,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
 
   // UI build info from vite.config.ts
   const uiBuildTime = typeof __UI_BUILD_TIME__ !== 'undefined' ? __UI_BUILD_TIME__ : 'dev';
-  const uiVersion = typeof __UI_VERSION__ !== 'undefined' ? __UI_VERSION__ : '3.3.1';
+  // The fallback is only reached when the bundle was built without vite's define (a
+  // dev server run, a test harness). It still has to name THIS release: shipped as
+  // 3.4.0 with a 3.3.1 here, the screen states a version the WAR does not have.
+  const uiVersion = typeof __UI_VERSION__ !== 'undefined' ? __UI_VERSION__ : '3.4.0';
 
   // Check if current user is admin via isAdmin flag from /me endpoint
   const isAdmin = authToken?.isAdmin === true;
