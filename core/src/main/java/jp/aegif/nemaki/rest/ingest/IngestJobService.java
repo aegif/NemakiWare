@@ -106,10 +106,17 @@ public class IngestJobService {
         job.setFailed(errorCount);
         job.setSkipped(result.skipped());
         job.setErrors(result.errors());
+        job.setIncompleteReads(result.incompleteReads());
         if (result.hasErrors() && result.imported() > 0) {
             job.setStatus(IngestJobRecord.Status.PARTIAL);
         } else if (result.hasErrors()) {
             job.setStatus(IngestJobRecord.Status.FAILED);
+        } else if (!result.sawEverything()) {
+            // PARTIAL, not COMPLETED. Nothing failed — the run stopped at a limit or a cap with
+            // more on the other side — but "COMPLETED" on this record is read as a statement
+            // about the SOURCE, and the next poll's operator has no other place to learn that
+            // the counters above describe a part of it.
+            job.setStatus(IngestJobRecord.Status.PARTIAL);
         } else {
             job.setStatus(IngestJobRecord.Status.COMPLETED);
         }

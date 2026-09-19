@@ -49,16 +49,59 @@ public class NotionConnectorAdapter {
     public record NotionPageSummary(String id, String title, String url, String parentId, String lastEditedTime) {}
 
     /**
+     * A listing this adapter could not finish reading.
+     *
+     * <p>Distinct from every "there is nothing more" so that the two can never be handed to a
+     * caller as the same value. The block listing used to answer a 429, a 500 and a timed-out
+     * page with the blocks collected so far — which the note importer states as "this page has
+     * no attachments", imports the page without them, and moves the checkpoint past it.
+     */
+    public static class NotionReadIncompleteException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        public NotionReadIncompleteException(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * A page listing, and whether it is the WHOLE listing.
+     *
+     * @param pages what was read
+     * @param complete true only when Notion said there is nothing after these
+     * @param truncatedBecause why it stopped early; null when {@code complete}
+     */
+    public record PageListing(List<NotionPageSummary> pages, boolean complete,
+            String truncatedBecause) {
+
+        static PageListing whole(List<NotionPageSummary> pages) {
+            return new PageListing(pages, true, null);
+        }
+
+        static PageListing cutShort(List<NotionPageSummary> pages, String because) {
+            return new PageListing(pages, false, because);
+        }
+    }
+
+    /**
      * Search for pages in the workspace with {@code start_cursor} pagination.
      *
      * <p>Notion API supports max {@code page_size} of 100.  This method
      * follows {@code next_cursor} across pages until {@code limit} results
      * are collected or no more pages remain.
+     *
+     * <p>It returns whether the listing is whole. Stopping at the caller's {@code limit} or at
+     * the page cap is legitimate and common — what is not legitimate is handing back the same
+     * shape for "these are all the pages" and "these are the first N of more", because the
+     * caller advances a last-edited-time checkpoint from what it was given.
      */
-    public List<NotionPageSummary> searchPages(String query, int limit) throws Exception {
+    public PageListing searchPages(String query, int limit) throws Exception {
         int pageSize = Math.min(limit, 100); // Notion max page_size: 100
         List<NotionPageSummary> allPages = new ArrayList<>();
         String cursor = null;
+        // Set only where Notion has ANSWERED that there is nothing more. Every other way out of
+        // this loop is a return or a throw, so the flag is what tells the cap apart from an end.
+        boolean nothingMore = false;
 
         for (int page = 0; page < 50; page++) { // Hard cap on pages
             var bodyNode = MAPPER.createObjectNode();
@@ -86,7 +129,16 @@ public class NotionConnectorAdapter {
 
             JsonNode root = MAPPER.readTree(response.body());
             JsonNode results = root.get("results");
-            if (results == null || !results.isArray() || results.isEmpty()) break;
+            // A missing or non-array `results` is a malformed answer, not an empty workspace.
+            // It used to end the loop the same way a genuine last page does.
+            if (results == null || !results.isArray()) {
+                throw new NotionReadIncompleteException("Notion search answered without a results "
+                        + "array on page " + (page + 1) + ", so how many pages exist is unknown");
+            }
+            if (results.isEmpty()) {
+                nothingMore = true; // an ANSWER: there are no (more) pages
+                break;
+            }
 
             for (JsonNode pageNode : results) {
                 String id = pageNode.path("id").asText();
@@ -97,17 +149,38 @@ public class NotionConnectorAdapter {
                 allPages.add(new NotionPageSummary(id, title, url, parentId, lastEdited));
                 if (allPages.size() >= limit) break;
             }
-            if (allPages.size() >= limit) break;
 
             // Notion pagination: has_more + next_cursor
-            if (!root.path("has_more").asBoolean(false)) break;
+            boolean hasMore = root.path("has_more").asBoolean(false);
+            if (allPages.size() >= limit) {
+                return hasMore
+                        ? PageListing.cutShort(allPages, "the caller's limit of " + limit
+                                + " was reached and Notion says there are more pages")
+                        : PageListing.whole(allPages);
+            }
+            if (!hasMore) {
+                return PageListing.whole(allPages);
+            }
             String nextCursor = root.path("next_cursor").asText(null);
-            if (nextCursor == null || nextCursor.isEmpty()) break;
+            if (nextCursor == null || nextCursor.isEmpty()) {
+                // has_more with nowhere to go. Ending here quietly reported the rest of the
+                // workspace as "nothing more".
+                throw new NotionReadIncompleteException("Notion search said there are more pages "
+                        + "and gave no cursor to read them with, after " + allPages.size()
+                        + " page(s)");
+            }
             cursor = nextCursor;
         }
 
         logger.info("Notion searchPages: query='{}', fetched={}, limit={}", query, allPages.size(), limit);
-        return allPages;
+        if (nothingMore) {
+            return PageListing.whole(allPages);
+        }
+        // The 50-page cap: Notion offered another cursor and this method stopped asking. Counting
+        // that as a whole listing is what let the caller raise its checkpoint over pages it had
+        // never been shown.
+        return PageListing.cutShort(allPages, "the 50-page pagination cap was reached with "
+                + allPages.size() + " page(s) read and more still offered");
     }
 
     /**
@@ -153,6 +226,17 @@ public class NotionConnectorAdapter {
 
     /**
      * Fetch all child blocks with pagination (follows has_more/next_cursor).
+     *
+     * <p><b>This never returns a partial listing.</b> It used to: any non-200 — a 429 that
+     * outlived {@code sendWithRetry}'s backoff, a 500, the 504 a timeout arrives as — ended the
+     * loop and returned the blocks read so far. Both callers state that result as a fact about
+     * the page: {@link #extractFiles} as "this page has no attachments" (so the note is imported
+     * without them, no dead letter is written, and the poller's last-edited checkpoint moves past
+     * the page, which is permanent) and {@link #fetchPageAsHtml} as the page's body. A read that
+     * failed and a page that is empty are now different outcomes, which is the whole point.
+     *
+     * @throws NotionReadIncompleteException when the listing stopped for any reason other than
+     *     Notion answering that there is nothing more
      */
     private List<JsonNode> fetchAllBlocks(String pageId) throws Exception {
         List<JsonNode> allBlocks = new ArrayList<>();
@@ -171,23 +255,45 @@ public class NotionConnectorAdapter {
                     .build();
 
             HttpResponse<String> response = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRetry(httpClient, request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() != 200) break;
+            if (response.statusCode() != 200) {
+                throw new NotionReadIncompleteException("Notion answered " + response.statusCode()
+                        + " for block page " + (page + 1) + " of " + pageId + " after "
+                        + allBlocks.size() + " block(s). What the page contains is unknown — this "
+                        + "is not a finding that it has no attachments: "
+                        + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.truncateBody(response.body()));
+            }
 
             JsonNode root = MAPPER.readTree(response.body());
             JsonNode results = root.get("results");
-            if (results != null && results.isArray()) {
-                for (JsonNode block : results) allBlocks.add(block);
+            if (results == null || !results.isArray()) {
+                throw new NotionReadIncompleteException("Notion answered block page " + (page + 1)
+                        + " of " + pageId + " without a results array, so what the page contains "
+                        + "is unknown");
             }
-            cursor = root.path("has_more").asBoolean(false) ? root.path("next_cursor").asText(null) : null;
-            // Detect repeated cursor to prevent infinite loop
-            if (cursor != null && cursor.equals(prevCursor)) {
-                logger.warn("Notion block pagination: repeated cursor detected, stopping");
-                break;
+            for (JsonNode block : results) {
+                allBlocks.add(block);
+            }
+            boolean hasMore = root.path("has_more").asBoolean(false);
+            if (!hasMore) {
+                return allBlocks; // ANSWERED: that is the whole page
+            }
+            cursor = root.path("next_cursor").asText(null);
+            if (cursor == null || cursor.isEmpty()) {
+                throw new NotionReadIncompleteException("Notion said page " + pageId + " has more "
+                        + "blocks and gave no cursor to read them with, after " + allBlocks.size()
+                        + " block(s)");
+            }
+            // A cursor that does not move is the API failing to paginate, not the end of the
+            // page. Stopping here reported the rest of the page as absent.
+            if (cursor.equals(prevCursor)) {
+                throw new NotionReadIncompleteException("Notion repeated the same block cursor for "
+                        + pageId + " after " + allBlocks.size() + " block(s), so the rest of the "
+                        + "page cannot be read");
             }
             prevCursor = cursor;
-            if (cursor == null) break;
         }
-        return allBlocks;
+        throw new NotionReadIncompleteException("the 100-page block cap was reached for " + pageId
+                + " with " + allBlocks.size() + " block(s) read and more still offered");
     }
 
     /**

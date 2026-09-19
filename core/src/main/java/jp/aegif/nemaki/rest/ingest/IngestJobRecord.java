@@ -33,6 +33,15 @@ public class IngestJobRecord {
     private int skipped;
     private int failed;
     private List<String> errors;
+    /**
+     * Why this run did not see everything there was to see.
+     *
+     * <p>Separate from {@link #errors} because it is not a failure: a listing that stopped
+     * at the caller's limit imported what it read and left the rest for the next poll. It is
+     * recorded because {@code COMPLETED} on a run that saw a part of the source reads as a
+     * statement about the source.
+     */
+    private List<String> incompleteReads;
 
     public IngestJobRecord() {}
 
@@ -76,4 +85,9 @@ public class IngestJobRecord {
 
     public List<String> getErrors() { return errors; }
     public void setErrors(List<String> errors) { this.errors = errors; }
+
+    public List<String> getIncompleteReads() { return incompleteReads; }
+    public void setIncompleteReads(List<String> incompleteReads) {
+        this.incompleteReads = incompleteReads;
+    }
 }

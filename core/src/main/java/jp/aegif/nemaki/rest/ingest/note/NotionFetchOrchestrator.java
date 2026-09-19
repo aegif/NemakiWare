@@ -22,6 +22,17 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
     private CheckpointManager checkpointManager;
     private CanonicalImportService canonicalImportService;
 
+    /**
+     * How this orchestrator obtains its adapter (R14, plan A-8).
+     *
+     * <p>It used to be {@code new NotionConnectorAdapter(token)} inline, which made every arm
+     * below — the per-page dead letter, the attachment dead letter, the checkpoint hold — reachable
+     * only by talking to Notion. They were written from reasoning and never run. Same shape and
+     * same package-private visibility as {@code ImapIdleMonitor.adapterFactory}.
+     */
+    java.util.function.Function<String, NotionConnectorAdapter> adapterFactory =
+            NotionConnectorAdapter::new;
+
     public void setFetchSupport(FetchSupport fs) { this.fetchSupport = fs; }
     public void setCheckpointManager(CheckpointManager cm) { this.checkpointManager = cm; }
     public void setCanonicalImportService(CanonicalImportService cis) { this.canonicalImportService = cis; }
@@ -47,11 +58,20 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
         if (token == null) return new FetchResult(0, 0, List.of("No token for Notion connector"));
 
         List<String> errors = new ArrayList<>();
+        List<String> incompleteReads = new ArrayList<>();
         int fetched = 0, imported = 0, skipped = 0;
         try {
-            var notion = new NotionConnectorAdapter(token);
+            var notion = adapterFactory.apply(token);
             String lastEditedCheckpoint = checkpointManager.loadSimpleCheckpoint(profile.getProfileId(), "notion");
-            List<NotionPageSummary> pages = notion.searchPages(query, limit);
+            NotionConnectorAdapter.PageListing listing = notion.searchPages(query, limit);
+            List<NotionPageSummary> pages = listing.pages();
+            if (!listing.complete()) {
+                // NOT an error — nothing failed, and putting it in `errors` would have the
+                // scheduler count a healthy large workspace towards the connector's circuit
+                // breaker on every poll that imported nothing new. It is recorded so the job
+                // record says PARTIAL rather than COMPLETED.
+                incompleteReads.add("Notion page listing: " + listing.truncatedBecause());
+            }
             fetched = pages.size();
             String highWaterEditedTime = lastEditedCheckpoint;
             long throttleMs = FetchSupport.calculateThrottleDelayMs(connector);
@@ -221,6 +241,6 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
         } catch (Exception e) {
             FetchSupport.addError(errors, "Notion connection failed: " + e.getMessage());
         }
-        return new FetchResult(fetched, imported, skipped, errors);
+        return new FetchResult(fetched, imported, skipped, errors, List.copyOf(incompleteReads));
     }
 }
