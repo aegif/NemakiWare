@@ -8651,6 +8651,29 @@ CONTROLS = [
                      'theNemakiMapperDoesNotTakeTheStamps',
                      'theStampsDoNotTravelOutInJson'],
     ),
+    # ── 強制変換のログが値を運ばない (CodeQL の sensitive-log が指し損ねた本体) ──
+    dict(
+        id="CN3",
+        what="a coercion refusal puts the rejected value back in the log — the deployed level "
+             "is INFO, so this is what normal running writes",
+        file='core/src/main/java/jp/aegif/nemaki/cmis/aspect/impl/CompileServiceImpl.java',
+        find='							"the stored String is not an Integer (value withheld from the log).");',
+        replace='							"Cannot parse String \'" + element + "\' as Integer.");',
+        test='CoercionLogsDoNotCarryTheValueTest',
+        expect_fail=['noCoercionLogLineCarriesTheValue'],
+    ),
+    dict(
+        id="CO3",
+        what="the blanket dump of every compiled property value comes back",
+        file='core/src/main/java/jp/aegif/nemaki/cmis/aspect/impl/CompileServiceImpl.java',
+        find='		// The two "TCK DEBUG" blocks that stood here dumped EVERY compiled property value of',
+        replace='		if (log.isDebugEnabled()) {\n'
+                '			log.debug("=== TCK DEBUG: Final compiled properties for object: " + content.getId() + " ===");\n'
+                '		}\n'
+                '		// The two "TCK DEBUG" blocks that stood here dumped EVERY compiled property value of',
+        test='CoercionLogsDoNotCarryTheValueTest',
+        expect_fail=['theBlanketPropertyDumpsAreGone'],
+    ),
 ]
 
 
