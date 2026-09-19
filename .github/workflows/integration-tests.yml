@@ -271,6 +271,81 @@ jobs:
           docker compose -f docker-compose-simple.yml down
           docker system prune -f
 
+  # ── Store-behaviour premises, one job per supported CouchDB line (R7 / A-7) ──
+  # The product's floor accepts every line in StoreBehaviourFacts.SUPPORTED_LINES,
+  # so a single run measures one of them and leaves the rest as prose. This job
+  # asks a BARE couchdb container (no NemakiWare, no Setup Wizard — the IT needs
+  # neither) whether each premise the code relies on is true there.
+  # required=true, so an unreachable store FAILS instead of assuming past the
+  # measurement. EverySupportedCouchDbIsMeasuredTest pins this matrix to the table.
+  store-behaviour-facts:
+    name: Store-behaviour premises (CouchDB ${{ matrix.couchdb }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # A-7: pinned to StoreBehaviourFacts.SUPPORTED_LINES — change both or neither.
+        couchdb: ['3.3.3', '3.4.3', '3.5.2']
+    env:
+      MAVEN_USERNAME: ${{ github.actor }}
+      MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+    services:
+      couchdb:
+        image: couchdb:${{ matrix.couchdb }}
+        env:
+          COUCHDB_USER: admin
+          COUCHDB_PASSWORD: password
+        ports:
+          - 15984:5984
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+          server-id: github-opencmis
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+
+      - name: Wait for CouchDB ${{ matrix.couchdb }}
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://admin:password@localhost:15984/ >/dev/null 2>&1; then
+              echo "CouchDB answered:"
+              curl -fsS http://admin:password@localhost:15984/
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "CouchDB ${{ matrix.couchdb }} never answered on 15984" >&2
+          exit 1
+
+      - name: Build the modules the test tree needs
+        run: |
+          mvn clean install -N -DskipTests -q
+          mvn clean install -f common/pom.xml -DskipTests -q
+          mvn clean install -f cloudant-init/pom.xml -DskipTests -q
+
+      - name: Measure the premises against CouchDB ${{ matrix.couchdb }}
+        run: |
+          mvn test \
+            -Dtest='StoreBehaviourFactsIT' \
+            -Dnemaki.test.couchdb.required=true \
+            -Dnemaki.test.couchdb.url=http://localhost:15984 \
+            -Dnemaki.test.couchdb.user=admin \
+            -Dnemaki.test.couchdb.password=password \
+            -f core/pom.xml -Pdevelopment,opencmis-github-packages \
+            -Dmaven.test.failure.ignore=false
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: store-behaviour-facts-${{ matrix.couchdb }}
+          path: core/target/surefire-reports/
+          retention-days: 14
+
   # ── Search-index ACL reconciliation IT (require running CouchDB/Solr) ─────
   # Exercises the durable reconciliation queue's concurrency / durability
   # primitives (deterministic-id dedupe, _rev CAS claim exclusivity, lease loss

@@ -9301,6 +9301,64 @@ CONTROLS = [
         expect_fail=['everyPostExecuteDecorationReAsksTheDelegation'],
     ),
     dict(
+        id="EV3",
+        what="CI stops running one of the supported CouchDB lines, so a premise that is only "
+             "true on the others reads as measured everywhere",
+        file='.github/workflows/integration-tests.yml',
+        find="        couchdb: ['3.3.3', '3.4.3', '3.5.2']",
+        replace="        couchdb: ['3.3.3', '3.4.3']",
+        test='EverySupportedCouchDbIsMeasuredTest',
+        expect_fail=['theMatrixIsExactlyTheSupportedLines'],
+    ),
+    dict(
+        id="EW3",
+        what="the per-version job stops requiring the store, so every matrix entry assumes past "
+             "an unreachable CouchDB and reports green without measuring anything",
+        file='.github/workflows/integration-tests.yml',
+        # url を含めて一意にする: reconcile-it も required=true を持つ。
+        find='-Dnemaki.test.couchdb.required=true \\\n            '
+             '-Dnemaki.test.couchdb.url=http://localhost:15984',
+        replace='-Dnemaki.test.couchdb.required=false \\\n            '
+                '-Dnemaki.test.couchdb.url=http://localhost:15984',
+        test='EverySupportedCouchDbIsMeasuredTest',
+        expect_fail=['theMatrixIsNotDecorative'],
+    ),
+    dict(
+        id="EX3",
+        what="a store-behaviour fact loses its row for one supported line, so that line is run "
+             "by CI and says nothing about that premise",
+        file='core/src/test/java/jp/aegif/nemaki/dao/impl/couch/StoreBehaviourFacts.java',
+        find='                Map.of("3.3", true, "3.4", false, "3.5", false)),',
+        replace='                Map.of("3.3", true, "3.4", false)),',
+        test='EverySupportedCouchDbIsMeasuredTest',
+        expect_fail=['thereAreNoGapsAndNoStaleRows'],
+    ),
+    dict(
+        id="EY3",
+        what="a CouchDB version above the floor and absent from the table is placed at the "
+             "nearest line instead of refused, so 3.5's expectations are reported as met by a "
+             "store nobody measured",
+        file='core/src/test/java/jp/aegif/nemaki/dao/impl/couch/StoreBehaviourFacts.java',
+        find="""        throw new IllegalStateException("CouchDB " + major + "." + minor + " is ABOVE the "
+                + "product's floor (" + CouchDbVersionRequirement.MINIMUM + ") — the product will "
+                + "start against it — but no row in StoreBehaviourFacts says what it must do, and "
+                + "no CI job runs there. Declare the line and add it to the matrix, or raise the "
+                + "floor. Skipping would report 'nothing wrong' about a store nobody asked.");""",
+        replace='        return SUPPORTED_LINES.get(SUPPORTED_LINES.size() - 1);',
+        test='EverySupportedCouchDbIsMeasuredTest',
+        expect_fail=['anUndeclaredVersionIsRefused'],
+    ),
+    dict(
+        id="EZ3",
+        what="the placement stops consulting the product's floor, so a store NemakiWare refuses "
+             "to start against is measured and its answers are reported as the product's",
+        file='core/src/test/java/jp/aegif/nemaki/dao/impl/couch/StoreBehaviourFacts.java',
+        find='        if (!CouchDbVersionRequirement.isSatisfiedBy(reported)) {',
+        replace='        if (false) {',
+        test='EverySupportedCouchDbIsMeasuredTest',
+        expect_fail=['aVersionBelowTheFloorIsRefused'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",

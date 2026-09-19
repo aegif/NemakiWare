@@ -51,7 +51,7 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
 | R4 | ~~公開 4 引数 `createDirectRelationship` の再認可なし~~ **処置済み 2026-09-15（バッチ 6）**: 入口が authorizing profile と request を受け取り、`createLinkAuthorized`（取込中のリンクと同じ核）を通る。委譲プロファイルは対象フォルダの現在の ACL に対して再確認、非委譲は対象外（過剰拒否の側も錠）。`outsideAnImport` の答え方（作られたリンクは null + WARN）は不変。`FetchSupport` は**両方とも**無ければリンクせず拒否を報告する。オーケストレータ 3 本の呼び出し側は**錠で測っていない**（orchestrator のユニットテストが無い）。**profile だけ渡して request を落とした場合は拒否されず**、コネクタ側の腕を黙って飛ばす（現在の 3 呼び出し側からは到達しない）。錠 6 本、control AY3 / AZ3 / BF3 / BG3 / BH3 | — | |
 | R5 | ~~gate / execute の版 TOCTOU~~ **測って範囲を確定した 2026-09-16（バッチ 9）— 「窓は無い」ではない**: ゲートは認可した行の指紋と解決済みフォルダ ID をリクエストに載せ、`execute` は (1) プロファイル解決の直後、(2) 内容の吸い出し・重複判定・冪等記録・resync 計画を読んだ後で書き込みの直前、の 2 回、委譲を問い直す。**`CanonicalImportServiceImpl` の書き込み 9 か所を数えた**: 文書の作成・版の checkIn・関係の作成はすべて `execute` か `createLink`（自分で問い直す）の中。4 つの archetype 入口（`…Internal`）はサービスを直接呼ぶ書き込みを持たない。**ただし「入口は execute の後に書かない」は偽**で、4 入口とも `execute` が返った後に属性を書く（→ R47）。**2 回目の問い直しと書き込みの間の瞬間は閉じられない**（店にトランザクションが無い）。錠 3 本（chat / note を通す実測 2 本 + 「2 回問い直す」「入口は直接書かない」「書き込みの本数は 9 と 4」の構造 1 本）、control BQ3 / BR3 | fencing は別件 | |
 | R6 | 数値 `repositoryId` はどのリポジトリも名指さない | 意図 | |
-| R7 | Mango `_find` が添付 stub を返す前提は未測定 | 実測 | |
+| R7 | ~~Mango `_find` が添付 stub を返す前提は未測定~~ **処置済み 2026-09-20（トラック A-7）— 実測したら前提の片方が偽だった**: `_find` の行は **`_attachments` stub を返す**（3.3.3 / 3.4.3 / 3.5.2 で実測。SDK 経由と生 curl の両方）。DLQ 側 (`IngestJobService`) はそれを前提にしていて正しかったが、**ACL-epoch finalizer の javadoc は逆を事実として書いていた**（「the scanner's `_find`, which does NOT carry `_attachments`」）。再読込の理由を「添付が落ちるから」と説明していたので、`_find` が stub を返すと知った次の読み手が再読込を不要と判断しかねない。**振る舞いは正しく、理由が偽**だったので javadoc を直した（本当の理由は hint が **stale** であること — CAS は生きた `_rev` と生きた state を要る）。前提の登録簿 `StoreBehaviourFacts`（7 fact × 3 ライン）と `StoreBehaviourFactsIT` を置き、**CI は supported な CouchDB ライン 1 本につき 1 job**（`store-behaviour-facts` matrix 3.3.3 / 3.4.3 / 3.5.2、素の couchdb コンテナだけ・`required=true`）。**使い捨て 1 回にしない錠**は `EverySupportedCouchDbIsMeasuredTest`（7 本、store 不要）: matrix と登録簿の双方向一致 / 「job が実際に IT を required で走らせる」/ 下限＝最低ライン / fact の欠落と死んだ行 / **未宣言の版は placement を拒否**（4.0 も 3.2 も）。`allow_fallback` は 3 つの結果（不明キーで拒否・効いた・受けたが何もしない）を**boolean 2 本**に分けた — 1 本だと「訊けなかった」が「答えは No」として通る。control EV3 / EW3 / EX3 / EY3 / EZ3 | — | **EW3 が最初不発**: 錠の job 抽出が次 job の**コメント帯**まで拾い、そこの `nemaki.test.couchdb.required=true` という一文で満たされていた。境界を 2 スペース行に詰め、コメント行を落として発火 |
 | R8 | ~~通し negative-control 未実施~~ **処置済み 2026-09-15**: 通し 621 本を 1 回完走（§5）。以後は CAS の後に 1 回 | — | |
 | R9 | DLQ の 503 級失敗は 200 `"failed"`（403 だけ例外） | 意図した限定 | |
 | R10 | ~~`webhook-deliveries:` は予約名ではない~~ **処置済み 2026-09-14（ユーザー指定のバッチ）**: 既存の `sourceObjectId` 接頭辞ではなく、行自身の欄 `webhookDeliveryRecord`（`saveWebhookDeliveryRecordToDlq` だけが立てる）で扉が拒否する。錠 4 本、control ZK2/ZL2/ZM2/ZN2 | — | |
@@ -116,12 +116,12 @@ attachment 行を作る → body を PUT」の順で（`ArchiveDaoDelegate` の 
 
 ## 5. 測定
 
-- コントロール **765**（2026-09-20 時点）。**うち 704 だけが通しで測られている** — 4 回目の通し以降に
-  足した 61 本（DG3 / DJ3 は退役。SIP 検証器の読みを手組みからパーサに替えたので、
+- コントロール **770**（2026-09-20 時点）。**うち 704 だけが通しで測られている** — 4 回目の通し以降に
+  足した 66 本（DG3 / DJ3 は退役。SIP 検証器の読みを手組みからパーサに替えたので、
   細工の対象そのものが無くなった）（CK3 / CL3 BagIt、CM3 stamp、CN3 / CO3 強制変換ログ、CP3 setup URL、CQ3 指紋、
   CR3 / CS3 / CT3 SIP の verdict、CU3〜CX3 内容複製、CY3 / CZ3 / DA3 / DC3〜DF3 / DL3〜DP3
   証拠 JSON の読み、DR3〜EF3 package 自身が述べた理由・重複キー・BOM・未知の理由・規則の一本化、
-  DB3 / DH3 / DI3 / DK3 / DQ3 中身の無い添付行・復元の窓・割り込み、EG3〜EI3 mapper の一本化、EJ3〜EL3 purge の走査上限、EM3 一覧の overload、EN3〜EP3 パス解決の期待値表、EQ3〜ES3 二重保護の各錨、ET3 / EU3 装飾の scope 付き列挙）は
+  DB3 / DH3 / DI3 / DK3 / DQ3 中身の無い添付行・復元の窓・割り込み、EG3〜EI3 mapper の一本化、EJ3〜EL3 purge の走査上限、EM3 一覧の overload、EN3〜EP3 パス解決の期待値表、EQ3〜ES3 二重保護の各錨、ET3 / EU3 装飾の scope 付き列挙、EV3〜EZ3 版ごとの実測とその fail-closed）は
   **ID 指定で 1 本ずつ実測しただけ**で、通しに入れたことはない。次の通しで初めて
   「他の錠を巻き添えにしないか」が測られる（CZ3 / DE3 / DH3 は実際に巻き込みがあり、宣言を足した）。
   **3 本が「発火しない」ことも分かった** — 新しい arm（空の path は `UNAVAILABLE`）が
