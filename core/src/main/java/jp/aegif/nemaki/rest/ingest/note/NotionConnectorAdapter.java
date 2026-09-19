@@ -68,7 +68,10 @@ public class NotionConnectorAdapter {
      * A page listing, and whether it is the WHOLE listing.
      *
      * @param pages what was read
-     * @param complete true only when Notion said there is nothing after these
+     * @param complete true when nothing this method saw says there is more. NOT the same as
+     *     "Notion answered that there is nothing after these": a response that OMITS
+     *     {@code has_more} is read as false, i.e. as an end (R61 — recorded, not fixed,
+     *     because the plan stops this area after its second P1)
      * @param truncatedBecause why it stopped early; null when {@code complete}
      */
     public record PageListing(List<NotionPageSummary> pages, boolean complete,
@@ -95,11 +98,19 @@ public class NotionConnectorAdapter {
      * shape for "these are all the pages" and "these are the first N of more", because the
      * caller advances a last-edited-time checkpoint from what it was given.
      *
-     * <p>{@code complete} is true only where Notion has ANSWERED that there is nothing after
-     * what came back. Three things have to line up for that, and two of them were wrong on the
-     * first pass: an empty {@code results} page may still carry {@code has_more}, and a
-     * {@code limit} above 100 lands in the middle of a page, so rows this method has already
-     * read can be dropped while Notion's own {@code has_more} for that page is false.
+     * <p>{@code complete} is true where nothing this method saw says there is more. Two ways of
+     * getting that wrong were fixed: an empty {@code results} page may still carry
+     * {@code has_more}, and a {@code limit} above 100 lands in the middle of a page, so rows
+     * this method has already read can be dropped while Notion's own {@code has_more} for that
+     * page is false.
+     *
+     * <p><b>One is left open and recorded (R61).</b> A response that omits {@code has_more}
+     * altogether is read as {@code false} — as an end — while the line above it refuses a
+     * response that omits {@code results}. The two are equally broken answers and only one is
+     * refused. This javadoc used to say {@code complete} means "Notion has ANSWERED that there
+     * is nothing after what came back", which that asymmetry makes false; the sentence is
+     * corrected here rather than the code, because the plan stops this area after its second
+     * P1 and the fix belongs with whoever opens it.
      */
     public PageListing searchPages(String query, int limit) throws Exception {
         int pageSize = Math.min(limit, 100); // Notion max page_size: 100
@@ -149,7 +160,9 @@ public class NotionConnectorAdapter {
 
             if (results.isEmpty()) {
                 if (!hasMore) {
-                    nothingMore = true; // an ANSWER: there are no (more) pages
+                    // Notion said there is no more — or omitted has_more, which is read
+                    // the same way and is not the same thing (R61).
+                    nothingMore = true;
                     break;
                 }
                 if (nextCursor == null || nextCursor.isEmpty()) {
@@ -326,7 +339,9 @@ public class NotionConnectorAdapter {
             }
             boolean hasMore = root.path("has_more").asBoolean(false);
             if (!hasMore) {
-                return allBlocks; // ANSWERED: that is the whole page
+                // As above: an omitted has_more reaches here as "that is the whole
+                // page" without Notion having said so (R61).
+                return allBlocks;
             }
             cursor = root.path("next_cursor").asText(null);
             if (cursor == null || cursor.isEmpty()) {
