@@ -1529,23 +1529,13 @@ public class CompileServiceImpl implements CompileService {
 		// cmis:changeToken - Version control property (add here to avoid duplication)
 		addProperty(properties, tdf, PropertyIds.CHANGE_TOKEN, String.valueOf(content.getChangeToken()));
 		
-		// TCK COMPLIANCE DEBUG: Verify compiled properties for all objects
-		if (log.isDebugEnabled()) {
-			log.debug("=== TCK DEBUG: Final compiled properties for object: " + content.getId() + " ===");
-			for (PropertyData<?> prop : properties.getPropertyList()) {
-				Object value = prop.getFirstValue();
-				log.debug("  Property: " + prop.getId() + " = " + value + " (type: " + (value != null ? value.getClass().getSimpleName() : "null") + ")");
-			}
-			log.debug("=== END TCK DEBUG ===");
-		}
-		
-		if (log.isDebugEnabled() && "cmis:document".equals(content.getType()) && content.getName() != null) {
-			log.debug("TCK PROPERTIES AFTER COMPILATION (Object: " + content.getName() + ", ID: " + content.getId() + ")");
-			for (PropertyData<?> prop : properties.getPropertyList()) {
-				Object value = prop.getFirstValue();
-				log.debug("  " + prop.getId() + " = " + value + " (type: " + (value != null ? value.getClass().getSimpleName() : "null") + ")");
-			}
-		}
+		// The two "TCK DEBUG" blocks that stood here dumped EVERY compiled property value of
+		// EVERY object, plus the object's name. They were an aid while the TCK was being made
+		// to pass; nothing reads them (no test, script or configuration in this repository
+		// refers to the strings), and the TCK judges CMIS responses, not logs. What they cost
+		// is that turning DEBUG on copies document metadata — a customer number, a diagnosis,
+		// a salary — into the log file. compileProperties already logs a summary above
+		// (repository, id, name, type), which is what a person debugging compilation needs.
 
 		// Note: If subType properties are not registered in DB, they won't appear in CMIS response
 		// SubType properties
@@ -2021,10 +2011,10 @@ public class CompileServiceImpl implements CompileService {
 				} else if (element instanceof String) {
 					String s = ((String) element).toLowerCase().trim();
 					if ("true".equals(s) || "1".equals(s)) {
-						log.debug("Type coercion: String '" + element + "' → Boolean true for property " + propertyId);
+						log.debug("Type coercion: String → Boolean true for property " + propertyId);
 						return Boolean.TRUE;
 					} else if ("false".equals(s) || "0".equals(s)) {
-						log.debug("Type coercion: String '" + element + "' → Boolean false for property " + propertyId);
+						log.debug("Type coercion: String → Boolean false for property " + propertyId);
 						return Boolean.FALSE;
 					}
 				} else if (element instanceof Number) {
@@ -2081,11 +2071,11 @@ public class CompileServiceImpl implements CompileService {
 					try {
 						// Trim whitespace before parsing
 						BigInteger parsed = new BigInteger(((String) element).trim());
-						log.debug("Type coercion: String '" + element + "' → Integer for property " + propertyId);
+						log.debug("Type coercion: String → Integer for property " + propertyId);
 						return parsed;
 					} catch (NumberFormatException e) {
 						log.warn("TYPE COERCION FAILED for property '" + propertyId + "': " +
-							"Cannot parse String '" + element + "' as Integer.");
+							"the stored String is not an Integer (value withheld from the log).");
 					}
 				}
 				break;
@@ -2113,11 +2103,11 @@ public class CompileServiceImpl implements CompileService {
 					try {
 						// Trim whitespace before parsing
 						BigDecimal parsed = new BigDecimal(((String) element).trim());
-						log.debug("Type coercion: String '" + element + "' → Decimal for property " + propertyId);
+						log.debug("Type coercion: String → Decimal for property " + propertyId);
 						return parsed;
 					} catch (NumberFormatException e) {
 						log.warn("TYPE COERCION FAILED for property '" + propertyId + "': " +
-							"Cannot parse String '" + element + "' as Decimal.");
+							"the stored String is not a Decimal (value withheld from the log).");
 					}
 				}
 				break;
@@ -2132,7 +2122,7 @@ public class CompileServiceImpl implements CompileService {
 						return cal;
 					} catch (ParseException e) {
 						log.warn("TYPE COERCION FAILED for property '" + propertyId + "': " +
-							"Cannot parse String '" + element + "' as DateTime.");
+							"the stored String is not a DateTime (value withheld from the log).");
 					}
 				} else if (element instanceof Number) {
 					// Timestamps stored as epoch millis. Number, not Long: the CouchDB round
@@ -2148,7 +2138,8 @@ public class CompileServiceImpl implements CompileService {
 					// Reject negative timestamps (before 1970-01-01)
 					if (timestamp < 0) {
 						log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
-							"numeric value " + timestamp + " is negative (before Unix epoch). " +
+							"the stored numeric timestamp is negative, before the Unix epoch " +
+							"(value withheld from the log). " +
 							"Returning null to avoid invalid DateTime.");
 						return null;
 					}
@@ -2158,7 +2149,7 @@ public class CompileServiceImpl implements CompileService {
 					long maxFutureMs = System.currentTimeMillis() + (100L * 365L * 24L * 60L * 60L * 1000L);
 					if (timestamp > maxFutureMs) {
 						log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
-							"numeric value " + timestamp + " is too far in the future (>100 "
+							"the stored numeric timestamp is too far in the future (>100 "
 							+ "years). This may be garbage data. Returning null.");
 						return null;
 					}
