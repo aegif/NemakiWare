@@ -222,17 +222,45 @@ class NoJavadocIsOrphanedTest {
             if (next >= lines.size() || !lines.get(next).strip().startsWith("/**")) {
                 continue;
             }
-            int open = i;
-            while (open > 0 && !lines.get(open).strip().startsWith("/**")) {
-                open--;
+            // The block that ENDS at `i` has to be JAVADOC. A plain /* ... */ comment owns no
+            // declaration and never did, so one sitting above a javadoc block is not an orphan
+            // — and the backward scan below used to walk straight past it, through whatever code
+            // lay in between, and report the text of an EARLIER javadoc that was attached fine.
+            // Two of those were in this tree, and both named a method that had its javadoc.
+            int open = openerOf(lines, i);
+            if (open < 0) {
+                continue;
             }
-            String firstLine = lines.get(open).strip().startsWith("/**")
-                    && lines.get(open).strip().length() > 3
-                            ? lines.get(open).strip().substring(3).trim()
-                            : (open + 1 < lines.size() ? lines.get(open + 1).strip() : "");
+            String opening = lines.get(open).strip();
+            String firstLine = opening.length() > 3
+                    ? opening.substring(3).trim()
+                    : (open + 1 < lines.size() ? lines.get(open + 1).strip() : "");
             found.add((next + 1) + " :: " + firstLine);
         }
         return found;
+    }
+
+    /**
+     * The line that OPENED the comment block ending at {@code end}, or -1 when that block is not
+     * javadoc.
+     *
+     * <p>Scans back to the nearest line that opens a block comment — {@code /*} matches both
+     * spellings — and answers only for {@code /**}. Stopping at the first opener is what keeps
+     * it from crossing a declaration; the previous version searched for {@code /**} specifically
+     * and therefore skipped over any {@code /*} block in between, together with the code around
+     * it.
+     */
+    static int openerOf(List<String> lines, int end) {
+        for (int open = end; open >= 0; open--) {
+            String line = lines.get(open).strip();
+            if (line.startsWith("/**")) {
+                return open;
+            }
+            if (line.startsWith("/*")) {
+                return -1; // a plain block comment: it documents nothing, so it orphans nothing
+            }
+        }
+        return -1;
     }
 
     @Test
@@ -268,6 +296,30 @@ class NoJavadocIsOrphanedTest {
         assertEquals(List.of(), orphansIn(List.of(
                 "    // a comment ending in */", "    /** B. */", "    void y();")),
                 "a line comment that happens to end in */ was treated as a block end");
+    }
+
+    @Test
+    @DisplayName("a plain /* block comment above javadoc is not an orphan, and is not blamed on "
+            + "someone else's javadoc")
+    void aBlockCommentOwnsNothingAndOrphansNothing() {
+        // Two of these were reported as orphans in this tree. A /* ... */ note explaining why
+        // something was removed documents no declaration — it cannot be dropped from the
+        // generated documentation because it was never in it.
+        //
+        // The second half is the worse failure. The report named "Does this node carry bytes?",
+        // which is the javadoc of a method three declarations earlier that is attached perfectly
+        // well: the backward scan looked for `/**` and walked past the `/*` opener and the code
+        // between them. Someone acting on that report would have gone to a healthy method.
+        List<String> removalNote = List.of(
+                "    /**", "     * Real javadoc.", "     */", "    void x();",
+                "",
+                "    /*", "     * y() was removed.", "     */",
+                "",
+                "    /** B. */", "    void z();");
+
+        assertEquals(List.of(), orphansIn(removalNote),
+                "a /* ... */ comment above a javadoc block was reported as an orphan, and the "
+                        + "text it was reported under belongs to a method that has its javadoc");
     }
 
     @Test

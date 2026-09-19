@@ -137,12 +137,33 @@ class NotionConnectorAdapterTest {
     }
 
     @Test
-    void shouldStopPaginationOnNon200() throws Exception {
+    void shouldRefuseToCallAFailedBlockReadAnEmptyPage() {
+        // This test used to assert the opposite, in these words: "Should not throw — just stops
+        // pagination and returns empty". It was the defect written down as the contract (R14):
+        // extractFiles then reported no attachments, the note was imported without them, no dead
+        // letter was written, and the poller's checkpoint moved past the page for good.
+        //
+        // The behaviour is measured end to end in NotionPartialReadsAreNotCompleteTest; this is
+        // the adapter's own half, left here so the old contract cannot come back quietly.
         wireMock.stubFor(get(urlPathEqualTo("/blocks/page-4/children"))
                 .willReturn(aResponse().withStatus(500)));
-        // Should not throw — just stops pagination and returns empty
-        String html = adapter.fetchPageAsHtml("page-4");
-        assertEquals("", html);
+
+        NotionConnectorAdapter.NotionReadIncompleteException refused = assertThrows(
+                NotionConnectorAdapter.NotionReadIncompleteException.class,
+                () -> adapter.fetchPageAsHtml("page-4"),
+                "a 500 on the block listing was reported as a page with no content");
+        assertTrue(refused.getMessage().contains("500"), refused.getMessage());
+    }
+
+    @Test
+    void shouldStillAnswerForAPageThatHasNoBlocks() throws Exception {
+        // The other direction, so the refusal above is not satisfied by refusing everything.
+        wireMock.stubFor(get(urlPathEqualTo("/blocks/page-5/children"))
+                .willReturn(aResponse().withBody("""
+                    {"results": [], "has_more": false}
+                    """)));
+
+        assertEquals("", adapter.fetchPageAsHtml("page-5"));
     }
 
     // ── Record mapping ───────────────────────────────────────────
