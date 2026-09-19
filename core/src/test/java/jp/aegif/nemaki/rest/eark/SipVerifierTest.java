@@ -168,6 +168,78 @@ class SipVerifierTest {
     }
 
     @Test
+    @DisplayName("a leaf and a root with NO audit path is not a proof of inclusion")
+    void aMissingAuditPathIsNotAnEmptyOne(@TempDir Path tmp) throws Exception {
+        // Found by review. An absent path walked as an empty one compares leaf(leafHash) with
+        // merkleRoot directly — so a package that puts the leaf's own hash in its merkleRoot
+        // passed the check while carrying no proof at all. Both values are the package's own.
+        String payload = "the minutes";
+        String evidence = "{ \"status\" : \"success\", \"inclusionProof\" : { \"leafHash\" : "
+                + "\"e0hash\", \"merkleRoot\" : \"" + SipVerifier.leaf("e0hash") + "\" } }";
+        Path sip = zip(tmp, "nopath.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", evidence));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.NOT_PRESENT, outcomeOf(result, "audit path"),
+                "a package with no auditPath was treated as one with an empty path: "
+                        + result.asMap());
+        assertEquals(SipVerifier.Verdict.INDETERMINATE, result.verdict(),
+                result.asMap().toString());
+    }
+
+    @Test
+    @DisplayName("an EMPTY audit path from a single-entry checkpoint still verifies")
+    void anEmptyAuditPathIsNotAMissingOne(@TempDir Path tmp) throws Exception {
+        // The over-throw guard for the fix above. A checkpoint that sealed one entry produces a
+        // genuinely empty path, and the root IS the leaf's hash. Refusing that would report a
+        // real package as unverifiable.
+        List<String> oneLeaf = List.of("e0hash");
+        String root = MerkleTree.root(oneLeaf);
+        String payload = "the minutes";
+        String evidence = "{ \"status\" : \"success\", \"inclusionProof\" : { \"leafHash\" : "
+                + "\"e0hash\", \"merkleRoot\" : \"" + root + "\", \"auditPath\" : [ ] } }";
+        Path sip = zip(tmp, "oneleaf.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", evidence));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.PASSED, outcomeOf(result, "audit path"),
+                result.asMap().toString());
+        assertEquals(SipVerifier.Verdict.VERIFIED, result.verdict(), result.asMap().toString());
+    }
+
+    @Test
+    @DisplayName("a step this verifier cannot read is UNAVAILABLE, not a broken path")
+    void anUnreadableStepIsNotAFailure(@TempDir Path tmp) throws Exception {
+        // Dropping the unreadable step silently would shorten the path, land on a different
+        // root, and report FAILED — "the entry was not in that span" — about a package we did
+        // not manage to read.
+        String payload = "the minutes";
+        String evidence = "{ \"inclusionProof\" : { \"leafHash\" : \"e0hash\", "
+                + "\"merkleRoot\" : \"" + SipVerifier.leaf("e0hash") + "\", "
+                + "\"auditPath\" : [ { \"siblingIsLeft\" : false } ] } }";
+        Path sip = zip(tmp, "unreadablestep.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", evidence));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"),
+                result.asMap().toString());
+        assertEquals(SipVerifier.Verdict.INDETERMINATE, result.verdict(),
+                result.asMap().toString());
+    }
+
+    @Test
     @DisplayName("a package with nothing to check does NOT report verified")
     void anEmptyPackageIsNotVerified(@TempDir Path tmp) throws Exception {
         // "Nothing was wrong" and "nothing was checked" are the same sentence with opposite
@@ -286,6 +358,11 @@ class SipVerifierTest {
 
         assertFalse(result.allPassed());
         assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "package readable"),
+                result.asMap().toString());
+        // The result carries ONE row and neither required check is in it. Asserting the verdict
+        // here says what that means: a file that is not a package establishes nothing, which is
+        // INDETERMINATE and not FAILED. Without this the test passed under the old rule too.
+        assertEquals(SipVerifier.Verdict.INDETERMINATE, result.verdict(),
                 result.asMap().toString());
     }
 

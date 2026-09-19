@@ -8800,6 +8800,49 @@ CONTROLS = [
         test='CopyingContentRefusesAMissingRowTest',
         expect_fail=['aPresentAttachmentIsStillCopied'],
     ),
+    # ── 確認レビューが出した P1 / P2 の処置 (2026-09-19) ──
+    dict(
+        id="CY3",
+        what="an ABSENT auditPath is walked as an empty one again, so a package carrying a leaf "
+             "and a root it computed from that leaf passes the inclusion check",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='        if (!path.present()) {',
+        replace='        if (false) {',
+        test='SipVerifierTest',
+        expect_fail=['aMissingAuditPathIsNotAnEmptyOne'],
+    ),
+    dict(
+        id="CZ3",
+        what="an empty-but-present auditPath is treated as a missing one, so a checkpoint that "
+             "sealed a single entry can no longer be verified",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='        if (!path.present()) {',
+        replace='        if (!path.present() || path.steps().isEmpty()) {',
+        test='SipVerifierTest',
+        # The unreadable-step lock goes down with it: an unreadable path also has zero steps, so
+        # the sabotage answers NOT_PRESENT before the unreadable arm is reached.
+        expect_fail=['anEmptyAuditPathIsNotAMissingOne', 'anUnreadableStepIsNotAFailure'],
+    ),
+    dict(
+        id="DA3",
+        what="a step this verifier cannot read is dropped silently again, shortening the path "
+             "and reporting FAILED about a package it did not manage to read",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='                return AuditPath.unreadable("a step carries no siblingHash");',
+        replace='                continue;',
+        test='SipVerifierTest',
+        expect_fail=['anUnreadableStepIsNotAFailure'],
+    ),
+    dict(
+        id="DB3",
+        what="an attachment row with no content body is copied again, producing a second empty "
+             "row that the caller records as a successful copy",
+        file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/delegate/AttachmentServiceDelegate.java',
+        find='\t\tif (original.getInputStream() == null) {',
+        replace='\t\tif (false) {',
+        test='CopyingContentRefusesAMissingRowTest',
+        expect_fail=['checkOutRefusesARowWithNoBody'],
+    ),
 ]
 
 

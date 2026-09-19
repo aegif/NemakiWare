@@ -156,6 +156,32 @@ class CopyingContentRefusesAMissingRowTest {
     }
 
     @Test
+    @DisplayName("checkOut refuses when the attachment row is there and its body is not")
+    void checkOutRefusesARowWithNoBody() throws Exception {
+        // One level further in than the missing row, and it produced something worse: a SECOND
+        // empty row. createAttachment skips its body stage for a null stream and returns the new
+        // id as a success, so the copy looked like it worked. Found by review.
+        jp.aegif.nemaki.dao.ContentDaoService dao = dao();
+        when(dao.getDocument("bedroom", "doc-1")).thenReturn(document("doc-1", "att-9"));
+        AttachmentNode bodyless = new AttachmentNode();
+        bodyless.setName("minutes.txt");
+        bodyless.setMimeType("text/plain");
+        bodyless.setLength(11L);
+        // No setInputStream: this is what getAttachment returns when the CouchDB document
+        // carries no `content` attachment.
+        when(dao.getAttachment("bedroom", "att-9")).thenReturn(bodyless);
+        ContentServiceImpl service = serviceOn(dao);
+
+        CmisStorageException refusal = assertThrows(CmisStorageException.class,
+                () -> service.checkOut(mock(CallContext.class), "bedroom", "doc-1", null));
+
+        assertTrue(refusal.getMessage().contains("no content body"),
+                "the refusal does not say what was actually missing: " + refusal.getMessage());
+        verify(dao, never()).createAttachment(anyString(), any(AttachmentNode.class), any());
+        verify(dao, never()).create(anyString(), any(Document.class));
+    }
+
+    @Test
     @DisplayName("a document that genuinely has no content is still checked out")
     void aContentLessDocumentStillChecksOut() throws Exception {
         // The over-throw guard. "The source names nothing" and "the store does not have what the
