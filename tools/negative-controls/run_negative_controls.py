@@ -8865,9 +8865,12 @@ CONTROLS = [
         # the proof its top-level status still answers, and the lock stays green.
         expect_fail=['aBrokenAuditPathFails', 'aByteOrderMarkIsSkipped', 'aGoodPackageVerifies',
                      'aHalfWrittenProofDescribesBothFields', 'aMissingAuditPathIsNotAnEmptyOne',
+                     'aPartlyReadableReasonKeepsWhatItRead',
                      'aProofThatSaysItIsUnavailableIsQuoted',
+                     'aProofWithOnlyAMessageTakesTheReasonWithIt',
                      'aRealExportedPackageWithALedgerVerifies', 'aReformattedProofStillVerifies',
                      'aSilentPackageIsNotPresent', 'anAuditPathWithoutADigestIsIndeterminate',
+                     'anEmptyProofObjectIsNotAnAbsentOne',
                      'looseKeysDoNotShadowTheProof', 'theReasonRuleIsOneRule'],
     ),
     dict(
@@ -8880,7 +8883,9 @@ CONTROLS = [
         test='SipVerifierTest',
         expect_fail=['aNonStringFieldIsNotReadAsTheNextKey',
                      'aHalfWrittenProofDescribesBothFields',
-                     'anUnreadableReasonSaysItIsUnreadable'],
+                     'anUnreadableReasonSaysItIsUnreadable',
+                     'aPartlyReadableReasonKeepsWhatItRead',
+                     'anEmptyProofObjectIsNotAnAbsentOne'],
     ),
     dict(
         id="DE3",
@@ -8940,11 +8945,13 @@ CONTROLS = [
         what="the reason written INSIDE the proof is not read, so a proof that explains "
              "itself is described without the explanation",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='        Map<String, Object> source =\n'
-             '                proof.containsKey("status") || proof.containsKey("message") ? proof : document;',
+        find='        Map<String, Object> source = proof != null\n'
+             '                && (proof.containsKey("status") || proof.containsKey("message")) ? proof : document;',
         replace='        Map<String, Object> source = document;',
         test='SipVerifierTest',
-        expect_fail=['aProofThatSaysItIsUnavailableIsQuoted', 'theReasonRuleIsOneRule'],
+        expect_fail=['aProofThatSaysItIsUnavailableIsQuoted', 'theReasonRuleIsOneRule',
+                     'aPartlyReadableReasonKeepsWhatItRead',
+                     'aProofWithOnlyAMessageTakesTheReasonWithIt'],
     ),
     dict(
         id="DT3",
@@ -8984,12 +8991,14 @@ CONTROLS = [
         expect_fail=['anUnrecognisedReasonIsUnavailable', 'aProofThatSaysItIsUnavailableIsQuoted',
                      'aRealExportedPackageIsRead', 'anUnreadableReasonIsStillAReason',
                      'theReasonRuleIsOneRule', 'aSuccessWithNoProofIsNotSilence',
-                     'anUnreadableReasonSaysItIsUnreadable'],
+                     'anUnreadableReasonSaysItIsUnreadable',
+                     'aPartlyReadableReasonKeepsWhatItRead',
+                     'aProofWithOnlyAMessageTakesTheReasonWithIt'],
     ),
     dict(
         id="DW3",
-        what="a package that says nothing at all is reported as unreadable, so an absent proof "
-             "becomes a proof that could not be used",
+        what="a package that says nothing at all is reported as one that gave a reason this "
+             "verifier does not recognise, so an absent proof becomes an unusable one",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
         find='        if (!source.containsKey("status") && !source.containsKey("message")) {\n'
              '            return null;\n'
@@ -9008,7 +9017,7 @@ CONTROLS = [
              "gets a different answer than the same word written beside it",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
         find='        if ("not-chained".equals(status)) {',
-        replace='        if ("not-chained".equals(status) && proof.isEmpty()) {',
+        replace='        if ("not-chained".equals(status) && source == document) {',
         test='SipVerifierTest',
         expect_fail=['theReasonRuleIsOneRule'],
     ),
@@ -9028,7 +9037,7 @@ CONTROLS = [
         what="a package that says its proof succeeded and carries no proof falls through to "
              "'carries no inclusion proof, and does not say why'",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='            if (proof.isEmpty()) {',
+        find='            if (proof == null) {',
         replace='            if (false) {',
         test='SipVerifierTest',
         expect_fail=['aSuccessWithNoProofIsNotSilence'],
@@ -9038,7 +9047,7 @@ CONTROLS = [
         what="a reason that could not be read is reported as one this verifier does not "
              "recognise — 'we could not read it' answered as 'we know the states, not this one'",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='        if (unreadable) {',
+        find='        if (status == null && message == null) {',
         replace='        if (false) {',
         test='SipVerifierTest',
         expect_fail=['anUnreadableReasonSaysItIsUnreadable'],
@@ -9048,12 +9057,31 @@ CONTROLS = [
         what="the reason beside a proof object is not read, so a package that put its reason "
              "where the canon allows is described as one whose fields are unreadable",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='                proof.containsKey("status") || proof.containsKey("message") ? proof : document;',
-        replace='                proof;',
+        find='        Map<String, Object> source = proof != null\n'
+             '                && (proof.containsKey("status") || proof.containsKey("message")) ? proof : document;',
+        replace='        Map<String, Object> source = proof != null ? proof : document;',
         test='SipVerifierTest',
-        expect_fail=['theReasonRuleIsOneRule', 'aRealExportedPackageIsRead',
-                     'aSuccessWithNoProofIsNotSilence', 'anUnreadableReasonIsStillAReason',
-                     'anUnreadableReasonSaysItIsUnreadable', 'anUnrecognisedReasonIsUnavailable'],
+        expect_fail=['theReasonRuleIsOneRule'],
+    ),
+    dict(
+        id="EC3",
+        what="an empty or unusable proof OBJECT is answered as 'there is no proof to read', "
+             "which is false and drops the diagnosis of its own fields",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='            if (proof == null) {',
+        replace='            if (true) {',
+        test='SipVerifierTest',
+        expect_fail=['anEmptyProofObjectIsNotAnAbsentOne'],
+    ),
+    dict(
+        id="ED3",
+        what="one unreadable field makes the whole reason 'not a readable string', throwing "
+             "away the half that WAS read",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='        if (status == null && message == null) {',
+        replace='        if (partlyUnreadable) {',
+        test='SipVerifierTest',
+        expect_fail=['aPartlyReadableReasonKeepsWhatItRead'],
     ),
     dict(
         id="DQ3",
@@ -9084,7 +9112,8 @@ CONTROLS = [
              '                            + fieldState(proof, "merkleRoot")',
         replace='                            + fieldState(proof, "leafHash")',
         test='SipVerifierTest',
-        expect_fail=['aHalfWrittenProofDescribesBothFields'],
+        expect_fail=['aHalfWrittenProofDescribesBothFields',
+                     'anEmptyProofObjectIsNotAnAbsentOne'],
     ),
     dict(
         id="DN3",
@@ -9116,7 +9145,7 @@ CONTROLS = [
         what="a package that says its audit path COULD NOT BE BUILT is described by its status "
              "alone, dropping the reason the package carries",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='        Check reason = reasonFor(document, Map.of());\n'
+        find='        Check reason = reasonFor(document, null);\n'
              '        if (reason != null) {',
         replace='        Check reason = null;\n'
                 '        if (reason != null) {',

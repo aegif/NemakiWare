@@ -684,6 +684,83 @@ class SipVerifierTest {
     }
 
     @Test
+    @DisplayName("half a readable reason keeps the half that was read")
+    void aPartlyReadableReasonKeepsWhatItRead(@TempDir Path tmp) throws Exception {
+        // status readable, message not. Reporting "the reason is not a readable string" threw
+        // away the status — and the status is the token a reader acts on (review, 2026-09-20).
+        String payload = "the minutes";
+        String evidence = "{ \"inclusionProof\" : { \"provesSequence\" : 7, "
+                + "\"status\" : \"pending-checkpoint\", "
+                + "\"message\" : { \"en\" : \"no checkpoint covers sequence 7 yet\" } } }";
+        Path sip = zip(tmp, "halfreadable.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", evidence));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+        String detail = detailOf(result, "audit path");
+
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"), detail);
+        assertTrue(detail.contains("pending-checkpoint"),
+                "the readable half of the reason was thrown away: " + detail);
+        assertTrue(detail.contains("not a readable string"),
+                "the unreadable half was not mentioned at all: " + detail);
+    }
+
+    @Test
+    @DisplayName("an EMPTY proof object is not 'there is no proof to read'")
+    void anEmptyProofObjectIsNotAnAbsentOne(@TempDir Path tmp) throws Exception {
+        // `proof.isEmpty()` stood in for "there is no proof object", so a package carrying an
+        // empty one — or a usable-looking one with unreadable fields — was told "carries no
+        // proof to read", which is false, and the diagnosis of its fields disappeared
+        // (both reviewers, 2026-09-20).
+        String payload = "the minutes";
+        String evidence = "{ \"inclusionProof\" : { \"provesSequence\" : 7, "
+                + "\"status\" : \"success\", \"merkleRoot\" : 42 } }";
+        Path sip = zip(tmp, "successbutunreadable.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", evidence));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+        String detail = detailOf(result, "audit path");
+
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"), detail);
+        assertTrue(detail.contains("merkleRoot is not a string"),
+                "the diagnosis of the proof's own fields was replaced with a sentence about "
+                        + "there being no proof: " + detail);
+        assertFalse(detail.contains("carries no proof to read"),
+                "a package WITH a proof object was told it carries none: " + detail);
+    }
+
+    @Test
+    @DisplayName("a proof that says only a message does not hide a status beside it")
+    void aProofWithOnlyAMessageTakesTheReasonWithIt(@TempDir Path tmp) throws Exception {
+        // The consequence of reading status and message as a PAIR from one place: a proof
+        // object that carries only a message takes the whole reason with it, so a
+        // `not-chained` written beside it is not read. Pinned because it is a consequence a
+        // reader has to know, not because it is obviously right (review, 2026-09-20).
+        String payload = "the minutes";
+        String evidence = "{ \"inclusionProof\" : { \"provesSequence\" : 7, "
+                + "\"message\" : \"no checkpoint covers sequence 7 yet\" }, "
+                + "\"status\" : \"not-chained\" }";
+        Path sip = zip(tmp, "messageonlyproof.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", evidence));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+        String detail = detailOf(result, "audit path");
+
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"), detail);
+        assertTrue(detail.contains("no checkpoint covers sequence 7"),
+                "the proof's own message was not used: " + detail);
+    }
+
+    @Test
     @DisplayName("a reason that cannot be read says THAT, not 'unrecognised'")
     void anUnreadableReasonSaysItIsUnreadable(@TempDir Path tmp) throws Exception {
         // "we do not recognise this state" and "we could not read what it says" are different
@@ -701,7 +778,9 @@ class SipVerifierTest {
         String detail = detailOf(result, "audit path");
 
         assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"), detail);
-        assertTrue(detail.contains("not a readable string"),
+        // The WHOLE sentence, not the fragment: the "part of what it says" note also contains
+        // "not a readable string", so the fragment alone left the sabotage green (measured).
+        assertTrue(detail.contains("the reason it gives is not a readable string"),
                 "an unreadable reason was reported as an unrecognised one: " + detail);
     }
 
