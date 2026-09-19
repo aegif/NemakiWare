@@ -547,8 +547,11 @@ class SipVerifierTest {
 
         SipVerifier.Result result = SipVerifier.verify(sip);
 
-        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"),
-                result.asMap().toString());
+        String detail = detailOf(result, "audit path");
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"), detail);
+        // The outcome alone would be satisfied by any other unreadable-shape arm; this says the
+        // DUPLICATE is what was detected (review, 2026-09-20).
+        assertTrue(detail.contains("Duplicate"), detail);
     }
 
     @Test
@@ -563,11 +566,51 @@ class SipVerifierTest {
                 "sip/representations/rep1/data/minutes.txt", payload,
                 "sip/metadata/preservation/premis.xml",
                 premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
-                "sip/metadata/other/nemaki-evidence.json", "\uFEFF" + proof.get("json")));
+                // Two, not one: a package that has been through two tools that each add one.
+                "sip/metadata/other/nemaki-evidence.json", "\uFEFF\uFEFF" + proof.get("json")));
 
         SipVerifier.Result result = SipVerifier.verify(sip);
 
         assertEquals(SipVerifier.Verdict.VERIFIED, result.verdict(), result.asMap().toString());
+    }
+
+    @Test
+    @DisplayName("a reason this verifier does not recognise is not 'no proof is present'")
+    void anUnrecognisedReasonIsUnavailable(@TempDir Path tmp) throws Exception {
+        // A third-party or older package that says WHY in words this verifier has no state for.
+        // Classifying that as "the proof is absent" attaches the chain sentence to a sentence
+        // we did not understand (review, 2026-09-20).
+        String payload = "the minutes";
+        String evidence = "{ \"inclusionProof\" : null, "
+                + "\"message\" : \"ledger temporarily unreachable\" }";
+        Path sip = zip(tmp, "unknownreason.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", evidence));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+        String detail = detailOf(result, "audit path");
+
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"), detail);
+        assertTrue(detail.contains("ledger temporarily unreachable"), detail);
+    }
+
+    @Test
+    @DisplayName("a package that says nothing at all is NOT_PRESENT — the absent proof it is")
+    void aSilentPackageIsNotPresent(@TempDir Path tmp) throws Exception {
+        // The over-throw side of the arm above: no proof, no reason, nothing to misread.
+        String payload = "the minutes";
+        Path sip = zip(tmp, "silent.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", "{ \"objectId\" : \"doc-1\" }"));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.NOT_PRESENT, outcomeOf(result, "audit path"),
+                result.asMap().toString());
     }
 
     @Test
@@ -876,6 +919,9 @@ class SipVerifierTest {
         // apart sitting in the same document.
         assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"),
                 result.asMap().toString());
+        assertTrue(detailOf(result, "audit path").contains("could not be read"),
+                "the verifier does not say that the package could not read its own evidence: "
+                        + detailOf(result, "audit path"));
         assertTrue(detailOf(result, "audit path").contains("not wired"),
                 "the verifier does not repeat what the package says about its own evidence: "
                         + detailOf(result, "audit path"));

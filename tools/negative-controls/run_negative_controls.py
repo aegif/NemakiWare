@@ -8860,11 +8860,14 @@ CONTROLS = [
         test='SipVerifierTest',
         # Reading the whole document as the proof breaks every package whose proof IS nested,
         # which is all of them — declared rather than narrowed, because the sabotage is the
-        # honest revert of the scoping.
+        # honest revert of the scoping. The list is what the runner MEASURED, not what I
+        # derived: `aRealExportedPackageIsRead` is NOT here, because with the document read as
+        # the proof its top-level status still answers, and the lock stays green.
         expect_fail=['looseKeysDoNotShadowTheProof', 'aRealExportedPackageWithALedgerVerifies',
-                     'aRealExportedPackageIsRead', 'aBrokenAuditPathFails',
+                     'aBrokenAuditPathFails', 'aByteOrderMarkIsSkipped',
                      'aGoodPackageVerifies', 'aHalfWrittenProofDescribesBothFields',
-                     'aMissingAuditPathIsNotAnEmptyOne', 'aReformattedProofStillVerifies',
+                     'aMissingAuditPathIsNotAnEmptyOne', 'aProofThatSaysItIsUnavailableIsQuoted',
+                     'aReformattedProofStillVerifies',
                      'anAuditPathWithoutADigestIsIndeterminate', 'thePackagesOwnReasonIsUsed'],
     ),
     dict(
@@ -8958,10 +8961,34 @@ CONTROLS = [
         what="a byte order mark is passed to the parser again, so a package this verifier could "
              "read is reported as unreadable JSON",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='        String text = json.startsWith("\\uFEFF") ? json.substring(1) : json;',
+        find='        String text = json;\n'
+             '        while (text.startsWith("\\uFEFF")) {\n'
+             '            text = text.substring(1);\n'
+             '        }',
         replace='        String text = json;',
         test='SipVerifierTest',
         expect_fail=['aByteOrderMarkIsSkipped'],
+    ),
+    dict(
+        id="DV3",
+        what="a reason this verifier does not recognise is classified as 'no proof is present', "
+             "attaching the chain sentence to a sentence we did not understand",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='        if (status != null || message != null) {',
+        replace='        if (false) {',
+        test='SipVerifierTest',
+        expect_fail=['anUnrecognisedReasonIsUnavailable'],
+    ),
+    dict(
+        id="DW3",
+        what="a package that says nothing at all is reported as unreadable, so an absent proof "
+             "becomes a proof that could not be used",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='        if (status != null || message != null) {',
+        replace='        if (true) {',
+        test='SipVerifierTest',
+        # The shadowing fixture has no status and no message either, so it takes the same arm.
+        expect_fail=['aSilentPackageIsNotPresent', 'looseKeysDoNotShadowTheProof'],
     ),
     dict(
         id="DQ3",
@@ -9004,8 +9031,10 @@ CONTROLS = [
         replace='        } catch (Exception malformed) {\n'
                 '            return new Check("audit path", Outcome.NOT_PRESENT,',
         test='SipVerifierTest',
-        # `truegarbage` is not valid JSON either, so it takes the same arm.
-        expect_fail=['unparseableEvidenceIsUnavailable', 'aTruncatedLiteralIsNotRead'],
+        # `truegarbage` is not valid JSON either, and a duplicate key is now a parse error, so
+        # all three take the same arm.
+        expect_fail=['unparseableEvidenceIsUnavailable', 'aTruncatedLiteralIsNotRead',
+                     'aDuplicateKeyIsRefused'],
     ),
     dict(
         id="DO3",
