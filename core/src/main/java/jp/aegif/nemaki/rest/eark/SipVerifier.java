@@ -278,6 +278,22 @@ public final class SipVerifier {
         String leaf = asString(proof.get("leafHash"));
         String root = asString(proof.get("merkleRoot"));
         if (leaf == null || root == null) {
+            // The package usually says WHY there is no path, and the exporter writes that
+            // reason INSIDE the proof object as well as beside it — so the arm added for
+            // `inclusionProofFailed` was unreachable for every package this product builds,
+            // and a correctly formed package ("no checkpoint covers this entry yet") was
+            // described as one whose fields could not be read (review, 2026-09-20).
+            String couldNotBuild = asString(document.get("inclusionProofFailed"));
+            if (couldNotBuild != null) {
+                return new Check("audit path", Outcome.UNAVAILABLE,
+                        "the package says the audit path could not be built: " + couldNotBuild);
+            }
+            String proofStatus = asString(proof.get("status"));
+            String proofMessage = asString(proof.get("message"));
+            if (proofStatus != null && !"success".equals(proofStatus) && proofMessage != null) {
+                return new Check("audit path", Outcome.UNAVAILABLE,
+                        "the package's own proof says it is " + proofStatus + ": " + proofMessage);
+            }
             // Both fields are described, each in its own words. Naming only the first problem
             // said "the rest is fine" about a field that might be unusable too — the same
             // conflation one level down (review, 2026-09-20).
@@ -463,12 +479,23 @@ public final class SipVerifier {
      * could be shadowed by loose keys beside it; a non-string value returned the NEXT KEY'S
      * NAME; {@code true} was matched by prefix; a {@code null} in the step array was absorbed
      * into its neighbour; and escapes were not decoded, so a legitimate value came back
-     * truncated. A parser has none of these, and the shape checks below are explicit.
+     * truncated. None of those survive a parser, and the shape checks below are explicit.
+     *
+     * <p>A parser does NOT settle duplicate keys by itself: Jackson's default takes the LAST
+     * one, so {@code "siblingHash": null, "siblingHash": "<the real one>"} would be read
+     * differently here than by a first-wins reader — the same disagreement between readers that
+     * the hand-rolled version had, with the winner flipped (review, 2026-09-20). Strict
+     * duplicate detection makes it an error instead, the way {@code LineageSpoolCodec} already
+     * reads spool JSON. A leading BOM is dropped: Jackson skips it when reading bytes and not
+     * when reading a String, and a re-zipped package can acquire one.
      */
     @SuppressWarnings("unchecked")
     static Map<String, Object> readJsonObject(String json) {
-        Object parsed = tools.jackson.databind.json.JsonMapper.builder().build()
-                .readValue(json, Object.class);
+        String text = json.startsWith("\uFEFF") ? json.substring(1) : json;
+        Object parsed = tools.jackson.databind.json.JsonMapper.builder()
+                .enable(tools.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+                .build()
+                .readValue(text, Object.class);
         if (!(parsed instanceof Map)) {
             throw new IllegalArgumentException("the evidence package is not a JSON object");
         }
@@ -524,8 +551,9 @@ public final class SipVerifier {
                                     + "this says nothing about whether the record is genuine.");
         }
         return new Check("audit path", Outcome.NOT_PRESENT,
-                "the evidence package carries no inclusion proof, and does not say why. The "
-                        + "chain only holds what was written to it, with no back-fill, so this "
-                        + "says nothing about whether the record is genuine.");
+                "the evidence package carries no inclusion proof"
+                        + (message == null ? ", and does not say why" : ": " + message)
+                        + ". The chain only holds what was written to it, with no back-fill, so "
+                        + "this says nothing about whether the record is genuine.");
     }
 }
