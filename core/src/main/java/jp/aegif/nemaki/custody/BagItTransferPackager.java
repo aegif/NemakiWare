@@ -143,6 +143,40 @@ public final class BagItTransferPackager {
      *        the package digest a receipt has to match. Without it, a bag and a receipt can
      *        only be tied together through a system that has both.
      */
+    /**
+     * The bag's file, guaranteed to be INSIDE {@code workDir}.
+     *
+     * <p>{@code submissionId} arrives from the caller — {@code @RequestParam} on the bag
+     * endpoint — and went straight into {@code workDir.resolve(submissionId + ".zip")}. A value
+     * of {@code ../../x} wrote {@code x.zip} outside the working directory, over whatever was
+     * there. The endpoint is admin-only, which is not the same thing as confinement: an admin
+     * asking for a bag is not asking to overwrite a file somewhere else, and the code should
+     * not be the reason a typo can.
+     *
+     * <p>Two steps, because either alone leaves a hole. The NAME is reduced to the character
+     * set {@code EarkSipExporter.sipId} already uses for the same reason ({@code /} and
+     * {@code \} are not in it, so no separator survives). Then the resolved path is checked to
+     * still start at {@code workDir} — the check that holds even if the character set is ever
+     * widened. A submission id that reduces to nothing gets a fixed name; it is the
+     * {@code External-Identifier} inside {@code bag-info.txt} that has to carry the caller's
+     * own text, and that one is written unchanged.
+     */
+    static Path zipUnder(Path workDir, String submissionId) throws IOException {
+        String name = submissionId.replaceAll("[^A-Za-z0-9._-]", "-");
+        if (name.isBlank() || name.equals(".") || name.equals("..")) {
+            name = "bag";
+        }
+        Path root = workDir.toAbsolutePath().normalize();
+        Path zip = root.resolve(name + ".zip").normalize();
+        if (!zip.startsWith(root)) {
+            // Cannot happen with the character set above; kept because the next person to widen
+            // it should get a refusal rather than a write outside the directory.
+            throw new IOException("the bag file for submission id '" + submissionId
+                    + "' would be written outside the working directory");
+        }
+        return zip;
+    }
+
     public static Bagged bag(Path sip, Path workDir, String submissionId, String sipDigest)
             throws IOException {
         if (sip == null || !Files.isRegularFile(sip)) {
@@ -198,7 +232,7 @@ public final class BagItTransferPackager {
 
         long bytes = Files.size(carried);
         String oxum = bytes + ".1";
-        Path zip = workDir.resolve(submissionId + ".zip");
+        Path zip = zipUnder(workDir, submissionId);
         zipDirectory(bagRoot, zip);
         return new Bagged(zip, oxum, bytes, LIMITS);
     }
