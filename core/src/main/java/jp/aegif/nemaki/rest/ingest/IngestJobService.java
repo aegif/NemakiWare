@@ -1099,17 +1099,35 @@ public class IngestJobService {
      *
      * @return how many were deleted
      */
-    public int purgeDlqOlderThan(java.time.Instant cutoff) {
+    public DlqPurgeResult purgeDlqOlderThan(java.time.Instant cutoff) {
         int deleted = 0;
+        int examined = 0;
+        int unreadable = 0;
+        boolean moreRowsMayExist = false;
         try {
             CloudantClientWrapper client = getConfClient();
             String dbName = client.getDatabaseName();
             var cloudant = client.getClient();
+            // SCAN_LIMIT + 1, so "there are more rows" is READ rather than guessed. Stopping at
+            // exactly the limit tells you nothing: a database holding exactly the limit and one
+            // holding ten times it look identical from here. The extra row is examined by
+            // nobody — it only answers the question (R20).
             List<Document> docs = findRawDocs(cloudant, dbName,
-                    Map.of("type", IngestDeadLetterRecord.DOC_TYPE), 1000, 0);
+                    Map.of("type", IngestDeadLetterRecord.DOC_TYPE), PURGE_SCAN_LIMIT + 1, 0);
+            moreRowsMayExist = docs.size() > PURGE_SCAN_LIMIT;
+            if (moreRowsMayExist) {
+                docs = docs.subList(0, PURGE_SCAN_LIMIT);
+            }
             for (Document doc : docs) {
+                examined++;
                 Object failedAt = doc.getProperties().get("failedAt");
-                if (!(failedAt instanceof String ts)) continue;
+                if (!(failedAt instanceof String ts)) {
+                    // Counted, not skipped in silence: a row whose failedAt is missing or is not
+                    // a string was never compared with the cutoff, so "nothing older was found"
+                    // is a claim this walk did not establish for it (R20).
+                    unreadable++;
+                    continue;
+                }
                 try {
                     if (java.time.Instant.parse(ts).isBefore(cutoff)) {
                         Object dlqId = doc.getProperties().get("dlqId");
@@ -1134,6 +1152,7 @@ public class IngestJobService {
                     // unparseable date, the loop carried on, and the endpoint answered
                     // "success". A review found the swallow inside the arm that had just been
                     // added to stop the outer one.
+                    unreadable++;
                     logger.warn("DLQ entry {} has an unparseable failedAt ({}); left in place",
                             doc.getId(), ts);
                 }
@@ -1148,7 +1167,44 @@ public class IngestJobService {
                     + couldNotFinish.getMessage() + "); " + deleted + " entries were deleted"
                     + " before it stopped", deleted, couldNotFinish);
         }
-        return deleted;
+        return new DlqPurgeResult(PURGE_SCAN_LIMIT, examined, deleted,
+                examined >= PURGE_SCAN_LIMIT, moreRowsMayExist, unreadable);
+    }
+
+    /** How far the purge walked. The limit is unchanged; what it reports about it is not. */
+    public static final int PURGE_SCAN_LIMIT = 1000;
+
+    /**
+     * What one purge did, and what it did NOT establish.
+     *
+     * <p>It used to answer one number — how many were deleted — and the endpoint turned that
+     * into {@code {"status":"success","deleted":N}}. A database with 40,000 dead-letter rows
+     * answered exactly the same as one with 40, because the walk reads the first
+     * {@value #PURGE_SCAN_LIMIT} and stops. The operator then believes the queue is clear (R20).
+     *
+     * @param scanLimit       how many rows this walk was willing to read
+     * @param rowsExamined    how many it actually read
+     * @param rowsPurged      how many the store confirmed deleted
+     * @param limitReached    whether the walk stopped because it hit the limit
+     * @param moreRowsMayExist whether a row BEYOND the limit was seen. MAY, because seeing one
+     *                        more row of this type says nothing about whether it is older than
+     *                        the cutoff — only that the walk did not see the end.
+     * @param unreadableRows  rows whose {@code failedAt} could not be read, so the cutoff was
+     *                        never applied to them. Not the same as "not old enough".
+     */
+    public record DlqPurgeResult(int scanLimit, int rowsExamined, int rowsPurged,
+            boolean limitReached, boolean moreRowsMayExist, int unreadableRows) {
+
+        public Map<String, Object> asMap() {
+            Map<String, Object> body = new java.util.LinkedHashMap<>();
+            body.put("scanLimit", scanLimit);
+            body.put("rowsExamined", rowsExamined);
+            body.put("rowsPurged", rowsPurged);
+            body.put("limitReached", limitReached);
+            body.put("moreRowsMayExist", moreRowsMayExist);
+            body.put("unreadableRows", unreadableRows);
+            return body;
+        }
     }
 
     /** The purge stopped part-way — never the same answer as "nothing was old enough". */

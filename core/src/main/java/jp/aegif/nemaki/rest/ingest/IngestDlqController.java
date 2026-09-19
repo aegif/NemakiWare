@@ -152,9 +152,9 @@ public class IngestDlqController {
         }
         java.time.Instant cutoff = java.time.Instant.now()
                 .minus(java.time.Duration.ofDays(olderThanDays));
-        int deleted;
+        IngestJobService.DlqPurgeResult purge;
         try {
-            deleted = ingestJobService.purgeDlqOlderThan(cutoff);
+            purge = ingestJobService.purgeDlqOlderThan(cutoff);
         } catch (IngestJobService.DlqPurgeIncompleteException stopped) {
             Map<String, Object> partial = new LinkedHashMap<>();
             partial.put("status", "error");
@@ -165,7 +165,12 @@ public class IngestDlqController {
         }
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", "success");
-        response.put("deleted", deleted);
+        // `deleted` stays, with the same meaning, so existing readers keep working. What is new
+        // is everything that says what the walk did NOT cover: it reads the first
+        // PURGE_SCAN_LIMIT rows, and a caller reading only `deleted` cannot tell a cleared
+        // queue from a queue whose first thousand rows were cleared (R20).
+        response.put("deleted", purge.rowsPurged());
+        response.putAll(purge.asMap());
         response.put("cutoff", cutoff.toString());
         return ResponseEntity.ok(response);
     }
