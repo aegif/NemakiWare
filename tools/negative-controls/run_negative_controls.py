@@ -8585,6 +8585,29 @@ CONTROLS = [
         test='StoredTimestampsSurviveTheSdkTest',
         expect_fail=['aNumberBeyondExactIntegersIsRefused'],
     ),
+    # ── CodeQL が指した実在の path traversal (bag の提出 ID) ──
+    dict(
+        id="CK3",
+        what="the bag file is named from the caller's submission id again — '../../x' writes "
+             "outside the working directory",
+        file='core/src/main/java/jp/aegif/nemaki/custody/BagItTransferPackager.java',
+        find='        Path zip = zipUnder(workDir, submissionId);',
+        replace='        Path zip = workDir.resolve(submissionId + ".zip");',
+        test='BagItTransferPackagerTest',
+        expect_fail=['aSubmissionIdCannotWalkOutOfTheWorkingDirectory'],
+    ),
+    dict(
+        id="CL3",
+        what="the bag file name stops being reduced — the confinement check alone lets a "
+             "separator through on a platform that resolves it differently",
+        file='core/src/main/java/jp/aegif/nemaki/custody/BagItTransferPackager.java',
+        find='        String name = submissionId.replaceAll("[^A-Za-z0-9._-]", "-");',
+        replace='        String name = submissionId;',
+        test='BagItTransferPackagerTest',
+        # bag() 経由ではなく zipUnder を直に見る錠。bag() を通すと、縮約を外しても
+        # 閉じ込め検査が例外で捕まえ、錠は自分の assertion では落ちない (実測)。
+        expect_fail=['theBagFileNameCarriesNoSeparator'],
+    ),
 ]
 
 
