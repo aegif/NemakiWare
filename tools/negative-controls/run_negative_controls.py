@@ -8922,6 +8922,48 @@ CONTROLS = [
     ),
     # ── 3 巡目のレビューが出した P1 の処置 (2026-09-20) ──
     dict(
+        id="DR3",
+        what="the reason written BESIDE the proof is not read, so a package that says its audit "
+             "path could not be built is described as one whose fields are unreadable",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='            String couldNotBuild = asString(document.get("inclusionProofFailed"));\n'
+             '            if (couldNotBuild != null) {',
+        replace='            String couldNotBuild = null;\n'
+                '            if (couldNotBuild != null) {',
+        test='SipVerifierTest',
+        expect_fail=['aProofThatCouldNotBeBuiltSaysWhy'],
+    ),
+    dict(
+        id="DS3",
+        what="the reason written INSIDE the proof is not read, so a proof that says it is "
+             "unavailable is described as one whose fields are unreadable",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='            if (proofStatus != null && !"success".equals(proofStatus) && proofMessage != null) {',
+        replace='            if (false) {',
+        test='SipVerifierTest',
+        expect_fail=['aProofThatSaysItIsUnavailableIsQuoted'],
+    ),
+    dict(
+        id="DT3",
+        what="duplicate JSON keys go back to last-one-wins, so the same package reads "
+             "differently here than in a first-wins reader",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='                .enable(tools.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION)\n',
+        replace='',
+        test='SipVerifierTest',
+        expect_fail=['aDuplicateKeyIsRefused'],
+    ),
+    dict(
+        id="DU3",
+        what="a byte order mark is passed to the parser again, so a package this verifier could "
+             "read is reported as unreadable JSON",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='        String text = json.startsWith("\\uFEFF") ? json.substring(1) : json;',
+        replace='        String text = json;',
+        test='SipVerifierTest',
+        expect_fail=['aByteOrderMarkIsSkipped'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",
@@ -8980,8 +9022,10 @@ CONTROLS = [
         what="a package that says its audit path COULD NOT BE BUILT is described by its status "
              "alone, dropping the reason the package carries",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='        if (couldNotBuild != null) {',
-        replace='        if (false) {',
+        find='        String couldNotBuild = asString(document.get("inclusionProofFailed"));\n'
+             '        if (couldNotBuild != null) {',
+        replace='        String couldNotBuild = null;\n'
+                '        if (couldNotBuild != null) {',
         test='SipVerifierTest',
         expect_fail=['thePackagesOwnReasonIsUsed'],
     ),

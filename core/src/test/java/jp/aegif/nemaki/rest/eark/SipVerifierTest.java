@@ -458,6 +458,119 @@ class SipVerifierTest {
     }
 
     @Test
+    @DisplayName("a package whose proof could not be built says so — through the real exporter")
+    void aProofThatCouldNotBeBuiltSaysWhy(@TempDir Path tmp) throws Exception {
+        // The arm for this was UNREACHABLE for every package this product builds, and its lock
+        // used a shape the exporter never writes: `inclusionProof: null` beside
+        // `inclusionProofFailed`. The exporter always puts a MAP there — it fills in
+        // provesEntry/provesSequence and merges the FAILED proof body into it — so the verifier
+        // went to the "fields cannot be read" sentence and described a correctly formed package
+        // as broken (review, 2026-09-20). Built here through the exporter for that reason.
+        jp.aegif.nemaki.evidence.EvidenceLedgerEntry only =
+                jp.aegif.nemaki.evidence.EvidenceLedgerEntry.of("bedroom", 7,
+                        jp.aegif.nemaki.evidence.EvidenceLedgerEntry.SubjectKind.CAPTURE_COMPLETED,
+                        "doc-1", "digest-7", "2026-09-20T00:00:00Z", null);
+        // A checkpoint that stops BEFORE this entry: the ordinary "not sealed yet" state.
+        jp.aegif.nemaki.evidence.EvidenceCheckpoint earlier =
+                jp.aegif.nemaki.evidence.EvidenceCheckpoint.of("bedroom", 1L, 5L,
+                        MerkleTree.root(List.of("e0hash")), null, "2026-09-20T00:02:00Z");
+        jp.aegif.nemaki.evidence.EvidenceLedgerStore store =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.evidence.EvidenceLedgerStore.class);
+        org.mockito.Mockito.when(store.isActive()).thenReturn(true);
+        org.mockito.Mockito.when(store.findBySubject(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(List.of(only));
+        org.mockito.Mockito.when(store.latestCheckpoint("bedroom")).thenReturn(earlier);
+        jp.aegif.nemaki.evidence.EvidenceLedgerService ledgerService =
+                new jp.aegif.nemaki.evidence.EvidenceLedgerService();
+        ledgerService.setStore(store);
+
+        EarkSipExporter exporter = exporterWithContent("the minutes");
+        exporter.setLedgerStore(store);
+        exporter.setLedgerService(ledgerService);
+        EarkSipExporter.Exported exported = exporter.export("bedroom", "doc-1",
+                EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp);
+
+        SipVerifier.Result result = SipVerifier.verify(exported.sip());
+        String detail = detailOf(result, "audit path");
+
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"), detail);
+        assertTrue(detail.contains("could not be built"),
+                "the verifier does not repeat the reason the package carries beside the proof — "
+                        + "it says something else instead: " + detail);
+        assertFalse(detail.contains("is not written"),
+                "a correctly formed package was described as one whose fields are missing: "
+                        + detail);
+    }
+
+    @Test
+    @DisplayName("a proof that says it is unavailable is quoted, not called unreadable")
+    void aProofThatSaysItIsUnavailableIsQuoted(@TempDir Path tmp) throws Exception {
+        // The reason also lives INSIDE the proof object, and a package may carry it there and
+        // nowhere else. Hand-built because this exporter writes both places.
+        String payload = "the minutes";
+        String evidence = "{ \"inclusionProof\" : { \"provesSequence\" : 7, "
+                + "\"status\" : \"unavailable\", \"message\" : \"no checkpoint covers "
+                + "sequence 7 yet.\" } }";
+        Path sip = zip(tmp, "proofsaysunavailable.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", evidence));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+        String detail = detailOf(result, "audit path");
+
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"), detail);
+        assertTrue(detail.contains("no checkpoint covers sequence 7"),
+                "the proof's own reason was replaced with a sentence about unreadable fields: "
+                        + detail);
+    }
+
+    @Test
+    @DisplayName("a duplicate key is an error, not a silent last-one-wins")
+    void aDuplicateKeyIsRefused(@TempDir Path tmp) throws Exception {
+        // Jackson's default takes the LAST of two same-named keys, so a step could carry
+        // `"siblingHash": null, "siblingHash": "<the real one>"` and read differently here than
+        // in a first-wins reader — two readers, two answers, about one package (review).
+        Map<String, String> proof = realProofFor(1);
+        String doubled = proof.get("json").replace("\"siblingHash\" : \"",
+                "\"siblingHash\" : null, \"siblingHash\" : \"");
+        assertFalse(doubled.equals(proof.get("json")), "the fixture was not altered");
+        String payload = "the minutes";
+        Path sip = zip(tmp, "duplicatekey.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", doubled));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"),
+                result.asMap().toString());
+    }
+
+    @Test
+    @DisplayName("a byte order mark does not make a good package unreadable")
+    void aByteOrderMarkIsSkipped(@TempDir Path tmp) throws Exception {
+        // Jackson skips a BOM when it reads bytes and not when it reads a String, and a
+        // re-zipped package can acquire one. Refusing there would report a package this
+        // verifier could have read (review, over-throw side).
+        Map<String, String> proof = realProofFor(2);
+        String payload = "the minutes";
+        Path sip = zip(tmp, "bom.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", "\uFEFF" + proof.get("json")));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Verdict.VERIFIED, result.verdict(), result.asMap().toString());
+    }
+
+    @Test
     @DisplayName("a half-written proof says which half, about BOTH fields")
     void aHalfWrittenProofDescribesBothFields(@TempDir Path tmp) throws Exception {
         // leafHash is not written at all; merkleRoot IS written but is not a string. Naming
