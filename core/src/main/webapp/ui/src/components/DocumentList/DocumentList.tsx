@@ -819,15 +819,20 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         message.error(result.message || t('documentList.runConnectorError'));
         return;
       }
-      // A run that stopped at its limit is not "done". The server has said so since the
-      // review that found this door answering "success" with pages it had never looked at;
-      // this is the screen that a person actually reads.
+      // A run that stopped at its limit is not "done", and neither is one where items failed.
+      // Both arrive as status "partial" — keying on sawEverything alone covered the first and
+      // left the second showing a green tick over five failures (both round-3 reviews). The
+      // sibling ZIP import on this same screen has always branched on status; this now matches.
       const done = t('documentList.runConnectorDone', {
         imported: result.imported ?? 0,
         skipped: result.skipped ?? 0,
       });
-      if (result.sawEverything === false) {
-        message.warning(`${done} — ${t('documentList.runConnectorIncomplete')}`);
+      if (result.status === 'partial') {
+        // The server sends the reason. Stating one here instead would be this screen asserting
+        // which of the two causes it was.
+        const why = (result.incompleteReads ?? result.errors ?? []).join('; ')
+          || t('documentList.runConnectorIncomplete');
+        message.warning(`${done} — ${why}`);
       } else {
         message.success(done);
       }

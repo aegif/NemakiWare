@@ -686,7 +686,7 @@ jq 'select(.details.denialReason == "CMIS_ALL_REQUIRED_NEW")' audit.log`}
           <Paragraph>{t('help.admin.ingestJobManagementDesc', 'スケジューラ実行のたびにジョブレコードが作成され、進捗がリアルタイムで追跡されます。')}</Paragraph>
           <Descriptions bordered size="small" column={1}>
             <Descriptions.Item label={t('help.admin.ingestJobStatus', 'ジョブステータス')}>
-              {t('help.admin.ingestJobStatusDesc', 'RUNNING: 実行中（ハートビートで進捗監視）。COMPLETED: 正常完了。PARTIAL: 一部失敗したか、または何も失敗していないが取得元を全部は見ていない。FAILED: 全件失敗。タイムアウト（デフォルト30分、ingest.scheduler.fetchTimeoutMinutes で変更可能）を超えるとスレッドが中断され FAILED になります。コネクタが連続失敗するとサーキットブレーカーが発動し、次サイクルまでスキップされます。')}
+              {t('help.admin.ingestJobStatusDesc', 'RUNNING: 実行中（ハートビートで進捗監視）。COMPLETED: 正常完了（「取得元を全部見た」という意味ではない）。PARTIAL: 一部失敗したか、または何も失敗していないが取得元を全部は見ていない。FAILED: 全件失敗。タイムアウト（デフォルト30分、ingest.scheduler.fetchTimeoutMinutes で変更可能）を超えるとスレッドが中断され FAILED になります。コネクタが連続失敗するとサーキットブレーカーが発動し、次サイクルまでスキップされます。')}
             </Descriptions.Item>
             <Descriptions.Item label={t('help.admin.ingestCheckpoint', 'チェックポイント')}>
               {t('help.admin.ingestCheckpointDesc', '各プロファイルの最後に正常取得した位置を記憶します。次回実行時はこの位置から差分取り込みを行います。チェックポイントはアダプタごとに異なります（Gmail: 日付、Slack: メッセージts、IMAP: UID等）。管理APIでチェックポイントのリセット（全件再取り込み）が可能です。')}

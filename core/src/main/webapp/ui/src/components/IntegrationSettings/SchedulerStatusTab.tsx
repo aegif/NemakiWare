@@ -47,8 +47,10 @@ export function SchedulerStatusTab() {
         const why = Array.isArray(result.incompleteReads)
           ? (result.incompleteReads as string[])
           : Array.isArray(result.errors) ? (result.errors as string[]) : [];
-        message.warning(`${t('schedulerStatus.triggerSuccess')} — ${
-          why.join('; ') || t('schedulerStatus.triggerPartial')}`);
+        // No fallback string: "partial" always carries one of the two lists (it is produced by
+        // hasErrors() or by !sawEverything(), and each fills its own), so a default here would
+        // be a branch that cannot run pretending to be one that can.
+        message.warning(`${t('schedulerStatus.triggerPartial')}: ${why.join('; ')}`);
       } else {
         message.error(String(result.errors ?? result.message ?? t('schedulerStatus.triggerFailed')));
       }
