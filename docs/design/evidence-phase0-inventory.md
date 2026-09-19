@@ -49,7 +49,8 @@
 | **W9** | **`replacePwc`** | **`updateAttachment`（:1488、その場）** | `ObjectServiceImpl.setContentStream`（対象が PWC のとき、:799） | PWC の内容差し替え |
 | **W10** | **アーカイブ（削除）** | `ArchiveDaoDelegate.createAttachmentArchive`（:481。bytes を **archive DB へ複製**、:545） | `deleteContentStream` / `deleteDocument` → `deleteAttachment`（`ContentServiceImpl` の両メソッド内） | 本番からは消え、archive に残る |
 | **W11** | **復元** | `ArchiveDaoDelegate.restoreAttachment`（:714。attachment 行を作り直し、:792 で **本番へ body を PUT**） | `ContentServiceImpl.restoreArchive` / `restoreArchiveGuarded` | bytes が本番に戻る |
-| **W13** | **アーカイブの物理削除** | `ArchiveServiceDelegate.destroyArchive` → `destroyDocument`（:502 付近。**body を持つ attachment archive 行そのものを削除**） | `ArchiveResource.destroyArchive`（api/v1、管理者） | bytes が完全に消える |
+| **W13** | **アーカイブの物理削除** | `ArchiveServiceDelegate.destroyArchive` → `destroyDocument`（**body を持つ attachment archive 行そのものを削除**） | `ArchiveResource.destroyArchive`（api/v1、管理者） | **ローカルの** bytes が消える |
+| **W14** | **cold blob の孤児化**（W13 を cold 化済みの文書に実行したとき） | 同上。`LongTermStorageAdapter.delete` は**呼ばれない** | 同上（管理 API は archive の状態で分岐しない） | 参照は消え、外部保管の blob は残る |
 | **W12** | **cold 移送**（COPY / MOVE） | `RetentionScheduler.moveToCold` → `LongTermStorageAdapter.put`（:599。**外部保管へ bytes を書く**）。MOVE なら `contentService.deleteArchiveContent`（:666 → `ArchiveDaoDelegate:1133`）で**ローカルの bytes を消す** | 保持ポリシーのスケジューラ | COPY は二重化、MOVE は所在の移動 |
 
 **外部取込は独自の書き込み経路を持たない。** `CanonicalImportServiceImpl` は
@@ -58,7 +59,16 @@ W1 と W4 に合流する。取込のために E1 を別に作る必要はない
 
 **その場書き換えは W3 / W7 / W9 の 3 本**である。
 
-> **W13 は 4 巡目、W12 は 3 巡目の指摘で足した。**（W13 = archive の物理削除。W10 で archive へ移した bytes を管理者が完全削除する経路で、`deleteContentStream` と同じ理由で対象になる。） 判定基準を「`createAttachment` /
+**rendition（変換）は E1 の対象外**で、表にも入れない。`createRendition` は 4 つ目の
+bytes 書き込み primitive だが、`storeRenditionAndRecordDuplication` が P3-2 の
+`FORMAT_DUPLICATION` entry を既に記録している。**外部取込が W1 / W4 に合流すると書いたのと
+同じ理由で、ここに 1 行書いておく**（書かないと「列挙から漏れた」のか
+「対象外と判断した」のかが読み手に分からない）。
+
+> **W14 は 5 巡目、W13 は 4 巡目、W12 は 3 巡目の指摘で足した。**（W14: 管理 API は
+> archive の状態で分岐せず `destroyArchive` を呼ぶが、削除されるのは archive DB の行だけで、
+> cold へ移した blob には `delete` が呼ばれない。**参照だけが消えて blob は孤児として残る** —
+> 「bytes が完全に消える」と書いた W13 の説明は cold 化済みの文書については偽だった。）（W13 = archive の物理削除。W10 で archive へ移した bytes を管理者が完全削除する経路で、`deleteContentStream` と同じ理由で対象になる。） 判定基準を「`createAttachment` /
 > `copyAttachment` / `updateAttachment` のどれも通らない」に広げた結果として W10 / W11 を
 > 足したのに、**同じ基準に当てはまる cold 移送を見落とした**。`deleteContentStream` を対象に
 > した理由（「台帳の最後の statement がもう存在しない bytes を指したままになる」）は
@@ -265,10 +275,10 @@ Phase 6 の「ERS persistence」はここを指す。
 
 ## 5. この文書で決めたこと
 
-- E1 の対象は **W1〜W13 と `deleteContentStream`**（W10 = アーカイブ、W11 = 復元、W12 = cold 移送、W13 = archive の物理削除）。2026-09-19 に実装を読んで
+- E1 の対象は **W1〜W14 と `deleteContentStream`**（W10 = アーカイブ、W11 = 復元、W12 = cold 移送、W13 = archive の物理削除、W14 = cold blob の孤児化）。2026-09-19 に実装を読んで
   W6 / W7 / W8 / 消去の扱いを決め、確認レビューを受けて数え直したときに W9 を足した（§1）。
   **列挙できたのはここまで**であり、ここに書いていない経路について
-  「記録した」とは後段のどこにも書かない。**4 度数え違えている**（W9 / W10・W11 / W12 / W13。いずれもレビューの指摘で、毎回「今度こそ数え切った」と書いていた）という事実も含めて読むこと。**この表を「全部数えた」と読まないこと。**
+  「記録した」とは後段のどこにも書かない。**5 度数え違えている**（W9 / W10・W11 / W12 / W13 / W14。いずれもレビューの指摘で、毎回「今度こそ数え切った」と書いていた）という事実も含めて読むこと。**この表を「全部数えた」と読まないこと。**
 - W7（追記）は 1 呼び出しごとに 1 statement。**どれが最終かは書かない** —
   製品が `isLastChunk` を使っていないので知らない。limits に明記する。
 - W6 / W8（複製）は**自分の digest**を持ち、元の entry を引き継がない。
