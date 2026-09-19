@@ -562,16 +562,79 @@ class SipVerifierTest {
         // verifier could have read (review, over-throw side).
         Map<String, String> proof = realProofFor(2);
         String payload = "the minutes";
-        Path sip = zip(tmp, "bom.zip", Map.of(
+        // ONE and TWO. The one-BOM package is the common case; the two-BOM one is a package
+        // that went through two tools that each add one. A fixture with only the second lets
+        // "strip exactly two" pass (review, 2026-09-20).
+        for (String bom : List.of("\uFEFF", "\uFEFF\uFEFF")) {
+            Path sip = zip(tmp, "bom-" + bom.length() + ".zip", Map.of(
+                    "sip/representations/rep1/data/minutes.txt", payload,
+                    "sip/metadata/preservation/premis.xml",
+                    premisWithDigest(
+                            SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                    "sip/metadata/other/nemaki-evidence.json", bom + proof.get("json")));
+
+            SipVerifier.Result result = SipVerifier.verify(sip);
+
+            assertEquals(SipVerifier.Verdict.VERIFIED, result.verdict(),
+                    bom.length() + " BOM(s): " + result.asMap());
+        }
+    }
+
+    @Test
+    @DisplayName("the same reason gets the same answer wherever the package wrote it")
+    void theReasonRuleIsOneRule(@TempDir Path tmp) throws Exception {
+        // The rule lived in two places and they disagreed: written inside the proof object,
+        // `not-chained` came back UNAVAILABLE; written beside it, NOT_PRESENT. A third party
+        // implementing the canon's table would then get a different answer from this verifier
+        // than the canon states, depending only on WHERE the reason was put (review).
+        String payload = "the minutes";
+        String inside = "{ \"inclusionProof\" : { \"provesSequence\" : 7, "
+                + "\"status\" : \"not-chained\", \"message\" : \"no ledger entry names "
+                + "this object.\" } }";
+        String beside = "{ \"inclusionProof\" : null, \"status\" : \"not-chained\", "
+                + "\"message\" : \"no ledger entry names this object.\" }";
+        Path insidePkg = zip(tmp, "reason-inside.zip", Map.of(
                 "sip/representations/rep1/data/minutes.txt", payload,
                 "sip/metadata/preservation/premis.xml",
                 premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
-                // Two, not one: a package that has been through two tools that each add one.
-                "sip/metadata/other/nemaki-evidence.json", "\uFEFF\uFEFF" + proof.get("json")));
+                "sip/metadata/other/nemaki-evidence.json", inside));
+        Path besidePkg = zip(tmp, "reason-beside.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", beside));
+
+        SipVerifier.Result fromInside = SipVerifier.verify(insidePkg);
+        SipVerifier.Result fromBeside = SipVerifier.verify(besidePkg);
+
+        assertEquals(SipVerifier.Outcome.NOT_PRESENT, outcomeOf(fromInside, "audit path"),
+                "a reason written INSIDE the proof got a different answer: "
+                        + fromInside.asMap());
+        assertEquals(outcomeOf(fromBeside, "audit path"), outcomeOf(fromInside, "audit path"),
+                "the same reason, written in the two places the canon names, gets two answers");
+    }
+
+    @Test
+    @DisplayName("a reason written in a shape this verifier cannot read is still a reason")
+    void anUnreadableReasonIsStillAReason(@TempDir Path tmp) throws Exception {
+        // `{"message": {"en": "…"}}` — an i18n object. asString answers null for it, and the
+        // arm used to decide "says something" from that null, so a package that HAD said why
+        // was reported as one that "does not say why" (review, 2026-09-20).
+        String payload = "the minutes";
+        String evidence = "{ \"inclusionProof\" : null, "
+                + "\"message\" : { \"en\" : \"ledger unreachable\" } }";
+        Path sip = zip(tmp, "objectreason.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", evidence));
 
         SipVerifier.Result result = SipVerifier.verify(sip);
+        String detail = detailOf(result, "audit path");
 
-        assertEquals(SipVerifier.Verdict.VERIFIED, result.verdict(), result.asMap().toString());
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "audit path"), detail);
+        assertFalse(detail.contains("does not say why"),
+                "a package that said why was reported as one that did not: " + detail);
     }
 
     @Test
