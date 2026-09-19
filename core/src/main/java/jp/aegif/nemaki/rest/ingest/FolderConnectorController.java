@@ -246,10 +246,15 @@ public class FolderConnectorController {
 
         boolean authError = result.errors() != null
                 && result.errors().stream().anyMatch(m -> isAuthFailure(m));
-        body.put("status", result.hasErrors() ? "partial" : "success");
+        // Same as the scheduler's manual run: "success" is a claim about the SOURCE, not only
+        // about whether anything threw. A run that stopped at its limit is partial even with an
+        // empty error list (Codex review, P1).
+        body.put("status", result.runStatus());
         body.put("fetched", result.fetched());
         body.put("imported", result.imported());
         body.put("skipped", result.skipped());
+        body.put("sawEverything", result.sawEverything());
+        if (!result.sawEverything()) body.put("incompleteReads", result.incompleteReads());
         if (result.hasErrors()) body.put("errors", result.errors());
         // authError lets the UI pop a "re-set token" dialog (dev tokens are short-lived).
         body.put("authError", authError);

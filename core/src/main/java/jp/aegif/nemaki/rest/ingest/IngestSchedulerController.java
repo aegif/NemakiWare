@@ -172,9 +172,17 @@ public class IngestSchedulerController {
         FetchResult fetchResult =
                 schedulerService.executeFetch(callContext, profile, connector, params);
 
-        response.put("status", fetchResult.hasErrors() ? "partial" : "success");
+        // "success" only for a run that both worked AND saw the whole source. The scheduled path
+        // was taught this first and these two manual endpoints were not, so a run that stopped at
+        // its limit answered a person who had just clicked Run with a plain "success" (Codex
+        // review, P1). `incompleteReads` travels whether or not there were errors: it is not one.
+        response.put("status", fetchResult.runStatus());
         response.put("fetched", fetchResult.fetched());
         response.put("imported", fetchResult.imported());
+        response.put("sawEverything", fetchResult.sawEverything());
+        if (!fetchResult.sawEverything()) {
+            response.put("incompleteReads", fetchResult.incompleteReads());
+        }
         if (fetchResult.hasErrors()) {
             response.put("errors", fetchResult.errors());
         }

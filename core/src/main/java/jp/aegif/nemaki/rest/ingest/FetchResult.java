@@ -48,4 +48,17 @@ public record FetchResult(int fetched, int imported, int skipped, List<String> e
     public boolean sawEverything() {
         return incompleteReads == null || incompleteReads.isEmpty();
     }
+
+    /**
+     * The word a manual run reports to whoever pressed the button.
+     *
+     * <p>One place, because there were two and they agreed with each other and not with the
+     * scheduled path: both keyed "success" off {@code hasErrors()} alone, so a run that stopped
+     * at its limit told a person it had succeeded while the job record for the same shape of run
+     * said PARTIAL (Codex review, P1). "success" is a claim about the SOURCE as well as about
+     * whether anything threw.
+     */
+    public String runStatus() {
+        return !hasErrors() && sawEverything() ? "success" : "partial";
+    }
 }

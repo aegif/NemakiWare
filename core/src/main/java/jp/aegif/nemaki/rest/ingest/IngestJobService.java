@@ -28,6 +28,7 @@ public class IngestJobService {
     private static final Logger logger = LoggerFactory.getLogger(IngestJobService.class);
     private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
 
+
     private CloudantClientPool connectorPool;
 
     public void setConnectorPool(CloudantClientPool connectorPool) {

@@ -94,6 +94,12 @@ public class NotionConnectorAdapter {
      * the page cap is legitimate and common — what is not legitimate is handing back the same
      * shape for "these are all the pages" and "these are the first N of more", because the
      * caller advances a last-edited-time checkpoint from what it was given.
+     *
+     * <p>{@code complete} is true only where Notion has ANSWERED that there is nothing after
+     * what came back. Three things have to line up for that, and two of them were wrong on the
+     * first pass: an empty {@code results} page may still carry {@code has_more}, and a
+     * {@code limit} above 100 lands in the middle of a page, so rows this method has already
+     * read can be dropped while Notion's own {@code has_more} for that page is false.
      */
     public PageListing searchPages(String query, int limit) throws Exception {
         int pageSize = Math.min(limit, 100); // Notion max page_size: 100
@@ -135,33 +141,61 @@ public class NotionConnectorAdapter {
                 throw new NotionReadIncompleteException("Notion search answered without a results "
                         + "array on page " + (page + 1) + ", so how many pages exist is unknown");
             }
+            // Notion pagination: has_more + next_cursor. Read BEFORE the empty-page arm, because
+            // an empty page that says there is more is not the end of anything — treating it as
+            // one reported the rest of the workspace as nothing (both reviews, P1).
+            boolean hasMore = root.path("has_more").asBoolean(false);
+            String nextCursor = root.path("next_cursor").asText(null);
+
             if (results.isEmpty()) {
-                nothingMore = true; // an ANSWER: there are no (more) pages
-                break;
+                if (!hasMore) {
+                    nothingMore = true; // an ANSWER: there are no (more) pages
+                    break;
+                }
+                if (nextCursor == null || nextCursor.isEmpty()) {
+                    throw new NotionReadIncompleteException("Notion search answered an empty page "
+                            + "that says there are more, and gave no cursor to read them with, "
+                            + "after " + allPages.size() + " page(s)");
+                }
+                cursor = nextCursor;
+                continue;
             }
 
+            // The limit is checked BEFORE adding, so `read` counts what was kept and the rest of
+            // this page is known to have been left behind.
+            int read = 0;
             for (JsonNode pageNode : results) {
+                if (allPages.size() >= limit) {
+                    break;
+                }
                 String id = pageNode.path("id").asText();
                 String url = pageNode.path("url").asText();
                 String lastEdited = pageNode.path("last_edited_time").asText();
                 String title = extractTitle(pageNode);
                 String parentId = extractParentId(pageNode);
                 allPages.add(new NotionPageSummary(id, title, url, parentId, lastEdited));
-                if (allPages.size() >= limit) break;
+                read++;
             }
+            int leftOnThePage = results.size() - read;
 
-            // Notion pagination: has_more + next_cursor
-            boolean hasMore = root.path("has_more").asBoolean(false);
             if (allPages.size() >= limit) {
-                return hasMore
-                        ? PageListing.cutShort(allPages, "the caller's limit of " + limit
-                                + " was reached and Notion says there are more pages")
-                        : PageListing.whole(allPages);
+                // `hasMore` alone is not enough. With limit > 100 the page size is 100, so the
+                // limit falls in the MIDDLE of a page: Notion can answer has_more=false for a
+                // page whose last rows this method just dropped. Reporting that as the whole
+                // listing raised the caller's checkpoint over rows it had read and thrown away
+                // (subagent review, P1).
+                if (hasMore || leftOnThePage > 0) {
+                    return PageListing.cutShort(allPages, "the caller's limit of " + limit
+                            + " was reached" + (leftOnThePage > 0
+                                    ? " part-way through a page, leaving " + leftOnThePage
+                                            + " already-read page(s) out"
+                                    : " and Notion says there are more pages"));
+                }
+                return PageListing.whole(allPages);
             }
             if (!hasMore) {
                 return PageListing.whole(allPages);
             }
-            String nextCursor = root.path("next_cursor").asText(null);
             if (nextCursor == null || nextCursor.isEmpty()) {
                 // has_more with nowhere to go. Ending here quietly reported the rest of the
                 // workspace as "nothing more".
@@ -228,8 +262,11 @@ public class NotionConnectorAdapter {
      * Fetch all child blocks with pagination (follows has_more/next_cursor).
      *
      * <p><b>This never returns a partial listing.</b> It used to: any non-200 — a 429 that
-     * outlived {@code sendWithRetry}'s backoff, a 500, the 504 a timeout arrives as — ended the
-     * loop and returned the blocks read so far. Both callers state that result as a fact about
+     * outlived {@code sendWithRetry}'s backoff, a 500, a gateway's own error page — ended the
+     * loop and returned the blocks read so far. (NOT this method's 30-second request timeout:
+     * that has always come out of {@code sendWithRetry} as an {@code IOException} and has always
+     * propagated. An earlier draft of this sentence said otherwise, which overstated what the
+     * old {@code break} did.) Both callers state that result as a fact about
      * the page: {@link #extractFiles} as "this page has no attachments" (so the note is imported
      * without them, no dead letter is written, and the poller's last-edited checkpoint moves past
      * the page, which is permanent) and {@link #fetchPageAsHtml} as the page's body. A read that
