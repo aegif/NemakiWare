@@ -100,25 +100,30 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
 | R53 | setup の接続は、**検証した解決先を接続まで固定していない**。`SetupAdminResource` は使う場所でも `UrlValidator` を通すようになった（3.4.0）が、その検査と接続の間に DNS の答えが変われば認証情報は新しい宛先へ行く。閉じるには解決したアドレスを接続まで運ぶ必要があり、setup の全接続の作りに関わる（CodeQL の user-controlled-bypass を追ったレビューの指摘） | 接続の作りを変えるとき | |
 | R54 | ~~`checkOut` / `checkIn` が `copyAttachment` の null をそのまま複製に書く — 文書が名指す attachment 行が store に無いとき、内容の無い作業コピーになり、check-in ではその版が**最新**になる~~ **処置済み 2026-09-19（3.4.0 計画の Phase 0 棚卸しで発見）**: `copyAttachmentOrRefuse` を 1 か所に置き、**`checkOut`（`ContentServiceImpl:1665`）と `checkIn`（同 :1844）の 2 か所**が拒否するようにした。元が**何も名指していない**ときは従来どおり null（内容の無い文書の複製は正常な操作）。名指した行が無いときだけ `CmisStorageException`（本文に「これは内容が無いという判定ではない」）。**読みの失敗はここに null で来ない** — `AttachmentDaoDelegate.getAttachment` は失敗で投げる（このブランチの既処置）。`createDocumentFromSource` は同じ状況で既に拒否していた（同じクラスの 1 メソッド隣）。**確認レビュー 2 名が同じ穴を指摘して追加処置**: 行はあるが**中身（`content` 添付の bytes）が無い**場合、`copyAttachment` は null stream を `createAttachment` に渡し、`createAttachment` は body 段を飛ばして**新しい id を成功として返す** — 中身の無い複製がもう 1 つできていた。`AttachmentServiceDelegate.copyAttachment` が拒否する（判定は `hasBody` の 1 か所 —
 **長さで判定すると 0 バイトの添付を「中身が無い」と誤る**）。
-**ただし 1 度読み直してから拒否する**: 復元は「文書を戻す → attachment 行を作る →
-body を PUT」の順で（`ArchiveDaoDelegate:714` / :792）、その間に checkOut が入ると
-行はあって body が無い状態を**正当に**読む。窓は狭まるが閉じないので、拒否の文面は
-「復元中なら少し待って再実行」と述べる（→ R56）。**3 つ目の呼び出し側 `copyAttachmentAtomic`（同 :5241）は錠が無く、主張もしない** — `createDocumentFromSource` の catch が全例外を `CmisRuntimeException` に包み直すので、**クライアントから見える型は前後とも同じ**で、変わるのはメッセージ本文だけである。錠 7 本（拒否 3・過剰拒否 4）、control CU3 / CV3 / CW3 / CX3 / DB3 / DH3 / DI3 | — | 確認レビュー 2 巡・各 2 名 |
+**ただし 1 度読み直してから拒否する**（**行が無い側も同じ**）: 復元は「文書を戻す →
+attachment 行を作る → body を PUT」の順で（`ArchiveDaoDelegate:853` → :772 → :792）、
+その間に checkOut が入ると**行が無い状態**と**行はあって body が無い状態**を順に
+**正当に**読む。3 巡目のレビューで「行が無い側は読み直していない」と指摘され、両方を
+読み直す形にした。窓は狭まるが閉じないので、拒否の文面は「復元中なら少し待って再実行」と
+述べる（→ R56）。**3 つ目の呼び出し側 `copyAttachmentAtomic`（同 :5240）は錠が無く、主張もしない** — `createDocumentFromSource` の catch が全例外を `CmisRuntimeException` に包み直すので、**クライアントから見える型は前後とも同じ**で、変わるのはメッセージ本文だけである。錠 8 本（拒否 3・過剰拒否 5）、control CU3 / CV3 / CW3 / CX3 / DB3 / DH3 / DI3 / DK3 | — | 確認レビュー 3 巡・各 2 名 |
 | R55 | `copyAttachmentOrRefuse` に再試行が無い。同じクラスの `getAttachmentRef` は「async な状況のため」25ms × 2 回の再試行を持つので、**書き込み直後やマルチレプリカで `getAttachment` が一過性に null を返す形は製品自身が観測している**。その窓で checkOut / checkIn は `CmisStorageException` になる（修正前は同じ null が「内容の無い作業コピー」になっていたので退行ではない）。過剰拒否の側の唯一の現実的な形（確認レビュー P3） | 再試行を足すなら `getAttachmentRef` と同じ形で | |
-| R56 | アーカイブからの復元は、**文書を先に戻してから** attachment 行と body を別々に書く（`ArchiveDaoDelegate.restoreAttachment`:714 → :792）。その間、文書は到達可能なのに内容が無い — R54 が塞いだ「宙に浮いた参照」を、製品が自分で作る窓である。R54 の追加処置は 1 度読み直すだけで、窓は狭まるが閉じない（大きな添付なら PUT のぶんだけ開く）。根治は復元の順序を変えること（body が入ってから文書を公開する）で、復元の意味に関わる（確認レビュー 2 巡目の P1 を、過剰拒否側の処置と残件に分けたもの） | 復元の順序を変えるとき | |
+| R56 | アーカイブからの復元は、**文書を先に戻してから** attachment 行と body を別々に書く（`ArchiveDaoDelegate.restoreAttachment`:714 → :792）。その間、文書は到達可能なのに内容が無い — R54 が塞いだ「宙に浮いた参照」を、製品が自分で作る窓である。R54 の追加処置は 1 度（25ms）読み直すだけで、窓は狭まるが閉じない — **body PUT は添付の
+大きさだけかかる**ので、大きな文書ほど開く。根治は復元の順序を変えること（body が入ってから文書を公開する）で、復元の意味に関わる（確認レビュー 2 巡目の P1 を、過剰拒否側の処置と残件に分けたもの） | 復元の順序を変えるとき | |
 | D1 | token 付き行の**添付前検査**（57 巡）、添付を landed の証拠に読む**自己修復**（58 巡）、15 分で通常経路に落とす **lease**（59 巡） | 凍結解除まで再導入しない | やめた（いずれも古い bytes を新しいメタデータで再生する同じ class に落ちた） |
 
 ## 5. 測定
 
-- コントロール **729**（2026-09-19 時点）。**うち 704 だけが通しで測られている** — 4 回目の通し以降に
-  足した 25 本（CK3 / CL3 BagIt、CM3 stamp、CN3 / CO3 強制変換ログ、CP3 setup URL、CQ3 指紋、
-  CR3 / CS3 / CT3 SIP の verdict、CU3〜CX3 内容複製、CY3 / CZ3 / DA3 / DC3〜DG3 audit path の
-  読み分け、DB3 / DH3 / DI3 中身の無い添付行）は **ID 指定で 1 本ずつ実測しただけ**で、
-  通しに入れたことはない。次の通しで初めて「他の錠を巻き添えにしないか」が測られる
-  （CZ3 と DE3 は実際に巻き込みがあり、宣言を足した）。
-  **2 巡目のレビューで 3 本が「発火しない」ことも分かった** — 新しい arm（空の path は
-  `UNAVAILABLE`）が細工の結果を覆い隠していたため、錠の fixture を作り直した。
+- コントロール **732**（2026-09-20 時点）。**うち 704 だけが通しで測られている** — 4 回目の通し以降に
+  足した 28 本（CK3 / CL3 BagIt、CM3 stamp、CN3 / CO3 強制変換ログ、CP3 setup URL、CQ3 指紋、
+  CR3 / CS3 / CT3 SIP の verdict、CU3〜CX3 内容複製、CY3 / CZ3 / DA3 / DC3〜DG3 / DJ3 / DL3
+  audit path の読み分け、DB3 / DH3 / DI3 / DK3 中身の無い添付行と復元の窓）は
+  **ID 指定で 1 本ずつ実測しただけ**で、通しに入れたことはない。次の通しで初めて
+  「他の錠を巻き添えにしないか」が測られる（CZ3 / DE3 / DH3 は実際に巻き込みがあり、宣言を足した）。
+  **3 本が「発火しない」ことも分かった** — 新しい arm（空の path は `UNAVAILABLE`）が
+  細工の結果を覆い隠していたため、錠の fixture を作り直した。
   **錠を足した直後に control を回すだけでは足りず、arm が増えたら既存の control も回す。**
+  さらに 1 本は `what` が古くなっていた（細工で起きることが arm の追加で変わった）。
+  **control の文面も製品と一緒に古びる。**
   内訳（通しに入った 704 まで。R46 の BY3 / BZ3、R13 の CA3〜CE3、R49 の CF3 / CG3、R51 の CH3 / CI3 を含む）: 通し前 621 → 不発の WX を退役して 620 → Phase C で
   25 新設 = 645 → バッチ 1〜3 で 11 新設 = 656 → バッチ 4 で 8 新設 = 664 → バッチ 5〜10 で 28 新設）。**通し negative-control は
   2 回完走**。1 回目 2026-09-14〜15（621 本、約 15 時間、exit 1）: 620 発火、不発 1（WX。腕とクラス

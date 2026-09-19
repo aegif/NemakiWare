@@ -42,8 +42,9 @@
 | W7 | `appendAttachment` | **`updateAttachment`（:4571、その場）** | `ObjectServiceImpl.appendContentStream` | 追記 |
 | W8 | `checkOut`（PWC 作成） | `copyAttachmentOrRefuse`（:1665） | `VersioningServiceImpl.checkOut` | PWC へ複製 |
 | **W9** | **`replacePwc`** | **`updateAttachment`（:1488、その場）** | `ObjectServiceImpl.setContentStream`（対象が PWC のとき、:799） | PWC の内容差し替え |
-| **W10** | **アーカイブ（削除）** | `ArchiveDaoDelegate.createAttachmentArchive`（:481。bytes を **archive DB へ複製**、:546） | `deleteContentStream` / `deleteDocument` → `deleteAttachment`（`ContentServiceImpl:3601` / :3788） | 本番からは消え、archive に残る |
+| **W10** | **アーカイブ（削除）** | `ArchiveDaoDelegate.createAttachmentArchive`（:481。bytes を **archive DB へ複製**、:545） | `deleteContentStream` / `deleteDocument` → `deleteAttachment`（`ContentServiceImpl:3601` / :3788） | 本番からは消え、archive に残る |
 | **W11** | **復元** | `ArchiveDaoDelegate.restoreAttachment`（:714。attachment 行を作り直し、:792 で **本番へ body を PUT**） | `ContentServiceImpl.restoreArchive`（:4805）/ `restoreArchiveGuarded` | bytes が本番に戻る |
+| **W12** | **cold 移送**（COPY / MOVE） | `RetentionScheduler.moveToCold` → `LongTermStorageAdapter.put`（:599。**外部保管へ bytes を書く**）。MOVE なら `contentService.deleteArchiveContent`（:666 → `ArchiveDaoDelegate:1133`）で**ローカルの bytes を消す** | 保持ポリシーのスケジューラ | COPY は二重化、MOVE は所在の移動 |
 
 **外部取込は独自の書き込み経路を持たない。** `CanonicalImportServiceImpl` は
 `versioningService.checkIn`（2 か所）と `objectService.createDocument`（1 か所）を呼ぶので、
@@ -51,6 +52,15 @@ W1 と W4 に合流する。取込のために E1 を別に作る必要はない
 
 **その場書き換えは W3 / W7 / W9 の 3 本**である。
 
+> **W12 は 3 巡目で 2 名が別々に指摘して足した。** 判定基準を「`createAttachment` /
+> `copyAttachment` / `updateAttachment` のどれも通らない」に広げた結果として W10 / W11 を
+> 足したのに、**同じ基準に当てはまる cold 移送を見落とした**。`deleteContentStream` を対象に
+> した理由（「台帳の最後の statement がもう存在しない bytes を指したままになる」）は
+> MOVE にもそのまま当てはまる。**なお cold から本番へ bytes を戻す経路は無い**
+> （`adapter.get` で本番へ書き戻す呼び出しは main に 0 件。`restoreAttachment` は archive に
+> binary が無ければ「no binary content」で終わる）ので、**cold 化した文書は W11 で戻せない**。
+> これも表に書いていなかった。
+>
 > **W10 / W11 は 2 巡目の確認レビューで 2 名が別々に指摘して足した。** 初版の表は
 > `createAttachment` / `copyAttachment` / `updateAttachment` の 3 つを最下層としていたが、
 > **archive / restore はそのどれも通らない** — `CloudantClientWrapper` を直接叩く。
@@ -247,10 +257,10 @@ Phase 6 の「ERS persistence」はここを指す。
 
 ## 5. この文書で決めたこと
 
-- E1 の対象は **W1〜W11 と `deleteContentStream`**（W10 = アーカイブ、W11 = 復元）。2026-09-19 に実装を読んで
+- E1 の対象は **W1〜W12 と `deleteContentStream`**（W10 = アーカイブ、W11 = 復元、W12 = cold 移送）。2026-09-19 に実装を読んで
   W6 / W7 / W8 / 消去の扱いを決め、確認レビューを受けて数え直したときに W9 を足した（§1）。
   **列挙できたのはここまで**であり、ここに書いていない経路について
-  「記録した」とは後段のどこにも書かない。**2 度数え違えている**（W9、そして W10 / W11）という事実も含めて読むこと。
+  「記録した」とは後段のどこにも書かない。**3 度数え違えている**（W9 / W10・W11 / W12。いずれもレビューの指摘）という事実も含めて読むこと。**この表を「全部数えた」と読まないこと。**
 - W7（追記）は 1 呼び出しごとに 1 statement。**どれが最終かは書かない** —
   製品が `isLastChunk` を使っていないので知らない。limits に明記する。
 - W6 / W8（複製）は**自分の digest**を持ち、元の entry を引き継がない。

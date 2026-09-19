@@ -73,7 +73,29 @@ statement の記録は必ず 2 段になり、**その間の窓をどう扱う�
 > フラグ、そして content を書く 9 経路そのもの）が、記録の手がかりを落としてはならない。
 
 marker は content 文書の上に載る。**文書の書き込みは文書を置き換える**ので、
-marker を知らない書き手が 1 つでもあれば、そこで落ちる。実測（`anUnrelatedWriterDoesNotDropTheGap`）:
+marker を知らない書き手が 1 つでもあれば、そこで落ちる。
+
+> **「それは案 A を不完全に実装しただけだ」という反論が 3 巡目に出た。** 保存 JSON 側には
+> 未知フィールドの carrier がある（`CouchNodeBase` の `@JsonAnySetter` / `@JsonAnyGetter` →
+> `additionalProperties`）ので、marker もそこに乗れば改名で落ちない、という指摘である。
+>
+> **コードを読んで確かめた結果、落ちる。** サービス層の更新は
+> `ContentDaoServiceImpl.update(repositoryId, Document)`（:2379-2380）で
+> **ドメインモデルから `new CouchDocument(document)` を組み直す**。そして
+> ドメインの `NodeBase` / `Content` / `Document` に `additionalProperties` は**無い**
+> （grep で 0 件）。carrier は「保存 JSON → Couch モデル → 保存 JSON」の往復しか守らず、
+> 製品が実際に通る「保存 JSON → Couch モデル → **ドメインモデル** → Couch モデル → 保存 JSON」
+> では消える。
+>
+> **この製品はその形で 1 度焼かれている。** `CouchContent` の :241-245 のコメント —
+> 「model round-trip used to LOSE `contentIncarnation`（convert() never copied it and the model
+> had no field）, so the mint below fired on EVERY update — each ordinary rename silently
+> started a new "lifetime"」。**普通の改名が記録を壊した**という、C6 そのものの実例である。
+> 直し方は「ドメインモデルにフィールドを足す」で、案 A の marker も同じことが要る —
+> つまり **`Document` を新しく組む書き手すべて**（`buildCopyDocument` を含む）が
+> marker を運ぶ責任を負う。
+
+実測（`anUnrelatedWriterDoesNotDropTheGap`）:
 
 ```
 content を書く → statement の前に落ちる（bytes は在る、statement は無い、gap は見える）
@@ -87,7 +109,7 @@ content を書く → statement の前に落ちる（bytes は在る、statement
 silent gap で、引き金が「利用者が名前を直した」である。
 
 この製品の content 文書は多くの場所から書かれる（Phase 0 の棚卸しで数えた content 書き込み
-だけで 9 経路、ほかにプロパティ更新・ACL・版フラグ）。**そのすべてに marker の持ち越しを
+だけで **12 経路**、ほかにプロパティ更新・ACL・版フラグ）。**そのすべてに marker の持ち越しを
 配線し、以後も落とさない**ことが案 A の前提になる。案 B の intent は別 DB の行なので、
 content 文書を書く側は何も知らなくてよい。
 
@@ -146,7 +168,7 @@ view の遅延、性能。したがってここで言えるのは**2 つの設�
 製品の実測ではない。
 
 **C6 は計画の条件ではない。** この製品の content 文書が多くの書き手を持つという事実から
-足したもので、その事実は Phase 0 の棚卸し（content 書き込み 9 経路）で数えている。
+足したもので、その事実は Phase 0 の棚卸し（content 書き込み 12 経路）で数えている。
 書き手が 1 か所しかない製品なら C6 は効かず、決定も変わりうる。
 
 書き込み順序だけは製品から読み出した（作る系は attachment → 文書、その場系は同じ行を
