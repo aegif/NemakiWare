@@ -311,19 +311,52 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
      * where the content lands and which connectors may put it there. Two rows with the same
      * fingerprint are interchangeable as far as that authorisation goes; anything else is a
      * different decision and must be refused rather than silently adopted.
+     *
+     * <p><b>Injective on purpose.</b> The first version joined the fields with U+001F and the
+     * connector ids with a comma, and escaped nothing. A profile's path and connector ids are
+     * caller-supplied text, so two DIFFERENT rows could produce the SAME string — put a U+001F
+     * inside a path and the boundary between two fields moves. A review built the pair: a row
+     * with {@code defaultConnectorId="false\u001fd"} and one with
+     * {@code targetFolderPath="p\u001ftrue"} collide. That is not a theoretical tidiness
+     * point: the fingerprint exists to refuse a row that changed between the gate and the
+     * write, so a collision is exactly the case it is there to catch.
+     *
+     * <p>Length-prefixing each field removes the ambiguity without needing an escape table or a
+     * character restriction on ids that are otherwise free-form: a decoder reading
+     * {@code 5:alpha} cannot mistake where the value ends, whatever the value contains. The
+     * result is compared for equality and never stored or shown, so the shape is free to change.
      */
     static String authorizationFingerprint(ImportProfileDefinition profile) {
         if (profile == null) return null;
         java.util.List<String> connectors = profile.getAllowedConnectorIds() == null
                 ? java.util.List.of()
                 : profile.getAllowedConnectorIds().stream().sorted().toList();
-        return String.join("\u001f",
-                String.valueOf(profile.getRepositoryId()),
-                String.valueOf(profile.getTargetFolderId()),
-                String.valueOf(profile.getTargetFolderPath()),
-                String.valueOf(profile.isDelegated()),
-                String.valueOf(profile.getDefaultConnectorId()),
-                String.join(",", connectors));
+        StringBuilder fingerprint = new StringBuilder("v2");
+        appendLengthPrefixed(fingerprint, profile.getRepositoryId());
+        appendLengthPrefixed(fingerprint, profile.getTargetFolderId());
+        appendLengthPrefixed(fingerprint, profile.getTargetFolderPath());
+        appendLengthPrefixed(fingerprint, String.valueOf(profile.isDelegated()));
+        appendLengthPrefixed(fingerprint, profile.getDefaultConnectorId());
+        // The count first, so a list of two ids cannot look like a list of one.
+        appendLengthPrefixed(fingerprint, String.valueOf(connectors.size()));
+        for (String connector : connectors) {
+            appendLengthPrefixed(fingerprint, connector);
+        }
+        return fingerprint.toString();
+    }
+
+    /**
+     * One field, written so that the next field's start is not a matter of interpretation.
+     *
+     * <p>{@code null} is its own token rather than the four letters {@code null}: a row whose
+     * path is unset and a row whose path is the string "null" are different rows.
+     */
+    private static void appendLengthPrefixed(StringBuilder out, String field) {
+        if (field == null) {
+            out.append("|-");
+            return;
+        }
+        out.append('|').append(field.length()).append(':').append(field);
     }
 
     /**

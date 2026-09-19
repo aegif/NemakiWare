@@ -2035,7 +2035,8 @@ public class CompileServiceImpl implements CompileService {
 					Double d = (Double) element;
 					if (d.isNaN() || d.isInfinite()) {
 						log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
-							"Cannot convert " + d + " (NaN/Infinite) to Integer.");
+							"the stored Double is NaN or infinite, so it is not an Integer " +
+							"(value withheld from the log).");
 						CoercionAuditLogger.logTypeCoercionRejected(propertyId, "Double", element, "INTEGER", "NaN/Infinite value");
 						return null;
 					}
@@ -2046,8 +2047,8 @@ public class CompileServiceImpl implements CompileService {
 					} else {
 						// Has fractional part - reject to avoid silent data loss
 						log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
-							"Cannot convert Double " + d + " to Integer (has fractional part " + 
-							(d - Math.floor(d)) + "). Returning null to avoid data loss.");
+							"the stored Double has a fractional part, so it is not an Integer " +
+							"(value withheld from the log). Returning null to avoid data loss.");
 						CoercionAuditLogger.logTypeCoercionRejected(propertyId, "Double", element, "INTEGER", "has fractional part");
 						return null;
 					}
@@ -2062,8 +2063,8 @@ public class CompileServiceImpl implements CompileService {
 					} catch (ArithmeticException e) {
 							// Has fractional part - reject
 							log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
-								"Cannot convert BigDecimal " + bd + " to Integer (has fractional part). " +
-								"Returning null to avoid data loss.");
+								"the stored BigDecimal has a fractional part, so it is not an Integer " +
+								"(value withheld from the log). Returning null to avoid data loss.");
 							CoercionAuditLogger.logTypeCoercionRejected(propertyId, "BigDecimal", element, "INTEGER", "has fractional part");
 							return null;
 						}
@@ -2087,7 +2088,8 @@ public class CompileServiceImpl implements CompileService {
 					Double d = (Double) element;
 					if (d.isNaN() || d.isInfinite()) {
 						log.warn("TYPE COERCION REJECTED for property '" + propertyId + "': " +
-							"Cannot convert " + d + " (NaN/Infinite) to Decimal.");
+							"the stored Double is NaN or infinite, so it is not a Decimal " +
+							"(value withheld from the log).");
 						return null;
 					}
 					log.debug("Type coercion: Double → Decimal for property " + propertyId);
