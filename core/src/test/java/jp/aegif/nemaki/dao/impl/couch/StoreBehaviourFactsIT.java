@@ -44,7 +44,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -335,17 +334,12 @@ public class StoreBehaviourFactsIT {
             stoppedTheFallback = false;
             outcome = "the store ANSWERED 200 — allow_fallback=false was neither rejected nor "
                     + "honoured (it full-scanned anyway, or the parameter was never sent)";
-        } catch (com.ibm.cloud.sdk.core.service.exception.BadRequestException badRequest) {
-            String message = String.valueOf(badRequest.getMessage()).toLowerCase(Locale.ROOT);
-            rejectedAsUnknown = message.contains("invalid_key")
-                    || message.contains("invalid key allow_fallback");
-            stoppedTheFallback = !rejectedAsUnknown;
-            outcome = "the store REFUSED the query with a 400: " + badRequest.getMessage();
-        } catch (RuntimeException couldNotAsk) {
-            rejectedAsUnknown = false;
-            stoppedTheFallback = false;
-            outcome = "the query did not reach a verdict (" + couldNotAsk + ") — this establishes "
-                    + "nothing about allow_fallback on this version";
+        } catch (RuntimeException thrown) {
+            StoreBehaviourFacts.FallbackVerdict verdict =
+                    StoreBehaviourFacts.classifyAllowFallbackRefusal(thrown);
+            rejectedAsUnknown = verdict == StoreBehaviourFacts.FallbackVerdict.REJECTED_AS_UNKNOWN_KEY;
+            stoppedTheFallback = verdict == StoreBehaviourFacts.FallbackVerdict.HONOURED;
+            outcome = "the query came back " + verdict + ": " + thrown.getMessage();
         }
         observed.put(Fact.ALLOW_FALLBACK_FALSE_IS_REJECTED_AS_AN_UNKNOWN_KEY, rejectedAsUnknown);
         howObserved.put(Fact.ALLOW_FALLBACK_FALSE_IS_REJECTED_AS_AN_UNKNOWN_KEY, outcome);
@@ -380,11 +374,12 @@ public class StoreBehaviourFactsIT {
             }
             byte[] bytes = in.readAllBytes();
             return new BinaryRead(bytes, false, bytes.length + " bytes");
-        } catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException gone) {
-            return new BinaryRead(null, true, "the store ANSWERED 404: there is no attachment");
-        } catch (Exception couldNotAsk) {
-            return new BinaryRead(null, false, "the attachment read FAILED (" + couldNotAsk
-                    + "), which says nothing about whether the binary is there");
+        } catch (Exception thrown) {
+            boolean gone = StoreBehaviourFacts.readEstablishesTheBinaryIsGone(thrown);
+            return new BinaryRead(null, gone, gone
+                    ? "the store ANSWERED 404: there is no attachment"
+                    : "the attachment read FAILED (" + thrown + "), which says nothing about "
+                            + "whether the binary is there");
         }
     }
 

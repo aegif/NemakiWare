@@ -3402,34 +3402,55 @@ class CanonicalImportServiceTest {
      *                          with the door it is reached from. They exist so that a NEW direct
      *                          writer — the way to add a door without re-asking — cannot arrive
      *                          unnamed
+     * @param reAskAbove        methods that reach a writer and re-ask by their OWN mechanism
+     *                          rather than by calling the guard. Named so that "below a door,
+     *                          which re-asks" is checkable rather than asserted
      */
     record DecorationScope(int version, java.util.List<String> includedOperations,
             java.util.Map<String, String> excludedOperations,
-            java.util.Map<String, String> writersBelowADoor) {}
+            java.util.Map<String, String> writersBelowADoor,
+            java.util.Map<String, String> reAskAbove) {}
 
-    private static final DecorationScope DECORATION_SCOPE = new DecorationScope(2,
+    private static final DecorationScope DECORATION_SCOPE = new DecorationScope(4,
             java.util.List.of(
                     "executeMailImportInternal",
                     "executeNoteImportInternal",
                     "executeNoteAttachment",
                     "executeBusinessRecordImportInternal",
                     "executeChatContextImportInternal"),
+            // EMPTY, and that is a statement: no door is deliberately unaccounted for.
+            // applyCaptureWindow sat here and read as "a door with no re-ask", which it is not
+            // — its two call sites are structurally identical to applyChatCapturedAt's, both
+            // below a re-ask (subagent review, P3). It moved to the writers below.
+            java.util.Map.of(),
             java.util.Map.of(
-                    "applyCaptureWindow",
-                    "writes its decoration DIRECTLY through contentService.update rather than "
-                            + "through the metadata service, so neither number here would move "
-                            + "if a door like it were added (R48, recorded not hidden)"),
-            java.util.Map.of(
+                    "applyCaptureWindow", "writes its decoration DIRECTLY through "
+                            + "contentService.update, so neither count here moves with it; "
+                            + "reached from executeChatContextImportInternal, below execute's "
+                            + "second re-ask (R48, recorded not hidden)",
                     // Version 1 listed applyCaptureWindow alone and read as though it were the
                     // only direct writer. It is not: four more write decorations through
                     // contentService.update. They are not doors — each is reached from one, so
                     // the re-ask has already happened above them — but leaving them unnamed made
                     // the enumeration silently partial, which both reviews called out.
-                    "applyChatCapturedAt", "reached from executeChatContextImportInternal, "
-                            + "which re-asks",
+                    // NOT "executeChatContextImportInternal, which re-asks": that door's own
+                    // re-ask is forty lines BELOW this call and runs only on the dedupe-skip
+                    // arm, where the hook does not run at all. What is actually above it is
+                    // execute's second re-ask, which starts the hook (subagent review, P3).
+                    "applyChatCapturedAt", "reached from the beforeEmit hook, which execute "
+                            + "starts after its second re-ask",
                     "applySourceMetadata", "reached from execute, which re-asks twice",
                     "applyAclSyncPolicy", "reached from applySourceMetadata, below execute",
-                    "applySourceAcl", "reached from applyAclSyncPolicy, below execute"));
+                    "applySourceAcl", "reached from applyAclSyncPolicy, below execute"),
+            java.util.Map.of(
+                    // Found by the caller check itself, on the round that added it: `execute`
+                    // reaches applySourceMetadata and is neither a guard caller nor a writer,
+                    // so it was in none of the lists while being the very method the claim
+                    // "below a door, which re-asks" rests on.
+                    "execute", "re-asks the delegation TWICE itself (R5) — once after profile "
+                            + "resolution and again immediately before the write — rather than "
+                            + "through refuseDecorationIfNoLongerAuthorized, so it is not a "
+                            + "guard caller and does not write a decoration either"));
 
     @Test
     void everyPostExecuteDecorationReAsksTheDelegation() throws Exception {
@@ -3460,6 +3481,7 @@ class CanonicalImportServiceTest {
                 DECORATION_SCOPE.includedOperations());
         named.addAll(DECORATION_SCOPE.excludedOperations().keySet());
         named.addAll(DECORATION_SCOPE.writersBelowADoor().keySet());
+        named.addAll(DECORATION_SCOPE.reAskAbove().keySet());
 
         java.util.List<String> unaccounted = new java.util.ArrayList<>(doors);
         unaccounted.addAll(writers);
@@ -3469,6 +3491,22 @@ class CanonicalImportServiceTest {
                         + "the scope's lists, so this inventory cannot be read as a count of "
                         + "anything (scope version " + DECORATION_SCOPE.version() + "): "
                         + unaccounted);
+
+        // The writers are claimed to sit BELOW a door. Naming them is not the same as pinning
+        // that: a new entry point calling one of them directly, without re-asking, changes
+        // neither the guard's callers nor the writer set, so the accounting above would stay
+        // green while a decoration is written after the authorisation it was granted under is
+        // gone (Codex review, P2). Every caller of a writer has to be accounted for too.
+        java.util.List<String> reachedFrom = new java.util.ArrayList<>();
+        for (String writer : DECORATION_SCOPE.writersBelowADoor().keySet()) {
+            reachedFrom.addAll(enclosingMethodsCalling(source, writer + "("));
+        }
+        reachedFrom.removeAll(DECORATION_SCOPE.writersBelowADoor().keySet()); // own declarations
+        reachedFrom.removeAll(named);
+        assertTrue(reachedFrom.isEmpty(),
+                "a method reaches a decoration writer without being a door or a writer itself, "
+                        + "so nothing here establishes that the delegation was re-asked above "
+                        + "it: " + reachedFrom);
 
         // The lists are a partition, not three overlapping opinions. A name in two of them makes
         // the accounting above pass while saying two different things about the same method.

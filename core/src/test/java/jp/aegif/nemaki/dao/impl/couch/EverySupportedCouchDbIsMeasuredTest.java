@@ -151,6 +151,28 @@ class EverySupportedCouchDbIsMeasuredTest {
     }
 
     @Test
+    @DisplayName("this class is itself on the list CI runs")
+    void theLockThatKeepsCiHonestIsRunByCi() throws IOException {
+        // CI runs an ALLOW-LIST of unit classes, and nobody widens it. Every assertion in this
+        // file therefore ran locally and nowhere else: the class written to stop the matrix from
+        // covering less than it claims was in no workflow at all, while its own javadoc said
+        // "caught on every build" (Codex review, P2). A lock that does not run is a comment.
+        String yaml = workflow();
+        java.util.regex.Matcher list =
+                Pattern.compile("-Dtest='([^']*)'").matcher(yaml);
+        java.util.List<String> everyListedClass = new ArrayList<>();
+        while (list.find()) {
+            for (String name : list.group(1).split(",")) {
+                everyListedClass.add(name.trim());
+            }
+        }
+
+        assertTrue(everyListedClass.contains(getClass().getSimpleName()),
+                getClass().getSimpleName() + " is in no -Dtest list in " + WORKFLOW
+                        + ", so nothing here runs in CI. Listed: " + everyListedClass);
+    }
+
+    @Test
     @DisplayName("each matrix entry actually starts THAT version of CouchDB")
     void theMatrixVersionReachesTheContainer() throws IOException {
         // Without this the matrix is three runs of whatever image is hardcoded: all three jobs
@@ -261,6 +283,45 @@ class EverySupportedCouchDbIsMeasuredTest {
                 IllegalStateException.class, () -> StoreBehaviourFacts.lineOf("3.2.3"),
                 "a version the product refuses to start against was accepted for measurement");
         assertTrue(refused.getMessage().contains("REFUSES"), refused.getMessage());
+    }
+
+    @Test
+    @DisplayName("a failed attachment read is not the finding that the binary is gone")
+    void onlyA404EstablishesThatTheBinaryWent() {
+        // The measuring instrument's own version of this branch's defect: StoreBehaviourFactsIT
+        // recorded EVERY exception from the attachment read as "the binary is gone", which is
+        // the value the deletion fact expects — so a transient 500 confirmed the fact (Codex
+        // review, P1). The classification lives here, apart from the read, because the IT does
+        // not run without a store: an inline catch could be reverted and every gate stay green.
+        // Mocked: these SDK exceptions read an okhttp Response in their constructor, which a
+        // unit test has no business building.
+        assertTrue(StoreBehaviourFacts.readEstablishesTheBinaryIsGone(
+                        org.mockito.Mockito.mock(
+                                com.ibm.cloud.sdk.core.service.exception.NotFoundException.class)),
+                "a 404 is the store ANSWERING that the attachment is not there");
+
+        for (Throwable notAnAnswer : List.<Throwable>of(
+                new java.io.IOException("connection reset"),
+                new RuntimeException("something else"),
+                org.mockito.Mockito.mock(
+                        com.ibm.cloud.sdk.core.service.exception.BadRequestException.class))) {
+            assertFalse(StoreBehaviourFacts.readEstablishesTheBinaryIsGone(notAnAnswer),
+                    notAnAnswer + " was read as the store saying the binary is gone");
+        }
+    }
+
+    @Test
+    @DisplayName("allow_fallback has three answers, and a failed query is the third")
+    void theFallbackVerdictKeepsTheThirdOutcome() {
+        // Same shape: every RuntimeException that was not invalid_key counted as "the parameter
+        // was honoured", so a connection reset became evidence about CouchDB's behaviour.
+        assertEquals(StoreBehaviourFacts.FallbackVerdict.NOT_ESTABLISHED,
+                StoreBehaviourFacts.classifyAllowFallbackRefusal(
+                        new RuntimeException("connection reset")),
+                "a query that never reached a verdict was counted as one");
+        assertEquals(StoreBehaviourFacts.FallbackVerdict.NOT_ESTABLISHED,
+                StoreBehaviourFacts.classifyAllowFallbackRefusal(
+                        new java.io.IOException("socket closed")));
     }
 
     @Test

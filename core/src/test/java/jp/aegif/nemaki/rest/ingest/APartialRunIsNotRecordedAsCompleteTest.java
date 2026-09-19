@@ -172,14 +172,31 @@ class APartialRunIsNotRecordedAsCompleteTest {
         // The wiring, because a correct helper nobody calls changes nothing. Read from source:
         // both doors build a Map response, so there is no type to hang this on.
         for (String door : List.of("IngestSchedulerController.java", "FolderConnectorController.java")) {
-            String source = Files.readString(
-                    Path.of("src/main/java/jp/aegif/nemaki/rest/ingest/" + door),
-                    StandardCharsets.UTF_8);
+            // Comments stripped. The grep below was satisfied by the COMMENT next to the code
+            // it was meant to find, so deleting the line that puts incompleteReads in the
+            // response left the lock green (Codex review, P2).
+            String source = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+                    Files.readString(
+                            Path.of("src/main/java/jp/aegif/nemaki/rest/ingest/" + door),
+                            StandardCharsets.UTF_8));
             assertTrue(source.contains(".runStatus()"),
                     door + " words its own outcome instead of going through FetchResult.runStatus");
             assertTrue(source.contains("incompleteReads"),
                     door + " answers without saying what the run did not see, so 'partial' is "
                             + "unactionable");
+        }
+
+        // And the screens that read those doors. "Unactionable" was measured on the server and
+        // not on the only consumer, so the response carried the reason while both manual-run
+        // screens still showed a green "done" (subagent review, P1).
+        for (String screen : List.of(
+                "components/DocumentList/DocumentList.tsx",
+                "components/IntegrationSettings/SchedulerStatusTab.tsx")) {
+            String source = Files.readString(Path.of("src/main/webapp/ui/src/" + screen),
+                    StandardCharsets.UTF_8);
+            assertTrue(source.contains("sawEverything") || source.contains("incompleteReads"),
+                    screen + " reports a manual run without looking at whether it saw the whole "
+                            + "source, so a run that stopped at its limit reads as finished");
         }
     }
 

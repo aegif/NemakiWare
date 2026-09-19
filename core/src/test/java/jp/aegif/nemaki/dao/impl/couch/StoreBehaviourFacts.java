@@ -263,6 +263,49 @@ public final class StoreBehaviourFacts {
                 + "floor. Skipping would report 'nothing wrong' about a store nobody asked.");
     }
 
+    /**
+     * How the {@code allow_fallback} question was answered, or that it was not.
+     *
+     * <p>Three outcomes, because there are three. The measurement folded "the query never
+     * reached a verdict" into "the parameter was honoured", so a connection reset would have
+     * been recorded as evidence about CouchDB's behaviour (Codex review, P1).
+     */
+    public enum FallbackVerdict {
+        /** The store does not know the key — a 400 naming it. */
+        REJECTED_AS_UNKNOWN_KEY,
+        /** The store knew it and acted on it — a 400 about the index instead. */
+        HONOURED,
+        /** Neither: a transport failure, a 200, anything that settles nothing. */
+        NOT_ESTABLISHED
+    }
+
+    /**
+     * Whether a failed attachment read ESTABLISHED that the binary is gone.
+     *
+     * <p>Only a 404 does. Every other failure — a 500, a reset, a timeout — leaves the question
+     * open, and answering it "gone" is the exact defect this whole branch is named after,
+     * committed inside the test that measures it.
+     *
+     * <p>Pure, and separate from the read, so it can be measured without a store: the IT does
+     * not run in the unit suite, so an inline {@code catch} here could be reverted and every
+     * gate would stay green.
+     */
+    public static boolean readEstablishesTheBinaryIsGone(Throwable thrown) {
+        return thrown instanceof com.ibm.cloud.sdk.core.service.exception.NotFoundException;
+    }
+
+    /** Classify the refusal a {@code allow_fallback=false} query came back with. */
+    public static FallbackVerdict classifyAllowFallbackRefusal(Throwable thrown) {
+        if (!(thrown instanceof com.ibm.cloud.sdk.core.service.exception.BadRequestException)) {
+            return FallbackVerdict.NOT_ESTABLISHED;
+        }
+        String message = String.valueOf(thrown.getMessage())
+                .toLowerCase(java.util.Locale.ROOT);
+        return message.contains("invalid_key") || message.contains("invalid key allow_fallback")
+                ? FallbackVerdict.REJECTED_AS_UNKNOWN_KEY
+                : FallbackVerdict.HONOURED;
+    }
+
     /** The image tags CI has to run, in declaration order. */
     public static List<String> ciImageTags() {
         List<String> tags = new java.util.ArrayList<>();
