@@ -165,6 +165,23 @@ class NotionPartialReadsAreNotCompleteTest {
                 + (cursor == null ? "" : ",\"next_cursor\":\"" + cursor + "\"") + "}";
     }
 
+    /** Three rows on one page, so a limit can be made to fall inside it. */
+    private static String threePages(boolean hasMore) {
+        StringBuilder rows = new StringBuilder();
+        for (int i = 1; i <= 3; i++) {
+            if (i > 1) {
+                rows.append(',');
+            }
+            rows.append("{\"id\":\"p-").append(i).append("\",\"url\":\"https://notion.so/p")
+                    .append(i).append("\",\"last_edited_time\":\"2026-01-0").append(i)
+                    .append("T00:00:00.000Z\",")
+                    .append("\"properties\":{\"title\":{\"type\":\"title\","
+                            + "\"title\":[{\"plain_text\":\"T\"}]}},")
+                    .append("\"parent\":{\"workspace\":true}}");
+        }
+        return "{\"results\":[" + rows + "],\"has_more\":" + hasMore + "}";
+    }
+
     private static String blockPage(String blockId, boolean hasMore, String cursor) {
         return "{\"results\":[{\"id\":\"" + blockId + "\",\"type\":\"paragraph\","
                 + "\"paragraph\":{\"rich_text\":[{\"plain_text\":\"hello\"}]}}],"
@@ -334,6 +351,112 @@ class NotionPartialReadsAreNotCompleteTest {
         assertTrue(result.sawEverything(),
                 "a complete listing was reported as cut short: " + result.incompleteReads());
         assertEquals(1, result.fetched(), result.toString());
+    }
+
+    @Test
+    @DisplayName("an EMPTY search page that says there is more is not the end of the workspace")
+    void anEmptyPageThatSaysThereIsMoreIsFollowed() {
+        // Both reviews, P1. The empty-results arm answered "there are no more pages" without
+        // ever looking at has_more, so a workspace whose first page came back empty — a filter,
+        // a permission, a shard that answered late — was reported as fully read, and the
+        // checkpoint moved on.
+        search = (exchange, n) -> {
+            if (n == 1) {
+                json(exchange, 200, "{\"results\":[],\"has_more\":true,\"next_cursor\":\"c2\"}");
+            } else {
+                json(exchange, 200, onePage("page-2", "2026-02-02T00:00:00.000Z", false, null));
+            }
+        };
+
+        FetchResult result = run();
+
+        assertTrue(SEARCH_CALLS.get() >= 2, "the cursor after the empty page was never followed");
+        assertEquals(1, result.fetched(), "the page behind the empty one was never seen: " + result);
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+    }
+
+    @Test
+    @DisplayName("an empty search page that says there is more, with no cursor, is refused")
+    void anEmptyPageWithMoreAndNoCursorIsRefused() {
+        search = (exchange, n) -> json(exchange, 200, "{\"results\":[],\"has_more\":true}");
+
+        FetchResult result = run();
+
+        assertTrue(result.hasErrors(),
+                "Notion said there are more pages and gave nowhere to look; the run reported no "
+                        + "problem: " + result);
+        assertEquals(0, result.fetched(), result.toString());
+    }
+
+    @Test
+    @DisplayName("a limit that falls mid-page does not call the listing whole")
+    void aLimitInsideAPageIsStillTruncation() {
+        // The subagent's P1. With limit > 100 the page size is 100, so the limit lands in the
+        // middle of a page: rows this adapter had already READ were dropped while Notion's
+        // has_more for that page was false — and the listing called itself whole.
+        //
+        // Reproduced in miniature: one page of three rows, limit 2. has_more is false, one row
+        // is left behind, and complete must still be false.
+        search = (exchange, n) -> json(exchange, 200, threePages(false));
+
+        FetchResult result = orchestrator().execute(null, profile(), connector(), Map.of(), 2);
+
+        assertFalse(result.sawEverything(),
+                "a row this run read and dropped was reported as nothing left to read: " + result);
+        assertTrue(result.incompleteReads().get(0).contains("already-read"),
+                result.incompleteReads().get(0));
+    }
+
+    @Test
+    @DisplayName("a limit that falls exactly on a page boundary is not truncation")
+    void aLimitOnThePageBoundaryIsNotTruncation() {
+        // The over-refusal side of the one above. Taking every row of a page that says there is
+        // nothing after it is a WHOLE listing, and calling it partial would make the flag mean
+        // nothing for every workspace smaller than one poll.
+        search = (exchange, n) -> json(exchange, 200, threePages(false));
+
+        FetchResult result = orchestrator().execute(null, profile(), connector(), Map.of(), 3);
+
+        assertTrue(result.sawEverything(),
+                "a listing that ended exactly at the limit, with Notion saying there is no more, "
+                        + "was reported as cut short: " + result.incompleteReads());
+    }
+
+    @Test
+    @DisplayName("a search page without a results array is not an empty workspace")
+    void aSearchPageWithoutResultsIsRefused() {
+        search = (exchange, n) -> json(exchange, 200, "{\"has_more\":false}");
+
+        FetchResult result = run();
+
+        assertTrue(result.hasErrors(), "a malformed search answer was read as an empty workspace: "
+                + result);
+        assertEquals(0, result.fetched(), result.toString());
+    }
+
+    @Test
+    @DisplayName("a block page without a results array is not a page with no blocks")
+    void aBlockPageWithoutResultsIsRefused() {
+        blocks = (exchange, n) -> json(exchange, 200, "{\"has_more\":false}");
+
+        run();
+
+        verify(importService, never()).executeNoteImport(any(), any());
+        assertEquals(1, dlqReasons.size(), "the page was not dead-lettered: " + dlqReasons);
+    }
+
+    @Test
+    @DisplayName("a block cursor that does not move is not the end of the page")
+    void aRepeatedBlockCursorIsRefused() {
+        // Notion failing to paginate. Stopping quietly reported the rest of the page as absent,
+        // which for extractFiles means "no attachments".
+        blocks = (exchange, n) -> json(exchange, 200, blockPage("b-" + n, true, "same-cursor"));
+
+        run();
+
+        verify(importService, never()).executeNoteImport(any(), any());
+        assertEquals(1, dlqReasons.size(), "the page was not dead-lettered: " + dlqReasons);
+        assertTrue(dlqReasons.get(0).contains("repeated"), dlqReasons.get(0));
     }
 
     // ── the answer that must stay an answer ────────────────────────

@@ -225,11 +225,9 @@ public class StoreBehaviourFactsIT {
         try {
             cloudant.putDocument(new PutDocumentOptions.Builder()
                     .db(db).docId(docId).document(fetched).build()).execute().getResult();
-            byte[] after = attachmentBytes(docId);
-            kept = java.util.Arrays.equals(BINARY, after);
-            outcome = after == null ? "the attachment is gone after the PUT"
-                    : "the attachment is " + after.length + " bytes after the PUT (seeded "
-                            + BINARY.length + ")";
+            BinaryRead after = readAttachment(docId);
+            kept = after.bytes() != null && java.util.Arrays.equals(BINARY, after.bytes());
+            outcome = "after the PUT, " + after.how() + " (seeded " + BINARY.length + ")";
         } catch (RuntimeException e) {
             kept = false;
             outcome = "the PUT itself failed: " + e;
@@ -249,12 +247,12 @@ public class StoreBehaviourFactsIT {
         stripped.put("marker", marker);
         cloudant.putDocument(new PutDocumentOptions.Builder()
                 .db(db).docId(docId).document(stripped).build()).execute().getResult();
-        byte[] after = attachmentBytes(docId);
-        observed.put(Fact.PUT_WITHOUT_ATTACHMENTS_DELETES_THE_BINARY, after == null);
+        BinaryRead after = readAttachment(docId);
+        // gone(), not "bytes == null". Only a 404 is the store telling us the binary went.
+        observed.put(Fact.PUT_WITHOUT_ATTACHMENTS_DELETES_THE_BINARY, after.gone());
         howObserved.put(Fact.PUT_WITHOUT_ATTACHMENTS_DELETES_THE_BINARY,
                 "after a PUT with no _attachments (seed rev " + seedRev + ", written at "
-                        + currentRev + ") the attachment is "
-                        + (after == null ? "gone" : "still there, " + after.length + " bytes"));
+                        + currentRev + "): " + after.how());
     }
 
     /**
@@ -314,10 +312,15 @@ public class StoreBehaviourFactsIT {
      * INDEX means it knew it and acted on it; and a 200 means it accepted the key and did
      * nothing, which is neither and must not be reported as either.
      *
-     * <p>The error code is deliberately read as "not invalid_key" rather than matched against a
-     * specific one. 3.4/3.5 answer {@code invalid_index} here and {@code no_usable_index} when no
-     * {@code use_index} is given; pinning the string would make this test fail on a rename and
-     * call it a store regression.
+     * <p>The error code is deliberately read as "a 400 that is not {@code invalid_key}" rather
+     * than matched against a specific one. 3.4/3.5 answer {@code invalid_index} here and
+     * {@code no_usable_index} when no {@code use_index} is given; pinning the string would make
+     * this test fail on a rename and call it a store regression.
+     *
+     * <p>It has to be a 400 from the SERVER, though. Counting every {@code RuntimeException} as
+     * "the parameter was honoured" made a connection reset — a read that never reached CouchDB —
+     * into evidence about CouchDB's behaviour (Codex review, P1). A transport failure now leaves
+     * both facts false and says so, which fails against whichever one expected true.
      */
     private static void measureAllowFallback(String marker) {
         String outcome;
@@ -332,12 +335,17 @@ public class StoreBehaviourFactsIT {
             stoppedTheFallback = false;
             outcome = "the store ANSWERED 200 — allow_fallback=false was neither rejected nor "
                     + "honoured (it full-scanned anyway, or the parameter was never sent)";
-        } catch (RuntimeException e) {
-            String message = String.valueOf(e.getMessage()).toLowerCase(Locale.ROOT);
+        } catch (com.ibm.cloud.sdk.core.service.exception.BadRequestException badRequest) {
+            String message = String.valueOf(badRequest.getMessage()).toLowerCase(Locale.ROOT);
             rejectedAsUnknown = message.contains("invalid_key")
                     || message.contains("invalid key allow_fallback");
             stoppedTheFallback = !rejectedAsUnknown;
-            outcome = "the store REFUSED the query: " + e.getMessage();
+            outcome = "the store REFUSED the query with a 400: " + badRequest.getMessage();
+        } catch (RuntimeException couldNotAsk) {
+            rejectedAsUnknown = false;
+            stoppedTheFallback = false;
+            outcome = "the query did not reach a verdict (" + couldNotAsk + ") — this establishes "
+                    + "nothing about allow_fallback on this version";
         }
         observed.put(Fact.ALLOW_FALLBACK_FALSE_IS_REJECTED_AS_AN_UNKNOWN_KEY, rejectedAsUnknown);
         howObserved.put(Fact.ALLOW_FALLBACK_FALSE_IS_REJECTED_AS_AN_UNKNOWN_KEY, outcome);
@@ -345,13 +353,38 @@ public class StoreBehaviourFactsIT {
         howObserved.put(Fact.ALLOW_FALLBACK_FALSE_STOPS_THE_FALLBACK, outcome);
     }
 
-    private static byte[] attachmentBytes(String docId) {
+    /**
+     * What the store said about a binary.
+     *
+     * @param bytes the content, when it was read
+     * @param gone true ONLY where the store answered 404
+     * @param how the observation, quoted in failure messages
+     */
+    private record BinaryRead(byte[] bytes, boolean gone, String how) {}
+
+    /**
+     * Read the attachment, keeping "the store says it is not there" apart from "the read failed".
+     *
+     * <p>This method used to answer {@code null} for both, and the deletion fact below read that
+     * {@code null} as "the binary is gone" — a failed read reported as an answered nothing, in
+     * the test written to catch exactly that (Codex review, P1). A read that did not happen now
+     * leaves the fact FALSE, so it fails against its expectation and prints why.
+     */
+    private static BinaryRead readAttachment(String docId) {
         try (InputStream in = cloudant.getAttachment(new GetAttachmentOptions.Builder()
                 .db(db).docId(docId).attachmentName(ATTACHMENT_NAME).build())
                 .execute().getResult()) {
-            return in == null ? null : in.readAllBytes();
-        } catch (Exception e) {
-            return null; // not found / gone
+            if (in == null) {
+                return new BinaryRead(null, false, "the SDK returned no stream and did not fail — "
+                        + "neither an answer nor a refusal, so nothing is established");
+            }
+            byte[] bytes = in.readAllBytes();
+            return new BinaryRead(bytes, false, bytes.length + " bytes");
+        } catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException gone) {
+            return new BinaryRead(null, true, "the store ANSWERED 404: there is no attachment");
+        } catch (Exception couldNotAsk) {
+            return new BinaryRead(null, false, "the attachment read FAILED (" + couldNotAsk
+                    + "), which says nothing about whether the binary is there");
         }
     }
 
@@ -406,6 +439,52 @@ public class StoreBehaviourFactsIT {
                 + "product's code says it does. Each line below is a defect in the code or in the "
                 + "javadoc that states the premise — NOT a row to be edited to match the store:\n  "
                 + String.join("\n  ", wrong));
+    }
+
+    @Test
+    @DisplayName("the _find stub fact holds on the WIRE, not only through the SDK")
+    void theFindStubFactIsNotAnSdkArtefact() {
+        // R7 is a claim about CouchDB. Measuring it only through the Cloudant SDK would leave
+        // open that the SDK synthesises `_attachments` from somewhere — and the canon said the
+        // fact had been checked both ways while the tree only ever checked one (subagent review,
+        // P3). This asks the HTTP API directly, with the SDK out of the path.
+        assumeTrue(available, "no CouchDB reachable — skipping (CI sets required=true)");
+
+        String url = cfg("nemaki.test.couchdb.url", "NEMAKI_TEST_COUCHDB_URL",
+                "http://localhost:5984");
+        String user = cfg("nemaki.test.couchdb.user", "NEMAKI_TEST_COUCHDB_USER", "admin");
+        String pass = cfg("nemaki.test.couchdb.password", "NEMAKI_TEST_COUCHDB_PASSWORD",
+                "password");
+        String auth = java.util.Base64.getEncoder().encodeToString(
+                (user + ":" + pass).getBytes(StandardCharsets.UTF_8));
+
+        String body = org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> {
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(url + "/" + db + "/_find"))
+                    .header("Authorization", "Basic " + auth)
+                    .header("Content-Type", "application/json")
+                    // ofString, not ofInputStream: the request timeout covers the headers only,
+                    // and a body handler that streams would let this block without bound.
+                    .timeout(java.time.Duration.ofSeconds(30))
+                    .POST(java.net.http.HttpRequest.BodyPublishers.ofString(
+                            "{\"selector\":{\"_id\":{\"$gt\":null}},\"limit\":50}"))
+                    .build();
+            java.net.http.HttpResponse<String> response = java.net.http.HttpClient.newHttpClient()
+                    .send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, response.statusCode(), response.body());
+            return response.body();
+        }, "the raw _find call did not complete, so it measured nothing");
+
+        boolean expected = StoreBehaviourFacts.expect(
+                StoreBehaviourFacts.lineOf(reportedVersion), Fact.FIND_ROW_CARRIES_ATTACHMENT_STUBS);
+        assertEquals(expected, body.contains("\"_attachments\""),
+                "the wire and the declared fact disagree about whether a _find row carries "
+                        + "_attachments stubs. Raw response: " + body);
+        if (expected) {
+            assertTrue(body.contains("\"stub\":true"),
+                    "the row carries an _attachments block that is not a stub — the shape the "
+                            + "DLQ's carry-forward copies is not there: " + body);
+        }
     }
 
     @Test

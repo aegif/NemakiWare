@@ -93,13 +93,19 @@ class EverySupportedCouchDbIsMeasuredTest {
         if (nextTopLevel.find(from + 1)) {
             end = nextTopLevel.start();
         }
-        // Comment lines are dropped for the same reason the boundary was tightened: a sentence
-        // ABOUT the job is not the job. Every assertion below is about YAML that runs.
+        // Comments are dropped for the same reason the boundary was tightened: a sentence ABOUT
+        // the job is not the job. Trailing comments go too — dropping only whole-line ones left
+        // `... # nemaki.test.couchdb.required=true` able to satisfy an assertion below (Codex
+        // review, P2). The `#` is taken as a comment start only with whitespace before it, so a
+        // URL fragment or a `#` inside a quoted string is left alone.
         StringBuilder running = new StringBuilder();
         for (String line : yaml.substring(from, end).split("\n", -1)) {
-            if (!line.trim().startsWith("#")) {
-                running.append(line).append('\n');
+            String trimmed = line.trim();
+            if (trimmed.startsWith("#")) {
+                continue;
             }
+            int hash = line.indexOf(" #");
+            running.append(hash >= 0 ? line.substring(0, hash) : line).append('\n');
         }
         return running.toString();
     }
@@ -142,6 +148,33 @@ class EverySupportedCouchDbIsMeasuredTest {
                         + "past an unreachable CouchDB and every matrix entry reports green — a "
                         + "read that never happened, reported as a read that found nothing:\n"
                         + job);
+    }
+
+    @Test
+    @DisplayName("each matrix entry actually starts THAT version of CouchDB")
+    void theMatrixVersionReachesTheContainer() throws IOException {
+        // Without this the matrix is three runs of whatever image is hardcoded: all three jobs
+        // go green, the unit lock above still matches the three tags, and EV3 through EZ3 keep
+        // firing — while 3.4 and 3.5 are never started (Codex review, P2).
+        String job = measuringJob();
+
+        assertTrue(job.contains("image: couchdb:${{ matrix.couchdb }}"),
+                "the service container does not take its image from the matrix, so the three "
+                        + "entries do not measure three versions:\n" + job);
+    }
+
+    @Test
+    @DisplayName("nothing in the measuring job lets a failure pass for a success")
+    void theMeasuringJobCannotPassWhileSkipping() throws IOException {
+        // A job or step that is conditioned off, or allowed to fail, reports green having
+        // measured nothing — the same defect as an IT that assumes past an unreachable store,
+        // one level up (subagent review, P3).
+        String job = measuringJob();
+
+        assertFalse(job.contains("continue-on-error: true"),
+                "a step in the measuring job may fail without failing the job:\n" + job);
+        assertFalse(job.contains("if: false"),
+                "a step in the measuring job is switched off:\n" + job);
     }
 
     @Test

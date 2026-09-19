@@ -26,8 +26,13 @@ import com.ibm.cloud.sdk.core.http.ServiceCall;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -88,6 +93,31 @@ class APartialRunIsNotRecordedAsCompleteTest {
         return jobs;
     }
 
+    /** A service whose store answers the given rows to every selector. */
+    @SuppressWarnings("unchecked")
+    private static IngestJobService serviceReturning(Document... rows) {
+        Cloudant cloudant = mock(Cloudant.class);
+        FindResult found = mock(FindResult.class);
+        when(found.getDocs()).thenReturn(List.of(rows));
+        ServiceCall<FindResult> find = mock(ServiceCall.class);
+        Response<FindResult> findResponse = mock(Response.class);
+        when(findResponse.getResult()).thenReturn(found);
+        when(find.execute()).thenReturn(findResponse);
+        when(cloudant.postFind(any())).thenReturn(find);
+
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper wrapper =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper.class);
+        when(wrapper.getClient()).thenReturn(cloudant);
+        when(wrapper.getDatabaseName()).thenReturn("nemaki_conf");
+        jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool pool =
+                mock(jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool.class);
+        when(pool.getClient(anyString())).thenReturn(wrapper);
+
+        IngestJobService jobs = new IngestJobService();
+        jobs.setConnectorPool(pool);
+        return jobs;
+    }
+
     private static IngestJobRecord job() {
         IngestJobRecord job = new IngestJobRecord();
         job.setJobId("job-1");
@@ -126,6 +156,85 @@ class APartialRunIsNotRecordedAsCompleteTest {
 
         assertEquals(IngestJobRecord.Status.COMPLETED, record.getStatus(),
                 "a run that saw everything was recorded as partial");
+    }
+
+    @Test
+    @DisplayName("a manual run does not tell the person who pressed the button 'success'")
+    void aManualRunSaysPartialWhenItDidNotSeeEverything() throws IOException {
+        // The two "Run now" doors keyed their word off hasErrors() alone, so the same shape of
+        // run that the scheduled path records as PARTIAL answered a human "success" (Codex
+        // review, P1). One wording now, and both doors have to go through it.
+        assertEquals("success", new FetchResult(5, 5, 0, List.of()).runStatus());
+        assertEquals("partial", new FetchResult(5, 5, 0, List.of(), List.of("cut short"))
+                .runStatus(), "a run that saw part of the source told the caller it succeeded");
+        assertEquals("partial", new FetchResult(5, 0, 0, List.of("boom")).runStatus());
+
+        // The wiring, because a correct helper nobody calls changes nothing. Read from source:
+        // both doors build a Map response, so there is no type to hang this on.
+        for (String door : List.of("IngestSchedulerController.java", "FolderConnectorController.java")) {
+            String source = Files.readString(
+                    Path.of("src/main/java/jp/aegif/nemaki/rest/ingest/" + door),
+                    StandardCharsets.UTF_8);
+            assertTrue(source.contains(".runStatus()"),
+                    door + " words its own outcome instead of going through FetchResult.runStatus");
+            assertTrue(source.contains("incompleteReads"),
+                    door + " answers without saying what the run did not see, so 'partial' is "
+                            + "unactionable");
+        }
+    }
+
+    @Test
+    @DisplayName("a job row carrying a field this node does not know still decodes")
+    void anUnknownFieldDoesNotMakeARowUnreadable() {
+        // During a rolling upgrade an old replica reads rows a new one wrote, and this batch
+        // added a field (incompleteReads). A review predicted that one added field would make
+        // every such row undecodable, degrade the listing to its "some rows could not be read"
+        // envelope and empty the console.
+        //
+        // MEASURED, and the prediction does not hold HERE: the default mapper does refuse an
+        // unknown property (probed directly — a bean without the annotation is rejected), but
+        // both row classes carry @JsonIgnoreProperties(ignoreUnknown = true), so the tolerance
+        // is the record's, not the mapper's. A lenient reader was written for this and reverted
+        // when control FP3 showed it protected nothing. What the tolerance actually rests on is
+        // the annotation, so that is what this locks.
+        Document row = new Document();
+        row.setId("ingest_job:1");
+        row.setRev("1-abc");
+        row.put("type", IngestJobRecord.DOC_TYPE);
+        row.put("jobId", "job-1");
+        row.put("profileId", "p-1");
+        row.put("status", "COMPLETED");
+        row.put("fetched", 3);
+        row.put("aFieldFromANewerNode", "whatever it means");
+
+        IngestJobService.JobPage page = assertDoesNotThrow(
+                () -> serviceReturning(row).listJobsPage(10),
+                "the listing threw rather than answering");
+
+        assertEquals(0, page.unreadable(),
+                "a row from a newer node was counted as unreadable: the whole listing degrades "
+                        + "to the envelope shape on a rolling upgrade");
+        assertEquals(1, page.entries().size(), "the row is missing from the listing");
+        assertEquals("job-1", page.entries().get(0).getJobId());
+    }
+
+    @Test
+    @DisplayName("a row whose types are wrong is still counted as unreadable")
+    void acorruptRowIsStillRefused() {
+        // The over-leniency side. Ignoring unknown fields must not turn into ignoring a row that
+        // cannot be read at all — that is the silence R18 closed.
+        Document row = new Document();
+        row.setId("ingest_job:2");
+        row.setRev("1-abc");
+        row.put("type", IngestJobRecord.DOC_TYPE);
+        row.put("jobId", "job-2");
+        row.put("fetched", "not a number at all");
+
+        IngestJobService.JobPage page = serviceReturning(row).listJobsPage(10);
+
+        assertEquals(1, page.unreadable(),
+                "a row that could not be decoded was passed over in silence");
+        assertTrue(page.entries().isEmpty(), page.entries().toString());
     }
 
     @Test

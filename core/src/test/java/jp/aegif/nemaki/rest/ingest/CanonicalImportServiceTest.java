@@ -3393,15 +3393,21 @@ class CanonicalImportServiceTest {
      * third count here because the comment beside it claimed more than the count did — a number
      * with no stated scope invites exactly that, since the reader has to guess what it covers.
      *
-     * @param version           bumped when the scope itself changes, so a stale expectation is
-     *                          a failing test rather than a quiet disagreement
+     * @param version           a LABEL for readers, bumped when the lists change. Nothing checks
+     *                          it against anything — saying otherwise would be the same kind of
+     *                          over-claim this record exists to stop (Codex review, P2)
      * @param includedOperations the doors this inventory accounts for, by enclosing method
      * @param excludedOperations doors deliberately NOT accounted for, each with its reason
+     * @param writersBelowADoor methods that write a decoration directly but are NOT doors, each
+     *                          with the door it is reached from. They exist so that a NEW direct
+     *                          writer — the way to add a door without re-asking — cannot arrive
+     *                          unnamed
      */
     record DecorationScope(int version, java.util.List<String> includedOperations,
-            java.util.Map<String, String> excludedOperations) {}
+            java.util.Map<String, String> excludedOperations,
+            java.util.Map<String, String> writersBelowADoor) {}
 
-    private static final DecorationScope DECORATION_SCOPE = new DecorationScope(1,
+    private static final DecorationScope DECORATION_SCOPE = new DecorationScope(2,
             java.util.List.of(
                     "executeMailImportInternal",
                     "executeNoteImportInternal",
@@ -3412,7 +3418,18 @@ class CanonicalImportServiceTest {
                     "applyCaptureWindow",
                     "writes its decoration DIRECTLY through contentService.update rather than "
                             + "through the metadata service, so neither number here would move "
-                            + "if a door like it were added (R48, recorded not hidden)"));
+                            + "if a door like it were added (R48, recorded not hidden)"),
+            java.util.Map.of(
+                    // Version 1 listed applyCaptureWindow alone and read as though it were the
+                    // only direct writer. It is not: four more write decorations through
+                    // contentService.update. They are not doors — each is reached from one, so
+                    // the re-ask has already happened above them — but leaving them unnamed made
+                    // the enumeration silently partial, which both reviews called out.
+                    "applyChatCapturedAt", "reached from executeChatContextImportInternal, "
+                            + "which re-asks",
+                    "applySourceMetadata", "reached from execute, which re-asks twice",
+                    "applyAclSyncPolicy", "reached from applySourceMetadata, below execute",
+                    "applySourceAcl", "reached from applyAclSyncPolicy, below execute"));
 
     @Test
     void everyPostExecuteDecorationReAsksTheDelegation() throws Exception {
@@ -3432,12 +3449,33 @@ class CanonicalImportServiceTest {
         // The declaration itself is not a door: its own signature is the nearest one above it.
         doors.remove("refuseDecorationIfNoLongerAuthorized");
 
+        // Enumerating only the callers of the re-ask can never see a door that does not call it
+        // — which is the door worth catching (Codex review, P2). So the WRITES are enumerated
+        // too, both ways a decoration reaches the store, and every method that performs one has
+        // to be named somewhere in the scope.
+        java.util.List<String> writers = enclosingMethodsCalling(source, "contentService.update(");
+        writers.addAll(enclosingMethodsCalling(source, "ingestMetadataService."));
+
+        java.util.List<String> named = new java.util.ArrayList<>(
+                DECORATION_SCOPE.includedOperations());
+        named.addAll(DECORATION_SCOPE.excludedOperations().keySet());
+        named.addAll(DECORATION_SCOPE.writersBelowADoor().keySet());
+
         java.util.List<String> unaccounted = new java.util.ArrayList<>(doors);
-        unaccounted.removeAll(DECORATION_SCOPE.includedOperations());
-        unaccounted.removeAll(DECORATION_SCOPE.excludedOperations().keySet());
+        unaccounted.addAll(writers);
+        unaccounted.removeAll(named);
         assertTrue(unaccounted.isEmpty(),
-                "a decoration door is in neither the included nor the excluded list, so this "
-                        + "inventory cannot be read as a count of anything: " + unaccounted);
+                "a method that re-asks the delegation, or that writes a decoration, is in none of "
+                        + "the scope's lists, so this inventory cannot be read as a count of "
+                        + "anything (scope version " + DECORATION_SCOPE.version() + "): "
+                        + unaccounted);
+
+        // The lists are a partition, not three overlapping opinions. A name in two of them makes
+        // the accounting above pass while saying two different things about the same method.
+        java.util.List<String> everyName = new java.util.ArrayList<>(named);
+        assertEquals(everyName.size(), new java.util.LinkedHashSet<>(everyName).size(),
+                "a method is named in more than one of the scope's lists: " + everyName);
+        assertFalse(named.isEmpty(), "the scope names nothing, so it accounts for nothing");
 
         assertEquals(DECORATION_SCOPE.includedOperations(), doors,
                 "the doors that re-ask the delegation are not the ones this scope names. "
@@ -3456,27 +3494,83 @@ class CanonicalImportServiceTest {
                         + "door that writes directly (see excludedOperations) does not move it");
     }
 
-    /** Every method that contains a call to {@code needle}, in source order, deduplicated. */
+    /**
+     * Every method that contains a call to {@code needle}, in source order, deduplicated.
+     *
+     * <p>The declaration pattern does NOT require a modifier. Requiring one meant a
+     * package-private method — of which this class has eighteen at member indentation — was not
+     * recognised as a declaration, so the backward scan walked over it and attributed the call to
+     * whatever {@code private} method came before. That is the same misattribution the javadoc
+     * orphan detector had, found by the same review round: a report that sends the reader to a
+     * method which is in fact fine.
+     *
+     * <p>Where no declaration is found before the end of the preceding member, the call is
+     * reported as {@code <unattributable:LINE>} rather than pinned on a neighbour. It fails the
+     * accounting loudly, which is the point — a silent wrong name is worse than a refusal.
+     */
     private static java.util.List<String> enclosingMethodsCalling(String source, String needle) {
+        // Any member-level declaration: optional modifiers, a type, a name, an opening paren.
+        // Anchored at exactly four spaces, which is where members of this class sit; statements
+        // inside a method body are indented further and cannot match.
         java.util.regex.Pattern declaration = java.util.regex.Pattern.compile(
-                "^\\s{4}(?:public|private|protected)[\\w<>,\\[\\]. ]*\\s+(\\w+)\\s*\\(");
+                "^ {4}(?![ *@/])[\\w<>,\\[\\]. ]*\\s(\\w+)\\s*\\(");
         String[] lines = source.split("\n", -1);
         java.util.List<String> found = new java.util.ArrayList<>();
         for (int i = 0; i < lines.length; i++) {
             if (!lines[i].contains(needle)) {
                 continue;
             }
+            String owner = null;
             for (int j = i; j >= 0; j--) {
+                if (j < i && lines[j].equals("    }")) {
+                    break; // the previous member ended here: this call is inside no method
+                }
                 java.util.regex.Matcher m = declaration.matcher(lines[j]);
                 if (m.find()) {
-                    if (!found.contains(m.group(1))) {
-                        found.add(m.group(1));
-                    }
+                    owner = m.group(1);
                     break;
                 }
             }
+            String name = owner != null ? owner : "<unattributable:" + (i + 1) + ">";
+            if (!found.contains(name)) {
+                found.add(name);
+            }
         }
         return found;
+    }
+
+    @Test
+    void theEnclosingMethodExtractorNamesPackagePrivateDeclarations() {
+        // On fixtures, not on the tree. Every call site in CanonicalImportServiceImpl today sits
+        // inside a method that carries an explicit modifier, so the tree cannot tell the two
+        // patterns apart — running the extractor over it proves nothing about what it can see.
+        // That is the same argument the javadoc orphan detector's fixtures make, and the same
+        // failure it had: a backward scan that does not recognise a declaration walks past it and
+        // blames the method before.
+        String packagePrivateDoor = String.join("\n",
+                "    private void earlier() {",
+                "        nothing();",
+                "    }",
+                "",
+                "    void applyRetentionLabel(String id) {",
+                "        contentService.update(id);",
+                "    }");
+
+        assertEquals(java.util.List.of("applyRetentionLabel"),
+                enclosingMethodsCalling(packagePrivateDoor, "contentService.update("),
+                "a package-private declaration was not recognised, so the write was blamed on "
+                        + "the method before it — which has no such write");
+
+        String outsideAnyMethod = String.join("\n",
+                "    private void earlier() {",
+                "        nothing();",
+                "    }",
+                "",
+                "    contentService.update(stray);");
+
+        assertEquals(java.util.List.of("<unattributable:5>"),
+                enclosingMethodsCalling(outsideAnyMethod, "contentService.update("),
+                "a call that belongs to no method was pinned on a neighbour instead of refused");
     }
 
     @Test
