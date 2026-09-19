@@ -8759,6 +8759,47 @@ CONTROLS = [
         test='SipVerifierTest',
         expect_fail=['theBodyCarriesTheVerdict'],
     ),
+    # ── 複製元の attachment 行が store に無いとき refuse すること ──
+    dict(
+        id="CU3",
+        what="checkOut goes back to writing copyAttachment's null onto the PWC, so a document "
+             "whose attachment row is gone is checked out as a document with no content",
+        file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/ContentServiceImpl.java',
+        find='\t\tString attachmentId = copyAttachmentOrRefuse(callContext, repositoryId, latest.getAttachmentNodeId());',
+        replace='\t\tString attachmentId = copyAttachment(callContext, repositoryId, latest.getAttachmentNodeId());',
+        test='CopyingContentRefusesAMissingRowTest',
+        expect_fail=['checkOutRefusesADanglingReference'],
+    ),
+    dict(
+        id="CV3",
+        what="checkIn goes back to writing copyAttachment's null onto the new version, so the "
+             "version that becomes the latest one silently has no content",
+        file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/ContentServiceImpl.java',
+        find='\t\t\t\t\tcopyAttachmentOrRefuse(callContext, repositoryId, pwc.getAttachmentNodeId()));',
+        replace='\t\t\t\t\tcopyAttachment(callContext, repositoryId, pwc.getAttachmentNodeId()));',
+        test='CopyingContentRefusesAMissingRowTest',
+        expect_fail=['checkInRefusesADanglingReference'],
+    ),
+    dict(
+        id="CW3",
+        what="the refusal stops exempting a source that names no attachment, so checking out a "
+             "document that genuinely has no content refuses",
+        file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/ContentServiceImpl.java',
+        find='\t\tif (StringUtils.isBlank(sourceAttachmentId)) {',
+        replace='\t\tif (false) {',
+        test='CopyingContentRefusesAMissingRowTest',
+        expect_fail=['aContentLessDocumentStillChecksOut'],
+    ),
+    dict(
+        id="CX3",
+        what="the refusal fires whether or not the copy succeeded, so an ordinary check-out of "
+             "an ordinary document with content refuses",
+        file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/ContentServiceImpl.java',
+        find='\t\tif (copied == null) {',
+        replace='\t\tif (true) {',
+        test='CopyingContentRefusesAMissingRowTest',
+        expect_fail=['aPresentAttachmentIsStillCopied'],
+    ),
 ]
 
 
