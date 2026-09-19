@@ -278,21 +278,12 @@ public final class SipVerifier {
         String leaf = asString(proof.get("leafHash"));
         String root = asString(proof.get("merkleRoot"));
         if (leaf == null || root == null) {
-            // The package usually says WHY there is no path, and the exporter writes that
-            // reason INSIDE the proof object as well as beside it — so the arm added for
-            // `inclusionProofFailed` was unreachable for every package this product builds,
-            // and a correctly formed package ("no checkpoint covers this entry yet") was
-            // described as one whose fields could not be read (review, 2026-09-20).
-            String couldNotBuild = asString(document.get("inclusionProofFailed"));
-            if (couldNotBuild != null) {
-                return new Check("audit path", Outcome.UNAVAILABLE,
-                        "the package says the audit path could not be built: " + couldNotBuild);
-            }
-            String proofStatus = asString(proof.get("status"));
-            String proofMessage = asString(proof.get("message"));
-            if (proofStatus != null && !"success".equals(proofStatus) && proofMessage != null) {
-                return new Check("audit path", Outcome.UNAVAILABLE,
-                        "the package's own proof says it is " + proofStatus + ": " + proofMessage);
+            // The package usually says WHY there is no path, and it may write that reason
+            // INSIDE the proof object, beside it, or both — so the same rule reads both places
+            // (review, 2026-09-20).
+            Check reason = reasonFor(document, proof);
+            if (reason != null) {
+                return reason;
             }
             // Both fields are described, each in its own words. Naming only the first problem
             // said "the rest is fine" about a field that might be unusable too — the same
@@ -528,22 +519,9 @@ public final class SipVerifier {
      * verifier only had to read it.
      */
     private static Check noProofCheck(Map<String, Object> document, Object proofValue) {
-        // NOTE: this arm is for THIRD-PARTY packages. This product's exporter writes
-        // `inclusionProofFailed` only after putting a Map into `inclusionProof`, so its own
-        // packages reach the copy of this check inside auditPathCheck instead. Kept because the
-        // canon now states that a reason is written in both places, and a partial implementation
-        // of that is a package a reader will hand us (review, 2026-09-20).
-        String couldNotBuild = asString(document.get("inclusionProofFailed"));
-        if (couldNotBuild != null) {
-            return new Check("audit path", Outcome.UNAVAILABLE,
-                    "the package says the audit path could not be built: " + couldNotBuild);
-        }
-        String status = asString(document.get("status"));
-        String message = asString(document.get("message"));
-        if ("unavailable".equals(status) || "error".equals(status)) {
-            return new Check("audit path", Outcome.UNAVAILABLE,
-                    "the package says its own evidence could not be read"
-                            + (message == null ? "" : ": " + message));
+        Check reason = reasonFor(document, Map.of());
+        if (reason != null) {
+            return reason;
         }
         if (proofValue != null) {
             return new Check("audit path", Outcome.UNAVAILABLE,
@@ -551,6 +529,46 @@ public final class SipVerifier {
                             + "nothing to read. Nothing about the entry's inclusion is "
                             + "established either way.");
         }
+        return new Check("audit path", Outcome.NOT_PRESENT,
+                "the evidence package carries no inclusion proof, and does not say why. The "
+                        + "chain only holds what was written to it, with no back-fill, so this "
+                        + "says nothing about whether the record is genuine.");
+    }
+
+    /**
+     * What the package says about why there is no usable proof, or null when it says nothing.
+     *
+     * <p>ONE rule, used wherever a proof is missing or half-written. It was two — the copy
+     * inside {@code auditPathCheck} treated every non-success status as unreadable, including
+     * {@code not-chained} — so a package written to the canon got a different answer from this
+     * verifier than the canon's own table says, depending on WHERE it put the reason
+     * (review, 2026-09-20).
+     *
+     * <p>The reason may be written inside the proof object, beside it, or both; both are read.
+     * "Says something" is decided by the key being PRESENT, not by its value being a readable
+     * string: a package whose {@code message} is an object for translations has still said
+     * something, and calling that "does not say why" asserts the opposite of what happened.
+     */
+    private static Check reasonFor(Map<String, Object> document, Map<String, Object> proof) {
+        if (document.containsKey("inclusionProofFailed")) {
+            String couldNotBuild = asString(document.get("inclusionProofFailed"));
+            return new Check("audit path", Outcome.UNAVAILABLE,
+                    couldNotBuild != null
+                            ? "the package says the audit path could not be built: "
+                                    + couldNotBuild
+                            : "the package says the audit path could not be built, and the "
+                                    + "reason it gives is not a readable string. Nothing about "
+                                    + "the entry's inclusion is established either way.");
+        }
+        boolean saysSomething = proof.containsKey("status") || proof.containsKey("message")
+                || document.containsKey("status") || document.containsKey("message");
+        if (!saysSomething) {
+            return null;
+        }
+        String status = asString(proof.get("status")) != null ? asString(proof.get("status"))
+                : asString(document.get("status"));
+        String message = asString(proof.get("message")) != null ? asString(proof.get("message"))
+                : asString(document.get("message"));
         if ("not-chained".equals(status)) {
             return new Check("audit path", Outcome.NOT_PRESENT,
                     message != null ? message
@@ -558,21 +576,25 @@ public final class SipVerifier {
                                     + "only holds what was written to it, with no back-fill, so "
                                     + "this says nothing about whether the record is genuine.");
         }
-        if (status != null || message != null) {
-            // It says SOMETHING, and it is not one of the states this verifier knows. Calling
-            // that "no proof is present" would classify a sentence we did not understand — a
-            // third-party or older package saying "ledger temporarily unreachable" is not a
-            // package saying the record was never chained (review, 2026-09-20).
+        if ("unavailable".equals(status) || "error".equals(status)) {
             return new Check("audit path", Outcome.UNAVAILABLE,
-                    "the evidence package carries no inclusion proof and gives a reason this "
-                            + "verifier does not recognise"
-                            + (status == null ? "" : " (status " + status + ")")
-                            + (message == null ? "" : ": " + message)
-                            + ". Nothing about the entry's inclusion is established either way.");
+                    "the package says its own evidence could not be read"
+                            + (message == null ? "" : ": " + message));
         }
-        return new Check("audit path", Outcome.NOT_PRESENT,
-                "the evidence package carries no inclusion proof, and does not say why. The "
-                        + "chain only holds what was written to it, with no back-fill, so this "
-                        + "says nothing about whether the record is genuine.");
+        if ("success".equals(status)) {
+            // It says the proof worked, and we are here because it is not usable. That is not a
+            // reason — fall through to the sentence about the fields themselves.
+            return null;
+        }
+        // It says SOMETHING, and it is not one of the states this verifier knows. Calling that
+        // "no proof is present" would classify a sentence we did not understand — a third-party
+        // or older package saying "ledger temporarily unreachable" is not a package saying the
+        // record was never chained.
+        return new Check("audit path", Outcome.UNAVAILABLE,
+                "the evidence package carries no usable inclusion proof and gives a reason this "
+                        + "verifier does not recognise"
+                        + (status == null ? "" : " (status " + status + ")")
+                        + (message == null ? "" : ": " + message)
+                        + ". Nothing about the entry's inclusion is established either way.");
     }
 }
