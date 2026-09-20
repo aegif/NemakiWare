@@ -10217,6 +10217,33 @@ CONTROLS = [
         expect_fail=['theV1LayoutReplacesTheLegacyFile'],
     ),
     dict(
+        id='IM3',
+        what='an unknown profile satisfies a requirement, so a package this version cannot judge is handed over as if it met the bar',
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/EarkSipExporter.java',
+        find='            return have >= 0 && need >= 0 && have >= need;',
+        replace='            return need < 0 || have < 0 || have >= need;',
+        test='AssuranceIsCheckedBeforeAnythingIsWrittenTest',
+        expect_fail=['anUnknownProfileSatisfiesNothing'],
+    ),
+    dict(
+        id='IN3',
+        what='a weaker package satisfies a stronger requirement, so a caller that required an anchored checkpoint is handed a ledger entry',
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/EarkSipExporter.java',
+        find='            int need = STRENGTH.indexOf(required);',
+        replace='            int need = 0;',
+        test='AssuranceIsCheckedBeforeAnythingIsWrittenTest',
+        expect_fail=['aWeakerPackageDoesNotSatisfyAStrongerRequirement'],
+    ),
+    dict(
+        id='IO3',
+        what='an unknown assurance level is defaulted to BEST_AVAILABLE, so a caller that misspelled its requirement gets a package built to no requirement at all',
+        file='core/src/main/java/jp/aegif/nemaki/rest/controller/EarkSipExportController.java',
+        find='            return ResponseEntity.badRequest().body(body);',
+        replace='            required = EarkSipExporter.Assurance.BEST_AVAILABLE;',
+        test='EarkSipExportControllerTest',
+        expect_fail=['anUnknownAssuranceLevelIsRefused'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",

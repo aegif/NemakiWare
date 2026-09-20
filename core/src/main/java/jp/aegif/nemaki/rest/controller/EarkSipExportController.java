@@ -169,11 +169,30 @@ public class EarkSipExportController {
             @RequestParam String repositoryId,
             @RequestParam String objectId,
             @RequestParam(defaultValue = "false") boolean includeInternalOnly,
-            @RequestParam(defaultValue = "") String submittingOrganisation) {
+            @RequestParam(defaultValue = "") String submittingOrganisation,
+            @RequestParam(defaultValue = "BEST_AVAILABLE") String assurance) {
 
         ResponseEntity<Map<String, Object>> forbidden = requireAdmin();
         if (forbidden != null) {
             return forbidden;
+        }
+        // The REQUEST is judged before the NODE. A malformed assurance level is wrong
+        // whichever node handles it, and answering 503 for it sends a caller with a typo
+        // into retrying against something that will never accept the parameter.
+        EarkSipExporter.Assurance required;
+        try {
+            required = EarkSipExporter.Assurance.valueOf(assurance);
+        } catch (IllegalArgumentException unknown) {
+            // Refused, not defaulted to BEST_AVAILABLE. A caller who misspells REQUIRE_TRUSTED
+            // and is handed a package built to no requirement at all has been given less than
+            // it asked for, and told nothing.
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("status", "error");
+            body.put("reasonCode", "UNKNOWN_ASSURANCE");
+            body.put("message", assurance + " is not an assurance level this version knows");
+            body.put("known", java.util.Arrays.stream(EarkSipExporter.Assurance.values())
+                    .map(Enum::name).toList());
+            return ResponseEntity.badRequest().body(body);
         }
         if (exporter == null) {
             return unavailable("the E-ARK exporter is not wired on this node");
@@ -188,7 +207,8 @@ public class EarkSipExportController {
             EarkSipExporter.Exported exported = exporter.export(repositoryId, objectId,
                     new EarkSipExporter.Options(includeInternalOnly,
                             submittingOrganisation.isBlank() ? "NemakiWare deployment"
-                                    : submittingOrganisation),
+                                    : submittingOrganisation,
+                            required),
                     workDir);
             HttpHeaders headers = new HttpHeaders();
             headers.setContentDisposition(org.springframework.http.ContentDisposition
@@ -224,6 +244,21 @@ public class EarkSipExportController {
                 headers.add("X-Nemaki-Export-Note", note.replace('\n', ' '));
             }
             return streaming(headers, exported.sip(), workDir);
+        } catch (EarkSipExporter.AssuranceNotMetException e) {
+            // A DIFFERENT refusal from the one below: the package could have been built and
+            // would not have been what was asked for. A caller changes its request for this
+            // one and retries for the other, so the reason code distinguishes them.
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("status", "refused");
+            body.put("reasonCode", e.reasonCode());
+            body.put("requestedAssurance", e.requested().name());
+            body.put("evidenceProfile", e.supported());
+            body.put("message", e.getMessage());
+            body.put("limits", NO_PACKAGE_WAS_PRODUCED + EXPORT_LIMITS);
+            logger.info("E-ARK export of {}/{} refused: {}", repositoryId, objectId,
+                    e.getMessage());
+            deleteWorkDir(workDir);
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
         } catch (EarkSipExporter.ExportRefusedException e) {
             // Refusals are the designed outcome for "we would have had to ship something
             // incomplete", so they are a 409 with the reason, not a 500 with a stack trace.

@@ -164,8 +164,73 @@ public class EarkSipExporter {
         this.reportAssembler = reportAssembler;
     }
 
+    /**
+     * How much evidence the caller will accept, and what happens when there is less.
+     *
+     * <p>{@code BEST_AVAILABLE} is the existing behaviour and stays the default: a package is
+     * built from whatever exists, and what it supports is stated rather than promised. The
+     * {@code REQUIRE_*} levels refuse instead — <b>before</b> a package is written, so a caller
+     * asking for an anchored checkpoint is told there is none rather than handed a package that
+     * quietly supports less and finding out from a verifier later.
+     *
+     * <p>Refusal is 409 with a reason code, not 500: the request was well formed and the
+     * repository is healthy. There simply is not that much evidence for this record yet.
+     */
+    public enum Assurance {
+        BEST_AVAILABLE(null),
+        REQUIRE_PACKAGE_INTEGRITY("PACKAGE_INTEGRITY_V1"),
+        REQUIRE_RECORD_LEDGER("RECORD_LEDGER_V1"),
+        REQUIRE_ANCHORED_CHECKPOINT("ANCHORED_CHECKPOINT_V1"),
+        REQUIRE_TRUSTED_RFC3161("TRUSTED_RFC3161_V1"),
+        REQUIRE_ANCHORED_OTS("ANCHORED_OTS_V1"),
+        REQUIRE_LONG_TERM_ERS("LONG_TERM_ERS_V1");
+
+        /** Profiles in increasing strength. Declaration order is NOT relied on. */
+        private static final List<String> STRENGTH = List.of(
+                "PACKAGE_INTEGRITY_V1", "RECORD_LEDGER_V1", "ANCHORED_CHECKPOINT_V1",
+                "ANCHORED_OTS_V1", "TRUSTED_RFC3161_V1", "LONG_TERM_ERS_V1");
+
+        private final String required;
+
+        Assurance(String required) {
+            this.required = required;
+        }
+
+        public String requiredProfile() {
+            return required;
+        }
+
+        /**
+         * Whether {@code supported} is at least what this level demands.
+         *
+         * <p>A profile neither side knows is NOT satisfied — an unknown name must not pass by
+         * being absent from the table.
+         */
+        public boolean satisfiedBy(String supported) {
+            if (required == null) {
+                return true;
+            }
+            int need = STRENGTH.indexOf(required);
+            int have = supported == null ? -1 : STRENGTH.indexOf(supported);
+            return have >= 0 && need >= 0 && have >= need;
+        }
+    }
+
     /** What the caller asked for. */
-    public record Options(boolean includeInternalOnly, String submittingOrganisation) {
+    public record Options(boolean includeInternalOnly, String submittingOrganisation,
+            Assurance assurance) {
+
+        public Options {
+            // Defaulted rather than refused: every existing caller constructs the two-argument
+            // form, and a null here would turn an omission into a NullPointerException at
+            // export time rather than the existing behaviour they are asking for.
+            assurance = assurance == null ? Assurance.BEST_AVAILABLE : assurance;
+        }
+
+        /** The pre-assurance signature, kept so existing callers do not change meaning. */
+        public Options(boolean includeInternalOnly, String submittingOrganisation) {
+            this(includeInternalOnly, submittingOrganisation, Assurance.BEST_AVAILABLE);
+        }
 
         /**
          * Leaves out the properties the disclosure table marks INTERNAL_ONLY.
@@ -214,6 +279,41 @@ public class EarkSipExporter {
                     + "STRUCTURE and METS. It says nothing about whether the record inside is "
                     + "genuine, complete, or what its metadata claims — those are the "
                     + "authenticity report's business, with its own limits.";
+        }
+    }
+
+    /**
+     * The record does not carry as much evidence as the caller required.
+     *
+     * <p>Its own type, not an {@code ExportRefusedException}: that one means the package could
+     * not be built, and this one means it could and would not have been what was asked for. A
+     * caller retries the first and changes its request for the second.
+     */
+    public static class AssuranceNotMetException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        private final transient Assurance requested;
+        private final String supported;
+
+        public AssuranceNotMetException(Assurance requested, String supported) {
+            super("this record supports " + supported + " and " + requested
+                    + " was required; no package was built");
+            this.requested = requested;
+            this.supported = supported;
+        }
+
+        public Assurance requested() {
+            return requested;
+        }
+
+        /** The profile the record DOES support, so a caller can ask for that instead. */
+        public String supported() {
+            return supported;
+        }
+
+        /** Stable code for a client that branches on it rather than on the sentence. */
+        public String reasonCode() {
+            return "ASSURANCE_NOT_MET";
         }
     }
 
@@ -324,6 +424,14 @@ public class EarkSipExporter {
             // a verifier would have to choose which one is the evidence.
             jp.aegif.nemaki.evidence.EvidenceBundle bundle = bundleAssembler == null ? null
                     : bundleAssembler.assemble(repositoryId, objectId, objectId);
+            // Checked BEFORE anything is written. A package built and then judged would have to
+            // be deleted, and a caller who got one anyway would have no way to tell it apart
+            // from one that met the bar.
+            String supported = bundle == null ? "PACKAGE_INTEGRITY_V1"
+                    : bundle.highestProfileSupported();
+            if (!options.assurance().satisfiedBy(supported)) {
+                throw new AssuranceNotMetException(options.assurance(), supported);
+            }
             if (bundle != null && bundle.statement() != null) {
                 addEvidenceBundle(sip, workDir, bundle);
             } else {

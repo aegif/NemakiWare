@@ -130,7 +130,7 @@ class EarkSipExportControllerTest {
         // otherwise ship personal data to every caller who did not name the parameter, and no
         // test invoking the method directly could see it.
         Method export = EarkSipExportController.class.getDeclaredMethod("export",
-                String.class, String.class, boolean.class, String.class);
+                String.class, String.class, boolean.class, String.class, String.class);
         java.lang.annotation.Annotation[][] parameterAnnotations = export.getParameterAnnotations();
 
         String disclosureDefault = null;
@@ -161,8 +161,8 @@ class EarkSipExportControllerTest {
         setField(controller, "exporter", exporter);
 
         Object response = EarkSipExportController.class.getDeclaredMethod("export",
-                        String.class, String.class, boolean.class, String.class)
-                .invoke(controller, "bedroom", "doc-1", false, "");
+                String.class, String.class, boolean.class, String.class, String.class)
+                .invoke(controller, "bedroom", "doc-1", false, "", "BEST_AVAILABLE");
         HttpStatus status = (HttpStatus) response.getClass()
                 .getMethod("getStatusCode").invoke(response);
         Object body = response.getClass().getMethod("getBody").invoke(response);
@@ -192,8 +192,8 @@ class EarkSipExportControllerTest {
         setField(controller, "exporter", exporter);
 
         Object response = EarkSipExportController.class.getDeclaredMethod("export",
-                        String.class, String.class, boolean.class, String.class)
-                .invoke(controller, "bedroom", "doc-1", false, "");
+                String.class, String.class, boolean.class, String.class, String.class)
+                .invoke(controller, "bedroom", "doc-1", false, "", "BEST_AVAILABLE");
         org.springframework.http.HttpHeaders headers =
                 (org.springframework.http.HttpHeaders) response.getClass()
                         .getMethod("getHeaders").invoke(response);
@@ -387,8 +387,8 @@ class EarkSipExportControllerTest {
         for (Object response : List.of(
                 EarkSipExportController.class.getDeclaredMethod("status").invoke(controller),
                 EarkSipExportController.class.getDeclaredMethod("export", String.class,
-                                String.class, boolean.class, String.class)
-                        .invoke(controller, "bedroom", "doc-1", false, ""),
+                                String.class, boolean.class, String.class, String.class)
+                        .invoke(controller, "bedroom", "doc-1", false, "", "BEST_AVAILABLE"),
                 EarkSipExportController.class.getDeclaredMethod("bag", String.class,
                                 String.class, boolean.class, String.class)
                         .invoke(controller, "bedroom", "doc-1", false, "sub-1"))) {
@@ -429,7 +429,7 @@ class EarkSipExportControllerTest {
         setField(controller, "exporter", refusing);
 
         org.springframework.http.ResponseEntity<?> response =
-                controller.export("bedroom", "obj-1", false, "");
+                controller.export("bedroom", "obj-1", false, "", "BEST_AVAILABLE");
 
         assertEquals(409, response.getStatusCode().value(), String.valueOf(response.getBody()));
         java.util.Set<java.nio.file.Path> after = tempDirs();
@@ -476,7 +476,7 @@ class EarkSipExportControllerTest {
         setField(controller, "exporter", exporter);
 
         org.springframework.http.ResponseEntity<?> response =
-                controller.export("bedroom", "obj-1", false, "");
+                controller.export("bedroom", "obj-1", false, "", "BEST_AVAILABLE");
 
         assertEquals(200, response.getStatusCode().value());
         java.util.Set<java.nio.file.Path> during = tempDirs();
@@ -501,5 +501,22 @@ class EarkSipExportControllerTest {
         assertTrue(after.isEmpty(),
                 "a successful export left its working directory on disk after the body had "
                         + "been streamed: " + after);
+    }
+
+    @Test
+    void anUnknownAssuranceLevelIsRefused() throws Exception {
+        EarkSipExportController controller = controllerFor(true);
+
+        Object response = EarkSipExportController.class.getDeclaredMethod("export",
+                String.class, String.class, boolean.class, String.class, String.class)
+                .invoke(controller, "bedroom", "doc-1", false, "", "REQUIRE_TRUSTD_RFC3161");
+
+        org.springframework.http.ResponseEntity<?> entity =
+                (org.springframework.http.ResponseEntity<?>) response;
+        assertEquals(400, entity.getStatusCode().value(),
+                "a misspelled requirement must not be defaulted to BEST_AVAILABLE: the caller "
+                        + "would be handed a package built to no requirement at all, and told "
+                        + "nothing. Body: " + entity.getBody());
+        assertTrue(String.valueOf(entity.getBody()).contains("UNKNOWN_ASSURANCE"));
     }
 }
