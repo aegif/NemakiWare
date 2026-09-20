@@ -9923,6 +9923,55 @@ CONTROLS = [
         expect_fail=['theSipVerifierComposesThroughTheSharedRule'],
     ),
     dict(
+        id='HI3',
+        what='a statement whose journal row could not be closed is reported as CHAINED, so an unresolved row reads as a finished one',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/RecordContentStateRecorder.java',
+        find='            return new Result(Outcome.CHAINED_ROW_STILL_OPEN, digest, appended.sequence(),\n                    e.getMessage());',
+        replace='            return new Result(Outcome.CHAINED, digest, appended.sequence(), null);',
+        test='E1LeavesNoSilentGapTest',
+        expect_fail=['aRowThatCouldNotBeClosedIsNotReportedAsClosed'],
+    ),
+    dict(
+        id='HJ3',
+        what="the version check moves after the append, so a newer version's statement is chained under a row opened for the previous one",
+        file='core/src/main/java/jp/aegif/nemaki/evidence/RecordContentStateRecorder.java',
+        find='        if (pending != null && !statement.versionObjectId().equals(pending.versionObjectId())) {',
+        replace='        if (false) {',
+        test='E1LeavesNoSilentGapTest',
+        expect_fail=['anOldIntentIsNotClosedByNewBytes'],
+    ),
+    dict(
+        id='HK3',
+        what='a gap nothing could record collapses into the listable one, so an empty unresolved list reads as "there are no gaps"',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/RecordContentStateRecorder.java',
+        find='            Outcome outcome = pending != null && pending.intentId() != null\n                    ? Outcome.UNRECORDED_GAP_OPEN\n                    : Outcome.UNRECORDED_GAP_UNLISTABLE;',
+        replace='            Outcome outcome = Outcome.UNRECORDED_GAP_OPEN;',
+        test='E1LeavesNoSilentGapTest',
+        expect_fail=['anUnlistableGapIsNotTheSameAsAListedOne'],
+    ),
+    dict(
+        id='HL3',
+        what='the statement stops carrying how the bytes came to be recorded, so an OBSERVED backfill digests identically to a CAPTURED one',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/RecordContentStatementV1.java',
+        find='        doc.put("commitmentKind", commitmentKind.name());\n',
+        replace='',
+        test='E1LeavesNoSilentGapTest',
+        # Only one lock. The round-trip lock stays green because both sides of it go
+        # through toDocument(), so removing a field removes it from both — measured.
+        expect_fail=['observedIsNotCaptured'],
+    ),
+    dict(
+        id='HM3',
+        what='a write path loses its WriteKind, so E1 covers fewer paths than the inventory says and nothing notices',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/ContentWriteJournal.java',
+        # Deletes a constant. The first version RENAMED one, which left the count at 15 —
+        # the lock counts constants, so it stayed green and the control did not fire.
+        find='        /** W7 appendContentStream — one statement per call; which is last is not known. */ APPEND,\n',
+        replace='',
+        test='E1LeavesNoSilentGapTest',
+        expect_fail=['everyEnumeratedWritePathIsCovered'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",

@@ -3733,7 +3733,8 @@ class CanonicalImportServiceTest {
                 "CanonicalImportServiceTest",
                 "TheSipLayoutIsWhereCommonsIpPutsItTest",
                 "EvidenceProfileV1VectorsTest",
-                "ReleaseReadinessIsMeasuredTest")) {
+                "ReleaseReadinessIsMeasuredTest",
+                "E1LeavesNoSilentGapTest")) {
             if (!listed.contains(lock)) {
                 missing.add(lock);
             }
