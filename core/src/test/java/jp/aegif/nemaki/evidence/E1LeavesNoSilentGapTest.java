@@ -373,6 +373,34 @@ class E1LeavesNoSilentGapTest {
     }
 
     @Test
+    @DisplayName("an in-place rewrite is recorded as UPDATED, not as a first capture")
+    void theCommitmentKindMatchesWhatTheWriteDid() throws java.io.IOException {
+        // Structural, and on the CALL SITES: the two recorders differ only in the constant they
+        // pass, so nothing a fake can observe tells them apart. What matters is that the paths
+        // that REPLACE a version's content call the UPDATED one — reading a replacement as a
+        // first capture would say the bytes had always been that version's.
+        Path source = Path.of(
+                "src/main/java/jp/aegif/nemaki/businesslogic/impl/ContentServiceImpl.java");
+        assertTrue(Files.exists(source), "ContentServiceImpl is not at " + source);
+        String text = Files.readString(source, StandardCharsets.UTF_8)
+                .replaceAll("(?m)//.*$", "")
+                .replaceAll("(?s)/\\*.*?\\*/", "");
+
+        assertTrue(text.contains("CommitmentKind.UPDATED"),
+                "no path records an in-place rewrite as UPDATED any more, so replacing a "
+                        + "version's content now reads as those bytes having been its first");
+        // The three in-place paths (W3, W7, W9) all go through recordUpdatedContentState.
+        int updatedCalls = text.split(Pattern.quote("recordUpdatedContentState(repositoryId"), -1)
+                .length - 1;
+        assertEquals(3, updatedCalls,
+                "three enumerated paths rewrite a version's bytes in place — W3 "
+                        + "updateDocumentWithNewStream, W7 appendContentStream, W9 replacePwc — "
+                        + "and " + updatedCalls + " call sites record an UPDATED statement. A "
+                        + "path that dropped its call records nothing at all, and one that moved "
+                        + "to the CAPTURED recorder records the wrong claim");
+    }
+
+    @Test
     @DisplayName("only the write paths actually wired claim to be recorded")
     void onlyTheWiredPathsClaimToBeRecorded() throws java.io.IOException {
         // The plan's rule (§8) is that a path nobody wired is a residual, never a success. The
@@ -398,7 +426,14 @@ class E1LeavesNoSilentGapTest {
             }
         }
 
-        SortedSet<String> declared = new TreeSet<>(List.of("CREATE_DOCUMENT", "CHECK_IN"));
+        SortedSet<String> declared = new TreeSet<>(List.of(
+                "CREATE_DOCUMENT",          // W1
+                "NEW_VERSION_WITH_STREAM",  // W2
+                "UPDATE_IN_PLACE",          // W3
+                "CHECK_IN",                 // W4
+                "UPDATE_WITHOUT_CHECKOUT",  // W5
+                "APPEND",                   // W7
+                "REPLACE_PWC"));            // W9
         assertEquals(declared, wired,
                 "the write paths wired into the product and the ones this lock declares differ. "
                         + "E1 records only what is wired: " + wired + ". The remaining "

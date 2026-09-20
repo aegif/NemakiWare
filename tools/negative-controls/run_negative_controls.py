@@ -10031,6 +10031,29 @@ CONTROLS = [
         expect_fail=['theAttachmentWriterLooksThroughTheWrapper'],
     ),
     dict(
+        id='HT3',
+        what='an in-place content rewrite stops being recorded, so a version whose bytes changed keeps the statement of the bytes it used to have',
+        file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/ContentServiceImpl.java',
+        find='		recordUpdatedContentState(repositoryId, original, inPlaceContent, inPlaceWrite);',
+        replace='',
+        test='E1LeavesNoSilentGapTest',
+        # Measured, not reasoned. onlyTheWiredPathsClaimToBeRecorded counts WriteKind
+        # references, and the OPEN call still names UPDATE_IN_PLACE — so it stays green while
+        # the statement is never recorded. The lock that sees it is the one counting the
+        # in-place RECORD call sites. Worth knowing: 'opened' and 'recorded' are different
+        # claims, and only one of them has a lock counting it.
+        expect_fail=['theCommitmentKindMatchesWhatTheWriteDid'],
+    ),
+    dict(
+        id='HU3',
+        what='an in-place rewrite is recorded as CAPTURED rather than UPDATED, so replacing a version\'s content reads as those bytes having been its first',
+        file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/ContentServiceImpl.java',
+        find='		recordContentState(repositoryId, updated, written, pending,\n				jp.aegif.nemaki.evidence.RecordContentStatementV1.CommitmentKind.UPDATED);',
+        replace='		recordContentState(repositoryId, updated, written, pending,\n				jp.aegif.nemaki.evidence.RecordContentStatementV1.CommitmentKind.CAPTURED);',
+        test='E1LeavesNoSilentGapTest',
+        expect_fail=['theCommitmentKindMatchesWhatTheWriteDid'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",
