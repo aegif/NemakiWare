@@ -112,7 +112,8 @@ public final class StoreBehaviourFacts {
         FIND_ROW_CARRIES_ATTACHMENT_STUBS(
                 "a Mango _find row DOES carry _attachments stubs — the DLQ's payload carry-forward "
                         + "would destroy the binary on every update if it did not",
-                "core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java:760-776",
+                "core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java:781-790",
+                "getAttachments",
                 Map.of("3.3", true, "3.4", true, "3.5", true)),
 
         /**
@@ -124,6 +125,7 @@ public final class StoreBehaviourFacts {
                 "a plain GET (no attachments=true) DOES carry the _attachments stubs, which is "
                         + "what makes getDoc + putBack safe on a document with a binary",
                 "core/src/main/java/jp/aegif/nemaki/epoch/AclEpochFinalizationService.java:1182-1190 (getDoc, a plain getDocument) and :1197 (putBack, which PUTs that same object)",
+                "getDoc",
                 Map.of("3.3", true, "3.4", true, "3.5", true)),
 
         /** The end-to-end form of the one above, measured on the binary rather than on the JSON. */
@@ -131,6 +133,7 @@ public final class StoreBehaviourFacts {
                 "PUTting back the object a plain GET returned preserves the attachment — the "
                         + "finalizer and the quarantine both do exactly this to content documents",
                 "core/src/main/java/jp/aegif/nemaki/epoch/AclEpochFinalizationService.java:886 (quarantine, which CAS-writes a content document back) and :1197 (putBack)",
+                "quarantine",
                 Map.of("3.3", true, "3.4", true, "3.5", true)),
 
         /**
@@ -141,6 +144,7 @@ public final class StoreBehaviourFacts {
                 "a PUT whose body omits _attachments DELETES the binary — a metadata update that "
                         + "serialises a POJO is destructive unless the stubs are copied across",
                 "core/src/main/java/jp/aegif/nemaki/dao/impl/couch/connector/CloudantClientWrapper.java:2230-2290",
+                "updatePreservingAttachments",
                 Map.of("3.3", true, "3.4", true, "3.5", true)),
 
         /**
@@ -152,7 +156,8 @@ public final class StoreBehaviourFacts {
         A_MISSING_PINNED_INDEX_FALLS_BACK_SILENTLY(
                 "use_index naming a missing index is NOT an error — CouchDB answers 200 and "
                         + "full-scans, with a warning the epoch scan's guard recognises",
-                "core/src/main/java/jp/aegif/nemaki/epoch/AclEpochFinalizationService.java:574-600",
+                "core/src/main/java/jp/aegif/nemaki/epoch/AclEpochFinalizationService.java:574-615",
+                "requireIndexServed",
                 Map.of("3.3", true, "3.4", true, "3.5", true)),
 
         /**
@@ -173,6 +178,7 @@ public final class StoreBehaviourFacts {
         ALLOW_FALLBACK_FALSE_IS_REJECTED_AS_AN_UNKNOWN_KEY(
                 "allow_fallback is a 3.4+/Cloudant parameter — 3.3.x does not know the key at all",
                 "core/src/main/java/jp/aegif/nemaki/epoch/AclEpochFinalizationService.java:566-573 and :589-596 (both javadoc paragraphs that state the version boundary)",
+                "allow_fallback",
                 Map.of("3.3", true, "3.4", false, "3.5", false)),
 
         /** The other half: where the key IS known, it actually stops the silent full scan. */
@@ -181,15 +187,18 @@ public final class StoreBehaviourFacts {
                         + "ERROR instead of a silent full scan — which is what 3.3 cannot have, so "
                         + "the epoch scan pins + pre-flights its indexes instead",
                 "core/src/main/java/jp/aegif/nemaki/epoch/AclEpochFinalizationService.java:566-573 and :589-596 (both javadoc paragraphs that state the version boundary)",
+                "allow_fallback",
                 Map.of("3.3", false, "3.4", true, "3.5", true));
 
         private final String premise;
         private final String where;
+        private final String anchor;
         private final Map<String, Boolean> expectations;
 
-        Fact(String premise, String where, Map<String, Boolean> expectations) {
+        Fact(String premise, String where, String anchor, Map<String, Boolean> expectations) {
             this.premise = premise;
             this.where = where;
+            this.anchor = anchor;
             this.expectations = expectations;
         }
 
@@ -201,6 +210,18 @@ public final class StoreBehaviourFacts {
         /** The code that assumes it. */
         public String where() {
             return where;
+        }
+
+        /**
+         * An identifier that must appear INSIDE the cited lines.
+         *
+         * <p>{@code where} was checked for the FILE only, and the lock said so honestly — which
+         * left the line numbers free to rot, and four of seven were wrong the day they were
+         * written. A pointer that lands on an unrelated method is the failure R7 itself
+         * describes: the wrong reason is what gets a correct guard deleted.
+         */
+        public String anchor() {
+            return anchor;
         }
 
         /** The lines this fact has been declared for — not necessarily the supported ones. */

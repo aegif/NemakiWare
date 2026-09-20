@@ -95,9 +95,17 @@ jobs:
       - name: The list below covers this batch's locks
         run: |
           set -eu
+          # Scoped to THIS job by name, not by position. `head -1` took the file's first
+          # -Dtest= and called it "the unit list"; a job inserted above would have replaced the
+          # thing being checked while the message kept saying unit (review). The sed range ends
+          # at the next two-space key, which is where the next job starts.
           # Anchored to the start of a line so this step's own pattern — which contains the
           # same text — is not what gets read. Measured: the first draft matched itself.
-          LIST=$(grep -oE "^ +-Dtest='[^']*'" .github/workflows/integration-tests.yml | head -1)
+          LIST=$(sed -n '/^  unit-tests:/,/^  [a-z]/p' .github/workflows/integration-tests.yml \
+                 | grep -oE "^ +-Dtest='[^']*'" | head -1)
+          if [ -z "$LIST" ]; then
+            echo "::error::no -Dtest list found inside the unit-tests job"; exit 1
+          fi
           # Exact CSV membership, not a substring: *"$lock"* was satisfied by
           # CanonicalImportServiceTestDisabled, and by Surefire's own !Name exclusion syntax
           # (the name is in the list and the class does not run). Review found both.
@@ -113,8 +121,15 @@ jobs:
             fi
             # Named is not the same as present. A renamed or deleted class leaves the name in
             # the list and Surefire does not fail unless NONE of the named classes resolve.
-            if ! find core/src/test/java -name "$lock.java" -print -quit | grep -q .; then
+            FILE=$(find core/src/test/java -name "$lock.java" -print -quit)
+            if [ -z "$FILE" ]; then
               echo "::error::$lock is named in the list but no such test class exists"
+              exit 1
+            fi
+            # A third way to be named and not run, and the shortest way to silence a lock that
+            # has gone red: @Disabled on the class. Surefire reports zero tests and stays green.
+            if grep -qE '^@Disabled' "$FILE"; then
+              echo "::error::$lock is named in the list but the class is @Disabled"
               exit 1
             fi
           done

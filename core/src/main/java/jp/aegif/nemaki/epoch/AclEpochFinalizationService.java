@@ -177,8 +177,8 @@ public class AclEpochFinalizationService {
      * <p><b>Why the re-read, corrected.</b> This javadoc used to say the hint comes from a
      * {@code _find} "which does NOT carry {@code _attachments}", i.e. that the re-read is what
      * keeps a binary alive. That is false: a Mango {@code _find} row DOES carry the stubs, on
-     * every CouchDB line this product supports (measured — {@code StoreBehaviourFactsIT},
-     * {@code FIND_ROW_CARRIES_ATTACHMENT_STUBS}). The re-read is here because the hint is
+     * CouchDB 3.3, 3.4 and 3.5 (measured — {@code StoreBehaviourFactsIT},
+     * {@code FIND_ROW_CARRIES_ATTACHMENT_STUBS}). NOT "every line the floor accepts": the floor has no ceiling and would start against 4.x, which nothing has measured — the same caveat the ingest side carries. The re-read is here because the hint is
      * STALE: the CAS needs the live {@code _rev} and the live state, and a page fetched at the
      * start of a scan says nothing about what the document is when its turn comes. Writing the
      * hint back would not lose the binary — it would lose whatever another writer did in

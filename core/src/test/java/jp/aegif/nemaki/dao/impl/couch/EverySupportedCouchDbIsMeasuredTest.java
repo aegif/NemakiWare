@@ -190,26 +190,92 @@ class EverySupportedCouchDbIsMeasuredTest {
         // total − 704 by construction, and it was hand-written beside a hand-written total —
         // so a control could be added, the total corrected, and this one left behind, which is
         // how the paragraph's three figures came to disagree (subagent review, P2).
-        // 704 is read from the canon too. Hard-coding it here meant the paragraph's THIRD
-        // figure — the one that says how many have been swept — was checked by nothing, and a
-        // completed sweep would have turned this lock red for the wrong reason (subagent
-        // review, P2).
-        Matcher swept = Pattern.compile("うち (\\d+) だけが通しで測られている").matcher(canon);
-        assertTrue(swept.find(), "the canon does not say how many controls a full sweep covered");
-        Matcher since = Pattern.compile("\\*\\*(\\d+) 本\\*\\*は 4 回目の通し以降").matcher(canon);
-        assertTrue(since.find(), "the canon does not state how many are unswept");
-        assertEquals(declared - Integer.parseInt(swept.group(1)), Integer.parseInt(since.group(1)),
-                "the canon says " + since.group(1) + " controls are unswept, and "
-                        + swept.group(1) + " swept out of " + declared + " implies "
-                        + (declared - Integer.parseInt(swept.group(1)))
-                        + ". The sweep ledger is what says which controls have never been run "
-                        + "together, so a wrong figure there hides exactly the new ones");
+        // The ledger's job is to say WHICH controls have never been run together, so what has
+        // to agree is the SET, not a derived number. Three rounds of review found the three
+        // figures disagreeing with each other and with the list beside them — and an arithmetic
+        // check passed while the list was short by one, because it never read the list.
+        //
+        // 704 + 106 does not equal 805, and cannot: two controls were added after the sweep and
+        // then retired. So nothing here derives one figure from the others. What is checked is
+        // that the enumeration covers exactly the controls declared from CK3 onward.
+        Matcher boundary = Pattern.compile("\\*\\*([A-Z]{2}3) 以降の (\\d+) 本\\*\\*").matcher(canon);
+        assertTrue(boundary.find(), "the canon does not name the unswept boundary");
+        String from = boundary.group(1);
+        java.util.SortedSet<String> unswept = new java.util.TreeSet<>();
+        for (String id : seen) {
+            if (id.compareTo(from) >= 0 && id.matches("[A-Z]{2}3")) {
+                unswept.add(id);
+            }
+        }
+        assertEquals(unswept.size(), Integer.parseInt(boundary.group(2)),
+                "the canon says " + boundary.group(2) + " controls are unswept from " + from
+                        + " onward and the runner declares " + unswept.size()
+                        + ". This ledger is the only record of which controls have never been "
+                        + "run together");
 
+        // And the enumeration beside it names them all — ranges expanded. An arithmetic check
+        // alone let the list fall one short while the numbers agreed with each other.
+        // Scoped to the LEDGER PARAGRAPH. Scanning the whole canon found these ids in the
+        // residual rows as well, so deleting a whole range from the list changed nothing
+        // (measured: GG3 did not fire until this was scoped) — the same file-wide-grep defect
+        // this batch has now hit three times.
+        int ledgerStart = canon.indexOf("- コントロール");
+        int ledgerEnd = canon.indexOf("\n\n", ledgerStart);
+        assertTrue(ledgerStart >= 0 && ledgerEnd > ledgerStart,
+                "the ledger paragraph is not where this test looks");
+        String ledger = canon.substring(ledgerStart, ledgerEnd);
 
-        // The CI-coverage half of this check MOVED to CanonicalImportServiceTest. Two reasons,
-        // both found by review: a class cannot notice its own exclusion from the list that runs
-        // it, and `yaml.contains(name)` was satisfied by the workflow's own comment about this
-        // very class. What is left here is the count, which needs no other class.
+        java.util.Set<String> named = new java.util.LinkedHashSet<>();
+        Matcher single = Pattern.compile("\\b([A-Z]{2}3)\\b").matcher(ledger);
+        while (single.find()) {
+            named.add(single.group(1));
+        }
+        Matcher range = Pattern.compile("([A-Z]{2}3)〜([A-Z]{2}3)").matcher(ledger);
+        while (range.find()) {
+            for (String id : unswept) {
+                if (id.compareTo(range.group(1)) >= 0 && id.compareTo(range.group(2)) <= 0) {
+                    named.add(id);
+                }
+            }
+        }
+        java.util.SortedSet<String> unnamed = new java.util.TreeSet<>(unswept);
+        unnamed.removeAll(named);
+        assertTrue(unnamed.isEmpty(),
+                "a control is unswept and is not named in the canon's list, so the next full "
+                        + "sweep would treat it as already covered: " + unnamed);
+
+        String yaml = workflow();
+        for (String needed : List.of(
+                "core/src/main/webapp/ui/src/**",      // the screens a lock reads
+                "tools/negative-controls/**",          // the controls this class counts
+                "docs/design/fail-closed-reads.md")) { // the ledger it compares them with
+            int occurrences =
+                    yaml.split(java.util.regex.Pattern.quote("'" + needed + "'"), -1).length - 1;
+            assertEquals(2, occurrences,
+                    "'" + needed + "' should appear in BOTH the push and pull_request paths of "
+                            + WORKFLOW + " and appears " + occurrences + " time(s). A change to "
+                            + "it would not start the workflow that checks it");
+        }
+    }
+
+    @Test
+    @DisplayName("the workflow starts for changes to the files these locks read")
+    void theGateRunsForTheFilesItGuards() throws IOException {
+        // Three paths were added because a check that never starts is a check that never gates
+        // (Codex, round 3). Nothing then measured the three lines — so the same hole could be
+        // reopened, one line at a time, in the file that fixed it (subagent review, P2).
+        String yaml = workflow();
+        for (String needed : List.of(
+                "core/src/main/webapp/ui/src/**",      // the screens a lock reads
+                "tools/negative-controls/**",          // the controls this class counts
+                "docs/design/fail-closed-reads.md")) { // the ledger it compares them with
+            int occurrences =
+                    yaml.split(java.util.regex.Pattern.quote("'" + needed + "'"), -1).length - 1;
+            assertEquals(2, occurrences,
+                    "'" + needed + "' should appear in BOTH the push and pull_request paths of "
+                            + WORKFLOW + " and appears " + occurrences + " time(s). A change to "
+                            + "it would not start the workflow that checks it");
+        }
     }
 
     @Test
@@ -404,20 +470,73 @@ class EverySupportedCouchDbIsMeasuredTest {
 
 
     @Test
-    @DisplayName("every fact names the code that relies on it, and that file exists")
-    void everyFactPointsAtItsPremise() {
-        // A premise register whose pointers rot becomes a list of opinions. The file half is
-        // checkable here; the line numbers are not, and this does not pretend to check them.
-        List<String> missing = new ArrayList<>();
+    @DisplayName("every fact points at code that is still where it says, LINES included")
+    void everyFactPointsAtItsPremise() throws IOException {
+        // The file half used to be all this checked, and it said so honestly — which left the
+        // line numbers free to rot. Four of the seven were wrong the day they were written, and
+        // a review found two more after those were corrected. Each fact now carries an ANCHOR:
+        // an identifier that has to appear inside the range it cites.
+        List<String> wrong = new ArrayList<>();
         for (Fact fact : Fact.values()) {
             assertFalse(fact.premise().isBlank(), fact + " states no premise");
-            String where = fact.where();
-            String file = where.contains(":") ? where.substring(0, where.indexOf(':')) : where;
-            if (!Files.exists(Path.of("..").resolve(file))) {
-                missing.add(fact.name() + " -> " + file);
+            assertFalse(fact.anchor().isBlank(), fact + " names no anchor");
+
+            for (String citation : fact.where().split(" and ")) {
+                String trimmed = citation.trim();
+                String file = trimmed.contains(":")
+                        ? trimmed.substring(0, trimmed.indexOf(':')) : trimmed;
+                Path source = Path.of("..").resolve(file.isEmpty()
+                        ? lastFileOf(fact.where()) : file);
+                if (!Files.exists(source)) {
+                    wrong.add(fact.name() + " -> " + source + " (no such file)");
+                    continue;
+                }
+                int[] range = lineRange(trimmed);
+                if (range == null) {
+                    continue; // a citation with no line numbers claims nothing about lines
+                }
+                List<String> lines = Files.readAllLines(source, StandardCharsets.UTF_8);
+                String cited = String.join("\n", lines.subList(
+                        Math.max(0, range[0] - 1), Math.min(lines.size(), range[1])));
+                // A citation that names its own method in parentheses — ":1197 (putBack, …)" —
+                // is checked against THAT name. The fact's anchor covers the ones that do not.
+                String expected = anchorOf(trimmed, fact.anchor());
+                if (!cited.contains(expected)) {
+                    wrong.add(fact.name() + " cites " + trimmed + ", which does not contain "
+                            + expected);
+                }
             }
         }
-        assertTrue(missing.isEmpty(), "a fact points at code that is no longer there:\n  "
-                + String.join("\n  ", missing));
+
+        assertTrue(wrong.isEmpty(), "a fact points at code that is not there, so a reader "
+                + "following it lands somewhere unrelated — which is the failure R7 itself "
+                + "describes:\n  " + String.join("\n  ", wrong));
     }
+
+    /** The identifier a single citation must contain: its own parenthetical, or the fact's. */
+    private static String anchorOf(String citation, String fallback) {
+        Matcher named = Pattern.compile("\\((\\w+)[,)]").matcher(citation);
+        return named.find() ? named.group(1) : fallback;
+    }
+
+    /** The file named by the first citation, for a follow-on ":123" that omits it. */
+    private static String lastFileOf(String where) {
+        String first = where.split(" and ")[0].trim();
+        return first.contains(":") ? first.substring(0, first.indexOf(':')) : first;
+    }
+
+    /** The {@code :from-to} or {@code :line} in one citation, or null when it has none. */
+    private static int[] lineRange(String citation) {
+        Matcher span = Pattern.compile(":(\\d+)-(\\d+)").matcher(citation);
+        if (span.find()) {
+            return new int[] {Integer.parseInt(span.group(1)), Integer.parseInt(span.group(2))};
+        }
+        Matcher one = Pattern.compile(":(\\d+)").matcher(citation);
+        if (one.find()) {
+            int line = Integer.parseInt(one.group(1));
+            return new int[] {line, line};
+        }
+        return null;
+    }
+
 }
