@@ -64,7 +64,7 @@ public final class Verify {
 
     /** Profiles this version can evaluate. Anything else is a usage error, never a pass. */
     static final List<String> KNOWN_PROFILES =
-            List.of("PACKAGE_INTEGRITY_V1", "RECORD_LEDGER_V1");
+            List.of("PACKAGE_INTEGRITY_V1", "RECORD_LEDGER_V1", "ANCHORED_CHECKPOINT_V1");
 
     private Verify() {
     }
@@ -77,6 +77,7 @@ public final class Verify {
     public static int run(String[] args, PrintStream out, PrintStream err) {
         Path sip = null;
         String profile = "PACKAGE_INTEGRITY_V1";
+        String expectedCheckpoint = null;
         boolean asJson = false;
 
         for (int i = 0; i < args.length; i++) {
@@ -86,6 +87,13 @@ public final class Verify {
                     // The verb. Accepted and ignored so the documented command line works.
                 }
                 case "--json" -> asJson = true;
+                case "--expected-checkpoint" -> {
+                    if (++i >= args.length) {
+                        err.println("--expected-checkpoint needs a value");
+                        return EXIT_USAGE;
+                    }
+                    expectedCheckpoint = args[i];
+                }
                 case "--profile" -> {
                     if (++i >= args.length) {
                         err.println("--profile needs a value");
@@ -116,7 +124,8 @@ public final class Verify {
 
         if (sip == null) {
             err.println("usage: nemaki-evidence verify <sip.zip> [--profile "
-                    + String.join("|", KNOWN_PROFILES) + "] [--json]");
+                    + String.join("|", KNOWN_PROFILES)
+                    + "] [--expected-checkpoint <hash>] [--json]");
             return EXIT_USAGE;
         }
         if (!KNOWN_PROFILES.contains(profile)) {
@@ -148,9 +157,14 @@ public final class Verify {
         try {
             List<Outcome.Check> checks = new ArrayList<>(PackageIntegrity.check(entries));
             List<String> requiredNames = new ArrayList<>(PackageIntegrity.REQUIRED);
-            if ("RECORD_LEDGER_V1".equals(profile)) {
+            if ("RECORD_LEDGER_V1".equals(profile) || "ANCHORED_CHECKPOINT_V1".equals(profile)) {
                 checks.addAll(RecordLedger.check(entries));
                 requiredNames.addAll(RecordLedger.REQUIRED);
+            }
+            if ("ANCHORED_CHECKPOINT_V1".equals(profile)) {
+                checks.addAll(jp.aegif.nemaki.verifier.AnchoredCheckpoint.check(
+                        entries, expectedCheckpoint));
+                requiredNames.addAll(jp.aegif.nemaki.verifier.AnchoredCheckpoint.REQUIRED);
             }
             List<Outcome.Check> required = new ArrayList<>();
             for (String name : requiredNames) {
