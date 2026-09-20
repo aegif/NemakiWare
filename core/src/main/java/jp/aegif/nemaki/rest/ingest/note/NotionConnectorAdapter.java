@@ -241,8 +241,9 @@ public class NotionConnectorAdapter {
      * not (subagent review, P3).
      *
      * <p>The line used to run on every call. Restructuring the exits left it reachable from two
-     * of six returns, so the ordinary case stopped logging and the truncation cases — the ones
-     * worth investigating — logged nothing either.
+     * of the five returns, so the ordinary case stopped logging and the truncation cases — the
+     * ones worth investigating — logged nothing either. (Earlier drafts said "six": that was the
+     * count in a commit message, and it is neither the returns nor the exits nor the throws.)
      */
     private PageListing logged(String query, int limit, PageListing listing) {
         logger.info("Notion searchPages: query='{}', fetched={}, limit={}, complete={}{}",
