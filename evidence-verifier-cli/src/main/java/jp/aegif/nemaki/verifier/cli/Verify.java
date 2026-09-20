@@ -65,7 +65,7 @@ public final class Verify {
     /** Profiles this version can evaluate. Anything else is a usage error, never a pass. */
     static final List<String> KNOWN_PROFILES =
             List.of("PACKAGE_INTEGRITY_V1", "RECORD_LEDGER_V1", "ANCHORED_CHECKPOINT_V1",
-                    "TRUSTED_RFC3161_V1");
+                    "TRUSTED_RFC3161_V1", "ANCHORED_OTS_V1", "LONG_TERM_ERS_V1");
 
     private Verify() {
     }
@@ -180,19 +180,29 @@ public final class Verify {
         try {
             List<Outcome.Check> checks = new ArrayList<>(PackageIntegrity.check(entries));
             List<String> requiredNames = new ArrayList<>(PackageIntegrity.REQUIRED);
-            if ("RECORD_LEDGER_V1".equals(profile) || "ANCHORED_CHECKPOINT_V1".equals(profile)) {
+            if (!"PACKAGE_INTEGRITY_V1".equals(profile)) {
                 checks.addAll(RecordLedger.check(entries));
                 requiredNames.addAll(RecordLedger.REQUIRED);
             }
             if ("ANCHORED_CHECKPOINT_V1".equals(profile)
-                    || "TRUSTED_RFC3161_V1".equals(profile)) {
+                    || "TRUSTED_RFC3161_V1".equals(profile)
+                    || "ANCHORED_OTS_V1".equals(profile)
+                    || "LONG_TERM_ERS_V1".equals(profile)) {
                 checks.addAll(jp.aegif.nemaki.verifier.AnchoredCheckpoint.check(
                         entries, expectedCheckpoint));
                 requiredNames.addAll(jp.aegif.nemaki.verifier.AnchoredCheckpoint.REQUIRED);
             }
-            if ("TRUSTED_RFC3161_V1".equals(profile)) {
+            if ("TRUSTED_RFC3161_V1".equals(profile) || "LONG_TERM_ERS_V1".equals(profile)) {
                 checks.addAll(jp.aegif.nemaki.verifier.TrustedRfc3161.check(entries, trust));
                 requiredNames.addAll(jp.aegif.nemaki.verifier.TrustedRfc3161.REQUIRED);
+            }
+            if ("ANCHORED_OTS_V1".equals(profile)) {
+                checks.addAll(jp.aegif.nemaki.verifier.AnchoredOts.check(entries));
+                requiredNames.addAll(jp.aegif.nemaki.verifier.AnchoredOts.REQUIRED);
+            }
+            if ("LONG_TERM_ERS_V1".equals(profile)) {
+                checks.addAll(jp.aegif.nemaki.verifier.LongTermErs.check(entries));
+                requiredNames.addAll(jp.aegif.nemaki.verifier.LongTermErs.REQUIRED);
             }
             List<Outcome.Check> required = new ArrayList<>();
             for (String name : requiredNames) {

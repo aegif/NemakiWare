@@ -158,10 +158,11 @@ class TheExitCodeIsTheInterfaceTest {
     void anUnknownProfileIsAUsageError(@TempDir Path tmp) throws Exception {
         Path sip = zip(tmp, "good.zip", goodPackage("the minutes"));
 
-        // LONG_TERM_ERS_V1 is the profile this version still cannot evaluate; TRUSTED_RFC3161_V1
-        // became evaluable when P3 landed, so asserting on it would have quietly stopped
-        // measuring the refusal.
-        Run result = run("verify", sip.toString(), "--profile", "LONG_TERM_ERS_V1");
+        // Every profile evidence-profile-v1.md defines is now evaluable, so the refusal is
+        // measured with a name that is not one of them. This assertion has already had to move
+        // twice as profiles landed — each time, leaving it pointed at a name that had become
+        // known would have stopped measuring the refusal without going red.
+        Run result = run("verify", sip.toString(), "--profile", "SOMETHING_FROM_A_LATER_VERSION");
 
         assertEquals(Verify.EXIT_USAGE, result.code(),
                 "a caller asking for a profile this version cannot evaluate must not be told "
