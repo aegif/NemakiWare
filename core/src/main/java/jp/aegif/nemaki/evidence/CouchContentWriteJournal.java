@@ -50,6 +50,14 @@ public class CouchContentWriteJournal implements ContentWriteJournal {
 
     public static final String VIEW_OPEN = "content_write_intents_open";
 
+    /** Closed rows that carry a statement, keyed by (repository, version). */
+    public static final String VIEW_STATEMENTS = "content_write_statements";
+
+    public static final String MAP_STATEMENTS =
+            "function(doc) { if (doc.type === '" + TYPE + "' && doc.statement"
+            + " && doc.repositoryId && doc.versionObjectId) {"
+            + " emit([doc.repositoryId, doc.versionObjectId], null); } }";
+
     /**
      * Only OPEN rows are indexed.
      *
@@ -122,7 +130,7 @@ public class CouchContentWriteJournal implements ContentWriteJournal {
 
     @Override
     public CloseOutcome close(String intentId, String versionObjectId, String statementDigest,
-            long entrySequence) {
+            Map<String, Object> statementDocument, long entrySequence) {
         String id = documentId(intentId);
         for (int attempt = 1; attempt <= MAX_CLOSE_ATTEMPTS; attempt++) {
             Document existing;
@@ -158,6 +166,8 @@ public class CouchContentWriteJournal implements ContentWriteJournal {
             updated.put("_rev", existing.getRev());
             updated.put("closedAt", java.time.Instant.now().toString());
             updated.put("statementDigest", statementDigest);
+            // The statement itself, because nothing else keeps it and a package has to ship it.
+            updated.put("statement", statementDocument);
             updated.put("entrySequence", entrySequence);
             try {
                 DocumentResult result = client().update(updated);
@@ -228,6 +238,35 @@ public class CouchContentWriteJournal implements ContentWriteJournal {
                     kind, String.valueOf(props.get("openedAt"))));
         }
         return out;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> statementFor(String repositoryId, String versionObjectId) {
+        if (versionObjectId == null) {
+            return null;
+        }
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("include_docs", true);
+        params.put("key", List.of(repositoryId, versionObjectId));
+        ViewResult result;
+        try {
+            result = client().queryView(CouchEvidenceLedgerStore.DESIGN_DOC, VIEW_STATEMENTS,
+                    params);
+        } catch (RuntimeException e) {
+            logger.warn("The statement for {} could not be read.", versionObjectId, e);
+            return null;
+        }
+        if (result == null || result.getRows() == null || result.getRows().isEmpty()) {
+            return null;
+        }
+        // The LAST one. A version can be written more than once (W3/W7/W9 rewrite in place), and
+        // the newest statement is the one that describes the bytes stored now. Taking the first
+        // would ship the digest of content that has since been replaced.
+        Document doc = result.getRows().get(result.getRows().size() - 1).getDoc();
+        Map<String, Object> props = doc == null ? null : doc.getProperties();
+        Object statement = props == null ? null : props.get("statement");
+        return statement instanceof Map ? (Map<String, Object>) statement : null;
     }
 
     @Override

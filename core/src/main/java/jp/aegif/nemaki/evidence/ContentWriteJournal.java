@@ -106,8 +106,28 @@ public interface ContentWriteJournal {
         UNAVAILABLE
     }
 
+    /**
+     * @param statementDocument the statement this write committed to, as the map a package
+     *        ships. Stored HERE because nothing else persists it: the ledger entry holds only
+     *        its digest, and a digest cannot be shipped as {@code record-content-statement.json}.
+     *        A package that had to rebuild the statement at export time would rebuild it from
+     *        the document's CURRENT state and get a different digest — which is the same class
+     *        of defect as reading each part at a different moment (plan §9).
+     */
     CloseOutcome close(String intentId, String versionObjectId, String statementDigest,
-            long entrySequence);
+            java.util.Map<String, Object> statementDocument, long entrySequence);
+
+    /**
+     * The statement recorded for a version, or null when none was.
+     *
+     * <p>Null is "this node has no statement for that version", which is NOT "the version has
+     * no statement" — another node may have recorded one, and this store may be unreachable.
+     * Callers check {@link #isActive()} before reading anything into a null.
+     */
+    default java.util.Map<String, Object> statementFor(String repositoryId,
+            String versionObjectId) {
+        return null;
+    }
 
     /** A write whose statement never reached the ledger. */
     record Unresolved(String intentId, String repositoryId, String objectId,

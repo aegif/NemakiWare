@@ -137,6 +137,8 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
         // put makes CouchDB discard the index it has just built for the others.
         views.put(CouchContentWriteJournal.VIEW_OPEN,
                 new CloudantClientWrapper.ViewSource(CouchContentWriteJournal.MAP_OPEN));
+        views.put(CouchContentWriteJournal.VIEW_STATEMENTS,
+                new CloudantClientWrapper.ViewSource(CouchContentWriteJournal.MAP_STATEMENTS));
         return views;
     }
 

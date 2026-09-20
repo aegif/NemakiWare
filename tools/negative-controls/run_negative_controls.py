@@ -10154,6 +10154,33 @@ CONTROLS = [
         expect_fail=['theDeclaredProfileTracksWhatIsActuallyThere'],
     ),
     dict(
+        id='IF3',
+        what='the statement is no longer kept beside its digest, so a package has nothing to ship as record-content-statement.json',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/RecordContentStateRecorder.java',
+        find='                    statement.toDocument(), appended.sequence());',
+        replace='                    null, appended.sequence());',
+        test='E1LeavesNoSilentGapTest',
+        expect_fail=['theStatementIsPersistedSoAPackageCanShipIt'],
+    ),
+    dict(
+        id='IG3',
+        what='the statement lookup takes the FIRST row for a version, so a version rewritten in place ships the digest of content that has since been replaced',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/CouchContentWriteJournal.java',
+        find='        Document doc = result.getRows().get(result.getRows().size() - 1).getDoc();',
+        replace='        Document doc = result.getRows().get(0).getDoc();',
+        test='TheStatementViewIsInTheOnePutTest',
+        expect_fail=['theNewestStatementForAVersionIsTheOneShipped'],
+    ),
+    dict(
+        id='IH3',
+        what='the statement view drops out of the single design-document put, so no package can ever find a statement to ship',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/CouchEvidenceLedgerStore.java',
+        find='        views.put(CouchContentWriteJournal.VIEW_STATEMENTS,\n                new CloudantClientWrapper.ViewSource(CouchContentWriteJournal.MAP_STATEMENTS));\n',
+        replace='',
+        test='TheStatementViewIsInTheOnePutTest',
+        expect_fail=['theStatementViewIsDeployedWithTheOthers'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",

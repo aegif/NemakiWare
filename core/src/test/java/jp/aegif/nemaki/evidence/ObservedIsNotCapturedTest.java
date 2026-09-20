@@ -211,7 +211,8 @@ class ObservedIsNotCapturedTest {
 
             @Override
             public CloseOutcome close(String intentId, String versionObjectId,
-                    String statementDigest, long entrySequence) {
+                    String statementDigest, java.util.Map<String, Object> statementDocument,
+                    long entrySequence) {
                 return CloseOutcome.UNAVAILABLE;
             }
 

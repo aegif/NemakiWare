@@ -50,6 +50,7 @@ class E1LeavesNoSilentGapTest {
     private static final class FakeJournal implements ContentWriteJournal {
         private final Map<String, Unresolved> open = new LinkedHashMap<>();
         private final Map<String, String> closedWith = new LinkedHashMap<>();
+        private final Map<String, Map<String, Object>> statements = new LinkedHashMap<>();
         private boolean active = true;
         private boolean refuseOpen;
         private boolean throwOnClose;
@@ -69,7 +70,10 @@ class E1LeavesNoSilentGapTest {
 
         @Override
         public CloseOutcome close(String intentId, String versionObjectId, String statementDigest,
-                long entrySequence) {
+                Map<String, Object> statementDocument, long entrySequence) {
+            if (statementDocument != null) {
+                statements.put(versionObjectId, statementDocument);
+            }
             if (throwOnClose) {
                 throw new IllegalStateException("the journal went away between append and close");
             }
@@ -95,6 +99,11 @@ class E1LeavesNoSilentGapTest {
         @Override
         public List<Unresolved> unresolved(int limit) {
             return new ArrayList<>(open.values());
+        }
+
+        @Override
+        public Map<String, Object> statementFor(String repositoryId, String versionObjectId) {
+            return statements.get(versionObjectId);
         }
 
         @Override
@@ -223,6 +232,27 @@ class E1LeavesNoSilentGapTest {
                         + "second ROW, not a second ENTRY. Two identical statements in the chain "
                         + "are not a falsehood, but they are not free either — and pretending "
                         + "this is de-duplicated would be a claim nothing here establishes");
+    }
+
+    @Test
+    @DisplayName("the statement itself is kept, not only its digest")
+    void theStatementIsPersistedSoAPackageCanShipIt() {
+        FakeLedger ledger = new FakeLedger();
+        FakeJournal journal = new FakeJournal();
+        RecordContentStateRecorder recorder = recorderWith(ledger, journal);
+
+        RecordContentStateRecorder.Pending pending = recorder.openBeforeWriting("bedroom", "doc-1",
+                "v-1", ContentWriteJournal.WriteKind.CHECK_IN, "2026-09-20T00:00:00Z");
+        RecordContentStatementV1 statement =
+                statement("v-1", RecordContentStatementV1.CommitmentKind.CAPTURED);
+        recorder.recordAndClose(pending, statement);
+
+        Map<String, Object> kept = journal.statementFor("bedroom", "v-1");
+        assertEquals(statement.toDocument(), kept,
+                "the ledger entry holds only the statement's DIGEST, and a digest cannot be "
+                        + "shipped as record-content-statement.json. A package that rebuilt the "
+                        + "statement at export time would rebuild it from the document's "
+                        + "CURRENT state and get a different digest");
     }
 
     @Test

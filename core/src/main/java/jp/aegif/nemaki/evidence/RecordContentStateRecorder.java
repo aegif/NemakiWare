@@ -205,7 +205,7 @@ public class RecordContentStateRecorder {
         ContentWriteJournal.CloseOutcome closed;
         try {
             closed = journal.close(pending.intentId(), statement.versionObjectId(), digest,
-                    appended.sequence());
+                    statement.toDocument(), appended.sequence());
         } catch (RuntimeException e) {
             logger.warn("The journal row {} could not be closed after its statement was chained "
                     + "at sequence {}. It stays open and will be listed as unresolved.",

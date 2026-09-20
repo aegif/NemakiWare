@@ -3736,7 +3736,8 @@ class CanonicalImportServiceTest {
                 "ReleaseReadinessIsMeasuredTest",
                 "E1LeavesNoSilentGapTest",
                 "ObservedIsNotCapturedTest",
-                "TheBundleIsFixedBeforeTheWriteTest")) {
+                "TheBundleIsFixedBeforeTheWriteTest",
+                "TheStatementViewIsInTheOnePutTest")) {
             if (!listed.contains(lock)) {
                 missing.add(lock);
             }
