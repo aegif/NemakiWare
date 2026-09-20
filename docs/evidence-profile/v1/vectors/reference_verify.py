@@ -7,7 +7,7 @@ values.
 Both this file and EvidenceProfileV1VectorsTest read profile-v1-vectors.json, so neither can be
 updated to match a changed algorithm without the other going red:
 
-    python3 core/src/test/resources/evidence/reference_verify.py
+    python3 docs/evidence-profile/v1/vectors/reference_verify.py
 
 exits non-zero on any disagreement.
 """

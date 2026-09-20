@@ -37,15 +37,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the claim — it is what a receiving organisation would actually run, and it shares no code
  * with the writer.
  *
- * <p>Reading the vectors out of {@code core/src/test/resources} is deliberate for now: one file
- * with three readers. Plan §10 moves it to {@code docs/evidence-profile/v1/vectors/} with the
- * CLI; moving it before all three read it would leave copies behind, and a vector file with two
- * copies is a vector file that can disagree with itself.
+ * <p>The vectors live where plan §10 says they belong — {@code docs/evidence-profile/v1/vectors/}
+ * — and all three readers open THAT file. One file with three readers; a copy per module would
+ * be a vector file that can disagree with itself.
  */
 class ThreeImplementationsAgreeTest {
 
     private static final Path VECTORS =
-            Path.of("../core/src/test/resources/evidence/profile-v1-vectors.json");
+            Path.of("../docs/evidence-profile/v1/vectors/profile-v1-vectors.json");
 
     @SuppressWarnings("unchecked")
     private static Map<String, Object> vectors() throws Exception {

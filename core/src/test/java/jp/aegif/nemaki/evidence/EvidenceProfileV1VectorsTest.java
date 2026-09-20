@@ -52,9 +52,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class EvidenceProfileV1VectorsTest {
 
     private static final Path VECTORS =
-            Path.of("src/test/resources/evidence/profile-v1-vectors.json");
+            Path.of("../docs/evidence-profile/v1/vectors/profile-v1-vectors.json");
     private static final Path REFERENCE =
-            Path.of("src/test/resources/evidence/reference_verify.py");
+            Path.of("../docs/evidence-profile/v1/vectors/reference_verify.py");
 
     @SuppressWarnings("unchecked")
     private static Map<String, Object> vectors() throws Exception {

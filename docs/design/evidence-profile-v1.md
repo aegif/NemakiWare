@@ -6,8 +6,8 @@
 この文書の読者は、**NemakiWare のコードを見ずに** package を検証するプログラムを書く人である。
 したがって「製品がそうしている」ではなく、**バイト列として何をどう計算するか**だけを書く。
 
-書いてあるアルゴリズムは `core/src/test/resources/evidence/profile-v1-vectors.json` の
-ベクタで固定され、`core/src/test/resources/evidence/reference_verify.py` が
+書いてあるアルゴリズムは `docs/evidence-profile/v1/vectors/profile-v1-vectors.json` の
+ベクタで固定され、`docs/evidence-profile/v1/vectors/reference_verify.py` が
 **Java を書き写さずにこの文書から**実装して同じ値を出すことを
 `EvidenceProfileV1VectorsTest` が毎回実行して確かめる。
 
@@ -508,11 +508,11 @@ exit code: `0` = `VERIFIED` / `2` = `FAILED` / `3` = `INDETERMINATE` / `4` = usa
 
 ## 16. ベクタと独立実装
 
-- `core/src/test/resources/evidence/profile-v1-vectors.json` — 入力と期待値。
-- `core/src/test/resources/evidence/reference_verify.py` — **この文書だけから**書いた実装。
+- `docs/evidence-profile/v1/vectors/profile-v1-vectors.json` — 入力と期待値。
+- `docs/evidence-profile/v1/vectors/reference_verify.py` — **この文書だけから**書いた実装。
 
 ```
-python3 core/src/test/resources/evidence/reference_verify.py
+python3 docs/evidence-profile/v1/vectors/reference_verify.py
 ```
 
 は、不一致があれば非 0 で終了する。`EvidenceProfileV1VectorsTest` は
