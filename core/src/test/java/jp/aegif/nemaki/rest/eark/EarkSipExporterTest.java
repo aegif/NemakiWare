@@ -107,6 +107,19 @@ class EarkSipExporterTest {
         return exporter;
     }
 
+    /**
+     * Build one package and hand back its zip.
+     *
+     * <p>Package-private so {@code TheSipLayoutIsWhereCommonsIpPutsItTest} can pin the layout
+     * without a second copy of this fixture.
+     */
+    static Path buildOne(Path tmp) throws Exception {
+        return exporterOver(reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
+                "the minutes".getBytes(StandardCharsets.UTF_8))
+                .export(REPO, OBJECT, EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp)
+                .sip();
+    }
+
     private static Map<String, String> entriesOf(Path zip) throws Exception {
         Map<String, String> entries = new LinkedHashMap<>();
         try (ZipInputStream in = new ZipInputStream(Files.newInputStream(zip))) {
