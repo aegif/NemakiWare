@@ -123,14 +123,14 @@ public final class StoreBehaviourFacts {
         PLAIN_GET_CARRIES_ATTACHMENT_STUBS(
                 "a plain GET (no attachments=true) DOES carry the _attachments stubs, which is "
                         + "what makes getDoc + putBack safe on a document with a binary",
-                "core/src/main/java/jp/aegif/nemaki/epoch/AclEpochFinalizationService.java:214,1168,1183",
+                "core/src/main/java/jp/aegif/nemaki/epoch/AclEpochFinalizationService.java:1182-1190 (getDoc, a plain getDocument) and :1197 (putBack, which PUTs that same object)",
                 Map.of("3.3", true, "3.4", true, "3.5", true)),
 
         /** The end-to-end form of the one above, measured on the binary rather than on the JSON. */
         PUT_BACK_OF_A_PLAIN_GET_KEEPS_THE_BINARY(
                 "PUTting back the object a plain GET returned preserves the attachment — the "
                         + "finalizer and the quarantine both do exactly this to content documents",
-                "core/src/main/java/jp/aegif/nemaki/epoch/AclEpochFinalizationService.java:854-858",
+                "core/src/main/java/jp/aegif/nemaki/epoch/AclEpochFinalizationService.java:886 (quarantine, which CAS-writes a content document back) and :1197 (putBack)",
                 Map.of("3.3", true, "3.4", true, "3.5", true)),
 
         /**
@@ -172,7 +172,7 @@ public final class StoreBehaviourFacts {
          */
         ALLOW_FALLBACK_FALSE_IS_REJECTED_AS_AN_UNKNOWN_KEY(
                 "allow_fallback is a 3.4+/Cloudant parameter — 3.3.x does not know the key at all",
-                "core/src/main/java/jp/aegif/nemaki/epoch/AclEpochFinalizationService.java:551-559",
+                "core/src/main/java/jp/aegif/nemaki/epoch/AclEpochFinalizationService.java:566-573 and :589-596 (both javadoc paragraphs that state the version boundary)",
                 Map.of("3.3", true, "3.4", false, "3.5", false)),
 
         /** The other half: where the key IS known, it actually stops the silent full scan. */
@@ -180,7 +180,7 @@ public final class StoreBehaviourFacts {
                 "where allow_fallback=false is understood it makes an unusable pinned index an "
                         + "ERROR instead of a silent full scan — which is what 3.3 cannot have, so "
                         + "the epoch scan pins + pre-flights its indexes instead",
-                "core/src/main/java/jp/aegif/nemaki/epoch/AclEpochFinalizationService.java:551-559",
+                "core/src/main/java/jp/aegif/nemaki/epoch/AclEpochFinalizationService.java:566-573 and :589-596 (both javadoc paragraphs that state the version boundary)",
                 Map.of("3.3", false, "3.4", true, "3.5", true));
 
         private final String premise;
@@ -301,9 +301,18 @@ public final class StoreBehaviourFacts {
         }
         String message = String.valueOf(thrown.getMessage())
                 .toLowerCase(java.util.Locale.ROOT);
-        return message.contains("invalid_key") || message.contains("invalid key allow_fallback")
-                ? FallbackVerdict.REJECTED_AS_UNKNOWN_KEY
-                : FallbackVerdict.HONOURED;
+        if (message.contains("invalid_key") || message.contains("invalid key allow_fallback")) {
+            return FallbackVerdict.REJECTED_AS_UNKNOWN_KEY;
+        }
+        // A 400 has to be ABOUT THE INDEX to be evidence that the parameter was honoured. Any
+        // other 400 was returned first: a malformed selector, a database error. Treating every
+        // non-invalid_key 400 as "honoured" made an answer to a different question into an
+        // answer to this one (Codex review, P1) — the same fail-open this register exists to
+        // catch, one level down.
+        if (message.contains("index")) {
+            return FallbackVerdict.HONOURED;
+        }
+        return FallbackVerdict.NOT_ESTABLISHED;
     }
 
     /** The image tags CI has to run, in declaration order. */

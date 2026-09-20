@@ -159,9 +159,17 @@ class EverySupportedCouchDbIsMeasuredTest {
         // 791 when the file held 793 — read off "791 not measured by this run" without adding
         // the two that were. And the allow-list widening covered the class that noticed the
         // problem while leaving its siblings out (both round-3 reviews).
-        String runner = Files.readString(
-                Path.of("../tools/negative-controls/run_negative_controls.py"),
-                StandardCharsets.UTF_8);
+        // Existence checked first, for the reason the same batch added it elsewhere: a moved or
+        // renamed file throws NoSuchFileException, which the control runner scores as "fired for
+        // the wrong reason" rather than as this lock doing its job (subagent review, P3).
+        Path runnerFile = Path.of("../tools/negative-controls/run_negative_controls.py");
+        Path canonFile = Path.of("../docs/design/fail-closed-reads.md");
+        for (Path input : List.of(runnerFile, canonFile)) {
+            assertTrue(Files.exists(input),
+                    "this lock reads " + input + ", which is not there — it would fail as a "
+                            + "missing file rather than as a disagreement about the numbers");
+        }
+        String runner = Files.readString(runnerFile, StandardCharsets.UTF_8);
         int declared = 0;
         Matcher ids = Pattern.compile("(?m)^\\s+id=[\"']([A-Z0-9]+)[\"'],").matcher(runner);
         java.util.Set<String> seen = new java.util.LinkedHashSet<>();
@@ -170,8 +178,7 @@ class EverySupportedCouchDbIsMeasuredTest {
             assertTrue(seen.add(ids.group(1)), "control id " + ids.group(1) + " is declared twice");
         }
 
-        String canon = Files.readString(Path.of("../docs/design/fail-closed-reads.md"),
-                StandardCharsets.UTF_8);
+        String canon = Files.readString(canonFile, StandardCharsets.UTF_8);
         Matcher recorded = Pattern.compile("コントロール \\*\\*(\\d+)\\*\\*").matcher(canon);
         assertTrue(recorded.find(), "the canon does not state a control count");
         assertEquals(declared, Integer.parseInt(recorded.group(1)),
@@ -183,11 +190,18 @@ class EverySupportedCouchDbIsMeasuredTest {
         // total − 704 by construction, and it was hand-written beside a hand-written total —
         // so a control could be added, the total corrected, and this one left behind, which is
         // how the paragraph's three figures came to disagree (subagent review, P2).
-        Matcher since = Pattern.compile("足した (\\d+) 本").matcher(canon);
-        assertTrue(since.find(), "the canon does not state how many were added since the sweep");
-        assertEquals(declared - 704, Integer.parseInt(since.group(1)),
-                "the canon says " + since.group(1) + " controls were added since the fourth "
-                        + "sweep and the total implies " + (declared - 704)
+        // 704 is read from the canon too. Hard-coding it here meant the paragraph's THIRD
+        // figure — the one that says how many have been swept — was checked by nothing, and a
+        // completed sweep would have turned this lock red for the wrong reason (subagent
+        // review, P2).
+        Matcher swept = Pattern.compile("うち (\\d+) だけが通しで測られている").matcher(canon);
+        assertTrue(swept.find(), "the canon does not say how many controls a full sweep covered");
+        Matcher since = Pattern.compile("\\*\\*(\\d+) 本\\*\\*は 4 回目の通し以降").matcher(canon);
+        assertTrue(since.find(), "the canon does not state how many are unswept");
+        assertEquals(declared - Integer.parseInt(swept.group(1)), Integer.parseInt(since.group(1)),
+                "the canon says " + since.group(1) + " controls are unswept, and "
+                        + swept.group(1) + " swept out of " + declared + " implies "
+                        + (declared - Integer.parseInt(swept.group(1)))
                         + ". The sweep ledger is what says which controls have never been run "
                         + "together, so a wrong figure there hides exactly the new ones");
 
@@ -348,6 +362,33 @@ class EverySupportedCouchDbIsMeasuredTest {
         assertEquals(StoreBehaviourFacts.FallbackVerdict.NOT_ESTABLISHED,
                 StoreBehaviourFacts.classifyAllowFallbackRefusal(
                         new java.io.IOException("socket closed")));
+
+        // The other two arms. Only NOT_ESTABLISHED was asserted, so the line that tells
+        // "the store does not know the key" from "the store acted on it" could be collapsed
+        // either way and every gate stayed green (subagent review, P2).
+        assertEquals(StoreBehaviourFacts.FallbackVerdict.REJECTED_AS_UNKNOWN_KEY,
+                StoreBehaviourFacts.classifyAllowFallbackRefusal(
+                        badRequest("Invalid key allow_fallback for this request.")),
+                "a 400 naming the key is the store saying it does not know it");
+        assertEquals(StoreBehaviourFacts.FallbackVerdict.HONOURED,
+                StoreBehaviourFacts.classifyAllowFallbackRefusal(
+                        badRequest("invalid_index: _design/x, y specified by `use_index` could "
+                                + "not be found or it is not suitable.")),
+                "a 400 about the INDEX is the store acting on the parameter");
+        assertEquals(StoreBehaviourFacts.FallbackVerdict.NOT_ESTABLISHED,
+                StoreBehaviourFacts.classifyAllowFallbackRefusal(
+                        badRequest("invalid_selector: the selector is malformed")),
+                "a 400 about something else answers a different question and must not be "
+                        + "counted as an answer to this one");
+    }
+
+    /** A 400 carrying a given message, without building an okhttp Response. */
+    private static Throwable badRequest(String message) {
+        com.ibm.cloud.sdk.core.service.exception.BadRequestException thrown =
+                org.mockito.Mockito.mock(
+                        com.ibm.cloud.sdk.core.service.exception.BadRequestException.class);
+        org.mockito.Mockito.when(thrown.getMessage()).thenReturn(message);
+        return thrown;
     }
 
     @Test

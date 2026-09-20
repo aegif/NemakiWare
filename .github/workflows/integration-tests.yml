@@ -98,17 +98,27 @@ jobs:
           # Anchored to the start of a line so this step's own pattern — which contains the
           # same text — is not what gets read. Measured: the first draft matched itself.
           LIST=$(grep -oE "^ +-Dtest='[^']*'" .github/workflows/integration-tests.yml | head -1)
+          # Exact CSV membership, not a substring: *"$lock"* was satisfied by
+          # CanonicalImportServiceTestDisabled, and by Surefire's own !Name exclusion syntax
+          # (the name is in the list and the class does not run). Review found both.
+          NAMES=$(printf '%s' "$LIST" | sed "s/^ *-Dtest='//; s/'$//")
           for lock in EverySupportedCouchDbIsMeasuredTest \
                       APartialRunIsNotRecordedAsCompleteTest \
                       NotionPartialReadsAreNotCompleteTest \
                       NoJavadocIsOrphanedTest \
                       CanonicalImportServiceTest; do
-            case "$LIST" in
-              *"$lock"*) ;;
-              *) echo "::error::$lock is not in the unit -Dtest list, so it runs nowhere in CI"; exit 1 ;;
-            esac
+            if ! printf '%s' "$NAMES" | tr ',' '\n' | grep -qx "$lock"; then
+              echo "::error::$lock is not named in the unit -Dtest list, so nothing in it runs here"
+              exit 1
+            fi
+            # Named is not the same as present. A renamed or deleted class leaves the name in
+            # the list and Surefire does not fail unless NONE of the named classes resolve.
+            if ! find core/src/test/java -name "$lock.java" -print -quit | grep -q .; then
+              echo "::error::$lock is named in the list but no such test class exists"
+              exit 1
+            fi
           done
-          echo "the unit list covers all five"
+          echo "the unit list names all five, and all five exist"
 
       - name: Run unit tests
         run: |
