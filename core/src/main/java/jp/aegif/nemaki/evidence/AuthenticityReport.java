@@ -100,39 +100,32 @@ public record AuthenticityReport(String repositoryId, String objectId, String ge
     }
 
     /**
-     * Every stage of the evidence chain, always listed — plan §12.
+     * The report's sections, exactly as the assembler produced them.
      *
-     * <p>The report used to show the stages a deployment happened to have configured. A reader
-     * then saw four green sections and no mention of the other seven, and "not shown" reads as
-     * "not applicable" far more often than as "nobody set this up". Listing all of them turns
-     * an invisible gap into a visible {@code ABSENT}.
+     * <h2>Why there is no stage-filling here any more</h2>
      *
-     * <p>The order is the order of the chain, because that is how a reader follows it: bytes,
-     * then what was said about them, then what committed to that, then what committed to THAT.
+     * <p>This used to append an eleven-rung ladder — {@code PACKAGE}, {@code CONTENT_DIGEST},
+     * {@code RFC3161} and so on — marking every rung the report had nothing for as
+     * {@code ABSENT}, on the stated ground that a reader who sees only the configured sections
+     * reads the silence as "not applicable".
+     *
+     * <p>That premise was false. {@code AuthenticityReportAssembler} adds all eight of its
+     * sections unconditionally, every time, each answering {@code UNAVAILABLE} or
+     * {@code ABSENT} on its own — so nothing was ever being omitted and there was no silence
+     * to fill. The ladder's names matched none of the sections any producer emits, so all
+     * eleven rungs were {@code ABSENT} in every deployment regardless of configuration: a
+     * working RFC 3161 anchor still rendered as {@code RFC3161: ABSENT}. Eleven constant rows
+     * of noise, and the runbook then had to tell operators to ignore them — which is worse
+     * than not printing them, because an operator taught to ignore a row stops reading it.
+     *
+     * <p>The ladder is a real thing, but it belongs to the package verifier, where the rungs
+     * correspond to checks something actually performs (profiles P0–P5). It was never a
+     * property of a per-object report: this report has no per-object data for
+     * {@code CHECKPOINT_CHAIN} or {@code OTS}, and inventing a mapping from the eight sections
+     * onto it would have been a claim, not a repair. Residual R64, closed by removal.
      */
-    public static final List<String> STAGES = List.of(
-            "PACKAGE", "CONTENT_DIGEST", "RECORD_STATEMENT", "LEDGER_ENTRY", "INCLUSION_PROOF",
-            "CHECKPOINT_CHAIN", "RFC3161", "OTS", "ERS", "TRUST", "REVOCATION");
-
-    /**
-     * The report's sections, with every stage of {@link #STAGES} present.
-     *
-     * <p>A stage the report has nothing for becomes {@code ABSENT} with a limits sentence
-     * saying so. <b>Not {@code UNAVAILABLE}</b>: that means the source could not be read, and
-     * "this deployment has no such stage" is a different fact.
-     */
-    public List<Section> sectionsWithEveryStage() {
-        List<Section> out = new java.util.ArrayList<>(sections);
-        for (String stage : STAGES) {
-            boolean present = sections.stream().anyMatch(s -> s.name().equals(stage));
-            if (!present) {
-                out.add(new Section(stage, Verdict.ABSENT, Map.of(),
-                        "This deployment produced nothing for this stage. That is NOT a finding "
-                                + "that the stage is unnecessary, and NOT a statement that it "
-                                + "could not be read — it is that nothing was gathered."));
-            }
-        }
-        return List.copyOf(out);
+    public List<Section> sections() {
+        return sections;
     }
 
     /**
@@ -187,12 +180,12 @@ public record AuthenticityReport(String repositoryId, String objectId, String ge
         body.put("generatedAt", generatedAt);
         // FIRST, not last. A reader who stops early must still have met it.
         body.put("whatThisDoesNotEstablish", REPORT_LIMITS);
-        // Every stage here too. A machine reader that iterates "sections" and finds seven of
-        // them missing has no way to tell "not configured" from "this version does not have
-        // that stage" — and the two lead to different actions.
-        List<Section> everyStage = sectionsWithEveryStage();
-        List<Map<String, Object>> out = new ArrayList<>(everyStage.size());
-        for (Section section : everyStage) {
+        // The assembler's sections, all of them. It adds every one unconditionally, so a
+        // machine reader can rely on the set being complete and on each section saying for
+        // itself whether it was UNAVAILABLE (could not be read) or ABSENT (nothing to read).
+        List<Section> all = sections();
+        List<Map<String, Object>> out = new ArrayList<>(all.size());
+        for (Section section : all) {
             out.add(section.asMap());
         }
         body.put("sections", out);
@@ -218,10 +211,10 @@ public record AuthenticityReport(String repositoryId, String objectId, String ge
         // hands it to somebody else must not be able to hand over the numbers alone.
         html.append("<div class=\"limits\"><b>What this report does not establish</b><br>")
                 .append(escape(REPORT_LIMITS)).append("</div>");
-        // Every stage, not only the ones this deployment gathered. The human rendering is
-        // where the omission does the most damage: a reader who prints four green headings and
-        // hands the sheet to somebody else has handed over a chain with seven silent gaps.
-        for (Section section : sectionsWithEveryStage()) {
+        // Every section the assembler produced — which is all of them, unconditionally. The
+        // human rendering is where an omission would do the most damage: a reader prints this
+        // and hands it to somebody else, and a missing heading reads as "not applicable".
+        for (Section section : sections()) {
             html.append("<h2>").append(escape(section.name())).append(" — ")
                     .append(section.verdict().name()).append("</h2>");
             html.append("<div class=\"limits\">").append(escape(section.limits()))
