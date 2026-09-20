@@ -30,6 +30,14 @@ on:
       - 'docs/design/v3.4-release-readiness.md'
       # E1's scope lock reads the Phase 0 inventory's write-path table.
       - 'docs/design/evidence-phase0-inventory.md'
+      # The OPERATOR-facing documents. Three locks in this batch read files under
+      # docs/operations/, and the forbidden-claim lint reads docs/operations/ and
+      # docs/compliance/ as two of its four shipped roots — none of which were in
+      # this list, so a PR deleting the ABSENT row or the 「更新しない」 sentence
+      # touched only paths that never start this workflow and went green
+      # (subagent review, P2).
+      - 'docs/operations/**'
+      - 'docs/compliance/**'
       # The independent verifier module, which has its own test step.
       - 'evidence-verifier-core/**'
       - 'evidence-verifier-cli/**'
@@ -70,6 +78,14 @@ on:
       - 'docs/design/v3.4-release-readiness.md'
       # E1's scope lock reads the Phase 0 inventory's write-path table.
       - 'docs/design/evidence-phase0-inventory.md'
+      # The OPERATOR-facing documents. Three locks in this batch read files under
+      # docs/operations/, and the forbidden-claim lint reads docs/operations/ and
+      # docs/compliance/ as two of its four shipped roots — none of which were in
+      # this list, so a PR deleting the ABSENT row or the 「更新しない」 sentence
+      # touched only paths that never start this workflow and went green
+      # (subagent review, P2).
+      - 'docs/operations/**'
+      - 'docs/compliance/**'
       # The independent verifier module, which has its own test step.
       - 'evidence-verifier-core/**'
       - 'evidence-verifier-cli/**'
@@ -156,6 +172,7 @@ jobs:
                  NoForbiddenClaimShipsTest
                  EveryStageIsListedTest
                  ItReportsItDoesNotRenewTest
+                 WhichProfilesCanPassIsMeasuredTest
                  TheBundleIsFixedBeforeTheWriteTest
                  TheStatementViewIsInTheOnePutTest
                  TheAssemblerReadsOncePerPackageTest
@@ -184,7 +201,7 @@ jobs:
       - name: Run unit tests
         run: |
           mvn test \
-            -Dtest='ResourceBaseCsrfProtectionTest,CanonicalImportServiceTest,WebhookServiceTest,WebhookConfigTest,WebhookConfigParserTest,WebhookDeliveryServiceTest,HttpWebhookDispatcherTest,WebhookEventMatcherTest,ChildEventBatchProcessorTest,LiteralTypeValidatorTest,SolrPredicateWalkerMultilingualTest,SolrQueryProcessorScanCapTest,SolrQueryProcessorAclFilterTest,SolrUtilRelationshipReadersTest,ACLExpanderTest,PrincipalServiceImplCycleTest,SearchIndexReconciliationSchedulerTest,SearchIndexReconciliationFenceGuardTest,RAGIndexingServiceImplPwcTest,RAGIndexingServiceImplAclUpdateTest,AclEpochCounterServiceTest,Patch_AclEpochCounterTest,AclEpochStateTest,AclSemanticsGoldenTest,AclSemanticsCrossPathReportTest,AclSemanticsResolveAclIsRequiredTest,AclEffectiveEpochReadersProjectionTest,ContentWriterFenceTest,SolrUtilReadersFailureTest,CsrfValidatorBrowserBindingTest,NavigationPaginationTest,FilesystemImporterTest,ImportExportResourceTest,SlackConnectorAdapterTest,TeamsConnectorAdapterTest,ChatworkConnectorAdapterTest,MattermostConnectorAdapterTest,NotionConnectorAdapterTest,SalesforceConnectorAdapterTest,BoxDropboxAdapterTest,EverySupportedCouchDbIsMeasuredTest,APartialRunIsNotRecordedAsCompleteTest,NotionPartialReadsAreNotCompleteTest,NoJavadocIsOrphanedTest,TheSipLayoutIsWhereCommonsIpPutsItTest,EvidenceProfileV1VectorsTest,ReleaseReadinessIsMeasuredTest,E1LeavesNoSilentGapTest,ObservedIsNotCapturedTest,NotAskedIsNotAskedAndAnsweredNothingTest,NoForbiddenClaimShipsTest,EveryStageIsListedTest,ItReportsItDoesNotRenewTest,TheBundleIsFixedBeforeTheWriteTest,TheStatementViewIsInTheOnePutTest,TheAssemblerReadsOncePerPackageTest,AssuranceIsCheckedBeforeAnythingIsWrittenTest' \
+            -Dtest='ResourceBaseCsrfProtectionTest,CanonicalImportServiceTest,WebhookServiceTest,WebhookConfigTest,WebhookConfigParserTest,WebhookDeliveryServiceTest,HttpWebhookDispatcherTest,WebhookEventMatcherTest,ChildEventBatchProcessorTest,LiteralTypeValidatorTest,SolrPredicateWalkerMultilingualTest,SolrQueryProcessorScanCapTest,SolrQueryProcessorAclFilterTest,SolrUtilRelationshipReadersTest,ACLExpanderTest,PrincipalServiceImplCycleTest,SearchIndexReconciliationSchedulerTest,SearchIndexReconciliationFenceGuardTest,RAGIndexingServiceImplPwcTest,RAGIndexingServiceImplAclUpdateTest,AclEpochCounterServiceTest,Patch_AclEpochCounterTest,AclEpochStateTest,AclSemanticsGoldenTest,AclSemanticsCrossPathReportTest,AclSemanticsResolveAclIsRequiredTest,AclEffectiveEpochReadersProjectionTest,ContentWriterFenceTest,SolrUtilReadersFailureTest,CsrfValidatorBrowserBindingTest,NavigationPaginationTest,FilesystemImporterTest,ImportExportResourceTest,SlackConnectorAdapterTest,TeamsConnectorAdapterTest,ChatworkConnectorAdapterTest,MattermostConnectorAdapterTest,NotionConnectorAdapterTest,SalesforceConnectorAdapterTest,BoxDropboxAdapterTest,EverySupportedCouchDbIsMeasuredTest,APartialRunIsNotRecordedAsCompleteTest,NotionPartialReadsAreNotCompleteTest,NoJavadocIsOrphanedTest,TheSipLayoutIsWhereCommonsIpPutsItTest,EvidenceProfileV1VectorsTest,ReleaseReadinessIsMeasuredTest,E1LeavesNoSilentGapTest,ObservedIsNotCapturedTest,NotAskedIsNotAskedAndAnsweredNothingTest,NoForbiddenClaimShipsTest,EveryStageIsListedTest,ItReportsItDoesNotRenewTest,WhichProfilesCanPassIsMeasuredTest,TheBundleIsFixedBeforeTheWriteTest,TheStatementViewIsInTheOnePutTest,TheAssemblerReadsOncePerPackageTest,AssuranceIsCheckedBeforeAnythingIsWrittenTest' \
             -f core/pom.xml -Pdevelopment,opencmis-github-packages
       # The independent verifier is a SEPARATE module and would not run under -f core/pom.xml.
       # It carries the claim that a third party can check a package without the product, so a

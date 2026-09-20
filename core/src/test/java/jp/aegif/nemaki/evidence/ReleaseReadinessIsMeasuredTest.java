@@ -344,6 +344,23 @@ class ReleaseReadinessIsMeasuredTest {
         SortedSet<String> claimedNotStarted = new TreeSet<>(
                 List.of(notStarted.group(1).split("・")));
 
+        // The two lines have to be a PARTITION of 0-9. Checking only the phases each line names
+        // leaves a phase dropped from both silently unchecked — the reader sees a document that
+        // simply does not mention it, which is the quietest way for a phase to go missing
+        // (both reviews, P2).
+        SortedSet<String> unclassified = new TreeSet<>();
+        for (int phase = 0; phase <= 9; phase++) {
+            boolean claimed = (phase >= from && phase <= to)
+                    || claimedNotStarted.contains(String.valueOf(phase));
+            if (!claimed) {
+                unclassified.add(String.valueOf(phase));
+            }
+        }
+        assertTrue(unclassified.isEmpty(),
+                "the readiness document's two lines do not account for every phase: "
+                        + unclassified + " appears in neither 着手済み nor 未着手. A phase in "
+                        + "neither list is invisible to a reader deciding what is left");
+
         // The plan's phase rows carry the evidence: a row that has been worked says so with a
         // dated 着手 or 途中経過 note. Nothing here reads a summary — the row IS the record.
         String phases = slice(plan, "## 16. 実装順とゲート", "\n## 17",
@@ -415,24 +432,44 @@ class ReleaseReadinessIsMeasuredTest {
                 && runbook.contains("anchors")
                 && runbook.contains("requireRevocationAtIssuance");
 
-        for (String sentence : leftoverSentences) {
-            boolean listedAsOpen = sentence.contains("trust profile のファイル形式");
-            if (formatIsWritten) {
-                assertFalse(listedAsOpen,
-                        "the trust profile file format is written in " + release + " and the "
-                                + "readiness document still lists it as outstanding: 「"
-                                + sentence.trim() + "」. Whoever reads that to decide what is "
-                                + "left will write it a second time, or report the release as "
-                                + "further away than it is");
-            } else {
-                assertTrue(listedAsOpen,
-                        "the trust profile file format is NOT written in " + release + " and "
-                                + "this sentence does not list it as outstanding: 「"
-                                + sentence.trim() + "」. A verifier operator would have no way "
-                                + "to construct the file the CLI demands, and nothing would be "
-                                + "tracking that");
+        // ACROSS the three documents, not just this one. The first version read the readiness
+        // document alone, so the plan went on listing the format as outstanding in two more
+        // places — one of them the plan's own copy of the very sentence this polices. A claim
+        // that lives in three files cannot be held by a lock that opens one (both reviews, P2).
+        int statements = 0;
+        for (Path document : List.of(READINESS, PLAN, CANON)) {
+            String text = read(document);
+            // By SENTENCE. A whole-file check cannot tell "we wrote it" from "it is still to
+            // write" when both sentences are in the same file — and after this batch, both are.
+            for (String sentence : text.split("。")) {
+                if (!sentence.contains("trust profile のファイル形式")) {
+                    continue;
+                }
+                statements++;
+                boolean saysItIsWritten = sentence.contains("書いた");
+                if (formatIsWritten) {
+                    assertTrue(saysItIsWritten,
+                            document + " names the trust profile file format in a sentence that "
+                                    + "does not say it was written, while it IS written in "
+                                    + release + ": 「" + sentence.trim().replace('\n', ' ')
+                                    + "」. Whoever reads that to decide what is left will write "
+                                    + "it a second time, or report the release as further away "
+                                    + "than it is");
+                } else {
+                    assertFalse(saysItIsWritten,
+                            document + " says the trust profile file format was written and "
+                                    + release + " does not define it: 「"
+                                    + sentence.trim().replace('\n', ' ') + "」. A verifier "
+                                    + "operator would have no way to construct the file the CLI "
+                                    + "demands, and this sentence would stop anyone tracking it");
+                }
             }
         }
+        assertTrue(statements >= 2,
+                "the trust profile file format is mentioned " + statements + " time(s) across "
+                        + "the three documents. It used to be mentioned more, so either the "
+                        + "wording drifted out of this check's reach or the documents stopped "
+                        + "saying where it lives");
     }
 
     @Test
@@ -491,6 +528,73 @@ class ReleaseReadinessIsMeasuredTest {
                             + workflow + " and appears " + occurrences + " time(s). Editing a "
                             + "count in it would not start the workflow that checks the count");
         }
+    }
+
+    /**
+     * Every document any lock reads is a document that starts the workflow.
+     *
+     * <p>The sibling lock names its own two files, and its comment says an enumeration widened
+     * by hand a fourth time is the wrong shape. It was right, and the hand list proved it:
+     * three locks written this batch read files under {@code docs/operations/}, and the
+     * forbidden-claim lint has read {@code docs/operations/} and {@code docs/compliance/} for
+     * longer than that — none of which were in the workflow's paths. A pull request deleting
+     * the ABSENT row, or the sentence saying this version does not renew, touched only files
+     * that never start the workflow, so every one of those locks was green by not running.
+     *
+     * <p>So this does not carry a list. It reads the test sources for the documents they open
+     * and requires the workflow to start for each one. A lock added tomorrow that reads a new
+     * document is covered the day it is written, which a hand list never manages.
+     */
+    @Test
+    @DisplayName("every document a lock reads starts the workflow that runs that lock")
+    void everyDocumentALockReadsStartsTheWorkflow() throws IOException {
+        Path workflow = Path.of("../.github/workflows/integration-tests.yml");
+        String yaml = read(workflow);
+
+        SortedSet<String> read = new TreeSet<>();
+        Path tests = Path.of("src/test/java");
+        try (java.util.stream.Stream<Path> walk = Files.walk(tests)) {
+            for (Path file : walk.filter(p -> p.toString().endsWith(".java")).toList()) {
+                Matcher opened = Pattern.compile("\"\\.\\./(docs/[^\"]+)\"")
+                        .matcher(Files.readString(file, java.nio.charset.StandardCharsets.UTF_8));
+                while (opened.find()) {
+                    read.add(opened.group(1));
+                }
+            }
+        }
+        assertFalse(read.isEmpty(),
+                "no lock appears to open a document under docs/. Either the tests moved or this "
+                        + "check's pattern no longer matches how they name a path, and it would "
+                        + "pass by finding nothing");
+
+        SortedSet<String> ungated = new TreeSet<>();
+        for (String document : read) {
+            // Either the file itself is listed, or a directory above it is listed with /**.
+            // Both are real ways to start the workflow; requiring the exact path would force
+            // every new document into the list by hand, which is the shape being replaced.
+            // The path itself, then the path AS a directory — the forbidden-claim lint opens
+            // docs/operations and docs/compliance as directories, and a check that only walked
+            // upwards from the last slash asked for 'docs/**' and missed the entry that covers
+            // them — then climb.
+            boolean gated = occurrences(yaml, document) == 2
+                    || occurrences(yaml, document + "/**") == 2;
+            for (int cut = document.lastIndexOf('/'); cut > 0 && !gated;
+                    cut = document.lastIndexOf('/', cut - 1)) {
+                gated = occurrences(yaml, document.substring(0, cut) + "/**") == 2;
+            }
+            if (!gated) {
+                ungated.add(document);
+            }
+        }
+        assertTrue(ungated.isEmpty(),
+                "a lock reads these documents and no path in " + workflow + " starts the "
+                        + "workflow for them, in BOTH push and pull_request. A change that "
+                        + "breaks one of those locks would be green because the job never "
+                        + "ran: " + ungated);
+    }
+
+    private static int occurrences(String yaml, String path) {
+        return yaml.split(Pattern.quote("'" + path + "'"), -1).length - 1;
     }
 
     @Test

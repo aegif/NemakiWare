@@ -171,30 +171,63 @@ class EveryStageIsListedTest {
                         + "investigate. It is the one value that IS a fault, and a table that "
                         + "does not separate it from ABSENT makes the other rows noise");
 
-        // Each entry is the claim and why an operator is harmed without it.
-        Map<String, String> required = Map.of(
-                "既定 off",
-                "revocation collection reaches a CRL endpoint, so the operator has to know it "
-                        + "is their decision and that it is currently not happening",
-                "NOT_ATTEMPTED",
-                "off records 'nothing was asked', and an operator who reads it as 'asked and "
-                        + "clean' has the wrong idea of what the package carries",
+        // The eleven rows are ALWAYS absent in this version, whatever the deployment has
+        // configured, because nothing produces sections under those names. Without this
+        // warning the table above reads as "you did not configure RFC 3161" to an operator
+        // whose RFC 3161 anchoring works perfectly (Codex review, P1).
+        assertTrue(section.contains("構成の有無とは無関係"),
+                "the runbook no longer warns that the eleven stage rows are ABSENT regardless "
+                        + "of configuration. An operator with working anchoring reads "
+                        + "'RFC3161: ABSENT' and, following the table above, does nothing");
+
+        // Every stage the product lists is named in the runbook. A count would stay green when
+        // a stage was added or renamed, and the names are what the operator matches on screen.
+        for (String stage : AuthenticityReport.STAGES) {
+            assertTrue(section.contains("`" + stage + "`"),
+                    "the runbook does not name the stage 「" + stage + "」 among the rows that "
+                            + "appear after the upgrade, so an operator meeting it on screen "
+                            + "has nothing to look it up in");
+        }
+
+        // Claims checked as SENTENCES carrying their point, not as words. Measured: deleting
+        // the line that says exit 3 is not success left a bare `INDETERMINATE` needle satisfied
+        // by O5-2 two sections earlier, and deleting the whole on/off explanation left every
+        // needle satisfied by a heading (subagent review, P2).
+        Map<String, String> claims = Map.of(
+                "`3` (`INDETERMINATE`) は成功ではありません",
+                "an operator scripting on 'not 1' ships an INDETERMINATE result as a pass",
+                "CRL distribution point",
+                "turning collection on makes this node talk to an outside endpoint, which is "
+                        + "the operator's decision to take knowingly",
+                "`NOT_ATTEMPTED`",
+                "off records 'nothing was asked', and read as 'asked and clean' it overstates "
+                        + "what the package carries",
+                "`NOT_PRESENT`",
+                "without a trust profile the PKIX check does not pass, it abstains — and an "
+                        + "operator who does not know that reads a silent check as a passed one",
                 "--trust-profile",
                 "trust from inside the package would let a re-signed package name its own "
-                        + "issuer, so the operator has to know they supply it",
-                "INDETERMINATE",
-                "exit 3 is not success, and an operator scripting on 'not 1' would ship it as "
-                        + "one");
-        required.forEach((needle, why) -> assertTrue(section.contains(needle),
-                "the runbook's evidence section no longer mentions 「" + needle + "」 — " + why));
+                        + "issuer, so the operator has to know they supply it");
+        claims.forEach((needle, why) -> assertTrue(section.contains(needle),
+                "the runbook's evidence section no longer says 「" + needle + "」 — " + why));
 
-        // The other direction: what the version does NOT do. A section that listed only
-        // capabilities reads as a compliance claim by omission.
-        for (String limit : List.of("ERS", "renewal", "最新")) {
-            assertTrue(section.contains(limit),
-                    "the runbook's evidence section stops naming 「" + limit + "」 among the "
-                            + "things this version does not do. A reader takes the absence of a "
-                            + "limit for the absence of the limit");
-        }
+        // The other direction: what the version does NOT do, checked as the ROWS of the table
+        // that says so. A section listing only capabilities reads as a compliance claim by
+        // omission, and a word-level check let two of these four rows be deleted silently.
+        Map<String, String> limits = Map.of(
+                "6 経路", "the ledger records content-bearing writes only, and 'every operation "
+                        + "is in the ledger' is the reading this row exists to prevent",
+                "renewal", "renewal is assessed and never executed, and nothing else says so",
+                "最新", "whether the checkpoint shown is the newest cannot be known from the "
+                        + "package, and an operator who assumes it loses rollback detection",
+                "認定", "accreditation is a fact of contract and registry, and a row saying so "
+                        + "is what keeps it from being read as something the product judges");
+        limits.forEach((needle, why) -> {
+            boolean inARow = section.lines()
+                    .anyMatch(line -> line.startsWith("|") && line.contains(needle));
+            assertTrue(inARow,
+                    "the runbook's 'what this version does not do' table has no row naming 「"
+                            + needle + "」 — " + why);
+        });
     }
 }

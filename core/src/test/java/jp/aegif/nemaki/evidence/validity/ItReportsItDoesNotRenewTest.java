@@ -64,7 +64,12 @@ class ItReportsItDoesNotRenewTest {
     @Test
     @DisplayName("the assessment says which renewal it does NOT assess")
     void theAssessmentNamesWhatItDoesNotCover() throws java.io.IOException {
-        String text = Files.readString(SERVICE, StandardCharsets.UTF_8);
+        // Comments stripped, as the sibling method does. Without it a javadoc line saying the
+        // words satisfies the check while the report says nothing — a grep a comment can
+        // satisfy has been the defect in this batch seven times (subagent review, P3).
+        String text = Files.readString(SERVICE, StandardCharsets.UTF_8)
+                .replaceAll("(?m)//.*$", "")
+                .replaceAll("(?s)/\\*.*?\\*/", "");
         assertTrue(text.contains("is NOT assessed"),
                 "the service no longer says that signature-driven timestamp renewal is not "
                         + "assessed. No rung records the token's signature algorithm, so that "
@@ -84,7 +89,12 @@ class ItReportsItDoesNotRenewTest {
         int start = text.indexOf("## ERS の更新");
         assertTrue(start >= 0, "the runbook no longer has a renewal section, so an operator "
                 + "reading it would not learn that renewal is theirs to run");
-        int end = text.indexOf("## ", start + 3);
+        // A level-2 heading at the START of a line. indexOf("## ") also matches inside
+        // "### ", so a subsection added later would truncate the very section this
+        // scopes to and the assertions below would read a fragment (subagent, P3).
+        java.util.regex.Matcher next = java.util.regex.Pattern.compile("(?m)^## ")
+                .matcher(text);
+        int end = next.find(start + 3) ? next.start() : -1;
         String section = end > start ? text.substring(start, end) : text.substring(start);
 
         assertTrue(section.contains("更新しない") && section.contains("自動更新は入れない"),

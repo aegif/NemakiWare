@@ -186,6 +186,7 @@ class EverySupportedCouchDbIsMeasuredTest {
                         + declared + ". A count nobody checks is how a retired or a missing "
                         + "control reads as a known rounding difference");
 
+
         // The other number in the same sentence. "N added since the fourth sweep" is
         // total − 704 by construction, and it was hand-written beside a hand-written total —
         // so a control could be added, the total corrected, and this one left behind, which is
@@ -212,6 +213,55 @@ class EverySupportedCouchDbIsMeasuredTest {
                         + " onward and the runner declares " + unswept.size()
                         + ". This ledger is the only record of which controls have never been "
                         + "run together");
+
+        // EVERY statement of both counts, in EVERY document that carries them. The counts live
+        // in three files and this lock read one; the plan sat at "CK3 以降の 110 本" while the
+        // real figure was 219, so whoever scoped the overdue sweep from the plan would have run
+        // half the set. Per-file locks cannot hold a claim that crosses files (both reviews, P2).
+        List<Path> carriers = List.of(canonFile,
+                Path.of("../docs/design/v3.4-release-readiness.md"),
+                Path.of("../docs/design/v3.4.0-evidence-and-residuals-plan.md"));
+        // Phrasings, by meaning. Each is a way one of these documents states one of the two
+        // numbers; the minimum counts below catch a rephrase that escapes them all.
+        List<String> totalForms = List.of("コントロール \\*\\*(\\d+)\\*\\*",
+                "負のコントロール \\*\\*(\\d+) 本\\*\\*", "今の総数は (\\d+) 本",
+                "その (\\d+) 本での通し", "RC 前に \\*\\*(\\d+) 本\\*\\*で測り直す",
+                "今の (\\d+) 本が通る", "(?m)^\\| 通し negative-control \\|[^|]*\\|[^|]*\\*\\*(\\d+) 本\\*\\*");
+        List<String> unsweptForms = List.of("CK3 以降の (\\d+) 本", "704 \\+ (\\d+) が総数");
+
+        int totalsSeen = 0;
+        int unsweptSeen = 0;
+        for (Path carrier : carriers) {
+            assertTrue(Files.exists(carrier), "this lock reads " + carrier + ", which is not there");
+            String text = Files.readString(carrier, StandardCharsets.UTF_8);
+            for (String form : totalForms) {
+                Matcher m = Pattern.compile(form).matcher(text);
+                while (m.find()) {
+                    totalsSeen++;
+                    assertEquals(declared, Integer.parseInt(m.group(1)),
+                            carrier + " states the control total as " + m.group(1)
+                                    + " and the runner declares " + declared
+                                    + ". A reader takes whichever document they open");
+                }
+            }
+            for (String form : unsweptForms) {
+                Matcher m = Pattern.compile(form).matcher(text);
+                while (m.find()) {
+                    unsweptSeen++;
+                    assertEquals(unswept.size(), Integer.parseInt(m.group(1)),
+                            carrier + " states the never-swept count as " + m.group(1)
+                                    + " and the runner declares " + unswept.size()
+                                    + ". This is the number the next full sweep is scoped from");
+                }
+            }
+        }
+        assertTrue(totalsSeen >= 6, "the three documents used to state the control total at "
+                + "least six times between them and now state it " + totalsSeen + " time(s). "
+                + "Either a statement went away or its wording drifted out of this check's "
+                + "reach, which is exactly how the plan's copy went stale");
+        assertTrue(unsweptSeen >= 5, "the three documents used to state the never-swept count "
+                + "at least five times between them and now state it " + unsweptSeen
+                + " time(s), so a statement has drifted out of reach");
 
         // EVERY statement of the count, not just the bold one. The same fact is written three
         // times in this document, and only the bold occurrence was read — so while the set grew

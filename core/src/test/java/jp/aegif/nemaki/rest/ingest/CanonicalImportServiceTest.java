@@ -3740,6 +3740,7 @@ class CanonicalImportServiceTest {
                 "NoForbiddenClaimShipsTest",
                 "EveryStageIsListedTest",
                 "ItReportsItDoesNotRenewTest",
+            "WhichProfilesCanPassIsMeasuredTest",
                 "TheBundleIsFixedBeforeTheWriteTest",
                 "TheStatementViewIsInTheOnePutTest",
                 "TheAssemblerReadsOncePerPackageTest",

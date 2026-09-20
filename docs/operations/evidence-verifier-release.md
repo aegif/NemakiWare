@@ -79,7 +79,37 @@ package が自分の trust anchor を名乗れるなら、署名を差し替え�
 |---|---|---|
 | `anchors` | **必須**。空だと**ファイルごと拒否**される | PKIX path の終点。ここに無い発行者の token は `token pkix` が FAILED |
 | `policyOids` | 省略可 | 省略すると `token policy` は `NOT_PRESENT`（照合する基準が無いので、通ったとは言わない） |
-| `requireRevocationAtIssuance` | **省略時 true** | false にすると、材料が無くても `REVOCATION_NOT_REQUIRED` として先へ進む。**弱くする側の既定を沈黙で作らない**ためこうしてある |
+| `requireRevocationAtIssuance` | **省略時 true** | false にすると理由が `REVOCATION_NOT_CAPTURED` から `REVOCATION_NOT_REQUIRED` に変わる。**verdict は変わらない**（下記）。**弱くする側の既定を沈黙で作らない**ためこうしてある |
+
+### この版で `VERIFIED` に到達できるのは **P0 と P1 だけ**です
+
+profile は**積み上げ**で、上位は下位の必須検査を全部含みます。そして
+**必須検査のうち 4 つは、この版では `PASSED` になる分岐を持っていません**。
+
+| 必須検査 | どの profile から入るか | なぜ `PASSED` が無いか |
+|---|---|---|
+| `anchor commits root` | `ANCHORED_CHECKPOINT_V1` 以上 | anchor の DER を読まないので、root に commit しているかは **UNKNOWN**。読まずに「commit している」と言うのは、どの検査も行っていない主張 |
+| `token revocation` | `TRUSTED_RFC3161_V1` 以上 | 失効材料を**評価しない**。材料が在ることは、その検証ではない |
+| `ots parse` / `ots commits root` / `ots attestation` | `ANCHORED_OTS_V1` | block header の入手元が無く、socket も開かない |
+
+したがって:
+
+| profile | この版の最良の結果 |
+|---|---|
+| `PACKAGE_INTEGRITY_V1` | **`VERIFIED` に到達できる**（exit 0） |
+| `RECORD_LEDGER_V1` | **`VERIFIED` に到達できる**（exit 0） |
+| `ANCHORED_CHECKPOINT_V1` | **必ず exit 3** |
+| `TRUSTED_RFC3161_V1` | **必ず exit 3** |
+| `ANCHORED_OTS_V1` | **必ず exit 3** |
+| `LONG_TERM_ERS_V1` | **必ず exit 3** |
+
+**`requireRevocationAtIssuance: false` を渡しても exit 0 にはなりません。**
+変わるのは理由コードだけです。
+
+**exit 3 を「実質 OK」として script で畳まないでください。** 畳んだ時点で、
+この版が積み上げた拒否は最後の一歩で全部無効になります。**P2 以上を合否判定に
+使う運用は、この版では成立しません** — 使えるのは P0 と P1 です。
+上位 profile の出力は、**どこまで確かめられたかの内訳**としてのみ読んでください。
 
 **anchor が 1 つも無い profile ファイルは拒否される。** 空の profile を返すと
 「渡さなかった」場合とまったく同じに振る舞い、それを verdict から気づくことになる。
