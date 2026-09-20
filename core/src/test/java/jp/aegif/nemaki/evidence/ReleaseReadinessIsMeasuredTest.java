@@ -313,6 +313,128 @@ class ReleaseReadinessIsMeasuredTest {
         }
     }
 
+    /**
+     * "Which phases have been started" agrees with the plan that records the work.
+     *
+     * <p>The readiness document is the one people read for how much is left, and this line is
+     * the first thing in it. It said 「未着手 = Phase 3〜9」 while Phases 3 through 7 had all
+     * landed — five phases of work reported as not begun, in the document whose own opening
+     * paragraph says uncounted numbers go stale.
+     *
+     * <p>Both directions, and for opposite harms: a phase reported as not started makes the
+     * release look further away than it is and invites someone to do the work twice; a phase
+     * reported as started when it is not is the direction that ships.
+     */
+    @Test
+    @DisplayName("the phases said to be started are the ones the plan records work for")
+    void thePhaseStatusAgreesWithThePlan() throws IOException {
+        String readiness = read(READINESS);
+        String plan = read(PLAN);
+
+        Matcher started = Pattern.compile("\\*\\*着手済み = Phase (\\d)〜(\\d)\\*\\*").matcher(readiness);
+        assertTrue(started.find(),
+                "the readiness document no longer says which phases have been started. That "
+                        + "line is what a reader takes for the project's position");
+        Matcher notStarted = Pattern.compile("\\*\\*未着手 = Phase ([\\d・]+)\\*\\*").matcher(readiness);
+        assertTrue(notStarted.find(), "the readiness document no longer says which phases are "
+                + "untouched, so 'started' has nothing to be the complement of");
+
+        int from = Integer.parseInt(started.group(1));
+        int to = Integer.parseInt(started.group(2));
+        SortedSet<String> claimedNotStarted = new TreeSet<>(
+                List.of(notStarted.group(1).split("・")));
+
+        // The plan's phase rows carry the evidence: a row that has been worked says so with a
+        // dated 着手 or 途中経過 note. Nothing here reads a summary — the row IS the record.
+        String phases = slice(plan, "## 16. 実装順とゲート", "\n## 17",
+                "the plan's phase table");
+        for (int phase = 0; phase <= 9; phase++) {
+            Matcher row = Pattern.compile("(?m)^\\| " + phase + " \\| (.*)$").matcher(phases);
+            assertTrue(row.find(), "the plan has no row for Phase " + phase);
+            String text = row.group(1);
+            // A DATE, not a vocabulary. The first version looked for 着手 / 途中経過 / 達成 and
+            // missed Phase 1, which says 完了, and would have missed the next word someone
+            // reached for. What every worked row actually carries is the day it was worked.
+            boolean planRecordsWork = text.matches(".*20\\d\\d-\\d\\d-\\d\\d.*");
+
+            if (phase >= from && phase <= to) {
+                assertTrue(planRecordsWork,
+                        "the readiness document says Phase " + phase + " has been started and "
+                                + "the plan's row for it records no work. The direction that "
+                                + "ships is this one: a phase claimed as begun that nobody began");
+            }
+            if (claimedNotStarted.contains(String.valueOf(phase))) {
+                assertFalse(planRecordsWork,
+                        "the readiness document lists Phase " + phase + " as untouched and the "
+                                + "plan's row for it records work. Someone reading the readiness "
+                                + "document to decide what to pick up will do it a second time");
+            }
+        }
+    }
+
+    /**
+     * The G0 leftovers list stops naming a leftover once it exists.
+     *
+     * <p>The sentence beside the gate says what is still only a FORMAT question. It was written
+     * when none of the three existed, and nothing read it afterwards — so the trust profile
+     * file format was written into the release runbook and the readiness document went on
+     * listing it as outstanding. Understating is the gentler direction, but it makes the one
+     * document people read for "how much is left" wrong, which is the defect this whole branch
+     * is about pointed the other way.
+     *
+     * <p>Both directions, for the same reason every other gate here has both: a lock that only
+     * demanded the item be absent would let it be dropped from the list before it was written.
+     */
+    @Test
+    @DisplayName("G0's leftovers list agrees with what has actually been written")
+    void theLeftoversListAgreesWithWhatExists() throws IOException {
+        String readiness = read(READINESS);
+        Path release = Path.of("../docs/operations/evidence-verifier-release.md");
+        assertTrue(Files.exists(release), "the verifier release runbook is not at " + release);
+        String runbook = read(release);
+
+        // EVERY sentence that says what is left, not the one in §1.5. The document states this
+        // twice — §0's summary and §1.5's gate — and the first version of this lock read only
+        // §1.5, so §0 went on naming the format as outstanding after it was written. One claim,
+        // many exits: the exits here are sentences, so the check collects them.
+        List<String> leftoverSentences = new java.util.ArrayList<>();
+        for (String line : readiness.split("\n")) {
+            if ((line.contains("残るのは") || line.contains("残っているのは")) && line.contains("形式")) {
+                leftoverSentences.add(line);
+            }
+        }
+        assertTrue(leftoverSentences.size() >= 2,
+                "the readiness document used to say what G0 leaves open in more than one place "
+                        + "and now says it " + leftoverSentences.size() + " time(s). Either a "
+                        + "statement was deleted or its wording drifted out of this check's "
+                        + "reach — which is how §0 went stale while §1.5 was locked");
+
+        // "Written" means the runbook carries the format's OWN section with its fields, not
+        // that the words appear somewhere: the phrase occurs in prose about what is missing too.
+        boolean formatIsWritten = runbook.contains("## trust profile のファイル形式")
+                && runbook.contains("anchors")
+                && runbook.contains("requireRevocationAtIssuance");
+
+        for (String sentence : leftoverSentences) {
+            boolean listedAsOpen = sentence.contains("trust profile のファイル形式");
+            if (formatIsWritten) {
+                assertFalse(listedAsOpen,
+                        "the trust profile file format is written in " + release + " and the "
+                                + "readiness document still lists it as outstanding: 「"
+                                + sentence.trim() + "」. Whoever reads that to decide what is "
+                                + "left will write it a second time, or report the release as "
+                                + "further away than it is");
+            } else {
+                assertTrue(listedAsOpen,
+                        "the trust profile file format is NOT written in " + release + " and "
+                                + "this sentence does not list it as outstanding: 「"
+                                + sentence.trim() + "」. A verifier operator would have no way "
+                                + "to construct the file the CLI demands, and nothing would be "
+                                + "tracking that");
+            }
+        }
+    }
+
     @Test
     @DisplayName("every Track A row agrees with the residual table it points at")
     void everyTrackARowAgreesWithTheResidualTable() throws IOException {
