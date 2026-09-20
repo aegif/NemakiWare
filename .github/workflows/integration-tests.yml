@@ -19,6 +19,10 @@ on:
       # workflow, so the check exists and never gates (Codex review, P2).
       - 'tools/negative-controls/**'
       - 'docs/design/fail-closed-reads.md'
+      # The evidence profile spec and the vectors both languages read. A change to
+      # either is a change to what every external verifier must do.
+      - 'docs/design/evidence-profile-v1.md'
+      - 'core/src/test/resources/evidence/**'
       - 'common/**'
       - 'cloudant-init/**'
       - 'solr/**'
@@ -45,6 +49,10 @@ on:
       # workflow, so the check exists and never gates (Codex review, P2).
       - 'tools/negative-controls/**'
       - 'docs/design/fail-closed-reads.md'
+      # The evidence profile spec and the vectors both languages read. A change to
+      # either is a change to what every external verifier must do.
+      - 'docs/design/evidence-profile-v1.md'
+      - 'core/src/test/resources/evidence/**'
       - 'common/**'
       - 'cloudant-init/**'
       - 'solr/**'
@@ -115,7 +123,8 @@ jobs:
                       NotionPartialReadsAreNotCompleteTest \
                       NoJavadocIsOrphanedTest \
                       CanonicalImportServiceTest \
-                      TheSipLayoutIsWhereCommonsIpPutsItTest; do
+                      TheSipLayoutIsWhereCommonsIpPutsItTest \
+                      EvidenceProfileV1VectorsTest; do
             if ! printf '%s' "$NAMES" | tr ',' '\n' | grep -qx "$lock"; then
               echo "::error::$lock is not named in the unit -Dtest list, so nothing in it runs here"
               exit 1
@@ -139,7 +148,7 @@ jobs:
       - name: Run unit tests
         run: |
           mvn test \
-            -Dtest='ResourceBaseCsrfProtectionTest,CanonicalImportServiceTest,WebhookServiceTest,WebhookConfigTest,WebhookConfigParserTest,WebhookDeliveryServiceTest,HttpWebhookDispatcherTest,WebhookEventMatcherTest,ChildEventBatchProcessorTest,LiteralTypeValidatorTest,SolrPredicateWalkerMultilingualTest,SolrQueryProcessorScanCapTest,SolrQueryProcessorAclFilterTest,SolrUtilRelationshipReadersTest,ACLExpanderTest,PrincipalServiceImplCycleTest,SearchIndexReconciliationSchedulerTest,SearchIndexReconciliationFenceGuardTest,RAGIndexingServiceImplPwcTest,RAGIndexingServiceImplAclUpdateTest,AclEpochCounterServiceTest,Patch_AclEpochCounterTest,AclEpochStateTest,AclSemanticsGoldenTest,AclSemanticsCrossPathReportTest,AclSemanticsResolveAclIsRequiredTest,AclEffectiveEpochReadersProjectionTest,ContentWriterFenceTest,SolrUtilReadersFailureTest,CsrfValidatorBrowserBindingTest,NavigationPaginationTest,FilesystemImporterTest,ImportExportResourceTest,SlackConnectorAdapterTest,TeamsConnectorAdapterTest,ChatworkConnectorAdapterTest,MattermostConnectorAdapterTest,NotionConnectorAdapterTest,SalesforceConnectorAdapterTest,BoxDropboxAdapterTest,EverySupportedCouchDbIsMeasuredTest,APartialRunIsNotRecordedAsCompleteTest,NotionPartialReadsAreNotCompleteTest,NoJavadocIsOrphanedTest,TheSipLayoutIsWhereCommonsIpPutsItTest' \
+            -Dtest='ResourceBaseCsrfProtectionTest,CanonicalImportServiceTest,WebhookServiceTest,WebhookConfigTest,WebhookConfigParserTest,WebhookDeliveryServiceTest,HttpWebhookDispatcherTest,WebhookEventMatcherTest,ChildEventBatchProcessorTest,LiteralTypeValidatorTest,SolrPredicateWalkerMultilingualTest,SolrQueryProcessorScanCapTest,SolrQueryProcessorAclFilterTest,SolrUtilRelationshipReadersTest,ACLExpanderTest,PrincipalServiceImplCycleTest,SearchIndexReconciliationSchedulerTest,SearchIndexReconciliationFenceGuardTest,RAGIndexingServiceImplPwcTest,RAGIndexingServiceImplAclUpdateTest,AclEpochCounterServiceTest,Patch_AclEpochCounterTest,AclEpochStateTest,AclSemanticsGoldenTest,AclSemanticsCrossPathReportTest,AclSemanticsResolveAclIsRequiredTest,AclEffectiveEpochReadersProjectionTest,ContentWriterFenceTest,SolrUtilReadersFailureTest,CsrfValidatorBrowserBindingTest,NavigationPaginationTest,FilesystemImporterTest,ImportExportResourceTest,SlackConnectorAdapterTest,TeamsConnectorAdapterTest,ChatworkConnectorAdapterTest,MattermostConnectorAdapterTest,NotionConnectorAdapterTest,SalesforceConnectorAdapterTest,BoxDropboxAdapterTest,EverySupportedCouchDbIsMeasuredTest,APartialRunIsNotRecordedAsCompleteTest,NotionPartialReadsAreNotCompleteTest,NoJavadocIsOrphanedTest,TheSipLayoutIsWhereCommonsIpPutsItTest,EvidenceProfileV1VectorsTest' \
             -f core/pom.xml -Pdevelopment,opencmis-github-packages
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()

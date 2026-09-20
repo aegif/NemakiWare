@@ -3731,7 +3731,8 @@ class CanonicalImportServiceTest {
                 "NotionPartialReadsAreNotCompleteTest",
                 "NoJavadocIsOrphanedTest",
                 "CanonicalImportServiceTest",
-                "TheSipLayoutIsWhereCommonsIpPutsItTest")) {
+                "TheSipLayoutIsWhereCommonsIpPutsItTest",
+                "EvidenceProfileV1VectorsTest")) {
             if (!listed.contains(lock)) {
                 missing.add(lock);
             }
