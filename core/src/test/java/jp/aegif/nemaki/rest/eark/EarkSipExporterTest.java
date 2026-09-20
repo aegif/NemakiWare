@@ -113,6 +113,17 @@ class EarkSipExporterTest {
      * <p>Package-private so {@code TheSipLayoutIsWhereCommonsIpPutsItTest} can pin the layout
      * without a second copy of this fixture.
      */
+    /** The same package, with an evidence bundle wired so the v1 layout is written. */
+    static Path buildOneWithBundle(Path tmp,
+            jp.aegif.nemaki.evidence.EvidenceBundleAssembler assembler) throws Exception {
+        EarkSipExporter exporter = exporterOver(reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
+                "the minutes".getBytes(StandardCharsets.UTF_8));
+        exporter.setBundleAssembler(assembler);
+        return exporter
+                .export(REPO, OBJECT, EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp)
+                .sip();
+    }
+
     static Path buildOne(Path tmp) throws Exception {
         return exporterOver(reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
                 "the minutes".getBytes(StandardCharsets.UTF_8))

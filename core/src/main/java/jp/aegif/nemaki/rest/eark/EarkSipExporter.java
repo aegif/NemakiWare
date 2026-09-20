@@ -319,14 +319,23 @@ public class EarkSipExporter {
             // plus the checkpoint it was sealed under. Without the proof, a package carrying a
             // checkpoint would only say "this repository's chain was sealed at some point",
             // which says nothing about the document beside it — decoration, not evidence.
-            Map<String, Object> evidence = evidencePackage(repositoryId, objectId, notes);
-            evidence.put("evidenceRecord", evidenceRecord == null
-                    ? java.util.Map.of("present", false, "unavailable",
-                            "this node has no evidence record service wired")
-                    : evidenceRecord.asMap());
-            sip.addOtherMetadata(new IPMetadata(
-                    new IPFile(writeEvidencePackage(workDir, evidence)),
-                    new MetadataType(MetadataType.MetadataTypeEnum.OTHER)));
+            // Profile v1's layout when there is a statement to anchor it to; the legacy single
+            // file otherwise. NEVER both: the spec makes a package carrying both FAILED, because
+            // a verifier would have to choose which one is the evidence.
+            jp.aegif.nemaki.evidence.EvidenceBundle bundle = bundleAssembler == null ? null
+                    : bundleAssembler.assemble(repositoryId, objectId, objectId);
+            if (bundle != null && bundle.statement() != null) {
+                addEvidenceBundle(sip, workDir, bundle);
+            } else {
+                Map<String, Object> evidence = evidencePackage(repositoryId, objectId, notes);
+                evidence.put("evidenceRecord", evidenceRecord == null
+                        ? java.util.Map.of("present", false, "unavailable",
+                                "this node has no evidence record service wired")
+                        : evidenceRecord.asMap());
+                sip.addOtherMetadata(new IPMetadata(
+                        new IPFile(writeEvidencePackage(workDir, evidence)),
+                        new MetadataType(MetadataType.MetadataTypeEnum.OTHER)));
+            }
 
             IPRepresentation representation = new IPRepresentation("rep1");
             representation.addFile(new IPFile(payload));
@@ -991,6 +1000,47 @@ public class EarkSipExporter {
     public void setEvidenceRecordService(
             jp.aegif.nemaki.evidence.validity.EvidenceRecordService evidenceRecordService) {
         this.evidenceRecordService = evidenceRecordService;
+    }
+
+    private jp.aegif.nemaki.evidence.EvidenceBundleAssembler bundleAssembler;
+
+    /** Optional: without it every package is written in the legacy single-file layout. */
+    @Autowired(required = false)
+    public void setBundleAssembler(
+            jp.aegif.nemaki.evidence.EvidenceBundleAssembler bundleAssembler) {
+        this.bundleAssembler = bundleAssembler;
+    }
+
+    /**
+     * Adds profile v1's twelve files under {@code metadata/other/nemaki-evidence/}.
+     *
+     * <p>Each file is added by the path the WRITER returned, not by listing the directory: a
+     * listing would put whatever happened to be there into the METS, and the METS is what a
+     * verifier walks to decide the package is closed.
+     */
+    private void addEvidenceBundle(jp.aegif.nemaki.evidence.EvidenceBundle bundle,
+            org.roda_project.commons_ip2.model.SIP sip, Path stagingDir,
+            java.util.List<String> written) throws org.roda_project.commons_ip.utils.IPException {
+        for (String relative : written) {
+            Path file = stagingDir.resolve(relative);
+            // Everything before the file name becomes the folder chain commons-ip2 recreates
+            // inside metadata/other/. Without it the twelve files land flat beside each other
+            // and the layout the spec pins does not exist.
+            java.util.List<String> folders = new java.util.ArrayList<>(
+                    java.util.Arrays.asList(relative.split("/")));
+            folders.remove(folders.size() - 1);
+            sip.addOtherMetadata(new IPMetadata(new IPFile(file, folders),
+                    new MetadataType(MetadataType.MetadataTypeEnum.OTHER)));
+        }
+    }
+
+    private void addEvidenceBundle(org.roda_project.commons_ip2.model.SIP sip, Path workDir,
+            jp.aegif.nemaki.evidence.EvidenceBundle bundle)
+            throws IOException, org.roda_project.commons_ip.utils.IPException {
+        Path staging = Files.createDirectories(workDir.resolve("evidence"));
+        java.util.List<String> written =
+                new jp.aegif.nemaki.evidence.EvidenceBundleWriter(bundle).writeTo(staging);
+        addEvidenceBundle(bundle, sip, staging, written);
     }
 
     private Path writeEvidencePackage(Path workDir, Map<String, Object> evidence)

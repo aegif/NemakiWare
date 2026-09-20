@@ -28,6 +28,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -46,10 +47,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <h2>What it found</h2>
  *
- * <p>Our JSON goes to {@code metadata/other/}, as a FILE, beside the authenticity report. The
- * contract's directory does not exist today; whether commons-ip2 will carry one is a question
- * for the phase that adds the other nine files, and it has to be answered the same way — by
- * building a package and looking.
+ * <p>Our JSON goes to {@code metadata/other/}, as a FILE, beside the authenticity report.
+ *
+ * <p><b>The open question is answered.</b> This class used to say the contract's directory did
+ * not exist and that whether commons-ip2 would carry one had to be answered by building a
+ * package and looking. It was, on 2026-09-20: given an {@code IPFile} with relative folders,
+ * commons-ip2 recreates the directory inside {@code metadata/other/}, and a package built with
+ * an evidence bundle carries all twelve files at the paths the spec names. The test below is
+ * that measurement, not a prediction.
  */
 class TheSipLayoutIsWhereCommonsIpPutsItTest {
 
@@ -77,6 +82,74 @@ class TheSipLayoutIsWhereCommonsIpPutsItTest {
                         + "Entries: " + names);
         assertTrue(names.contains(ROOT + "metadata/other/nemaki-authenticity-report.json"),
                 "the report moved out from beside it: " + names);
+    }
+
+    /**
+     * An assembler that hands back one complete bundle, so a real package is built with the
+     * profile v1 layout rather than the legacy file.
+     */
+    private static jp.aegif.nemaki.evidence.EvidenceBundleAssembler assemblerReturning(
+            jp.aegif.nemaki.evidence.EvidenceBundle bundle) {
+        return new jp.aegif.nemaki.evidence.EvidenceBundleAssembler() {
+            @Override
+            public jp.aegif.nemaki.evidence.EvidenceBundle assemble(String repositoryId,
+                    String objectId, String versionObjectId) {
+                return bundle;
+            }
+        };
+    }
+
+    private static jp.aegif.nemaki.evidence.EvidenceBundle oneBundle() {
+        jp.aegif.nemaki.evidence.RecordContentStatementV1 statement =
+                new jp.aegif.nemaki.evidence.RecordContentStatementV1("bedroom", "doc-1", "doc-1",
+                        "att-1", "a".repeat(64), 11L,
+                        jp.aegif.nemaki.evidence.RecordContentStatementV1.CommitmentKind.CAPTURED,
+                        null, "2026-09-20T00:00:00Z");
+        jp.aegif.nemaki.evidence.EvidenceLedgerEntry entry =
+                jp.aegif.nemaki.evidence.EvidenceLedgerEntry.of("record-content", 1L,
+                        jp.aegif.nemaki.evidence.EvidenceLedgerEntry.SubjectKind
+                                .RECORD_CONTENT_STATE,
+                        "doc-1", statement.digest(), "2026-09-20T00:00:00Z", null);
+        jp.aegif.nemaki.evidence.EvidenceCheckpoint covering =
+                jp.aegif.nemaki.evidence.EvidenceCheckpoint.of("record-content", 1, 10, "aa", null,
+                        "2026-09-20T00:00:00Z");
+        return new jp.aegif.nemaki.evidence.EvidenceBundle("bedroom", "doc-1", "doc-1", statement,
+                entry,
+                new jp.aegif.nemaki.evidence.EvidenceBundle.InclusionProof(
+                        jp.aegif.nemaki.evidence.MerkleTree.hashLeaf(entry.entryHash()),
+                        java.util.List.of(), null),
+                covering, java.util.List.of(covering), covering, java.util.Map.of(),
+                "2026-09-20T01:00:00Z");
+    }
+
+    @Test
+    @DisplayName("with a bundle, the package carries the v1 directory and NOT the legacy file")
+    void theV1LayoutReplacesTheLegacyFile(@TempDir Path tmp) throws Exception {
+        List<String> names = entryNames(
+                EarkSipExporterTest.buildOneWithBundle(tmp, assemblerReturning(oneBundle())));
+
+        assertFalse(names.contains(ROOT + "metadata/other/nemaki-evidence.json"),
+                "a package must not carry both layouts: the spec makes that FAILED, because a "
+                        + "verifier would have to choose which one is the evidence. Entries: "
+                        + names);
+        for (String expected : List.of(
+                "metadata/other/nemaki-evidence/profile.json",
+                "metadata/other/nemaki-evidence/bundle-manifest.json",
+                "metadata/other/nemaki-evidence/record-content-statement.json",
+                "metadata/other/nemaki-evidence/record-content-statement.c14n",
+                "metadata/other/nemaki-evidence/ledger-entry.json",
+                "metadata/other/nemaki-evidence/ledger-entry.c14n",
+                "metadata/other/nemaki-evidence/inclusion-proof.json",
+                "metadata/other/nemaki-evidence/covering-checkpoint.json",
+                "metadata/other/nemaki-evidence/covering-checkpoint.c14n",
+                "metadata/other/nemaki-evidence/checkpoint-chain.json",
+                "metadata/other/nemaki-evidence/anchor-target-checkpoint.json",
+                "metadata/other/nemaki-evidence/anchor-target-checkpoint.c14n")) {
+            assertTrue(names.contains(ROOT + expected),
+                    expected + " is not in the package. The spec tells a third party to open "
+                            + "exactly this path, and commons-ip2 — not the exporter — decides "
+                            + "where a file lands. Entries: " + names);
+        }
     }
 
     @Test

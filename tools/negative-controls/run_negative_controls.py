@@ -10199,6 +10199,24 @@ CONTROLS = [
         expect_fail=['anUnaskableJournalYieldsNoStatement'],
     ),
     dict(
+        id='IK3',
+        what='a package carries BOTH the v1 directory and the legacy file, so a verifier has to choose which one is the evidence',
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/EarkSipExporter.java',
+        find='            if (bundle != null && bundle.statement() != null) {\n                addEvidenceBundle(sip, workDir, bundle);\n            } else {',
+        replace='            if (bundle != null && bundle.statement() != null) {\n                addEvidenceBundle(sip, workDir, bundle);\n            }\n            if (true) {',
+        test='TheSipLayoutIsWhereCommonsIpPutsItTest',
+        expect_fail=['theV1LayoutReplacesTheLegacyFile'],
+    ),
+    dict(
+        id='IL3',
+        what='the evidence files are added without their folder chain, so the twelve land flat in metadata/other and the layout the spec pins does not exist',
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/EarkSipExporter.java',
+        find='            folders.remove(folders.size() - 1);',
+        replace='            folders.clear();',
+        test='TheSipLayoutIsWhereCommonsIpPutsItTest',
+        expect_fail=['theV1LayoutReplacesTheLegacyFile'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",
