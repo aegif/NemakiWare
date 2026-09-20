@@ -153,7 +153,7 @@ class EverySupportedCouchDbIsMeasuredTest {
     }
 
     @Test
-    @DisplayName("the canon's control count is the runner's, and the whole batch's locks are in CI")
+    @DisplayName("the canon's control count is the runner's")
     void theRecordedNumbersAreTheRealOnes() throws IOException {
         // Two numbers this batch got wrong by hand. The control count went into the canon as
         // 791 when the file held 793 — read off "791 not measured by this run" without adding
@@ -178,6 +178,19 @@ class EverySupportedCouchDbIsMeasuredTest {
                 "the canon says " + recorded.group(1) + " controls and the runner declares "
                         + declared + ". A count nobody checks is how a retired or a missing "
                         + "control reads as a known rounding difference");
+
+        // The other number in the same sentence. "N added since the fourth sweep" is
+        // total − 704 by construction, and it was hand-written beside a hand-written total —
+        // so a control could be added, the total corrected, and this one left behind, which is
+        // how the paragraph's three figures came to disagree (subagent review, P2).
+        Matcher since = Pattern.compile("足した (\\d+) 本").matcher(canon);
+        assertTrue(since.find(), "the canon does not state how many were added since the sweep");
+        assertEquals(declared - 704, Integer.parseInt(since.group(1)),
+                "the canon says " + since.group(1) + " controls were added since the fourth "
+                        + "sweep and the total implies " + (declared - 704)
+                        + ". The sweep ledger is what says which controls have never been run "
+                        + "together, so a wrong figure there hides exactly the new ones");
+
 
         // The CI-coverage half of this check MOVED to CanonicalImportServiceTest. Two reasons,
         // both found by review: a class cannot notice its own exclusion from the list that runs

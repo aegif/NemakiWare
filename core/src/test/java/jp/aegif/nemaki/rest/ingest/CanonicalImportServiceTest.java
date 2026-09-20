@@ -3402,9 +3402,10 @@ class CanonicalImportServiceTest {
      *                          with the door it is reached from. They exist so that a NEW direct
      *                          writer — the way to add a door without re-asking — cannot arrive
      *                          unnamed
-     * @param reAskAbove        methods that reach a writer and re-ask by their OWN mechanism
-     *                          rather than by calling the guard. Named so that "below a door,
-     *                          which re-asks" is checkable rather than asserted
+     * @param reAskAbove        methods that re-ask by their OWN mechanism rather than by
+     *                          calling the guard, and that reach a writer — {@code execute} is
+     *                          also a writer itself. Named so that "below a door, which
+     *                          re-asks" is checkable rather than asserted
      */
     record DecorationScope(int version, java.util.List<String> includedOperations,
             java.util.Map<String, String> excludedOperations,
@@ -3413,7 +3414,16 @@ class CanonicalImportServiceTest {
             java.util.Map<String, String> notADecoration) {}
 
     /**
-     * Every call shape through which this class writes to the store.
+     * Every {@code *Service}-shaped call through which this class writes to the store.
+     *
+     * <p><b>Not "every call shape".</b> The derivation below is two conditions joined: the
+     * receiver's name ends in {@code Service} or {@code DaoService}, AND the method name starts
+     * with one of seventeen verbs. Earlier text named only the second as the remaining gap and
+     * headed itself "Every call shape", which the first contradicts — there are two store writes
+     * in this class today that no {@code *Service} receiver performs
+     * ({@code emitReimportEvent} and {@code openIfWriting}). They are recorded in R63 rather
+     * than chased: reviews have widened this list in four consecutive rounds, and the plan's
+     * rule for that is to stop widening and write down what is not covered.
      *
      * <p>The inventory is only as wide as this list, and the list was hand-written — twice. It
      * held two entries described as "both ways a decoration reaches the store"; it then held
@@ -3422,9 +3432,11 @@ class CanonicalImportServiceTest {
      * same method with a larger number.
      *
      * <p>So {@link #writeFormsInSource} derives the shapes MECHANICALLY and
-     * {@code theWriteFormsAreClosed} requires this list to cover every one of them. What is
-     * hand-written now is the PATTERN, and a service call that does not match it is the
-     * remaining gap — stated rather than implied.
+     * {@link #everyPostExecuteDecorationReAsksTheDelegation} requires this list to cover every
+     * one of them. What is hand-written now is the PATTERN — both halves of it — and that is the
+     * remaining gap, stated rather than implied. (The javadoc named a test called
+     * {@code theWriteFormsAreClosed}, which does not exist; {@code @code} is not checked, so the
+     * sentence claimed a guarantee under a name nothing answers to.)
      */
     private static final java.util.List<String> WRITE_FORMS = java.util.List.of(
             "contentService.update(",
@@ -3441,7 +3453,9 @@ class CanonicalImportServiceTest {
     /**
      * Every {@code someService.writeShapedMethod(} in the source, found by pattern.
      *
-     * <p>Comments and string literals are removed first, so a call named in prose is not a call.
+     * <p>String literals are removed HERE; comments are removed by the caller, which passes
+     * {@code JavaSource.withoutComments}. The javadoc said this method did both — a second
+     * caller handing it raw source would have counted calls named in prose as calls.
      */
     static java.util.List<String> writeFormsInSource(String source) {
         String withoutStrings = source.replaceAll("\"(\\\\.|[^\"\\\\])*\"", "\"\"");
@@ -3506,10 +3520,11 @@ class CanonicalImportServiceTest {
                             + "through refuseDecorationIfNoLongerAuthorized",
                     "execute", "re-asks the delegation TWICE itself (R5) — once after profile "
                             + "resolution and again immediately before the write — rather than "
-                            + "through refuseDecorationIfNoLongerAuthorized. It DOES write (the "
-                            + "checkIn, checkOut, createDocument and deleteObject shapes all sit "
-                            + "in it); an earlier version of this sentence said it did not, "
-                            + "which its own enumeration contradicted"),
+                            + "through refuseDecorationIfNoLongerAuthorized. It DOES write: "
+                            + "seven of the ten shapes sit in it (checkIn, checkOut, "
+                            + "createDocument, deleteObject, saveSourceReadToDlq, writeSetting, "
+                            + "deleteSettings). An earlier sentence said it did not write at "
+                            + "all, and the version after that counted four"),
             java.util.Map.of(
                     // Writes that are not decorations, so R48's question does not apply to them.
                     // They appear only because the shape list is now closed against the source.
@@ -3691,9 +3706,15 @@ class CanonicalImportServiceTest {
         // And it reads the -Dtest LISTS, not the file. The first version used
         // yaml.contains(name), which the workflow's own explanatory comment satisfied — the
         // "a sentence about the code is not the code" defect, committed in the fix for it.
+        java.nio.file.Path workflow =
+                java.nio.file.Path.of("../.github/workflows/integration-tests.yml");
+        // The move dropped the existence check the original had. Without it a renamed workflow
+        // throws NoSuchFileException, which the control runner scores as "fired for the wrong
+        // reason" rather than as a lock doing its job.
+        assertTrue(java.nio.file.Files.exists(workflow),
+                "the integration-tests workflow is not where this test looks: " + workflow);
         String yaml = java.nio.file.Files.readString(
-                java.nio.file.Path.of("../.github/workflows/integration-tests.yml"),
-                java.nio.charset.StandardCharsets.UTF_8);
+                workflow, java.nio.charset.StandardCharsets.UTF_8);
         java.util.List<String> listed = new java.util.ArrayList<>();
         java.util.regex.Matcher lists =
                 java.util.regex.Pattern.compile("-Dtest='([^']*)'").matcher(yaml);
