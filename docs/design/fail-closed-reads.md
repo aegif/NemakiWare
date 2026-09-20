@@ -15,6 +15,9 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
   メタデータ書き込み → 添付 PUT → 確定書き込みの 3 段を 1 つにはしない。
 - **通し negative-control は 704 本で完走した**（2026-09-19、exit 0。§5）。言えるのはそこまでで、
   コントロール×兄弟錠 2,403 組（R15）をはじめ §5 の測定の穴は測っていない。
+  **今の総数は 821 本で、その 821 本での通しは未実施**（差の 110 本は ID 指定でしか測っていない）。
+  計画 §16 は「Phase 1 の製品コミットのあと 1 回」と定めており、**Phase 1 は完了したので
+  この 1 回は期限が来ている**。「704 本が通った」を「今の木が通る」と読まないこと。
 
 ## 2. 凍結（CAS のためだけに限定解除、2026-09-15 バッチ 3）
 
@@ -114,21 +117,21 @@ attachment 行を作る → body を PUT」の順で（`ArchiveDaoDelegate` の 
 | R58 | **SIP 検証器の残りの精度**（11 巡目のレビューが記録した 4 件・いずれも `UNAVAILABLE` / `NOT_PRESENT` の**文面**の問題で、判定そのものは fail-closed）: (a) `inclusionProofFailed` が非文字列のときの腕、`not-chained` の既定文、message 無しの `unavailable` 腕 — **到達はするが fixture が無い**。(b) `{"inclusionProof": "n/a", "status":"success"}` が「proof が無い」の文に落ち、`noProofCheck` の「inclusionProof is not an object」に到達しない。(c) 読めない `status` について「この版が知らない理由」と述べる（注記が別文で救っている）。**この検証器は本番の呼び出し元を持たず、Phase 5 で独立 CLI として作り直す対象**なので、そこで正典ごと書き直す | Phase 5（独立 verifier） | |
 | R59 | **順序の保証が無い listing で last-edited の high-water を上げること自体は直していない。** Notion の `/search` に sort を渡していないので返る順は未規定で、limit や 50 ページ上限で切れたlisting の max(見た last_edited) を checkpoint にすると、**見ていないページのうち last_edited がそれより小さいものは以後の poll で恒久的に除外される**。A-8 で直したのは「切れたことを黙っていた」側で（`incompleteReads` / PARTIAL）、切り詰め自体は残る。閉じ方は `sort: {direction: ascending, timestamp: last_edited_time}` を足して listing を編集時刻の prefix にし、境界の同時刻グループを次回に回すこと — **実機の Notion が無いと検証できないので、このセッションでは足していない**（検証できない API パラメータを入れると、落ちたときに connector ごと止まる）。**checkpoint を上げない**という選択は採らなかった: 既定 limit は 50 なので、50 ページを超えるworkspace で前進しなくなる（過剰拒否）。**同じ形は他の connector にもある** — `incompleteReads` の経路は用意したが、埋めているのは Notion だけ | 実機 Notion で sort を確認できるとき、および connector ごとに | |
 | R60 | **A-8 の拒否が届く範囲**（subagent P3、方向は正しいので記録のみ）: `/search` と `blocks/{id}/children` の**間に削除・共有解除されたページ**は Notion が 404 を返し、新しい拒否がそれも巻き込む → エラー + 二度と replay で成功しない DLQ 行。また全ページ 429 の poll は `imported()==0 && hasErrors()` になり circuit breaker が進む（修正前は「添付なしで取り込み」＝ breaker reset だった）。**空ページ・空 `results` は巻き込んでいない**（両方向とも錠と control FG3 で測れている）。閉じ方は 404 を「このページはもう無い」という**答え**として分けること — Notion の 404 は「無い」と「見えない」を区別しないので、区別できない以上どちらに倒すかは設計判断 | 404 の意味を決めるとき | |
-| R61 | **`has_more` の欠落・不正型を `false`（= 後続なし）として読む。** `root.path("has_more").asBoolean(false)` は、field が無い応答を黙って「もう無い」にする (`NotionConnectorAdapter` の search と block listing の両方)。同じメソッドの直前で **`results` の欠落は malformed として拒否している**ので非対称で、javadoc の 「`complete` is true only where Notion has ANSWERED」はコードより強い。塞ぎ方は `results` の腕と同じ（`root.has("has_more")` が偽なら refuse）。**直していない理由**: 計画 §13 の「同じ領域の 2 度目の P1 は残件に戻して止まる」— listing の完了判定は 1 巡目で既に P1 を 2 件出しており、これがその領域の 3 件目。旧コードも同じ `asBoolean(false)` だったので、このバッチが作った欠陥ではない （Codex 2 巡目 P1 / subagent 2 巡目 P2-1、指摘は独立に一致） | listing の領域を開けるとき | |
-| R62 | **手動実行の結果を「押した人」にどう述べるか — R14 から切り出して止める。** `FetchResult.runStatus()` の下流（`IngestSchedulerController` / `FolderConnectorController` の応答、`DocumentList.tsx#handleRunConnector`、`SchedulerStatusTab.tsx#handleTrigger`、およびその i18n 文面）。**4 巡連続で同じ領域に P1 が出た**（1 巡目=サーバ 2 扉、2 巡目=画面 2 つ、3 巡目=同じ `if`、4 巡目=同じ 10 行）。計画 §13 / §17 の「同じ領域の 2 度目の P1 は残件に戻して止まる」は**2 巡目の時点で既に満たされていた**のに、「自分の半端な変更だから」という理由で 3 巡開け続けた（両レビュアが独立に指摘）。**残っている既知の欠陥**: (a) toast の本文が `runConnectorDone`（「取込完了」/ "Import finished"）のままで、分岐は `status` に直ったが**主語が「完了した」**、しかも `failed` 件数が文にも数にも出ない。(b) `incompleteReads ?? errors` は**両方あるとき errors を捨てる**（切り詰め＋取込失敗の同時発生で失敗理由が消える）。`(a ?? []).concat(b ?? [])` で足りる。**同じ欠陥が `SchedulerStatusTab.tsx` にもう 1 つある**（`Array.isArray(incompleteReads) ? … : Array.isArray(errors) ? …` で同じく errors を捨てる）— (b) を文言どおり直すと DocumentList だけ直って残る。さらに `cmis.ts` の `sawEverything` は 3 巡目に判定が `status` へ移って以降**どの画面も読んでいない**のに、javadoc は現役の保証のように述べている。(c) `SchedulerStatusTab` の `else` は到達不能（`parseJsonOrThrow` が非 2xx で投げる）で、503「retry shortly」/ 404 / 409 が `catch` の一律「トリガーに失敗しました」に吸われる（「訊けなかった」を「失敗」と同値にする形）。(d) 錠は `'partial'` と `message.warning` の**存在**しか測らず、両者の制御関係も過剰拒否側の対照も無い。**開けるときは (a)〜(d) をまとめて 1 バッチで**（局所修正のたびに別の partial の形が落ちる、というのが 4 巡の実績） | R14 とは別に開けるとき | 両レビュア 4 巡目 |
-| R63 | **装飾インベントリ（A-6 / R48 の錠）の列挙範囲 — 4 度目は広げずに止める。** `WRITE_FORMS` とその機械導出 `writeFormsInSource` は **2・3・4・5 巡目と 4 巡連続で指摘**を受けた（2 形 → 7 形 → 10 形 + 機械導出）。両レビュアが「§13 / §17 の止め方はここにも当てはまる、4 度目に広げるな」と判定。**残っている既知の穴**: (a) 導出は `receiver が *Service で終わる` AND `メソッド名が 17 動詞で始まる` の連言で、**受け手側の条件は残る穴として書かれていなかった**。実際に今日の木に 2 件 — `emitReimportEvent`（`ingestLineageEmitter.emitLineageEvent` が journal 行を書く）と `openIfWriting`（`captureScope.ensureIntentOpened()` が intent 行を書く）— がどのリストにも出ない。(b) `notADecoration` は**反証されない免除カテゴリ**: 名前を置けば `unaccounted` から消え、呼び出し元検査も `writersBelowADoor` しか見ない。分類を否定する control が無い。**`reAskAbove` も同型** — キーに対する検査は`source.contains(name + "(")` の存在だけで、(1) 実際に問い直すか (2) writer に届くかはどちらも測っていない（`writersBelowADoor` は declared↔found を測っているので非対称）。(c) **導出器そのものが測られていない**: 動詞表から 1 語外しても、文字列リテラル除去を外しても錠は緑（後者は過剰拒否の側 — ログ文に `"fooService.writeSetting("` と書くと実在しない write form として CI が拒否する）。**開けるときは (a)〜(c) をまとめて**、かつ「列挙の入力を列挙する」形を設計してから （手で広げる→指摘→広げる、を 4 巡やった） | A-6 の錠を設計し直すとき | 両レビュア 5 巡目 |
+| R61 | **凍結（ユーザー指示 2026-09-20）— 開かない。** **`has_more` の欠落・不正型を `false`（= 後続なし）として読む。** `root.path("has_more").asBoolean(false)` は、field が無い応答を黙って「もう無い」にする (`NotionConnectorAdapter` の search と block listing の両方)。同じメソッドの直前で **`results` の欠落は malformed として拒否している**ので非対称で、javadoc の 「`complete` is true only where Notion has ANSWERED」はコードより強い。塞ぎ方は `results` の腕と同じ（`root.has("has_more")` が偽なら refuse）。**直していない理由**: 計画 §13 の「同じ領域の 2 度目の P1 は残件に戻して止まる」— listing の完了判定は 1 巡目で既に P1 を 2 件出しており、これがその領域の 3 件目。旧コードも同じ `asBoolean(false)` だったので、このバッチが作った欠陥ではない （Codex 2 巡目 P1 / subagent 2 巡目 P2-1、指摘は独立に一致） | listing の領域を開けるとき | |
+| R62 | **凍結（ユーザー指示 2026-09-20）— 開かない。** **手動実行の結果を「押した人」にどう述べるか — R14 から切り出して止める。** `FetchResult.runStatus()` の下流（`IngestSchedulerController` / `FolderConnectorController` の応答、`DocumentList.tsx#handleRunConnector`、`SchedulerStatusTab.tsx#handleTrigger`、およびその i18n 文面）。**4 巡連続で同じ領域に P1 が出た**（1 巡目=サーバ 2 扉、2 巡目=画面 2 つ、3 巡目=同じ `if`、4 巡目=同じ 10 行）。計画 §13 / §17 の「同じ領域の 2 度目の P1 は残件に戻して止まる」は**2 巡目の時点で既に満たされていた**のに、「自分の半端な変更だから」という理由で 3 巡開け続けた（両レビュアが独立に指摘）。**残っている既知の欠陥**: (a) toast の本文が `runConnectorDone`（「取込完了」/ "Import finished"）のままで、分岐は `status` に直ったが**主語が「完了した」**、しかも `failed` 件数が文にも数にも出ない。(b) `incompleteReads ?? errors` は**両方あるとき errors を捨てる**（切り詰め＋取込失敗の同時発生で失敗理由が消える）。`(a ?? []).concat(b ?? [])` で足りる。**同じ欠陥が `SchedulerStatusTab.tsx` にもう 1 つある**（`Array.isArray(incompleteReads) ? … : Array.isArray(errors) ? …` で同じく errors を捨てる）— (b) を文言どおり直すと DocumentList だけ直って残る。さらに `cmis.ts` の `sawEverything` は 3 巡目に判定が `status` へ移って以降**どの画面も読んでいない**のに、javadoc は現役の保証のように述べている。(c) `SchedulerStatusTab` の `else` は到達不能（`parseJsonOrThrow` が非 2xx で投げる）で、503「retry shortly」/ 404 / 409 が `catch` の一律「トリガーに失敗しました」に吸われる（「訊けなかった」を「失敗」と同値にする形）。(d) 錠は `'partial'` と `message.warning` の**存在**しか測らず、両者の制御関係も過剰拒否側の対照も無い。**開けるときは (a)〜(d) をまとめて 1 バッチで**（局所修正のたびに別の partial の形が落ちる、というのが 4 巡の実績） | R14 とは別に開けるとき | 両レビュア 4 巡目 |
+| R63 | **凍結（ユーザー指示 2026-09-20）— 開かない。** **装飾インベントリ（A-6 / R48 の錠）の列挙範囲 — 4 度目は広げずに止める。** `WRITE_FORMS` とその機械導出 `writeFormsInSource` は **2・3・4・5 巡目と 4 巡連続で指摘**を受けた（2 形 → 7 形 → 10 形 + 機械導出）。両レビュアが「§13 / §17 の止め方はここにも当てはまる、4 度目に広げるな」と判定。**残っている既知の穴**: (a) 導出は `receiver が *Service で終わる` AND `メソッド名が 17 動詞で始まる` の連言で、**受け手側の条件は残る穴として書かれていなかった**。実際に今日の木に 2 件 — `emitReimportEvent`（`ingestLineageEmitter.emitLineageEvent` が journal 行を書く）と `openIfWriting`（`captureScope.ensureIntentOpened()` が intent 行を書く）— がどのリストにも出ない。(b) `notADecoration` は**反証されない免除カテゴリ**: 名前を置けば `unaccounted` から消え、呼び出し元検査も `writersBelowADoor` しか見ない。分類を否定する control が無い。**`reAskAbove` も同型** — キーに対する検査は`source.contains(name + "(")` の存在だけで、(1) 実際に問い直すか (2) writer に届くかはどちらも測っていない（`writersBelowADoor` は declared↔found を測っているので非対称）。(c) **導出器そのものが測られていない**: 動詞表から 1 語外しても、文字列リテラル除去を外しても錠は緑（後者は過剰拒否の側 — ログ文に `"fooService.writeSetting("` と書くと実在しない write form として CI が拒否する）。**開けるときは (a)〜(c) をまとめて**、かつ「列挙の入力を列挙する」形を設計してから （手で広げる→指摘→広げる、を 4 巡やった） | A-6 の錠を設計し直すとき | 両レビュア 5 巡目 |
 | D1 | token 付き行の**添付前検査**（57 巡）、添付を landed の証拠に読む**自己修復**（58 巡）、15 分で通常経路に落とす **lease**（59 巡） | 凍結解除まで再導入しない | やめた（いずれも古い bytes を新しいメタデータで再生する同じ class に落ちた） |
 
 ## 5. 測定
 
-- コントロール **813**（2026-09-20 時点）。**4 回目の通しが流したのは 704 本**（当時の総数）。
-  以後に足した **CK3 以降の 110 本**は一度も通しに入れていない。
+- コントロール **821**（2026-09-20 時点）。**4 回目の通しが流したのは 704 本**（当時の総数）。
+  以後に足した **CK3 以降の 118 本**は一度も通しに入れていない。
   （704 + 110 が総数に合わないのは、DG3 / DJ3 を足した後に退役させたため。
   SIP 検証器の読みを手組みからパーサに替えたので、細工の対象そのものが無くなった。
   **合わない差を計算で埋めない** — 錠が突き合わせるのは「CK3 以降の集合」であって、導出した数ではない）（CK3 / CL3 BagIt、CM3 stamp、CN3 / CO3 強制変換ログ、CP3 setup URL、CQ3 指紋、
   CR3 / CS3 / CT3 SIP の verdict、CU3〜CX3 内容複製、CY3 / CZ3 / DA3 / DC3〜DF3 / DL3〜DP3
   証拠 JSON の読み、DR3〜EF3 package 自身が述べた理由・重複キー・BOM・未知の理由・規則の一本化、
-  DB3 / DH3 / DI3 / DK3 / DQ3 中身の無い添付行・復元の窓・割り込み、EG3〜EI3 mapper の一本化、EJ3〜EL3 purge の走査上限、EM3 一覧の overload、EN3〜EP3 パス解決の期待値表、EQ3〜ES3 二重保護の各錨、ET3 / EU3 装飾の scope 付き列挙、EV3〜EZ3 版ごとの実測とその fail-closed、FA3〜FG3 Notion の読み切れなかった listing、FH3〜FR3 確認レビュー 1 巡目の処置、FS3〜FX3 2 巡目の処置、FY3 / FZ3 / GA3 3 巡目の処置、GB3 / GC3 4 巡目の処置、GD3〜GF3 5・6 巡目の処置、GG3〜GJ3 7 巡目、GK3 Phase 2 の配置、GL3〜GO3 8 巡目、GP3〜GR3 Phase 2 の profile 仕様）は
+  DB3 / DH3 / DI3 / DK3 / DQ3 中身の無い添付行・復元の窓・割り込み、EG3〜EI3 mapper の一本化、EJ3〜EL3 purge の走査上限、EM3 一覧の overload、EN3〜EP3 パス解決の期待値表、EQ3〜ES3 二重保護の各錨、ET3 / EU3 装飾の scope 付き列挙、EV3〜EZ3 版ごとの実測とその fail-closed、FA3〜FG3 Notion の読み切れなかった listing、FH3〜FR3 確認レビュー 1 巡目の処置、FS3〜FX3 2 巡目の処置、FY3 / FZ3 / GA3 3 巡目の処置、GB3 / GC3 4 巡目の処置、GD3〜GF3 5・6 巡目の処置、GG3〜GJ3 7 巡目、GK3 Phase 2 の配置、GL3〜GO3 8 巡目、GP3〜GR3 Phase 2 の profile 仕様、GS3〜GZ3 進捗文書の数・凍結・G0・通しの期限）は
   **ID 指定で 1 本ずつ実測しただけ**で、通しに入れたことはない。次の通しで初めて
   「他の錠を巻き添えにしないか」が測られる（CZ3 / DE3 / DH3 は実際に巻き込みがあり、宣言を足した）。
   **3 本が「発火しない」ことも分かった** — 新しい arm（空の path は `UNAVAILABLE`）が
@@ -148,6 +151,14 @@ attachment 行を作る → body を PUT」の順で（`ArchiveDaoDelegate` の 
   測ったのは強める前の木だった。以後、**そのテストクラスを狙う control は全部まとめて
   回す**（23 本・約 12 分）。実測すると 2 本が「別の錠で落ちていた」ので、
   細工の狙いも直した。
+  **2026-09-20、通しの事前検査だけを走らせたら錨が 1 本外れていた** — GJ3（workflow の
+  `paths:` から 1 行落とす細工）は、Phase 2 のコミットが同じ一覧に 2 行足した時点で
+  一致しなくなっていた。**通しはそこで死に、以後の control は 1 本も走らない**。
+  ID 指定の実測は**他の control の錨を見ない**ので、1 日気づかなかった。
+  処置: GJ3 を「落とす行で終わる span」に変え、同じ形で毎回古びていた **FZ3 / GD3**
+  （本数そのものを錨にしていた）も数を挟む span にした。
+  **教訓は「事前検査は通しの前に単体で流せる」**（`anchors_still_match()` は control を
+  1 本も実行しない）。
   **レビュー中に runner を走らせた**（4 巡目、DJ3 / DK3 / DH3）。細工中の木を subagent が
   読み、`.nc-backup` と細工済みのソースを見て「手続き上の事故」として報告した。
   指摘自体はコミット済みの範囲に対するものだったので結論は無事だが、

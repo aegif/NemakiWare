@@ -9579,7 +9579,10 @@ CONTROLS = [
         id='FZ3',
         what="the canon's control count stops being the runner's, so a retired or missing control reads as a known rounding difference",
         file='docs/design/fail-closed-reads.md',
-        find='- コントロール **813**',
+        # A SPAN around the number, not the number itself. Anchoring on the literal count
+        # meant this control drifted every single time a control was added — twice now, and
+        # both times the sweep would have stopped here rather than at a real defect.
+        find_span=('- コントロール **', '**'),
         replace='- コントロール **791**',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -9615,7 +9618,9 @@ CONTROLS = [
         id='GD3',
         what='the unswept boundary count stops matching the runner, so the next full sweep is planned against a smaller set than exists',
         file='docs/design/fail-closed-reads.md',
-        find='**CK3 以降の 110 本**',
+        # Same reason as FZ3: the span brackets the number so the anchor survives the next
+        # batch that adds a control.
+        find_span=('**CK3 以降の ', ' 本**'),
         replace='**CK3 以降の 101 本**',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -9669,10 +9674,16 @@ CONTROLS = [
         id='GJ3',
         what='a path is dropped from the workflow, so a change to the file a lock reads does not start the workflow that runs the lock',
         file='.github/workflows/integration-tests.yml',
-        find="      - 'tools/negative-controls/**'\n      - 'docs/design/fail-closed-reads.md'\n      - 'common/**'\n      - 'cloudant-init/**'\n      - 'solr/**'\n      - 'docker/core/**'\n      - 'docker/solr/**'\n      - 'docker/docker-compose-simple.yml'\n      - '.github/workflows/integration-tests.yml'\n      - 'scripts/ci-complete-setup.sh'\n      - 'scripts/ci-seed-odata-docs.sh'\n  pull_request:",
-        replace="      - 'docs/design/fail-closed-reads.md'\n      - 'common/**'\n      - 'cloudant-init/**'\n      - 'solr/**'\n      - 'docker/core/**'\n      - 'docker/solr/**'\n      - 'docker/docker-compose-simple.yml'\n      - '.github/workflows/integration-tests.yml'\n      - 'scripts/ci-complete-setup.sh'\n      - 'scripts/ci-seed-odata-docs.sh'\n  pull_request:",
+        # A SPAN that ends at the path being dropped, not a literal run of every path after it.
+        # The first version listed the whole tail; the very next batch inserted two paths in the
+        # middle of it, the anchor stopped matching, and the sweep would have DIED here — at the
+        # first control after the change, with every control after it unrun. Nothing noticed,
+        # because running controls one id at a time never asks whether the others still apply.
+        find_span=("    branches: [ master, main, develop, 'release/**' ]",
+                   "      - 'tools/negative-controls/**'"),
+        replace="    branches: [ master, main, develop, 'release/**' ]\n    paths:\n      - 'pom.xml'\n      - 'core/src/main/java/**'\n      - 'core/src/test/java/**'\n      - 'core/pom.xml'\n      - 'core/src/main/webapp/WEB-INF/**'\n      # The unit job carries a lock that reads the manual-run SCREENS. Without this a\n      # UI-only revert does not start this workflow at all, so the lock is on the list\n      # and the list never runs for the change it guards.\n      - 'core/src/main/webapp/ui/src/**'\n      # The unit job counts the controls and checks the canon's number against them.\n      # Without these, retiring a control or editing that number does not start this\n      # workflow, so the check exists and never gates (Codex review, P2).\n",
         test='EverySupportedCouchDbIsMeasuredTest',
-        expect_fail=['theGateRunsForTheFilesItGuards', 'theRecordedNumbersAreTheRealOnes'],
+        expect_fail=['theGateRunsForTheFilesItGuards'],
     ),
     dict(
         id='GK3',
@@ -9745,6 +9756,84 @@ CONTROLS = [
         replace='        return LineageCanonicalHash.hash(HASH_DOMAIN, domain,',
         test='EvidenceProfileV1VectorsTest',
         expect_fail=['theProductAgreesWithTheVectors'],
+    ),
+    dict(
+        id='GS3',
+        what="the readiness document's count of treated residuals goes stale, so the summary of the work reads smaller than the work",
+        file='docs/design/v3.4-release-readiness.md',
+        find='**処置済み 43 / 開いている 20**',
+        replace='**処置済み 35 / 開いている 20**',
+        test='ReleaseReadinessIsMeasuredTest',
+        expect_fail=['theReadinessCountsAreTheCanonsRows'],
+    ),
+    dict(
+        id='GT3',
+        what='the readiness document states a control total the runner does not declare, so a sweep of 710 reads as a sweep of today',
+        file='docs/design/v3.4-release-readiness.md',
+        find='負のコントロール **821 本**',
+        replace='負のコントロール **710 本**',
+        test='ReleaseReadinessIsMeasuredTest',
+        expect_fail=['theReadinessControlCountIsTheRunners'],
+    ),
+    dict(
+        id='GU3',
+        what='an open residual drops out of the readiness breakdown, so work that is open is accounted for nowhere',
+        file='docs/design/v3.4-release-readiness.md',
+        # The group count moves with it, so the sabotage is internally consistent — which is the
+        # point. A check that only read the numbers beside each other would stay green.
+        find='**実際に開いている 10** — R53 / R55〜R63',
+        replace='**実際に開いている 9** — R55〜R63',
+        test='ReleaseReadinessIsMeasuredTest',
+        expect_fail=['everyOpenResidualIsInExactlyOneGroup'],
+    ),
+    dict(
+        id='GV3',
+        what='a frozen residual stops saying it is frozen, so the next batch opens the area the owner closed',
+        file='docs/design/fail-closed-reads.md',
+        find='| R62 | **凍結（ユーザー指示 2026-09-20）— 開かない。** ',
+        replace='| R62 | ',
+        test='ReleaseReadinessIsMeasuredTest',
+        expect_fail=['theFrozenResidualsAreMarkedInBothPlaces'],
+    ),
+    dict(
+        id='GW3',
+        what="Phase 0's gate stops being recorded as unmet while the profile spec still leaves the canonical form unspecified",
+        file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
+        find='不明な正準化 field・trust 意味が残っていない → **未達**（下記 G0） |',
+        replace='不明な正準化 field・trust 意味が残っていない |',
+        test='ReleaseReadinessIsMeasuredTest',
+        expect_fail=['phaseZerosGateTracksTheSpec'],
+    ),
+    dict(
+        id='GX3',
+        what='a Track A row stops agreeing with the residual table it points at, so the plan reads as having outstanding work it has finished — or finished work it has not',
+        file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
+        find='**処置済み 2026-09-20**: 全 overload が同じ順序規則を通る。control EM3',
+        replace='全 overload が同じ順序規則を通る。control EM3',
+        test='ReleaseReadinessIsMeasuredTest',
+        expect_fail=['everyTrackARowAgreesWithTheResidualTable'],
+    ),
+    dict(
+        id='GY3',
+        what="the readiness document stops marking the sweep outstanding, so a finished sweep of 704 controls reads as a measurement of today's 821",
+        file='docs/design/v3.4-release-readiness.md',
+        find='| **821 本** | **期限切れ**（下記） |',
+        replace='| **821 本** | 済 |',
+        test='ReleaseReadinessIsMeasuredTest',
+        expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
+    ),
+    dict(
+        id='GZ3',
+        what='a progress document drops out of the workflow paths, so editing a count in it does not start the workflow that checks the count',
+        file='.github/workflows/integration-tests.yml',
+        # A span, for the reason GJ3 now carries: the two paths blocks are identical, so no short
+        # literal inside one of them is unique, and the tail-of-the-file form drifts the moment a
+        # path is added.
+        find_span=("    branches: [ master, main, develop, 'release/**' ]",
+                   "      - 'docs/design/v3.4-release-readiness.md'"),
+        replace="    branches: [ master, main, develop, 'release/**' ]\n    paths:\n      - 'pom.xml'\n      - 'core/src/main/java/**'\n      - 'core/src/test/java/**'\n      - 'core/pom.xml'\n      - 'core/src/main/webapp/WEB-INF/**'\n      # The unit job carries a lock that reads the manual-run SCREENS. Without this a\n      # UI-only revert does not start this workflow at all, so the lock is on the list\n      # and the list never runs for the change it guards.\n      - 'core/src/main/webapp/ui/src/**'\n      # The unit job counts the controls and checks the canon's number against them.\n      # Without these, retiring a control or editing that number does not start this\n      # workflow, so the check exists and never gates (Codex review, P2).\n      - 'tools/negative-controls/**'\n      - 'docs/design/fail-closed-reads.md'\n      # The evidence profile spec and the vectors both languages read. A change to\n      # either is a change to what every external verifier must do.\n      - 'docs/design/evidence-profile-v1.md'\n      - 'core/src/test/resources/evidence/**'\n      # The progress documents. A lock reads their counts against the canon and the\n      # runner, and reads the Phase 0 gate against the profile spec. Editing a number\n      # in either of these is exactly the change that has to start this workflow.\n      - 'docs/design/v3.4.0-evidence-and-residuals-plan.md'\n",
+        test='ReleaseReadinessIsMeasuredTest',
+        expect_fail=['theGateRunsForTheDocumentsThisLockReads'],
     ),
     dict(
         id="DQ3",

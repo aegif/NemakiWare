@@ -3732,7 +3732,8 @@ class CanonicalImportServiceTest {
                 "NoJavadocIsOrphanedTest",
                 "CanonicalImportServiceTest",
                 "TheSipLayoutIsWhereCommonsIpPutsItTest",
-                "EvidenceProfileV1VectorsTest")) {
+                "EvidenceProfileV1VectorsTest",
+                "ReleaseReadinessIsMeasuredTest")) {
             if (!listed.contains(lock)) {
                 missing.add(lock);
             }
