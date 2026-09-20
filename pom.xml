@@ -17,6 +17,8 @@
         <module>common</module>
         <module>core</module>
         <module>cloudant-init</module>
+        <!-- The independent verifier. Deliberately NOT depending on core; see its own pom. -->
+        <module>evidence-verifier-core</module>
     </modules>
 </project>
 

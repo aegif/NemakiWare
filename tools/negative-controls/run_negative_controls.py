@@ -61,6 +61,17 @@ from xml.etree import ElementTree
 REPO = Path(__file__).resolve().parents[2]
 REPORTS = REPO / "core" / "target" / "surefire-reports"
 
+
+def reports_for(module: str):
+    """Where surefire writes for one module.
+
+    A second module arrived with the independent verifier (plan §10), whose whole claim is that
+    it does NOT live in core. Its controls have to run where its tests are, and reading core's
+    report directory for them would score every one of them as "no report" — which the runner
+    correctly treats as a failure to measure, but for the wrong reason.
+    """
+    return REPO / module / "target" / "surefire-reports"
+
 # Each control: id, description, file, sabotage (find -> replace), test class,
 # and the test methods that MUST fail under the sabotage.
 CONTROLS = [
@@ -10253,6 +10264,36 @@ CONTROLS = [
         expect_fail=['twoPremisDocumentsAreAmbiguous'],
     ),
     dict(
+        id='IQ3',
+        what='the independent verifier hashes Merkle nodes over raw bytes (RFC 6962) instead of concatenated hex, so it disagrees with every root the product ever wrote',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/Merkle.java',
+        module='evidence-verifier-core',
+        find="        out.writeBytes(((left == null ? \"\" : left) + (right == null ? \"\" : right))\n                .getBytes(StandardCharsets.UTF_8));",
+        replace="        out.writeBytes(Canonical.sha256((left + right).getBytes(StandardCharsets.UTF_8)));",
+        test='ThreeImplementationsAgreeTest',
+        expect_fail=['theVerifierAgreesWithTheVectors', 'theProofRoundTripAgrees'],
+    ),
+    dict(
+        id='IR3',
+        what='the independent verifier sorts map keys by UTF-16 code unit, so any document with a key outside the BMP digests differently — and only those documents',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/Canonical.java',
+        module='evidence-verifier-core',
+        find='        byte[] a = left.getBytes(StandardCharsets.UTF_8);\n        byte[] b = right.getBytes(StandardCharsets.UTF_8);',
+        replace='        byte[] a = left.getBytes(StandardCharsets.UTF_16BE);\n        byte[] b = right.getBytes(StandardCharsets.UTF_16BE);',
+        test='TheVerifierStandsAloneTest',
+        expect_fail=['theEncodingSortsByUtf8Bytes'],
+    ),
+    dict(
+        id='IS3',
+        what='the independent verifier accepts a document with duplicate keys, committing to whichever reading its parser chose',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/Json.java',
+        module='evidence-verifier-core',
+        find='            if (map.containsKey(key)) {',
+        replace='            if (false) {',
+        test='ThreeImplementationsAgreeTest',
+        expect_fail=['theVerifierRefusesWhatTheSpecRefuses'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",
@@ -10558,7 +10599,7 @@ def run_exit_message(results: list, undeclared: list, gaps: list):
     return None
 
 
-def run_test(test_class: str) -> tuple:
+def run_test(test_class: str, module: str = "core") -> tuple:
     """Run one class; return (all_green, failed_methods, unreadable_names, failure_texts).
 
     Everything comes from surefire's XML: the failing method NAMES (an attribute) and each
@@ -10569,9 +10610,11 @@ def run_test(test_class: str) -> tuple:
     ran into another test's message in both directions. An attribute and an element cannot be
     confused with prose.
     """
-    for old in REPORTS.glob("*.txt"):
+    reports = reports_for(module)
+    reports.mkdir(parents=True, exist_ok=True)
+    for old in reports.glob("*.txt"):
         old.unlink()
-    for old in REPORTS.glob("*.xml"):
+    for old in reports.glob("*.xml"):
         old.unlink()
     # No -DfailIfNoTests=false: with it, a renamed or moved test class became a zero-test
     # green — the sabotage phase would then misread the silence as "protects nothing" and the
@@ -10579,7 +10622,7 @@ def run_test(test_class: str) -> tuple:
     # to as well.
     purge_poisoned_classes()
     proc = subprocess.run(
-        ["mvn", "-o", "-q", "-pl", "core", "test", f"-Dtest={test_class}",
+        ["mvn", "-o", "-q", "-pl", module, "test", f"-Dtest={test_class}",
          # The UI bundle is not part of what any control measures — every sabotage
          # is Java and every lock is a Java test — but frontend-maven-plugin runs
          # npm at generate-resources on EVERY build: about 40 seconds of the 43 a
@@ -10590,17 +10633,17 @@ def run_test(test_class: str) -> tuple:
          "-Dskip.npm=true", "-Dskip.installnodenpm=true"],
         cwd=REPO, capture_output=True, text=True, timeout=900)
     if any("Unresolved compilation problem" in x.read_text(errors="replace")
-           for x in REPORTS.glob("TEST-*.xml")):
+           for x in reports.glob("TEST-*.xml")):
         # The IDE's language server wrote an error-bearing class into the Maven output
         # directory while this control's sabotage was in flight, and the incremental build
         # kept it: the reports then say "CouchConflicts cannot be resolved" instead of
         # measuring the lock. Not a measurement. Purge and run ONCE more (2026-09-15).
         print("  (poisoned class files from the IDE — purged, re-running once)")
         purge_poisoned_classes()
-        for old in list(REPORTS.glob("*.txt")) + list(REPORTS.glob("*.xml")):
+        for old in list(reports.glob("*.txt")) + list(reports.glob("*.xml")):
             old.unlink()
         proc = subprocess.run(
-            ["mvn", "-o", "-q", "-pl", "core", "test", f"-Dtest={test_class}",
+            ["mvn", "-o", "-q", "-pl", module, "test", f"-Dtest={test_class}",
          # The UI bundle is not part of what any control measures — every sabotage
          # is Java and every lock is a Java test — but frontend-maven-plugin runs
          # npm at generate-resources on EVERY build: about 40 seconds of the 43 a
@@ -10611,12 +10654,12 @@ def run_test(test_class: str) -> tuple:
          "-Dskip.npm=true", "-Dskip.installnodenpm=true"],
             cwd=REPO, capture_output=True, text=True, timeout=900)
     failed_methods, unreadable, failure_texts = failing_methods_in_reports(
-        [x.read_text(errors="replace") for x in REPORTS.glob("TEST-*.xml")])
+        [x.read_text(errors="replace") for x in reports.glob("TEST-*.xml")])
     # Two ways a run measures nothing, both hit by hand before this runner existed:
     # the literal marker, and — sturdier — a nonzero exit with NO reports at all
     # (a broken build writes none; a red test writes them and also exits nonzero).
     output = proc.stdout + proc.stderr
-    reports_exist = any(REPORTS.glob("TEST-*.xml"))
+    reports_exist = any(reports.glob("TEST-*.xml"))
     if "COMPILATION ERROR" in output or (proc.returncode != 0 and not reports_exist):
         raise SystemExit(
             f"nothing was measured (exit {proc.returncode}, no reports): either the sabotage "
@@ -10919,7 +10962,8 @@ def expect_fail_methods_exist() -> list:
     """
     problems = []
     for control in CONTROLS:
-        matches = list((REPO / "core" / "src" / "test").rglob(control["test"] + ".java"))
+        module = control.get("module", "core")
+        matches = list((REPO / module / "src" / "test").rglob(control["test"] + ".java"))
         if not matches:
             problems.append(f"[{control['id']}] no test class named {control['test']}")
             continue
@@ -11049,7 +11093,13 @@ def main() -> None:
     # language server had COPIED into core/target/classes as a resource, and "recovered" it by
     # writing a .java file into the compiled-classes directory — polluting the very output the
     # incremental build reuses (the known jdtls-poisons-the-WAR trap, self-inflicted).
-    for leftover in (REPO / "core" / "src").rglob("*.nc-backup"):
+    # Every module a control can touch. The verifier module arrived with plan §10, and a
+    # backup left behind there would have been invisible to this recovery — the sabotage would
+    # have stayed applied in a module nothing scanned.
+    leftovers = []
+    for module in sorted({control.get("module", "core") for control in CONTROLS}):
+        leftovers.extend((REPO / module / "src").rglob("*.nc-backup"))
+    for leftover in leftovers:
         target = leftover.with_name(leftover.name.removesuffix(".nc-backup"))
         backup_text = leftover.read_text()
         current_text = target.read_text() if target.exists() else None
@@ -11113,7 +11163,8 @@ def main() -> None:
             sabotaged = sabotage_text(original, control)
             try:
                 path.write_text(sabotaged)
-                green, failed_methods, unreadable, failure_texts = run_test(control["test"])
+                green, failed_methods, unreadable, failure_texts = run_test(
+                    control["test"], control.get("module", "core"))
                 if green:
                     # The finally below still restores, and the green-after re-verification after
                     # it still runs — the first version `continue`d past both, leaving the restore
@@ -11177,7 +11228,8 @@ def main() -> None:
                         f"{backup}")
                 path.write_text(original)
                 backup.unlink(missing_ok=True)
-            green_after, failed_after, unreadable_after, _ = run_test(control["test"])
+            green_after, failed_after, unreadable_after, _ = run_test(
+                control["test"], control.get("module", "core"))
             if not green_after:
                 raise SystemExit(
                     f"[{control['id']}] the tree is NOT green after restore — stop and look: "
