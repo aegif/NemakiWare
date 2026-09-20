@@ -125,4 +125,76 @@ class EveryStageIsListedTest {
                         + "committed to that, what committed to THAT — and a reader follows "
                         + "them in that order");
     }
+
+    /**
+     * The operator-facing half of the same claim (Phase 7, runbook).
+     *
+     * <p>The stage list above is only useful to someone upgrading if they are told what the new
+     * rows mean. An operator who upgrades and sees seven rows appear reads them as seven new
+     * faults, opens seven investigations, and finds nothing — because {@code ABSENT} is not a
+     * fault. The distinction lives in the product and has to live in the runbook too, or the
+     * product's honesty arrives as noise.
+     *
+     * <p>Scoped to the O5 SECTION rather than the file. A file-wide grep for these words is
+     * satisfied by prose elsewhere in a long runbook, so deleting the table would change
+     * nothing — the failure this batch has now had to correct seven times.
+     */
+    @Test
+    @DisplayName("the runbook tells the operator what the new rows mean")
+    void theRunbookExplainsTheNewRows() throws java.io.IOException {
+        java.nio.file.Path runbook =
+                java.nio.file.Path.of("../docs/operations/v3.4.0-upgrade-runbook.md");
+        assertTrue(java.nio.file.Files.exists(runbook),
+                "the 3.4.0 upgrade runbook is not at " + runbook);
+        String text = java.nio.file.Files.readString(runbook,
+                java.nio.charset.StandardCharsets.UTF_8);
+
+        int start = text.indexOf("## O5. 証拠まわりで運用の判断が要るもの");
+        assertTrue(start >= 0, "the runbook no longer has a section on the evidence-side "
+                + "decisions. Phases 4 through 6 shipped features whose defaults are the "
+                + "operator's to change, and a runbook silent on them hands those decisions to "
+                + "nobody");
+        int end = text.indexOf("## O6.", start);
+        assertTrue(end > start, "the evidence section does not end where this looks");
+        String section = text.substring(start, end);
+
+        // The two values are checked as TABLE ROWS carrying their operator action, not as
+        // words. Measured: deleting the ABSENT row left the lock green, because the prose above
+        // the table says the word too (control KR3 did not fire). What an operator acts on is
+        // the row — the value beside what to do about it — so that is what is read.
+        assertTrue(section.matches("(?s).*\\|\\s*`ABSENT`\\s*\\|[^|]*\\|[^|]*故障ではありません.*"),
+                "the runbook's table no longer has an ABSENT row saying it is NOT a fault. An "
+                        + "operator who upgrades sees seven new rows and, without this row, "
+                        + "opens seven investigations that find nothing");
+        assertTrue(section.matches("(?s).*\\|\\s*`UNAVAILABLE`\\s*\\|[^|]*\\|[^|]*調査.*"),
+                "the runbook's table no longer has an UNAVAILABLE row telling the operator to "
+                        + "investigate. It is the one value that IS a fault, and a table that "
+                        + "does not separate it from ABSENT makes the other rows noise");
+
+        // Each entry is the claim and why an operator is harmed without it.
+        Map<String, String> required = Map.of(
+                "既定 off",
+                "revocation collection reaches a CRL endpoint, so the operator has to know it "
+                        + "is their decision and that it is currently not happening",
+                "NOT_ATTEMPTED",
+                "off records 'nothing was asked', and an operator who reads it as 'asked and "
+                        + "clean' has the wrong idea of what the package carries",
+                "--trust-profile",
+                "trust from inside the package would let a re-signed package name its own "
+                        + "issuer, so the operator has to know they supply it",
+                "INDETERMINATE",
+                "exit 3 is not success, and an operator scripting on 'not 1' would ship it as "
+                        + "one");
+        required.forEach((needle, why) -> assertTrue(section.contains(needle),
+                "the runbook's evidence section no longer mentions 「" + needle + "」 — " + why));
+
+        // The other direction: what the version does NOT do. A section that listed only
+        // capabilities reads as a compliance claim by omission.
+        for (String limit : List.of("ERS", "renewal", "最新")) {
+            assertTrue(section.contains(limit),
+                    "the runbook's evidence section stops naming 「" + limit + "」 among the "
+                            + "things this version does not do. A reader takes the absence of a "
+                            + "limit for the absence of the limit");
+        }
+    }
 }

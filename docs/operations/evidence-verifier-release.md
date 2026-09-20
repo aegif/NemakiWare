@@ -61,6 +61,48 @@ gpg --armor --detach-sign --output SHA-256SUMS.asc SHA-256SUMS
 
 ---
 
+## trust profile のファイル形式
+
+verifier に `--trust-profile <file>` で渡す。**package の中からは絶対に来ない** —
+package が自分の trust anchor を名乗れるなら、署名を差し替えた package は差し替え先の
+発行者を名乗って通る。
+
+```json
+{
+  "anchors": ["<PEM または base64 DER>", "..."],
+  "policyOids": ["1.2.3.4", "..."],
+  "requireRevocationAtIssuance": true
+}
+```
+
+| 欄 | 既定 | 意味 |
+|---|---|---|
+| `anchors` | **必須**。空だと**ファイルごと拒否**される | PKIX path の終点。ここに無い発行者の token は `token pkix` が FAILED |
+| `policyOids` | 省略可 | 省略すると `token policy` は `NOT_PRESENT`（照合する基準が無いので、通ったとは言わない） |
+| `requireRevocationAtIssuance` | **省略時 true** | false にすると、材料が無くても `REVOCATION_NOT_REQUIRED` として先へ進む。**弱くする側の既定を沈黙で作らない**ためこうしてある |
+
+**anchor が 1 つも無い profile ファイルは拒否される。** 空の profile を返すと
+「渡さなかった」場合とまったく同じに振る舞い、それを verdict から気づくことになる。
+
+**認定の有無をこのファイルから読み取らない。** anchor に置いた証明書が認定事業者のもので
+あることは、契約と登録簿の事実であって、ファイルに書いたから真になるものではない。
+
+## ERS の更新（renewal）
+
+**この版は評価するだけで、更新しない。** `LongTermValidityService` が「何が古びつつあり、
+どちらの renewal が要るか」を答える（dry-run 側）。**明示実行は入っていない**。
+
+理由は 2 つある。
+
+- hash-tree renewal は**保管済みオブジェクトを全部読む**。いつ走らせるかは運用の判断で、
+  製品が決めると組織のコストを製品が決めることになる
+- timestamp renewal は **token の署名アルゴリズム**が弱るときに発火するが、
+  どの rung もそれを記録していないので、**この版は署名由来の renewal を評価していない**
+  （評価結果にもそう書いてある）
+
+**自動更新は入れない。** 入れるときは dry-run と明示実行を分け、明示実行には
+どの記録を対象にするかを運用者が選ぶ手順を付ける。
+
 ## 受け取る側に渡すもの
 
 jar、`SHA-256SUMS`、`SHA-256SUMS.asc`、profile spec、vectors。

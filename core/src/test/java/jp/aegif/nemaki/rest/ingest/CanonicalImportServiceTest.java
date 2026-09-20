@@ -3739,6 +3739,7 @@ class CanonicalImportServiceTest {
                 "NotAskedIsNotAskedAndAnsweredNothingTest",
                 "NoForbiddenClaimShipsTest",
                 "EveryStageIsListedTest",
+                "ItReportsItDoesNotRenewTest",
                 "TheBundleIsFixedBeforeTheWriteTest",
                 "TheStatementViewIsInTheOnePutTest",
                 "TheAssemblerReadsOncePerPackageTest",

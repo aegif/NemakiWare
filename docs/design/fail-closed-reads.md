@@ -15,7 +15,7 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
   メタデータ書き込み → 添付 PUT → 確定書き込みの 3 段を 1 つにはしない。
 - **通し negative-control は 704 本で完走した**（2026-09-19、exit 0。§5）。言えるのはそこまでで、
   コントロール×兄弟錠 2,403 組（R15）をはじめ §5 の測定の穴は測っていない。
-  **今の総数は 912 本で、その 912 本での通しは未実施**（差の 110 本は ID 指定でしか測っていない）。
+  **今の総数は 918 本で、その 918 本での通しは未実施**（CK3 以降の 215 本は ID 指定でしか測っていない）。
   計画 §16 は「Phase 1 の製品コミットのあと 1 回」と定めており、**Phase 1 は完了したので
   この 1 回は期限が来ている**。「704 本が通った」を「今の木が通る」と読まないこと。
 
@@ -124,14 +124,14 @@ attachment 行を作る → body を PUT」の順で（`ArchiveDaoDelegate` の 
 
 ## 5. 測定
 
-- コントロール **912**（2026-09-20 時点）。**4 回目の通しが流したのは 704 本**（当時の総数）。
-  以後に足した **CK3 以降の 209 本**は一度も通しに入れていない。
-  （704 + 110 が総数に合わないのは、DG3 / DJ3 を足した後に退役させたため。
+- コントロール **918**（2026-09-20 時点）。**4 回目の通しが流したのは 704 本**（当時の総数）。
+  以後に足した **CK3 以降の 215 本**は一度も通しに入れていない。
+  （704 + 215 が総数に合わないのは、DG3 / DJ3 を足した後に退役させたため。
   SIP 検証器の読みを手組みからパーサに替えたので、細工の対象そのものが無くなった。
   **合わない差を計算で埋めない** — 錠が突き合わせるのは「CK3 以降の集合」であって、導出した数ではない）（CK3 / CL3 BagIt、CM3 stamp、CN3 / CO3 強制変換ログ、CP3 setup URL、CQ3 指紋、
   CR3 / CS3 / CT3 SIP の verdict、CU3〜CX3 内容複製、CY3 / CZ3 / DA3 / DC3〜DF3 / DL3〜DP3
   証拠 JSON の読み、DR3〜EF3 package 自身が述べた理由・重複キー・BOM・未知の理由・規則の一本化、
-  DB3 / DH3 / DI3 / DK3 / DQ3 中身の無い添付行・復元の窓・割り込み、EG3〜EI3 mapper の一本化、EJ3〜EL3 purge の走査上限、EM3 一覧の overload、EN3〜EP3 パス解決の期待値表、EQ3〜ES3 二重保護の各錨、ET3 / EU3 装飾の scope 付き列挙、EV3〜EZ3 版ごとの実測とその fail-closed、FA3〜FG3 Notion の読み切れなかった listing、FH3〜FR3 確認レビュー 1 巡目の処置、FS3〜FX3 2 巡目の処置、FY3 / FZ3 / GA3 3 巡目の処置、GB3 / GC3 4 巡目の処置、GD3〜GF3 5・6 巡目の処置、GG3〜GJ3 7 巡目、GK3 Phase 2 の配置、GL3〜GO3 8 巡目、GP3〜GR3 Phase 2 の profile 仕様、GS3〜GZ3 進捗文書の数・凍結・G0・通しの期限、HA3〜HH3 Phase 2 の正準形・chain・合成、HI3〜HM3 Phase 3 の耐久 gap と列挙範囲、HN3 / HO3 journal store、HP3〜HS3 書き込み経路の digest と配線、HT3 / HU3 その場書き換えの記録、HV3〜HX3 observe と未解決一覧、HY3 停滞した読み、HZ3〜IE3 Phase 4 の束と書き出し、IF3〜IH3 statement の保存、II3 / IJ3 束の組み立て、IK3 / IL3 package への配線、IM3〜IO3 assurance、IP3 PREMIS の曖昧さ、IQ3〜IS3 独立 verifier、IT3〜IY3 P0 の検査、IZ3〜JD3 P1 の再計算、JE3〜JH3 CLI の exit code、JI3〜JN3 P2 の chain、JO3〜JU3 P3 の trust、JV3〜JZ3 P4 / P5、KA3〜KC3 発行時の失効材料、KD3 / KE3 禁じ手 lint、KF3 制度文書の責任分界、KG3 / KH3 段の列挙、KI3 / KJ3 両方の描画、KK3〜KM3 失効材料の運搬）は
+  DB3 / DH3 / DI3 / DK3 / DQ3 中身の無い添付行・復元の窓・割り込み、EG3〜EI3 mapper の一本化、EJ3〜EL3 purge の走査上限、EM3 一覧の overload、EN3〜EP3 パス解決の期待値表、EQ3〜ES3 二重保護の各錨、ET3 / EU3 装飾の scope 付き列挙、EV3〜EZ3 版ごとの実測とその fail-closed、FA3〜FG3 Notion の読み切れなかった listing、FH3〜FR3 確認レビュー 1 巡目の処置、FS3〜FX3 2 巡目の処置、FY3 / FZ3 / GA3 3 巡目の処置、GB3 / GC3 4 巡目の処置、GD3〜GF3 5・6 巡目の処置、GG3〜GJ3 7 巡目、GK3 Phase 2 の配置、GL3〜GO3 8 巡目、GP3〜GR3 Phase 2 の profile 仕様、GS3〜GZ3 進捗文書の数・凍結・G0・通しの期限、HA3〜HH3 Phase 2 の正準形・chain・合成、HI3〜HM3 Phase 3 の耐久 gap と列挙範囲、HN3 / HO3 journal store、HP3〜HS3 書き込み経路の digest と配線、HT3 / HU3 その場書き換えの記録、HV3〜HX3 observe と未解決一覧、HY3 停滞した読み、HZ3〜IE3 Phase 4 の束と書き出し、IF3〜IH3 statement の保存、II3 / IJ3 束の組み立て、IK3 / IL3 package への配線、IM3〜IO3 assurance、IP3 PREMIS の曖昧さ、IQ3〜IS3 独立 verifier、IT3〜IY3 P0 の検査、IZ3〜JD3 P1 の再計算、JE3〜JH3 CLI の exit code、JI3〜JN3 P2 の chain、JO3〜JU3 P3 の trust、JV3〜JZ3 P4 / P5、KA3〜KC3 発行時の失効材料、KD3 / KE3 禁じ手 lint、KF3 制度文書の責任分界、KG3 / KH3 段の列挙、KI3 / KJ3 両方の描画、KK3〜KM3 失効材料の運搬、KN3 / KO3 renewal の境界、KP3 / KQ3 数え落ちた兄弟の数字、KR3 / KS3 運用文書の新しい行）は
   **ID 指定で 1 本ずつ実測しただけ**で、通しに入れたことはない。次の通しで初めて
   「他の錠を巻き添えにしないか」が測られる（CZ3 / DE3 / DH3 は実際に巻き込みがあり、宣言を足した）。
   **3 本が「発火しない」ことも分かった** — 新しい arm（空の path は `UNAVAILABLE`）が

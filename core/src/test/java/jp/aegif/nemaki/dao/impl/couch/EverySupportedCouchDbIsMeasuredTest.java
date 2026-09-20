@@ -213,6 +213,37 @@ class EverySupportedCouchDbIsMeasuredTest {
                         + ". This ledger is the only record of which controls have never been "
                         + "run together");
 
+        // EVERY statement of the count, not just the bold one. The same fact is written three
+        // times in this document, and only the bold occurrence was read — so while the set grew
+        // 110 → 209 → 211 the other two sat at 110, and the document contradicted itself in the
+        // very paragraph whose subject is that uncounted numbers go stale. One arm of a claim
+        // locked leaves the other arms free; this reads all of them.
+        Matcher anyStatement = Pattern.compile("\\*{0,2}" + from + " 以降の (\\d+) 本").matcher(canon);
+        int statements = 0;
+        while (anyStatement.find()) {
+            statements++;
+            assertEquals(unswept.size(), Integer.parseInt(anyStatement.group(1)),
+                    "the canon states the unswept count as " + anyStatement.group(1)
+                            + " in one place and the runner declares " + unswept.size()
+                            + ". A reader takes whichever sentence they reach first");
+        }
+        assertTrue(statements >= 2,
+                "the canon used to state the unswept count in more than one place and now "
+                        + "states it " + statements + " time(s). Either a statement was deleted "
+                        + "or its wording drifted out of this check's reach — which is how the "
+                        + "other two went stale");
+
+        // The arithmetic-does-not-work parenthetical carries the number too, and it is the one
+        // sentence whose job is to stop anyone deriving the figure. Wrong there, it teaches the
+        // reader a sum that does happen to work.
+        Matcher sum = Pattern.compile("704 \\+ (\\d+) が総数に合わない").matcher(canon);
+        assertTrue(sum.find(), "the canon no longer explains why the sweep total and the "
+                + "unswept count do not add up, so the next reader derives one from the other");
+        assertEquals(unswept.size(), Integer.parseInt(sum.group(1)),
+                "the 'these do not add up' sentence uses " + sum.group(1) + " while the runner "
+                        + "declares " + unswept.size() + " unswept. The one sentence that tells "
+                        + "the reader not to do arithmetic has to have the real numbers in it");
+
         // And the enumeration beside it names them all — ranges expanded. An arithmetic check
         // alone let the list fall one short while the numbers agreed with each other.
         // Scoped to the LEDGER PARAGRAPH. Scanning the whole canon found these ids in the
