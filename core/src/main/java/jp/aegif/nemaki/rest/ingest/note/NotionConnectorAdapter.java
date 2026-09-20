@@ -52,9 +52,17 @@ public class NotionConnectorAdapter {
      * A listing this adapter could not finish reading.
      *
      * <p>Distinct from every "there is nothing more" so that the two can never be handed to a
-     * caller as the same value. The block listing used to answer a 429, a 500 and a timed-out
-     * page with the blocks collected so far — which the note importer states as "this page has
-     * no attachments", imports the page without them, and moves the checkpoint past it.
+     * caller as the same value. The block listing used to answer a 429 and a 500 with the blocks
+     * collected so far — which the note importer states as "this page has no attachments",
+     * imports the page without them, and moves the checkpoint past it. (NOT a timed-out page:
+     * a request timeout has always come out as an {@code IOException} and has always
+     * propagated. An earlier draft of this sentence said otherwise and the correction was added
+     * elsewhere in the file while this copy kept the retracted claim.)
+     *
+     * <p><b>It is not the only way a read fails.</b> A timeout, a dropped connection and a
+     * malformed body arrive as {@code IOException} / parse failures and propagate as
+     * themselves. Anything that treats this type as "the complete set of incomplete reads"
+     * would let those through.
      */
     public static class NotionReadIncompleteException extends RuntimeException {
         private static final long serialVersionUID = 1L;
@@ -307,8 +315,10 @@ public class NotionConnectorAdapter {
      * the page, which is permanent) and {@link #fetchPageAsHtml} as the page's body. A read that
      * failed and a page that is empty are now different outcomes, which is the whole point.
      *
-     * @throws NotionReadIncompleteException when the listing stopped for any reason other than
-     *     Notion answering that there is nothing more
+     * @throws NotionReadIncompleteException when the STORE's answer stopped the listing for any
+     *     reason other than saying there is nothing more. A timeout, a dropped connection or an
+     *     unparseable body do not arrive as this type — they propagate as themselves, and a
+     *     caller that treats this type as the whole of "did not finish" will miss them
      */
     private List<JsonNode> fetchAllBlocks(String pageId) throws Exception {
         List<JsonNode> allBlocks = new ArrayList<>();

@@ -775,11 +775,16 @@ public class IngestJobService {
             //
             // The dependency this rests on — that a Mango _find returns attachment stubs — is
             // shared with loadDlqContent and with upsertDlqCas's carry-forward, which would
-            // DESTROY payloads on every update if it did not hold. It IS measured now, on every
-            // CouchDB line the product's floor accepts, by StoreBehaviourFactsIT
-            // (FIND_ROW_CARRIES_ATTACHMENT_STUBS) — once per supported version in CI, because a
-            // store behaviour measured once by hand on one version is a store behaviour that
-            // stops being true without anyone hearing about it (R7).
+            // DESTROY payloads on every update if it did not hold. It IS measured now, on
+            // CouchDB 3.3, 3.4 and 3.5, by StoreBehaviourFactsIT
+            // (FIND_ROW_CARRIES_ATTACHMENT_STUBS) — once per line in CI, because a store
+            // behaviour measured once by hand on one version is a store behaviour that stops
+            // being true without anyone hearing about it (R7).
+            //
+            // NOT "every line the floor accepts": the floor has no ceiling and would start
+            // against 3.6 or 4.x, which nothing here has measured. StoreBehaviourFacts.lineOf
+            // refuses such a version rather than assuming, so the gap fails loudly instead of
+            // passing quietly — but this comment claimed the wider thing (Codex review, P2).
             return raw.get(0).getAttachments() != null
                     && !raw.get(0).getAttachments().isEmpty();
         } catch (RuntimeException couldNotAsk) {
