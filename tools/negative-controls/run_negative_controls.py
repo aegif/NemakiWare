@@ -10687,6 +10687,24 @@ CONTROLS = [
         expect_fail=['theComplianceDocumentNamesWhatIsNotTheProductsJob'],
     ),
     dict(
+        id='KG3',
+        what='the report shows only the stages a deployment configured, so a reader takes the silence about the rest for "not applicable"',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/AuthenticityReport.java',
+        find='            if (!present) {',
+        replace='            if (false) {',
+        test='EveryStageIsListedTest',
+        expect_fail=['everyStageAppears'],
+    ),
+    dict(
+        id='KH3',
+        what='a stage nobody configured is reported as UNAVAILABLE, sending an operator to look for a broken connection that does not exist',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/AuthenticityReport.java',
+        find='                out.add(new Section(stage, Verdict.ABSENT, Map.of(),',
+        replace='                out.add(new Section(stage, Verdict.UNAVAILABLE, Map.of(),',
+        test='EveryStageIsListedTest',
+        expect_fail=['anUnconfiguredStageIsAbsentNotUnavailable'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",

@@ -108,6 +108,42 @@ public record AuthenticityReport(String repositoryId, String objectId, String ge
      * receiving archive AND silently made the withheld count zero — a package that withholds
      * without saying it withheld.
      */
+    /**
+     * Every stage of the evidence chain, always listed — plan §12.
+     *
+     * <p>The report used to show the stages a deployment happened to have configured. A reader
+     * then saw four green sections and no mention of the other seven, and "not shown" reads as
+     * "not applicable" far more often than as "nobody set this up". Listing all of them turns
+     * an invisible gap into a visible {@code ABSENT}.
+     *
+     * <p>The order is the order of the chain, because that is how a reader follows it: bytes,
+     * then what was said about them, then what committed to that, then what committed to THAT.
+     */
+    public static final List<String> STAGES = List.of(
+            "PACKAGE", "CONTENT_DIGEST", "RECORD_STATEMENT", "LEDGER_ENTRY", "INCLUSION_PROOF",
+            "CHECKPOINT_CHAIN", "RFC3161", "OTS", "ERS", "TRUST", "REVOCATION");
+
+    /**
+     * The report's sections, with every stage of {@link #STAGES} present.
+     *
+     * <p>A stage the report has nothing for becomes {@code ABSENT} with a limits sentence
+     * saying so. <b>Not {@code UNAVAILABLE}</b>: that means the source could not be read, and
+     * "this deployment has no such stage" is a different fact.
+     */
+    public List<Section> sectionsWithEveryStage() {
+        List<Section> out = new java.util.ArrayList<>(sections);
+        for (String stage : STAGES) {
+            boolean present = sections.stream().anyMatch(s -> s.name().equals(stage));
+            if (!present) {
+                out.add(new Section(stage, Verdict.ABSENT, Map.of(),
+                        "This deployment produced nothing for this stage. That is NOT a finding "
+                                + "that the stage is unnecessary, and NOT a statement that it "
+                                + "could not be read — it is that nothing was gathered."));
+            }
+        }
+        return List.copyOf(out);
+    }
+
     public static final String WITHHELD_COUNT_KEY = "withheldInternalOnlyCount";
 
     /** The identity section's marker that personal data was deliberately included. */
