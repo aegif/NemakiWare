@@ -247,7 +247,12 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
                     : "PKIX path validation to the configured anchor; revocation NOT checked");
             // Not a TODO: revocation data genuinely cannot be captured retroactively, so its
             // absence is part of the evidence rather than a gap to paper over.
-            attrs.put("revocationDataCapturedAt", "never");
+            // Plan §11: what was captured about the signer's revocation status AT ISSUANCE.
+            // Collection is OFF by default and the attributes then say NOT_ATTEMPTED — which is
+            // a different fact from "asked and got nothing", and the verifier reads the two
+            // differently. Turning it on is a deployment decision because it makes the anchor
+            // path reach a CRL/OCSP endpoint.
+            attrs.putAll(collectRevocationMaterial(token).asAttributes());
 
             logger.info("RFC 3161 token obtained from {} (serial {}, genTime {})",
                     tsaUrl, info.getSerialNumber(), info.getGenTime().toInstant());
@@ -274,6 +279,118 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             logger.warn("RFC 3161 anchoring failed against {}: {}", tsaUrl, e.toString());
             return AnchorReceipt.failed(kind(), hexDigest, attemptedAt,
                     e.getClass().getSimpleName() + ": " + e.getMessage());
+        }
+    }
+
+    private boolean collectRevocationAtIssuance;
+
+    /**
+     * Whether to fetch the signer's revocation material while the token is being obtained.
+     *
+     * <p>Default false, and deliberately so: turning it on makes anchoring reach a CRL or OCSP
+     * endpoint, which is a decision about what this node talks to. What the default does NOT do
+     * is pretend — with collection off the receipt says {@code NOT_ATTEMPTED}, and a verifier
+     * reading it answers {@code INDETERMINATE} for P3 rather than passing.
+     */
+    public void setCollectRevocationAtIssuance(boolean collectRevocationAtIssuance) {
+        this.collectRevocationAtIssuance = collectRevocationAtIssuance;
+    }
+
+    /**
+     * The signer's CRL, fetched now, because "now" is issuance.
+     *
+     * <p>Never throws: a revocation endpoint that does not answer must not fail the anchoring
+     * it was part of. What it must not do instead is stay quiet — the three states are all
+     * reported.
+     */
+    RevocationMaterial collectRevocationMaterial(
+            org.bouncycastle.tsp.TimeStampToken token) {
+        if (!collectRevocationAtIssuance) {
+            return RevocationMaterial.notAttempted(
+                    "collection at issuance is off on this node, so nothing is known about the "
+                            + "signer's revocation status when the token was made");
+        }
+        String url = null;
+        try {
+            java.security.cert.X509Certificate signer = null;
+            for (Object holder : token.getCertificates().getMatches(token.getSID())) {
+                signer = new org.bouncycastle.cert.jcajce.JcaX509CertificateConverter()
+                        .getCertificate((org.bouncycastle.cert.X509CertificateHolder) holder);
+                break;
+            }
+            if (signer == null) {
+                return RevocationMaterial.unavailable(null,
+                        "the token carries no signer certificate, so there is no distribution "
+                                + "point to ask");
+            }
+            url = crlDistributionPointOf(signer);
+            if (url == null) {
+                return RevocationMaterial.unavailable(null,
+                        "the signer certificate names no CRL distribution point");
+            }
+            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                    .connectTimeout(java.time.Duration.ofSeconds(10)).build();
+            java.net.http.HttpResponse<byte[]> response = client.send(
+                    java.net.http.HttpRequest.newBuilder(java.net.URI.create(url))
+                            .timeout(java.time.Duration.ofSeconds(20)).GET().build(),
+                    java.net.http.HttpResponse.BodyHandlers.ofByteArray());
+            if (response.statusCode() != 200 || response.body() == null
+                    || response.body().length == 0) {
+                return RevocationMaterial.unavailable(url,
+                        "the distribution point answered " + response.statusCode()
+                                + " with " + (response.body() == null ? 0 : response.body().length)
+                                + " bytes");
+            }
+            return RevocationMaterial.captured(response.body(), sha256Hex(response.body()),
+                    java.time.Instant.now(), url);
+        } catch (Exception e) {
+            // Including an interrupt: the flag is restored and the answer is "we asked and did
+            // not get one", which is true.
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return RevocationMaterial.unavailable(url,
+                    e.getClass().getSimpleName() + ": " + e.getMessage());
+        }
+    }
+
+    /** The first HTTP CRL distribution point, or null. */
+    static String crlDistributionPointOf(java.security.cert.X509Certificate certificate) {
+        try {
+            byte[] extension = certificate.getExtensionValue("2.5.29.31");
+            if (extension == null) {
+                return null;
+            }
+            org.bouncycastle.asn1.ASN1Primitive octets =
+                    org.bouncycastle.asn1.ASN1Primitive.fromByteArray(
+                            ((org.bouncycastle.asn1.ASN1OctetString)
+                                    org.bouncycastle.asn1.ASN1Primitive.fromByteArray(extension))
+                                    .getOctets());
+            org.bouncycastle.asn1.x509.CRLDistPoint points =
+                    org.bouncycastle.asn1.x509.CRLDistPoint.getInstance(octets);
+            for (org.bouncycastle.asn1.x509.DistributionPoint point : points.getDistributionPoints()) {
+                if (point.getDistributionPoint() == null) {
+                    continue;
+                }
+                org.bouncycastle.asn1.ASN1Encodable name = point.getDistributionPoint().getName();
+                if (!(name instanceof org.bouncycastle.asn1.x509.GeneralNames names)) {
+                    continue;
+                }
+                for (org.bouncycastle.asn1.x509.GeneralName general : names.getNames()) {
+                    if (general.getTagNo() == org.bouncycastle.asn1.x509.GeneralName.uniformResourceIdentifier) {
+                        String value = general.getName().toString();
+                        // HTTP only. An ldap:// or file:// point is not something this node
+                        // should be reaching for, and silently skipping it is better than
+                        // failing the anchor over a scheme nobody configured.
+                        if (value.startsWith("http://") || value.startsWith("https://")) {
+                            return value;
+                        }
+                    }
+                }
+            }
+            return null;
+        } catch (Exception unreadable) {
+            return null;
         }
     }
 

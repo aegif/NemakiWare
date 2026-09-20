@@ -3736,6 +3736,7 @@ class CanonicalImportServiceTest {
                 "ReleaseReadinessIsMeasuredTest",
                 "E1LeavesNoSilentGapTest",
                 "ObservedIsNotCapturedTest",
+                "NotAskedIsNotAskedAndAnsweredNothingTest",
                 "TheBundleIsFixedBeforeTheWriteTest",
                 "TheStatementViewIsInTheOnePutTest",
                 "TheAssemblerReadsOncePerPackageTest",

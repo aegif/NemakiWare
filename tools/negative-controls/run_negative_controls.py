@@ -10633,6 +10633,33 @@ CONTROLS = [
         expect_fail=['anUnknownDigestAlgorithmIsNotAMismatch'],
     ),
     dict(
+        id='KA3',
+        what="'asked and got no answer' is reported as 'nobody asked', hiding a broken revocation endpoint behind a setting the operator did not choose",
+        file='core/src/main/java/jp/aegif/nemaki/rest/purview/anchor/RevocationMaterial.java',
+        find='    public static RevocationMaterial unavailable(String source, String why) {\n        return new RevocationMaterial(Status.UNAVAILABLE, null, null, null, source, why);',
+        replace='    public static RevocationMaterial unavailable(String source, String why) {\n        return new RevocationMaterial(Status.NOT_ATTEMPTED, null, null, null, source, why);',
+        test='NotAskedIsNotAskedAndAnsweredNothingTest',
+        expect_fail=['askedAndUnansweredIsNotTheSameAsNotAsking'],
+    ),
+    dict(
+        id='KB3',
+        what='revocation material may be recorded as CAPTURED with no bytes or no retrieval time, so an absence travels in the receipt dressed as a presence',
+        file='core/src/main/java/jp/aegif/nemaki/rest/purview/anchor/RevocationMaterial.java',
+        find='            if (der == null || der.length == 0) {',
+        replace='            if (false) {',
+        test='NotAskedIsNotAskedAndAnsweredNothingTest',
+        expect_fail=['capturedWithNoBytesIsRefused'],
+    ),
+    dict(
+        id='KC3',
+        what='revocation collection reaches a CRL endpoint even when the node was never configured to, so anchoring talks to something nobody chose',
+        file='core/src/main/java/jp/aegif/nemaki/rest/purview/anchor/Rfc3161AnchorTarget.java',
+        find='        if (!collectRevocationAtIssuance) {',
+        replace='        if (false) {',
+        test='NotAskedIsNotAskedAndAnsweredNothingTest',
+        expect_fail=['collectionIsOffByDefault'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",
