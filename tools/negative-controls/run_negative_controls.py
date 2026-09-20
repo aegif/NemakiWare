@@ -10181,6 +10181,24 @@ CONTROLS = [
         expect_fail=['theStatementViewIsDeployedWithTheOthers'],
     ),
     dict(
+        id='II3',
+        what='the bundle takes the newest entry for a version rather than the one naming its statement, so a package ships two parts that do not refer to each other',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/EvidenceBundleAssembler.java',
+        find='            if (candidate != null && digest.equals(candidate.payloadDigest())) {',
+        replace='            if (candidate != null) {',
+        test='TheAssemblerReadsOncePerPackageTest',
+        expect_fail=['theEntryMatchesTheStatementItShipsWith'],
+    ),
+    dict(
+        id='IJ3',
+        what='an inactive journal is read through, so a package ships a statement nobody established is current',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/EvidenceBundleAssembler.java',
+        find='        if (journal == null || !journal.isActive()) {\n            return null;\n        }\n        Map<String, Object> document = journal.statementFor',
+        replace='        if (journal == null) {\n            return null;\n        }\n        Map<String, Object> document = journal.statementFor',
+        test='TheAssemblerReadsOncePerPackageTest',
+        expect_fail=['anUnaskableJournalYieldsNoStatement'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",
