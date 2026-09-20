@@ -10093,6 +10093,67 @@ CONTROLS = [
         expect_fail=['aStreamThatStallsIsNotDigested'],
     ),
     dict(
+        id='HZ3',
+        what='an absent evidence part is written as an empty document, so a verifier reads a package claiming a statement it does not have',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/EvidenceBundleWriter.java',
+        find='        if (document == null) {\n            return;\n        }',
+        replace='        if (document == null) {\n            document = new LinkedHashMap<>();\n        }',
+        test='TheBundleIsFixedBeforeTheWriteTest',
+        expect_fail=['anAbsentPartIsOmittedRatherThanWrittenEmpty'],
+    ),
+    dict(
+        id='IA3',
+        what="a proof that could not be built ships an empty step list, making 'no proof' and 'the proof is trivially satisfied' the same file",
+        file='core/src/main/java/jp/aegif/nemaki/evidence/EvidenceBundleWriter.java',
+        # Writes an empty step list on the absent arm. Flipping the condition instead
+        # dereferenced a null steps list — an NPE, which the runner scores as a harness break
+        # and which proves nothing about the protection.
+        find='            doc.put("unavailableBecause", proof.unavailableBecause());',
+        replace='            doc.put("steps", java.util.List.of());',
+        test='TheBundleIsFixedBeforeTheWriteTest',
+        expect_fail=['anUnavailableProofIsNotAnEmptyPath'],
+    ),
+    dict(
+        id='IB3',
+        what='the ledger entry ships without its subjectId, so nothing outside the product can recompute the entry hash',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/EvidenceBundleWriter.java',
+        find='        doc.put("subjectId", entry.subjectId());\n',
+        replace='',
+        test='TheBundleIsFixedBeforeTheWriteTest',
+        # One lock. The .c14n comparison stays green because both sides of it come from the
+        # same document — removing a field removes it from both (measured; same shape as HL3).
+        expect_fail=['theEntryCanBeRecomputedFromWhatIsShipped'],
+    ),
+    dict(
+        id='IC3',
+        what='a rung with no material still gets a file, so an absence is reported by a verifier as a parse failure — which reads as tampering',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/EvidenceBundleWriter.java',
+        # Writes a ZERO-BYTE file for the absent rung. Removing the guard instead passed a
+        # null to Files.write — an NPE, and a harness break rather than a firing.
+        find='                continue;\n            }\n            files.put("anchors/" + fileNameFor(entry.getKey()), part.der());',
+        replace='                files.put("anchors/" + fileNameFor(entry.getKey()), new byte[0]);\n                continue;\n            }\n            files.put("anchors/" + fileNameFor(entry.getKey()), part.der());',
+        test='TheBundleIsFixedBeforeTheWriteTest',
+        expect_fail=['anAbsentAnchorShipsNoFile'],
+    ),
+    dict(
+        id='ID3',
+        what='an anchor with no bytes may be recorded as PRESENT, so an absence travels in the package dressed as a presence',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/EvidenceBundle.java',
+        find='            if (state == State.PRESENT && (der == null || der.length == 0)) {',
+        replace='            if (false) {',
+        test='TheBundleIsFixedBeforeTheWriteTest',
+        expect_fail=['aPresentAnchorWithNoBytesIsRefused'],
+    ),
+    dict(
+        id='IE3',
+        what='the declared profile stops tracking what the bundle holds, so a package claims an anchored checkpoint its own files cannot support',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/EvidenceBundle.java',
+        find='        if (anchorTargetCheckpoint == null || checkpointChain.isEmpty()\n                || !anyAnchorPresent()) {',
+        replace='        if (false) {',
+        test='TheBundleIsFixedBeforeTheWriteTest',
+        expect_fail=['theDeclaredProfileTracksWhatIsActuallyThere'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",

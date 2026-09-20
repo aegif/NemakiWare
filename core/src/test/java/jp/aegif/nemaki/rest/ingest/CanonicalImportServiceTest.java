@@ -3735,7 +3735,8 @@ class CanonicalImportServiceTest {
                 "EvidenceProfileV1VectorsTest",
                 "ReleaseReadinessIsMeasuredTest",
                 "E1LeavesNoSilentGapTest",
-                "ObservedIsNotCapturedTest")) {
+                "ObservedIsNotCapturedTest",
+                "TheBundleIsFixedBeforeTheWriteTest")) {
             if (!listed.contains(lock)) {
                 missing.add(lock);
             }
