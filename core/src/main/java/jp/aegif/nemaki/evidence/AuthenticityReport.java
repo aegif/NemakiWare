@@ -100,15 +100,6 @@ public record AuthenticityReport(String repositoryId, String objectId, String ge
     }
 
     /**
-     * The identity section's bookkeeping key for how many properties were withheld.
-     *
-     * <p>A constant because a second reader appeared: {@code EarkSipExporter} both skips this
-     * key when building descriptive metadata and reads it to report the omission. With the
-     * literal duplicated, renaming it here would have published the bookkeeping key to a
-     * receiving archive AND silently made the withheld count zero — a package that withholds
-     * without saying it withheld.
-     */
-    /**
      * Every stage of the evidence chain, always listed — plan §12.
      *
      * <p>The report used to show the stages a deployment happened to have configured. A reader
@@ -144,6 +135,15 @@ public record AuthenticityReport(String repositoryId, String objectId, String ge
         return List.copyOf(out);
     }
 
+    /**
+     * The identity section's bookkeeping key for how many properties were withheld.
+     *
+     * <p>A constant because a second reader appeared: {@code EarkSipExporter} both skips this
+     * key when building descriptive metadata and reads it to report the omission. With the
+     * literal duplicated, renaming it here would have published the bookkeeping key to a
+     * receiving archive AND silently made the withheld count zero — a package that withholds
+     * without saying it withheld.
+     */
     public static final String WITHHELD_COUNT_KEY = "withheldInternalOnlyCount";
 
     /** The identity section's marker that personal data was deliberately included. */
