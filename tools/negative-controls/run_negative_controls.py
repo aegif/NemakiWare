@@ -10407,6 +10407,49 @@ CONTROLS = [
         expect_fail=['theLegacyLayoutSaysWhy'],
     ),
     dict(
+        id='JE3',
+        what="INDETERMINATE exits 0, so 'could not tell' reaches a receiving organisation's script as success at the last possible moment",
+        file='evidence-verifier-cli/src/main/java/jp/aegif/nemaki/verifier/cli/Verify.java',
+        module='evidence-verifier-cli',
+        find='            case INDETERMINATE -> EXIT_INDETERMINATE;',
+        replace='            case INDETERMINATE -> EXIT_VERIFIED;',
+        test='TheExitCodeIsTheInterfaceTest',
+        expect_fail=['anIndeterminatePackageExitsThree'],
+    ),
+    dict(
+        id='JF3',
+        what='a profile this version cannot evaluate falls back to the weakest one, so a caller is told the package passed something it did not ask for',
+        file='evidence-verifier-cli/src/main/java/jp/aegif/nemaki/verifier/cli/Verify.java',
+        module='evidence-verifier-cli',
+        find='        if (!KNOWN_PROFILES.contains(profile)) {',
+        replace='        if (false) {',
+        test='TheExitCodeIsTheInterfaceTest',
+        expect_fail=['anUnknownProfileIsAUsageError'],
+    ),
+    dict(
+        id='JG3',
+        what='asking for RECORD_LEDGER_V1 stops REQUIRING its checks, so a package with no ledger section reports VERIFIED against a profile it does not meet',
+        file='evidence-verifier-cli/src/main/java/jp/aegif/nemaki/verifier/cli/Verify.java',
+        module='evidence-verifier-cli',
+        # The .orElse arm below it is unreachable today — every required name IS produced —
+        # so a control aimed there measured nothing (it did not fire). This one breaks the
+        # requirement LIST, which is what actually decides the bar.
+        find='                requiredNames.addAll(RecordLedger.REQUIRED);',
+        replace='                requiredNames.addAll(java.util.List.of());',
+        test='TheExitCodeIsTheInterfaceTest',
+        expect_fail=['anIndeterminatePackageExitsThree'],
+    ),
+    dict(
+        id='JH3',
+        what='the limits stop printing on success, leaving a reader to supply their own idea of what VERIFIED means',
+        file='evidence-verifier-cli/src/main/java/jp/aegif/nemaki/verifier/cli/Verify.java',
+        module='evidence-verifier-cli',
+        find='            out.println(LIMITS);',
+        replace='            if (verdict != Outcome.Verdict.VERIFIED) { out.println(LIMITS); }',
+        test='TheExitCodeIsTheInterfaceTest',
+        expect_fail=['aGoodPackageExitsZero'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",

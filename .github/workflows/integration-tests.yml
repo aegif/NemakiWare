@@ -32,6 +32,7 @@ on:
       - 'docs/design/evidence-phase0-inventory.md'
       # The independent verifier module, which has its own test step.
       - 'evidence-verifier-core/**'
+      - 'evidence-verifier-cli/**'
       - 'common/**'
       - 'cloudant-init/**'
       - 'solr/**'
@@ -71,6 +72,7 @@ on:
       - 'docs/design/evidence-phase0-inventory.md'
       # The independent verifier module, which has its own test step.
       - 'evidence-verifier-core/**'
+      - 'evidence-verifier-cli/**'
       - 'common/**'
       - 'cloudant-init/**'
       - 'solr/**'
@@ -184,7 +186,10 @@ jobs:
       # It carries the claim that a third party can check a package without the product, so a
       # green build that never ran it would be asserting exactly nothing about that claim.
       - name: Run the independent verifier's tests
-        run: mvn test -f evidence-verifier-core/pom.xml
+        run: |
+          mvn install -q -f evidence-verifier-core/pom.xml -DskipTests
+          mvn test -f evidence-verifier-core/pom.xml
+          mvn test -f evidence-verifier-cli/pom.xml
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with: { name: unit-test-reports, path: core/target/surefire-reports/, retention-days: 7 }
