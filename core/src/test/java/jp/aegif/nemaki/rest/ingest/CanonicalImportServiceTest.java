@@ -3741,6 +3741,7 @@ class CanonicalImportServiceTest {
                 "EveryStageIsListedTest",
                 "ItReportsItDoesNotRenewTest",
             "WhichProfilesCanPassIsMeasuredTest",
+            "TheRequirementMatrixIsHonestTest",
                 "TheBundleIsFixedBeforeTheWriteTest",
                 "TheStatementViewIsInTheOnePutTest",
                 "TheAssemblerReadsOncePerPackageTest",
