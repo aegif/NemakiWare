@@ -1138,6 +1138,11 @@ public class ContentServiceImpl implements ContentService {
 	String createdDocumentId = null;
 	String createdAttachmentId = null;
 	boolean rollbackRequired = false;
+	// E1 (W1). Held across the phases below: the row is opened BEFORE the bytes and the
+	// statement is recorded after the document exists, because only then is there a version
+	// key for it to be about.
+	jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written writtenContent = null;
+	jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending contentWrite = null;
 	
 	try {
 		// PHASE 1: Prepare all components without CouchDB writes
@@ -1183,7 +1188,17 @@ public class ContentServiceImpl implements ContentService {
 		// PHASE 2: Atomic Attachment creation (CMIS 1.1 SPECIFICATION COMPLIANT)
 		if (csa == ContentStreamAllowed.REQUIRED || (csa == ContentStreamAllowed.ALLOWED && contentStream != null)) {
 			// Create Attachment atomically with immediate Document reference
-			createdAttachmentId = createAttachmentAtomic(callContext, repositoryId, contentStream);
+			// The row first. A crash between here and the statement below leaves bytes with no
+			// statement, and this row is what makes that gap listable (ADR decision 1).
+			// The version key is not known yet — the document does not exist — so the row is
+			// opened without one, which is legitimate for a CREATE: there is no previous
+			// version for a stale intent to be confused with.
+			contentWrite = recordContentState == null ? null
+					: recordContentState.openBeforeWriting(repositoryId, null, null,
+							jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.CREATE_DOCUMENT,
+							java.time.Instant.now().toString());
+			writtenContent = createAttachmentAtomicRecording(callContext, repositoryId, contentStream);
+			createdAttachmentId = writtenContent.attachmentId();
 			d.setAttachmentNodeId(createdAttachmentId);
 			log.debug("Created AttachmentId atomically: {}", createdAttachmentId);
 
@@ -1257,6 +1272,8 @@ public class ContentServiceImpl implements ContentService {
 			}
 		}
 		
+		recordCreatedContentState(repositoryId, atomicResult, writtenContent, contentWrite);
+
 		log.debug("=== ATOMIC DOCUMENT CREATION SUCCESS: {} ===", atomicResult.getId());
 		return atomicResult;
 		
@@ -1835,6 +1852,11 @@ public class ContentServiceImpl implements ContentService {
 		// original document during push but not on the PWC.
 		mergeSecondaryTypesFromLatest(checkedIn, latest);
 
+		// E1 (W4). Declared here so the statement below can be recorded after the new version
+		// exists — only then is there a version key for it to be about.
+		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written checkInContent = null;
+		jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending checkInWrite = null;
+
 		// When PWCUpdatable is true
 		if (contentStream == null) {
 			// OrRefuse: this is the flow where the client edited the working copy in place, so
@@ -1844,7 +1866,15 @@ public class ContentServiceImpl implements ContentService {
 					copyAttachmentOrRefuse(callContext, repositoryId, pwc.getAttachmentNodeId()));
 			// When PWCUpdatable is false
 		} else {
-			checkedIn.setAttachmentNodeId(createAttachment(callContext, repositoryId, contentStream));
+			// E1 (W4). The row is opened before the bytes; the version key is not known yet
+			// (the new version is created below), so the row carries none — see
+			// RecordContentStateRecorder.recordAndClose.
+			checkInWrite = recordContentState == null ? null
+					: recordContentState.openBeforeWriting(repositoryId, id, null,
+							jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.CHECK_IN,
+							java.time.Instant.now().toString());
+			checkInContent = createAttachmentRecording(callContext, repositoryId, contentStream);
+			checkedIn.setAttachmentNodeId(checkInContent.attachmentId());
 		}
 
 		// Set updated properties
@@ -1901,6 +1931,8 @@ public class ContentServiceImpl implements ContentService {
 		} catch (Exception e) {
 			log.warn("checkIn: Solr indexing failed for document " + result.getId() + ": " + e.getMessage());
 		}
+
+		recordCreatedContentState(repositoryId, result, checkInContent, checkInWrite);
 
 		return result;
 	}
@@ -3969,8 +4001,17 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	private String createAttachment(CallContext callContext, String repositoryId, ContentStream contentStream) {
+		return createAttachmentRecording(callContext, repositoryId, contentStream).attachmentId();
+	}
+
+	/**
+	 * The same write, carrying the digest E1 records. Existing callers keep their signature.
+	 */
+	private jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written
+			createAttachmentRecording(CallContext callContext, String repositoryId,
+					ContentStream contentStream) {
 		initDelegates();
-		return attachmentDelegate.createAttachment(callContext, repositoryId, contentStream);
+		return attachmentDelegate.createAttachmentRecording(callContext, repositoryId, contentStream);
 	}
 
 	/**
@@ -5175,11 +5216,74 @@ public class ContentServiceImpl implements ContentService {
 	 * Create attachment with atomic operation pattern
 	 * Prevents _rev inconsistency by using immediate consistent read pattern
 	 */
+	@org.springframework.beans.factory.annotation.Autowired(required = false)
+	private jp.aegif.nemaki.evidence.RecordContentStateRecorder recordContentState;
+
+	/**
+	 * E1: record what this version's bytes were, once the version exists.
+	 *
+	 * <p>Never throws. An evidence outage that failed a {@code createDocument} would convert a
+	 * recording problem into a business failure, which the plan forbids (§8). What it must not
+	 * do instead is stay quiet: the recorder returns which of the five outcomes happened, and
+	 * a gap it could not even list is a different outcome from one it could.
+	 *
+	 * <p><b>No digest means no statement.</b> {@code DigestingInputStream} answers null when it
+	 * cannot vouch for the bytes — a short read, a rewind it could not snapshot. Recording a
+	 * digest that may cover the wrong bytes would put a falsehood in the chain, and every later
+	 * check of that version would fail against bytes that were never wrong.
+	 */
+	private void recordCreatedContentState(String repositoryId, Document created,
+			jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written written,
+			jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pending) {
+		if (recordContentState == null || created == null || written == null) {
+			return;
+		}
+		if (written.contentDigest() == null) {
+			log.warn("E1: the content of {} could not be digested on the write, so no statement "
+					+ "was recorded for it. The journal row stays open.", created.getId());
+			return;
+		}
+		try {
+			jp.aegif.nemaki.evidence.RecordContentStatementV1 statement =
+					new jp.aegif.nemaki.evidence.RecordContentStatementV1(
+							repositoryId, created.getId(), created.getId(),
+							written.attachmentId(), written.contentDigest(), written.length(),
+							jp.aegif.nemaki.evidence.RecordContentStatementV1.CommitmentKind.CAPTURED,
+							null, java.time.Instant.now().toString());
+			jp.aegif.nemaki.evidence.RecordContentStateRecorder.Result result =
+					recordContentState.recordAndClose(pending, statement);
+			if (!result.inChain()) {
+				log.warn("E1: the content statement for {} is not in the chain ({}).",
+						created.getId(), result.outcome());
+			}
+		} catch (RuntimeException e) {
+			// Including the statement's own validation. A version key or a digest this class
+			// cannot produce is a reason to record nothing, not a reason to fail the create.
+			log.warn("E1: no content statement was recorded for {}.", created.getId(), e);
+		}
+	}
+
 	private String createAttachmentAtomic(CallContext callContext, String repositoryId, ContentStream contentStream) {
+		return createAttachmentAtomicRecording(callContext, repositoryId, contentStream).attachmentId();
+	}
+
+	/**
+	 * The same write, with the digest E1 records.
+	 *
+	 * <p>Separate from {@link #createAttachmentAtomic} so every existing caller keeps the
+	 * signature it had, and delegating rather than duplicated so the verification below has one
+	 * definition.
+	 */
+	private jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written
+			createAttachmentAtomicRecording(CallContext callContext, String repositoryId,
+					ContentStream contentStream) {
 		log.debug("Creating attachment atomically for repository: {}", repositoryId);
-		
+		initDelegates();
+
 		// Create attachment using existing method (already handles _rev properly)
-		String attachmentId = createAttachment(callContext, repositoryId, contentStream);
+		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written written =
+				attachmentDelegate.createAttachmentRecording(callContext, repositoryId, contentStream);
+		String attachmentId = written.attachmentId();
 		
 		// ATOMIC VERIFICATION: Ensure attachment exists and is accessible.
 		// Ref, not the full node: this asks whether the document is there, and getAttachment
@@ -5190,7 +5294,7 @@ public class ContentServiceImpl implements ContentService {
 		}
 		
 		log.debug("Atomic attachment creation verified: {}", attachmentId);
-		return attachmentId;
+		return written;
 	}
 	
 	

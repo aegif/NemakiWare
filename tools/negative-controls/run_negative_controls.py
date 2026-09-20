@@ -9935,8 +9935,11 @@ CONTROLS = [
         id='HJ3',
         what="the version check moves after the append, so a newer version's statement is chained under a row opened for the previous one",
         file='core/src/main/java/jp/aegif/nemaki/evidence/RecordContentStateRecorder.java',
-        find='        if (pending != null && !statement.versionObjectId().equals(pending.versionObjectId())) {',
-        replace='        if (false) {',
+        # Follows the guard, which grew a null arm when W1 (a create, which has no version
+        # key yet) was wired. The span brackets the condition so the next arm does not
+        # drift it again.
+        find_span=('        if (pending != null && pending.versionObjectId() != null', '{\n'),
+        replace='        if (false) {\n',
         test='E1LeavesNoSilentGapTest',
         expect_fail=['anOldIntentIsNotClosedByNewBytes'],
     ),
@@ -9988,6 +9991,44 @@ CONTROLS = [
         replace='',
         test='E1LeavesNoSilentGapTest',
         expect_fail=['theOpenIntentViewIsInTheOneDesignDocumentPut'],
+    ),
+    dict(
+        id='HP3',
+        what='a write path is wired without being declared, so E1 records more than the documents say and the difference is invisible',
+        file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/ContentServiceImpl.java',
+        find='jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.CHECK_IN,',
+        replace='jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.UPDATE_IN_PLACE,',
+        test='E1LeavesNoSilentGapTest',
+        expect_fail=['onlyTheWiredPathsClaimToBeRecorded'],
+    ),
+    dict(
+        id='HQ3',
+        what='the digest is handed back even when the stream could not be vouched for, so a digest that may cover the wrong bytes goes into the chain as a fact',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/DigestingInputStream.java',
+        find='        if (!trustworthy) {\n            return null;\n        }',
+        replace='        if (false) {\n            return null;\n        }',
+        test='E1LeavesNoSilentGapTest',
+        expect_fail=['aRewindWithoutASnapshotStopsClaimingADigest'],
+    ),
+    dict(
+        id='HR3',
+        what='a short write still produces a digest, so the chain commits to bytes the write did not send',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/DigestingInputStream.java',
+        find='        if (expectedLength >= 0 && expectedLength != bytesRead) {\n            return null;\n        }',
+        replace='        if (false) {\n            return null;\n        }',
+        test='E1LeavesNoSilentGapTest',
+        expect_fail=['aShortWriteHasNoDigest'],
+    ),
+    dict(
+        id='HS3',
+        what='the attachment retry decision stops looking through the digest wrapper, so every retryable revision conflict becomes a failed upload once recording is on',
+        file='core/src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/AttachmentDaoDelegate.java',
+        find='\t\t\t\tboolean canRetryStream =\n\t\t\t\t\tjp.aegif.nemaki.evidence.DigestingInputStream.isRewindable(binaryStream);',
+        replace='\t\t\t\tboolean canRetryStream = (binaryStream instanceof java.io.ByteArrayInputStream)\n\t\t\t\t\t&& binaryStream.markSupported();',
+        test='E1LeavesNoSilentGapTest',
+        # Re-aimed at the CALL SITE lock. The first version pointed at a test that exercised
+        # the helper directly, so reverting the DAO changed nothing it could see.
+        expect_fail=['theAttachmentWriterLooksThroughTheWrapper'],
     ),
     dict(
         id="DQ3",

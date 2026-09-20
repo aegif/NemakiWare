@@ -161,7 +161,12 @@ public class RecordContentStateRecorder {
         if (statement == null) {
             throw new IllegalArgumentException("there is no statement to record");
         }
-        if (pending != null && !statement.versionObjectId().equals(pending.versionObjectId())) {
+        // A null version on the row means the write is a CREATE: the document did not exist
+        // when the row was opened, so there is no version key for it to be about — and no
+        // previous version for a stale intent to be confused with either, which is the case
+        // this check exists for.
+        if (pending != null && pending.versionObjectId() != null
+                && !statement.versionObjectId().equals(pending.versionObjectId())) {
             // Caught here rather than at the store, because at the store it would be one of
             // several reasons a close failed. The caller built both, and a mismatch means the
             // two halves are about different versions.

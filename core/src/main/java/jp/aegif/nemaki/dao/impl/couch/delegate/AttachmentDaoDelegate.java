@@ -403,8 +403,13 @@ public class AttachmentDaoDelegate {
 				// ByteArrayInputStream (common in CMIS) ignores readlimit, so this is safe.
 				// For other streams, retry is only attempted if mark/reset is supported.
 				InputStream binaryStream = contentStream.getStream();
-				boolean canRetryStream = (binaryStream instanceof java.io.ByteArrayInputStream)
-					&& binaryStream.markSupported();
+				// Asked THROUGH any digest wrapper. E1 takes the SHA-256 of the bytes on this
+				// one pass (ADR decision 2), and a wrapped stream is no longer an
+				// instanceof ByteArrayInputStream — so the plain test would have turned every
+				// retryable conflict into a failed upload the moment recording was switched on.
+				// The answer is identical when there is no wrapper.
+				boolean canRetryStream =
+					jp.aegif.nemaki.evidence.DigestingInputStream.isRewindable(binaryStream);
 				if (canRetryStream) {
 					binaryStream.mark(0); // ByteArrayInputStream ignores readlimit
 				}

@@ -277,6 +277,146 @@ class E1LeavesNoSilentGapTest {
                 "the canonical bytes of the statement and of the JSON a package ships differ");
     }
 
+    private static byte[] bytes(String s) {
+        return s.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static DigestingInputStream readingAll(byte[] input) throws java.io.IOException {
+        DigestingInputStream stream =
+                DigestingInputStream.over(new java.io.ByteArrayInputStream(input));
+        stream.readAllBytes();
+        return stream;
+    }
+
+    @Test
+    @DisplayName("the digest taken on the write is the SHA-256 of the bytes that went past")
+    void theDigestIsOfTheBytesThatWentPast() throws Exception {
+        DigestingInputStream stream = readingAll(bytes("hello"));
+        // Independently computed, not taken from the class under test.
+        byte[] expected = java.security.MessageDigest.getInstance("SHA-256").digest(bytes("hello"));
+        StringBuilder hex = new StringBuilder();
+        for (byte b : expected) {
+            hex.append(String.format("%02x", b));
+        }
+        assertEquals(hex.toString(), stream.digestIfTrustworthy(5));
+        // Asked twice. MessageDigest.digest() resets the instance, so a class that did not copy
+        // would answer with the digest of the empty input the second time — and that value looks
+        // exactly like a digest.
+        assertEquals(hex.toString(), stream.digestIfTrustworthy(5));
+    }
+
+    @Test
+    @DisplayName("a rewind whose digest could not be snapshotted stops claiming a digest")
+    void aRewindWithoutASnapshotStopsClaimingADigest() throws Exception {
+        DigestingInputStream stream =
+                DigestingInputStream.over(new java.io.ByteArrayInputStream(bytes("hello")));
+        assertEquals(3, stream.read(new byte[3], 0, 3));
+        // reset() with no mark taken. ByteArrayInputStream allows it (its mark defaults to 0),
+        // so the BYTES rewind while the digest has no snapshot to rewind to.
+        stream.reset();
+        stream.readAllBytes();
+        // NO declared length. Asking with one let the LENGTH arm answer — the rewind leaves
+        // eight bytes counted against a declared five — so the sabotage that removed the
+        // trustworthiness arm entirely kept this test green (control HQ3 did not fire).
+        assertEquals(null, stream.digestIfTrustworthy(),
+                "the bytes were rewound and the digest was not, so it now covers the first "
+                        + "three bytes twice. A wrong digest recorded as a fact is worse than "
+                        + "no digest: every later check of that version fails against bytes "
+                        + "that were never wrong");
+    }
+
+    @Test
+    @DisplayName("the attachment writer asks about rewindability THROUGH the digest wrapper")
+    void theAttachmentWriterLooksThroughTheWrapper() throws java.io.IOException {
+        // Structural, because the behavioural control (HS3) did not fire: the earlier lock
+        // exercised DigestingInputStream.isRewindable directly, so reverting the DAO to its
+        // plain instanceof check changed nothing it could see. The call site is the thing.
+        Path source = Path.of("src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/"
+                + "AttachmentDaoDelegate.java");
+        assertTrue(Files.exists(source), "the attachment delegate is not at " + source);
+        String text = Files.readString(source, StandardCharsets.UTF_8);
+        int at = text.indexOf("boolean canRetryStream");
+        assertTrue(at >= 0, "the attachment writer no longer decides retryability here, so this "
+                + "lock is reading a decision that has moved rather than one that is wrong");
+        String decision = text.substring(at, text.indexOf(';', at)).replaceAll("(?m)//.*$", "");
+        assertTrue(decision.contains("DigestingInputStream.isRewindable("),
+                "the retry decision no longer looks through the digest wrapper. A wrapped "
+                        + "stream is not an instanceof ByteArrayInputStream, so every retryable "
+                        + "revision conflict would become a failed upload the moment E1 "
+                        + "recording is on.\nDecision reads: " + decision);
+    }
+
+    @Test
+    @DisplayName("a write shorter than it declared has no digest")
+    void aShortWriteHasNoDigest() throws Exception {
+        DigestingInputStream stream =
+                DigestingInputStream.over(new java.io.ByteArrayInputStream(bytes("hel")));
+        stream.readAllBytes();
+        assertEquals(null, stream.digestIfTrustworthy(5),
+                "five bytes were declared and three went past; the digest is of something other "
+                        + "than what the write said it was sending");
+        assertEquals(3, stream.bytesRead());
+    }
+
+    @Test
+    @DisplayName("wrapping a rewindable stream does not make it unrewindable")
+    void aWrappedByteArrayIsStillRewindable() {
+        java.io.ByteArrayInputStream raw = new java.io.ByteArrayInputStream(bytes("hello"));
+        assertTrue(DigestingInputStream.isRewindable(raw));
+        assertTrue(DigestingInputStream.isRewindable(DigestingInputStream.over(raw)),
+                "the attachment writer decides whether a revision conflict may be retried from "
+                        + "this answer. If wrapping made it false, switching recording on would "
+                        + "turn every retryable conflict into a failed upload");
+        assertFalse(DigestingInputStream.isRewindable(
+                        new java.io.FilterInputStream(new java.io.ByteArrayInputStream(bytes("x"))) { }),
+                "and it must not become true for a stream that could not be rewound before");
+    }
+
+    @Test
+    @DisplayName("only the write paths actually wired claim to be recorded")
+    void onlyTheWiredPathsClaimToBeRecorded() throws java.io.IOException {
+        // The plan's rule (§8) is that a path nobody wired is a residual, never a success. The
+        // only way to keep that honest is to read the product and compare with a list somebody
+        // had to write down — so adding a wiring without declaring it, or declaring one that
+        // does not exist, both go red.
+        SortedSet<String> wired = new TreeSet<>();
+        for (Path source : List.of(
+                Path.of("src/main/java/jp/aegif/nemaki/businesslogic/impl/ContentServiceImpl.java"),
+                Path.of("src/main/java/jp/aegif/nemaki/businesslogic/impl/delegate/"
+                        + "AttachmentServiceDelegate.java"))) {
+            if (!Files.exists(source)) {
+                continue;
+            }
+            // Comments stripped: this file's own javadoc names WriteKind constants, and a grep
+            // a comment can satisfy has been the defect five times in this batch.
+            String text = Files.readString(source, StandardCharsets.UTF_8)
+                    .replaceAll("(?m)//.*$", "")
+                    .replaceAll("(?s)/\\*.*?\\*/", "");
+            Matcher uses = Pattern.compile("WriteKind\\.([A-Z_]+)").matcher(text);
+            while (uses.find()) {
+                wired.add(uses.group(1));
+            }
+        }
+
+        SortedSet<String> declared = new TreeSet<>(List.of("CREATE_DOCUMENT", "CHECK_IN"));
+        assertEquals(declared, wired,
+                "the write paths wired into the product and the ones this lock declares differ. "
+                        + "E1 records only what is wired: " + wired + ". The remaining "
+                        + (ContentWriteJournal.WriteKind.values().length - wired.size())
+                        + " of the enumerated paths are NOT recorded, and nothing anywhere may "
+                        + "say otherwise");
+
+        // And the plan says the same thing, in the row a reader consults for progress.
+        Path plan = Path.of("../docs/design/v3.4.0-evidence-and-residuals-plan.md");
+        assertTrue(Files.exists(plan), "the plan is not at " + plan);
+        String planText = Files.readString(plan, StandardCharsets.UTF_8);
+        assertTrue(planText.contains("配線済みは " + wired.size() + " 本"),
+                "the plan does not record that " + wired.size() + " of the "
+                        + ContentWriteJournal.WriteKind.values().length + " enumerated write "
+                        + "paths are wired. A progress row that does not move with the code is "
+                        + "how 'E1 is done' comes to be read off a phase table");
+    }
+
     @Test
     @DisplayName("a journal that cannot be asked does not answer 'there are no gaps'")
     void aJournalThatCannotBeAskedReportsThatRatherThanAnEmptyList() {

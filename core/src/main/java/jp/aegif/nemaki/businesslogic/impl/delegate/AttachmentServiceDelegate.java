@@ -56,7 +56,17 @@ public class AttachmentServiceDelegate {
 		this.nemakiCachePool = nemakiCachePool;
 	}
 
+	/**
+	 * The existing signature, for callers that only need the id.
+	 *
+	 * <p>Delegates rather than duplicating: a second body would be a second definition of what
+	 * an attachment write does, and the two would drift.
+	 */
 	public String createAttachment(CallContext callContext, String repositoryId, ContentStream contentStream) {
+		return createAttachmentRecording(callContext, repositoryId, contentStream).attachmentId();
+	}
+
+	public Written createAttachmentRecording(CallContext callContext, String repositoryId, ContentStream contentStream) {
 		AttachmentNode a = new AttachmentNode();
 
 		String mimeType = contentStream.getMimeType();
@@ -101,7 +111,38 @@ public class AttachmentServiceDelegate {
 		a.setName(fileName);
 
 		helper.setSignature(callContext, a);
-		return contentDaoService.createAttachment(repositoryId, a, contentStream);
+
+		// E1: the digest of the bytes as they go past, on the one pass that carries them
+		// (docs/design/adr-e1-durable-commitment.md, decision 2). Wrapping happens HERE and not
+		// earlier because the length logic above may itself read and rewind the stream.
+		jp.aegif.nemaki.evidence.DigestingInputStream digesting =
+				jp.aegif.nemaki.evidence.DigestingInputStream.over(contentStream.getStream());
+		ContentStream toWrite = contentStream;
+		if (digesting != null) {
+			// The ORIGINAL declared length is carried through, not the computed one: the DAO
+			// reads it, and substituting a value it did not have before would change what gets
+			// stored for a stream whose length was unknown.
+			org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl wrapped =
+					new org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl(
+							contentStream.getFileName(), contentStream.getBigLength(),
+							contentStream.getMimeType(), digesting);
+			toWrite = wrapped;
+		}
+		String attachmentId = contentDaoService.createAttachment(repositoryId, a, toWrite);
+		// Null when the stream could not be vouched for — a short read, a rewind whose digest
+		// could not be snapshotted. The caller records NO statement in that case rather than a
+		// digest that may cover the wrong bytes.
+		String digest = digesting == null ? null : digesting.digestIfTrustworthy(streamLength);
+		return new Written(attachmentId, digest, streamLength);
+	}
+
+	/**
+	 * What one attachment write produced.
+	 *
+	 * @param contentDigest null when the write could not be digested; NOT an empty string and
+	 *        not the digest of nothing, both of which look exactly like an answer
+	 */
+	public record Written(String attachmentId, String contentDigest, long length) {
 	}
 
 	public String copyAttachment(CallContext callContext, String repositoryId, String attachmentId) {
