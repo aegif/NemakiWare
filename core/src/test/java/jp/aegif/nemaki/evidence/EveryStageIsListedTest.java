@@ -207,7 +207,17 @@ class EveryStageIsListedTest {
                         + "operator who does not know that reads a silent check as a passed one",
                 "--trust-profile",
                 "trust from inside the package would let a re-signed package name its own "
-                        + "issuer, so the operator has to know they supply it");
+                        + "issuer, so the operator has to know they supply it",
+                // The setter has no caller anywhere, so 'off by default' was standing in for
+                // 'cannot be switched on' — the weaker fact reading as the stronger one, in the
+                // operator's own document (parallel review, P1).
+                "この版では有効にできません",
+                "revocation collection has no caller, no properties key and no admin API, so "
+                        + "'off by default' told operators they had a choice they do not have",
+                "SsrfGuard",
+                "the collection path fetches a URL out of the TSA certificate with a bare "
+                        + "HttpClient, so whoever wires the toggle ships an SSRF unless the "
+                        + "runbook tells them the guard comes first");
         claims.forEach((needle, why) -> assertTrue(section.contains(needle),
                 "the runbook's evidence section no longer says 「" + needle + "」 — " + why));
 

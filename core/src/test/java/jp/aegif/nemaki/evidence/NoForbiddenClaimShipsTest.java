@@ -72,6 +72,30 @@ class NoForbiddenClaimShipsTest {
             Path.of("../docs/operations"),
             Path.of("../docs/compliance"));
 
+    /**
+     * The same claims in English, for the text that ships in English.
+     *
+     * <p>The authenticity report has no React screen — plan §12 says the UI IS its HTML — and
+     * that HTML is written in English, so a Japanese-only list could never have caught an
+     * overclaim in the one artefact a reader is most likely to be shown. The list is short on
+     * purpose: these are the claims §4.2 forbids, not a style guide.
+     */
+    private static final Map<String, String> FORBIDDEN_EN = Map.of(
+            "tamper-proof", "detection, not prevention — the administrator can rewrite",
+            "tamper proof", "detection, not prevention — the administrator can rewrite",
+            "cannot be altered", "the ledger and the checkpoint are in the same hands",
+            "cannot be modified by an administrator",
+                    "independence comes from an external anchor, not from this product",
+            "guarantees authenticity", "a pass means the checks of that profile passed",
+            "proves the document is authentic",
+                    "nothing here establishes that the content was true when captured");
+
+    /** English-language text that reaches a reader: the report IS the UI (plan §12). */
+    private static final List<Path> SHIPPED_EN = List.of(
+            Path.of("src/main/java/jp/aegif/nemaki/evidence/AuthenticityReport.java"),
+            Path.of("../evidence-verifier-cli/src/main/java/jp/aegif/nemaki/verifier/cli/"
+                    + "Verify.java"));
+
     @Test
     @DisplayName("no forbidden claim appears in anything that ships to a reader")
     void noForbiddenClaimShips() throws IOException {
@@ -108,6 +132,34 @@ class NoForbiddenClaimShipsTest {
                 "a claim plan §4.2 forbids is in text that reaches a reader outside this "
                         + "repository. These sentences survive review because each one reads as "
                         + "a reasonable summary; that is exactly why they are linted:\n  "
+                        + String.join("\n  ", offences));
+    }
+
+    @Test
+    @DisplayName("no forbidden claim appears in the English text a reader is shown")
+    void noForbiddenClaimShipsInEnglish() throws IOException {
+        List<String> offences = new ArrayList<>();
+        for (Path file : SHIPPED_EN) {
+            assertTrue(Files.exists(file),
+                    "this lint reads " + file + ", which is not there — it would pass by "
+                            + "finding nothing rather than by the text being clean");
+            // Java string concatenation removed first, for the same reason the limits check
+            // does it: a sentence written across literals is contiguous in the OUTPUT even
+            // when it is not in the file.
+            String text = Files.readString(file, StandardCharsets.UTF_8)
+                    .replaceAll("\"\\s*\\+\\s*\"", "")
+                    .replaceAll("\\s+", " ")
+                    .toLowerCase(Locale.ROOT);
+            FORBIDDEN_EN.forEach((phrase, why) -> {
+                if (text.contains(phrase)) {
+                    offences.add(file + " says \"" + phrase + "\" — " + why);
+                }
+            });
+        }
+        assertTrue(offences.isEmpty(),
+                "a claim plan §4.2 forbids is in English text that reaches a reader. The "
+                        + "authenticity report has no separate screen — its HTML is the UI — so "
+                        + "a sentence here is a sentence a customer is shown:\n  "
                         + String.join("\n  ", offences));
     }
 

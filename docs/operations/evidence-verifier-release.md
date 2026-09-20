@@ -23,7 +23,7 @@ profile spec、vectors。
 |---|---|
 | **SBOM** | `cyclonedx-maven-plugin` が**このマシンのローカルリポジトリに無い**ため、オフラインでは配線できない。ネットワークのある環境で `org.cyclonedx:cyclonedx-maven-plugin` を追加して `makeAggregateBom` を回す |
 | **detached signature** | **鍵は持っていない。** 署名はリリース担当者が自分の鍵で行う作業で、自動化してはならない（鍵を CI に置くことと同義になる） |
-| **result schema** | CLI の `--json` 出力の JSON Schema。Phase 7 の段階レポートと同じ語彙にするため、そこで書く |
+| **result schema** | CLI の `--json` 出力の JSON Schema。「Phase 7 で書く」としていたが、**Phase 7 の範囲は終わったのに書いていない**。所属を移した — 残件として追跡する（正典 §6 の R66）。**受け取る側は出力を目視で読むことになる** |
 
 ---
 
