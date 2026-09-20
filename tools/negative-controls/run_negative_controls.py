@@ -11713,8 +11713,13 @@ def compile_check(ids: list) -> list:
         original = path.read_text()
         try:
             path.write_text(sabotage_text(original, control))
+            # The control's OWN module, not always core. Hardcoding core meant the
+            # verifier modules' sabotages were never compile-checked at all, so the one
+            # shape this mode exists to catch could still kill the sweep from there
+            # (pre-sweep review, P3).
+            module = control.get("module", "core")
             result = subprocess.run(
-                ["mvn", "-o", "-q", "-pl", "core", "test-compile", "-DskipTests",
+                ["mvn", "-o", "-q", "-pl", module, "test-compile", "-DskipTests",
          "-Dskip.npm=true", "-Dskip.installnodenpm=true"],
                 cwd=REPO, capture_output=True, text=True)
             if result.returncode != 0:
