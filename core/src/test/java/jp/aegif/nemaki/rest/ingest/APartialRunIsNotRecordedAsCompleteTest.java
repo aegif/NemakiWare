@@ -250,6 +250,39 @@ class APartialRunIsNotRecordedAsCompleteTest {
     }
 
     @Test
+    @DisplayName("the job history screen reads the partial-page envelope and the reason badge")
+    void theJobHistoryScreenSaysWhatItCouldNotRead() throws IOException {
+        // Two claims that had no lock at all (both round-8 reviews).
+        //
+        // 1. The server answers a bare array when every row decoded and an envelope when some
+        //    did not. The only consumer asked for the array and cast, so the envelope rendered
+        //    an empty table and the catch above it swallowed the error: "some rows could not be
+        //    read" arrived as "there are no jobs".
+        // 2. The help legend says the PARTIAL reason is on the status badge. Nothing measured
+        //    that the badge carries it.
+        String service = withoutTsComments(Files.readString(
+                Path.of("src/main/webapp/ui/src/services/externalIngest.ts"),
+                StandardCharsets.UTF_8));
+        // The VALUE has to travel, not just the name. Checking for the identifier was satisfied
+        // by the type declaration while the mapping returned a constant 0 (measured: GL3 did
+        // not fire until this asked for the read).
+        assertTrue(service.contains("envelope.unreadableEntries"),
+                "the job listing declares the server's unreadable count and does not read it, "
+                        + "so a partly-readable page reaches the screen as a complete one");
+        assertTrue(service.contains("Array.isArray(envelope.jobs)"),
+                "the job listing does not check the envelope's shape, so an answer in neither "
+                        + "shape becomes an empty table rather than a refusal");
+
+        String screen = withoutTsComments(Files.readString(
+                Path.of("src/main/webapp/ui/src/components/IntegrationSettings/IngestJobsTab.tsx"),
+                StandardCharsets.UTF_8));
+        assertTrue(screen.contains("unreadableRows"),
+                "the screen never tells the operator that rows are missing from the list");
+        assertTrue(screen.contains("incompleteReads"),
+                "the status badge carries no reason, while the help legend says it does");
+    }
+
+    @Test
     @DisplayName("a job row carrying a field this node does not know still decodes")
     void anUnknownFieldDoesNotMakeARowUnreadable() {
         // During a rolling upgrade an old replica reads rows a new one wrote, and this batch

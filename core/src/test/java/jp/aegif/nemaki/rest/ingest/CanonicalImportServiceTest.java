@@ -3730,7 +3730,8 @@ class CanonicalImportServiceTest {
                 "APartialRunIsNotRecordedAsCompleteTest",
                 "NotionPartialReadsAreNotCompleteTest",
                 "NoJavadocIsOrphanedTest",
-                "CanonicalImportServiceTest")) {
+                "CanonicalImportServiceTest",
+                "TheSipLayoutIsWhereCommonsIpPutsItTest")) {
             if (!listed.contains(lock)) {
                 missing.add(lock);
             }

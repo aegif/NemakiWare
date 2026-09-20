@@ -89,7 +89,7 @@ public final class StoreBehaviourFacts {
      * One store behaviour the product relies on.
      *
      * <p>The boolean is the whole value: each fact is phrased so that the product's premise is
-     * TRUE. A fact whose expectation differs between lines (see {@link #ALLOW_FALLBACK_FALSE_IS_ACCEPTED})
+     * TRUE. A fact whose expectation differs between lines (see {@link #ALLOW_FALLBACK_FALSE_IS_REJECTED_AS_AN_UNKNOWN_KEY})
      * is exactly why the table is per line rather than a single "CouchDB does this".
      */
     public enum Fact {
@@ -345,6 +345,12 @@ public final class StoreBehaviourFacts {
             case "invalid_key" -> FallbackVerdict.REJECTED_AS_UNKNOWN_KEY;
             // The store knew it and refused to fall back. Both codes are the store answering
             // about the INDEX, which is the question allow_fallback asks.
+            //
+            // invalid_index is what 3.4.3 answered when measured. no_usable_index is the code
+            // CouchDB documents for the same refusal with no use_index given — a shape the IT
+            // never sends, so it is here as a second spelling of the same answer and NOT as
+            // something measured. If it never arrives, nothing is lost; if it does, treating it
+            // as anything else would call a refusal about the index "not established".
             case "invalid_index", "no_usable_index" -> FallbackVerdict.HONOURED;
             // A 400 about something else answered a different question.
             default -> FallbackVerdict.NOT_ESTABLISHED;

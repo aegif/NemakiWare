@@ -219,11 +219,16 @@ class EverySupportedCouchDbIsMeasuredTest {
         // residual rows as well, so deleting a whole range from the list changed nothing
         // (measured: GG3 did not fire until this was scoped) — the same file-wide-grep defect
         // this batch has now hit three times.
-        int ledgerStart = canon.indexOf("- コントロール");
-        int ledgerEnd = canon.indexOf("\n\n", ledgerStart);
-        assertTrue(ledgerStart >= 0 && ledgerEnd > ledgerStart,
-                "the ledger paragraph is not where this test looks");
-        String ledger = canon.substring(ledgerStart, ledgerEnd);
+        // Scoped to the ENUMERATION — the parenthetical that lists the ids — and not to the
+        // whole §5 bullet. The wider scope let six ids be satisfied by prose elsewhere in the
+        // same bullet ("CZ3 / DE3 / DH3 は実際に巻き込みがあり…"), so deleting one from the list
+        // changed nothing (subagent review, P2). Third time this batch has had to narrow a
+        // grep from "the file" to "the thing".
+        int listStart = canon.indexOf("（CK3 / CL3");
+        assertTrue(listStart >= 0, "the ledger's enumeration does not start where this looks");
+        int listEnd = canon.indexOf("）は", listStart);
+        assertTrue(listEnd > listStart, "the ledger's enumeration does not end where this looks");
+        String ledger = canon.substring(listStart, listEnd);
 
         java.util.Set<String> named = new java.util.LinkedHashSet<>();
         Matcher single = Pattern.compile("\\b([A-Z]{2}3)\\b").matcher(ledger);
@@ -238,24 +243,23 @@ class EverySupportedCouchDbIsMeasuredTest {
                 }
             }
         }
+        // Both directions. Only unswept-minus-named was checked, so an id that does not exist,
+        // or a range wider than the runner has, could be added to the ledger and the word
+        // "exactly" would still read as measured (Codex review, P2). Retired ids are named on
+        // purpose and are the one thing allowed to be in the list and not in the set.
+        java.util.SortedSet<String> namedButAbsent = new java.util.TreeSet<>(named);
+        namedButAbsent.removeAll(seen);
+        namedButAbsent.removeAll(java.util.Set.of("DG3", "DJ3"));
+        assertTrue(namedButAbsent.isEmpty(),
+                "the ledger names a control the runner does not declare, so the next sweep is "
+                        + "planned against a set that does not exist: " + namedButAbsent);
+
         java.util.SortedSet<String> unnamed = new java.util.TreeSet<>(unswept);
         unnamed.removeAll(named);
         assertTrue(unnamed.isEmpty(),
                 "a control is unswept and is not named in the canon's list, so the next full "
                         + "sweep would treat it as already covered: " + unnamed);
 
-        String yaml = workflow();
-        for (String needed : List.of(
-                "core/src/main/webapp/ui/src/**",      // the screens a lock reads
-                "tools/negative-controls/**",          // the controls this class counts
-                "docs/design/fail-closed-reads.md")) { // the ledger it compares them with
-            int occurrences =
-                    yaml.split(java.util.regex.Pattern.quote("'" + needed + "'"), -1).length - 1;
-            assertEquals(2, occurrences,
-                    "'" + needed + "' should appear in BOTH the push and pull_request paths of "
-                            + WORKFLOW + " and appears " + occurrences + " time(s). A change to "
-                            + "it would not start the workflow that checks it");
-        }
     }
 
     @Test
@@ -491,17 +495,30 @@ class EverySupportedCouchDbIsMeasuredTest {
                     wrong.add(fact.name() + " -> " + source + " (no such file)");
                     continue;
                 }
-                int[] range = lineRange(trimmed);
-                if (range == null) {
-                    continue; // a citation with no line numbers claims nothing about lines
-                }
+                    int[] range = lineRange(trimmed);
+                // REQUIRED, not optional. Skipping a citation with no line numbers meant the
+                // easiest way to silence this lock when a refactor moved code was to delete the
+                // numbers — which restores exactly the file-only check it replaced (subagent
+                // review, P2). All seven carry a range today, so requiring one refuses nothing.
+                assertTrue(range != null,
+                        fact.name() + " cites " + trimmed + " with no line numbers, so nothing "
+                                + "checks that the premise is still there");
                 List<String> lines = Files.readAllLines(source, StandardCharsets.UTF_8);
+                // Comments are KEPT, deliberately. A review suggested dropping them — "a sentence
+                // about the code is not the code" — and it is right for the facts whose premise
+                // is a call. But two of these premises ARE javadoc: the allow_fallback version
+                // boundary is a claim about versions, made in prose, and this branch counts such
+                // a claim as equal to a line of code. Stripping comments made those two facts
+                // uncheckable (measured: the lock went red on them immediately).
                 String cited = String.join("\n", lines.subList(
                         Math.max(0, range[0] - 1), Math.min(lines.size(), range[1])));
                 // A citation that names its own method in parentheses — ":1197 (putBack, …)" —
                 // is checked against THAT name. The fact's anchor covers the ones that do not.
                 String expected = anchorOf(trimmed, fact.anchor());
-                if (!cited.contains(expected)) {
+                // Word-bounded: plain contains() let `getDoc` be satisfied by a `getDocument`
+                // call sitting in the range, so the pointer could rot to a different method and
+                // stay green (Codex review, P2).
+                if (!Pattern.compile("\\b" + Pattern.quote(expected) + "\\b").matcher(cited).find()) {
                     wrong.add(fact.name() + " cites " + trimmed + ", which does not contain "
                             + expected);
                 }

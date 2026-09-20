@@ -84,10 +84,19 @@ class TheSipLayoutIsWhereCommonsIpPutsItTest {
     void theLayoutIsExactlyThis(@TempDir Path tmp) throws Exception {
         List<String> names = entryNames(EarkSipExporterTest.buildOne(tmp));
 
-        // Pinned in full rather than by prefix. A commons-ip2 upgrade that renames
-        // `representations/rep1` or moves METS.xml changes what every external verifier has to
-        // open, and the only way that is noticed is if something states the whole set.
-        assertEquals(List.of(
+        // A SET, not a sequence. The first version compared an ordered List, so commons-ip2
+        // writing the same eleven paths in a different order would have been rejected — and
+        // nothing a verifier does depends on zip order (Codex review, P2).
+        //
+        // Pinned in full rather than by prefix: an upgrade that renames `representations/rep1`
+        // or moves METS.xml changes what every external verifier has to open, and the only way
+        // that is noticed is if something states the whole set.
+        //
+        // THIS FIXTURE'S configuration: no evidence-record service is wired, so no `ers.der`.
+        // The product adds one when it is (EarkSipExporter's addOtherMetadata for the record),
+        // and a spec written from this list alone would reject that legitimate package — so the
+        // optional entry is named here rather than discovered later.
+        assertEquals(java.util.Set.of(
                 ROOT + "metadata/descriptive/dc.xml",
                 ROOT + "metadata/preservation/premis.xml",
                 ROOT + "metadata/other/nemaki-authenticity-report.json",
@@ -98,10 +107,12 @@ class TheSipLayoutIsWhereCommonsIpPutsItTest {
                 ROOT + "schemas/DILCISExtensionSIPMETS.xsd",
                 ROOT + "schemas/mets1_12.xsd",
                 ROOT + "schemas/xlink.xsd",
-                ROOT + "METS.xml"), names,
+                ROOT + "METS.xml"), new java.util.LinkedHashSet<>(names),
                 "the package layout changed. This is not a formatting detail: the spec in "
                         + "docs/design tells a third party which paths to open, and it is "
-                        + "written from this list");
+                        + "written from this list. Known OPTIONAL entry, absent here because "
+                        + "this fixture wires no evidence-record service: "
+                        + ROOT + "metadata/other/ers.der");
     }
 
     @Test
