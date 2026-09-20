@@ -105,6 +105,34 @@ class SipVerifierTest {
     }
 
     @Test
+    @DisplayName("two PREMIS documents are ambiguous, not a free choice of digest")
+    void twoPremisDocumentsAreAmbiguous(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> proof = realProofFor(2);
+        // A derived copy brings its own PREMIS. The one describing the payload records the
+        // right digest; the other records a different one. Which arrives first depends on zip
+        // order, so a verifier that took the first would sometimes PASS and sometimes FAIL the
+        // same package — and when it passed, it would be checking bytes against a digest it
+        // chose rather than one the package assigned to them.
+        Path sip = zip(tmp, "two-premis.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/derived/premis.xml", premisWithDigest("b".repeat(64)),
+                "sip/metadata/other/nemaki-evidence.json", proof.get("json")));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "payload digest"),
+                "ambiguity is UNAVAILABLE, not NOT_PRESENT and certainly not PASSED: the "
+                        + "package HAS fixity metadata and this verifier cannot tell which "
+                        + "document is about the payload. " + result.asMap());
+        assertEquals(SipVerifier.Verdict.INDETERMINATE, result.verdict(),
+                "and a required check that could not be carried out makes the whole answer "
+                        + "INDETERMINATE: " + result.asMap());
+    }
+
+    @Test
     @DisplayName("a well-formed package verifies, and both checks actually ran")
     void aGoodPackageVerifies(@TempDir Path tmp) throws Exception {
         String payload = "the minutes";

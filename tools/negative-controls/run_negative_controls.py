@@ -10244,6 +10244,15 @@ CONTROLS = [
         expect_fail=['anUnknownAssuranceLevelIsRefused'],
     ),
     dict(
+        id='IP3',
+        what='the verifier goes back to taking the FIRST premis.xml, so a package with two is checked against whichever the zip order reached first',
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='                if (found != null) {\n                    return null;\n                }\n                found = new String(entry.getValue(), StandardCharsets.UTF_8);',
+        replace='                return new String(entry.getValue(), StandardCharsets.UTF_8);',
+        test='SipVerifierTest',
+        expect_fail=['twoPremisDocumentsAreAmbiguous'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",

@@ -204,6 +204,17 @@ public final class SipVerifier {
     private static Check payloadDigestCheck(Map<String, byte[]> entries) {
         String premis = textOf(entries, "premis.xml");
         if (premis == null) {
+            int matches = countMatching(entries, "premis.xml");
+            if (matches > 1) {
+                // Ambiguity is UNAVAILABLE, not NOT_PRESENT: the package HAS fixity metadata
+                // and this verifier cannot tell which document is about the payload beside it.
+                // Picking one would be checking the bytes against a digest chosen by zip order.
+                return new Check("payload digest", Outcome.UNAVAILABLE,
+                        "the package carries " + matches + " PREMIS documents and this verifier "
+                                + "cannot tell which one describes the payload. Choosing by "
+                                + "path order would check the bytes against whichever happened "
+                                + "to be written first");
+            }
             return new Check("payload digest", Outcome.NOT_PRESENT,
                     "the package carries no PREMIS document");
         }
@@ -439,13 +450,37 @@ public final class SipVerifier {
         }
     }
 
+    /**
+     * The one entry whose path ends with {@code suffix}, or null.
+     *
+     * <p><b>Null when there is more than one, too.</b> The first version returned whichever the
+     * zip iteration reached first, so a package carrying two PREMIS documents — a derived copy
+     * brings its own — was verified against an arbitrary one of them, and which one depended on
+     * the order the entries happened to be written in. That is a verifier choosing the evidence
+     * it likes; {@link #countMatching} lets the caller say so instead.
+     */
     private static String textOf(Map<String, byte[]> entries, String suffix) {
+        String found = null;
         for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
             if (entry.getKey().endsWith(suffix)) {
-                return new String(entry.getValue(), StandardCharsets.UTF_8);
+                if (found != null) {
+                    return null;
+                }
+                found = new String(entry.getValue(), StandardCharsets.UTF_8);
             }
         }
-        return null;
+        return found;
+    }
+
+    /** How many entries end with {@code suffix}, so absence and ambiguity are told apart. */
+    private static int countMatching(Map<String, byte[]> entries, String suffix) {
+        int n = 0;
+        for (String key : entries.keySet()) {
+            if (key.endsWith(suffix)) {
+                n++;
+            }
+        }
+        return n;
     }
 
     private static String between(String text, String open, String close) {
