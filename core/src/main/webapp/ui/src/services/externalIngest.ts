@@ -424,9 +424,42 @@ export async function deleteProfile(profileId: string): Promise<void> {
 const INGEST_URL = '/core/api/v1/admin/ingest';
 const SCHEDULER_URL = '/core/api/v1/admin/ingest-scheduler';
 
-export async function listIngestJobs(limit = 50): Promise<IngestJobRecord[]> {
+/**
+ * A page of job rows, and how many the server could not decode.
+ *
+ * The server answers a bare array when every row decoded, and an envelope
+ * `{jobs, unreadableEntries, unreadableNote}` when some did not. The only consumer asked for
+ * the array and cast — so on the envelope the table received an object, rendered nothing, and
+ * the `catch {}` above it swallowed the error. "Some rows could not be read" arrived as
+ * "there are no jobs", which is the defect this branch is named after, on the screen.
+ */
+export interface IngestJobPage {
+  jobs: IngestJobRecord[];
+  /** Rows the server could not decode. They are NOT in `jobs`. */
+  unreadableEntries: number;
+  /** What the server said about them, when it said anything. */
+  unreadableNote?: string;
+}
+
+export async function listIngestJobs(limit = 50): Promise<IngestJobPage> {
   const res = await fetchWithAuth(`${INGEST_URL}/jobs?limit=${limit}`);
-  return parseJsonOrThrow<IngestJobRecord[]>(res, 'listIngestJobs');
+  const data = await parseJsonOrThrow<unknown>(res, 'listIngestJobs');
+  if (Array.isArray(data)) {
+    return { jobs: data as IngestJobRecord[], unreadableEntries: 0 };
+  }
+  const envelope = data as { jobs?: unknown; unreadableEntries?: unknown; unreadableNote?: unknown };
+  if (!Array.isArray(envelope.jobs)) {
+    // Neither shape. Refusing is the point: returning [] here would say "no jobs" about an
+    // answer nobody understood.
+    throw new Error('listIngestJobs: the server answered neither a job array nor a job page');
+  }
+  return {
+    jobs: envelope.jobs as IngestJobRecord[],
+    unreadableEntries: typeof envelope.unreadableEntries === 'number'
+      ? envelope.unreadableEntries : 0,
+    unreadableNote: typeof envelope.unreadableNote === 'string'
+      ? envelope.unreadableNote : undefined,
+  };
 }
 
 export async function listDlqEntries(limit = 100): Promise<{ count: number; entries: DlqEntry[] }> {

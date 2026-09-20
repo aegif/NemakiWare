@@ -3561,6 +3561,8 @@
     }
   },
   "ingestJobs": {
+    "unreadableRows": "{{count}} row(s) could not be decoded by this node and are NOT in the list below, so the history looks shorter than it is. The server log names them by document id.",
+    "loadFailed": "Could not load the job history",
     "incompleteReads": "Not seen by this run",
     "title": "Ingest Job History & Dead-Letter Queue",
     "tabs": {

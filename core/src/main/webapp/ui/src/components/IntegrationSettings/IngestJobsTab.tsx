@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Button, Tag, Space, Card, App, Popconfirm, Tabs, Typography, Tooltip } from 'antd';
+import { Table, Button, Tag, Space, Card, App, Popconfirm, Tabs, Typography, Tooltip, Alert } from 'antd';
 import { ReloadOutlined, DeleteOutlined, RedoOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import {
@@ -22,13 +22,24 @@ export function IngestJobsTab() {
   const [jobs, setJobs] = useState<IngestJobRecord[]>([]);
   const [dlqEntries, setDlqEntries] = useState<DlqEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [unreadableJobs, setUnreadableJobs] = useState(0);
 
   const loadJobs = useCallback(async () => {
     setLoading(true);
     try {
-      setJobs(await listIngestJobs(50));
-    } catch { /* ignore */ } finally { setLoading(false); }
-  }, []);
+      const page = await listIngestJobs(50);
+      setJobs(page.jobs);
+      // A page the server could only partly decode is not a shorter history. Saying so is the
+      // whole reason the server sends the count; dropping it turned "n rows unreadable" into
+      // a list that looks complete.
+      setUnreadableJobs(page.unreadableEntries);
+    } catch (e) {
+      // NOT ignored. An unreadable answer used to leave the previous table on screen with no
+      // sign anything had failed.
+      message.error(t('ingestJobs.loadFailed'));
+      setUnreadableJobs(0);
+    } finally { setLoading(false); }
+  }, [message, t]);
 
   const loadDlq = useCallback(async () => {
     setLoading(true);
@@ -123,6 +134,10 @@ export function IngestJobsTab() {
               <Button icon={<ReloadOutlined />} onClick={loadJobs} style={{ marginBottom: 16 }}>
                 {t('common.refresh')}
               </Button>
+              {unreadableJobs > 0 && (
+                <Alert type="warning" showIcon style={{ marginBottom: 16 }}
+                  message={t('ingestJobs.unreadableRows', { count: unreadableJobs })} />
+              )}
               <Table columns={jobColumns} dataSource={jobs} rowKey="jobId"
                 loading={loading} pagination={{ pageSize: 20 }} size="small" bordered />
             </>
