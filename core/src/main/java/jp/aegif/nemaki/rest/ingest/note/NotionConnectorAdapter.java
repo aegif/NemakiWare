@@ -116,8 +116,13 @@ public class NotionConnectorAdapter {
         int pageSize = Math.min(limit, 100); // Notion max page_size: 100
         List<NotionPageSummary> allPages = new ArrayList<>();
         String cursor = null;
-        // Set only where Notion has ANSWERED that there is nothing more. Every other way out of
-        // this loop is a return or a throw, so the flag is what tells the cap apart from an end.
+        // Set where nothing said there is more — which includes a response that OMITS has_more
+        // (R61), so this is NOT "Notion answered". The javadoc above was corrected for exactly
+        // that and this line — the strongest statement of the three, and the one right beside
+        // the flag — was left saying ANSWERED (subagent review, P2).
+        //
+        // It tells an END apart from the 50-page CAP: the cap falls out of the loop with the
+        // flag unset. (Not "every other way out is a return or a throw" — the cap is neither.)
         boolean nothingMore = false;
 
         for (int page = 0; page < 50; page++) { // Hard cap on pages
@@ -231,11 +236,13 @@ public class NotionConnectorAdapter {
     }
 
     /**
-     * One logging point for every way {@link #searchPages} ends.
+     * One logging point for every way {@link #searchPages} RETURNS. The four refusals throw and
+     * are recorded by the caller as errors; "every way it ends" covered those too, which it does
+     * not (subagent review, P3).
      *
      * <p>The line used to run on every call. Restructuring the exits left it reachable from two
-     * of six, so the ordinary case stopped logging and the truncation cases — the ones worth
-     * investigating — logged nothing either (subagent review, P3).
+     * of six returns, so the ordinary case stopped logging and the truncation cases — the ones
+     * worth investigating — logged nothing either.
      */
     private PageListing logged(String query, int limit, PageListing listing) {
         logger.info("Notion searchPages: query='{}', fetched={}, limit={}, complete={}{}",
