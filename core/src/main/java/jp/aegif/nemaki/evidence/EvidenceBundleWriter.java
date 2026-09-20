@@ -222,8 +222,23 @@ public final class EvidenceBundleWriter {
                 continue;
             }
             files.put("anchors/" + fileNameFor(entry.getKey()), part.der());
+            if (part.revocationDer() != null) {
+                // The name the verifier looks for (evidence-profile-v1.md §12). Written only
+                // when there IS material: an empty file would be reported as a parse failure,
+                // which reads as tampering rather than as "nobody kept the answer".
+                files.put("anchors/" + revocationFileNameFor(entry.getKey()),
+                        part.revocationDer());
+            }
         }
         return files;
+    }
+
+    private static String revocationFileNameFor(AnchorKind kind) {
+        return switch (kind) {
+            case RFC3161_TSA -> "rfc3161-revocation.der";
+            case OPENTIMESTAMPS -> "ots-revocation.der";
+            case ATLAS_CATALOG -> "atlas-revocation.der";
+        };
     }
 
     private static String fileNameFor(AnchorKind kind) {

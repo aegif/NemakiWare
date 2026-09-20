@@ -203,6 +203,51 @@ class TheBundleIsFixedBeforeTheWriteTest {
     }
 
     @Test
+    @DisplayName("revocation material captured at issuance reaches the package")
+    void revocationMaterialReachesThePackage(@TempDir Path dir) throws Exception {
+        EvidenceBundle full = fullBundle();
+        Map<AnchorKind, EvidenceBundle.AnchorPart> anchors = new LinkedHashMap<>(full.anchors());
+        anchors.put(AnchorKind.RFC3161_TSA, new EvidenceBundle.AnchorPart(
+                EvidenceBundle.AnchorPart.State.PRESENT, new byte[] { 0x30, 0x03 },
+                new byte[] { 0x30, 0x05 }, null));
+        EvidenceBundle withRevocation = new EvidenceBundle(full.repositoryId(), full.objectId(),
+                full.versionObjectId(), full.statement(), full.entry(), full.inclusionProof(),
+                full.coveringCheckpoint(), full.checkpointChain(), full.anchorTargetCheckpoint(),
+                anchors, full.createdAt());
+
+        SortedSet<String> found = write(withRevocation, dir);
+
+        assertTrue(found.contains("anchors/rfc3161-revocation.der"),
+                "the verifier looks for exactly this path (§12). Material collected at issuance "
+                        + "and left in the receipt is material nobody outside this deployment "
+                        + "can ever use: " + found);
+    }
+
+    @Test
+    @DisplayName("no revocation material ships no file, rather than an empty one")
+    void noRevocationMaterialShipsNoFile(@TempDir Path dir) throws Exception {
+        SortedSet<String> found = write(fullBundle(), dir);
+
+        assertFalse(found.contains("anchors/rfc3161-revocation.der"),
+                "an empty CRL would be reported by a verifier as a parse failure — a finding "
+                        + "about the package — rather than as 'nobody kept the answer from "
+                        + "then', which is what it is");
+    }
+
+    @Test
+    @DisplayName("revocation material for a rung with no anchor is refused")
+    void revocationMaterialWithoutAnAnchorIsRefused() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new EvidenceBundle.AnchorPart(EvidenceBundle.AnchorPart.State.NOT_PRESENT,
+                        null, new byte[] { 1 }, null),
+                "material about a rung that carries no anchor is material about nothing");
+        assertThrows(IllegalArgumentException.class,
+                () -> new EvidenceBundle.AnchorPart(EvidenceBundle.AnchorPart.State.PRESENT,
+                        new byte[] { 1 }, new byte[0], null),
+                "zero-length material would ship and then fail to parse");
+    }
+
+    @Test
     @DisplayName("an anchor recorded as present with no bytes is refused outright")
     void aPresentAnchorWithNoBytesIsRefused() {
         assertThrows(IllegalArgumentException.class,

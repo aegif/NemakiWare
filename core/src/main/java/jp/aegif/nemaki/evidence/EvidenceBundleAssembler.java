@@ -328,8 +328,13 @@ public class EvidenceBundleAssembler {
                         "the receipt is " + receipt.status() + " and carries no usable material"));
                 continue;
             }
+            // The revocation material captured when the token was obtained (plan §11). Absent
+            // is the common case and is not a problem here: the package then ships none and a
+            // verifier answers INDETERMINATE for P3's revocation check.
+            byte[] revocation = jp.aegif.nemaki.rest.purview.anchor.RevocationMaterial
+                    .materialIn(receipt.attributes());
             anchors.put(kind, new EvidenceBundle.AnchorPart(
-                    EvidenceBundle.AnchorPart.State.PRESENT, receipt.proof(), null));
+                    EvidenceBundle.AnchorPart.State.PRESENT, receipt.proof(), revocation, null));
         }
         return anchors;
     }

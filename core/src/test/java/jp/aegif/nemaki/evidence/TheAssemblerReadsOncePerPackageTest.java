@@ -203,6 +203,28 @@ class TheAssemblerReadsOncePerPackageTest {
     }
 
     @Test
+    @DisplayName("the assembler reads the captured revocation material out of the receipt")
+    void theAssemblerReadsTheCapturedMaterial() throws java.io.IOException {
+        // Structural, on the call site. Driving this behaviourally needs a receipt store, a
+        // checkpoint and an anchor target, and the bundle-level lock that DOES exist builds its
+        // bundle directly — so the assembler was never on its path and stayed green while the
+        // assembler dropped the material entirely (control KM3 did not fire).
+        java.nio.file.Path source = java.nio.file.Path.of(
+                "src/main/java/jp/aegif/nemaki/evidence/EvidenceBundleAssembler.java");
+        assertTrue(java.nio.file.Files.exists(source), "the assembler is not at " + source);
+        String text = java.nio.file.Files.readString(source,
+                        java.nio.charset.StandardCharsets.UTF_8)
+                .replaceAll("(?m)//.*$", "")
+                .replaceAll("(?s)/\\*.*?\\*/", "");
+
+        assertTrue(text.contains("RevocationMaterial\n                    .materialIn(")
+                        || text.contains("RevocationMaterial.materialIn("),
+                "the assembler no longer reads the captured revocation material out of the "
+                        + "receipt, so every package ships none however much was collected — "
+                        + "and the collection that produced it runs for nothing");
+    }
+
+    @Test
     @DisplayName("a pending anchor ships no material and says so")
     void aPendingAnchorIsNotMaterial() {
         AnchorReceipt pending = AnchorReceipt.pending(AnchorKind.OPENTIMESTAMPS, "root",

@@ -47,6 +47,32 @@ import java.util.Map;
 public record RevocationMaterial(Status status, byte[] der, String digest, Instant retrievedAt,
                                  String source, String detail) {
 
+    /** Where the captured bytes travel inside an anchor receipt. */
+    public static final String MATERIAL_KEY = "revocationMaterialBase64";
+
+    /**
+     * The bytes a receipt carries, or null.
+     *
+     * <p>Null for every state but {@code CAPTURED}, and null when the attribute is unreadable —
+     * material that cannot be decoded is material this node does not have, and shipping a
+     * half-decoded CRL would put a parse failure in the package where an absence belongs.
+     */
+    public static byte[] materialIn(java.util.Map<String, String> attributes) {
+        if (attributes == null) {
+            return null;
+        }
+        String encoded = attributes.get(MATERIAL_KEY);
+        if (encoded == null || encoded.isBlank()) {
+            return null;
+        }
+        try {
+            byte[] decoded = java.util.Base64.getDecoder().decode(encoded);
+            return decoded.length == 0 ? null : decoded;
+        } catch (IllegalArgumentException notBase64) {
+            return null;
+        }
+    }
+
     public enum Status {
         NOT_ATTEMPTED,
         UNAVAILABLE,
@@ -110,6 +136,12 @@ public record RevocationMaterial(Status status, byte[] der, String digest, Insta
         }
         if (detail != null) {
             attributes.put("revocationDetail", detail);
+        }
+        if (der != null) {
+            // Base64 in the receipt's attributes, because that is the only place the receipt
+            // store already persists free-form values. The package ships the DECODED bytes;
+            // a verifier never sees this encoding.
+            attributes.put(MATERIAL_KEY, java.util.Base64.getEncoder().encodeToString(der));
         }
         return attributes;
     }

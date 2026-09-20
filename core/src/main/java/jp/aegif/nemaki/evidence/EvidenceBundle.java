@@ -78,7 +78,13 @@ public record EvidenceBundle(
      * @param der the anchor's own bytes, or null. <b>Never an empty array</b> — a zero-length
      *        DER in a package is an anchor that is not there dressed as one that is.
      */
-    public record AnchorPart(State state, byte[] der, String detail) {
+    public record AnchorPart(State state, byte[] der, byte[] revocationDer, String detail) {
+
+        /** The pre-revocation shape, kept so existing construction does not change meaning. */
+        public AnchorPart(State state, byte[] der, String detail) {
+            this(state, der, null, detail);
+        }
+
         /** The three ways an anchor can be missing, which are not the same answer. */
         public enum State {
             /** Present, and {@code der} holds it. */
@@ -100,11 +106,33 @@ public record EvidenceBundle(
                 throw new IllegalArgumentException("an anchor that is not PRESENT must not carry "
                         + "bytes: a reader would take them as the anchor");
             }
+            if (revocationDer != null && revocationDer.length == 0) {
+                // A zero-length CRL would be shipped and then fail to parse, which a verifier
+                // reports as a finding about the package rather than as the absence it is.
+                throw new IllegalArgumentException("revocation material with no bytes is an "
+                        + "absence dressed as a presence");
+            }
+            if (state != State.PRESENT && revocationDer != null) {
+                throw new IllegalArgumentException("revocation material for a rung that carries "
+                        + "no anchor is material about nothing");
+            }
             der = der == null ? null : der.clone();
+            revocationDer = revocationDer == null ? null : revocationDer.clone();
         }
 
         public byte[] der() {
             return der == null ? null : der.clone();
+        }
+
+        /**
+         * The revocation material captured AT ISSUANCE, or null.
+         *
+         * <p>Null means the package ships none, and a verifier answers {@code INDETERMINATE}
+         * for P3's revocation check rather than passing — which is the honest outcome when
+         * nobody kept the answer from then.
+         */
+        public byte[] revocationDer() {
+            return revocationDer == null ? null : revocationDer.clone();
         }
     }
 

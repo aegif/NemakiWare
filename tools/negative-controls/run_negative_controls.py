@@ -10723,6 +10723,39 @@ CONTROLS = [
         expect_fail=['bothRenderingsCarryEveryStage'],
     ),
     dict(
+        id='KK3',
+        what='revocation material collected at issuance never reaches the package, so it is material nobody outside this deployment can ever use',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/EvidenceBundleWriter.java',
+        find='            if (part.revocationDer() != null) {',
+        replace='            if (false) {',
+        test='TheBundleIsFixedBeforeTheWriteTest',
+        expect_fail=['revocationMaterialReachesThePackage'],
+    ),
+    dict(
+        id='KL3',
+        what='material that cannot be decoded is shipped half-decoded, putting a parse failure in the package where an absence belongs',
+        file='core/src/main/java/jp/aegif/nemaki/rest/purview/anchor/RevocationMaterial.java',
+        # The zero-length arm is UNREACHABLE — base64 of an empty string IS an empty
+        # string, which isBlank() catches first — so a control aimed there measured
+        # nothing. This breaks the reachable arm: the catch.
+        find='        } catch (IllegalArgumentException notBase64) {\n            return null;',
+        replace='        } catch (IllegalArgumentException notBase64) {\n            return new byte[] { 0 };',
+        test='NotAskedIsNotAskedAndAnsweredNothingTest',
+        expect_fail=['undecodableMaterialIsAbsent'],
+    ),
+    dict(
+        id='KM3',
+        what='the assembler stops reading the captured material out of the receipt, so every package ships none however much was collected',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/EvidenceBundleAssembler.java',
+        find='            byte[] revocation = jp.aegif.nemaki.rest.purview.anchor.RevocationMaterial\n                    .materialIn(receipt.attributes());',
+        replace='            byte[] revocation = null;',
+        # Measured on a STRUCTURAL lock. The behavioural one builds its bundle
+        # directly, so the assembler is never on its path — it stayed green while
+        # the assembler dropped the material entirely.
+        test='TheAssemblerReadsOncePerPackageTest',
+        expect_fail=['theAssemblerReadsTheCapturedMaterial'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",

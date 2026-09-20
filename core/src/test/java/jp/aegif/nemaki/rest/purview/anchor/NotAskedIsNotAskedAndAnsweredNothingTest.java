@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -101,6 +102,31 @@ class NotAskedIsNotAskedAndAnsweredNothingTest {
                         new byte[] { 1 }, null, null, "s", null),
                 "bytes on material that was not captured would be taken by a reader as the "
                         + "answer");
+    }
+
+    @Test
+    @DisplayName("captured bytes travel in the receipt and come back out")
+    void capturedBytesTravelInTheReceipt() {
+        byte[] crl = { 0x30, 0x05, 0x01, 0x02 };
+        Map<String, String> attributes = RevocationMaterial
+                .captured(crl, "abc", Instant.EPOCH, "http://crl.example/ca.crl")
+                .asAttributes();
+
+        assertTrue(attributes.containsKey(RevocationMaterial.MATERIAL_KEY),
+                "material collected at issuance and left nowhere is material nobody outside "
+                        + "this deployment can ever use");
+        assertArrayEquals(crl, RevocationMaterial.materialIn(attributes));
+    }
+
+    @Test
+    @DisplayName("material that cannot be decoded is material this node does not have")
+    void undecodableMaterialIsAbsent() {
+        assertNull(RevocationMaterial.materialIn(Map.of(
+                RevocationMaterial.MATERIAL_KEY, "not base64 !!!")),
+                "shipping a half-decoded CRL would put a parse failure in the package where an "
+                        + "absence belongs");
+        assertNull(RevocationMaterial.materialIn(Map.of(RevocationMaterial.MATERIAL_KEY, "")));
+        assertNull(RevocationMaterial.materialIn(null));
     }
 
     @Test
