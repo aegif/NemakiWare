@@ -116,19 +116,21 @@ public final class SipVerifier {
          * up: absence read as assurance.
          */
         public Verdict verdict() {
-            for (Check check : checks) {
-                if (check.outcome() == Outcome.FAILED) {
-                    return Verdict.FAILED;
-                }
-            }
-            for (String required : REQUIRED_CHECKS) {
-                boolean passed = checks.stream()
-                        .anyMatch(c -> required.equals(c.name()) && c.outcome() == Outcome.PASSED);
-                if (!passed) {
-                    return Verdict.INDETERMINATE;
-                }
-            }
-            return Verdict.VERIFIED;
+            // Composed by ProfileVerdict so the rule has ONE definition. The profile vectors
+            // measure that method, and a second copy here would let the two drift — which is
+            // the defect R52 was, in a place where drifting means a package reads as verified
+            // in one layer and indeterminate in the next.
+            List<Outcome> all = checks.stream().map(Check::outcome).toList();
+            List<Outcome> required = REQUIRED_CHECKS.stream()
+                    .map(name -> checks.stream()
+                            .filter(c -> name.equals(c.name()))
+                            .map(Check::outcome)
+                            // A required check the package does not carry is NOT_PRESENT, not
+                            // absent from the list: an empty required list means "nothing was
+                            // required", which is a different and much weaker statement.
+                            .findFirst().orElse(Outcome.NOT_PRESENT))
+                    .toList();
+            return jp.aegif.nemaki.evidence.ProfileVerdict.of(all, required);
         }
 
         /**

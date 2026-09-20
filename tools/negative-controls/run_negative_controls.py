@@ -8715,24 +8715,24 @@ CONTROLS = [
         id="CR3",
         what="the SIP verifier goes back to 'at least one check passed and none failed', so a "
              "package with a matching digest and NO inclusion proof is reported as verified",
-        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='            for (String required : REQUIRED_CHECKS) {\n'
-             '                boolean passed = checks.stream()\n'
-             '                        .anyMatch(c -> required.equals(c.name()) && c.outcome() == Outcome.PASSED);\n'
-             '                if (!passed) {\n'
-             '                    return Verdict.INDETERMINATE;\n'
-             '                }\n'
+        file='core/src/main/java/jp/aegif/nemaki/evidence/ProfileVerdict.java',
+        # Re-aimed 2026-09-20: the rule moved into ProfileVerdict so the profile vectors could
+        # measure the one the product uses. The control follows the rule rather than the file —
+        # it still runs SipVerifierTest, which is the point: the delegation has to carry the
+        # protection, not just relocate it.
+        find='        for (SipVerifier.Outcome outcome : required) {\n'
+             '            if (outcome != SipVerifier.Outcome.PASSED) {\n'
+             '                return SipVerifier.Verdict.INDETERMINATE;\n'
              '            }\n'
-             '            return Verdict.VERIFIED;',
-        replace='            for (Check check : checks) {\n'
-                '                if (check.outcome() == Outcome.PASSED) {\n'
-                '                    return Verdict.VERIFIED;\n'
-                '                }\n'
+             '        }\n'
+             '        return SipVerifier.Verdict.VERIFIED;',
+        replace='        for (SipVerifier.Outcome outcome : required) {\n'
+                '            if (outcome == SipVerifier.Outcome.PASSED) {\n'
+                '                return SipVerifier.Verdict.VERIFIED;\n'
                 '            }\n'
-                '            return Verdict.INDETERMINATE;',
+                '        }\n'
+                '        return SipVerifier.Verdict.INDETERMINATE;',
         test='SipVerifierTest',
-        # Four, and the fourth is the one that matters most: the ROUND TRIP. Under the old rule
-        # the package this product's own exporter builds without a ledger came back verified.
         expect_fail=['aDigestWithoutAnAuditPathIsIndeterminate',
                      'anAuditPathWithoutADigestIsIndeterminate',
                      'theBodyCarriesTheVerdict',
@@ -8748,11 +8748,10 @@ CONTROLS = [
         id="CS3",
         what="a FAILED check stops outranking an absent one, so a package whose bytes do not "
              "match their digest is reported as merely inconclusive",
-        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='                if (check.outcome() == Outcome.FAILED) {\n'
-             '                    return Verdict.FAILED;',
-        replace='                if (check.outcome() == null) {\n'
-                '                    return Verdict.FAILED;',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/ProfileVerdict.java',
+        # Re-aimed with CR3, same reason.
+        find='        if (all != null && all.contains(SipVerifier.Outcome.FAILED)) {',
+        replace='        if (all != null && all.contains(null)) {',
         test='SipVerifierTest',
         expect_fail=['aFindingOutranksAnAbsence'],
     ),
@@ -9761,7 +9760,10 @@ CONTROLS = [
         id='GS3',
         what="the readiness document's count of treated residuals goes stale, so the summary of the work reads smaller than the work",
         file='docs/design/v3.4-release-readiness.md',
-        find='**処置済み 43 / 開いている 20**',
+        # A SPAN around the number. Anchoring on the literal count drifts every time a
+        # control is added — FZ3 and GD3 had the same defect, and this one was written
+        # the same way on the same day, hours after recording the lesson.
+        find_span=('**処置済み ', '**'),
         replace='**処置済み 35 / 開いている 20**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessCountsAreTheCanonsRows'],
@@ -9770,7 +9772,10 @@ CONTROLS = [
         id='GT3',
         what='the readiness document states a control total the runner does not declare, so a sweep of 710 reads as a sweep of today',
         file='docs/design/v3.4-release-readiness.md',
-        find='負のコントロール **821 本**',
+        # A SPAN around the number. Anchoring on the literal count drifts every time a
+        # control is added — FZ3 and GD3 had the same defect, and this one was written
+        # the same way on the same day, hours after recording the lesson.
+        find_span=('負のコントロール **', ' 本**'),
         replace='負のコントロール **710 本**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
@@ -9781,7 +9786,10 @@ CONTROLS = [
         file='docs/design/v3.4-release-readiness.md',
         # The group count moves with it, so the sabotage is internally consistent — which is the
         # point. A check that only read the numbers beside each other would stay green.
-        find='**実際に開いている 10** — R53 / R55〜R63',
+        # A SPAN around the number. Anchoring on the literal count drifts every time a
+        # control is added — FZ3 and GD3 had the same defect, and this one was written
+        # the same way on the same day, hours after recording the lesson.
+        find_span=('**実際に開いている ', '〜R63'),
         replace='**実際に開いている 9** — R55〜R63',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['everyOpenResidualIsInExactlyOneGroup'],
@@ -9797,10 +9805,14 @@ CONTROLS = [
     ),
     dict(
         id='GW3',
-        what="Phase 0's gate stops being recorded as unmet while the profile spec still leaves the canonical form unspecified",
-        file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='不明な正準化 field・trust 意味が残っていない → **未達**（下記 G0） |',
-        replace='不明な正準化 field・trust 意味が残っていない |',
+        what="the spec withdraws the canonical form it regulates, and the plan goes on recording Phase 0's gate as met",
+        file='docs/design/evidence-profile-v1.md',
+        # Re-aimed 2026-09-20. The original sabotage removed 未達 from the plan while the spec
+        # still said .c14n was unregulated. Phase 2 then closed the gate, so that premise is
+        # gone: the live arm is now the other one — put the exclusion back in the spec and the
+        # plan's 達成 becomes a claim the spec does not support.
+        find='| 機械可読な JSON Schema と verifier の結果 schema |',
+        replace='| `.c14n` の正準化形式 | 未定 |\n| 機械可読な JSON Schema と verifier の結果 schema |',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['phaseZerosGateTracksTheSpec'],
     ),
@@ -9817,8 +9829,9 @@ CONTROLS = [
         id='GY3',
         what="the readiness document stops marking the sweep outstanding, so a finished sweep of 704 controls reads as a measurement of today's 821",
         file='docs/design/v3.4-release-readiness.md',
-        find='| **821 本** | **期限切れ**（下記） |',
-        replace='| **821 本** | 済 |',
+        # The WORD, not the row: the row carries the control count, which changes.
+        find='| **期限切れ**（下記） |',
+        replace='| 済 |',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -9834,6 +9847,80 @@ CONTROLS = [
         replace="    branches: [ master, main, develop, 'release/**' ]\n    paths:\n      - 'pom.xml'\n      - 'core/src/main/java/**'\n      - 'core/src/test/java/**'\n      - 'core/pom.xml'\n      - 'core/src/main/webapp/WEB-INF/**'\n      # The unit job carries a lock that reads the manual-run SCREENS. Without this a\n      # UI-only revert does not start this workflow at all, so the lock is on the list\n      # and the list never runs for the change it guards.\n      - 'core/src/main/webapp/ui/src/**'\n      # The unit job counts the controls and checks the canon's number against them.\n      # Without these, retiring a control or editing that number does not start this\n      # workflow, so the check exists and never gates (Codex review, P2).\n      - 'tools/negative-controls/**'\n      - 'docs/design/fail-closed-reads.md'\n      # The evidence profile spec and the vectors both languages read. A change to\n      # either is a change to what every external verifier must do.\n      - 'docs/design/evidence-profile-v1.md'\n      - 'core/src/test/resources/evidence/**'\n      # The progress documents. A lock reads their counts against the canon and the\n      # runner, and reads the Phase 0 gate against the profile spec. Editing a number\n      # in either of these is exactly the change that has to start this workflow.\n      - 'docs/design/v3.4.0-evidence-and-residuals-plan.md'\n",
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theGateRunsForTheDocumentsThisLockReads'],
+    ),
+    dict(
+        id='HA3',
+        what="the plan records Phase 0's gate as unmet after the spec has closed it, so a met gate reads as outstanding work forever",
+        file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
+        # The OTHER direction from GW3. A lock that only demanded 未達 would hold a false
+        # sentence in place once the gate was met, which is the same defect pointed backwards.
+        find='~~不明な正準化 field・trust 意味が残っていない~~ **達成 2026-09-20**（下記 G0） |',
+        replace='不明な正準化 field・trust 意味が残っていない → **未達** |',
+        test='ReleaseReadinessIsMeasuredTest',
+        expect_fail=['phaseZerosGateTracksTheSpec'],
+    ),
+    dict(
+        id='HB3',
+        what='the canonical form stops refusing a document with duplicate keys, so one document has two canonical forms and the digest commits to whichever the parser kept',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/CanonicalJson.java',
+        find='            .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)\n',
+        replace='',
+        test='EvidenceProfileV1VectorsTest',
+        expect_fail=['everyRefusalInTheVectorsIsARefusalHere'],
+    ),
+    dict(
+        id='HC3',
+        what='a non-integral number is rounded into the typed encoding instead of refused, so the digest commits to a value the document does not contain',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/CanonicalJson.java',
+        find='            case VALUE_NUMBER_FLOAT:\n                throw new NotCanonicalisable("the typed encoding has no tag for a non-integral "',
+        replace='            case VALUE_NUMBER_FLOAT:\n                if (true) { return (long) parser.getDoubleValue(); }\n                throw new NotCanonicalisable("the typed encoding has no tag for a non-integral "',
+        test='EvidenceProfileV1VectorsTest',
+        expect_fail=['everyRefusalInTheVectorsIsARefusalHere'],
+    ),
+    dict(
+        id='HD3',
+        what='the checkpoint chain accepts a step that does not move forward, so two checkpoints for the same period both read as a walk to the anchor',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/CheckpointChain.java',
+        find='            if (here.toSequence() <= prior.toSequence()) {',
+        replace='            if (false) {',
+        test='EvidenceProfileV1VectorsTest',
+        expect_fail=['chainsAgreeWithTheVectors'],
+    ),
+    dict(
+        id='HE3',
+        what='an empty checkpoint chain passes, so a package carrying no link at all reads as one whose chain held',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/CheckpointChain.java',
+        find='        if (links == null || links.isEmpty()) {',
+        replace='        if (links == null) {',
+        test='EvidenceProfileV1VectorsTest',
+        expect_fail=['chainsAgreeWithTheVectors'],
+    ),
+    dict(
+        id='HF3',
+        what='the verdict composition treats an empty required set as satisfied, so a verifier that required nothing reports VERIFIED',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/ProfileVerdict.java',
+        find='        if (required == null || required.isEmpty()) {\n            return SipVerifier.Verdict.INDETERMINATE;\n        }',
+        replace='        if (required == null) {\n            return SipVerifier.Verdict.INDETERMINATE;\n        }',
+        test='EvidenceProfileV1VectorsTest',
+        expect_fail=['compositionAgreesWithTheVectors'],
+    ),
+    dict(
+        id='HG3',
+        what='a FAILED check in a check the profile does not require stops counting, so a package known to be inconsistent reports VERIFIED',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/ProfileVerdict.java',
+        find='        if (all != null && all.contains(SipVerifier.Outcome.FAILED)) {',
+        replace='        if (false) {',
+        test='EvidenceProfileV1VectorsTest',
+        expect_fail=['compositionAgreesWithTheVectors'],
+    ),
+    dict(
+        id='HH3',
+        what='SipVerifier goes back to its own copy of the composition rule, so the rule the vectors measure and the rule the product uses can drift apart',
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='            return jp.aegif.nemaki.evidence.ProfileVerdict.of(all, required);',
+        replace='            return all.contains(Outcome.FAILED) ? Verdict.FAILED\n                    : required.stream().allMatch(o -> o == Outcome.PASSED)\n                            ? Verdict.VERIFIED : Verdict.INDETERMINATE;',
+        test='EvidenceProfileV1VectorsTest',
+        expect_fail=['theSipVerifierComposesThroughTheSharedRule'],
     ),
     dict(
         id="DQ3",

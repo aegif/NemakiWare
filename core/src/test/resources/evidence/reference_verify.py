@@ -45,8 +45,62 @@ def enc(v):
 
 
 def hash_parts(parts):
-    """Spec section 3.2: the ARGUMENT LIST is encoded as one LIST."""
+    """Spec section 3.3: the ARGUMENT LIST is encoded as one LIST."""
     return hashlib.sha256(enc(list(parts))).hexdigest()
+
+
+class Refused(Exception):
+    """A document with no single canonical form. Spec section 3.2."""
+
+
+def parse_strict(text):
+    """Spec section 3.2's refusals, before any encoding happens.
+
+    Python's json keeps the LAST duplicate key and reads 1.5 as a float, so a canonicaliser
+    built on the defaults would silently produce a second canonical form for a document that
+    has one, or round a number the document does not contain.
+    """
+    def pairs(items):
+        seen = {}
+        for key, value in items:
+            if key in seen:
+                raise Refused("duplicate key %r" % key)
+            seen[key] = value
+        return seen
+
+    def refuse_float(literal):
+        raise Refused("non-integral number %s" % literal)
+
+    def refuse_constant(literal):
+        raise Refused("%s is not a JSON value the encoding has a tag for" % literal)
+
+    def int_or_refuse(literal):
+        value = int(literal)
+        if value < -(2 ** 63) or value > 2 ** 63 - 1:
+            raise Refused("integer %s does not fit in int64" % literal)
+        return value
+
+    decoder = json.JSONDecoder(object_pairs_hook=pairs, parse_float=refuse_float,
+                               parse_int=int_or_refuse, parse_constant=refuse_constant)
+    try:
+        value, end = decoder.raw_decode(text)
+    except Refused:
+        raise
+    except ValueError as exc:
+        raise Refused(str(exc))
+    if text[end:].strip():
+        raise Refused("trailing content after the top-level value")
+    return value
+
+
+def document_c14n(text):
+    """Spec section 3.2: the bytes a .c14n file holds."""
+    return enc(parse_strict(text))
+
+
+def document_digest(text):
+    """Spec section 3.2."""
+    return hashlib.sha256(document_c14n(text)).hexdigest()
 
 
 def entry_hash(domain, sequence, subject_kind, subject_id, payload_digest, occurred_at, prev):
@@ -98,6 +152,76 @@ def verify_proof(leaf_value, path, expected_root):
     return current == expected_root
 
 
+def build_chain(described):
+    """Spec section 11: links are wired by hashing, then optionally broken.
+
+    The vectors describe a chain rather than carrying its hashes, so both implementations have
+    to compute the linkage themselves. A vector that carried the hashes would be checking that
+    each side can compare two strings.
+    """
+    links = []
+    prev = None
+    for step in described["links"]:
+        link = {
+            "domain": described.get("domain", "d"),
+            "fromSequence": step["from"],
+            "toSequence": step["to"],
+            "merkleRoot": step["root"],
+            "prevCheckpointHash": prev,
+            "createdAt": step.get("createdAt"),
+        }
+        link["checkpointHash"] = checkpoint_hash(
+            link["domain"], link["fromSequence"], link["toSequence"], link["merkleRoot"],
+            link["prevCheckpointHash"], link["createdAt"])
+        prev = link["checkpointHash"]
+        links.append(link)
+
+    how = described.get("break")
+    if how == "prev" and len(links) > 1:
+        links[1]["prevCheckpointHash"] = "0" * 64
+    elif how == "order" and len(links) > 1:
+        links[0], links[1] = links[1], links[0]
+    elif how == "fields" and links:
+        # The recorded hash is left alone and a field is moved under it, which is the shape a
+        # rewrite takes: the chain still LOOKS linked.
+        links[-1]["merkleRoot"] = "ff"
+    elif how == "standstill" and len(links) > 1:
+        links[1]["toSequence"] = links[0]["toSequence"]
+        links[1]["checkpointHash"] = checkpoint_hash(
+            links[1]["domain"], links[1]["fromSequence"], links[1]["toSequence"],
+            links[1]["merkleRoot"], links[1]["prevCheckpointHash"], links[1]["createdAt"])
+    return links
+
+
+def verify_chain(links):
+    """Spec section 11. Returns PASS or FAIL."""
+    if not links:
+        return "FAIL"
+    for link in links:
+        recomputed = checkpoint_hash(link["domain"], link["fromSequence"], link["toSequence"],
+                                     link["merkleRoot"], link["prevCheckpointHash"],
+                                     link["createdAt"])
+        if recomputed != link["checkpointHash"]:
+            return "FAIL"
+    for i in range(1, len(links)):
+        if links[i]["prevCheckpointHash"] != links[i - 1]["checkpointHash"]:
+            return "FAIL"
+        if links[i]["toSequence"] <= links[i - 1]["toSequence"]:
+            return "FAIL"
+    return "PASS"
+
+
+def combine(all_outcomes, required_outcomes):
+    """Spec section 15."""
+    if "FAILED" in all_outcomes:
+        return "FAILED"
+    if not required_outcomes:
+        return "INDETERMINATE"
+    if any(outcome != "PASSED" for outcome in required_outcomes):
+        return "INDETERMINATE"
+    return "VERIFIED"
+
+
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(here, "profile-v1-vectors.json"), encoding="utf-8") as handle:
@@ -116,6 +240,8 @@ def main():
                                          spec["createdAt"])
     for name, spec in vectors["merkle"].items():
         computed[name] = merkle_root(spec["leaves"])
+    for name, spec in vectors["documentDigest"].items():
+        computed[name] = document_digest(spec["json"])
 
     wrong = []
     for name, expected in sorted(vectors["expected"].items()):
@@ -136,12 +262,35 @@ def main():
     if verify_proof(proof["leaf"], proof["path"], "0" * 64):
         wrong.append("proof: a wrong root was accepted")
 
+    # Section 3.2: documents with no single canonical form are refused, not normalised.
+    for name, spec in sorted(vectors["documentRefusals"].items()):
+        try:
+            document_digest(spec["json"])
+            wrong.append("%s: the spec refuses this document and the reference digested it "
+                         "anyway (%s)" % (name, spec["because"]))
+        except Refused:
+            pass
+
+    # Section 11.
+    for name, spec in sorted(vectors["chain"].items()):
+        actual = verify_chain(build_chain(spec))
+        if actual != spec["verdict"]:
+            wrong.append("%s: chain verdict %s, vectors say %s" % (name, actual, spec["verdict"]))
+
+    # Section 15.
+    for name, spec in sorted(vectors["composition"].items()):
+        actual = combine(spec["all"], spec["required"])
+        if actual != spec["verdict"]:
+            wrong.append("%s: verdict %s, vectors say %s" % (name, actual, spec["verdict"]))
+
     if wrong:
         print("evidence profile v1 — the spec and the vectors disagree:")
         for line in wrong:
             print("  " + line)
         return 1
-    print("evidence profile v1: %d vectors agree" % len(vectors["expected"]))
+    print("evidence profile v1: %d digests, %d refusals, %d chains, %d compositions agree"
+          % (len(vectors["expected"]), len(vectors["documentRefusals"]),
+             len(vectors["chain"]), len(vectors["composition"])))
     return 0
 
 
