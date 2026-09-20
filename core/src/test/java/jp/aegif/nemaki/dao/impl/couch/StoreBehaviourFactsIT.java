@@ -311,15 +311,12 @@ public class StoreBehaviourFactsIT {
      * INDEX means it knew it and acted on it; and a 200 means it accepted the key and did
      * nothing, which is neither and must not be reported as either.
      *
-     * <p>The error code is deliberately read as "a 400 that is not {@code invalid_key}" rather
-     * than matched against a specific one. 3.4/3.5 answer {@code invalid_index} here and
-     * {@code no_usable_index} when no {@code use_index} is given; pinning the string would make
-     * this test fail on a rename and call it a store regression.
-     *
-     * <p>It has to be a 400 from the SERVER, though. Counting every {@code RuntimeException} as
-     * "the parameter was honoured" made a connection reset — a read that never reached CouchDB —
-     * into evidence about CouchDB's behaviour (Codex review, P1). A transport failure now leaves
-     * both facts false and says so, which fails against whichever one expected true.
+     * <p>The classification is {@link StoreBehaviourFacts#classifyAllowFallbackRefusal}, which
+     * reads the CouchDB ERROR CODE out of the SDK's debugging info and matches it exactly. Two
+     * earlier versions of this javadoc described free-text rules — "any 400 that is not
+     * invalid_key", then "any 400 mentioning index" — and both were wrong in both directions.
+     * A maintainer following either sentence back into the code would reintroduce the fail-open
+     * it describes.
      */
     private static void measureAllowFallback(String marker) {
         String outcome;

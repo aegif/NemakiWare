@@ -294,25 +294,40 @@ public final class StoreBehaviourFacts {
         return thrown instanceof com.ibm.cloud.sdk.core.service.exception.NotFoundException;
     }
 
-    /** Classify the refusal a {@code allow_fallback=false} query came back with. */
+    /**
+     * Classify the refusal a {@code allow_fallback=false} query came back with.
+     *
+     * <p>On the ERROR CODE, exactly. Two earlier versions matched free text and both were wrong
+     * in both directions: "any 400 that is not {@code invalid_key}" counted a malformed-selector
+     * 400 as evidence, and "any 400 mentioning {@code index}" counted
+     * {@code invalid_selector: property 'index' is malformed} while refusing a hypothetical
+     * {@code unknown parameter allow_fallback}. Substrings of a human-readable reason cannot
+     * carry this distinction.
+     *
+     * <p>CouchDB returns {@code {"error": "...", "reason": "..."}} and the SDK puts that object
+     * in {@code getDebuggingInfo()}. Measured on live servers: 3.3.3 answers
+     * {@code error=invalid_key}, 3.4.3 answers {@code error=invalid_index}. An UNKNOWN code —
+     * or no code at all — establishes nothing and says so.
+     */
     public static FallbackVerdict classifyAllowFallbackRefusal(Throwable thrown) {
-        if (!(thrown instanceof com.ibm.cloud.sdk.core.service.exception.BadRequestException)) {
+        if (!(thrown instanceof com.ibm.cloud.sdk.core.service.exception.ServiceResponseException
+                answered)) {
             return FallbackVerdict.NOT_ESTABLISHED;
         }
-        String message = String.valueOf(thrown.getMessage())
-                .toLowerCase(java.util.Locale.ROOT);
-        if (message.contains("invalid_key") || message.contains("invalid key allow_fallback")) {
-            return FallbackVerdict.REJECTED_AS_UNKNOWN_KEY;
+        Object code = answered.getDebuggingInfo() == null
+                ? null : answered.getDebuggingInfo().get("error");
+        if (code == null) {
+            return FallbackVerdict.NOT_ESTABLISHED;
         }
-        // A 400 has to be ABOUT THE INDEX to be evidence that the parameter was honoured. Any
-        // other 400 was returned first: a malformed selector, a database error. Treating every
-        // non-invalid_key 400 as "honoured" made an answer to a different question into an
-        // answer to this one (Codex review, P1) — the same fail-open this register exists to
-        // catch, one level down.
-        if (message.contains("index")) {
-            return FallbackVerdict.HONOURED;
-        }
-        return FallbackVerdict.NOT_ESTABLISHED;
+        return switch (String.valueOf(code)) {
+            // The store does not know the parameter.
+            case "invalid_key" -> FallbackVerdict.REJECTED_AS_UNKNOWN_KEY;
+            // The store knew it and refused to fall back. Both codes are the store answering
+            // about the INDEX, which is the question allow_fallback asks.
+            case "invalid_index", "no_usable_index" -> FallbackVerdict.HONOURED;
+            // A 400 about something else answered a different question.
+            default -> FallbackVerdict.NOT_ESTABLISHED;
+        };
     }
 
     /** The image tags CI has to run, in declaration order. */

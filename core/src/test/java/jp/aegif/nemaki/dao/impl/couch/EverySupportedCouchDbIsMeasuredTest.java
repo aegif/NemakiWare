@@ -363,33 +363,45 @@ class EverySupportedCouchDbIsMeasuredTest {
                 StoreBehaviourFacts.classifyAllowFallbackRefusal(
                         new java.io.IOException("socket closed")));
 
-        // The other two arms. Only NOT_ESTABLISHED was asserted, so the line that tells
-        // "the store does not know the key" from "the store acted on it" could be collapsed
-        // either way and every gate stayed green (subagent review, P2).
+        // The other two arms, on the codes live servers actually return (measured: 3.3.3 says
+        // invalid_key, 3.4.3 says invalid_index).
         assertEquals(StoreBehaviourFacts.FallbackVerdict.REJECTED_AS_UNKNOWN_KEY,
-                StoreBehaviourFacts.classifyAllowFallbackRefusal(
-                        badRequest("Invalid key allow_fallback for this request.")),
-                "a 400 naming the key is the store saying it does not know it");
+                StoreBehaviourFacts.classifyAllowFallbackRefusal(badRequest("invalid_key")),
+                "the code the store returns when it does not know the parameter");
         assertEquals(StoreBehaviourFacts.FallbackVerdict.HONOURED,
-                StoreBehaviourFacts.classifyAllowFallbackRefusal(
-                        badRequest("invalid_index: _design/x, y specified by `use_index` could "
-                                + "not be found or it is not suitable.")),
-                "a 400 about the INDEX is the store acting on the parameter");
+                StoreBehaviourFacts.classifyAllowFallbackRefusal(badRequest("invalid_index")),
+                "the code the store returns when it acted on the parameter");
+        assertEquals(StoreBehaviourFacts.FallbackVerdict.HONOURED,
+                StoreBehaviourFacts.classifyAllowFallbackRefusal(badRequest("no_usable_index")),
+                "the same answer with no use_index given");
+
+        // Both directions of the misclassification that free-text matching produced.
         assertEquals(StoreBehaviourFacts.FallbackVerdict.NOT_ESTABLISHED,
                 StoreBehaviourFacts.classifyAllowFallbackRefusal(
-                        badRequest("invalid_selector: the selector is malformed")),
-                "a 400 about something else answers a different question and must not be "
-                        + "counted as an answer to this one");
+                        badRequest("invalid_selector")),
+                "a 400 about the selector answers a different question — and its REASON can "
+                        + "contain the word index, which is how substring matching read it as "
+                        + "an answer to this one");
+        assertEquals(StoreBehaviourFacts.FallbackVerdict.NOT_ESTABLISHED,
+                StoreBehaviourFacts.classifyAllowFallbackRefusal(badRequest("something_new")),
+                "an unknown code establishes nothing rather than defaulting to an answer");
+        assertEquals(StoreBehaviourFacts.FallbackVerdict.NOT_ESTABLISHED,
+                StoreBehaviourFacts.classifyAllowFallbackRefusal(badRequest(null)),
+                "a refusal carrying no code at all is not a verdict");
     }
 
-    /** A 400 carrying a given message, without building an okhttp Response. */
-    private static Throwable badRequest(String message) {
+    /** A 400 whose body carries the given CouchDB error code, as the SDK exposes it. */
+    private static Throwable badRequest(String errorCode) {
         com.ibm.cloud.sdk.core.service.exception.BadRequestException thrown =
                 org.mockito.Mockito.mock(
                         com.ibm.cloud.sdk.core.service.exception.BadRequestException.class);
-        org.mockito.Mockito.when(thrown.getMessage()).thenReturn(message);
+        org.mockito.Mockito.when(thrown.getDebuggingInfo()).thenReturn(
+                errorCode == null ? java.util.Map.of()
+                        : java.util.Map.of("error", errorCode, "reason",
+                                "property 'index' is malformed"));
         return thrown;
     }
+
 
     @Test
     @DisplayName("every fact names the code that relies on it, and that file exists")
