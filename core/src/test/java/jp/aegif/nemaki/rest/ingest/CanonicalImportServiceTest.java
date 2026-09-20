@@ -3757,9 +3757,13 @@ class CanonicalImportServiceTest {
 
     @Test
     void theEnclosingMethodExtractorNamesPackagePrivateDeclarations() {
-        // On fixtures, not on the tree. Every call site in CanonicalImportServiceImpl today sits
-        // inside a method that carries an explicit modifier, so the tree cannot tell the two
-        // patterns apart — running the extractor over it proves nothing about what it can see.
+        // On fixtures, not on the tree. The claim here used to be that every call site in
+        // CanonicalImportServiceImpl sits inside a method with an explicit modifier — that is
+        // FALSE: the two execute(...) overloads are package-private, and control FI3 fires
+        // precisely because they are. Written as it was, anyone who "fixed" those declarations
+        // to match the comment would have turned FI3 into WRONG TEST FIRED, which is fatal
+        // (pre-sweep review, P2). Fixtures are still the right place to measure the extractor:
+        // the tree has both shapes, but not in the combinations that pin its edges.
         // That is the same argument the javadoc orphan detector's fixtures make, and the same
         // failure it had: a backward scan that does not recognise a declaration walks past it and
         // blames the method before.

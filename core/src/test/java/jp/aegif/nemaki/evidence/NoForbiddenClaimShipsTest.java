@@ -29,6 +29,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -177,6 +178,24 @@ class NoForbiddenClaimShipsTest {
             assertTrue(why != null && !why.isBlank(),
                     "every entry has to say WHY, or whoever trips it rewrites the sentence "
                             + "into a synonym");
+        });
+
+        // The English list needs the same self-check, and one more besides: the scan lowercases
+        // the text before matching, so an entry carrying a single capital could never match
+        // anything and would sit in the table looking like protection. The Japanese list has
+        // had this guard since it was written; the English one arrived without it
+        // (pre-sweep review, P2).
+        FORBIDDEN_EN.forEach((phrase, why) -> {
+            assertEquals(phrase.toLowerCase(Locale.ROOT), phrase,
+                    "the forbidden English phrase \"" + phrase + "\" has a capital in it, and "
+                            + "the scan lowercases the text before matching — so this entry can "
+                            + "never match and protects nothing");
+            String sample = "This product is " + phrase + ".";
+            assertTrue(sample.toLowerCase(Locale.ROOT).contains(phrase),
+                    "the forbidden English phrase \"" + phrase + "\" does not match a sentence "
+                            + "built around it");
+            assertTrue(why != null && !why.isBlank(),
+                    "every entry has to say WHY, in English too");
         });
     }
 

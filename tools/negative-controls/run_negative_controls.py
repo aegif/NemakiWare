@@ -9742,7 +9742,11 @@ CONTROLS = [
     ),
     dict(
         id='GQ3',
-        what='the Merkle node stops hashing concatenated hex, so a proof built by the product no longer verifies under the published spec',
+        what="the Merkle node's domain separation tag changes, so a proof built by the product no longer verifies under the published spec",
+        # NOT the hex concatenation. This flips NODE_PREFIX (0x01), the tag that separates a
+        # node from a leaf — and it is the ONLY control that touches MerkleTree.java, so the
+        # hex-concatenation choice itself is unmeasured. The old wording said otherwise and
+        # would have been read as coverage it does not provide (pre-sweep review, P2).
         file='core/src/main/java/jp/aegif/nemaki/evidence/MerkleTree.java',
         find='    private static final byte NODE_PREFIX = 0x01;',
         replace='    private static final byte NODE_PREFIX = 0x02;',
@@ -10004,7 +10008,10 @@ CONTROLS = [
     ),
     dict(
         id='HP3',
-        what='a write path is wired without being declared, so E1 records more than the documents say and the difference is invisible',
+        what='a write path is re-declared as another kind, so the wired set SHRINKS and the enumeration no longer matches the inventory',
+        # Direction corrected: the sabotage collapses CHECK_IN onto UPDATE_IN_PLACE, taking
+        # the wired set from nine to eight. The record used to claim the opposite (wired but
+        # undeclared), which no control models (pre-sweep review, P2).
         file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/ContentServiceImpl.java',
         find='jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.CHECK_IN,',
         replace='jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.UPDATE_IN_PLACE,',
@@ -10818,6 +10825,15 @@ CONTROLS = [
         expect_fail=['theLeftoversListAgreesWithWhatExists'],
     ),
     dict(
+        id='LL3',
+        what="an English forbidden phrase carries a capital, so it can never match text the scan has lowercased — an entry that looks like protection and is not",
+        file='core/src/test/java/jp/aegif/nemaki/evidence/NoForbiddenClaimShipsTest.java',
+        find='"tamper-proof", "detection, not prevention',
+        replace='"Tamper-Proof", "detection, not prevention',
+        test='NoForbiddenClaimShipsTest',
+        expect_fail=['theLintCatchesWhatItNames'],
+    ),
+    dict(
         id='LI3',
         what='the runbook goes back to telling the operator they decide revocation collection with a setter that has no caller anywhere — "off by default" standing in for "cannot be switched on"',
         file='docs/operations/v3.4.0-upgrade-runbook.md',
@@ -10828,10 +10844,14 @@ CONTROLS = [
     ),
     dict(
         id='LJ3',
-        what='the runbook stops saying the collection path bypasses SsrfGuard, so whoever wires the toggle ships an SSRF without being told the order',
+        what='the runbook asserts the OPPOSITE — that the collection path goes through SsrfGuard — so whoever wires the toggle is told the guard is already there',
         file='docs/operations/v3.4.0-upgrade-runbook.md',
+        # Flips the negation rather than deleting the word. The first version deleted
+        # "SsrfGuard" entirely, which fired only because the lock grepped for that word; the
+        # lock stayed green when the sentence was rewritten to claim the guard IS applied —
+        # the more dangerous edit of the two (pre-sweep review, P2).
         find='`SsrfGuard` を通っていません。',
-        replace='ガードを通っています。',
+        replace='`SsrfGuard` を通っています。',
         test='EveryStageIsListedTest',
         expect_fail=['theRunbookExplainsTheNewRows'],
     ),
@@ -11153,7 +11173,16 @@ def purge_poisoned_classes() -> int:
     them because they are newer than their source; deleting them makes it recompile. Cheap:
     a substring scan of the two output directories."""
     removed = 0
-    for outdir in (REPO / "core" / "target" / "classes", REPO / "core" / "target" / "test-classes"):
+    # Every module a control RUNS in. Hardcoding core made this a no-op for the 36 controls in
+    # the verifier modules: a poisoned class there survives the purge, the lock fails for a
+    # reason that is not its assertion, and the green-after check then aborts the whole sweep
+    # (pre-sweep review, P1). Same one-line shape as the compile-check fix, in the next
+    # function down.
+    outdirs = []
+    for module in sorted({control.get("module", "core") for control in CONTROLS}):
+        outdirs.append(REPO / module / "target" / "classes")
+        outdirs.append(REPO / module / "target" / "test-classes")
+    for outdir in outdirs:
         if not outdir.exists():
             continue
         for cls in outdir.rglob("*.class"):
@@ -11779,9 +11808,19 @@ def main() -> None:
     # Every module a control can touch. The verifier module arrived with plan §10, and a
     # backup left behind there would have been invisible to this recovery — the sabotage would
     # have stayed applied in a module nothing scanned.
+    # Derived from the controls' OWN target paths. Scoping to <module>/src missed the 44
+    # controls that sabotage docs/, .github/ and RELEASE_NOTES.md — their backups sat where
+    # nothing looked, so an interrupted sweep left the sabotage applied and the NEXT run
+    # started green and silent. Eleven of those still match their own anchor after sabotage,
+    # so the drift check would not have refused either: an interrupt inside KD3 leaves a claim
+    # plan §4.2 forbids sitting in RELEASE_NOTES.md (pre-sweep review, P1).
+    # Still not a repo-wide rglob: that once "recovered" a backup the IDE had copied into
+    # core/target/classes, writing a .java file into the compiled-output directory.
     leftovers = []
-    for module in sorted({control.get("module", "core") for control in CONTROLS}):
-        leftovers.extend((REPO / module / "src").rglob("*.nc-backup"))
+    for candidate in sorted({REPO / control["file"] for control in CONTROLS}):
+        backup = candidate.with_suffix(candidate.suffix + ".nc-backup")
+        if backup.exists():
+            leftovers.append(backup)
     for leftover in leftovers:
         target = leftover.with_name(leftover.name.removesuffix(".nc-backup"))
         backup_text = leftover.read_text()

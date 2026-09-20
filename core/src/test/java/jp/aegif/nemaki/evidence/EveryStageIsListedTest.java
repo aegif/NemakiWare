@@ -214,10 +214,18 @@ class EveryStageIsListedTest {
                 "この版では有効にできません",
                 "revocation collection has no caller, no properties key and no admin API, so "
                         + "'off by default' told operators they had a choice they do not have",
-                "SsrfGuard",
+                // The NEGATION, not the name. A needle of "SsrfGuard" alone is satisfied by the
+                // sentence that says the opposite — measured: rewriting 「通っていません」 to
+                // 「通っています」 left this green while the runbook now asserted a guard that is
+                // not there. Written three lines under a comment saying to read the claim and
+                // not the word, in the commit that added it (pre-sweep review, P2).
+                "`SsrfGuard` を通っていません",
                 "the collection path fetches a URL out of the TSA certificate with a bare "
                         + "HttpClient, so whoever wires the toggle ships an SSRF unless the "
-                        + "runbook tells them the guard comes first");
+                        + "runbook tells them the guard comes first",
+                "ガードが先、つまみが後",
+                "the ORDER is the whole finding: wiring the toggle before the guard is the one "
+                        + "sequence that ships the vulnerability");
         claims.forEach((needle, why) -> assertTrue(section.contains(needle),
                 "the runbook's evidence section no longer says 「" + needle + "」 — " + why));
 
