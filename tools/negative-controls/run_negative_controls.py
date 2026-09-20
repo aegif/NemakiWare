@@ -10054,6 +10054,36 @@ CONTROLS = [
         expect_fail=['theCommitmentKindMatchesWhatTheWriteDid'],
     ),
     dict(
+        id='HV3',
+        what='an observation is recorded as CAPTURED, so bytes that were only ever looked at read as the ones the repository received',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/RecordContentObserver.java',
+        find='                RecordContentStatementV1.CommitmentKind.OBSERVED, null,',
+        replace='                RecordContentStatementV1.CommitmentKind.CAPTURED, null,',
+        test='ObservedIsNotCapturedTest',
+        expect_fail=['anObservationIsRecordedAsObserved'],
+    ),
+    dict(
+        id='HW3',
+        what='a document with no content is observed as the empty string, whose SHA-256 is a real-looking digest that says nothing about being an absence',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/RecordContentObserver.java',
+        find="        if (document.getAttachmentNodeId() == null) {",
+        replace="        if (false) {",
+        test='ObservedIsNotCapturedTest',
+        expect_fail=['aDocumentWithoutContentIsNotStatedAsEmpty'],
+    ),
+    dict(
+        id='HX3',
+        what="the unresolved-writes endpoint answers 200 with an empty list when the journal could not be asked, so 'could not ask' reads as 'there are no gaps'",
+        file='core/src/main/java/jp/aegif/nemaki/rest/controller/RecordContentStateController.java',
+        # Drops only the isActive() arm. Removing the whole guard NPEs on a null journal, and
+        # the runner scores that as a harness break rather than a firing — the sabotage has to
+        # break the protection, not the test.
+        find='        if (journal == null || !journal.isActive()) {',
+        replace='        if (journal == null) {',
+        test='ObservedIsNotCapturedTest',
+        expect_fail=['anUnaskableJournalAnswers503RatherThanAnEmptyList'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",
