@@ -9972,6 +9972,24 @@ CONTROLS = [
         expect_fail=['everyEnumeratedWritePathIsCovered'],
     ),
     dict(
+        id='HN3',
+        what='a journal view that did not answer comes back as an empty list of gaps, so "could not ask" reads as "there are no unresolved writes"',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/CouchContentWriteJournal.java',
+        find='            unreadable = 1;\n            return List.of();',
+        replace='            return List.of();',
+        test='E1LeavesNoSilentGapTest',
+        expect_fail=['aJournalThatCannotBeAskedReportsThatRatherThanAnEmptyList'],
+    ),
+    dict(
+        id='HO3',
+        what='the open-intent view drops out of the single design-document put, so unresolved writes can never be listed',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/CouchEvidenceLedgerStore.java',
+        find='        views.put(CouchContentWriteJournal.VIEW_OPEN,\n                new CloudantClientWrapper.ViewSource(CouchContentWriteJournal.MAP_OPEN));\n',
+        replace='',
+        test='E1LeavesNoSilentGapTest',
+        expect_fail=['theOpenIntentViewIsInTheOneDesignDocumentPut'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",

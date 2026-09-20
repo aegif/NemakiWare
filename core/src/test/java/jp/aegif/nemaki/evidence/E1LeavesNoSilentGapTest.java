@@ -278,6 +278,37 @@ class E1LeavesNoSilentGapTest {
     }
 
     @Test
+    @DisplayName("a journal that cannot be asked does not answer 'there are no gaps'")
+    void aJournalThatCannotBeAskedReportsThatRatherThanAnEmptyList() {
+        // No ledger store wired, which is what an unprovisioned or unreachable evidence
+        // database looks like from here.
+        CouchContentWriteJournal journal = new CouchContentWriteJournal();
+
+        assertFalse(journal.isActive(),
+                "a journal with nowhere to write must not report itself active");
+        assertTrue(journal.unresolved(10).isEmpty(), "there is nothing it could read");
+        assertEquals(1, journal.unreadableCount(),
+                "the empty list above must come with something that says it is not an answer. "
+                        + "A caller reading only the list would report 'no unresolved writes' "
+                        + "for a store it never reached — which is the same defect the ledger's "
+                        + "UNAVAILABLE outcome exists to prevent, one layer out");
+    }
+
+    @Test
+    @DisplayName("the open-intent view is deployed in the same put as the others")
+    void theOpenIntentViewIsInTheOneDesignDocumentPut() {
+        // A second put makes CouchDB discard the index it has just built for the others, so the
+        // sibling stores all share this map. A view added anywhere else would rebuild the whole
+        // design document on every startup.
+        assertTrue(CouchEvidenceLedgerStore.viewSources()
+                        .containsKey(CouchContentWriteJournal.VIEW_OPEN),
+                "the open content-write intent view is not in the single design-document put, "
+                        + "so either it is never deployed — and unresolved() answers nothing "
+                        + "forever — or it is deployed by a second put that discards the "
+                        + "ledger's own index");
+    }
+
+    @Test
     @DisplayName("the workflow starts for the inventory this lock reads")
     void theGateRunsForTheInventoryThisLockReads() throws java.io.IOException {
         Path workflow = Path.of("../.github/workflows/integration-tests.yml");

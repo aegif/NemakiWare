@@ -133,6 +133,10 @@ public class CouchEvidenceLedgerStore implements EvidenceLedgerStore {
         views.put(jp.aegif.nemaki.custody.CouchCustodyTransferStore.VIEW_BY_OBJECT,
                 new CloudantClientWrapper.ViewSource(
                         jp.aegif.nemaki.custody.CouchCustodyTransferStore.MAP_BY_OBJECT));
+        // E1's open content-write intents. Same put, same reason as the line above: a second
+        // put makes CouchDB discard the index it has just built for the others.
+        views.put(CouchContentWriteJournal.VIEW_OPEN,
+                new CloudantClientWrapper.ViewSource(CouchContentWriteJournal.MAP_OPEN));
         return views;
     }
 
