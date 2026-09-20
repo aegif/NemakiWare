@@ -10678,6 +10678,15 @@ CONTROLS = [
         expect_fail=['theVerifierSaysWhatItDoesNotEstablish'],
     ),
     dict(
+        id='KF3',
+        what='the compliance scope document stops naming what is NOT the product\'s job, so every requirement reads as a feature the customer already bought',
+        file='docs/compliance/jp-electronic-records-scope.md',
+        find='| **組織統制** | 規程・権限分離・教育 | 管理者権限を誰が持つか、その監督 |',
+        replace='| **せいど** | 規程・権限分離・教育 | 管理者権限を誰が持つか、その監督 |',
+        test='NoForbiddenClaimShipsTest',
+        expect_fail=['theComplianceDocumentNamesWhatIsNotTheProductsJob'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",

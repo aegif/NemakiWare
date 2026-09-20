@@ -151,6 +151,45 @@ class NoForbiddenClaimShipsTest {
     }
 
     @Test
+    @DisplayName("the compliance scope document says what the product CANNOT do")
+    void theComplianceDocumentNamesWhatIsNotTheProductsJob() throws IOException {
+        // A scope document that only listed features would read as a compliance claim by
+        // omission: a reader takes the absence of a limit for its absence. Plan §14 wants the
+        // responsibility split, so the document has to carry the other side too.
+        Path scope = Path.of("../docs/compliance/jp-electronic-records-scope.md");
+        assertTrue(Files.exists(scope),
+                "the compliance scope document is not at " + scope + ". Plan §14 names it as "
+                        + "the deliverable, and a matrix nobody wrote is not a scope anyone can "
+                        + "act on");
+        String text = Files.readString(scope, StandardCharsets.UTF_8);
+
+        // Scoped to the CLASSIFICATION TABLE, not the file. The whole-file version was
+        // satisfied by the same words appearing in the prose two sections later, so deleting a
+        // row from the table changed nothing (control KF3 did not fire). Sixth time this batch
+        // has had to narrow a grep from "the document" to "the thing".
+        int start = text.indexOf("## 2. 責任の分界");
+        assertTrue(start >= 0, "the responsibility table has moved, so this lock reads a "
+                + "section that is gone rather than one that is wrong");
+        int end = text.indexOf("## 3.", start);
+        assertTrue(end > start, "the responsibility section does not end where this looks");
+        String table = text.substring(start, end);
+
+        for (String required : List.of("運用", "外部サービス", "組織統制", "利用者責任", "対象外")) {
+            assertTrue(table.contains(required),
+                    "the scope document's responsibility table does not classify requirements "
+                            + "as 「" + required + "」. Without the split, every requirement "
+                            + "reads as the product's job and the customer discovers otherwise "
+                            + "during an audit");
+        }
+        assertTrue(text.contains("申請しない"),
+                "the document must say that certification is NOT being applied for; a scope "
+                        + "document that stays silent on it reads as preparation for one");
+        assertTrue(text.contains("版を固定"),
+                "requirement text without a pinned source version goes quietly wrong at the "
+                        + "next revision, and this document is where that rule belongs");
+    }
+
+    @Test
     @DisplayName("the CLI's limits sentence says what a pass does not establish")
     void theVerifierSaysWhatItDoesNotEstablish() throws IOException {
         // The one place a forbidden claim would do the most damage is where a VERDICT is
