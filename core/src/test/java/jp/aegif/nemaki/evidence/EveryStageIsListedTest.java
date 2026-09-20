@@ -139,8 +139,11 @@ class EveryStageIsListedTest {
             assertTrue(inMap.contains(section),
                     section + " is missing from asMap(). A machine reader iterating sections "
                             + "would conclude this deployment has no such section: " + inMap);
-            assertTrue(html.contains(section),
-                    section + " is missing from asHtml(). Fixing the accessor and leaving a "
+            // The HEADING, not the word. REPORT_LIMITS mentions six of the eight names in
+            // prose, so `contains(section)` was green for those six with no heading at all —
+            // only duplications and versions were being measured (subagent review, P2).
+            assertTrue(html.contains("<h2>" + section + " — "),
+                    section + " has no heading in asHtml(). Fixing the accessor and leaving a "
                             + "rendering behind ships the very report the change replaced");
         }
     }
@@ -165,6 +168,15 @@ class EveryStageIsListedTest {
                             + "in this report produces it, so every such row is ABSENT in every "
                             + "deployment regardless of configuration — which is how a working "
                             + "RFC 3161 anchor came to render as 'RFC3161: ABSENT' (R64)");
+        }
+        // And the RENDERINGS, not only the class source: a rung re-added inside asMap() as an
+        // ABSENT row would pass the source grep above and the section count alike.
+        AuthenticityReport report = unwiredReport();
+        String rendered = report.asHtml() + report.asMap().toString();
+        for (String rung : List.of("CHECKPOINT_CHAIN", "INCLUSION_PROOF", "RECORD_STATEMENT",
+                "RFC3161", "OTS")) {
+            assertFalse(rendered.contains(rung),
+                    "the rendered report carries the verifier rung " + rung + " again");
         }
     }
 
@@ -204,10 +216,19 @@ class EveryStageIsListedTest {
         // words. Measured: deleting the ABSENT row left the lock green, because the prose above
         // the table says the word too (control KR3 did not fire). What an operator acts on is
         // the row — the value beside what to do about it — so that is what is read.
-        assertTrue(section.matches("(?s).*\\|\\s*`ABSENT`\\s*\\|[^|]*\\|[^|]*故障ではありません.*"),
-                "the runbook's table no longer has an ABSENT row saying it is NOT a fault. An "
-                        + "operator who upgrades sees seven new rows and, without this row, "
-                        + "opens seven investigations that find nothing");
+        // ABSENT is NOT blanket-benign. custody's empty result cannot tell "no rows" from
+        // "recording failed / purged" — the assembler's own limits say so — and a row that
+        // said 「故障ではありません」 for every section was stronger than that code (both
+        // reviews, P1). The row now has to carry the distinction it cannot make.
+        assertTrue(section.matches("(?s).*\\|\\s*`ABSENT`\\s*\\|[^|]*\\|[^|]*区別できない.*"),
+                "the runbook's ABSENT row no longer says that an empty custody section cannot "
+                        + "distinguish 'no records' from 'recording failed'. An operator told "
+                        + "ABSENT is never a fault stops investigating the one case where it is");
+        assertTrue(section.matches("(?s).*\\|\\s*`UNAVAILABLE`\\s*\\|[^|]*\\|[^|]*`access` 以外.*"),
+                "the runbook's UNAVAILABLE row no longer exempts access, which is UNAVAILABLE "
+                        + "by design in every deployment. A blanket 'investigate' there is an "
+                        + "unresolvable investigation on every report — over-refusal — and it "
+                        + "teaches operators that UNAVAILABLE can be ignored");
         assertTrue(section.matches("(?s).*\\|\\s*`UNAVAILABLE`\\s*\\|[^|]*\\|[^|]*調査.*"),
                 "the runbook's table no longer has an UNAVAILABLE row telling the operator to "
                         + "investigate. It is the one value that IS a fault, and a table that "
@@ -216,7 +237,10 @@ class EveryStageIsListedTest {
         // The withdrawal is stated, not silently done. An operator who saw the eleven rows
         // in an earlier build has to be told they are gone and why, or their absence reads as
         // a regression (R64).
-        assertTrue(section.contains("11 段の一覧") && section.contains("常に `ABSENT`"),
+        // The withdrawal as a CLAIM — 「取り下げました」 and 「この 11 行は出ません」 — not the
+        // words around it. "11 段の一覧" + "常に ABSENT" was satisfied by a sentence promising
+        // to bring the rows back (review, P3).
+        assertTrue(section.contains("取り下げました") && section.contains("この 11 行は出ません"),
                 "the runbook no longer explains that the eleven-rung list was withdrawn and "
                         + "why. Someone who met those rows in an interim build has no way to "
                         + "tell a deliberate removal from something breaking");

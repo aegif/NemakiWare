@@ -10697,7 +10697,7 @@ CONTROLS = [
         what='the assembler stops adding a section unconditionally, so a deployment that cannot read it gets a report with the section simply missing — and silence reads as "not applicable"',
         file='core/src/main/java/jp/aegif/nemaki/evidence/AuthenticityReportAssembler.java',
         find='        sections.add(custodySection(repositoryId, objectId));',
-        replace='        if (contentService != null) { sections.add(custodySection(repositoryId, objectId)); }',
+        replace='        if (maintenanceStore != null) { sections.add(custodySection(repositoryId, objectId)); }',
         test='EveryStageIsListedTest',
         expect_fail=['everySectionAppearsWithNothingWired', 'bothRenderingsCarryEverySection', 'unreadableIsNotAbsent'],
     ),
@@ -10801,8 +10801,10 @@ CONTROLS = [
         id='KR3',
         what='the runbook stops separating ABSENT from UNAVAILABLE for the six real sections, so a read that FAILED and a read that answered "nothing" send the operator the same way',
         file='docs/operations/v3.4.0-upgrade-runbook.md',
-        find='| `ABSENT` | **読めたが、対象が無い**（記録が存在しない） | **なし。** 故障ではありません |',
-        replace='| (記録なし) | **読めたが、対象が無い**（記録が存在しない） | **なし。** 故障ではありません |',
+        # Re-pointed after the ABSENT row was rewritten to carry custody's distinction.
+        # A span, so the long third cell (which will keep changing) is not part of the anchor.
+        find_span=('| `ABSENT` | **読めたが、該当が見つからなかった**', ' |'),
+        replace='| (記録なし) | **読めたが、該当が見つからなかった** |',
         test='EveryStageIsListedTest',
         expect_fail=['theRunbookExplainsTheNewRows'],
     ),
@@ -10832,6 +10834,15 @@ CONTROLS = [
         replace='"Tamper-Proof", "detection, not prevention',
         test='NoForbiddenClaimShipsTest',
         expect_fail=['theLintCatchesWhatItNames'],
+    ),
+    dict(
+        id='LM3',
+        what="a forbidden claim enters a section's limits text in the ASSEMBLER — the English a reader actually gets — where neither the report-class scan nor a hand-built fixture render could see it",
+        file='core/src/main/java/jp/aegif/nemaki/evidence/AuthenticityReportAssembler.java',
+        find='                "The capture boundary is not wired in this deployment, so no custody rows "',
+        replace='                "The capture boundary is tamper-proof. The capture boundary is not wired in this deployment, so no custody rows "',
+        test='NoForbiddenClaimShipsTest',
+        expect_fail=['noForbiddenClaimShipsInEnglish'],
     ),
     dict(
         id='LI3',
@@ -11773,18 +11784,6 @@ def main() -> None:
     if "--self-test" in sys.argv[1:]:
         raise SystemExit(1 if run_self_test() else 0)
 
-    if "--compile-check" in sys.argv[1:]:
-        wanted = [a for a in sys.argv[1:] if a != "--compile-check"]
-        ids = wanted or [c["id"] for c in CONTROLS]
-        print(f"compile-checking {len(ids)} of {len(CONTROLS)} sabotages")
-        found = compile_check(ids)
-        if found:
-            raise SystemExit("sabotages that no longer compile — the sweep would die at the "
-                             "first of these and every control after it would not run:\n  "
-                             + "\n  ".join(found))
-        print("every checked sabotage compiles")
-        raise SystemExit(0)
-
     # The judgement functions decide every result below, so they are checked before any
     # control runs. A runner whose verdicts are wrong reports confidently either way.
     if run_self_test():
@@ -11835,9 +11834,31 @@ def main() -> None:
             # previous run's finally refused to overwrite, or hand repair. The FIRST version
             # of this recovery wrote the backup over it unconditionally, undoing exactly the
             # edit the refusal had protected. Unknown state stays untouched, loudly.
-            print(f"NOT restoring {target.relative_to(REPO)}: its content matches neither "
-                  f"the backup nor any known sabotage. Reconcile by hand; the backup stays "
-                  f"at {leftover.relative_to(REPO)}")
+            # STOP, do not continue. Printing and going on let the sweep start over a tree
+            # this runner could not vouch for — and worse: the per-control backup write below
+            # is unconditional, so the next control touching this file would copy the
+            # POISONED content over the one surviving good backup and destroy the recovery
+            # material (both reviews, P1). Fail-closed means the run does not begin.
+            raise SystemExit(
+                f"NOT restoring {target.relative_to(REPO)}: its content matches neither the "
+                f"backup nor any sabotage the current controls would produce. Reconcile by "
+                f"hand; the backup stays at {leftover.relative_to(REPO)}. Refusing to start "
+                f"a sweep over a tree in an unknown state.")
+    # --compile-check runs AFTER recovery. It used to branch out before it, so on an
+    # interrupted tree it sabotaged on top of a sabotage and judged that — outside the
+    # "recovery runs first" contract, and writing no backup of its own (review, P3).
+    if "--compile-check" in sys.argv[1:]:
+        wanted = [a for a in sys.argv[1:] if a != "--compile-check"]
+        ids = wanted or [c["id"] for c in CONTROLS]
+        print(f"compile-checking {len(ids)} of {len(CONTROLS)} sabotages")
+        found = compile_check(ids)
+        if found:
+            raise SystemExit("sabotages that no longer compile — the sweep would die at the "
+                             "first of these and every control after it would not run:\n  "
+                             + "\n  ".join(found))
+        print("every checked sabotage compiles")
+        raise SystemExit(0)
+
     stale = expect_fail_methods_exist()
     if stale:
         raise SystemExit("controls point at locks that no longer exist:\n  "

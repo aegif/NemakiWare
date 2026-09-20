@@ -94,6 +94,10 @@ class NoForbiddenClaimShipsTest {
     /** English-language text that reaches a reader: the report IS the UI (plan §12). */
     private static final List<Path> SHIPPED_EN = List.of(
             Path.of("src/main/java/jp/aegif/nemaki/evidence/AuthenticityReport.java"),
+            // The English a reader actually gets — every section's limits sentence, the
+            // duplication disclosure, the renditions note — is written HERE, not in the
+            // report class. Scanning only the report class missed all of it (both reviews).
+            Path.of("src/main/java/jp/aegif/nemaki/evidence/AuthenticityReportAssembler.java"),
             Path.of("../evidence-verifier-cli/src/main/java/jp/aegif/nemaki/verifier/cli/"
                     + "Verify.java"));
 
@@ -157,22 +161,21 @@ class NoForbiddenClaimShipsTest {
                 }
             });
         }
-        assertTrue(offences.isEmpty(),
-                "a claim plan §4.2 forbids is in English text that reaches a reader. The "
-                        + "authenticity report has no separate screen — its HTML is the UI — so "
-                        + "a sentence here is a sentence a customer is shown:\n  "
-                        + String.join("\n  ", offences));
+        // NOT asserted here. The first version asserted the source scan before rendering
+        // anything, so a phrase the scan caught stopped the method — and the render check
+        // below was never reached, never measured, and would have kept LK3 "firing" after
+        // being deleted outright (Codex review, P1). Both lists are judged together, below.
 
         // And the RENDERED page, not only the source that produces it. A source scan cannot
         // tell a shipped sentence from a dead string: a forbidden phrase in an unused local
         // would be reported here while no reader ever sees it, and — the direction that
         // matters — a phrase assembled at render time from pieces that are individually
         // innocent would not be reported at all. This renders the thing and reads it.
-        AuthenticityReport rendered = new AuthenticityReport("bedroom", "doc-1",
-                "2026-09-21T00:00:00Z",
-                List.of(new AuthenticityReport.Section("content",
-                        AuthenticityReport.Verdict.REPORTED, Map.of("k", "v"),
-                        "this section does not establish anything beyond what it lists")));
+        // The REAL assembler, nothing wired. A hand-built one-section fixture rendered only
+        // the boilerplate; this renders every unwired arm's limits sentence — the text the
+        // assembler actually writes for a reader.
+        AuthenticityReport rendered = new AuthenticityReportAssembler()
+                .assemble("bedroom", "doc-1", "2026-09-21T00:00:00Z", false);
         String page = rendered.asHtml().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
         List<String> shown = new ArrayList<>();
         FORBIDDEN_EN.forEach((phrase, why) -> {
@@ -180,10 +183,13 @@ class NoForbiddenClaimShipsTest {
                 shown.add("the rendered report says \"" + phrase + "\" — " + why);
             }
         });
-        assertTrue(shown.isEmpty(),
-                "a claim plan §4.2 forbids is in the report AS RENDERED — this is the page a "
-                        + "customer is handed, so there is no layer left to catch it:\n  "
-                        + String.join("\n  ", shown));
+        List<String> all = new ArrayList<>(offences);
+        all.addAll(shown);
+        assertTrue(all.isEmpty(),
+                "a claim plan §4.2 forbids reaches a reader in English — in the shipped "
+                        + "source, or in the report AS RENDERED by the real assembler (the page "
+                        + "a customer is handed, with no layer left to catch it):\n  "
+                        + String.join("\n  ", all));
     }
 
     @Test
