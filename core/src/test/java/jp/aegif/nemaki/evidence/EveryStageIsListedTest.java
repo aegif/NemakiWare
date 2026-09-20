@@ -223,10 +223,18 @@ class EveryStageIsListedTest {
                 "認定", "accreditation is a fact of contract and registry, and a row saying so "
                         + "is what keeps it from being read as something the product judges");
         limits.forEach((needle, why) -> {
-            boolean inARow = section.lines()
-                    .anyMatch(line -> line.startsWith("|") && line.contains(needle));
-            assertTrue(inARow,
-                    "the runbook's 'what this version does not do' table has no row naming 「"
+            // The FIRST cell — what the row is about — not the whole line. A row's second cell
+            // explains the first, so it repeats its words: changing 「ERS の renewal の実行」 to
+            // something else left "renewal" in the explanation beside it and the check stayed
+            // true (KS3 did not fire). Reading the line is reading the explanation, not the
+            // subject (pre-sweep review, P1).
+            boolean isARowSubject = section.lines()
+                    .filter(line -> line.startsWith("| "))
+                    .map(line -> line.split("\\|"))
+                    .filter(cells -> cells.length > 1)
+                    .anyMatch(cells -> cells[1].contains(needle));
+            assertTrue(isARowSubject,
+                    "the runbook's 'what this version does not do' table has no row ABOUT 「"
                             + needle + "」 — " + why);
         });
     }

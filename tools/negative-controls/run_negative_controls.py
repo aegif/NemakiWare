@@ -4127,7 +4127,7 @@ CONTROLS = [
                    '                CanonicalImportServiceImpl.authorizationFingerprint(profile));'),
         replace='',
         test='ExternalIngestControllerGateTest',
-        expect_fail=['theGateStampsTheRowItAuthorized'],
+        expect_fail=['theGateStampsTheRowItAuthorized', 'aStampTheCallerSuppliedIsOverwrittenByTheGate'],
     ),
     dict(
         id="UY",
@@ -8744,16 +8744,7 @@ CONTROLS = [
                 '        }\n'
                 '        return SipVerifier.Verdict.INDETERMINATE;',
         test='SipVerifierTest',
-        expect_fail=['aDigestWithoutAnAuditPathIsIndeterminate',
-                     'anAuditPathWithoutADigestIsIndeterminate',
-                     'theBodyCarriesTheVerdict',
-                     'aRealExportedPackageIsRead',
-                     # Everything that asserts INDETERMINATE for an unusable path goes with it:
-                     # under the old rule the payload digest alone carried the verdict.
-                     'aMissingAuditPathIsNotAnEmptyOne',
-                     'anEmptyAuditPathEstablishesNothing',
-                     'anUnreadableStepIsNotAFailure',
-                     'anotherArrayIsNotTheAuditPath'],
+        expect_fail=['aDigestWithoutAnAuditPathIsIndeterminate', 'anAuditPathWithoutADigestIsIndeterminate', 'theBodyCarriesTheVerdict', 'aRealExportedPackageIsRead', 'aMissingAuditPathIsNotAnEmptyOne', 'anEmptyAuditPathEstablishesNothing', 'anUnreadableStepIsNotAFailure', 'anotherArrayIsNotTheAuditPath', 'twoPremisDocumentsAreAmbiguous'],
     ),
     dict(
         id="CS3",
@@ -8816,7 +8807,7 @@ CONTROLS = [
         find='\t\tif (copied == null) {',
         replace='\t\tif (true) {',
         test='CopyingContentRefusesAMissingRowTest',
-        expect_fail=['aPresentAttachmentIsStillCopied'],
+        expect_fail=['aPresentAttachmentIsStillCopied', 'aRestoreInFlightIsNotRefused', 'aRestoreThatHasNotReachedTheRowYetIsNotRefused', 'aZeroByteAttachmentIsStillCopied'],
     ),
     # ── 確認レビューが出した P1 / P2 の処置 (2026-09-19) ──
     dict(
@@ -9155,7 +9146,7 @@ CONTROLS = [
                 '        if (true) return createCouchdbObjectMapper();\n'
                 '        return JsonMapper.builderWithJackson2Defaults()',
         test='MapperDefinitionsAreInOnePlaceTest',
-        expect_fail=['theProfilesAreNotMerged'],
+        expect_fail=['theProfilesAreNotMerged', 'theDaoDelegateMapperCarriesTheModule'],
     ),
     # ── A-2 (R20): purge の走査上限を応答が述べる ──
     dict(
@@ -9412,7 +9403,7 @@ CONTROLS = [
         find='                incompleteReads.add("Notion page listing: " + listing.truncatedBecause());',
         replace='                incompleteReads.clear();',
         test='NotionPartialReadsAreNotCompleteTest',
-        expect_fail=['aTruncatedListingIsNotComplete'],
+        expect_fail=['aTruncatedListingIsNotComplete', 'aLimitInsideAPageIsStillTruncation'],
     ),
     dict(
         id='FC3',
@@ -9439,7 +9430,7 @@ CONTROLS = [
         find='                "^ {4}(?![ *@/])[\\\\w<>,\\\\[\\\\]. ]*\\\\s(\\\\w+)\\\\s*\\\\(");',
         replace='                "^ {4}(?:public|private|protected)[\\\\w<>,\\\\[\\\\]. ]*\\\\s(\\\\w+)\\\\s*\\\\(");',
         test='CanonicalImportServiceTest',
-        expect_fail=['theEnclosingMethodExtractorNamesPackagePrivateDeclarations'],
+        expect_fail=['theEnclosingMethodExtractorNamesPackagePrivateDeclarations', 'everyPostExecuteDecorationReAsksTheDelegation'],
     ),
     dict(
         id='FJ3',
@@ -9859,7 +9850,7 @@ CONTROLS = [
                    "      - 'docs/design/v3.4-release-readiness.md'"),
         replace="    branches: [ master, main, develop, 'release/**' ]\n    paths:\n      - 'pom.xml'\n      - 'core/src/main/java/**'\n      - 'core/src/test/java/**'\n      - 'core/pom.xml'\n      - 'core/src/main/webapp/WEB-INF/**'\n      # The unit job carries a lock that reads the manual-run SCREENS. Without this a\n      # UI-only revert does not start this workflow at all, so the lock is on the list\n      # and the list never runs for the change it guards.\n      - 'core/src/main/webapp/ui/src/**'\n      # The unit job counts the controls and checks the canon's number against them.\n      # Without these, retiring a control or editing that number does not start this\n      # workflow, so the check exists and never gates (Codex review, P2).\n      - 'tools/negative-controls/**'\n      - 'docs/design/fail-closed-reads.md'\n      # The evidence profile spec and the vectors both languages read. A change to\n      # either is a change to what every external verifier must do.\n      - 'docs/design/evidence-profile-v1.md'\n      - 'core/src/test/resources/evidence/**'\n      # The progress documents. A lock reads their counts against the canon and the\n      # runner, and reads the Phase 0 gate against the profile spec. Editing a number\n      # in either of these is exactly the change that has to start this workflow.\n      - 'docs/design/v3.4.0-evidence-and-residuals-plan.md'\n",
         test='ReleaseReadinessIsMeasuredTest',
-        expect_fail=['theGateRunsForTheDocumentsThisLockReads'],
+        expect_fail=['theGateRunsForTheDocumentsThisLockReads', 'everyDocumentALockReadsStartsTheWorkflow'],
     ),
     dict(
         id='HA3',
@@ -9870,7 +9861,7 @@ CONTROLS = [
         find='~~不明な正準化 field・trust 意味が残っていない~~ **達成 2026-09-20**（下記 G0） |',
         replace='不明な正準化 field・trust 意味が残っていない → **未達** |',
         test='ReleaseReadinessIsMeasuredTest',
-        expect_fail=['phaseZerosGateTracksTheSpec'],
+        expect_fail=['phaseZerosGateTracksTheSpec', 'thePhaseStatusAgreesWithThePlan'],
     ),
     dict(
         id='HB3',
@@ -9982,7 +9973,13 @@ CONTROLS = [
         file='core/src/main/java/jp/aegif/nemaki/evidence/ContentWriteJournal.java',
         # Deletes a constant. The first version RENAMED one, which left the count at 15 —
         # the lock counts constants, so it stayed green and the control did not fire.
-        find='        /** W7 appendContentStream — one statement per call; which is last is not known. */ APPEND,\n',
+        # APPEND was the target until a pre-sweep review traced it: ContentServiceImpl
+        # references WriteKind.APPEND, so deleting the constant stops main compiling. The
+        # runner then measures nothing, the SWEEP ABORTS at this control, and every control
+        # after it goes unrun — 106 of them, on a run that costs ten hours. The sabotage now
+        # removes an UNREFERENCED constant, which models the same defect (a write path loses
+        # its WriteKind and the enumeration shrinks) and still compiles.
+        find='        /** W10 archive on delete. */ ARCHIVE,\n',
         replace='',
         test='E1LeavesNoSilentGapTest',
         expect_fail=['everyEnumeratedWritePathIsCovered'],
@@ -10021,7 +10018,7 @@ CONTROLS = [
         find='        if (!trustworthy) {\n            return null;\n        }',
         replace='        if (false) {\n            return null;\n        }',
         test='E1LeavesNoSilentGapTest',
-        expect_fail=['aRewindWithoutASnapshotStopsClaimingADigest'],
+        expect_fail=['aRewindWithoutASnapshotStopsClaimingADigest', 'aStreamThatStallsIsNotDigested'],
     ),
     dict(
         id='HR3',
@@ -10146,7 +10143,7 @@ CONTROLS = [
         find='                continue;\n            }\n            files.put("anchors/" + fileNameFor(entry.getKey()), part.der());',
         replace='                files.put("anchors/" + fileNameFor(entry.getKey()), new byte[0]);\n                continue;\n            }\n            files.put("anchors/" + fileNameFor(entry.getKey()), part.der());',
         test='TheBundleIsFixedBeforeTheWriteTest',
-        expect_fail=['anAbsentAnchorShipsNoFile'],
+        expect_fail=['anAbsentAnchorShipsNoFile', 'aCompleteBundleWritesTheNineEntries'],
     ),
     dict(
         id='ID3',
@@ -10416,7 +10413,7 @@ CONTROLS = [
         find='            case INDETERMINATE -> EXIT_INDETERMINATE;',
         replace='            case INDETERMINATE -> EXIT_VERIFIED;',
         test='TheExitCodeIsTheInterfaceTest',
-        expect_fail=['anIndeterminatePackageExitsThree'],
+        expect_fail=['anIndeterminatePackageExitsThree', 'anUnreadablePackageIsIndeterminate'],
     ),
     dict(
         id='JF3',
@@ -10582,7 +10579,7 @@ CONTROLS = [
         find='        boolean requireRevocation = !(Boolean.FALSE.equals(require));',
         replace='        boolean requireRevocation = Boolean.TRUE.equals(require);',
         test='TheTrustComesFromOutsideTest',
-        expect_fail=['revocationIsRequiredUnlessTheProfileSaysOtherwise'],
+        expect_fail=['revocationIsRequiredUnlessTheProfileSaysOtherwise', 'missingRevocationMaterialIsUnknown'],
     ),
     dict(
         id='JV3',
@@ -10695,7 +10692,7 @@ CONTROLS = [
         find='            if (!present) {',
         replace='            if (false) {',
         test='EveryStageIsListedTest',
-        expect_fail=['everyStageAppears'],
+        expect_fail=['everyStageAppears', 'bothRenderingsCarryEveryStage'],
     ),
     dict(
         id='KH3',

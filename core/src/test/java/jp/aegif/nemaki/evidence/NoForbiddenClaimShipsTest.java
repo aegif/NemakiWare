@@ -170,9 +170,18 @@ class NoForbiddenClaimShipsTest {
         int start = text.indexOf("## 2. 責任の分界");
         assertTrue(start >= 0, "the responsibility table has moved, so this lock reads a "
                 + "section that is gone rather than one that is wrong");
-        int end = text.indexOf("## 3.", start);
-        assertTrue(end > start, "the responsibility section does not end where this looks");
-        String table = text.substring(start, end);
+        // The NEXT level-2 heading, not a literal "## 3.". The literal outlived the document:
+        // §2.5 was added between them, so the slice swallowed the whole requirement matrix and
+        // its rows say 組織統制 and the rest — deleting the classification table changed
+        // nothing and KF3 stopped firing. A section boundary written as the name of a section
+        // that happens to come next is a boundary that moves when anything is inserted
+        // (pre-sweep review, P1).
+        java.util.regex.Matcher nextSection =
+                java.util.regex.Pattern.compile("(?m)^## ").matcher(text);
+        assertTrue(nextSection.find(start + 3),
+                "the responsibility section is the last one in the document, so this lock "
+                        + "cannot tell where it ends");
+        String table = text.substring(start, nextSection.start());
 
         for (String required : List.of("運用", "外部サービス", "組織統制", "利用者責任", "対象外")) {
             assertTrue(table.contains(required),
