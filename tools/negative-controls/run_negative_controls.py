@@ -10705,6 +10705,24 @@ CONTROLS = [
         expect_fail=['anUnconfiguredStageIsAbsentNotUnavailable'],
     ),
     dict(
+        id='KI3',
+        what='the HTML rendering goes back to showing only the gathered stages, so a reader prints four green headings and hands over a chain with seven silent gaps',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/AuthenticityReport.java',
+        find='        for (Section section : sectionsWithEveryStage()) {\n            html.append("<h2>")',
+        replace='        for (Section section : sections) {\n            html.append("<h2>")',
+        test='EveryStageIsListedTest',
+        expect_fail=['bothRenderingsCarryEveryStage'],
+    ),
+    dict(
+        id='KJ3',
+        what='the JSON rendering shows only the gathered stages, so a machine reader cannot tell "not configured" from "this version has no such stage"',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/AuthenticityReport.java',
+        find='        List<Section> everyStage = sectionsWithEveryStage();',
+        replace='        List<Section> everyStage = sections;',
+        test='EveryStageIsListedTest',
+        expect_fail=['bothRenderingsCarryEveryStage'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",

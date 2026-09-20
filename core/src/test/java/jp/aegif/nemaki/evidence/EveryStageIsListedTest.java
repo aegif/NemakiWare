@@ -86,6 +86,33 @@ class EveryStageIsListedTest {
     }
 
     @Test
+    @DisplayName("both renderings carry every stage, not just the accessor")
+    @SuppressWarnings("unchecked")
+    void bothRenderingsCarryEveryStage() {
+        // The accessor is not what a reader sees. A version that filled the gaps in
+        // sectionsWithEveryStage() and rendered sections() would pass every other test here
+        // and ship exactly the report this change exists to replace.
+        AuthenticityReport report = reportWith("PACKAGE");
+
+        String html = report.asHtml();
+        for (String stage : AuthenticityReport.STAGES) {
+            assertTrue(html.contains(stage),
+                    stage + " is missing from the HTML. That rendering is where the omission "
+                            + "does the most damage: a reader prints it and hands the sheet to "
+                            + "somebody else");
+        }
+
+        List<Map<String, Object>> sections =
+                (List<Map<String, Object>>) report.asMap().get("sections");
+        List<String> names = sections.stream().map(s -> String.valueOf(s.get("section")))
+                .toList();
+        for (String stage : AuthenticityReport.STAGES) {
+            assertTrue(names.contains(stage),
+                    stage + " is missing from the JSON: " + names);
+        }
+    }
+
+    @Test
     @DisplayName("the stage list is the chain's order, and covers the whole ladder")
     void theStageListIsTheWholeLadder() {
         // Named individually rather than counted: a count would stay green if a stage were

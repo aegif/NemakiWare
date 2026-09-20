@@ -187,8 +187,12 @@ public record AuthenticityReport(String repositoryId, String objectId, String ge
         body.put("generatedAt", generatedAt);
         // FIRST, not last. A reader who stops early must still have met it.
         body.put("whatThisDoesNotEstablish", REPORT_LIMITS);
-        List<Map<String, Object>> out = new ArrayList<>(sections.size());
-        for (Section section : sections) {
+        // Every stage here too. A machine reader that iterates "sections" and finds seven of
+        // them missing has no way to tell "not configured" from "this version does not have
+        // that stage" — and the two lead to different actions.
+        List<Section> everyStage = sectionsWithEveryStage();
+        List<Map<String, Object>> out = new ArrayList<>(everyStage.size());
+        for (Section section : everyStage) {
             out.add(section.asMap());
         }
         body.put("sections", out);
@@ -214,7 +218,10 @@ public record AuthenticityReport(String repositoryId, String objectId, String ge
         // hands it to somebody else must not be able to hand over the numbers alone.
         html.append("<div class=\"limits\"><b>What this report does not establish</b><br>")
                 .append(escape(REPORT_LIMITS)).append("</div>");
-        for (Section section : sections) {
+        // Every stage, not only the ones this deployment gathered. The human rendering is
+        // where the omission does the most damage: a reader who prints four green headings and
+        // hands the sheet to somebody else has handed over a chain with seven silent gaps.
+        for (Section section : sectionsWithEveryStage()) {
             html.append("<h2>").append(escape(section.name())).append(" — ")
                     .append(section.verdict().name()).append("</h2>");
             html.append("<div class=\"limits\">").append(escape(section.limits()))
