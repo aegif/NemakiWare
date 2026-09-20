@@ -10660,6 +10660,24 @@ CONTROLS = [
         expect_fail=['collectionIsOffByDefault'],
     ),
     dict(
+        id='KD3',
+        what='a claim plan §4.2 forbids ships in the release notes, where it reaches a customer who has no way to know it is wrong',
+        file='RELEASE_NOTES.md',
+        find='# 未リリース (3.4.0 に向けた作業)',
+        replace='# 未リリース (3.4.0 に向けた作業)\n\n本リリースは改ざん防止を実現します。',
+        test='NoForbiddenClaimShipsTest',
+        expect_fail=['noForbiddenClaimShips'],
+    ),
+    dict(
+        id='KE3',
+        what="the verifier stops saying what a pass does NOT establish, so a reader who sees VERIFIED supplies their own idea of what it means",
+        file='evidence-verifier-cli/src/main/java/jp/aegif/nemaki/verifier/cli/Verify.java',
+        find='            + "the ledger material it carries. It does NOT establish that the content was true "',
+        replace='            + "the ledger material it carries. "',
+        test='NoForbiddenClaimShipsTest',
+        expect_fail=['theVerifierSaysWhatItDoesNotEstablish'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",

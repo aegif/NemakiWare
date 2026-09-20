@@ -250,7 +250,9 @@ public final class Verify {
             + "the ledger material it carries. It does NOT establish that the content was true "
             + "when captured, that everything was captured, that the checkpoint shown is the "
             + "latest, or that an administrator could not have produced all of it. "
-            + "Independence comes from an external anchor, which this version does not check.";
+            + "Independence comes from an external anchor: it is checked only when a profile "
+            + "of ANCHORED_CHECKPOINT_V1 or above is requested, and only against a trust "
+            + "profile you supplied. Without one, the anchor checks report NOT_PRESENT.";
 
     static String asJson(Outcome.Verdict verdict, String profile, List<Outcome.Check> checks) {
         StringBuilder json = new StringBuilder("{\"profile\":\"").append(profile)
