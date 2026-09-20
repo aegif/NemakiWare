@@ -179,37 +179,10 @@ class EverySupportedCouchDbIsMeasuredTest {
                         + declared + ". A count nobody checks is how a retired or a missing "
                         + "control reads as a known rounding difference");
 
-        String yaml = workflow();
-        for (String lock : List.of("EverySupportedCouchDbIsMeasuredTest",
-                "APartialRunIsNotRecordedAsCompleteTest",
-                "NotionPartialReadsAreNotCompleteTest",
-                "NoJavadocIsOrphanedTest")) {
-            assertTrue(yaml.contains(lock),
-                    lock + " is in no -Dtest list in " + WORKFLOW + ", so it runs on a laptop "
-                            + "and nowhere else");
-        }
-    }
-
-    @Test
-    @DisplayName("this class is itself on the list CI runs")
-    void theLockThatKeepsCiHonestIsRunByCi() throws IOException {
-        // CI runs an ALLOW-LIST of unit classes, and nobody widens it. Every assertion in this
-        // file therefore ran locally and nowhere else: the class written to stop the matrix from
-        // covering less than it claims was in no workflow at all, while its own javadoc said
-        // "caught on every build" (Codex review, P2). A lock that does not run is a comment.
-        String yaml = workflow();
-        java.util.regex.Matcher list =
-                Pattern.compile("-Dtest='([^']*)'").matcher(yaml);
-        java.util.List<String> everyListedClass = new ArrayList<>();
-        while (list.find()) {
-            for (String name : list.group(1).split(",")) {
-                everyListedClass.add(name.trim());
-            }
-        }
-
-        assertTrue(everyListedClass.contains(getClass().getSimpleName()),
-                getClass().getSimpleName() + " is in no -Dtest list in " + WORKFLOW
-                        + ", so nothing here runs in CI. Listed: " + everyListedClass);
+        // The CI-coverage half of this check MOVED to CanonicalImportServiceTest. Two reasons,
+        // both found by review: a class cannot notice its own exclusion from the list that runs
+        // it, and `yaml.contains(name)` was satisfied by the workflow's own comment about this
+        // very class. What is left here is the count, which needs no other class.
     }
 
     @Test

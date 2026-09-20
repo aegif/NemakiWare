@@ -14,6 +14,11 @@ on:
       # UI-only revert does not start this workflow at all, so the lock is on the list
       # and the list never runs for the change it guards.
       - 'core/src/main/webapp/ui/src/**'
+      # The unit job counts the controls and checks the canon's number against them.
+      # Without these, retiring a control or editing that number does not start this
+      # workflow, so the check exists and never gates (Codex review, P2).
+      - 'tools/negative-controls/**'
+      - 'docs/design/fail-closed-reads.md'
       - 'common/**'
       - 'cloudant-init/**'
       - 'solr/**'
@@ -35,6 +40,11 @@ on:
       # UI-only revert does not start this workflow at all, so the lock is on the list
       # and the list never runs for the change it guards.
       - 'core/src/main/webapp/ui/src/**'
+      # The unit job counts the controls and checks the canon's number against them.
+      # Without these, retiring a control or editing that number does not start this
+      # workflow, so the check exists and never gates (Codex review, P2).
+      - 'tools/negative-controls/**'
+      - 'docs/design/fail-closed-reads.md'
       - 'common/**'
       - 'cloudant-init/**'
       - 'solr/**'

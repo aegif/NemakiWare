@@ -3409,14 +3409,22 @@ class CanonicalImportServiceTest {
     record DecorationScope(int version, java.util.List<String> includedOperations,
             java.util.Map<String, String> excludedOperations,
             java.util.Map<String, String> writersBelowADoor,
-            java.util.Map<String, String> reAskAbove) {}
+            java.util.Map<String, String> reAskAbove,
+            java.util.Map<String, String> notADecoration) {}
 
     /**
      * Every call shape through which this class writes to the store.
      *
-     * <p>The inventory is only as wide as this list. It held two entries and the lock's own
-     * comment called them "both ways a decoration reaches the store" — an overclaim that the
-     * text R48 struck through had already contradicted.
+     * <p>The inventory is only as wide as this list, and the list was hand-written — twice. It
+     * held two entries described as "both ways a decoration reaches the store"; it then held
+     * seven, described as "EVERY way this class writes", and a review found three more
+     * (settings writes and the dead-letter save). Widening it by hand once more would be the
+     * same method with a larger number.
+     *
+     * <p>So {@link #writeFormsInSource} derives the shapes MECHANICALLY and
+     * {@code theWriteFormsAreClosed} requires this list to cover every one of them. What is
+     * hand-written now is the PATTERN, and a service call that does not match it is the
+     * remaining gap — stated rather than implied.
      */
     private static final java.util.List<String> WRITE_FORMS = java.util.List.of(
             "contentService.update(",
@@ -3425,9 +3433,37 @@ class CanonicalImportServiceTest {
             "versioningService.checkOut(",
             "objectService.createDocument(",
             "objectService.createRelationship(",
-            "objectService.deleteObject(");
+            "objectService.deleteObject(",
+            "ingestJobService.saveSourceReadToDlq(",
+            "integrationSettingsService.writeSetting(",
+            "integrationSettingsService.deleteSettings(");
 
-    private static final DecorationScope DECORATION_SCOPE = new DecorationScope(5,
+    /**
+     * Every {@code someService.writeShapedMethod(} in the source, found by pattern.
+     *
+     * <p>Comments and string literals are removed first, so a call named in prose is not a call.
+     */
+    static java.util.List<String> writeFormsInSource(String source) {
+        String withoutStrings = source.replaceAll("\"(\\\\.|[^\"\\\\])*\"", "\"\"");
+        java.util.regex.Matcher call = java.util.regex.Pattern.compile(
+                "\\b(\\w+(?:Service|DaoService))\\.(\\w+)\\s*\\(").matcher(withoutStrings);
+        java.util.regex.Pattern writes = java.util.regex.Pattern.compile(
+                "^(create|update|delete|remove|write|save|checkIn|checkOut|apply|set|put|add"
+                        + "|move|purge|restore)", java.util.regex.Pattern.CASE_INSENSITIVE);
+        java.util.List<String> found = new java.util.ArrayList<>();
+        while (call.find()) {
+            if (!writes.matcher(call.group(2)).find()) {
+                continue;
+            }
+            String form = call.group(1) + "." + call.group(2) + "(";
+            if (!found.contains(form)) {
+                found.add(form);
+            }
+        }
+        return found;
+    }
+
+    private static final DecorationScope DECORATION_SCOPE = new DecorationScope(6,
             java.util.List.of(
                     "executeMailImportInternal",
                     "executeNoteImportInternal",
@@ -3470,8 +3506,16 @@ class CanonicalImportServiceTest {
                             + "through refuseDecorationIfNoLongerAuthorized",
                     "execute", "re-asks the delegation TWICE itself (R5) — once after profile "
                             + "resolution and again immediately before the write — rather than "
-                            + "through refuseDecorationIfNoLongerAuthorized, so it is not a "
-                            + "guard caller and does not write a decoration either"));
+                            + "through refuseDecorationIfNoLongerAuthorized. It DOES write (the "
+                            + "checkIn, checkOut, createDocument and deleteObject shapes all sit "
+                            + "in it); an earlier version of this sentence said it did not, "
+                            + "which its own enumeration contradicted"),
+            java.util.Map.of(
+                    // Writes that are not decorations, so R48's question does not apply to them.
+                    // They appear only because the shape list is now closed against the source.
+                    "failedAfterEntry", "writes a DEAD-LETTER row, not a decoration: it records "
+                            + "that an item was lost, which is the opposite of adding metadata "
+                            + "to one that was not"));
 
     @Test
     void everyPostExecuteDecorationReAsksTheDelegation() throws Exception {
@@ -3492,14 +3536,15 @@ class CanonicalImportServiceTest {
         doors.remove("refuseDecorationIfNoLongerAuthorized");
 
         // Enumerating only the callers of the re-ask can never see a door that does not call it
-        // — which is the door worth catching (Codex review, P2). So the WRITES are enumerated
-        // too, both ways a decoration reaches the store, and every method that performs one has
-        // to be named somewhere in the scope.
-        // EVERY way this class writes, not the two that decorations happen to use today. The
-        // comment here used to say "both ways a decoration reaches the store", which the
-        // withdrawn half of R48 had already named as false: a decoration can ride on the
-        // properties of a checkIn, or on a createDocument, and neither moves either count
-        // (subagent review, P2). Widening cost two names.
+        // — which is the door worth catching. So the WRITES are enumerated too, and every method
+        // that performs one has to be named somewhere in the scope.
+        //
+        // The first version of this comment said "both ways a decoration reaches the store",
+        // which was false and which the struck-through half of R48 had already said was false.
+        // That sentence was then CORRECTED BY APPENDING a paragraph beneath it, leaving the
+        // overclaim in place two lines above its own retraction — so a reader who stopped at the
+        // first paragraph read the stronger version. It is deleted now, which is what the
+        // retraction should have done in the first place.
         java.util.List<String> writers = new java.util.ArrayList<>();
         for (String write : WRITE_FORMS) {
             writers.addAll(enclosingMethodsCalling(source, write));
@@ -3510,6 +3555,7 @@ class CanonicalImportServiceTest {
         named.addAll(DECORATION_SCOPE.excludedOperations().keySet());
         named.addAll(DECORATION_SCOPE.writersBelowADoor().keySet());
         named.addAll(DECORATION_SCOPE.reAskAbove().keySet());
+        named.addAll(DECORATION_SCOPE.notADecoration().keySet());
 
         java.util.List<String> unaccounted = new java.util.ArrayList<>(doors);
         unaccounted.addAll(writers);
@@ -3532,6 +3578,19 @@ class CanonicalImportServiceTest {
                         + "method is gone or WRITE_FORMS lost the shape it writes through — "
                         + "either way the inventory covers less than it says: "
                         + declaredButNotFound);
+
+        // The list of SHAPES is closed against the source, not against the author's memory.
+        // Three shapes were missing from the hand-written seven while its own comment said
+        // "EVERY way this class writes" (both round-4 reviews).
+        java.util.List<String> uncoveredForms = new java.util.ArrayList<>();
+        for (String form : writeFormsInSource(source)) {
+            if (WRITE_FORMS.stream().noneMatch(form::startsWith)) {
+                uncoveredForms.add(form);
+            }
+        }
+        assertTrue(uncoveredForms.isEmpty(),
+                "this class writes through a shape WRITE_FORMS does not cover, so the inventory "
+                        + "below cannot see anything that writes that way: " + uncoveredForms);
 
         // The writers are claimed to sit BELOW a door. Naming them is not the same as pinning
         // that: a new entry point calling one of them directly, without re-asking, changes
@@ -3560,17 +3619,20 @@ class CanonicalImportServiceTest {
                 "the doors that re-ask the delegation are not the ones this scope names. "
                         + "included=" + DECORATION_SCOPE.includedOperations() + " found=" + doors);
 
-        for (String excluded : DECORATION_SCOPE.excludedOperations().keySet()) {
-            assertTrue(source.contains(excluded + "("),
-                    "the excluded list names " + excluded + ", which no longer exists — an "
-                            + "exclusion nobody prunes stops being a decision and becomes a name");
+        // Every declared name, not only the excluded ones. reAskAbove had no existence check at
+        // all, so `execute` or `createLinkAuthorized` could be renamed and the scope would keep
+        // naming a method that is not there (subagent review, P3).
+        for (String declared : named) {
+            assertTrue(source.contains(declared + "("),
+                    "the scope names " + declared + ", which no longer exists — a list nobody "
+                            + "prunes stops being a set of decisions and becomes a set of names");
         }
 
         int metadataWrites = source.split("ingestMetadataService\\.", -1).length - 1;
         assertEquals(15, metadataWrites,
                 "the metadata service is used in a new place (" + metadataWrites + "). SCOPE: "
                         + "this number covers decorations written THROUGH that service only; a "
-                        + "door that writes directly (see excludedOperations) does not move it");
+                        + "door that writes directly (see writersBelowADoor) does not move it");
     }
 
     /**
@@ -3616,6 +3678,45 @@ class CanonicalImportServiceTest {
             }
         }
         return found;
+    }
+
+    @Test
+    void everyLockThisBatchAddedIsOnAListCiActuallyRuns() throws Exception {
+        // This assertion lives HERE, and not in the class it is about, because a class cannot
+        // notice its own exclusion: drop EverySupportedCouchDbIsMeasuredTest from the -Dtest
+        // list and the test that would have complained is the one that no longer runs (both
+        // round-4 reviews, P1). This class is on the list in two workflows and is what the
+        // CSRF gate runs, so it is the wrong thing to quietly drop.
+        //
+        // And it reads the -Dtest LISTS, not the file. The first version used
+        // yaml.contains(name), which the workflow's own explanatory comment satisfied — the
+        // "a sentence about the code is not the code" defect, committed in the fix for it.
+        String yaml = java.nio.file.Files.readString(
+                java.nio.file.Path.of("../.github/workflows/integration-tests.yml"),
+                java.nio.charset.StandardCharsets.UTF_8);
+        java.util.List<String> listed = new java.util.ArrayList<>();
+        java.util.regex.Matcher lists =
+                java.util.regex.Pattern.compile("-Dtest='([^']*)'").matcher(yaml);
+        while (lists.find()) {
+            for (String name : lists.group(1).split(",")) {
+                listed.add(name.trim());
+            }
+        }
+
+        java.util.List<String> missing = new java.util.ArrayList<>();
+        for (String lock : java.util.List.of(
+                "EverySupportedCouchDbIsMeasuredTest",
+                "APartialRunIsNotRecordedAsCompleteTest",
+                "NotionPartialReadsAreNotCompleteTest",
+                "NoJavadocIsOrphanedTest",
+                "CanonicalImportServiceTest")) {
+            if (!listed.contains(lock)) {
+                missing.add(lock);
+            }
+        }
+        assertTrue(missing.isEmpty(),
+                "a lock this batch added or changed is on no -Dtest list, so it runs on a laptop "
+                        + "and nowhere else: " + missing + ". Listed: " + listed);
     }
 
     @Test
