@@ -10859,8 +10859,14 @@ CONTROLS = [
         id='LK3',
         what='a forbidden claim in ENGLISH reaches the authenticity report, whose HTML is the UI itself — the Japanese-only list could never see it',
         file='core/src/main/java/jp/aegif/nemaki/evidence/AuthenticityReport.java',
-        find='public String asHtml() {',
-        replace='public String asHtml() {\n        String shipped = "This report is tamper-proof.";',
+        # Into REPORT_LIMITS, which BOTH renderings emit — asHtml() escapes it into the page
+        # and asMap() puts it under whatThisDoesNotEstablish. The first version inserted an
+        # unused local in asHtml(), which the source-level scan caught but which never reached
+        # a reader: the control reported FIRED while measuring a dead string, so the claim it
+        # exists to test — a forbidden phrase reaching the shipped report — went unmeasured
+        # (pre-sweep review, P2).
+        find='    public static final String REPORT_LIMITS =\n            "This report gathers evidence;',
+        replace='    public static final String REPORT_LIMITS =\n            "This report is tamper-proof. This report gathers evidence;',
         test='NoForbiddenClaimShipsTest',
         expect_fail=['noForbiddenClaimShipsInEnglish'],
     ),
@@ -11785,29 +11791,13 @@ def main() -> None:
         raise SystemExit("the runner's own judgement functions are wrong; fix them before "
                          "trusting any control result")
 
-    stale = expect_fail_methods_exist()
-    if stale:
-        raise SystemExit("controls point at locks that no longer exist:\n  "
-                         + "\n  ".join(stale))
-
-    # And the other half of the same question: the lock exists, but does the SABOTAGE still
-    # apply? Both are asked before anything runs, so a drifted anchor cannot silently cut the
-    # sweep short at the control where it happens to sit.
-    drifted = anchors_still_match()
-    if drifted:
-        raise SystemExit("controls whose sabotage no longer applies — the sweep would stop "
-                         "at the first of these and every control after it would not run:\n  "
-                         + "\n  ".join(drifted))
-
-    # Recover from a previous interrupted run FIRST: a leftover .nc-backup means a control
-    # died between sabotage and restore, and the production file may still carry the edit.
-    # Scoped to the source tree. rglob over the whole repo once picked up a backup the IDE's
-    # language server had COPIED into core/target/classes as a resource, and "recovered" it by
-    # writing a .java file into the compiled-classes directory — polluting the very output the
-    # incremental build reuses (the known jdtls-poisons-the-WAR trap, self-inflicted).
-    # Every module a control can touch. The verifier module arrived with plan §10, and a
-    # backup left behind there would have been invisible to this recovery — the sabotage would
-    # have stayed applied in a module nothing scanned.
+    # RECOVERY RUNS FIRST — before either preflight. It used to run after, under a
+    # comment that said 'FIRST', and the order was the whole bug: an interrupted
+    # sweep leaves the target sabotaged, so the anchor no longer matches, so
+    # anchors_still_match() raises SystemExit and the recovery below is never
+    # reached. The one state this code exists to repair was the one state that
+    # stopped it from running (pre-sweep review, P1). Recover, then ask whether the
+    # anchors match the RECOVERED tree.
     # Derived from the controls' OWN target paths. Scoping to <module>/src missed the 44
     # controls that sabotage docs/, .github/ and RELEASE_NOTES.md — their backups sat where
     # nothing looked, so an interrupted sweep left the sabotage applied and the NEXT run
@@ -11848,6 +11838,29 @@ def main() -> None:
             print(f"NOT restoring {target.relative_to(REPO)}: its content matches neither "
                   f"the backup nor any known sabotage. Reconcile by hand; the backup stays "
                   f"at {leftover.relative_to(REPO)}")
+    stale = expect_fail_methods_exist()
+    if stale:
+        raise SystemExit("controls point at locks that no longer exist:\n  "
+                         + "\n  ".join(stale))
+
+    # And the other half of the same question: the lock exists, but does the SABOTAGE still
+    # apply? Both are asked before anything runs, so a drifted anchor cannot silently cut the
+    # sweep short at the control where it happens to sit.
+    drifted = anchors_still_match()
+    if drifted:
+        raise SystemExit("controls whose sabotage no longer applies — the sweep would stop "
+                         "at the first of these and every control after it would not run:\n  "
+                         + "\n  ".join(drifted))
+
+    # Recover from a previous interrupted run FIRST: a leftover .nc-backup means a control
+    # died between sabotage and restore, and the production file may still carry the edit.
+    # Scoped to the source tree. rglob over the whole repo once picked up a backup the IDE's
+    # language server had COPIED into core/target/classes as a resource, and "recovered" it by
+    # writing a .java file into the compiled-classes directory — polluting the very output the
+    # incremental build reuses (the known jdtls-poisons-the-WAR trap, self-inflicted).
+    # Every module a control can touch. The verifier module arrived with plan §10, and a
+    # backup left behind there would have been invisible to this recovery — the sabotage would
+    # have stayed applied in a module nothing scanned.
     wanted = set(sys.argv[1:])
     known = {c["id"] for c in CONTROLS}
     unknown = wanted - known

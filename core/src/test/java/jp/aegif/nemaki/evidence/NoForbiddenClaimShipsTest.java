@@ -162,6 +162,28 @@ class NoForbiddenClaimShipsTest {
                         + "authenticity report has no separate screen — its HTML is the UI — so "
                         + "a sentence here is a sentence a customer is shown:\n  "
                         + String.join("\n  ", offences));
+
+        // And the RENDERED page, not only the source that produces it. A source scan cannot
+        // tell a shipped sentence from a dead string: a forbidden phrase in an unused local
+        // would be reported here while no reader ever sees it, and — the direction that
+        // matters — a phrase assembled at render time from pieces that are individually
+        // innocent would not be reported at all. This renders the thing and reads it.
+        AuthenticityReport rendered = new AuthenticityReport("bedroom", "doc-1",
+                "2026-09-21T00:00:00Z",
+                List.of(new AuthenticityReport.Section("content",
+                        AuthenticityReport.Verdict.REPORTED, Map.of("k", "v"),
+                        "this section does not establish anything beyond what it lists")));
+        String page = rendered.asHtml().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+        List<String> shown = new ArrayList<>();
+        FORBIDDEN_EN.forEach((phrase, why) -> {
+            if (page.contains(phrase)) {
+                shown.add("the rendered report says \"" + phrase + "\" — " + why);
+            }
+        });
+        assertTrue(shown.isEmpty(),
+                "a claim plan §4.2 forbids is in the report AS RENDERED — this is the page a "
+                        + "customer is handed, so there is no layer left to catch it:\n  "
+                        + String.join("\n  ", shown));
     }
 
     @Test
