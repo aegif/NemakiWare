@@ -24,6 +24,24 @@
       JUnit is test scope: a test dependency cannot reach a released artifact.
     -->
     <dependencies>
+        <!--
+          BouncyCastle, and ONLY for RFC 3161 (P3).
+
+          Plan section 10 forbids core, Spring, CouchDB, CMIS and a WAR. It does not forbid a
+          cryptography library, and the alternative is worse: the JDK has no public API that
+          verifies an RFC 3161 token, so P3 without this means hand-writing DER parsing, CMS
+          signature verification and PKIX path building. Hand-written signature verification is
+          not defensible in a component whose whole job is to be trusted by someone else.
+
+          What it costs, stated plainly: a receiving organisation now has to trust this library
+          alongside the verifier. That is one well-known dependency instead of several hundred
+          lines of security-critical code written here, and the trade is made deliberately.
+        -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
+            <version>1.85</version>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>

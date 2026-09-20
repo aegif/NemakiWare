@@ -45,7 +45,15 @@ class TheVerifierStandsAloneTest {
     private static final Path POM = Path.of("pom.xml");
     private static final Path SOURCES = Path.of("src/main/java");
 
-    /** What plan §10 forbids this module to reach for. */
+    /**
+     * What plan §10 forbids this module to reach for.
+     *
+     * <p>{@code org.bouncycastle} is deliberately NOT on this list. The JDK has no public API
+     * that verifies an RFC 3161 token, so P3 without a cryptography library means hand-written
+     * DER parsing and CMS signature verification — which is not defensible in a component whose
+     * job is to be trusted by another organisation. The cost is stated in the pom: one more
+     * library a receiving party has to trust.
+     */
     private static final List<String> FORBIDDEN = List.of(
             "jp.aegif.nemaki.core", "org.springframework", "com.ibm.cloud",
             "org.apache.chemistry", "jakarta.servlet", "tools.jackson",

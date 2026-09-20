@@ -64,7 +64,8 @@ public final class Verify {
 
     /** Profiles this version can evaluate. Anything else is a usage error, never a pass. */
     static final List<String> KNOWN_PROFILES =
-            List.of("PACKAGE_INTEGRITY_V1", "RECORD_LEDGER_V1", "ANCHORED_CHECKPOINT_V1");
+            List.of("PACKAGE_INTEGRITY_V1", "RECORD_LEDGER_V1", "ANCHORED_CHECKPOINT_V1",
+                    "TRUSTED_RFC3161_V1");
 
     private Verify() {
     }
@@ -78,6 +79,7 @@ public final class Verify {
         Path sip = null;
         String profile = "PACKAGE_INTEGRITY_V1";
         String expectedCheckpoint = null;
+        Path trustProfileFile = null;
         boolean asJson = false;
 
         for (int i = 0; i < args.length; i++) {
@@ -87,6 +89,13 @@ public final class Verify {
                     // The verb. Accepted and ignored so the documented command line works.
                 }
                 case "--json" -> asJson = true;
+                case "--trust-profile" -> {
+                    if (++i >= args.length) {
+                        err.println("--trust-profile needs a value");
+                        return EXIT_USAGE;
+                    }
+                    trustProfileFile = Path.of(args[i]);
+                }
                 case "--expected-checkpoint" -> {
                     if (++i >= args.length) {
                         err.println("--expected-checkpoint needs a value");
@@ -125,7 +134,7 @@ public final class Verify {
         if (sip == null) {
             err.println("usage: nemaki-evidence verify <sip.zip> [--profile "
                     + String.join("|", KNOWN_PROFILES)
-                    + "] [--expected-checkpoint <hash>] [--json]");
+                    + "] [--trust-profile <file>] [--expected-checkpoint <hash>] [--json]");
             return EXIT_USAGE;
         }
         if (!KNOWN_PROFILES.contains(profile)) {
@@ -138,6 +147,20 @@ public final class Verify {
         if (!Files.isRegularFile(sip)) {
             err.println("no such package: " + sip);
             return EXIT_USAGE;
+        }
+
+        // Read BEFORE the package, so a trust profile that cannot be read stops the run
+        // rather than silently becoming the empty one — which would make every PKIX check
+        // NOT_PRESENT and look like a package problem.
+        jp.aegif.nemaki.verifier.TrustProfile trust =
+                jp.aegif.nemaki.verifier.TrustProfile.empty();
+        if (trustProfileFile != null) {
+            try {
+                trust = jp.aegif.nemaki.verifier.TrustProfile.read(trustProfileFile);
+            } catch (jp.aegif.nemaki.verifier.TrustProfile.Unreadable e) {
+                err.println(e.getMessage());
+                return EXIT_USAGE;
+            }
         }
 
         Map<String, byte[]> entries;
@@ -161,10 +184,15 @@ public final class Verify {
                 checks.addAll(RecordLedger.check(entries));
                 requiredNames.addAll(RecordLedger.REQUIRED);
             }
-            if ("ANCHORED_CHECKPOINT_V1".equals(profile)) {
+            if ("ANCHORED_CHECKPOINT_V1".equals(profile)
+                    || "TRUSTED_RFC3161_V1".equals(profile)) {
                 checks.addAll(jp.aegif.nemaki.verifier.AnchoredCheckpoint.check(
                         entries, expectedCheckpoint));
                 requiredNames.addAll(jp.aegif.nemaki.verifier.AnchoredCheckpoint.REQUIRED);
+            }
+            if ("TRUSTED_RFC3161_V1".equals(profile)) {
+                checks.addAll(jp.aegif.nemaki.verifier.TrustedRfc3161.check(entries, trust));
+                requiredNames.addAll(jp.aegif.nemaki.verifier.TrustedRfc3161.REQUIRED);
             }
             List<Outcome.Check> required = new ArrayList<>();
             for (String name : requiredNames) {
