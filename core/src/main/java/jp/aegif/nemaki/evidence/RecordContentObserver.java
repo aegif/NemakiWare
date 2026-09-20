@@ -157,7 +157,13 @@ public class RecordContentObserver {
                 return new Observation(Refusal.NOT_DIGESTIBLE, null,
                         "SHA-256 is unavailable on this node", null);
             }
-            digesting.readAllBytes();
+            // Drained through a fixed buffer, never held: a gigabyte attachment must not
+            // allocate a gigabyte to produce a 32-byte digest.
+            if (!digesting.drain()) {
+                return new Observation(Refusal.UNREADABLE, null,
+                        "the content stopped making progress before its end, so the digest "
+                                + "would cover only part of it", null);
+            }
             observedLength = digesting.bytesRead();
             // The declared length is checked when there IS one. A stored row with an unknown
             // length (-1) is common enough that refusing on it would make this endpoint useless;

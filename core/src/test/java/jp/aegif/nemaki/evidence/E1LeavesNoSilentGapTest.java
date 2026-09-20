@@ -34,6 +34,7 @@ import java.util.regex.Pattern;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -306,6 +307,38 @@ class E1LeavesNoSilentGapTest {
     }
 
     @Test
+    @DisplayName("draining a stream that makes no progress stops, and stops claiming a digest")
+    void aStreamThatStallsIsNotDigested() throws Exception {
+        // A stream answering "0 bytes, not the end" forever. readAllBytes() grew its buffer
+        // until the JVM died — this is the shape that took an existing test to an
+        // OutOfMemoryError, and it is not hypothetical: it is Mockito's default for read().
+        DigestingInputStream stalling = DigestingInputStream.over(new java.io.InputStream() {
+            @Override
+            public int read() {
+                return 0;
+            }
+
+            @Override
+            public int read(byte[] b, int off, int len) {
+                return 0;
+            }
+        });
+        assertFalse(stalling.drain(), "a stream that never progresses must not be waited on");
+        assertEquals(null, stalling.digestIfTrustworthy(),
+                "and what it read is not the content, so there is no digest to give");
+    }
+
+    @Test
+    @DisplayName("draining reads to the end without holding the bytes")
+    void drainingReachesTheEnd() throws Exception {
+        DigestingInputStream stream =
+                DigestingInputStream.over(new java.io.ByteArrayInputStream(bytes("hello")));
+        assertTrue(stream.drain());
+        assertEquals(5, stream.bytesRead());
+        assertNotNull(stream.digestIfTrustworthy(5));
+    }
+
+    @Test
     @DisplayName("a rewind whose digest could not be snapshotted stops claiming a digest")
     void aRewindWithoutASnapshotStopsClaimingADigest() throws Exception {
         DigestingInputStream stream =
@@ -432,7 +465,9 @@ class E1LeavesNoSilentGapTest {
                 "UPDATE_IN_PLACE",          // W3
                 "CHECK_IN",                 // W4
                 "UPDATE_WITHOUT_CHECKOUT",  // W5
+                "COPY_FROM_SOURCE",         // W6
                 "APPEND",                   // W7
+                "CHECK_OUT_PWC",            // W8
                 "REPLACE_PWC"));            // W9
         assertEquals(declared, wired,
                 "the write paths wired into the product and the ones this lock declares differ. "

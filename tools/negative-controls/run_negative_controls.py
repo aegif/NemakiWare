@@ -10084,6 +10084,15 @@ CONTROLS = [
         expect_fail=['anUnaskableJournalAnswers503RatherThanAnEmptyList'],
     ),
     dict(
+        id='HY3',
+        what='a stalled drain still hands back a digest, so the chain commits to the part of a file that was readable before the stream stopped answering',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/DigestingInputStream.java',
+        find='                if (++stalled >= MAX_STALLED_READS) {\n                    trustworthy = false;\n                    return false;\n                }',
+        replace='                if (++stalled >= MAX_STALLED_READS) {\n                    return false;\n                }',
+        test='E1LeavesNoSilentGapTest',
+        expect_fail=['aStreamThatStallsIsNotDigested'],
+    ),
+    dict(
         id="DQ3",
         what="the interrupted retry answers with the two-read sentence, saying 'asked twice, "
              "twice there was nothing' about a read that was never made",

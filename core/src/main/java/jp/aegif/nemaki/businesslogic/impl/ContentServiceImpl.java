@@ -1315,6 +1315,10 @@ public class ContentServiceImpl implements ContentService {
 	String createdAttachmentId = null;
 
 	try {
+		// E1 (W6).
+		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written copyContent = null;
+		jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending copyWrite = null;
+
 		// PHASE 1: Prepare document copy without CouchDB writes
 		Document copy = buildCopyDocument(callContext, repositoryId, original, null, null);
 
@@ -1330,7 +1334,13 @@ public class ContentServiceImpl implements ContentService {
 
 		// PHASE 2: Atomic Attachment copy (if source has attachment)
 		if (original.getAttachmentNodeId() != null) {
+			// E1 (W6). A copy makes its OWN statement; it does not inherit the source's entry.
+			copyWrite = recordContentState == null ? null
+					: recordContentState.openBeforeWriting(repositoryId, original.getId(), null,
+							jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.COPY_FROM_SOURCE,
+							java.time.Instant.now().toString());
 			createdAttachmentId = copyAttachmentAtomic(callContext, repositoryId, original.getAttachmentNodeId());
+			copyContent = digestOfStoredAttachment(repositoryId, createdAttachmentId);
 			copy.setAttachmentNodeId(createdAttachmentId);
 			log.debug("Copied AttachmentId atomically: {}", createdAttachmentId);
 		}
@@ -1385,6 +1395,8 @@ public class ContentServiceImpl implements ContentService {
 		} catch (Exception e) {
 			log.warn("Solr indexing failed for copied document {} (non-critical): {}", atomicResult.getId(), e.getMessage());
 		}
+
+		recordCreatedContentState(repositoryId, atomicResult, copyContent, copyWrite);
 
 		log.debug("=== ATOMIC DOCUMENT FROM SOURCE SUCCESS: {} ===", atomicResult.getId());
 		return atomicResult;
@@ -1707,10 +1719,20 @@ public class ContentServiceImpl implements ContentService {
 		Document latest = getDocument(repositoryId, objectId);
 		Document pwc = buildCopyDocument(callContext, repositoryId, latest, null, null);
 
+		// E1 (W8). The working copy's content is its OWN fact: it gets its own statement
+		// rather than inheriting the version it was copied from.
+		jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pwcCopyWrite =
+				recordContentState == null ? null
+						: recordContentState.openBeforeWriting(repositoryId, objectId, null,
+								jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.CHECK_OUT_PWC,
+								java.time.Instant.now().toString());
+
 		// Create PWC attachment. OrRefuse: a document whose attachment row is gone must not be
 		// checked out into a working copy that reports itself as having no content.
 		String attachmentId = copyAttachmentOrRefuse(callContext, repositoryId, latest.getAttachmentNodeId());
 		pwc.setAttachmentNodeId(attachmentId);
+		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written pwcCopyContent =
+				digestOfStoredAttachment(repositoryId, attachmentId);
 
 		// Set other properties
 		updateVersionProperties(callContext, repositoryId, VersioningState.CHECKEDOUT, pwc, latest);
@@ -1784,6 +1806,8 @@ public class ContentServiceImpl implements ContentService {
 		} catch (Exception e) {
 			log.warn("checkOut: Solr indexing failed for PWC " + result.getId() + ": " + e.getMessage());
 		}
+
+		recordCreatedContentState(repositoryId, result, pwcCopyContent, pwcCopyWrite);
 
 		return result;
 	}
@@ -4038,6 +4062,56 @@ public class ContentServiceImpl implements ContentService {
 		}
 		
 		return null;
+	}
+
+	/**
+	 * The digest of an attachment that is already stored — for the COPY paths (W6, W8).
+	 *
+	 * <p>A copy has no received stream to hash on the way past: the bytes were already here.
+	 * So this reads them back, which for a copy is not the weaker claim the ADR warns about —
+	 * there is no "as received" to differ from. It IS an extra full read, which is why it is
+	 * only on the copy paths.
+	 *
+	 * @return null when the bytes could not be read to the end, in which case no statement is
+	 *         recorded and the journal row stays open
+	 */
+	private jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written
+			digestOfStoredAttachment(String repositoryId, String attachmentId) {
+		if (attachmentId == null) {
+			return null;
+		}
+		AttachmentNode stored;
+		try {
+			stored = contentDaoService.getAttachment(repositoryId, attachmentId);
+		} catch (RuntimeException e) {
+			log.warn("E1: the copied content {} could not be opened to digest it.", attachmentId, e);
+			return null;
+		}
+		if (stored == null || stored.getInputStream() == null) {
+			return null;
+		}
+		try (InputStream body = stored.getInputStream()) {
+			jp.aegif.nemaki.evidence.DigestingInputStream digesting =
+					jp.aegif.nemaki.evidence.DigestingInputStream.over(body);
+			if (digesting == null) {
+				return null;
+			}
+			// Drained through a fixed buffer. readAllBytes() held the whole body in memory and
+			// never terminated on a stream that made no progress — it turned an existing test
+			// into an OutOfMemoryError.
+			if (!digesting.drain()) {
+				return null;
+			}
+			String digest = digesting.digestIfTrustworthy(stored.getLength());
+			if (digest == null) {
+				return null;
+			}
+			return new jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written(
+					attachmentId, digest, digesting.bytesRead());
+		} catch (java.io.IOException | RuntimeException e) {
+			log.warn("E1: the copied content {} could not be read to the end.", attachmentId, e);
+			return null;
+		}
 	}
 
 	/**

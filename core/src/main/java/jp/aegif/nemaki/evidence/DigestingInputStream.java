@@ -144,6 +144,46 @@ public final class DigestingInputStream extends FilterInputStream {
         return target instanceof java.io.ByteArrayInputStream && target.markSupported();
     }
 
+    /**
+     * How many consecutive zero-length reads are tolerated before giving up.
+     *
+     * <p>A stream that keeps answering "0 bytes, not end of stream" makes no progress, and a
+     * loop that waits for {@code -1} never returns. Mockito's default for
+     * {@code read(byte[], int, int)} is exactly this, which is how the first version of
+     * {@link #drain()} — a plain {@code readAllBytes()} — turned an existing test into an
+     * OutOfMemoryError: the buffer doubled forever while nothing was read.
+     */
+    private static final int MAX_STALLED_READS = 1000;
+
+    /**
+     * Reads the stream to the end through a fixed buffer, keeping nothing.
+     *
+     * <p>{@code readAllBytes()} was wrong here in two ways: it holds the whole body in memory —
+     * a gigabyte attachment would allocate a gigabyte to compute a 32-byte digest — and it
+     * never terminates on a stream that makes no progress.
+     *
+     * @return true when the end of the stream was reached; false when it stalled, in which case
+     *         the digest covers only part of the content and must not be used
+     */
+    public boolean drain() throws IOException {
+        byte[] buffer = new byte[8192];
+        int stalled = 0;
+        while (true) {
+            int n = read(buffer, 0, buffer.length);
+            if (n < 0) {
+                return true;
+            }
+            if (n == 0) {
+                if (++stalled >= MAX_STALLED_READS) {
+                    trustworthy = false;
+                    return false;
+                }
+            } else {
+                stalled = 0;
+            }
+        }
+    }
+
     /** Bytes counted since the last rewind. */
     public long bytesRead() {
         return bytesRead;
