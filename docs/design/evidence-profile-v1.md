@@ -417,7 +417,7 @@ current == merkleRoot なら PASS
 | `CHAIN_ENDS` | `links[0]` が covering、`links[last]` が anchor target |
 | `CHAIN_FORWARD` | `links[i].toSequence` が狭義単調増加。covering が target より後なら `FAILED` |
 | `CHAIN_RECOMPUTE` | 各 link の `checkpointHash` を §7 で再計算して一致 |
-| `ANCHOR_COMMITS_ROOT` | `anchors[].anchoredDigest == anchor-target-checkpoint.merkleRoot` |
+| `ANCHOR_COMMITS_ROOT` | manifest が `PRESENT` と記録する rung の**材料を読む**（2026-09-22 まではファイルの有無だけを見て常に `UNAVAILABLE` だった）。RFC 3161（`anchors/rfc3161.der`）: token を parse し、`messageImprint == SHA-256(UTF-8(anchor-target-checkpoint.merkleRoot))`（製品は root を**文字列**として anchor する。P3 の `TOKEN_IMPRINT` と同じ読み）。一致で PASS。parse 不能・不一致は `FAILED`。imprint の算法が SHA-256 でなければ `UNAVAILABLE`（`UNKNOWN_ALGORITHM`）。OTS / ERS / Atlas の材料はこの profile では**読まない**（P4 / P5 が読む）— 読める rung が 1 つも無ければ `UNAVAILABLE`（`ANCHOR_NOT_PARSED`）。rung が 1 つも `PRESENT` でなければ `NOT_PRESENT` |
 | `ROLLBACK` | `--expected-checkpoint` が与えられたとき、chain 上にその hash が在る |
 
 主張しないこと: token の PKIX（それは P3）。
@@ -434,6 +434,10 @@ current == merkleRoot なら PASS
 （`--expected-checkpoint`）が要る。** 無ければ `ROLLBACK` は `NOT_CHECKED`。
 
 `links` が空、重複、逆順、欠落のいずれかなら `FAILED`。
+
+**`ANCHOR_COMMITS_ROOT` が言うのは imprint の一致まで。** token の署名者が誰か、指定 trust anchor へ path が
+繋がるか、失効していないかは P3 の問い。P2 の `VERIFIED` は「誰かが発行した RFC 3161 token が、この
+checkpoint の root を commit している」であって、その誰かを信頼してよいとは言わない。
 
 ---
 

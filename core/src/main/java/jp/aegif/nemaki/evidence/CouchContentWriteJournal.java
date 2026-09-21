@@ -281,7 +281,14 @@ public class CouchContentWriteJournal implements ContentWriteJournal {
             Object statement = props == null ? null : props.get("statement");
             Object sequence = props == null ? null : props.get("entrySequence");
             if (!(statement instanceof Map)) {
-                continue;
+                // Same shape as the sequence below, and the same answer. This view emits rows
+                // whose statement is truthy, so a row whose statement cannot be read as a
+                // document is not an absent one: it is a statement this version cannot read.
+                // Skipping it would report an OLDER row as the newest (Codex, second review).
+                logger.warn("A statement row for {} could not be read as a document; which "
+                        + "statement is newest cannot be determined, so none is reported.",
+                        versionObjectId);
+                return null;
             }
             if (!(sequence instanceof Number)) {
                 // This view emits closed rows only, so a statement with no readable sequence is

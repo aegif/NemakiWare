@@ -285,6 +285,50 @@ class TransitionPackagesAreExportedTest {
         assertNotNull(unfound.entry(), "the transition's own entry is unaffected by a missing prior");
     }
 
+    /**
+     * The boundary this batch did NOT cross, held so nothing says otherwise.
+     *
+     * <p>{@link jp.aegif.nemaki.rest.eark.EarkSipExporter#export} writes the payload before it
+     * reads the bundle, and refuses when the document has no attachment. A version whose
+     * content was archived, moved to cold storage or removed has none — so a transition
+     * statement, however well the assembler and the writer handle it, never reaches a package
+     * through the product's own export entry point. The assembler and writer tests above call
+     * those two classes directly and cannot see this (Codex, second review, P1); this one calls
+     * the entry point.
+     *
+     * <p>What that leaves: a receiver's verifier now READS a transition package correctly, and
+     * this repository cannot yet PRODUCE one. That is residual R67, reopened.
+     */
+    @Test
+    @DisplayName("the product's export entry point refuses a version whose content is gone — no transition package is produced")
+    void theExportEntryPointRefusesAVersionWithNoContent() {
+        jp.aegif.nemaki.businesslogic.ContentService contentService =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.businesslogic.ContentService.class);
+        jp.aegif.nemaki.model.Document document = new jp.aegif.nemaki.model.Document();
+        document.setId("doc-1");
+        document.setName("minutes.txt");
+        // The state a transition records: the version is there and its content is not.
+        document.setAttachmentNodeId(null);
+        org.mockito.Mockito.when(contentService.getContent("bedroom", "doc-1"))
+                .thenReturn(document);
+
+        jp.aegif.nemaki.rest.eark.EarkSipExporter exporter =
+                new jp.aegif.nemaki.rest.eark.EarkSipExporter();
+        exporter.setContentService(contentService);
+
+        jp.aegif.nemaki.rest.eark.EarkSipExporter.ExportRefusedException refused =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        jp.aegif.nemaki.rest.eark.EarkSipExporter.ExportRefusedException.class,
+                        () -> exporter.export("bedroom", "doc-1",
+                                new jp.aegif.nemaki.rest.eark.EarkSipExporter.Options(false, "Acme Ltd"),
+                                java.nio.file.Path.of("/tmp/never-written")),
+                        "the exporter packaged a version with no content. Either a transition "
+                                + "package is now producible — and the documents that say it is "
+                                + "not have to change — or an empty representation is shipping, "
+                                + "which reads as a record whose content was preserved");
+        assertTrue(refused.getMessage().contains("no attachment"), refused.getMessage());
+    }
+
     @Test
     @DisplayName("a state statement is still read back as a state statement, with no prior")
     void aStateStatementIsUnchanged() {

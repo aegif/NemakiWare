@@ -6,13 +6,16 @@
 **2026-09-22 に台帳側を実装した（sub-batch 1）。** `SubjectKind.RECORD_CONTENT_TRANSITION`、`RecordContentTransitionV1`、
 `CommitmentKind.RESTORED`、`RecordContentStateRecorder.recordTransition / priorFor / abandon`、journal の
 `latestRecorded / abandon`、6 経路の配線（W10 / W11 / W12 / W13 / W14 / `deleteContentStream`）、E1 の錠 15 本、
-crash test。**package 側も 2026-09-22 に実装した（sub-batch 2、R67 を閉じた）**: `EvidenceBundle.statement` は `RecordStatement`、
+crash test。**verifier 側も 2026-09-22 に実装した（sub-batch 2）。製品の export 入口はまだ届かない — R67 は開いている**: `EvidenceBundle.statement` は `RecordStatement`、
 assembler は journal の文書を形で型に読み戻し（entry の kind と一致しない対は entry 無しで出す）、遷移文が引く prior を
 `journal.recordedAt(sequence)` と `ledgerStore.range(seq, seq)` の**両方**から読んで一致するときだけ `prior/` に出す。
 verifier P1 は kind を **entry から**読み、`content binding` は遷移文で payload 無し → `NOT_PRESENT`／有り → `FAILED`、
 `transition continuity` を全 P1 package で報告（必須ではない — 遷移文の package は `content binding` で既に P1 に届かない）。
 reason code `TRANSITION_PRIOR_NOT_IN_PACKAGE`（登録簿 18 値、schema の enum）。`highestProfileSupported` は遷移文で
-`PACKAGE_INTEGRITY_V1`（P1 以上を要求する export は拒否）。**設計 §1.5 から動いた点**: 「`INDETERMINATE` に落とす方向を
+`PACKAGE_INTEGRITY_V1`（P1 以上を要求する export は拒否）。**ただし遷移文の版はそもそも export できない**:
+`EarkSipExporter.export` は bundle を読む前に payload を書き、attachment の無い版を拒否する（2 巡目レビュー、Codex P1）。
+assembler と writer を直接呼ぶ錠だけを書いたので、入口の断線が見えていなかった — 錠
+`theExportEntryPointRefusesAVersionWithNoContent` が現状を固定し、R67 が残る。**設計 §1.5 から動いた点**: 「`INDETERMINATE` に落とす方向を
 既定にしない」は §15 の合成と両立しない — bytes を主張しない statement に `CONTENT_BINDING` は `NOT_PRESENT` で、
 必須 check の `NOT_PRESENT` は `INDETERMINATE`。遷移文の package は **P0 まで**、と仕様 §5.3b / §10 に書いた。
 §1.3 の「W12 MOVE では両方が在ること」は verifier が確かめない（package は entry を 1 つしか運ばない）— 期待として

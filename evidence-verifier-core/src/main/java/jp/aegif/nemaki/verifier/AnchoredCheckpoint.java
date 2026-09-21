@@ -16,6 +16,9 @@
  */
 package jp.aegif.nemaki.verifier;
 
+import org.bouncycastle.cms.CMSSignedData;
+import org.bouncycastle.tsp.TimeStampToken;
+
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -183,10 +186,15 @@ public final class AnchoredCheckpoint {
     /**
      * The anchor material commits to the anchor target's Merkle root.
      *
-     * <p>This version reads the manifest's record of what each rung holds rather than parsing
-     * the DER: parsing an RFC 3161 token is P3's job and needs an ASN.1 reader. What it CAN
-     * establish is whether the package claims an anchor at all, and a claim with no material is
-     * reported as absent rather than passed.
+     * <p>Reads the manifest's record of what each rung holds, then READS the material it can:
+     * an RFC 3161 token is parsed and its imprint compared with the anchor target's Merkle root
+     * (SHA-256 over the root's UTF-8 bytes, which is what the product anchors). Until 2026-09-22
+     * the material was only checked for presence and the outcome was always UNAVAILABLE
+     * ({@code ANCHOR_NOT_PARSED}), so no package could reach VERIFIED at P2 (release condition
+     * 3). OTS and ERS material stays unread here — their own profiles read them — and a package
+     * whose only material is of those kinds is still UNAVAILABLE, not passed. P3 repeats the
+     * imprint comparison under its own name because P3 also checks WHO signed; the two agree
+     * by construction.
      */
     static Outcome.Check anchorCommitsRoot(Map<String, byte[]> entries,
             List<Map<String, Object>> links) {
@@ -223,14 +231,78 @@ public final class AnchoredCheckpoint {
                     "no rung carries anchor material, so nothing external commits to this "
                             + "checkpoint");
         }
-        // The material is there and this version cannot read what it commits to. UNAVAILABLE,
-        // not PASSED: saying the anchor commits to the root would assert something no check
-        // here performed.
-        return Outcome.Check.unavailable("anchor commits root", "ANCHOR_NOT_PARSED",
-                "the package carries anchor material (" + present + ") and this version does "
-                        + "not parse it. Whether it commits to "
-                        + links.get(links.size() - 1).get("merkleRoot")
-                        + " is therefore UNKNOWN, not established");
+        Map<String, Object> target = documentIn(entries, "anchor-target-checkpoint.json");
+        Object root = target == null ? null : target.get("merkleRoot");
+        if (!(root instanceof String merkleRoot)) {
+            return Outcome.Check.absent("anchor commits root",
+                    "the anchor target records no Merkle root, so there is nothing the material "
+                            + "could commit to");
+        }
+        // What the product anchors is the root as a STRING (the anchor service sends
+        // checkpoint.merkleRoot), so an RFC 3161 imprint over it is SHA-256 of its UTF-8 bytes
+        // — the same reading P3's imprint check makes.
+        String expected = Canonical.hex(Canonical.sha256(merkleRoot.getBytes(StandardCharsets.UTF_8)));
+        List<String> committing = new ArrayList<>();
+        List<String> unread = new ArrayList<>();
+        for (String path : present) {
+            if (!path.endsWith("rfc3161.der")) {
+                // OTS and ERS material is read by their own profiles (P4 / P5); Atlas is a
+                // catalogue reference, not a commitment. Recorded as unread, not as passed.
+                unread.add(path);
+                continue;
+            }
+            TimeStampToken token;
+            try {
+                token = new TimeStampToken(new CMSSignedData(bytesOf(entries, path)));
+            } catch (Exception notAToken) {
+                // A file recorded as a token and not parsing as one is a FINDING about the
+                // package, the same reading P3 makes of it — not "unknown".
+                return Outcome.Check.failed("anchor commits root",
+                        path + " is recorded as an RFC 3161 token and does not parse as one: "
+                                + notAToken.getMessage());
+            }
+            String algorithm = String.valueOf(token.getTimeStampInfo().getMessageImprintAlgOID());
+            if (!SHA256_OID.equals(algorithm)) {
+                // A digest this version does not compute is one it has not checked.
+                return Outcome.Check.unavailable("anchor commits root", "UNKNOWN_ALGORITHM",
+                        path + " carries an imprint under " + algorithm + " and this version "
+                                + "computes SHA-256 only, so whether it commits to the root "
+                                + "was not established");
+            }
+            String imprint = Canonical.hex(token.getTimeStampInfo().getMessageImprintDigest());
+            if (!imprint.equals(expected)) {
+                return Outcome.Check.failed("anchor commits root",
+                        path + " is over " + imprint + " and the anchor target's Merkle root "
+                                + "hashes to " + expected + ", so the anchor commits to something "
+                                + "else");
+            }
+            committing.add(path);
+        }
+        if (committing.isEmpty()) {
+            // The material is there and this version cannot read what it commits to.
+            // UNAVAILABLE, not PASSED: saying the anchor commits to the root would assert
+            // something no check here performed.
+            return Outcome.Check.unavailable("anchor commits root", "ANCHOR_NOT_PARSED",
+                    "the package carries anchor material (" + unread + ") that this profile does "
+                            + "not read. Whether it commits to " + merkleRoot
+                            + " is therefore UNKNOWN, not established");
+        }
+        return Outcome.Check.passed("anchor commits root", committing + " commit(s) to "
+                + merkleRoot + (unread.isEmpty() ? "" : "; " + unread + " not read by this "
+                + "profile"));
+    }
+
+    /** SHA-256, the one imprint algorithm this version computes (id-sha256). */
+    static final String SHA256_OID = "2.16.840.1.101.3.4.2.1";
+
+    private static byte[] bytesOf(Map<String, byte[]> entries, String relative) {
+        String wanted = RecordLedger.DIR + relative;
+        for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
+            if (("/" + entry.getKey()).endsWith(wanted)) {
+                return entry.getValue();
+            }
+        }
+        return new byte[0];
     }
 
     static Outcome.Check rollback(List<Map<String, Object>> links, String expected) {

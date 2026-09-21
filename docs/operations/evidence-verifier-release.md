@@ -46,7 +46,8 @@ java -cp evidence-verifier-cli/target/classes:evidence-verifier-core/target/clas
 **exit code を見ること。** `0` は `VERIFIED` だけで、`3`（`INDETERMINATE`）は成功ではない。
 
 **遷移文の package**（`ledger-entry.json` の `subjectKind` が `RECORD_CONTENT_TRANSITION` — 内容が archive へ移った・cold へ移った・
-消された版）は **P1 以上で `VERIFIED` に届かない**（`content binding` が `NOT_PRESENT`）。`transition continuity` は
+消された版）は **P1 以上で `VERIFIED` に届かない**（`content binding` が `NOT_PRESENT`）。**この版の NemakiWare はそういう package を
+書き出さない**（書き出しが payload を要求する）— 読む側の備えであって、この製品が出すものの説明ではない。`transition continuity` は
 写した prior を `prior/` の出所と突き合わせ、`TRANSITION_PRIOR_NOT_IN_PACKAGE` は「出所を運んでいない」であって「写しが誤り」ではない。
 
 ### 3. SHA-256SUMS
@@ -85,14 +86,15 @@ package が自分の trust anchor を名乗れるなら、署名を差し替え�
 | `policyOids` | 省略可 | 省略すると `token policy` は `NOT_PRESENT`（照合する基準が無いので、通ったとは言わない） |
 | `requireRevocationAtIssuance` | **省略時 true** | false にすると理由が `REVOCATION_NOT_CAPTURED` から `REVOCATION_NOT_REQUIRED` に変わる。**verdict は変わらない**（下記）。**弱くする側の既定を沈黙で作らない**ためこうしてある |
 
-### この版で `VERIFIED` に到達できるのは **P0 と P1 だけ**です
+### この版で `VERIFIED` に到達できるのは **P0・P1・P2** です
 
 profile は**積み上げ**で、上位は下位の必須検査を全部含みます。そして
-**必須検査のうち 4 つは、この版では `PASSED` になる分岐を持っていません**。
+**必須検査のうち 3 つは、この版では `PASSED` になる分岐を持っていません**
+（`anchor commits root` は 2026-09-22 から RFC 3161 token を読み、root を commit していれば `PASSED`。
+それまでは材料の有無しか見ず、P2 も必ず exit 3 だった）。
 
 | 必須検査 | どの profile から入るか | なぜ `PASSED` が無いか |
 |---|---|---|
-| `anchor commits root` | `ANCHORED_CHECKPOINT_V1` 以上 | anchor の DER を読まないので、root に commit しているかは **UNKNOWN**。読まずに「commit している」と言うのは、どの検査も行っていない主張 |
 | `token revocation` | `TRUSTED_RFC3161_V1` 以上 | 失効材料を**評価しない**。材料が在ることは、その検証ではない |
 | `ots parse` / `ots commits root` / `ots attestation` | `ANCHORED_OTS_V1` | block header の入手元が無く、socket も開かない |
 
@@ -102,7 +104,7 @@ profile は**積み上げ**で、上位は下位の必須検査を全部含み�
 |---|---|
 | `PACKAGE_INTEGRITY_V1` | **`VERIFIED` に到達できる**（exit 0） |
 | `RECORD_LEDGER_V1` | **`VERIFIED` に到達できる**（exit 0） |
-| `ANCHORED_CHECKPOINT_V1` | **必ず exit 3** |
+| `ANCHORED_CHECKPOINT_V1` | **`VERIFIED` に到達できる**（exit 0）— RFC 3161 token が anchor target の root を commit しているとき。OTS / ERS の材料しか無い package は exit 3（この profile はそれらを読まない） |
 | `TRUSTED_RFC3161_V1` | **必ず exit 3** |
 | `ANCHORED_OTS_V1` | **必ず exit 3** |
 | `LONG_TERM_ERS_V1` | **必ず exit 3** |
@@ -111,8 +113,9 @@ profile は**積み上げ**で、上位は下位の必須検査を全部含み�
 変わるのは理由コードだけです。**node 側で収集を on にしても同じ**（`anchor.rfc3161.revocation.collect-at-issuance`）— 集めた材料をこの版は評価しない。
 
 **exit 3 を「実質 OK」として script で畳まないでください。** 畳んだ時点で、
-この版が積み上げた拒否は最後の一歩で全部無効になります。**P2 以上を合否判定に
-使う運用は、この版では成立しません** — 使えるのは P0 と P1 です。
+この版が積み上げた拒否は最後の一歩で全部無効になります。**P3 以上を合否判定に
+使う運用は、この版では成立しません** — 使えるのは P0〜P2 です。P2 の `VERIFIED` が言うのは
+「誰かが発行した RFC 3161 token が root を commit している」までで、**その誰かを信頼してよいかは P3 の問い**（P3 は届かない）。
 上位 profile の出力は、**どこまで確かめられたかの内訳**としてのみ読んでください。
 
 **anchor が 1 つも無い profile ファイルは拒否される。** 空の profile を返すと

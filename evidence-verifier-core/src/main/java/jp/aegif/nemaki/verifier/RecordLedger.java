@@ -230,7 +230,8 @@ public final class RecordLedger {
                     + "source entry, or the reverse; the two are set together or not at all");
         }
         byte[] priorStatementJson = fileIn(entries, "prior/record-content-statement.json");
-        Map<String, Object> priorEntry = parseOrNull(fileIn(entries, "prior/ledger-entry.json"));
+        byte[] priorEntryJson = fileIn(entries, "prior/ledger-entry.json");
+        Map<String, Object> priorEntry = parseOrNull(priorEntryJson);
         if (priorStatementJson == null || priorEntry == null) {
             return Outcome.Check.unavailable(name, "TRANSITION_PRIOR_NOT_IN_PACKAGE",
                     "the transition cites ledger entry " + cited + " and the package does not "
@@ -283,7 +284,63 @@ public final class RecordLedger {
             return Outcome.Check.failed(name, "the transition copied " + priorDigest
                     + " and the cited statement's contentDigest is " + source);
         }
+        // The prior has to be about THIS version. Everything above agrees on numbers and
+        // digests, and none of it is identity: a state statement for ANOTHER record that
+        // happens to sit at the cited sequence and to have the same content digest satisfies
+        // all of it (Codex, second review). Two records with equal bytes are ordinary.
+        Object priorSubject = priorEntry.get("subjectId");
+        if (!(priorSubject instanceof String subject)
+                || !subject.equals(statement.get("versionObjectId"))) {
+            return Outcome.Check.failed(name, "the cited entry is about " + priorSubject
+                    + " and this transition is about " + statement.get("versionObjectId")
+                    + ", so the prior belongs to another record");
+        }
+        for (String field : List.of("repositoryId", "objectId", "versionObjectId")) {
+            if (!java.util.Objects.equals(priorStatement.get(field), statement.get(field))) {
+                return Outcome.Check.failed(name, "the prior statement's " + field + " is "
+                        + priorStatement.get(field) + " and this transition's is "
+                        + statement.get(field) + ", so they are about different records");
+            }
+        }
+        // And the canonical forms shipped beside them are the canonical forms OF them. The
+        // package carries four files under prior/ (§4.2); reading two and shipping four means
+        // the other two can say anything (Codex, second review, P2).
+        Outcome.Check c14n = priorCanonicalForm(entries, name,
+                "prior/record-content-statement.c14n", priorStatementJson);
+        if (c14n != null) {
+            return c14n;
+        }
+        c14n = priorCanonicalForm(entries, name, "prior/ledger-entry.c14n", priorEntryJson);
+        if (c14n != null) {
+            return c14n;
+        }
         return Outcome.Check.passed(name);
+    }
+
+    /**
+     * The failure when {@code path} is not the canonical form of {@code json}, or null when it
+     * is. A package that carries the JSON and drops its {@code .c14n} is one that shipped half
+     * of a pair §4.2 defines as four files.
+     */
+    private static Outcome.Check priorCanonicalForm(Map<String, byte[]> entries, String name,
+            String path, byte[] json) {
+        byte[] shipped = fileIn(entries, path);
+        if (shipped == null) {
+            return Outcome.Check.failed(name, "the package carries " + path.replace(".c14n",
+                    ".json") + " and not " + path + "; prior/ is four files or none");
+        }
+        byte[] recomputed;
+        try {
+            recomputed = Canonical.encode(Json.parse(new String(json, StandardCharsets.UTF_8)));
+        } catch (Json.NotCanonicalisable | Canonical.NotEncodable e) {
+            return Outcome.Check.failed(name, path.replace(".c14n", ".json")
+                    + " has no canonical form: " + e.getMessage());
+        }
+        if (!Arrays.equals(recomputed, shipped)) {
+            return Outcome.Check.failed(name, "the shipped " + path + " is not the canonical "
+                    + "form of the .json beside it");
+        }
+        return null;
     }
 
     static Outcome.Check entryRecompute(Map<String, Object> entry) {

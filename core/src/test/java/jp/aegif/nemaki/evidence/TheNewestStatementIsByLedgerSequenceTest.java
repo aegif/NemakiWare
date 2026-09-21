@@ -127,6 +127,23 @@ class TheNewestStatementIsByLedgerSequenceTest {
     }
 
     @Test
+    @DisplayName("a statement row that cannot be read as a document makes 'newest' undeterminable too")
+    void anUnreadableStatementMakesTheNewestUndeterminable() {
+        // The sequence half was fixed first and this half was left skipping (Codex, second
+        // review). Same view, same shape, same wrong answer: the view emits rows whose
+        // statement is truthy, so a statement that is not a document is one this version
+        // cannot read — not one that is absent.
+        Map<String, Object> unreadable = new LinkedHashMap<>();
+        unreadable.put("statement", "not a document");
+        unreadable.put("entrySequence", 90L);
+
+        assertNull(journalOver(clientReturning(row("a".repeat(64), 10L), unreadable))
+                        .latestRecorded("bedroom", "v-1"),
+                "the row at sequence 90 could not be read and the row at 10 was reported as the "
+                        + "newest; a transition would copy a digest that is two writes old");
+    }
+
+    @Test
     @DisplayName("recordedAt answers the cited sequence, not the first row it meets")
     void recordedAtIsTheCitedSequenceNotTheFirstRow() {
         CouchContentWriteJournal journal = journalOver(clientReturning(

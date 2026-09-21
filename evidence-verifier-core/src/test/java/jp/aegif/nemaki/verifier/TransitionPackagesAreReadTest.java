@@ -165,9 +165,14 @@ class TransitionPackagesAreReadTest {
             entries.put(DIR + "covering-checkpoint.json", bytes(json(covering)));
             entries.put(DIR + "inclusion-proof.json", bytes(json(proof)));
             if (shipPrior) {
+                // FOUR files, which is what EvidenceBundleWriter ships (§4.2). The first
+                // version of this fixture left out prior/ledger-entry.c14n and every test here
+                // passed — a fixture measuring a package the product does not build (Codex,
+                // second review, P2: the .c14n were shipped and never read).
                 entries.put(DIR + "prior/record-content-statement.json", bytes(json(prior)));
                 entries.put(DIR + "prior/record-content-statement.c14n", Canonical.encode(prior));
                 entries.put(DIR + "prior/ledger-entry.json", bytes(json(priorEntry)));
+                entries.put(DIR + "prior/ledger-entry.c14n", Canonical.encode(priorEntry));
             }
             return entries;
         }
@@ -331,6 +336,119 @@ class TransitionPackagesAreReadTest {
         // And the state-side checks still recompute the relabelled entry, which is consistent
         // with itself; nothing here is FAILED, which is why the kind has to be the entry's.
         assertEquals(Outcome.PASSED, named(checks, "entry recompute").outcome());
+    }
+
+    /**
+     * The prior's ENTRY names another record. Two arms guard this — the entry's subjectId and
+     * the statement's own fields — and the first version of the fixture moved both at once, so
+     * breaking either left the test green (control ND3 did not fire). Each arm now has a
+     * fixture only it can catch.
+     */
+    @Test
+    @DisplayName("a prior ENTRY about another record is FAILED, even when the statement is this record's")
+    void aPriorEntryAboutAnotherRecordIsFailed() {
+        Fixture fixture = new Fixture();
+        Map<String, byte[]> entries = fixture.entries();
+        // The statement stays doc-1 — the statement-side arm passes — and only the entry says
+        // it is about doc-2.
+        Map<String, Object> otherSubject = entry(1L, "RECORD_CONTENT_STATE",
+                fixture.priorDigest, null);
+        otherSubject.put("subjectId", "doc-2");
+        otherSubject.put("entryHash", Canonical.hash("LEDGER_ENTRY_V1", "record-content", 1L,
+                "RECORD_CONTENT_STATE", "doc-2", fixture.priorDigest, AT, null));
+        entries.put(DIR + "prior/ledger-entry.json", bytes(json(otherSubject)));
+        entries.put(DIR + "prior/ledger-entry.c14n", Canonical.encode(otherSubject));
+
+        Outcome.Check continuity = named(RecordLedger.check(entries), "transition continuity");
+        assertEquals(Outcome.FAILED, continuity.outcome(), continuity.detail());
+        assertTrue(continuity.detail().contains("another record"), continuity.detail());
+    }
+
+    /**
+     * The prior's STATEMENT is another record's, and the entry that commits to it says what
+     * this transition says. Everything numeric agrees; two records with equal bytes are
+     * ordinary (Codex, second review).
+     */
+    @Test
+    @DisplayName("a prior STATEMENT about another record is FAILED, even when the entry names this one")
+    void aPriorStatementAboutAnotherRecordIsFailed() {
+        Fixture fixture = new Fixture();
+        Map<String, byte[]> entries = fixture.entries();
+        Map<String, Object> otherRecord = stateStatement("minutes of the meeting");
+        otherRecord.put("objectId", "doc-2");
+        otherRecord.put("versionObjectId", "doc-2");
+        String otherDigest = Canonical.documentDigest(otherRecord);
+        // subjectId stays doc-1, so the entry-side arm passes.
+        Map<String, Object> entryForOther = entry(1L, "RECORD_CONTENT_STATE", otherDigest, null);
+        entries.put(DIR + "prior/record-content-statement.json", bytes(json(otherRecord)));
+        entries.put(DIR + "prior/record-content-statement.c14n", Canonical.encode(otherRecord));
+        entries.put(DIR + "prior/ledger-entry.json", bytes(json(entryForOther)));
+        entries.put(DIR + "prior/ledger-entry.c14n", Canonical.encode(entryForOther));
+
+        Outcome.Check continuity = named(RecordLedger.check(entries), "transition continuity");
+        assertEquals(Outcome.FAILED, continuity.outcome(), continuity.detail());
+        assertTrue(continuity.detail().contains("different records"), continuity.detail());
+    }
+
+    @Test
+    @DisplayName("a prior whose shipped .c14n is not its canonical form is FAILED")
+    void aPriorWhoseCanonicalFormIsWrongIsFailed() {
+        // The writer ships four files and the first version of this check read two, so the
+        // other two could say anything (Codex, second review, P2).
+        for (String path : List.of("prior/record-content-statement.c14n", "prior/ledger-entry.c14n")) {
+            Fixture fixture = new Fixture();
+            Map<String, byte[]> entries = fixture.entries();
+            entries.put(DIR + path, "not the canonical form".getBytes(StandardCharsets.UTF_8));
+
+            Outcome.Check continuity = named(RecordLedger.check(entries), "transition continuity");
+            assertEquals(Outcome.FAILED, continuity.outcome(),
+                    path + " was replaced with arbitrary bytes and continuity answered "
+                            + continuity.outcome() + ": " + continuity.detail());
+        }
+    }
+
+    @Test
+    @DisplayName("a prior shipped without its canonical form is FAILED — prior/ is four files or none")
+    void aPriorMissingItsCanonicalFormIsFailed() {
+        Fixture fixture = new Fixture();
+        Map<String, byte[]> entries = fixture.entries();
+        entries.remove(DIR + "prior/ledger-entry.c14n");
+
+        Outcome.Check continuity = named(RecordLedger.check(entries), "transition continuity");
+        assertEquals(Outcome.FAILED, continuity.outcome(), continuity.detail());
+    }
+
+    @Test
+    @DisplayName("two evidence sections in one package FAIL at P0 — zip order must not choose the answers")
+    void twoEvidenceSectionsFailAtP0() {
+        // Both sections are internally consistent; they disagree about the record. Which one a
+        // verifier reads was decided by the order of entries in the zip, which the party that
+        // built it chooses (Codex, second review, P1).
+        Map<String, byte[]> entries = new Fixture().entries();
+        Map<String, byte[]> second = new LinkedHashMap<>();
+        for (Map.Entry<String, byte[]> e : entries.entrySet()) {
+            second.put(e.getKey().replace("sip/", "other-sip/"), e.getValue());
+        }
+        entries.putAll(second);
+
+        Outcome.Check one = named(PackageIntegrity.check(entries), "one evidence section");
+        assertEquals(Outcome.FAILED, one.outcome(),
+                "a package with two evidence sections was read as one: " + one.detail());
+        assertTrue(PackageIntegrity.REQUIRED.contains("one evidence section"),
+                "the check is not required, so a package with two sections would still verify");
+    }
+
+    @Test
+    @DisplayName("one section, and none at all, both pass that check")
+    void oneOrZeroSectionsPass() {
+        assertEquals(Outcome.PASSED,
+                named(PackageIntegrity.check(new Fixture().entries()), "one evidence section").outcome());
+        Map<String, byte[]> legacy = new LinkedHashMap<>();
+        legacy.put(ROOT + "representations/rep1/data/minutes.txt", bytes("x"));
+        assertEquals(Outcome.PASSED,
+                named(PackageIntegrity.check(legacy), "one evidence section").outcome(),
+                "a legacy package with no evidence section was failed by a check about having "
+                        + "TWO of them");
     }
 
     @Test

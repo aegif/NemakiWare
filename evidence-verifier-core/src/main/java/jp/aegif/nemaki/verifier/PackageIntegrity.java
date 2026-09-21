@@ -40,7 +40,7 @@ public final class PackageIntegrity {
 
     /** The checks this profile will not pass without — §9. */
     public static final List<String> REQUIRED =
-            List.of("zip safe", "payload fixity", "mets closure");
+            List.of("zip safe", "one evidence section", "payload fixity", "mets closure");
 
     /**
      * Runs P0 over a package that has already been read.
@@ -53,9 +53,42 @@ public final class PackageIntegrity {
     public static List<Outcome.Check> check(Map<String, byte[]> entries) {
         List<Outcome.Check> checks = new ArrayList<>();
         checks.add(Outcome.Check.passed("zip safe"));
+        checks.add(oneEvidenceSection(entries));
         checks.add(payloadFixity(entries));
         checks.add(metsClosure(entries));
         return checks;
+    }
+
+    /**
+     * The package carries at most one evidence section.
+     *
+     * <p>Every check above P0 finds its documents by matching the END of an entry path against
+     * {@code metadata/other/nemaki-evidence/<name>}, and takes the first match. A package with
+     * that directory under two roots therefore holds two answers to every one of those
+     * questions, and which one is read is decided by zip order — which the party that built the
+     * zip chooses (Codex, second review of the transition batch). A broken section and a
+     * made-to-fit one in one package would verify as the made-to-fit one.
+     *
+     * <p>FAILED, not a refusal to read: the package WAS read, and what was found is a package
+     * that contradicts itself. Zero sections is not a finding here — a legacy package has none,
+     * and P1 reports that under its own name.
+     */
+    static Outcome.Check oneEvidenceSection(Map<String, byte[]> entries) {
+        java.util.SortedSet<String> roots = new java.util.TreeSet<>();
+        for (String path : entries.keySet()) {
+            String full = "/" + path;
+            int at = full.indexOf(RecordLedger.DIR);
+            if (at >= 0) {
+                roots.add(full.substring(0, at + 1));
+            }
+        }
+        if (roots.size() <= 1) {
+            return Outcome.Check.passed("one evidence section");
+        }
+        return Outcome.Check.failed("one evidence section",
+                "the package carries " + roots.size() + " evidence sections (" + roots + "). "
+                        + "Every check above this one takes the first path that matches, so the "
+                        + "zip's order would decide which set of answers is verified");
     }
 
     /** Payload bytes against the digest PREMIS records for them. */

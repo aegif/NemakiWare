@@ -305,6 +305,14 @@ class EveryStageIsListedTest {
                 // The one escape from the guard, stated with its scope. It used to turn the
                 // whole guard off and the runbook read as if there were no escape (both
                 // reviews).
+                // The capability the documents claimed and the code refuses: a version whose
+                // content is gone cannot be exported at all, so no transition package is
+                // produced by this version (Codex, second review of the transition batch, P1).
+                Map.entry("**ただし内容の無い版は E-ARK SIP として書き出せません**",
+                        "the ledger records the six content-losing paths and the exporter "
+                                + "refuses the versions they are about; a runbook that said "
+                                + "packages carry them would promise an artefact nobody can "
+                                + "produce"),
                 Map.entry("**loopback だけ**を通します",
                         "the runbook says the fetch is pinned to a validated address; the test "
                                 + "property is the one thing that widens that, and its scope — "

@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -260,8 +261,8 @@ class TheChainIsWalkedNotAssumedTest {
     }
 
     @Test
-    @DisplayName("anchor material this version cannot parse is UNKNOWN, not a pass")
-    void unparsedAnchorMaterialIsUnknown() {
+    @DisplayName("material recorded as an RFC 3161 token that does not parse is a FINDING, not unknown")
+    void materialRecordedAsATokenThatDoesNotParseIsAFinding() {
         List<Map<String, Object>> links = twoLinked();
         Map<String, byte[]> entries = chainOf(links);
         Map<String, Object> manifest = new LinkedHashMap<>();
@@ -279,9 +280,38 @@ class TheChainIsWalkedNotAssumedTest {
         Outcome.Check anchor =
                 named(AnchoredCheckpoint.check(entries, null), "anchor commits root");
 
+        // Until 2026-09-22 this was UNAVAILABLE (ANCHOR_NOT_PARSED): the material was there and
+        // nothing read it. Now the RFC 3161 rung IS read, and two bytes that are not a token
+        // are a finding about the package — the same reading P3 makes (TheAnchorIsReadNotAssumedTest
+        // holds the passing side, with a real token).
+        assertEquals(Outcome.FAILED, anchor.outcome(),
+                "a file recorded as an RFC 3161 token and not parsing as one was reported as "
+                        + anchor.outcome() + ": " + anchor.detail());
+        assertNull(anchor.reasonCode());
+    }
+
+    @Test
+    @DisplayName("a rung whose material this profile does not read is UNKNOWN, never verified")
+    void aPresentRungOfAKindNotReadHereIsUnknown() {
+        Map<String, byte[]> entries = chainOf(twoLinked());
+        Map<String, Object> manifest = new LinkedHashMap<>();
+        manifest.put("bundleId", "b");
+        manifest.put("createdAt", "2026-09-20T01:00:00Z");
+        manifest.put("files", List.of());
+        Map<String, Object> rung = new LinkedHashMap<>();
+        rung.put("kind", "OPENTIMESTAMPS");
+        rung.put("state", "PRESENT");
+        rung.put("path", "anchors/ots.ots");
+        manifest.put("anchors", List.of(rung));
+        entries.put(DIR + "bundle-manifest.json", json(manifest).getBytes(StandardCharsets.UTF_8));
+        entries.put(DIR + "anchors/ots.ots", new byte[] { 0x00, 0x4f, 0x70 });
+
+        Outcome.Check anchor =
+                named(AnchoredCheckpoint.check(entries, null), "anchor commits root");
+
         assertEquals(Outcome.UNAVAILABLE, anchor.outcome(),
-                "the material is there and this version does not read it. Saying the anchor "
-                        + "commits to the root would assert something no check performed");
+                "OTS material is read by P4, not here. Saying it commits to the root at P2 "
+                        + "would assert something no check in this profile performed");
         assertEquals("ANCHOR_NOT_PARSED", anchor.reasonCode());
     }
 

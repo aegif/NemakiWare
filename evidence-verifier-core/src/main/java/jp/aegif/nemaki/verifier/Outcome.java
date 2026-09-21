@@ -100,6 +100,11 @@ public enum Outcome {
             }
         }
 
+        /** PASSED with something a reader should still know — what was and was not read. */
+        public static Check passed(String name, String detail) {
+            return new Check(name, PASSED, null, detail);
+        }
+
         public static Check passed(String name) {
             return new Check(name, PASSED, null, null);
         }
