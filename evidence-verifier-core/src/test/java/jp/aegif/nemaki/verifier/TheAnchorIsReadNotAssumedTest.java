@@ -48,7 +48,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -68,6 +67,10 @@ class TheAnchorIsReadNotAssumedTest {
     private static final String DIR = ROOT + "metadata/other/nemaki-evidence/";
     private static final String SHA256 = "2.16.840.1.101.3.4.2.1";
     private static final String SHA512 = "2.16.840.1.101.3.4.2.3";
+
+    /** Merkle roots the way the ledger writes them: 64 lowercase hex characters. */
+    private static final String ROOT_A = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+    private static final String ROOT_Z = "0000d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
 
     static {
         Security.addProvider(new BouncyCastleProvider());
@@ -102,11 +105,20 @@ class TheAnchorIsReadNotAssumedTest {
                 converter.getCertificate(tsaHolder), tsaKeys);
     }
 
-    /** A real token whose imprint is {@code digestOid} over the UTF-8 bytes of {@code over}. */
+    /**
+     * A real token over {@code over}, made the way the product makes them: a Merkle root is
+     * already a SHA-256 digest, so its BYTES are what gets timestamped
+     * ({@code Rfc3161AnchorTarget.decodeSha256Hex}). For the SHA-512 case there is nothing to
+     * decode — the point there is an algorithm this verifier does not compute.
+     */
     private static byte[] tokenOver(Authority authority, String over, String digestOid)
             throws Exception {
-        MessageDigest md = MessageDigest.getInstance(SHA512.equals(digestOid) ? "SHA-512" : "SHA-256");
-        byte[] imprint = md.digest(over.getBytes(StandardCharsets.UTF_8));
+        byte[] imprint;
+        if (SHA512.equals(digestOid)) {
+            imprint = MessageDigest.getInstance("SHA-512").digest(over.getBytes(StandardCharsets.UTF_8));
+        } else {
+            imprint = java.util.HexFormat.of().parseHex(over);
+        }
         TimeStampRequestGenerator requests = new TimeStampRequestGenerator();
         requests.setCertReq(true);
         TimeStampRequest request = requests.generate(new ASN1ObjectIdentifier(digestOid), imprint);
@@ -213,8 +225,8 @@ class TheAnchorIsReadNotAssumedTest {
     @Test
     @DisplayName("a real token over the anchor target's Merkle root PASSES anchor commits root")
     void aTokenOverTheRootPasses() throws Exception {
-        Map<String, Object> cp = checkpoint(1, 10, "aa", null);
-        byte[] token = tokenOver(authority(), "aa", SHA256);
+        Map<String, Object> cp = checkpoint(1, 10, ROOT_A, null);
+        byte[] token = tokenOver(authority(), ROOT_A, SHA256);
 
         Outcome.Check anchor = named(AnchoredCheckpoint.check(anchoredChain(cp, token), null),
                 "anchor commits root");
@@ -226,8 +238,8 @@ class TheAnchorIsReadNotAssumedTest {
     @Test
     @DisplayName("a real token over something else FAILS — a well-formed anchor for a different root")
     void aTokenOverSomethingElseFails() throws Exception {
-        Map<String, Object> cp = checkpoint(1, 10, "aa", null);
-        byte[] token = tokenOver(authority(), "not-the-root", SHA256);
+        Map<String, Object> cp = checkpoint(1, 10, ROOT_A, null);
+        byte[] token = tokenOver(authority(), ROOT_Z, SHA256);
 
         Outcome.Check anchor = named(AnchoredCheckpoint.check(anchoredChain(cp, token), null),
                 "anchor commits root");
@@ -242,8 +254,8 @@ class TheAnchorIsReadNotAssumedTest {
     @Test
     @DisplayName("an imprint under a digest this version does not compute is UNKNOWN, not a mismatch")
     void anImprintUnderAnotherDigestIsUnknown() throws Exception {
-        Map<String, Object> cp = checkpoint(1, 10, "aa", null);
-        byte[] token = tokenOver(authority(), "aa", SHA512);
+        Map<String, Object> cp = checkpoint(1, 10, ROOT_A, null);
+        byte[] token = tokenOver(authority(), ROOT_A, SHA512);
 
         Outcome.Check anchor = named(AnchoredCheckpoint.check(anchoredChain(cp, token), null),
                 "anchor commits root");
@@ -255,18 +267,92 @@ class TheAnchorIsReadNotAssumedTest {
         assertEquals("UNKNOWN_ALGORITHM", anchor.reasonCode());
     }
 
+    /**
+     * The root compared is the CHAIN'S, so a target document that is missing one is caught by
+     * {@code chain ends} — which recomputes the document — rather than leaving
+     * {@code anchor commits root} to compare against a field that is not there.
+     */
     @Test
-    @DisplayName("a target with no Merkle root has nothing the token could commit to")
-    void aTargetWithoutARootIsAbsent() throws Exception {
-        Map<String, Object> cp = checkpoint(1, 10, "aa", null);
-        Map<String, byte[]> entries = anchoredChain(cp, tokenOver(authority(), "aa", SHA256));
+    @DisplayName("a target with no Merkle root fails the walk, and the anchor check reads the chain's root")
+    void aTargetWithoutARootFailsTheWalk() throws Exception {
+        Map<String, Object> cp = checkpoint(1, 10, ROOT_A, null);
+        Map<String, byte[]> entries = anchoredChain(cp, tokenOver(authority(), ROOT_A, SHA256));
         Map<String, Object> rootless = new LinkedHashMap<>(cp);
         rootless.remove("merkleRoot");
         entries.put(DIR + "anchor-target-checkpoint.json", bytes(json(rootless)));
 
+        List<Outcome.Check> checks = AnchoredCheckpoint.check(entries, null);
+        assertEquals(Outcome.NOT_PRESENT, named(checks, "chain ends").outcome(),
+                "a target document that omits merkleRoot cannot be recomputed, and the walk "
+                        + "reported " + named(checks, "chain ends").outcome());
+    }
+
+    /**
+     * The attack the third review found: the target document carries the chain's hash and
+     * SOMEONE ELSE'S root, and the token is over that other root. Comparing only the stated
+     * checkpointHash let every check pass while the anchor committed to a root the chain never
+     * reached (Codex, P1).
+     */
+    @Test
+    @DisplayName("a target carrying the chain's hash and another root fails the walk")
+    void aTargetWithASubstitutedRootFailsTheWalk() throws Exception {
+        Map<String, Object> cp = checkpoint(1, 10, ROOT_A, null);
+        Map<String, byte[]> entries = anchoredChain(cp, tokenOver(authority(), ROOT_Z, SHA256));
+        Map<String, Object> substituted = new LinkedHashMap<>(cp);
+        substituted.put("merkleRoot", ROOT_Z);           // the token is over this
+        // ...and the hash it presents is still the chain's, so chainEnds' old comparison held.
+        entries.put(DIR + "anchor-target-checkpoint.json", bytes(json(substituted)));
+
+        List<Outcome.Check> checks = AnchoredCheckpoint.check(entries, null);
+        assertEquals(Outcome.FAILED, named(checks, "chain ends").outcome(),
+                "the target's fields do not hash to the hash it presents, and the walk said "
+                        + named(checks, "chain ends").outcome());
+        // And the anchor check reads the CHAIN's root, so it refuses the token too.
+        assertEquals(Outcome.FAILED, named(checks, "anchor commits root").outcome(),
+                "the token is over the substituted root and the anchor check accepted it");
+    }
+
+    /**
+     * "An anchor commits" is a claim about a signature. Reading a field out of an unverified
+     * CMS structure is not one — anyone can write a TSTInfo (Codex, third review, P1).
+     */
+    @Test
+    @DisplayName("a token whose signature does not verify is FAILED, however well its imprint matches")
+    void aTokenWithABrokenSignatureIsFailed() throws Exception {
+        Map<String, Object> cp = checkpoint(1, 10, ROOT_A, null);
+        byte[] token = tokenOver(authority(), ROOT_A, SHA256);
+        // Corrupt the signature bytes without touching the imprint: the last byte of the DER
+        // is inside the signature value.
+        byte[] tampered = token.clone();
+        tampered[tampered.length - 1] ^= 0x01;
+        Map<String, byte[]> entries = anchoredChain(cp, tampered);
+
         Outcome.Check anchor = named(AnchoredCheckpoint.check(entries, null), "anchor commits root");
-        assertEquals(Outcome.NOT_PRESENT, anchor.outcome(), anchor.detail());
-        assertNull(anchor.reasonCode());
+        assertEquals(Outcome.FAILED, anchor.outcome(),
+                "a token whose signature does not verify was reported as " + anchor.outcome()
+                        + ". The imprint matching says what the STRUCTURE claims; only the "
+                        + "signature says someone issued it: " + anchor.detail());
+    }
+
+    /**
+     * P2 and P3 read the same file, named the same way. A rung claiming another kind, at
+     * another path, is not the RFC 3161 anchor — P3 would find no token at all (Codex, P2).
+     */
+    @Test
+    @DisplayName("a matching token at a decoy path under another kind is not read as the RFC 3161 anchor")
+    void aDecoyRungIsNotReadAsTheAnchor() throws Exception {
+        Map<String, Object> cp = checkpoint(1, 10, ROOT_A, null);
+        Map<String, byte[]> entries = anchoredChain(cp, tokenOver(authority(), ROOT_A, SHA256));
+        Map<String, Object> decoy = manifestWith("OPENTIMESTAMPS", "anchors/decoy-rfc3161.der");
+        entries.put(DIR + "bundle-manifest.json", bytes(json(decoy)));
+        entries.put(DIR + "anchors/decoy-rfc3161.der", entries.get(DIR + "anchors/rfc3161.der"));
+        entries.remove(DIR + "anchors/rfc3161.der");
+
+        Outcome.Check anchor = named(AnchoredCheckpoint.check(entries, null), "anchor commits root");
+        assertEquals(Outcome.UNAVAILABLE, anchor.outcome(),
+                "a token under a rung calling itself OPENTIMESTAMPS, at a path §4.2 does not "
+                        + "name, was read as the RFC 3161 anchor: " + anchor.detail());
+        assertEquals("ANCHOR_NOT_PARSED", anchor.reasonCode());
     }
 
     // ---------------------------------------------------------------- end to end

@@ -116,16 +116,17 @@ public final class TrustedRfc3161 {
                     "the anchor target records no Merkle root");
         }
         byte[] imprint = token.getTimeStampInfo().getMessageImprintDigest();
-        // The product anchors the root as a STRING (AnchorService sends checkpoint.merkleRoot),
-        // so the imprint is over its UTF-8 bytes. Stated here because a reader would reasonably
-        // assume the raw digest bytes.
-        String actual = Canonical.hex(
-                Canonical.sha256(merkleRoot.getBytes(StandardCharsets.UTF_8)));
+        // The imprint IS the root, as §12 says: the Merkle root is already a SHA-256 digest,
+        // and what the product timestamps is that digest's BYTES — it decodes the hex and
+        // sends the 32 bytes (Rfc3161AnchorTarget.decodeSha256Hex). This read hashed the hex
+        // STRING a second time, so it refused every token the product has ever produced while
+        // agreeing with a fixture that hashed it the same wrong way. Found by the third
+        // review, from the writer's side (2026-09-22).
         String recorded = Canonical.hex(imprint);
-        if (!actual.equals(recorded)) {
+        if (!recorded.equals(merkleRoot)) {
             return Outcome.Check.failed("token imprint",
-                    "the token is over " + recorded + " and the anchor target's Merkle root "
-                            + "hashes to " + actual + ", so the token is about something else");
+                    "the token is over " + recorded + " and the anchor target's Merkle root is "
+                            + merkleRoot + ", so the token is about something else");
         }
         return Outcome.Check.passed("token imprint");
     }

@@ -180,7 +180,43 @@ public final class AnchoredCheckpoint {
                             + target.get("checkpointHash") + ", so the walk does not reach what "
                             + "was anchored");
         }
+        // The two DOCUMENTS are recomputed too, not only their stated hashes. The chain's own
+        // links are recomputed by chainRecompute; covering-checkpoint.json and
+        // anchor-target-checkpoint.json are separate files, and comparing only their
+        // checkpointHash field leaves their other fields free: a target carrying the chain's
+        // hash and SOMEONE ELSE'S merkleRoot passed every check while the anchor committed to
+        // a root the chain never reached (Codex, third review, P1).
+        Outcome.Check coveringSelf = selfConsistent("chain ends", covering, "covering checkpoint");
+        if (coveringSelf != null) {
+            return coveringSelf;
+        }
+        Outcome.Check targetSelf = selfConsistent("chain ends", target, "anchor target checkpoint");
+        if (targetSelf != null) {
+            return targetSelf;
+        }
         return Outcome.Check.passed("chain ends");
+    }
+
+    /** The failure when {@code document}'s own fields do not hash to its checkpointHash. */
+    private static Outcome.Check selfConsistent(String name, Map<String, Object> document,
+            String what) {
+        for (String field : List.of("domain", "fromSequence", "toSequence", "merkleRoot",
+                "prevCheckpointHash", "createdAt", "checkpointHash")) {
+            if (!document.containsKey(field)) {
+                return Outcome.Check.absent(name, "the " + what + " omits " + field
+                        + ", so its hash cannot be recomputed");
+            }
+        }
+        String recomputed = Canonical.hash("LEDGER_CHECKPOINT_V1", document.get("domain"),
+                document.get("fromSequence"), document.get("toSequence"),
+                document.get("merkleRoot"), document.get("prevCheckpointHash"),
+                document.get("createdAt"));
+        if (!recomputed.equals(document.get("checkpointHash"))) {
+            return Outcome.Check.failed(name, "the " + what + "'s fields hash to " + recomputed
+                    + " and it records " + document.get("checkpointHash")
+                    + ", so the hash it presents is not the hash of what it says");
+        }
+        return null;
     }
 
     /**
@@ -209,6 +245,7 @@ public final class AnchoredCheckpoint {
                     "the manifest records no anchor rungs");
         }
         List<String> present = new ArrayList<>();
+        List<String> rfc3161 = new ArrayList<>();
         for (Object raw : rungs) {
             if (raw instanceof Map<?, ?> rung && "PRESENT".equals(rung.get("state"))) {
                 Object path = rung.get("path");
@@ -222,6 +259,15 @@ public final class AnchoredCheckpoint {
                                     + "not carry it");
                 }
                 present.add(String.valueOf(path));
+                // The RFC 3161 rung is the one the manifest CALLS one, at the path §4.2 names.
+                // Reading anything ending in rfc3161.der, whatever kind claimed it, let a rung
+                // marked OPENTIMESTAMPS carry a matching token at a decoy path and pass here
+                // while P3 — which reads anchors/rfc3161.der only — found no token at all
+                // (Codex, third review, P2).
+                if ("RFC3161_TSA".equals(rung.get("kind"))
+                        && "anchors/rfc3161.der".equals(String.valueOf(path))) {
+                    rfc3161.add(String.valueOf(path));
+                }
             }
         }
         if (present.isEmpty()) {
@@ -231,21 +277,25 @@ public final class AnchoredCheckpoint {
                     "no rung carries anchor material, so nothing external commits to this "
                             + "checkpoint");
         }
-        Map<String, Object> target = documentIn(entries, "anchor-target-checkpoint.json");
-        Object root = target == null ? null : target.get("merkleRoot");
+        // The CHAIN'S root, not the target document's. chainRecompute has already recomputed
+        // every link's hash from its own fields, so this value is one the walk established;
+        // the target document's field is checked against it by chainEnds (Codex, third review).
+        Object root = links.get(links.size() - 1).get("merkleRoot");
         if (!(root instanceof String merkleRoot)) {
             return Outcome.Check.absent("anchor commits root",
-                    "the anchor target records no Merkle root, so there is nothing the material "
-                            + "could commit to");
+                    "the chain's last link records no Merkle root, so there is nothing the "
+                            + "material could commit to");
         }
-        // What the product anchors is the root as a STRING (the anchor service sends
-        // checkpoint.merkleRoot), so an RFC 3161 imprint over it is SHA-256 of its UTF-8 bytes
-        // — the same reading P3's imprint check makes.
-        String expected = Canonical.hex(Canonical.sha256(merkleRoot.getBytes(StandardCharsets.UTF_8)));
+        // The imprint IS the root (§11, §12): the Merkle root is already a SHA-256 digest and
+        // what gets timestamped is its BYTES. The first version of this check hashed the hex
+        // string a second time — copying the same mistake P3 had — which refused every token
+        // the product produces (third review, P1). A fixture that made its tokens the same
+        // wrong way agreed with it, which is why both were green.
+        String expected = merkleRoot;
         List<String> committing = new ArrayList<>();
         List<String> unread = new ArrayList<>();
         for (String path : present) {
-            if (!path.endsWith("rfc3161.der")) {
+            if (!rfc3161.contains(path)) {
                 // OTS and ERS material is read by their own profiles (P4 / P5); Atlas is a
                 // catalogue reference, not a commitment. Recorded as unread, not as passed.
                 unread.add(path);
@@ -272,9 +322,32 @@ public final class AnchoredCheckpoint {
             String imprint = Canonical.hex(token.getTimeStampInfo().getMessageImprintDigest());
             if (!imprint.equals(expected)) {
                 return Outcome.Check.failed("anchor commits root",
-                        path + " is over " + imprint + " and the anchor target's Merkle root "
-                                + "hashes to " + expected + ", so the anchor commits to something "
-                                + "else");
+                        path + " is over " + imprint + " and the chain's Merkle root hashes to "
+                                + expected + ", so the anchor commits to something else");
+            }
+            // "An anchor COMMITS" is a claim about a signature, and reading a field out of an
+            // unverified structure is not one: anyone can write a TSTInfo. The token's own
+            // signature is verified here against the certificate it carries — WHO that
+            // certificate belongs to is P3's question, and this check does not answer it
+            // (Codex, third review, P1).
+            org.bouncycastle.cert.X509CertificateHolder signer = null;
+            for (Object held : token.getCertificates().getMatches(token.getSID())) {
+                signer = (org.bouncycastle.cert.X509CertificateHolder) held;
+                break;
+            }
+            if (signer == null) {
+                return Outcome.Check.unavailable("anchor commits root", "CERTIFICATE_UNREADABLE",
+                        path + " carries no signer certificate, so its signature cannot be "
+                                + "verified from the package alone and what it commits to is "
+                                + "not established");
+            }
+            try {
+                token.validate(new org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoVerifierBuilder()
+                        .build(signer));
+            } catch (Exception invalid) {
+                return Outcome.Check.failed("anchor commits root",
+                        path + "'s signature does not verify against its own signer "
+                                + "certificate: " + invalid.getMessage());
             }
             committing.add(path);
         }

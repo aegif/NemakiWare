@@ -24,15 +24,17 @@
 
 **「規定しない」は「検証しなくてよい」ではない。**
 
-### 今の製品が書く package はこの contract を満たしていない
+### どの package が v1 で、どれが `legacy` か
 
-3.4.0 が今日書く package には `metadata/other/nemaki-evidence.json` が 1 本あるだけで、
-§4.2 の 9 エントリは**存在しない**。この形の package は **`legacy`** であり、
+**3.4.0 は v1 の配置を書く**（Phase 4、`EvidenceBundleWriter`）。ただし**書けるのは、その版に
+E1 の record content statement が台帳に在るときだけ**である。無い版の package は
+`metadata/other/nemaki-evidence.json` が 1 本あるだけの **`legacy`** で、
 
 - **P0 だけが評価できる**
 - P1 以上は `INDETERMINATE`、reason code **`LEGACY_PACKAGE_LAYOUT`**
 
-v1 の配置を書き出すのは Phase 4 である。
+statement が無いのは、E1 の配線より前に書かれた版、台帳に届かなかった版、
+そして**内容を失った版**（遷移文しか無く、書き出し自体が拒否される。正典 R67）である。
 **旧 package を「検証した」と述べてはならない** — 検査していないのだから。
 
 ---
@@ -47,6 +49,29 @@ v1 の配置を書き出すのは Phase 4 である。
 
 verifier は **既定で network を使わない**。network を使う check は、使えないなら
 `NOT_CHECKED` であり、`PASS` でも `FAIL` でもない。
+
+### 1.1 v1 は凍結した（2026-09-22）
+
+**この版で v1 を凍結する。** 受け取る側が自分で verifier を書くための contract だから、
+書いた後で意味が変わってよい部分と、変えてはならない部分を先に分ける。
+
+| 変えない（変えるなら v2） | 足してよい（v1 のまま） |
+|---|---|
+| §3 の正準エンコーディングと `hash(parts...)` の入力 | 新しい reason code（verifier の登録簿と result schema が正典） |
+| §4.2 の配置と、そこに**必須**と書いたファイル | 新しい profile（P6 以降） |
+| §5 の各文書の**必須** field と、その型 | **必須でない** check（報告はするが verdict を動かさない） |
+| §6 の entry hash の入力**と順序** | 既存文書の**任意** field（知らなくても検証できるもの） |
+| §7 の checkpoint hash、§8 の Merkle の規則 | |
+| §9〜§14 の**必須 check の集合** | |
+| §15 の合成規則と exit code | |
+
+**変えるときは v2。** `$id` の `v1`、`profile.json` の `profileVersion`、
+`docs/evidence-profile/v1/` が一緒に動く。**v1 の package を読めなくする変更は、
+v1 を壊さずに v2 を足すことでしか行わない。**
+
+**凍結の対象は contract であって、製品の実装ではない。** 例えば遷移文（§5.3b）は v1 の
+一部だが、この版の NemakiWare は内容を失った版の package を**書き出せない**（正典 R67）。
+contract が定義済みであることと、この製品が今それを出せることは、別の事実である。
 
 ---
 
@@ -417,7 +442,7 @@ current == merkleRoot なら PASS
 | `CHAIN_ENDS` | `links[0]` が covering、`links[last]` が anchor target |
 | `CHAIN_FORWARD` | `links[i].toSequence` が狭義単調増加。covering が target より後なら `FAILED` |
 | `CHAIN_RECOMPUTE` | 各 link の `checkpointHash` を §7 で再計算して一致 |
-| `ANCHOR_COMMITS_ROOT` | manifest が `PRESENT` と記録する rung の**材料を読む**（2026-09-22 まではファイルの有無だけを見て常に `UNAVAILABLE` だった）。RFC 3161（`anchors/rfc3161.der`）: token を parse し、`messageImprint == SHA-256(UTF-8(anchor-target-checkpoint.merkleRoot))`（製品は root を**文字列**として anchor する。P3 の `TOKEN_IMPRINT` と同じ読み）。一致で PASS。parse 不能・不一致は `FAILED`。imprint の算法が SHA-256 でなければ `UNAVAILABLE`（`UNKNOWN_ALGORITHM`）。OTS / ERS / Atlas の材料はこの profile では**読まない**（P4 / P5 が読む）— 読める rung が 1 つも無ければ `UNAVAILABLE`（`ANCHOR_NOT_PARSED`）。rung が 1 つも `PRESENT` でなければ `NOT_PRESENT` |
+| `ANCHOR_COMMITS_ROOT` | manifest が `PRESENT` と記録する rung の**材料を読む**（2026-09-22 まではファイルの有無だけを見て常に `UNAVAILABLE` だった）。RFC 3161（manifest の `kind` が `RFC3161_TSA` で path が `anchors/rfc3161.der` の rung**だけ**）: token を parse し、**`hex(messageImprint) == chain の末尾 link の `merkleRoot`**（root は既に SHA-256 digest なので、timestamp されるのは**その bytes**。hex 文字列を再度 hash しない。§12 の `TOKEN_IMPRINT` と同じ読み）。さらに **token の署名を、token が運ぶ証明書に対して検証**する（「誰かが発行した」を言うために必要。**誰が**は P3）。両方が通れば PASS。parse 不能・不一致は `FAILED`。imprint の算法が SHA-256 でなければ `UNAVAILABLE`（`UNKNOWN_ALGORITHM`）。OTS / ERS / Atlas の材料はこの profile では**読まない**（P4 / P5 が読む）— 読める rung が 1 つも無ければ `UNAVAILABLE`（`ANCHOR_NOT_PARSED`）。rung が 1 つも `PRESENT` でなければ `NOT_PRESENT` |
 | `ROLLBACK` | `--expected-checkpoint` が与えられたとき、chain 上にその hash が在る |
 
 主張しないこと: token の PKIX（それは P3）。

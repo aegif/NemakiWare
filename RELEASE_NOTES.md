@@ -759,6 +759,71 @@ POST /core/api/v1/admin/eark/{repositoryId}/objects/{objectId}/bag?submissionId=
 - **記録の中身が真実だとは言いません。** 検証器が言うのは容器が仕様に合っていることだけで、
   記述メタデータは取り込み時に元のシステムが報告した内容です
 
+## 受け取った側が、NemakiWare を起動せずに package を検証できるようになりました
+
+書き出した E-ARK SIP を、**この製品も、サーバも、リポジトリ網も要らずに**検証する
+コマンドを同梱しました。受け取る組織が自分の手元で走らせるためのものです。
+
+```
+java -jar evidence-verifier-cli.jar verify <package.zip> --profile RECORD_LEDGER_V1
+```
+
+**exit code が interface です。**
+
+| exit | 意味 |
+|---|---|
+| `0` | `VERIFIED` — 要求した profile の必須検査が**全部通った** |
+| `2` | `FAILED` — 検査が**食い違いを見つけた** |
+| `3` | `INDETERMINATE` — 必須の材料が無い・読めない・この版が対応していない |
+| `4` | 使い方の誤り (未知の profile、読めない trust profile など) |
+| `5` | この検証器自身の異常 |
+
+**`3` は成功ではありません。** `0` 以外を一律に失敗として扱うのは正しく、
+**`3` を「実質 OK」として畳むのは誤り**です。畳んだ時点で、この検証器が積み上げた
+「確かめていない」という区別が全部消えます。
+
+`--json` を付けると機械可読の結果が出ます。その形は
+`docs/evidence-profile/v1/verifier-result.schema.json` に固定してあり、配布物の
+`SHA-256SUMS` に載せています。分岐に使ってよいのは `reasonCode` で、`detail` は
+人向けの文です (契約ではありません)。
+
+**この版で `VERIFIED` に到達できるのは `PACKAGE_INTEGRITY_V1`・`RECORD_LEDGER_V1`・
+`ANCHORED_CHECKPOINT_V1` までです。** その上 (`TRUSTED_RFC3161_V1` /
+`ANCHORED_OTS_V1` / `LONG_TERM_ERS_V1`) は**必ず exit 3** になります — 失効材料を
+評価しない、OpenTimestamps の block header を持たない、といった**この版の限界**が
+必須検査に残っているためで、package の欠陥ではありません。詳細は
+[独立 verifier のリリース手順](docs/operations/evidence-verifier-release.md)。
+
+### 全部の必須検査が通った package について、名乗れる文
+
+> この SIP に含まれる対象 bytes は、同梱された record content statement と一致し、
+> その statement の digest は証拠台帳 entry に結び付いています。当該 entry から
+> checkpoint までの inclusion proof、checkpoint chain、および指定 trust profile による
+> 外部 anchor の検証を、NemakiWare を起動せずに再実行できます。
+
+### 必ず併記すること
+
+> この検証は、取込前の内容の真実性、対象が漏れなく取り込まれたこと、
+> 提示 checkpoint が最新であること、法令適合、JIIMA 認証、または管理者による
+> 変更の防止を証明しません。外部で保持した checkpoint または trust profile を基準に、
+> 提示された証拠範囲の事後変更を検出するものです。
+
+**この 2 つは対です。** 上だけを引くと、この検証器が**設計として答えない**ことまで
+答えたように読めます。
+
+### 主張しないこと
+
+- **「改ざんされていない」とは言いません。** 言えるのは「**外部で保持した**
+  checkpoint または trust profile を基準に、提示された範囲の事後変更を検出できる」まで。
+  基準を外から持っていなければ、package は自分と整合しているだけです
+- **認定タイムスタンプ事業者かどうかを判定しません。** 暗号からは推論できません。
+  契約と登録簿の事実です。trust profile に置いた証明書がそうであることは、
+  ファイルに書いたから真になるものではありません
+- **`ANCHORED_CHECKPOINT_V1` が通っても、署名者を信頼してよいとは言いません。**
+  その profile が確かめるのは「誰かが発行した RFC 3161 token が、この checkpoint の
+  root を commit している」までです。**誰が**は `TRUSTED_RFC3161_V1` の問いで、
+  この版ではそこに届きません
+
 ## 保存システムへ渡すときに、実機で分かったこと
 
 RODA 6.3.0 と Archivematica 1.18.0 に実際に投入して測りました。**渡す前に読んでください。**

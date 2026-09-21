@@ -66,6 +66,10 @@ class TheTrustComesFromOutsideTest {
     private static final String DIR = "sip/metadata/other/nemaki-evidence/";
     private static final String POLICY = "1.2.3.4.5";
 
+    /** A Merkle root the way the ledger writes one: 64 lowercase hex characters. */
+    private static final String ROOT = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+    private static final String OTHER_ROOT = "0000d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+
     static {
         Security.addProvider(new BouncyCastleProvider());
     }
@@ -109,10 +113,15 @@ class TheTrustComesFromOutsideTest {
                 converter.getCertificate(tsaHolder), tsaKeys);
     }
 
-    /** A real RFC 3161 token over the UTF-8 bytes of {@code merkleRoot}. */
+    /**
+     * A real RFC 3161 token over {@code merkleRoot}, made the way the product makes them:
+     * the root is already a SHA-256 digest, so its 32 BYTES are what gets timestamped
+     * ({@code Rfc3161AnchorTarget.decodeSha256Hex}). The first version hashed the hex string a
+     * second time and so agreed with a verifier that did the same — both wrong, and green
+     * (third review, 2026-09-22).
+     */
     private static byte[] tokenOver(Authority authority, String merkleRoot) throws Exception {
-        byte[] imprint = java.security.MessageDigest.getInstance("SHA-256")
-                .digest(merkleRoot.getBytes(StandardCharsets.UTF_8));
+        byte[] imprint = java.util.HexFormat.of().parseHex(merkleRoot);
         // certReq MUST be set, or BouncyCastle omits the signer certificate from the token and
         // every check that needs it reports "the token carries no signer certificate" — which
         // is a legitimate answer for such a token, and not the case under test here. The
@@ -187,7 +196,7 @@ class TheTrustComesFromOutsideTest {
     @DisplayName("a real token under a chosen anchor passes parse, imprint, signature, EKU and path")
     void aRealTokenUnderAChosenAnchorPasses(@TempDir Path tmp) throws Exception {
         Authority authority = authority(true, true);
-        String root = "aabbcc";
+        String root = ROOT;
         List<Outcome.Check> checks = TrustedRfc3161.check(
                 packageWith(tokenOver(authority, root), root),
                 profileWith(tmp, authority.ca(), POLICY));
@@ -202,7 +211,7 @@ class TheTrustComesFromOutsideTest {
     @DisplayName("WITHOUT a trust profile the path check is NOT_PRESENT — never passed")
     void withoutATrustProfileThePathIsNotPresent(@TempDir Path tmp) throws Exception {
         Authority authority = authority(true, true);
-        String root = "aabbcc";
+        String root = ROOT;
         List<Outcome.Check> checks = TrustedRfc3161.check(
                 packageWith(tokenOver(authority, root), root), TrustProfile.empty());
 
@@ -221,7 +230,7 @@ class TheTrustComesFromOutsideTest {
     void aTokenFromAnotherAuthorityFailsThePath(@TempDir Path tmp) throws Exception {
         Authority mine = authority(true, true);
         Authority someoneElse = authority(true, true);
-        String root = "aabbcc";
+        String root = ROOT;
 
         List<Outcome.Check> checks = TrustedRfc3161.check(
                 packageWith(tokenOver(someoneElse, root), root),
@@ -237,7 +246,7 @@ class TheTrustComesFromOutsideTest {
     void aTokenOverSomethingElseFailsTheImprint(@TempDir Path tmp) throws Exception {
         Authority authority = authority(true, true);
         List<Outcome.Check> checks = TrustedRfc3161.check(
-                packageWith(tokenOver(authority, "a different root"), "aabbcc"),
+                packageWith(tokenOver(authority, OTHER_ROOT), ROOT),
                 profileWith(tmp, authority.ca(), POLICY));
 
         assertEquals(Outcome.FAILED, named(checks, "token imprint").outcome(),
@@ -281,7 +290,7 @@ class TheTrustComesFromOutsideTest {
     @DisplayName("a policy the profile does not accept fails")
     void anUnacceptedPolicyFails(@TempDir Path tmp) throws Exception {
         Authority authority = authority(true, true);
-        String root = "aabbcc";
+        String root = ROOT;
         List<Outcome.Check> checks = TrustedRfc3161.check(
                 packageWith(tokenOver(authority, root), root),
                 profileWith(tmp, authority.ca(), "9.9.9.9"));
@@ -293,7 +302,7 @@ class TheTrustComesFromOutsideTest {
     @DisplayName("no revocation material captured at issuance is UNKNOWN, not a pass and not a finding")
     void missingRevocationMaterialIsUnknown(@TempDir Path tmp) throws Exception {
         Authority authority = authority(true, true);
-        String root = "aabbcc";
+        String root = ROOT;
         Outcome.Check revocation = named(TrustedRfc3161.check(
                 packageWith(tokenOver(authority, root), root),
                 profileWith(tmp, authority.ca(), POLICY)), "token revocation");
@@ -310,7 +319,7 @@ class TheTrustComesFromOutsideTest {
     @DisplayName("a file presented as a token and not parsing is a FINDING")
     void aFileThatIsNotATokenIsAFinding() {
         Map<String, byte[]> entries = packageWith("not a token".getBytes(StandardCharsets.UTF_8),
-                "aabbcc");
+                ROOT);
         assertEquals(Outcome.FAILED,
                 named(TrustedRfc3161.check(entries, TrustProfile.empty()), "token parse")
                         .outcome(),
@@ -322,7 +331,7 @@ class TheTrustComesFromOutsideTest {
     @DisplayName("no token at all is absent, not failed")
     void noTokenIsAbsent() {
         List<Outcome.Check> checks =
-                TrustedRfc3161.check(packageWith(null, "aabbcc"), TrustProfile.empty());
+                TrustedRfc3161.check(packageWith(null, ROOT), TrustProfile.empty());
         for (String name : TrustedRfc3161.REQUIRED) {
             assertEquals(Outcome.NOT_PRESENT, named(checks, name).outcome(), name + ": " + checks);
         }

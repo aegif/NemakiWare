@@ -296,10 +296,20 @@ public final class RecordLedger {
                     + ", so the prior belongs to another record");
         }
         for (String field : List.of("repositoryId", "objectId", "versionObjectId")) {
-            if (!java.util.Objects.equals(priorStatement.get(field), statement.get(field))) {
+            // Present STRINGs, as §5.3 requires of both documents. Objects.equals alone let
+            // two absent fields — or two nulls — agree, so a prior with no identity at all
+            // passed as this record's (Codex, third review, P2).
+            Object here = statement.get(field);
+            Object there = priorStatement.get(field);
+            if (!(here instanceof String mine) || !(there instanceof String theirs)) {
+                return Outcome.Check.failed(name, "the transition's " + field + " is " + here
+                        + " and the prior statement's is " + there + "; §5.3 requires both to "
+                        + "be text, and two absences do not make them the same record");
+            }
+            if (!mine.equals(theirs)) {
                 return Outcome.Check.failed(name, "the prior statement's " + field + " is "
-                        + priorStatement.get(field) + " and this transition's is "
-                        + statement.get(field) + ", so they are about different records");
+                        + theirs + " and this transition's is " + mine + ", so they are about "
+                        + "different records");
             }
         }
         // And the canonical forms shipped beside them are the canonical forms OF them. The

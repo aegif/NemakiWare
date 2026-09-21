@@ -59,36 +59,59 @@ public final class PackageIntegrity {
         return checks;
     }
 
+    /** The evidence documents every check above P0 looks up by name (§4.2). */
+    private static final List<String> EVIDENCE_FILES = List.of(
+            "profile.json", "bundle-manifest.json",
+            "record-content-statement.json", "record-content-statement.c14n",
+            "ledger-entry.json", "ledger-entry.c14n",
+            "inclusion-proof.json",
+            "covering-checkpoint.json", "covering-checkpoint.c14n",
+            "checkpoint-chain.json",
+            "anchor-target-checkpoint.json", "anchor-target-checkpoint.c14n",
+            "prior/record-content-statement.json", "prior/record-content-statement.c14n",
+            "prior/ledger-entry.json", "prior/ledger-entry.c14n",
+            "anchors/rfc3161.der", "anchors/ots.ots", "anchors/ers.der", "anchors/atlas.json");
+
     /**
-     * The package carries at most one evidence section.
+     * No evidence document is named twice.
      *
      * <p>Every check above P0 finds its documents by matching the END of an entry path against
-     * {@code metadata/other/nemaki-evidence/<name>}, and takes the first match. A package with
-     * that directory under two roots therefore holds two answers to every one of those
-     * questions, and which one is read is decided by zip order — which the party that built the
-     * zip chooses (Codex, second review of the transition batch). A broken section and a
-     * made-to-fit one in one package would verify as the made-to-fit one.
+     * {@code metadata/other/nemaki-evidence/<name>} and takes the FIRST match, so a package
+     * where two entries match one name holds two answers to that question and the zip's order
+     * decides which is read — an order the party that built the zip chooses (Codex, second
+     * review). A broken section and a made-to-fit one in one package would verify as the
+     * made-to-fit one.
+     *
+     * <p>Counted per NAME rather than per directory, which is what the lookups actually do.
+     * Counting directories missed a second section nested inside the first and refused a
+     * legitimate package whose PAYLOAD happened to contain a similarly named folder (Codex,
+     * third review, P1 and P2).
      *
      * <p>FAILED, not a refusal to read: the package WAS read, and what was found is a package
-     * that contradicts itself. Zero sections is not a finding here — a legacy package has none,
-     * and P1 reports that under its own name.
+     * that contradicts itself. Zero evidence documents is not a finding here — a legacy package
+     * has none, and P1 reports that under its own name.
      */
     static Outcome.Check oneEvidenceSection(Map<String, byte[]> entries) {
-        java.util.SortedSet<String> roots = new java.util.TreeSet<>();
-        for (String path : entries.keySet()) {
-            String full = "/" + path;
-            int at = full.indexOf(RecordLedger.DIR);
-            if (at >= 0) {
-                roots.add(full.substring(0, at + 1));
+        java.util.SortedMap<String, List<String>> ambiguous = new java.util.TreeMap<>();
+        for (String name : EVIDENCE_FILES) {
+            String wanted = RecordLedger.DIR + name;
+            List<String> matches = new ArrayList<>();
+            for (String path : entries.keySet()) {
+                if (("/" + path).endsWith(wanted)) {
+                    matches.add(path);
+                }
+            }
+            if (matches.size() > 1) {
+                ambiguous.put(name, matches);
             }
         }
-        if (roots.size() <= 1) {
+        if (ambiguous.isEmpty()) {
             return Outcome.Check.passed("one evidence section");
         }
         return Outcome.Check.failed("one evidence section",
-                "the package carries " + roots.size() + " evidence sections (" + roots + "). "
-                        + "Every check above this one takes the first path that matches, so the "
-                        + "zip's order would decide which set of answers is verified");
+                "the package names the same evidence document more than once: " + ambiguous
+                        + ". Every check above this one takes the first path that matches, so "
+                        + "the zip's order would decide which answer is verified");
     }
 
     /** Payload bytes against the digest PREMIS records for them. */

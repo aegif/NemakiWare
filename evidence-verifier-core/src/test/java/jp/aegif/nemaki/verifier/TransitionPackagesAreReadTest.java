@@ -439,6 +439,63 @@ class TransitionPackagesAreReadTest {
     }
 
     @Test
+    @DisplayName("a second section NESTED inside the first is caught too — counting roots missed it")
+    void aNestedSecondSectionFailsAtP0() {
+        // sip/metadata/other/nemaki-evidence/prior/x/metadata/other/nemaki-evidence/... has the
+        // same root as the first section, so counting directories said "one". The suffix
+        // lookups match both (Codex, third review, P1).
+        Map<String, byte[]> entries = new Fixture().entries();
+        entries.put(DIR + "prior/x/metadata/other/nemaki-evidence/record-content-statement.json",
+                bytes("{}"));
+
+        Outcome.Check one = named(PackageIntegrity.check(entries), "one evidence section");
+        assertEquals(Outcome.FAILED, one.outcome(),
+                "a nested second section was not counted: " + one.detail());
+    }
+
+    @Test
+    @DisplayName("a payload folder that merely looks like the evidence section does not fail the package")
+    void aPayloadFolderWithASimilarNameIsNotASecondSection() {
+        // Counting every path containing the directory name refused a legitimate package whose
+        // payload happened to carry one (Codex, third review, P2). What matters is whether two
+        // entries answer the same LOOKUP.
+        Map<String, byte[]> entries = new Fixture().entries();
+        entries.put(ROOT + "representations/rep1/data/metadata/other/nemaki-evidence/note.txt",
+                bytes("a note that happens to live there"));
+
+        assertEquals(Outcome.PASSED,
+                named(PackageIntegrity.check(entries), "one evidence section").outcome(),
+                "a payload file under a similarly named folder was read as a second evidence "
+                        + "section");
+    }
+
+    @Test
+    @DisplayName("a prior with no identity at all is FAILED — two absences are not the same record")
+    void aPriorWithNoIdentityIsFailed() {
+        // Objects.equals let two nulls agree (Codex, third review, P2). §5.3 requires text.
+        Fixture fixture = new Fixture();
+        fixture.transition = transitionStatement(
+                String.valueOf(fixture.prior.get("contentDigest")), 1L);
+        fixture.transition.put("repositoryId", null);
+        fixture.transition.put("objectId", null);
+        Map<String, byte[]> entries = fixture.entries();
+        Map<String, Object> anonymous = stateStatement("minutes of the meeting");
+        anonymous.put("repositoryId", null);
+        anonymous.put("objectId", null);
+        Map<String, Object> entryForIt = entry(1L, "RECORD_CONTENT_STATE",
+                Canonical.documentDigest(anonymous), null);
+        entries.put(DIR + "prior/record-content-statement.json", bytes(json(anonymous)));
+        entries.put(DIR + "prior/record-content-statement.c14n", Canonical.encode(anonymous));
+        entries.put(DIR + "prior/ledger-entry.json", bytes(json(entryForIt)));
+        entries.put(DIR + "prior/ledger-entry.c14n", Canonical.encode(entryForIt));
+
+        Outcome.Check continuity = named(RecordLedger.check(entries), "transition continuity");
+        assertEquals(Outcome.FAILED, continuity.outcome(),
+                "a transition and a prior that both omit their identity were read as the same "
+                        + "record: " + continuity.detail());
+    }
+
+    @Test
     @DisplayName("one section, and none at all, both pass that check")
     void oneOrZeroSectionsPass() {
         assertEquals(Outcome.PASSED,
