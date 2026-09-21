@@ -10907,7 +10907,11 @@ CONTROLS = [
         find='"CERTIFICATE_UNREADABLE", "DUPLICATE_ENTRY", "LEGACY_PACKAGE_LAYOUT", "NOT_A_ZIP",',
         replace='"CERTIFICATE_UNREADABLE", "DUPLICATE_ENTRY", "LEGACY_PACKAGE_LAYOUT",',
         test='TheReasonCodeIsARegistryTest',
-        expect_fail=['everyRefusalIsRegistered'],
+        # Both: dropping a refusal's code from the registry also makes the registry differ
+        # from the schema, so the registry<->schema lock falls with it (measured: reported as
+        # undeclared, and the previous commit was gated on the "4/4 fired" line instead of the
+        # runner's exit code — which is 1 for an undeclared failure).
+        expect_fail=['everyRefusalIsRegistered', 'theSchemaEnumIsTheRegistry'],
     ),
     dict(
         id='LT3',
