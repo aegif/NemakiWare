@@ -26,6 +26,7 @@
     },
     "checks": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -54,20 +55,47 @@
               "AMBIGUOUS_PREMIS",
               "ANCHOR_NOT_PARSED",
               "CERTIFICATE_UNREADABLE",
+              "DUPLICATE_ENTRY",
+              "LEGACY_PACKAGE_LAYOUT",
+              "NOT_A_ZIP",
               "NO_BLOCK_HEADER_SOURCE",
               "OTS_NOT_PARSED",
               "PKIX_UNAVAILABLE",
+              "RESOURCE_LIMIT",
               "REVOCATION_NOT_CAPTURED",
               "REVOCATION_NOT_PARSED",
               "REVOCATION_NOT_REQUIRED",
               "UNKNOWN_ALGORITHM",
+              "UNSAFE_PATH",
               "UNSUPPORTED_ERS_VERSION"
             ],
-            "description": "Present only when outcome is UNAVAILABLE. Derived from the verifier's source; a lock keeps this list equal to it in both directions."
+            "description": "Present exactly when outcome is UNAVAILABLE (enforced below with if/then/else, and by the verifier's own constructor). The enum is the verifier's registry Outcome.Check.REASON_CODES; a lock keeps the two equal in both directions."
           },
           "detail": {
             "type": "string",
             "description": "Not a contract. Do not branch on it."
+          }
+        },
+        "if": {
+          "properties": {
+            "outcome": {
+              "const": "UNAVAILABLE"
+            }
+          },
+          "required": [
+            "outcome"
+          ]
+        },
+        "then": {
+          "required": [
+            "reasonCode"
+          ]
+        },
+        "else": {
+          "not": {
+            "required": [
+              "reasonCode"
+            ]
           }
         }
       }

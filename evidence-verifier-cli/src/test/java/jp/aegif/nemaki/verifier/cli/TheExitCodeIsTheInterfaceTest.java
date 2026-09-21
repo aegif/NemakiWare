@@ -27,6 +27,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
@@ -248,91 +249,132 @@ class TheExitCodeIsTheInterfaceTest {
         return (List<Object>) o;
     }
 
-    @Test
-    @DisplayName("--json output conforms to the published schema, judged BY the schema")
-    void theJsonConformsToThePublishedSchema(@TempDir Path tmp) throws Exception {
-        // The schema's own required/enum/additionalProperties drive the checks, so editing the
-        // schema changes what is demanded here. A hand-written list beside the schema would
-        // pass while the two disagreed — the defect this branch keeps meeting.
-        Map<String, Object> schema = schema();
-        Path sip = zip(tmp, "good.zip", goodPackage("the minutes"));
-        Run result = run("verify", sip.toString(), "--json");
-        Map<String, Object> body = (Map<String, Object>) jp.aegif.nemaki.verifier.Json.parse(
-                result.out().trim());
-
-        for (Object required : list(schema.get("required"))) {
-            assertTrue(body.containsKey(String.valueOf(required)),
-                    "the output lacks the key the schema requires: " + required);
+    /**
+     * A validator for the subset of JSON Schema this schema uses, driven by the schema text.
+     *
+     * <p>Not a hand-written list of what the schema "means". The first version checked
+     * required / enum / additionalProperties by hand and nothing else, so an empty
+     * {@code name} passed the lock while the schema's {@code minLength: 1} would have rejected
+     * it — and it demanded a non-empty {@code checks} the schema did not (both reviews, P2).
+     * Everything below is read from the schema node it is validating against.
+     */
+    @SuppressWarnings("unchecked")
+    private static void validate(Object value, Map<String, Object> node, String at,
+            List<String> errors) {
+        if (node.containsKey("const") && !java.util.Objects.equals(node.get("const"), value)) {
+            errors.add(at + ": expected const " + node.get("const") + ", got " + value);
         }
-        assertEquals(Boolean.FALSE, schema.get("additionalProperties"), "the schema is not closed");
-        for (String key : body.keySet()) {
-            assertTrue(properties(schema).containsKey(key),
-                    "the output carries a key the CLOSED schema does not declare: " + key
-                            + ". A receiving party validating with the schema would reject "
-                            + "every result this version prints");
+        if (node.containsKey("enum") && !list(node.get("enum")).contains(value)) {
+            errors.add(at + ": " + value + " is not in enum " + node.get("enum"));
         }
-        Map<String, Object> verdict = (Map<String, Object>) properties(schema).get("verdict");
-        assertTrue(list(verdict.get("enum")).contains(body.get("verdict")),
-                "verdict " + body.get("verdict") + " is not in the schema's enum");
-        assertTrue(!String.valueOf(body.get("limits")).isEmpty(), "limits is empty");
-
-        Map<String, Object> items = (Map<String, Object>) ((Map<String, Object>)
-                properties(schema).get("checks")).get("items");
-        Map<String, Object> checkProps = properties(items);
-        List<Object> outcomes = list(((Map<String, Object>) checkProps.get("outcome")).get("enum"));
-        List<Object> reasonCodes = list(((Map<String, Object>) checkProps.get("reasonCode")).get("enum"));
-        List<Object> checks = list(body.get("checks"));
-        assertTrue(!checks.isEmpty(), "the output has no checks");
-        for (Object o : checks) {
-            Map<String, Object> check = (Map<String, Object>) o;
-            for (Object required : list(items.get("required"))) {
-                assertTrue(check.containsKey(String.valueOf(required)),
-                        "a check lacks " + required + ": " + check);
+        String type = (String) node.get("type");
+        if ("object".equals(type)) {
+            if (!(value instanceof Map)) {
+                errors.add(at + ": expected object");
+                return;
             }
-            for (String key : check.keySet()) {
-                assertTrue(checkProps.containsKey(key),
-                        "a check carries a key the closed schema does not declare: " + key);
+            Map<String, Object> object = (Map<String, Object>) value;
+            for (Object required : list(node.getOrDefault("required", List.of()))) {
+                if (!object.containsKey(String.valueOf(required))) {
+                    errors.add(at + ": missing required " + required);
+                }
             }
-            assertTrue(outcomes.contains(check.get("outcome")),
-                    "outcome " + check.get("outcome") + " is not in the schema's enum");
-            if (check.containsKey("reasonCode")) {
-                assertTrue(reasonCodes.contains(check.get("reasonCode")),
-                        "reasonCode " + check.get("reasonCode") + " is not in the schema's enum");
+            Map<String, Object> props = (Map<String, Object>) node.getOrDefault("properties", Map.of());
+            for (Map.Entry<String, Object> e : object.entrySet()) {
+                if (props.containsKey(e.getKey())) {
+                    validate(e.getValue(), (Map<String, Object>) props.get(e.getKey()),
+                            at + "." + e.getKey(), errors);
+                } else if (Boolean.FALSE.equals(node.get("additionalProperties"))) {
+                    errors.add(at + ": undeclared key " + e.getKey());
+                }
+            }
+        } else if ("array".equals(type)) {
+            if (!(value instanceof List)) {
+                errors.add(at + ": expected array");
+                return;
+            }
+            List<Object> array = list(value);
+            if (node.containsKey("minItems")
+                    && array.size() < ((Number) node.get("minItems")).intValue()) {
+                errors.add(at + ": fewer than minItems " + node.get("minItems"));
+            }
+            Map<String, Object> items = (Map<String, Object>) node.get("items");
+            for (int i = 0; items != null && i < array.size(); i++) {
+                validate(array.get(i), items, at + "[" + i + "]", errors);
+            }
+        } else if ("string".equals(type)) {
+            if (!(value instanceof String)) {
+                errors.add(at + ": expected string, got " + value);
+                return;
+            }
+            if (node.containsKey("minLength")
+                    && ((String) value).length() < ((Number) node.get("minLength")).intValue()) {
+                errors.add(at + ": shorter than minLength " + node.get("minLength"));
+            }
+        }
+        // if / then / else and not — the only applicators this schema uses beyond the above.
+        if (node.containsKey("if")) {
+            List<String> ifErrors = new ArrayList<>();
+            validate(value, (Map<String, Object>) node.get("if"), at, ifErrors);
+            Object branch = ifErrors.isEmpty() ? node.get("then") : node.get("else");
+            if (branch != null) {
+                validate(value, (Map<String, Object>) branch, at, errors);
+            }
+        }
+        if (node.containsKey("not")) {
+            List<String> notErrors = new ArrayList<>();
+            validate(value, (Map<String, Object>) node.get("not"), at, notErrors);
+            if (notErrors.isEmpty()) {
+                errors.add(at + ": matches a 'not' schema " + node.get("not"));
             }
         }
     }
 
     @Test
-    @DisplayName("the schema's reasonCode enum is exactly the codes the verifier can emit")
-    void theSchemasReasonCodesAreTheSourcesReasonCodes() throws Exception {
-        // Derived from BOTH modules' main sources, compared in BOTH directions. A code the
-        // source emits and the schema lacks makes every such result non-conforming; a code the
-        // schema lists and nothing emits is a branch a receiving party writes for nothing.
-        java.util.SortedSet<String> inSource = new java.util.TreeSet<>();
-        for (Path root : List.of(Path.of("../evidence-verifier-core/src/main/java"),
-                Path.of("src/main/java"))) {
-            try (java.util.stream.Stream<Path> walk = Files.walk(root)) {
-                for (Path file : walk.filter(p -> p.toString().endsWith(".java")).toList()) {
-                    java.util.regex.Matcher m = java.util.regex.Pattern
-                            .compile("unavailable\\(\"[^\"]+\",\\s*\"([A-Z_]+)\"")
-                            .matcher(Files.readString(file, StandardCharsets.UTF_8));
-                    while (m.find()) {
-                        inSource.add(m.group(1));
+    @DisplayName("--json output conforms to the published schema for EVERY profile and refusal")
+    void theJsonConformsToThePublishedSchema(@TempDir Path tmp) throws Exception {
+        // Every profile, plus the two refusal paths — because the first version ran one
+        // package against one profile, produced no UNAVAILABLE check at all, and so never
+        // reached the reasonCode branch: five codes the CLI really prints were missing from
+        // the schema and this lock was green (both reviews, P1). A lock that exercises one
+        // happy path measures the happy path.
+        Map<String, Object> schema = schema();
+        Path good = zip(tmp, "good.zip", goodPackage("the minutes"));
+        Path notAZip = tmp.resolve("broken.zip");
+        Files.writeString(notAZip, "this is not a zip");
+
+        List<String> allErrors = new ArrayList<>();
+        int outputs = 0;
+        int unavailableSeen = 0;
+        for (String profile : List.of("PACKAGE_INTEGRITY_V1", "RECORD_LEDGER_V1",
+                "ANCHORED_CHECKPOINT_V1", "TRUSTED_RFC3161_V1", "ANCHORED_OTS_V1",
+                "LONG_TERM_ERS_V1")) {
+            for (Path sip : List.of(good, notAZip)) {
+                Run result = run("verify", sip.toString(), "--profile", profile, "--json");
+                assertTrue(result.code() != Verify.EXIT_USAGE && result.code() != Verify.EXIT_INTERNAL,
+                        profile + " on " + sip.getFileName() + " did not produce a result: "
+                                + result.err());
+                Object body = jp.aegif.nemaki.verifier.Json.parse(result.out().trim());
+                List<String> errors = new ArrayList<>();
+                validate(body, schema, profile + "/" + sip.getFileName(), errors);
+                allErrors.addAll(errors);
+                outputs++;
+                for (Object c : list(((Map<String, Object>) body).get("checks"))) {
+                    if ("UNAVAILABLE".equals(((Map<String, Object>) c).get("outcome"))) {
+                        unavailableSeen++;
                     }
                 }
             }
         }
-        assertTrue(!inSource.isEmpty(), "no reason code found in the sources — the pattern "
-                + "no longer matches how unavailable(...) is written, and this would pass empty");
-        Map<String, Object> items = (Map<String, Object>) ((Map<String, Object>)
-                properties(schema()).get("checks")).get("items");
-        java.util.SortedSet<String> inSchema = new java.util.TreeSet<>();
-        for (Object code : list(((Map<String, Object>) properties(items).get("reasonCode")).get("enum"))) {
-            inSchema.add(String.valueOf(code));
-        }
-        assertEquals(inSource, inSchema,
-                "the schema's reasonCode enum and the codes the verifier emits differ. "
-                        + "Source: " + inSource + " / schema: " + inSchema);
+        assertEquals(12, outputs, "six profiles times two packages were meant to be exercised");
+        assertTrue(unavailableSeen > 0,
+                "no UNAVAILABLE check was produced across every profile and both packages, so "
+                        + "the reasonCode branch of the schema was never exercised — which is "
+                        + "exactly how five codes went missing from it");
+        assertTrue(allErrors.isEmpty(),
+                "output the CLI really prints does not conform to the published schema. A "
+                        + "receiving party validating with it would reject these results:\n  "
+                        + String.join("\n  ", allErrors));
     }
 
     @Test

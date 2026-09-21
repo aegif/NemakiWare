@@ -3,7 +3,7 @@
 2026-09-21。残件 R66（[`fail-closed-reads.md`](fail-closed-reads.md) §4）。
 CLI の現状は [`evidence-verifier-release.md`](../operations/evidence-verifier-release.md)。
 
-**これは設計であって実装ではない。** schema ファイルも、それを検証する錠もまだ無い。
+**2026-09-22 に実装した。** schema は `docs/evidence-profile/v1/verifier-result.schema.json`、錠は `TheExitCodeIsTheInterfaceTest`（cli: 出力の schema 適合）と `TheReasonCodeIsARegistryTest`（core: 登録簿 ↔ schema、構築時 guard — **登録簿の在る module に置く**。cli のテストは install 済み core jar を読むので、core の細工は cli の錠に届かない）。以下の「決めたこと」は実装に写し、「決めていないこと」は所有者が 2026-09-21 に決めた（§2 に回答を記す）。
 
 ---
 
@@ -44,8 +44,9 @@ JSON Schema の draft は **2020-12**。
   「空でない STRING」
 - `checks[].reasonCode` は **enum にする**。理由コードは受け取る側が分岐する値であり、
   自由文にすると `REVOCATION_NOT_REQUIRED` と `REVOCATION_NOT_REQUIRE` が別物になる。
-  値は**ソースから導出**する（`unavailable("…", "REASON", …)` の第 2 引数を grep）— 手で
-  写した表は必ず古びる（この木で数字が 3 度古びた）
+  値は **`Outcome.Check.REASON_CODES` という登録簿**から取る（17 値）。**初版は grep で導出して 5 値を落とした**
+  — 第 1 引数が変数の呼び出しと、第 2 引数がメソッド呼び出し（`refusal.reasonCode()`）を拾えなかった。
+  grep は「コードがどう書かれているか」の推測であり、constructor はそうではない。**未登録の理由は構築時に拒否**する
 - `limits` は `minLength: 1`。**空の limits を通す schema は、限界文を落とした CLI を通す**
 - `checks` の**順序に意味を持たせない**。CLI が出す順は実装の都合であって契約ではない、
   と schema の `description` に書く
@@ -61,10 +62,10 @@ schema は受け取る側が**自分の**道具で検証するためのもの。
 `~/.m2` に JSON Schema validator は無い（オフライン）。**足さない**。
 代わりに錠は「schema が要求すること」を**自前で**検査する:
 
-- `Verify.asJson` の出力を Jackson で読み、4 キー・enum・`limits` 非空・
-  `additionalProperties` 無しを assert
-- **schema ファイルの `enum` 配列**と、ソースから導出した `reasonCode` の集合が**一致**する
-  （両方向 — schema にだけ在る値も、ソースにだけ在る値も落とす）
+- `Verify.asJson` の出力を **verifier 自身の `Json.parse`** で読み（cli の pom に Jackson は無い。この parser は整数のみ・重複 key 拒否・深さ 64 で、schema はその範囲内）、
+  **schema の語彙（type / enum / const / minLength / minItems / required / additionalProperties / items / if-then-else / not）を再帰的に評価する小さな validator** で判定する。手書きの要求は置かない
+- **schema ファイルの `enum` 配列**と、登録簿 `Outcome.Check.REASON_CODES` が**一致**する
+  （両方向 — schema にだけ在る値も、登録簿にだけ在る値も落とす）
 - schema の `required` と `asJson` が常に出すキーが一致する
 
 これは「validator 相当を手で書く」のではなく「schema と実装が**同じ集合を指す**ことを
@@ -76,16 +77,16 @@ schema は受け取る側が**自分の**道具で検証するためのもの。
 
 | 未決 | なぜここで決めないか |
 |---|---|
-| `detail` を契約に含めるか | 今は人向けの文。機械が分岐するなら `reasonCode` に寄せるべきで、`detail` に依存する受け取り側を作らないため**明示的に「契約外」と書く**方に傾いているが、受け取る側の要望を聞いていない |
-| schema の**署名** | Phase 5 の detached signature と同じ問題（鍵を持っていない）。schema も jar と同じ `SHA-256SUMS` に載せる、までは決める |
-| `profile` を enum にするか | v1 は 6 profile 固定だが、未知の profile 名は CLI が usage error（exit 4）で拒否するので、schema で二重に閉じる必要は無い。**閉じない**方に傾いている |
+| `detail` を契約に含めるか | **決定（2026-09-21）: 契約外。** 機械の分岐は `reasonCode` |
+| schema の**署名** | **決定: 今はしない**（鍵が無い）。**`SHA-256SUMS` に載せる**、まで |
+| `profile` を enum にするか | **決定: enum にしない。** 未知の profile は CLI が exit 4 で先に拒否する |
 
 ---
 
 ## 3. 錠と control
 
-- **集合一致の錠**（1.4）: schema の `reasonCode` enum ＝ ソースの理由コード集合
-- **出力適合の錠**: 6 profile × 代表的な package で `asJson` を読み、schema の要求を満たす
+- **集合一致の錠**（1.4）: schema の `reasonCode` enum ＝ 登録簿 `REASON_CODES`。**登録簿の錠**（core）: 未登録の理由と UNAVAILABLE 以外の理由は構築時に拒否、`PackageReader.Refusal` は全部登録済み
+- **出力適合の錠**: **6 profile × 2 package（正常・非 zip）= 12 出力**で `asJson` を読み、schema の要求を満たす。UNAVAILABLE が 1 つも出なければ落ちる（初版は 1×1 で reasonCode の分岐を一度も通していなかった）
 - **control**: schema から `limits` の `required` を外す細工／`reasonCode` を 1 つ schema に
   足すだけの細工（ソースに無い理由が契約に入る）／`asJson` が `limits` を落とす細工
 

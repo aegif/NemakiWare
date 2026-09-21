@@ -51,10 +51,48 @@ public enum Outcome {
      *        check" without a why is not actionable, and the CLI prints it
      */
     public record Check(String name, Outcome outcome, String reasonCode, String detail) {
+        /**
+         * Every reason code this verifier can emit — the ONE registry.
+         *
+         * <p>The published result schema's {@code reasonCode} enum is compared against this set
+         * in both directions by a lock, and the constructor below refuses a code that is not
+         * here. That is what makes the schema's enum complete: a code reaches a reader only by
+         * passing through this constructor. The first version derived the enum by grepping the
+         * sources for {@code unavailable("…", "CODE"} — which missed every call whose first
+         * argument was a variable or whose second was a method call, so five codes the CLI
+         * really prints ({@code NOT_A_ZIP}, {@code UNSAFE_PATH}, {@code DUPLICATE_ENTRY},
+         * {@code RESOURCE_LIMIT}, {@code LEGACY_PACKAGE_LAYOUT}) were absent from the schema
+         * while the lock stayed green (both reviews, P1). A grep is a guess about how code is
+         * written; a constructor is not.
+         */
+        public static final java.util.Set<String> REASON_CODES = java.util.Set.of(
+                "AMBIGUOUS_PAYLOAD", "AMBIGUOUS_PREMIS", "ANCHOR_NOT_PARSED",
+                "CERTIFICATE_UNREADABLE", "DUPLICATE_ENTRY", "LEGACY_PACKAGE_LAYOUT", "NOT_A_ZIP",
+                "NO_BLOCK_HEADER_SOURCE", "OTS_NOT_PARSED", "PKIX_UNAVAILABLE", "RESOURCE_LIMIT",
+                "REVOCATION_NOT_CAPTURED", "REVOCATION_NOT_PARSED", "REVOCATION_NOT_REQUIRED",
+                "UNKNOWN_ALGORITHM", "UNSAFE_PATH", "UNSUPPORTED_ERS_VERSION");
+
         public Check {
             if (outcome == UNAVAILABLE && (reasonCode == null || reasonCode.isBlank())) {
                 throw new IllegalArgumentException("an UNAVAILABLE check must say why: "
                         + "'could not check' with no reason cannot be acted on");
+            }
+            if (outcome == UNAVAILABLE && !REASON_CODES.contains(reasonCode)) {
+                // Fail-closed at construction: a code the registry does not know is a code the
+                // published schema does not know, and a result a receiving party's validator
+                // would reject. Registering it is a one-line change; emitting it unregistered
+                // is not allowed to compile into a green run.
+                throw new IllegalArgumentException("reason code " + reasonCode + " is not in "
+                        + "Outcome.Check.REASON_CODES. Register it there — the result schema's "
+                        + "enum is kept equal to that set, and an unregistered code is one the "
+                        + "schema rejects");
+            }
+            if (outcome != UNAVAILABLE && reasonCode != null) {
+                // The schema says reasonCode is present only when UNAVAILABLE. Saying it in a
+                // description and not enforcing it was the document being stronger than the
+                // code (both reviews, P2).
+                throw new IllegalArgumentException("a " + outcome + " check carries a reason "
+                        + "code (" + reasonCode + "); reason codes belong to UNAVAILABLE only");
             }
         }
 
