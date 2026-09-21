@@ -282,6 +282,9 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
         }
     }
 
+    /** The most a CRL may be before it is refused as UNAVAILABLE rather than captured. */
+    static final long MAX_CRL_BYTES = 8L * 1024 * 1024;
+
     private boolean collectRevocationAtIssuance;
 
     /**
@@ -328,21 +331,37 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
                 return RevocationMaterial.unavailable(null,
                         "the signer certificate names no CRL distribution point");
             }
-            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
-                    .connectTimeout(java.time.Duration.ofSeconds(10)).build();
-            java.net.http.HttpResponse<byte[]> response = client.send(
-                    java.net.http.HttpRequest.newBuilder(java.net.URI.create(url))
-                            .timeout(java.time.Duration.ofSeconds(20)).GET().build(),
-                    java.net.http.HttpResponse.BodyHandlers.ofByteArray());
-            if (response.statusCode() != 200 || response.body() == null
-                    || response.body().length == 0) {
+            // The URL came out of the TSA's certificate, not out of this node's configuration,
+            // so it is treated as the input of a party this node did not choose. It goes through
+            // AdapterHttpClient.sendWithRetry — the path every other outbound call in this
+            // product takes — which re-resolves the host AT SEND TIME and pins HTTP to the
+            // validated address (HTTPS is TLS-bounded; see that method's javadoc for the
+            // window it does not close). A one-shot check before connecting is not used: it
+            // leaves the resolve-then-connect gap, and its enforce flag defaults to off (R65).
+            java.net.http.HttpClient client = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.shared();
+            java.net.http.HttpResponse<java.io.InputStream> response =
+                    jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRetry(client,
+                            java.net.http.HttpRequest.newBuilder(java.net.URI.create(url))
+                                    .timeout(java.time.Duration.ofSeconds(20)).GET().build(),
+                            java.net.http.HttpResponse.BodyHandlers.ofInputStream());
+            byte[] body;
+            try (java.io.InputStream in = response.body()) {
+                // Bounded. A CRL can be megabytes and an unbounded read is the RESOURCE_LIMIT
+                // shape the verifier already refuses; over the cap the material is UNAVAILABLE,
+                // never a truncated CAPTURED.
+                body = in == null ? new byte[0] : in.readNBytes((int) MAX_CRL_BYTES + 1);
+            }
+            if (response.statusCode() != 200 || body.length == 0) {
                 return RevocationMaterial.unavailable(url,
                         "the distribution point answered " + response.statusCode()
-                                + " with " + (response.body() == null ? 0 : response.body().length)
-                                + " bytes");
+                                + " with " + body.length + " bytes");
             }
-            return RevocationMaterial.captured(response.body(), sha256Hex(response.body()),
-                    java.time.Instant.now(), url);
+            if (body.length > MAX_CRL_BYTES) {
+                return RevocationMaterial.unavailable(url, "CRL_TOO_LARGE: the distribution "
+                        + "point sent more than " + MAX_CRL_BYTES + " bytes; a truncated CRL "
+                        + "would be an absence dressed as a presence");
+            }
+            return RevocationMaterial.captured(body, sha256Hex(body), java.time.Instant.now(), url);
         } catch (Exception e) {
             // Including an interrupt: the flag is restored and the answer is "we asked and did
             // not get one", which is true.

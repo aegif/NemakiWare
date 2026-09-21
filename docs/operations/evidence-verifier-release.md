@@ -104,7 +104,7 @@ profile は**積み上げ**で、上位は下位の必須検査を全部含み�
 | `LONG_TERM_ERS_V1` | **必ず exit 3** |
 
 **`requireRevocationAtIssuance: false` を渡しても exit 0 にはなりません。**
-変わるのは理由コードだけです。
+変わるのは理由コードだけです。**node 側で収集を on にしても同じ**（`anchor.rfc3161.revocation.collect-at-issuance`）— 集めた材料をこの版は評価しない。
 
 **exit 3 を「実質 OK」として script で畳まないでください。** 畳んだ時点で、
 この版が積み上げた拒否は最後の一歩で全部無効になります。**P2 以上を合否判定に

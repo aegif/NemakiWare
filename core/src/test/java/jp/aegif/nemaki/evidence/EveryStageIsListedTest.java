@@ -277,21 +277,19 @@ class EveryStageIsListedTest {
                 // The setter has no caller anywhere, so 'off by default' was standing in for
                 // 'cannot be switched on' — the weaker fact reading as the stronger one, in the
                 // operator's own document (parallel review, P1).
-                "この版では有効にできません",
-                "revocation collection has no caller, no properties key and no admin API, so "
-                        + "'off by default' told operators they had a choice they do not have",
-                // The NEGATION, not the name. A needle of "SsrfGuard" alone is satisfied by the
-                // sentence that says the opposite — measured: rewriting 「通っていません」 to
-                // 「通っています」 left this green while the runbook now asserted a guard that is
-                // not there. Written three lines under a comment saying to read the claim and
-                // not the word, in the commit that added it (pre-sweep review, P2).
-                "`SsrfGuard` を通っていません",
-                "the collection path fetches a URL out of the TSA certificate with a bare "
-                        + "HttpClient, so whoever wires the toggle ships an SSRF unless the "
-                        + "runbook tells them the guard comes first",
-                "ガードが先、つまみが後",
-                "the ORDER is the whole finding: wiring the toggle before the guard is the one "
-                        + "sequence that ships the vulnerability");
+                "`anchor.rfc3161.revocation.collect-at-issuance`",
+                "collection is now something an operator can switch on, so the runbook has to "
+                        + "name the key — the previous edition said it could not be enabled",
+                "既定 **`false`**",
+                "collection reaches an outside endpoint the TSA chose; the default has to be "
+                        + "stated as off, or an upgrade silently starts talking to it",
+                "閉じていません",
+                "the HTTPS TCP-connect window is the same residual every other outbound path "
+                        + "carries; a runbook that stopped saying so would claim the guard "
+                        + "closes what it does not (owner's decision, R65)",
+                "`VERIFIED` に届きません",
+                "an operator who turns collection on expecting P3 to pass tunes a trust profile "
+                        + "forever; this version collects so a later one can evaluate");
         claims.forEach((needle, why) -> assertTrue(section.contains(needle),
                 "the runbook's evidence section no longer says 「" + needle + "」 — " + why));
 

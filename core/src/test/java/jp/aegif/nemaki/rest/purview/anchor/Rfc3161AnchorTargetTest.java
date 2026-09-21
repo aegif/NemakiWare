@@ -35,6 +35,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -713,6 +714,144 @@ class Rfc3161AnchorTargetTest {
             assertEquals(1, receipt.proof()[0], "mutating a returned copy must not alter the receipt");
 
             assertThrows(UnsupportedOperationException.class, () -> receipt.attributes().put("x", "y"));
+        }
+    }
+
+    @Nested
+    class RevocationCollection {
+
+        private java.security.KeyPair keyPair;
+        private java.security.cert.X509Certificate certificate;
+
+        @org.junit.jupiter.api.BeforeEach
+        void allowTheLocalStub() {
+            // The CRL fetch rides the send-time-pinned path, which refuses loopback — as it
+            // should in production. The stub below IS loopback, so the test-only escape the
+            // adapter tests use is set here and cleared after (R65).
+            System.setProperty("nemaki.ingest.allowLocalhost", "true");
+        }
+
+        @org.junit.jupiter.api.AfterEach
+        void forbidItAgain() {
+            System.clearProperty("nemaki.ingest.allowLocalhost");
+        }
+
+        /** A token whose signer certificate names {@code crlUrl} as its CRL distribution point. */
+        private org.bouncycastle.tsp.TimeStampToken tokenWithDistributionPoint(String crlUrl)
+                throws Exception {
+            java.security.KeyPairGenerator kpg = java.security.KeyPairGenerator.getInstance("RSA");
+            kpg.initialize(2048);
+            keyPair = kpg.generateKeyPair();
+            org.bouncycastle.asn1.x500.X500Name subject =
+                    new org.bouncycastle.asn1.x500.X500Name("CN=Test TSA with CRL DP");
+            java.util.Date from = new java.util.Date(System.currentTimeMillis() - 86_400_000L);
+            java.util.Date to = new java.util.Date(System.currentTimeMillis() + 86_400_000L);
+            org.bouncycastle.cert.X509v3CertificateBuilder certBuilder =
+                    new org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder(
+                            subject, BigInteger.TWO, from, to, subject, keyPair.getPublic());
+            certBuilder.addExtension(org.bouncycastle.asn1.x509.Extension.extendedKeyUsage, true,
+                    new org.bouncycastle.asn1.x509.ExtendedKeyUsage(
+                            org.bouncycastle.asn1.x509.KeyPurposeId.id_kp_timeStamping));
+            org.bouncycastle.asn1.x509.GeneralName uri = new org.bouncycastle.asn1.x509.GeneralName(
+                    org.bouncycastle.asn1.x509.GeneralName.uniformResourceIdentifier, crlUrl);
+            org.bouncycastle.asn1.x509.DistributionPoint point =
+                    new org.bouncycastle.asn1.x509.DistributionPoint(
+                            new org.bouncycastle.asn1.x509.DistributionPointName(
+                                    new org.bouncycastle.asn1.x509.GeneralNames(uri)), null, null);
+            certBuilder.addExtension(org.bouncycastle.asn1.x509.Extension.cRLDistributionPoints,
+                    false, new org.bouncycastle.asn1.x509.CRLDistPoint(
+                            new org.bouncycastle.asn1.x509.DistributionPoint[] { point }));
+            org.bouncycastle.operator.ContentSigner signer =
+                    new org.bouncycastle.operator.jcajce.JcaContentSignerBuilder("SHA256withRSA")
+                            .build(keyPair.getPrivate());
+            certificate = new org.bouncycastle.cert.jcajce.JcaX509CertificateConverter()
+                    .getCertificate(certBuilder.build(signer));
+
+            org.bouncycastle.tsp.TimeStampTokenGenerator tokenGen =
+                    new org.bouncycastle.tsp.TimeStampTokenGenerator(
+                            new org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoGeneratorBuilder()
+                                    .build("SHA256withRSA", keyPair.getPrivate(), certificate),
+                            new org.bouncycastle.operator.bc.BcDigestCalculatorProvider()
+                                    .get(new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
+                                            new org.bouncycastle.asn1.ASN1ObjectIdentifier(
+                                                    "2.16.840.1.101.3.4.2.1"))),
+                            new org.bouncycastle.asn1.ASN1ObjectIdentifier("1.2.3.4.1"));
+            tokenGen.addCertificates(new org.bouncycastle.cert.jcajce.JcaCertStore(
+                    java.util.List.of(certificate)));
+            org.bouncycastle.tsp.TimeStampRequestGenerator reqGen =
+                    new org.bouncycastle.tsp.TimeStampRequestGenerator();
+            reqGen.setCertReq(true);
+            org.bouncycastle.tsp.TimeStampRequest request = reqGen.generate(
+                    new org.bouncycastle.asn1.ASN1ObjectIdentifier("2.16.840.1.101.3.4.2.1"),
+                    new byte[32], BigInteger.ONE);
+            return tokenGen.generate(request, BigInteger.ONE, new java.util.Date());
+        }
+
+        private Rfc3161AnchorTarget collecting() {
+            Rfc3161AnchorTarget target = new Rfc3161AnchorTarget(null, null, null);
+            target.setCollectRevocationAtIssuance(true);
+            return target;
+        }
+
+        @Test
+        @DisplayName("with collection on, the signer's CRL is captured through the pinned path")
+        void materialIsCapturedThroughThePinnedPath() throws Exception {
+            byte[] crl = "-- a CRL, as far as this test is concerned --".getBytes(StandardCharsets.UTF_8);
+            String url = startServer("/ca.crl", exchange -> {
+                exchange.sendResponseHeaders(200, crl.length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(crl);
+                }
+            });
+            RevocationMaterial material = collecting()
+                    .collectRevocationMaterial(tokenWithDistributionPoint(url));
+
+            assertEquals(RevocationMaterial.Status.CAPTURED, material.status(), material.detail());
+            assertArrayEquals(crl, material.der());
+            assertEquals(url, material.source());
+        }
+
+        @Test
+        @DisplayName("a CRL over the cap is UNAVAILABLE, never a truncated capture")
+        void tooLargeIsUnavailable() throws Exception {
+            byte[] huge = new byte[(int) Rfc3161AnchorTarget.MAX_CRL_BYTES + 1];
+            String url = startServer("/big.crl", exchange -> {
+                exchange.sendResponseHeaders(200, huge.length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(huge);
+                }
+            });
+            RevocationMaterial material = collecting()
+                    .collectRevocationMaterial(tokenWithDistributionPoint(url));
+
+            assertEquals(RevocationMaterial.Status.UNAVAILABLE, material.status(),
+                    "material over the cap was reported as " + material.status()
+                            + ". A truncated CRL shipped as CAPTURED is an absence dressed as a "
+                            + "presence — the verifier would evaluate the wrong bytes");
+            assertTrue(material.detail().contains("CRL_TOO_LARGE"), material.detail());
+        }
+
+        @Test
+        @DisplayName("with the localhost escape off, the loopback distribution point is refused — the guard is on the path")
+        void theGuardIsOnThePath() throws Exception {
+            String url = startServer("/ca.crl", exchange -> {
+                exchange.sendResponseHeaders(200, 1);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(new byte[] { 0x30 });
+                }
+            });
+            org.bouncycastle.tsp.TimeStampToken token = tokenWithDistributionPoint(url);
+            System.clearProperty("nemaki.ingest.allowLocalhost");
+
+            RevocationMaterial material = collecting().collectRevocationMaterial(token);
+
+            // Refused at send time by the pinned path, and reported as UNAVAILABLE — asked, and
+            // refused to ask a loopback address — never as NOT_ATTEMPTED and never captured.
+            assertEquals(RevocationMaterial.Status.UNAVAILABLE, material.status(),
+                    "a loopback distribution point was " + material.status() + " with the "
+                            + "localhost escape off. If it was CAPTURED, the fetch is not on the "
+                            + "guarded path");
+            assertTrue(material.detail().contains("SecurityException"), material.detail());
         }
     }
 }
