@@ -316,8 +316,11 @@ class EveryStageIsListedTest {
         // that says so. A section listing only capabilities reads as a compliance claim by
         // omission, and a word-level check let two of these four rows be deleted silently.
         Map<String, String> limits = Map.of(
-                "6 経路", "the ledger records content-bearing writes only, and 'every operation "
-                        + "is in the ledger' is the reading this row exists to prevent",
+                // The row used to say the six content-losing paths were not recorded. They are,
+                // since 2026-09-22; what the destroy path still does not do is ask cold storage,
+                // so W14's UNKNOWN is the claim this row now keeps from being read as COLD.
+                "cold blob", "W14 writes bytesNow: UNKNOWN because the destroy path does not ask "
+                        + "cold storage; a table without this row lets UNKNOWN be read as COLD",
                 "renewal", "renewal is assessed and never executed, and nothing else says so",
                 "最新", "whether the checkpoint shown is the newest cannot be known from the "
                         + "package, and an operator who assumes it loses rollback detection",

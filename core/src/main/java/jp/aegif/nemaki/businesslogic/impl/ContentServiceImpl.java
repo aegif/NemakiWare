@@ -3692,9 +3692,15 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		// Delete attachment if exists
+		// E1 (deleteContentStream): the version is about to have no content. The row is opened
+		// before the attachment goes; the bytes themselves are copied to the archive by
+		// deleteAttachment (W10), which is where bytesNow points.
+		jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending removalRow = null;
 		if (document.getAttachmentNodeId() != null) {
 			String attachmentId = document.getAttachmentNodeId();
 			log.debug("Deleting attachment: " + attachmentId + " for document: " + docId);
+			removalRow = openTransition(repositoryId, docId,
+					jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.CONTENT_REMOVED);
 			deleteAttachment(callContext, repositoryId, attachmentId);
 		}
 
@@ -3708,6 +3714,9 @@ public class ContentServiceImpl implements ContentService {
 
 		// Update document in database
 		Document updated = contentDaoService.update(repositoryId, document);
+		closeTransition(removalRow,
+				jp.aegif.nemaki.evidence.RecordContentTransitionV1.Transition.CONTENT_REMOVED,
+				jp.aegif.nemaki.evidence.RecordContentTransitionV1.BytesNow.ARCHIVE_DB);
 
 		// CMIS 1.1 COMPLIANCE: Update objectId holder with result
 		// For non-versioned documents, return the same id
@@ -3882,7 +3891,14 @@ public class ContentServiceImpl implements ContentService {
 					log.warn("Failed to get attachment info before deletion: {}", e.getMessage());
 				}
 				// Delete an attachment (this also creates attachment archive if enabled)
+				// E1 (W10): the bytes are copied to the archive database as the version goes.
+				jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending archiveRow = openTransition(
+						repositoryId, version.getId(),
+						jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.ARCHIVE);
 				deleteAttachment(callContext, repositoryId, attachmentId);
+				closeTransition(archiveRow,
+						jp.aegif.nemaki.evidence.RecordContentTransitionV1.Transition.ARCHIVED,
+						jp.aegif.nemaki.evidence.RecordContentTransitionV1.BytesNow.ARCHIVE_DB);
 			}
 			// Delete rendition (no need for archive)
 			if (CollectionUtils.isNotEmpty(version.getRenditionIds())) {
@@ -5214,7 +5230,8 @@ public class ContentServiceImpl implements ContentService {
 		}
 		if (archiveDelegate == null) {
 			archiveDelegate = new ArchiveServiceDelegate(contentDaoService, this, () -> solrUtil,
-					(callContext, nodeBase) -> helper.setSignature(callContext, nodeBase));
+					(callContext, nodeBase) -> helper.setSignature(callContext, nodeBase),
+					() -> recordContentState);
 		}
 		if (aclDelegate == null && nemakiCachePool != null && repositoryInfoMap != null && propertyManager != null) {
 			aclDelegate = new AclServiceDelegate(this, contentDaoService, nemakiCachePool,
@@ -5399,6 +5416,26 @@ public class ContentServiceImpl implements ContentService {
 	 * digest that may cover the wrong bytes would put a falsehood in the chain, and every later
 	 * check of that version would fail against bytes that were never wrong.
 	 */
+	/** E1 transitions (W10 / deleteContentStream): opens the row BEFORE the bytes move. */
+	private jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending openTransition(String repositoryId,
+			String versionObjectId, jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind kind) {
+		if (recordContentState == null || versionObjectId == null) {
+			return null;
+		}
+		return recordContentState.openBeforeWriting(repositoryId, versionObjectId, versionObjectId, kind,
+				java.time.Instant.now().toString());
+	}
+
+	/** Records the transition and closes the row. Never fails the operation it belongs to. */
+	private void closeTransition(jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pending,
+			jp.aegif.nemaki.evidence.RecordContentTransitionV1.Transition transition,
+			jp.aegif.nemaki.evidence.RecordContentTransitionV1.BytesNow bytesNow) {
+		if (recordContentState == null || pending == null) {
+			return;
+		}
+		recordContentState.recordTransition(pending, transition, bytesNow);
+	}
+
 	private void recordCreatedContentState(String repositoryId, Document created,
 			jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written written,
 			jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pending) {

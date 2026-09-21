@@ -157,7 +157,7 @@ public class RecordContentStateRecorder {
      * @param statement what the bytes were. Built by the caller, because only the caller knows
      *        the version key and the digest it just wrote.
      */
-    public Result recordAndClose(Pending pending, RecordContentStatementV1 statement) {
+    public Result recordAndClose(Pending pending, RecordStatement statement) {
         if (statement == null) {
             throw new IllegalArgumentException("there is no statement to record");
         }
@@ -180,7 +180,7 @@ public class RecordContentStateRecorder {
                 ? new EvidenceLedgerService.AppendResult(
                         EvidenceLedgerService.AppendOutcome.UNAVAILABLE, -1, null,
                         "the evidence ledger is not wired")
-                : ledgerService.append(DOMAIN, EvidenceLedgerEntry.SubjectKind.RECORD_CONTENT_STATE,
+                : ledgerService.append(DOMAIN, statement.subjectKind(),
                         statement.versionObjectId(), digest, statement.recordedAt());
 
         if (!appended.recorded()) {
@@ -221,6 +221,106 @@ public class RecordContentStateRecorder {
             case UNAVAILABLE -> new Result(Outcome.CHAINED_ROW_STILL_OPEN, digest,
                     appended.sequence(), "the journal could not be asked to close the row");
         };
+    }
+
+    /**
+     * The digest of a version's bytes as the ledger last recorded it, and the entry that
+     * recorded it. Null when the ledger holds none, or when the journal could not be asked —
+     * "not known", which the transition statement writes as null and never as a digest.
+     */
+    public record Prior(String contentDigest, long entrySequence) {
+    }
+
+    /**
+     * Copies, never computes (design §1.2). A state statement gives its own digest; a
+     * transition after it carries the digest forward, because a copy to the archive or to cold
+     * storage does not change the bytes — so a second transition still names the last state
+     * that was actually recorded, through the first.
+     */
+    public Prior priorFor(String repositoryId, String versionObjectId) {
+        if (journal == null || !journal.isActive()) {
+            return null;
+        }
+        ContentWriteJournal.Recorded latest;
+        try {
+            latest = journal.latestRecorded(repositoryId, versionObjectId);
+        } catch (RuntimeException e) {
+            logger.warn("The prior statement for {} could not be read; the transition will say "
+                    + "it is not known.", versionObjectId, e);
+            return null;
+        }
+        if (latest == null || latest.statement() == null) {
+            return null;
+        }
+        Object own = latest.statement().get("contentDigest");
+        if (own instanceof String digest && !digest.isBlank()) {
+            return new Prior(digest, latest.entrySequence());
+        }
+        Object carried = latest.statement().get("priorContentDigest");
+        Object from = latest.statement().get("priorStatementEntrySequence");
+        if (carried instanceof String digest && !digest.isBlank() && from instanceof Number at) {
+            return new Prior(digest, at.longValue());
+        }
+        return null;
+    }
+
+    /**
+     * Records that {@code transition} happened to the version {@code pending} was opened for,
+     * with the prior digest copied from the ledger, and closes the row.
+     *
+     * <p>Never throws: a transition that cannot be recorded is logged and reported, not a
+     * reason to fail the archive, restore or destroy it belongs to (the plan's rule for E1).
+     */
+    public Result recordTransition(Pending pending, RecordContentTransitionV1.Transition transition,
+            RecordContentTransitionV1.BytesNow bytesNow) {
+        if (pending == null) {
+            throw new IllegalArgumentException("a transition needs the row it was opened for");
+        }
+        try {
+            Prior prior = priorFor(pending.repositoryId(), pending.versionObjectId());
+            RecordContentTransitionV1 statement = new RecordContentTransitionV1(
+                    pending.repositoryId(), pending.objectId(), pending.versionObjectId(),
+                    transition, bytesNow,
+                    prior == null ? null : prior.contentDigest(),
+                    prior == null ? null : prior.entrySequence(),
+                    java.time.Instant.now().toString());
+            Result result = recordAndClose(pending, statement);
+            if (!result.inChain()) {
+                logger.warn("The {} transition for {} is not in the chain ({}: {}).", transition,
+                        pending.versionObjectId(), result.outcome(), result.detail());
+            }
+            return result;
+        } catch (RuntimeException e) {
+            logger.warn("No transition statement was recorded for {} ({}).",
+                    pending.versionObjectId(), transition, e);
+            return new Result(Outcome.UNRECORDED_GAP_OPEN, null, -1, e.getMessage());
+        }
+    }
+
+    /**
+     * Closes {@code pending}'s row with no statement, because the write it announced
+     * verifiably did not happen (see {@link ContentWriteJournal#abandon}).
+     *
+     * @return whether the row is now closed. False leaves it open and listed — the right side
+     *         when the journal could not be asked
+     */
+    public boolean abandon(Pending pending, String reason) {
+        if (pending == null || pending.intentId() == null || journal == null) {
+            return false;
+        }
+        try {
+            boolean closed = journal.abandon(pending.intentId(), reason);
+            if (!closed) {
+                logger.warn("The journal row {} for {} could not be closed as abandoned ({}); "
+                        + "it stays open and will be listed as unresolved.", pending.intentId(),
+                        pending.versionObjectId(), reason);
+            }
+            return closed;
+        } catch (RuntimeException e) {
+            logger.warn("The journal row {} for {} could not be abandoned.", pending.intentId(),
+                    pending.versionObjectId(), e);
+            return false;
+        }
     }
 
     /**

@@ -939,6 +939,34 @@ public interface ContentDaoService {
 	void restoreDocumentWithArchive(String repositoryId, Archive archive);
 
 	/**
+	 * What a restore wrote back (W11, E1).
+	 *
+	 * @param contentDigest lowercase hex SHA-256 of the bytes as they were written back, taken in
+	 *        the same pass; NULL when the bytes went past but the digest cannot be vouched for
+	 *        (the stored length differed from what was counted) — "not known", never a guess
+	 */
+	record RestoredBytes(String attachmentId, String contentDigest, long length) {
+		/** The archive carried no binary, so nothing was written back. NOT the same as null. */
+		public static final RestoredBytes NOTHING = new RestoredBytes(null, null, 0L);
+
+		public boolean wroteBytes() {
+			return attachmentId != null;
+		}
+	}
+
+	/**
+	 * {@link #restoreDocumentWithArchive}, reporting what was written back.
+	 *
+	 * @return the restored bytes' digest and length; NULL when the archive carried no binary
+	 *         (nothing was written back) or when this implementation cannot report it. A caller
+	 *         recording E1 treats null after a restore as "not known", not as "nothing"
+	 */
+	default RestoredBytes restoreDocumentWithArchiveRecording(String repositoryId, Archive archive) {
+		restoreDocumentWithArchive(repositoryId, archive);
+		return null;
+	}
+
+	/**
 	 * Restore a VersionSeries document by purging its tombstone and recreating it.
 	 * Used when restoring archived documents whose VersionSeries was deleted.
 	 *

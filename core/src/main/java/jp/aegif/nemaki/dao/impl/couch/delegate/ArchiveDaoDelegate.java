@@ -712,6 +712,23 @@ public class ArchiveDaoDelegate {
 	}
 
 	public void restoreAttachment(String repositoryId, Archive archive) {
+		restoreAttachmentRecording(repositoryId, archive);
+	}
+
+	/**
+	 * {@link #restoreAttachment}, reporting the bytes written back (W11, E1).
+	 *
+	 * <p>The digest is taken IN THE PASS that writes the bytes back — a {@code DigestInputStream}
+	 * under the PUT — not by reading the archive again, which would be a second observation.
+	 * When the length CouchDB stored differs from the bytes counted going past, the digest is
+	 * not vouched for (null): the ADR's rule that a write shorter than it declared has no digest.
+	 */
+	public jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes restoreAttachmentRecording(
+			String repositoryId, Archive archive) {
+		// NOTHING until bytes go past: the no-attachment, no-document and no-binary paths all end
+		// with nothing written back, which is a known outcome, not an unreported one (null).
+		jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes restored =
+				jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.NOTHING;
 		if (archive == null) {
 			// getAttachmentArchive returns null, by design, when the document archive carries
 			// no attachmentNodeId (it logs a WARN and returns) or when the attachments view
@@ -725,7 +742,7 @@ public class ArchiveDaoDelegate {
 			// archive had no attachmentNodeId.
 			log.info("restoreAttachment: nothing to restore — the document archive names no "
 					+ "attachment (repository " + repositoryId + ")");
-			return;
+			return jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.NOTHING;
 		}
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
@@ -741,7 +758,7 @@ public class ArchiveDaoDelegate {
 			com.ibm.cloud.cloudant.v1.model.Document archivedDoc = archiveClient.get(archiveId);
 			if (archivedDoc == null) {
 				log.warn("Archive attachment document not found: " + archiveId);
-				return;
+				return jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.NOTHING;
 			}
 
 			// Build restored document from raw properties
@@ -789,7 +806,31 @@ public class ArchiveDaoDelegate {
 							? (String) docMap.get("mimeType") : "application/octet-stream";
 						if (mimeType.isEmpty()) mimeType = "application/octet-stream";
 
-						client.createAttachment(originalId, revision, "content", body, mimeType);
+						// E1 (W11): digest and count the bytes as they go past, in this one pass.
+						java.security.MessageDigest digestOfRestored = java.security.MessageDigest.getInstance("SHA-256");
+						long[] bytesCounted = { 0L };
+						java.io.InputStream counted = new java.io.FilterInputStream(
+								new java.security.DigestInputStream(body, digestOfRestored)) {
+							@Override
+							public int read() throws java.io.IOException {
+								int b = super.read();
+								if (b >= 0) {
+									bytesCounted[0]++;
+								}
+								return b;
+							}
+
+							@Override
+							public int read(byte[] buffer, int off, int len) throws java.io.IOException {
+								int n = super.read(buffer, off, len);
+								if (n > 0) {
+									bytesCounted[0] += n;
+								}
+								return n;
+							}
+						};
+						client.createAttachment(originalId, revision, "content", counted, mimeType);
+						String restoredDigest = hexOf(digestOfRestored.digest());
 
 						// Update length metadata, preserving _attachments stubs
 						com.ibm.cloud.cloudant.v1.model.Document updatedDoc = client.get(originalId);
@@ -797,6 +838,9 @@ public class ArchiveDaoDelegate {
 							Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> atts = updatedDoc.getAttachments();
 							if (atts != null && atts.get("content") != null) {
 								long actualLength = atts.get("content").length();
+								// Vouched for only when what CouchDB stored is what went past.
+								restored = new jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes(originalId,
+										actualLength == bytesCounted[0] ? restoredDigest : null, actualLength);
 								Map<String, Object> updateMap = new HashMap<>();
 								updateMap.put("_id", originalId);
 								updateMap.put("_rev", updatedDoc.getRev());
@@ -838,9 +882,25 @@ public class ArchiveDaoDelegate {
 			log.error("Error restoring attachment from archive: " + archive.getId() + " in repository: " + repositoryId, e);
 			throw new RuntimeException("Failed to restore attachment from archive", e);
 		}
+		return restored;
+	}
+
+	private static String hexOf(byte[] hash) {
+		StringBuilder out = new StringBuilder(hash.length * 2);
+		for (byte b : hash) {
+			out.append(Character.forDigit((b >> 4) & 0xF, 16));
+			out.append(Character.forDigit(b & 0xF, 16));
+		}
+		return out.toString();
 	}
 
 	public void restoreDocumentWithArchive(String repositoryId, Archive contentArchive) {
+		restoreDocumentWithArchiveRecording(repositoryId, contentArchive);
+	}
+
+	/** {@link #restoreDocumentWithArchive}, reporting the bytes written back (W11, E1). */
+	public jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes restoreDocumentWithArchiveRecording(
+			String repositoryId, Archive contentArchive) {
 		// LOOK BEFORE RESTORING. Separating "there is none" from "we could not get it" has to
 		// happen before the document is written, or the failure this method reports is the
 		// exact shape it was written to fix: the document is back and the caller is told the
@@ -853,7 +913,8 @@ public class ArchiveDaoDelegate {
 		restoreContent(repositoryId, contentArchive);
 		Archive attachmentArchive = lookup instanceof AttachmentArchiveLookup.Found found
 				? found.archive() : null;
-		restoreAttachment(repositoryId, attachmentArchive);
+		jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes restored =
+				restoreAttachmentRecording(repositoryId, attachmentArchive);
 
 		// DEFENSIVE FIX: After both document and attachment are restored,
 		// ensure the document's mimeType is set correctly.
@@ -909,6 +970,7 @@ public class ArchiveDaoDelegate {
 		} catch (Exception e) {
 			log.warn("restoreDocumentWithArchive: Failed to fix mimeType from attachment node: " + e.getMessage());
 		}
+		return restored;
 	}
 
 	public void restoreVersionSeries(String repositoryId, String versionSeriesId) {

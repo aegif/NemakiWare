@@ -47,14 +47,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class E1LeavesNoSilentGapTest {
 
     /** A journal that records what happened to it and can be told to fail at one point. */
-    private static final class FakeJournal implements ContentWriteJournal {
-        private final Map<String, Unresolved> open = new LinkedHashMap<>();
-        private final Map<String, String> closedWith = new LinkedHashMap<>();
-        private final Map<String, Map<String, Object>> statements = new LinkedHashMap<>();
-        private boolean active = true;
-        private boolean refuseOpen;
-        private boolean throwOnClose;
-        private int opened;
+    static final class FakeJournal implements ContentWriteJournal {
+        final Map<String, Unresolved> open = new LinkedHashMap<>();
+        final Map<String, String> closedWith = new LinkedHashMap<>();
+        final Map<String, Map<String, Object>> statements = new LinkedHashMap<>();
+        /** The ledger sequence each version's newest statement was closed with. */
+        final Map<String, Long> sequences = new LinkedHashMap<>();
+        final Map<String, String> abandoned = new LinkedHashMap<>();
+        boolean active = true;
+        boolean refuseOpen;
+        boolean throwOnClose;
+        boolean refuseAbandon;
+        int opened;
 
         @Override
         public String open(String repositoryId, String objectId, String versionObjectId,
@@ -73,6 +77,7 @@ class E1LeavesNoSilentGapTest {
                 Map<String, Object> statementDocument, long entrySequence) {
             if (statementDocument != null) {
                 statements.put(versionObjectId, statementDocument);
+                sequences.put(versionObjectId, entrySequence);
             }
             if (throwOnClose) {
                 throw new IllegalStateException("the journal went away between append and close");
@@ -107,16 +112,34 @@ class E1LeavesNoSilentGapTest {
         }
 
         @Override
+        public Recorded latestRecorded(String repositoryId, String versionObjectId) {
+            Map<String, Object> statement = statements.get(versionObjectId);
+            return statement == null ? null
+                    : new Recorded(statement, sequences.getOrDefault(versionObjectId, -1L));
+        }
+
+        @Override
+        public boolean abandon(String intentId, String reason) {
+            if (refuseAbandon || !open.containsKey(intentId)) {
+                return false;
+            }
+            open.remove(intentId);
+            abandoned.put(intentId, reason);
+            return true;
+        }
+
+        @Override
         public boolean isActive() {
             return active;
         }
     }
 
     /** A ledger whose append outcome the test chooses, counting how many times it was called. */
-    private static final class FakeLedger extends EvidenceLedgerService {
-        private AppendOutcome outcome = AppendOutcome.APPENDED;
-        private final List<String> appended = new ArrayList<>();
-        private long nextSequence = 7;
+    static final class FakeLedger extends EvidenceLedgerService {
+        AppendOutcome outcome = AppendOutcome.APPENDED;
+        final List<String> appended = new ArrayList<>();
+        final List<EvidenceLedgerEntry.SubjectKind> kinds = new ArrayList<>();
+        long nextSequence = 7;
 
         @Override
         public AppendResult append(String domain, EvidenceLedgerEntry.SubjectKind kind,
@@ -125,6 +148,7 @@ class E1LeavesNoSilentGapTest {
                 return new AppendResult(outcome, -1, null, "the ledger said " + outcome);
             }
             appended.add(payloadDigest);
+            kinds.add(kind);
             return new AppendResult(AppendOutcome.APPENDED, nextSequence++, "hash-" + payloadDigest,
                     null);
         }
@@ -136,7 +160,7 @@ class E1LeavesNoSilentGapTest {
                 "a".repeat(64), 12L, kind, null, "2026-09-20T00:00:00Z");
     }
 
-    private static RecordContentStateRecorder recorderWith(FakeLedger ledger, FakeJournal journal) {
+    static RecordContentStateRecorder recorderWith(FakeLedger ledger, FakeJournal journal) {
         RecordContentStateRecorder recorder = new RecordContentStateRecorder();
         recorder.setLedgerService(ledger);
         recorder.setJournal(journal);
@@ -471,10 +495,15 @@ class E1LeavesNoSilentGapTest {
         // had to write down — so adding a wiring without declaring it, or declaring one that
         // does not exist, both go red.
         SortedSet<String> wired = new TreeSet<>();
+        // The transitions (Phase 3's remaining paths) live in two more files: the archive
+        // delegate (W11 / W13 / W14) and the retention scheduler (W12).
         for (Path source : List.of(
                 Path.of("src/main/java/jp/aegif/nemaki/businesslogic/impl/ContentServiceImpl.java"),
                 Path.of("src/main/java/jp/aegif/nemaki/businesslogic/impl/delegate/"
-                        + "AttachmentServiceDelegate.java"))) {
+                        + "AttachmentServiceDelegate.java"),
+                Path.of("src/main/java/jp/aegif/nemaki/businesslogic/impl/delegate/"
+                        + "ArchiveServiceDelegate.java"),
+                Path.of("src/main/java/jp/aegif/nemaki/archive/RetentionScheduler.java"))) {
             if (!Files.exists(source)) {
                 continue;
             }
@@ -498,7 +527,13 @@ class E1LeavesNoSilentGapTest {
                 "COPY_FROM_SOURCE",         // W6
                 "APPEND",                   // W7
                 "CHECK_OUT_PWC",            // W8
-                "REPLACE_PWC"));            // W9
+                "REPLACE_PWC",              // W9
+                "ARCHIVE",                  // W10 (2026-09-22, transition)
+                "RESTORE",                  // W11 (state statement, RESTORED)
+                "COLD_TRANSFER",            // W12
+                "DESTROY_ARCHIVE",          // W13
+                "DESTROY_ARCHIVE_LEAVING_COLD_BLOB", // W14
+                "CONTENT_REMOVED"));        // deleteContentStream
         assertEquals(declared, wired,
                 "the write paths wired into the product and the ones this lock declares differ. "
                         + "E1 records only what is wired: " + wired + ". The remaining "

@@ -243,6 +243,13 @@ public class CouchContentWriteJournal implements ContentWriteJournal {
     @Override
     @SuppressWarnings("unchecked")
     public Map<String, Object> statementFor(String repositoryId, String versionObjectId) {
+        Recorded latest = latestRecorded(repositoryId, versionObjectId);
+        return latest == null ? null : latest.statement();
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public Recorded latestRecorded(String repositoryId, String versionObjectId) {
         if (versionObjectId == null) {
             return null;
         }
@@ -260,13 +267,72 @@ public class CouchContentWriteJournal implements ContentWriteJournal {
         if (result == null || result.getRows() == null || result.getRows().isEmpty()) {
             return null;
         }
-        // The LAST one. A version can be written more than once (W3/W7/W9 rewrite in place), and
-        // the newest statement is the one that describes the bytes stored now. Taking the first
-        // would ship the digest of content that has since been replaced.
-        Document doc = result.getRows().get(result.getRows().size() - 1).getDoc();
-        Map<String, Object> props = doc == null ? null : doc.getProperties();
-        Object statement = props == null ? null : props.get("statement");
-        return statement instanceof Map ? (Map<String, Object>) statement : null;
+        // The one with the HIGHEST ledger sequence. A version can be written more than once
+        // (W3/W7/W9 rewrite in place, and now a transition after a state), and the newest
+        // statement is the one that describes the bytes as they stand. The first version took
+        // the last ROW: rows are keyed by a random intent id, so "last" was whichever id
+        // sorted last, and a rewritten version could ship the digest of the bytes it no longer
+        // had (found while wiring the transitions, 2026-09-22). The ledger sequence is the
+        // one order that is time.
+        Recorded newest = null;
+        for (ViewResultRow row : result.getRows()) {
+            Document doc = row.getDoc();
+            Map<String, Object> props = doc == null ? null : doc.getProperties();
+            Object statement = props == null ? null : props.get("statement");
+            Object sequence = props == null ? null : props.get("entrySequence");
+            if (!(statement instanceof Map) || !(sequence instanceof Number)) {
+                continue;
+            }
+            long at = ((Number) sequence).longValue();
+            if (newest == null || at > newest.entrySequence()) {
+                newest = new Recorded((Map<String, Object>) statement, at);
+            }
+        }
+        return newest;
+    }
+
+    @Override
+    public boolean abandon(String intentId, String reason) {
+        String id = documentId(intentId);
+        for (int attempt = 1; attempt <= MAX_CLOSE_ATTEMPTS; attempt++) {
+            Document existing;
+            try {
+                existing = client().get(id);
+            } catch (RuntimeException e) {
+                logger.warn("The content-write intent {} could not be read to abandon it.",
+                        intentId, e);
+                return false;
+            }
+            if (existing == null) {
+                return false;
+            }
+            Map<String, Object> props = existing.getProperties();
+            if (props != null && props.get("closedAt") != null) {
+                // Closed with a statement: not ours to unsay. Closed as abandoned already: done.
+                return props.get("statement") == null;
+            }
+            Map<String, Object> updated = new LinkedHashMap<>(props == null ? Map.of() : props);
+            updated.put("_id", id);
+            updated.put("_rev", existing.getRev());
+            // closedAt takes it out of the open view; no statement keeps it out of the
+            // statements view; the reason is what a reader of the raw row gets instead.
+            updated.put("closedAt", java.time.Instant.now().toString());
+            updated.put("abandonedReason", reason);
+            try {
+                DocumentResult result = client().update(updated);
+                if (result != null && Boolean.TRUE.equals(result.isOk())) {
+                    return true;
+                }
+            } catch (RuntimeException e) {
+                if (attempt == MAX_CLOSE_ATTEMPTS) {
+                    logger.warn("The content-write intent {} could not be abandoned after {} "
+                            + "attempts; it stays open and will be listed as unresolved.",
+                            intentId, attempt, e);
+                    return false;
+                }
+            }
+        }
+        return false;
     }
 
     @Override

@@ -2919,6 +2919,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public RestoredBytes restoreDocumentWithArchiveRecording(String repositoryId, Archive contentArchive) {
+		return archiveDao.restoreDocumentWithArchiveRecording(repositoryId, contentArchive);
+	}
+
+	@Override
 	public void restoreVersionSeries(String repositoryId, String versionSeriesId) {
 		archiveDao.restoreVersionSeries(repositoryId, versionSeriesId);
 	}

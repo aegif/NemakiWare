@@ -126,7 +126,48 @@ public interface ContentWriteJournal {
      */
     default java.util.Map<String, Object> statementFor(String repositoryId,
             String versionObjectId) {
+        Recorded latest = latestRecorded(repositoryId, versionObjectId);
+        return latest == null ? null : latest.statement();
+    }
+
+    /**
+     * A statement this journal holds, with the ledger sequence of the entry that committed to
+     * it. The sequence is what makes the statement citable: a transition that copies a prior
+     * digest names this number as its source.
+     */
+    record Recorded(java.util.Map<String, Object> statement, long entrySequence) {
+    }
+
+    /**
+     * The newest statement recorded for a version, or null when none was (or none could be
+     * read — see {@link #statementFor}'s caveat on null).
+     *
+     * <p>"Newest" is by ledger sequence, not by row order: the rows are keyed by a random
+     * intent id, so the order a view returns them in says nothing about time. The first
+     * version of {@link #statementFor} took the last row and called it the newest, which for a
+     * version written twice (W3 / W7 / W9 rewrite in place) shipped whichever statement's id
+     * happened to sort last (found while wiring the transitions, 2026-09-22).
+     */
+    default Recorded latestRecorded(String repositoryId, String versionObjectId) {
         return null;
+    }
+
+    /**
+     * Closes an open row WITHOUT a statement, because the write it announced verifiably did
+     * not happen.
+     *
+     * <p>For the one shape E1's paths did not have: a cold move that was written and then
+     * undone (the disposition refused, the cold object deleted again). A row left open there
+     * would list a gap for a write that provably left nothing behind — over-refusal, which this
+     * tree weighs the same as under-refusal. It is only for that shape: a write whose outcome
+     * is NOT known (the undo itself failed, or the process died) stays open, which is the
+     * journal's whole point.
+     *
+     * @return true when the row is now closed as abandoned. False when it could not be — the
+     *         row then stays open and is listed, which is the right side of the error
+     */
+    default boolean abandon(String intentId, String reason) {
+        return false;
     }
 
     /** A write whose statement never reached the ledger. */

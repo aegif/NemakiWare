@@ -57,9 +57,9 @@ public record RecordContentStatementV1(
         long contentLength,
         CommitmentKind commitmentKind,
         String captureIntentId,
-        String recordedAt) {
+        String recordedAt) implements RecordStatement {
 
-    /** How the bytes came to be recorded. The three are not interchangeable. */
+    /** How the bytes came to be recorded. The four are not interchangeable. */
     public enum CommitmentKind {
         /** Recorded as the content was first stored for this version. */
         CAPTURED,
@@ -71,7 +71,23 @@ public record RecordContentStatementV1(
          * <p>Covers "existed at this observation, and was anchored after it" and nothing
          * earlier. Backfilling history as {@code CAPTURED} would manufacture evidence.
          */
-        OBSERVED
+        OBSERVED,
+        /**
+         * Recorded as the content was put back from the archive (W11).
+         *
+         * <p>A fourth kind, not {@code CAPTURED} and not {@code UPDATED}: the first would read
+         * as "these were the version's first bytes", the second as "the version's bytes were
+         * replaced". Both are false of a restore — the bytes are the ones the archive held,
+         * written back to a version that had none. The digest is taken on the bytes as they
+         * are written back (one pass, ADR E1 decision 2), which is why a restore is a state
+         * statement and not a {@link RecordContentTransitionV1}: there ARE received bytes.
+         */
+        RESTORED
+    }
+
+    @Override
+    public EvidenceLedgerEntry.SubjectKind subjectKind() {
+        return EvidenceLedgerEntry.SubjectKind.RECORD_CONTENT_STATE;
     }
 
     /** Lowercase hex, 64 characters. Case matters: a verifier compares the bytes. */

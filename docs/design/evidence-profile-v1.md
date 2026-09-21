@@ -215,13 +215,34 @@ metadata/other/nemaki-evidence/
 | `contentStreamId` | STRING or NULL | |
 | `contentDigest` | STRING | payload bytes の `hex(SHA-256)` |
 | `contentLength` | LONG | |
-| `commitmentKind` | STRING | `CAPTURED` / `UPDATED` / `OBSERVED` |
+| `commitmentKind` | STRING | `CAPTURED` / `UPDATED` / `OBSERVED` / `RESTORED` |
 | `captureIntentId` | STRING or NULL | 外部取込のときだけ非 NULL |
 | `recordedAt` | STRING | **台帳へ書いた時刻**。source の作成時刻ではない |
 
 **`OBSERVED` を `CAPTURED` と同じ強さで読んではならない。**
 `OBSERVED` は「この観測時点で存在し、その後 anchor された」までで、
 受領時から不変だったとは言っていない。
+
+**`RESTORED`**（2026-09-22）は「アーカイブから戻した」— bytes は archive が持っていたもので、内容を持たなかった版に
+書き戻された。`CAPTURED`（最初の bytes）でも `UPDATED`（差し替え）でもない。digest は書き戻す pass で取る。
+
+#### 5.3b `record-content-statement.json` が**遷移文**のとき
+
+同じファイル名で、`ledger-entry.json` の `subjectKind` が **`RECORD_CONTENT_TRANSITION`** の package は、
+statement が「bytes に何が起きたか」を述べる別の文書である（設計
+[`record-content-transition.md`](record-content-transition.md)）。**`contentDigest` を持たない。**
+
+| field | 型 | 意味 |
+|---|---|---|
+| `repositoryId` / `objectId` / `versionObjectId` | STRING | 5.3 と同じ。`versionObjectId` は不変の版キー |
+| `transition` | STRING | `ARCHIVED` / `COPIED_TO_COLD` / `MOVED_TO_COLD` / `ARCHIVE_DESTROYED` / `ARCHIVE_DESTROYED_LEAVING_COLD_BLOB` / `CONTENT_REMOVED` |
+| `bytesNow` | STRING | 遷移**後**に bytes が在る場所: `ARCHIVE_DB` / `COLD` / `NONE` / `UNKNOWN`。**`UNKNOWN` は「確かめていない」**であり「無い」でも「在る」でもない |
+| `priorContentDigest` | STRING or NULL | 遷移**前**の digest。台帳が先行する statement を持つときだけ、そこから**写す**。NULL は「知らない」 |
+| `priorStatementEntrySequence` | LONG or NULL | `priorContentDigest` の出所の entry。digest と**対**（片方だけは不正） |
+| `recordedAt` | STRING | 台帳へ書いた時刻 |
+
+**この版の verifier は遷移文を読まない**（P1 の `CONTENT_BINDING` は `contentDigest` が無いので `NOT_PRESENT` になる。
+遷移文の検査 — payload 同梱は矛盾、`transition continuity` — は残件 R67）。
 
 ### 5.4 `ledger-entry.json`
 
@@ -264,7 +285,7 @@ entryHash = hash(
 
 - **`sequence` が入力に入っている**。入っていなければ、2 つのエントリを入れ替えても
   すべての hash が通り、chain は「集合」だけを固定して順序を固定しないことになる。
-- `subjectKind` は enum の**名前**（例 `CAPTURE_COMPLETED`、`RECORD_CONTENT_STATE`）。序数ではない。
+- `subjectKind` は enum の**名前**（例 `CAPTURE_COMPLETED`、`RECORD_CONTENT_STATE`、`RECORD_CONTENT_TRANSITION`）。序数ではない。
 
 ### 検証
 

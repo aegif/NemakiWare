@@ -110,7 +110,29 @@ public record EvidenceLedgerEntry(
          * that the entry and the package's statement are about the same version — the bytes
          * alone would match any document that happens to have the same content.
          */
-        RECORD_CONTENT_STATE
+        RECORD_CONTENT_STATE,
+        /**
+         * Something happened to the bytes of one version of one document: they were copied to
+         * the archive, moved to cold storage, destroyed, or removed from the version (Phase 3's
+         * remaining paths, W10 / W12 / W13 / W14 / deleteContentStream).
+         *
+         * <p>Its own kind, and not a nullable {@code contentDigest} on
+         * {@link #RECORD_CONTENT_STATE}, because the two are statements about different
+         * subjects: "this version's bytes are these" and "this happened to this version's
+         * bytes". Folded together, every reader of {@code contentDigest} would decide for
+         * itself whether null means "the digest is broken" or "the bytes are gone" — one
+         * claim with as many exits as there are readers.
+         *
+         * <p>{@code payloadDigest} is the digest of a {@link RecordContentTransitionV1}. The
+         * package ships it under the same file name as a state statement; the reader tells
+         * them apart by THIS value in {@code ledger-entry.json}, which is the discriminator
+         * the ledger already had.
+         *
+         * <p>Appended after {@link #RECORD_CONTENT_STATE}: the name is what is hashed and
+         * shipped (spec §6), never the ordinal, but a value inserted in the middle would still
+         * move every later ordinal for a reader that persisted one.
+         */
+        RECORD_CONTENT_TRANSITION
     }
 
     public EvidenceLedgerEntry {

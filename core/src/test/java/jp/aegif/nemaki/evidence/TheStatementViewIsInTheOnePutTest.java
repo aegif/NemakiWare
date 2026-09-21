@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -44,25 +45,41 @@ class TheStatementViewIsInTheOnePutTest {
                         + "for the ledger");
     }
 
+    /**
+     * The first version of this lock held that the lookup takes the LAST ROW — and it did,
+     * and that was wrong: rows are keyed by a random intent id, so the last row is the last
+     * UUID, not the newest statement. The lock measured that the code did what it did, not that
+     * what it did was right (found while wiring the transitions, 2026-09-22). "Newest" is now
+     * the highest ledger sequence, measured behaviourally in
+     * {@code TheNewestStatementIsByLedgerSequenceTest}; what this structural half keeps is
+     * that {@code statementFor} still goes through that one decision rather than growing a
+     * second one.
+     */
     @Test
-    @DisplayName("the NEWEST statement for a version is the one shipped")
+    @DisplayName("the NEWEST statement for a version is the one shipped — by ledger sequence, through one lookup")
     void theNewestStatementForAVersionIsTheOneShipped() throws java.io.IOException {
-        // Structural: choosing a row from a view result needs a database, and the property is a
-        // one-line decision. A version can be rewritten in place (W3 / W7 / W9), so its rows
-        // accumulate; taking the first would ship the digest of content that has since been
-        // replaced, and the package would then fail its own CONTENT_BINDING check.
         Path source = Path.of("src/main/java/jp/aegif/nemaki/evidence/"
                 + "CouchContentWriteJournal.java");
         assertTrue(Files.exists(source), "the journal is not at " + source);
-        String text = Files.readString(source, StandardCharsets.UTF_8);
+        String text = Files.readString(source, StandardCharsets.UTF_8)
+                .replaceAll("(?m)//.*$", "");
         int at = text.indexOf("public Map<String, Object> statementFor(");
         assertTrue(at >= 0, "statementFor has moved, so this lock reads a decision that is gone "
                 + "rather than one that is wrong");
-        String body = text.substring(at, text.indexOf("\n    }", at))
-                .replaceAll("(?m)//.*$", "");
-        assertTrue(body.contains("result.getRows().size() - 1"),
-                "the statement lookup no longer takes the last row for a version. A version "
-                        + "rewritten in place has more than one, and the newest is the one that "
-                        + "describes the bytes stored now.\nBody reads:\n" + body);
+        String body = text.substring(at, text.indexOf("\n    }", at));
+        assertTrue(body.contains("latestRecorded(repositoryId, versionObjectId)"),
+                "statementFor no longer goes through latestRecorded, so 'newest' has two "
+                        + "definitions in one class.\nBody reads:\n" + body);
+        assertFalse(body.contains("getRows()"),
+                "statementFor reads view rows itself again; the row order is UUID order and "
+                        + "the last row is not the newest statement");
+
+        int latest = text.indexOf("public Recorded latestRecorded(");
+        assertTrue(latest >= 0, "latestRecorded has moved");
+        String decision = text.substring(latest, text.indexOf("\n    }", latest));
+        assertTrue(decision.contains("at > newest.entrySequence()"),
+                "latestRecorded no longer picks the HIGHEST ledger sequence. The ledger sequence "
+                        + "is the one order that is time; a transition copies its prior from "
+                        + "whichever statement this returns.\nBody reads:\n" + decision);
     }
 }

@@ -3,9 +3,35 @@
 2026-09-21。計画 [`v3.4.0-evidence-and-residuals-plan.md`](v3.4.0-evidence-and-residuals-plan.md)
 §16 Phase 3 の「未」。E1 の ADR は [`adr-e1-durable-commitment.md`](adr-e1-durable-commitment.md)。
 
-**これは設計であって実装ではない。** ここに書いた型・kind・検査はどれもまだ存在しない。
-実装したら、この文書の「決めたこと」を 1 つずつ錠と control に写し、写せなかったものは
-残件表に戻す。
+**2026-09-22 に台帳側を実装した（sub-batch 1）。** `SubjectKind.RECORD_CONTENT_TRANSITION`、`RecordContentTransitionV1`、
+`CommitmentKind.RESTORED`、`RecordContentStateRecorder.recordTransition / priorFor / abandon`、journal の
+`latestRecorded / abandon`、6 経路の配線（W10 / W11 / W12 / W13 / W14 / `deleteContentStream`）、E1 の錠 15 本、
+crash test。**package 側（exporter が遷移文と prior を出す、verifier P1 の `content binding` / `transition continuity`、
+仕様 §10 / §4.2、schema の `TRANSITION_PRIOR_NOT_IN_PACKAGE`）は sub-batch 2 で、それまで残件 R67。**
+所有者の決定（2026-09-21）: 新 kind／digest を nullable にしない／`priorContentDigest` は台帳から写す／W12 は 2 行／
+W11 は `RESTORED` — 採用。W14 はこのバッチでは削除経路に確かめさせない。`bytesNow: UNKNOWN` のまま。crash test は
+実装と同じバッチで書く — すべて写した。
+
+**実装して決まったこと（設計から動いた点）:**
+
+- `Transition` に **`RESTORED` は無い**（§1.4 のとおり W11 は state statement）。`BytesNow` に **`LOCAL` は無い** —
+  どの遷移も bytes を LOCAL に残さない（残すのは W11 で、それは state statement）。**生産者の無い値は enum に置かない**
+  （錠 `everyBytesNowHasAProducer` / `everyTransitionSaysWhereTheBytesAre`）
+- **`abandon`** を journal に足した — 「書いたが取り消した」形は E1 の 9 経路に無く、W12 にだけ在る（disposition が拒否され
+  cold の object を消し戻した／ローカル削除に失敗して消し戻した）。取り消しが**確かめられた**ときだけ行を statement 無しで
+  閉じる。消し戻しに失敗したら行は開いたまま（blob が残っているかもしれない、を一覧に残す）。錠 `abandonFollowsAVerifiedUndoOnly`
+- W11 の digest は **DAO が書き戻す pass で取る**（`DigestInputStream` を PUT の下に置く。`ContentDaoService.RestoredBytes`）。
+  CouchDB が保存した長さと数えた bytes が違えば digest は null（ADR の「宣言より短い書き込みに digest は無い」）で、行は開いたまま。
+  archive に binary が無ければ `RestoredBytes.NOTHING`（既知の「何も書いていない」）で行は abandon。DAO が報告できない実装は
+  null（「分からない」）で行は開いたまま — 3 つは別の値
+- `deleteContentStream` は `CONTENT_REMOVED` の **1 行**（`bytesNow: ARCHIVE_DB` — 中の `deleteAttachment` が W10 として
+  archive DB へ複製する）。`deleteDocument` の版ごとの `deleteAttachment` が `ARCHIVED` の 1 行
+- **見つけた欠陥（直した）**: journal の `statementFor` は「最後の行 = 最新」と読んでいたが、行の id は乱数 UUID なので
+  順序は時刻と無関係。同じ版が 2 度書かれた（W3 / W7 / W9）package は古い digest を出荷しえた。**最新は台帳 sequence の最大**
+  （`latestRecorded`）。錠 `TheNewestStatementIsByLedgerSequenceTest`。旧の錠は「最後の行を取る」というコードの事実を
+  固定していただけで、正しさを測っていなかった
+- **prior の carry-forward**: 最新の記録が遷移文なら、その `priorContentDigest / priorStatementEntrySequence` をそのまま写す
+  （複製も cold 移送も bytes を変えないので、2 つ目の遷移も最後に記録された state を指す）
 
 ---
 
@@ -117,23 +143,27 @@ W10〜W14 と `CONTENT_REMOVED` を持っている（**未配線なだけ**）�
 
 | 未決 | なぜここで決めないか |
 |---|---|
-| **crash test** | 案 B の「落ちた場所ごとに何が残るか」を W10〜W14 で列挙する作業。実装と同時でないと列挙が机上になる |
-| E1 の錠の **14 → 何本** | 棚卸し表を W11 の kind 変更込みで数え直す。数は数えてから書く |
-| `ARCHIVE_DESTROYED_LEAVING_COLD_BLOB` を W14 の**削除経路に確かめさせる**か | 確かめるなら `LongTermStorageAdapter` に問い合わせる = 外向き。範囲が変わる |
-| `bytesNow: UNKNOWN` を運用文書でどう見せるか | 「不明」を「無い」とも「在る」とも読ませない文言が要る |
+| **crash test** | **決定: 実装と同じバッチで書いた**（`TransitionsLeaveNoSilentGapTest`: 台帳拒否で行が開いたまま／prior は写す／carry-forward／journal に訊けなければ prior は null／abandon は確かめた取り消しだけ／abandon できなければ開いたまま） |
+| E1 の錠の **14 → 何本** | **決定: 棚卸し 14 経路 + `deleteContentStream` = `WriteKind` 15 本、配線済み 15 本**（`onlyTheWiredPathsClaimToBeRecorded` が製品 4 ファイルから `WriteKind.X` を数える） |
+| `ARCHIVE_DESTROYED_LEAVING_COLD_BLOB` を W14 の**削除経路に確かめさせる**か | **決定（所有者）: このバッチでは確かめさせない**（外向きが増える）。`bytesNow: UNKNOWN` |
+| `bytesNow: UNKNOWN` を運用文書でどう見せるか | 運用文書 §O5-4 の行「cold blob が残っているかを削除経路が確かめること」— **やらないこと**として。「不明」は「無い」でも「在る」でもない |
 
 ---
 
 ## 3. 錠と control（実装時に写すもの）
 
-- **型の錠**: `RecordContentTransitionV1` は `contentDigest` 欄を**持たない**（足すと V1 との
-  境界が溶ける）。`priorContentDigest` を出所無しで持てない
-- **配線の錠**: `WriteKind` の 15 本すべてが `CHAINED` か耐久 unresolved（E1 の錠を広げる）
-- **矛盾の錠**: `MOVED_TO_COLD` の遷移文が在るのに `DISPOSITION` 行が無い package を
-  verifier が `FAILED` にする（1.3）
-- **control**: `bytesNow` を `UNKNOWN` から `COLD` に変える細工（確かめていないことを
-  確かめたと言う）／`priorContentDigest` を写さず計算する細工（別の観測を先行文と偽る）／
-  W11 を `CAPTURED` で記録する細工
+- **型の錠** `theTypeHasNoContentDigest` / `thePriorIsPaired` / `nullsAreWrittenNotOmitted`: `RecordContentTransitionV1` は
+  `contentDigest` 欄を**持たない**。`priorContentDigest` を出所無しで持てない。null は書く（省略しない）
+- **配線の錠** `E1LeavesNoSilentGapTest#onlyTheWiredPathsClaimToBeRecorded`: 製品 4 ファイル（`ContentServiceImpl` /
+  `AttachmentServiceDelegate` / `ArchiveServiceDelegate` / `RetentionScheduler`）の `WriteKind.X` ＝ 宣言 15 本 ＝ 計画の
+  「配線済みは 15 本」。`everyTransitionSaysWhereTheBytesAre`: 遷移ごとの `bytesNow` が設計の表どおり、呼び出し側が 1 か所
+- **kind の錠** `aTransitionIsChainedUnderItsOwnKind`: 遷移文は `RECORD_CONTENT_TRANSITION` で chain に入る
+- **写しの錠** `thePriorIsCopiedFromTheLedgerNotComputed` / `aSecondTransitionCarriesThePriorForward` / `noPriorWhen…`
+- **順序の錠** `TheNewestStatementIsByLedgerSequenceTest`: 行順が逆でも sequence 最大が最新
+- **矛盾の錠**（`MOVED_TO_COLD` と `DISPOSITION` の対）: **sub-batch 2（verifier）で**。R67
+- **control**: MK3 W14 の `UNKNOWN` を `COLD` に／ML3 W11 を `CAPTURED` に／MM3 prior を写さない／MN3 遷移文を
+  `RECORD_CONTENT_STATE` で chain に入れる／MO3 取り消し未確認で abandon／MP3 E1 の宣言から 1 本落とす／
+  MQ3 abandon が statement を書く／MR3 DAO が書き戻しを報告しない（既定の null に戻す）／IG3 順序を sequence 最小に
 
 ---
 

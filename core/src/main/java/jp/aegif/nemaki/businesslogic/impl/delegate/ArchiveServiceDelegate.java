@@ -47,13 +47,98 @@ public class ArchiveServiceDelegate {
 	private final ContentService contentService;
 	private final Supplier<SolrUtil> solrUtilSupplier;
 	private final BiConsumer<CallContext, NodeBase> signatureSetter;
+	/** E1's recorder, or a supplier of null where none is wired (then nothing is recorded). */
+	private final Supplier<jp.aegif.nemaki.evidence.RecordContentStateRecorder> recorderSupplier;
 
 	public ArchiveServiceDelegate(ContentDaoService contentDaoService, ContentService contentService,
 			Supplier<SolrUtil> solrUtilSupplier, BiConsumer<CallContext, NodeBase> signatureSetter) {
+		this(contentDaoService, contentService, solrUtilSupplier, signatureSetter, () -> null);
+	}
+
+	public ArchiveServiceDelegate(ContentDaoService contentDaoService, ContentService contentService,
+			Supplier<SolrUtil> solrUtilSupplier, BiConsumer<CallContext, NodeBase> signatureSetter,
+			Supplier<jp.aegif.nemaki.evidence.RecordContentStateRecorder> recorderSupplier) {
 		this.contentDaoService = contentDaoService;
 		this.contentService = contentService;
 		this.solrUtilSupplier = solrUtilSupplier;
 		this.signatureSetter = signatureSetter;
+		this.recorderSupplier = recorderSupplier == null ? () -> null : recorderSupplier;
+	}
+
+	// ///////////////////////////////////////
+	// E1: transitions of a version's bytes (W11 / W13 / W14)
+	// ///////////////////////////////////////
+
+	/** Opens the journal row BEFORE the bytes move. Null when no recorder is wired. */
+	private jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending openTransition(String repositoryId,
+			String versionObjectId, jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind kind) {
+		jp.aegif.nemaki.evidence.RecordContentStateRecorder recorder = recorderSupplier.get();
+		if (recorder == null || versionObjectId == null) {
+			return null;
+		}
+		return recorder.openBeforeWriting(repositoryId, versionObjectId, versionObjectId, kind,
+				java.time.Instant.now().toString());
+	}
+
+	/** Records the transition and closes the row. Never fails the operation it belongs to. */
+	private void closeTransition(jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pending,
+			jp.aegif.nemaki.evidence.RecordContentTransitionV1.Transition transition,
+			jp.aegif.nemaki.evidence.RecordContentTransitionV1.BytesNow bytesNow) {
+		jp.aegif.nemaki.evidence.RecordContentStateRecorder recorder = recorderSupplier.get();
+		if (recorder == null || pending == null) {
+			return;
+		}
+		recorder.recordTransition(pending, transition, bytesNow);
+	}
+
+	/**
+	 * E1 (W11). A restore RECEIVES bytes, so it is a state statement — {@code RESTORED}, the
+	 * fourth commitment kind — with the digest the DAO took as the bytes were written back.
+	 *
+	 * <p>Three outcomes, three different records: bytes vouched for → RESTORED statement; bytes
+	 * written but not vouched for → the row stays OPEN (a gap that is listable); no binary in
+	 * the archive → the row is closed as abandoned, because nothing was written and an open row
+	 * would report a gap that is not one. A DAO that cannot report (null) leaves the row open:
+	 * "not known" is not "nothing".
+	 */
+	private void recordRestored(String repositoryId, Archive archive,
+			jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pending,
+			jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes restored) {
+		jp.aegif.nemaki.evidence.RecordContentStateRecorder recorder = recorderSupplier.get();
+		if (recorder == null || pending == null) {
+			return;
+		}
+		String versionId = archive.getOriginalId();
+		if (restored == null) {
+			log.warn("E1 (W11): the restore of {} did not report what it wrote back, so no statement "
+					+ "was recorded. The journal row stays open.", versionId);
+			return;
+		}
+		if (!restored.wroteBytes()) {
+			recorder.abandon(pending, "the archive carried no binary content; nothing was written back");
+			return;
+		}
+		if (restored.contentDigest() == null) {
+			log.warn("E1 (W11): the bytes written back for {} could not be vouched for (stored length "
+					+ "differs from what went past), so no statement was recorded. The journal row "
+					+ "stays open.", versionId);
+			return;
+		}
+		try {
+			jp.aegif.nemaki.evidence.RecordContentStatementV1 statement =
+					new jp.aegif.nemaki.evidence.RecordContentStatementV1(repositoryId, versionId, versionId,
+							restored.attachmentId(), restored.contentDigest(), restored.length(),
+							jp.aegif.nemaki.evidence.RecordContentStatementV1.CommitmentKind.RESTORED, null,
+							java.time.Instant.now().toString());
+			jp.aegif.nemaki.evidence.RecordContentStateRecorder.Result result =
+					recorder.recordAndClose(pending, statement);
+			if (!result.inChain()) {
+				log.warn("E1 (W11): the RESTORED statement for {} is not in the chain ({}).", versionId,
+						result.outcome());
+			}
+		} catch (RuntimeException e) {
+			log.warn("E1 (W11): no content statement was recorded for {}.", versionId, e);
+		}
 	}
 
 	// ///////////////////////////////////////
@@ -298,7 +383,13 @@ public class ArchiveServiceDelegate {
 
 		// Restore only the specific requested archive (not all archived versions of the series).
 		// This enforces one-at-a-time restoration consistent with one-at-a-time deletion.
-		contentDaoService.restoreDocumentWithArchive(repositoryId, archive);
+		// E1 (W11): the row is opened BEFORE the bytes are written back and closed with the
+		// RESTORED statement carrying the digest taken as they went past.
+		jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending restoreRow = openTransition(repositoryId,
+				archive.getOriginalId(), jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.RESTORE);
+		jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes restored =
+				contentDaoService.restoreDocumentWithArchiveRecording(repositoryId, archive);
+		recordRestored(repositoryId, archive, restoreRow, restored);
 		contentDaoService.deleteDocumentArchive(repositoryId, archive.getId());
 
 		// Track the restored document's ID so we can ensure it gets indexed
@@ -499,9 +590,27 @@ public class ArchiveServiceDelegate {
 			Archive attachmentArchive = contentDaoService.getAttachmentArchive(repositoryId, version);
 
 			if (attachmentArchive != null) {
+				// E1 (W13 / W14): opened before the row that holds the bytes goes. A cold-moved
+				// version's blob is not touched by this path and not checked either, so its
+				// transition says the bytes are now UNKNOWN — not COLD, which nothing here verified.
+				boolean coldMoved = version.getColdArchivedAt() != null
+						|| Archive.STATE_ARCHIVED_COLD.equals(version.getEffectiveArchiveState());
+				jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending destroyRow = openTransition(repositoryId,
+						version.getOriginalId(), coldMoved
+								? jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.DESTROY_ARCHIVE_LEAVING_COLD_BLOB
+								: jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.DESTROY_ARCHIVE);
 				String deletedAttachmentId = contentDaoService.deleteArchive(repositoryId, attachmentArchive.getId());
 				if (deletedAttachmentId == null) {
+					// Whether the bytes went is not known; the row stays open and is listed.
 					log.warn("destroyDocument: attachment archive deletion returned null, attachmentId=" + attachmentArchive.getId());
+				} else if (coldMoved) {
+					closeTransition(destroyRow,
+							jp.aegif.nemaki.evidence.RecordContentTransitionV1.Transition.ARCHIVE_DESTROYED_LEAVING_COLD_BLOB,
+							jp.aegif.nemaki.evidence.RecordContentTransitionV1.BytesNow.UNKNOWN);
+				} else {
+					closeTransition(destroyRow,
+							jp.aegif.nemaki.evidence.RecordContentTransitionV1.Transition.ARCHIVE_DESTROYED,
+							jp.aegif.nemaki.evidence.RecordContentTransitionV1.BytesNow.NONE);
 				}
 			} else {
 				log.warn("destroyDocument: attachment archive not found, versionId=" + version.getId());

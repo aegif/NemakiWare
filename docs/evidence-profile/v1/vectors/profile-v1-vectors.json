@@ -165,7 +165,10 @@
     "docNullVsEmpty": "2defc47aadfeff737a3e04d606488f26f76553af7057cdfe318c6f7219ff81a2",
     "docNested": "9b82e826bcadb1c94b83c14fb11bfc70cb547a0f3b15eec2e744d065d2f74a62",
     "docUnicodeKeys": "e996fe81e082f4f23b75d53b69f0b7532ca3108e59b1e9aed72a9d78b6b9d0e1",
-    "docNegativeAndBounds": "9f4e17af51f6cf097ba755b1bf38e93096b2f2e122fced5d02d410d75c91e765"
+    "docNegativeAndBounds": "9f4e17af51f6cf097ba755b1bf38e93096b2f2e122fced5d02d410d75c91e765",
+    "docRestoredStatement": "162d8d832aebd018876a6a769be9f1da699d4d118f5ad4b42839b4f83d7fcf57",
+    "docTransitionUnknownPrior": "28923f2ed537a6aa12aebc2c37e6b8840c52c670188c0a1dec74a5d56107d8fe",
+    "docTransitionWithPrior": "43d16a764a85ccd1ab220d053fadb655ad3a3d14268b714d76c2c871e518cd84"
   },
   "proof": {
     "leaf": "c",
@@ -209,6 +212,18 @@
     "docNegativeAndBounds": {
       "json": "{\"lo\":-9223372036854775808,\"hi\":9223372036854775807,\"z\":0}",
       "why": "int64 two's complement at both ends"
+    },
+    "docRestoredStatement": {
+      "json": "{\"repositoryId\":\"bedroom\",\"objectId\":\"doc-1\",\"versionObjectId\":\"doc-1\",\"contentStreamId\":\"att-1\",\"contentDigest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"contentLength\":12,\"commitmentKind\":\"RESTORED\",\"captureIntentId\":null,\"recordedAt\":\"2026-09-22T00:00:00Z\"}",
+      "why": "a RESTORED state statement (W11, 2026-09-22): the fourth commitment kind is a STRING like the other three, and captureIntentId null is tagged, not dropped"
+    },
+    "docTransitionUnknownPrior": {
+      "json": "{\"repositoryId\":\"bedroom\",\"objectId\":\"doc-1\",\"versionObjectId\":\"doc-1\",\"transition\":\"ARCHIVE_DESTROYED_LEAVING_COLD_BLOB\",\"bytesNow\":\"UNKNOWN\",\"priorContentDigest\":null,\"priorStatementEntrySequence\":null,\"recordedAt\":\"2026-09-22T00:00:00Z\"}",
+      "why": "a transition statement with no prior: both prior fields are NULL-tagged, and 'not known' digests differently from any digest"
+    },
+    "docTransitionWithPrior": {
+      "json": "{\"repositoryId\":\"bedroom\",\"objectId\":\"doc-1\",\"versionObjectId\":\"doc-1\",\"transition\":\"MOVED_TO_COLD\",\"bytesNow\":\"COLD\",\"priorContentDigest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"priorStatementEntrySequence\":7,\"recordedAt\":\"2026-09-22T00:00:00Z\"}",
+      "why": "a transition statement copying a prior digest and the LONG sequence it came from"
     }
   },
   "documentRefusals": {
