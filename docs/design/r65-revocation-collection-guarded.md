@@ -21,7 +21,7 @@
 | `AdapterHttpClient.pinRequestToValidatedAddress` は**送信時に再解決**し、HTTP なら検証済み IP リテラルに書き換えて `Host` を保つ。HTTPS は TLS 境界まで（残余リスク明記済み） | `AdapterHttpClient.java:281`（**package-private**） |
 | **2 巡目で判明**: 同メソッドは `nemaki.ingest.allowLocalhost=true`（JVM `-D`）で**解決の前に return** していた — 検証も固定も無し、宛先を問わず。`validateExternalUrl` も同じ | `AdapterHttpClient.java`（旧 :294 / :201） |
 | **2 巡目で判明**: `ofInputStream()` の後の本文読みには timer が無い。`SubmittedDigestRecovery` は同じ罠を Temurin 21 で実測し `BodyBudget` を持っていた | `SubmittedDigestRecovery.java`（旧 :484） |
-| **2 巡目で判明**: HTTP 固定の `Host` 上書きは JDK flag `jdk.httpclient.allowRestrictedHeaders=host` が要る。`Utils.DISALLOWED_HEADERS_SET` はクラス初期化時に 1 回だけ計算され、`AtlasLineageSink` が起動時に最初の `HttpClient` を作るので、`AdapterHttpClient` の static init で足すのは非 Docker 配備では手遅れ | `AdapterHttpClient.java:62-73` |
+| **2 巡目で判明**: HTTP 固定の `Host` 上書きは JDK flag `jdk.httpclient.allowRestrictedHeaders=host` が要る。`Utils.DISALLOWED_HEADERS_SET` はクラス初期化時に 1 回だけ計算され、`AtlasLineageSink` が起動時に最初の `HttpClient` を作るので、`AdapterHttpClient` の static init で足すのは非 Docker 配備では手遅れ | `AdapterHttpClient.java:70-81` |
 
 **今 live でないのは、つまみが無いおかげである。** つまみを先に配線した瞬間、
 攻撃者が影響できる URL（TSA 証明書の中身）へ無検査で接続する経路が出荷される。
@@ -55,14 +55,17 @@
 - **`enforce` は無条件** — 正確には、採った経路に `enforce` 引数は**無い**。無条件性は `sendPinned` の
   構造そのもの（固定を経ずに送る形が無い）。**唯一の例外はテスト用 JVM プロパティ
   `nemaki.ingest.allowLocalhost=true` で、これは loopback を通すだけ**（2 巡目まではガード全体を外していた。
-  `isAcceptable(InetAddress)` の 1 か所でだけ読まれ、loopback 以外は on でも検証・固定される。最初に通した
-  送信で WARN）。TSA 証明書の URL は運用者の入力ではない。運用者が「自分のネットワークでは要らない」と
+  `isAcceptable(InetAddress)` の 1 か所でだけ読まれ、loopback 以外は on でも検証・固定される。最初に loopback を
+  **受け入れた時** — 保存時の検証でも送信でも — に 1 回 WARN）。TSA 証明書の URL は運用者の入力ではない。運用者が「自分のネットワークでは要らない」と
   判断できる対象ではない
 - **前提**: HTTP 固定は JVM に `-Djdk.httpclient.allowRestrictedHeaders=host` が要る。Docker 配備は設定済み。
   素の Tomcat では on にすると `http://` の DP は毎回 `UNAVAILABLE`（`restricted header name: "Host"`）。
   運用文書 §O5-2 に前提として書いた。**この分岐は loopback stub では通せない**と初版は考えていたが、
   プロパティを loopback-only に狭めたことで stub でも固定を**通る**ようになり、`localhost` 名で束縛した stub に
-  対して CAPTURED になることを実測した（`materialIsCapturedThroughThePinnedPath`）
+  対して固定分岐を通って CAPTURED になることを実測した（`materialIsCapturedThroughThePinnedPath`。**分岐そのもの**
+  — URI が IP リテラルになり `Host` に元の名前が載ること — を測るのは escape の錠 `TheTestEscapeIsLoopbackOnlyTest`
+  で、こちらは「通って成功する」まで。3 巡目の subagent P3）。JVM flag が Dockerfile 2 本と、`JAVA_OPTS` を
+  override して core を起動する compose 全部に在ることは `theJvmFlagIsInEveryShippedConfiguration` が読む
 - HTTPS の残余（TCP-connect SSRF の窓）は `AdapterHttpClient` の javadoc が既に述べている
   とおり。**この設計で新たに閉じるとは言わない**。CRL の distribution point はほぼ `http://`
   だが、`https://` なら同じ残余を負う。運用文書に書く

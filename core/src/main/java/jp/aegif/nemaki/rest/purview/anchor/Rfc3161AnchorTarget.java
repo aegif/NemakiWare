@@ -361,6 +361,17 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
                             java.net.http.HttpRequest.newBuilder(java.net.URI.create(url))
                                     .timeout(java.time.Duration.ofSeconds(20)).GET().build(),
                             java.net.http.HttpResponse.BodyHandlers.ofInputStream());
+            if (response.statusCode() != 200) {
+                // Answered, and the answer is "not now" or "not here". Closed without reading:
+                // the body of a 503 is not a CRL, and reading it first would let a stalled error
+                // page hold this thread for the whole body budget while the runbook promises
+                // an immediate UNAVAILABLE (Codex, third review).
+                try (java.io.InputStream ignored = response.body()) {
+                    // closed, not drained
+                }
+                return RevocationMaterial.unavailable(url,
+                        "the distribution point answered " + response.statusCode());
+            }
             byte[] body;
             // Bounded twice. In bytes: a CRL can be megabytes and an unbounded read is the
             // RESOURCE_LIMIT shape the verifier already refuses; over the cap the material is
@@ -384,10 +395,9 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
                     budget.close();
                 }
             }
-            if (response.statusCode() != 200 || body.length == 0) {
+            if (body.length == 0) {
                 return RevocationMaterial.unavailable(url,
-                        "the distribution point answered " + response.statusCode()
-                                + " with " + body.length + " bytes");
+                        "the distribution point answered 200 with an empty body");
             }
             if (body.length > MAX_CRL_BYTES) {
                 return RevocationMaterial.unavailable(url, "CRL_TOO_LARGE: the distribution "

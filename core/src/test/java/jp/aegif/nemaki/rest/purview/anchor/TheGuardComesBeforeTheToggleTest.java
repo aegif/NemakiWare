@@ -75,7 +75,8 @@ class TheGuardComesBeforeTheToggleTest {
             ".sendAsync(",
             "HttpURLConnection",
             "openConnection(",
-            "openStream(");
+            "openStream(",
+            ".execute(");
 
     private static final Pattern COMMENTS_AND_LITERALS = Pattern.compile(
             "(\"(?:\\\\.|[^\"\\\\])*\")|('(?:\\\\.|[^'\\\\])')|(//[^\\n]*)|(/\\*.*?\\*/)",
@@ -153,6 +154,50 @@ class TheGuardComesBeforeTheToggleTest {
                             + "out of this method into a helper trips this arm too — the lock "
                             + "reads this body and would not see the helper");
         }
+    }
+
+    /**
+     * The HTTP pin sets {@code Host}, which the JDK allows only under
+     * {@code jdk.httpclient.allowRestrictedHeaders=host}, and only if the flag is on the JVM
+     * command line (the JDK computes its restricted set once, at the first HttpClient). The
+     * runbook says Docker deployments carry it; this reads the files the runbook is about.
+     * A compose that overrides {@code JAVA_OPTS} drops the Dockerfile's copy, so it has to
+     * carry its own (subagent, third review: four of them do, and nothing read them).
+     */
+    @Test
+    @DisplayName("every shipped configuration that starts core carries the JVM flag the pin needs")
+    void theJvmFlagIsInEveryShippedConfiguration() throws IOException {
+        String flag = "allowRestrictedHeaders=host";
+        for (Path dockerfile : List.of(Path.of("../docker/core/Dockerfile"),
+                Path.of("../docker/core/Dockerfile.simple"))) {
+            assertTrue(Files.exists(dockerfile), dockerfile + " is not there");
+            assertTrue(Files.readString(dockerfile, StandardCharsets.UTF_8).contains(flag),
+                    dockerfile + " no longer sets " + flag + ". Every http:// pin on that image "
+                            + "then fails with 'restricted header name: Host'");
+        }
+        List<Path> composes;
+        try (var files = Files.list(Path.of("../docker"))) {
+            composes = files.filter(f -> f.getFileName().toString().startsWith("docker-compose")
+                    && f.getFileName().toString().endsWith(".yml")).sorted().toList();
+        }
+        assertTrue(composes.size() >= 4, "fixture: only " + composes.size() + " compose files found");
+        int checked = 0;
+        for (Path compose : composes) {
+            String text = Files.readString(compose, StandardCharsets.UTF_8);
+            boolean startsCore = Pattern.compile("(?m)^\\s+core:\\s*$").matcher(text).find();
+            boolean overridesJavaOpts = text.contains("JAVA_OPTS=");
+            if (!startsCore || !overridesJavaOpts) {
+                continue; // inherits the Dockerfile's ENV, which the loop above holds
+            }
+            checked++;
+            assertTrue(text.contains(flag),
+                    compose + " overrides JAVA_OPTS (dropping the Dockerfile's flag) and does "
+                            + "not set " + flag + " itself. The runbook says Docker deployments "
+                            + "carry it; this one would answer UNAVAILABLE on every http:// "
+                            + "distribution point");
+        }
+        assertTrue(checked >= 1, "fixture: no compose overrides JAVA_OPTS for core, so this "
+                + "lock measured nothing");
     }
 
     @Test

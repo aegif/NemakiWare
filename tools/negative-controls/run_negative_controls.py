@@ -9839,8 +9839,8 @@ CONTROLS = [
         id='GY3',
         what="the readiness document stops saying the control added since the fifth sweep is unswept, so a finished sweep of 938 reads as a measurement of today's tree",
         file='docs/design/v3.4-release-readiness.md',
-        find='**その 21 本は通し未実施**',
-        replace='**その 21 本も通し済み**',
+        find='**その 23 本は通し未実施**',
+        replace='**その 23 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10785,7 +10785,7 @@ CONTROLS = [
         what='a second statement of the unswept count drifts from the locked one, so the document contradicts itself about how many controls have never been run together',
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **5 回目以後に足した control は 21 本**（境界 LM3 — 5 回目時点の最大 ID。',
+        find='  **5 回目以後に足した control は 23 本**（境界 LM3 — 5 回目時点の最大 ID。',
         replace='  **5 回目以後に足した control は 0 本**（境界 LM3 — 5 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10796,7 +10796,7 @@ CONTROLS = [
         file='docs/design/fail-closed-reads.md',
         # Re-pointed: the boundary id moves below LM3, so ids above it exist while the sweep
         # record says nothing was added — the cross-check (declared − swept ≠ ids above) fires.
-        find='**5 回目以後に足した control は 21 本**（境界 LM3）: ',
+        find='**5 回目以後に足した control は 23 本**（境界 LM3）: ',
         replace='**5 回目以後に足した control は 5 本**（境界 LA3）: ',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10852,8 +10852,8 @@ CONTROLS = [
         id='LN3',
         what="the canon stops saying the control added since the fifth sweep is unswept — the canon-side twin of GY3 — and, being itself the first control after the sweep, the one that forces the ledger back from 0 to 1",
         file='docs/design/fail-closed-reads.md',
-        find='**その 21 本は通し未実施**',
-        replace='**その 21 本も通し済み**',
+        find='**その 23 本は通し未実施**',
+        replace='**その 23 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10861,8 +10861,8 @@ CONTROLS = [
         id='LO3',
         what="the readiness document's §4 stops saying the added controls are unswept while §1.4 still does — the second exit, which a once-per-file check let through (GY3 did not fire)",
         file='docs/design/v3.4-release-readiness.md',
-        find='5 回目以後に足した control は **21 本**（通し未実施）。',
-        replace='5 回目以後に足した control は **21 本**（通し済み）。',
+        find='5 回目以後に足した control は **23 本**（通し未実施）。',
+        replace='5 回目以後に足した control は **23 本**（通し済み）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11061,7 +11061,30 @@ CONTROLS = [
         find='                    jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendPinned(client,\n',
         replace='                    jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRetry(client,\n',
         test='Rfc3161AnchorTargetTest',
-        # Preemptive 1.5 s: the first retry sleep alone is 2 s.
+        # The stub says Retry-After: 0, so the loop comes straight back and the stub counts 4
+        # requests instead of 1 — no clock involved (third review re-pointed the lock).
+        expect_fail=['notNowIsNotRetried'],
+    ),
+    # R65, third review (Codex NOT CONVERGED on two P2s, subagent CONVERGED). Stop rule: no
+    # fourth round on this area; these two are the last R65 controls.
+    dict(
+        id='MI3',
+        what='a shipped compose that overrides JAVA_OPTS for core drops the JDK flag the HTTP pin needs, so every http:// distribution point on that deployment answers UNAVAILABLE with a detail that never names the flag',
+        file='docker/docker-compose-prod.yml',
+        find=' -Djdk.httpclient.allowRestrictedHeaders=host',
+        replace='',
+        test='TheGuardComesBeforeTheToggleTest',
+        expect_fail=['theJvmFlagIsInEveryShippedConfiguration'],
+    ),
+    dict(
+        id='MJ3',
+        what='the status is read AFTER the body again, so a 503 whose body never finishes holds the admin request thread for the whole body budget while the runbook promises an immediate UNAVAILABLE',
+        file='core/src/main/java/jp/aegif/nemaki/rest/purview/anchor/Rfc3161AnchorTarget.java',
+        find='            if (response.statusCode() != 200) {\n',
+        replace='            if (false) {\n',
+        test='Rfc3161AnchorTargetTest',
+        # The 503 stub never finishes its body; with the status read after the body the fetch
+        # waits out the 5 s budget and the 3 s preemptive guard fails the test.
         expect_fail=['notNowIsNotRetried'],
     ),
     dict(
@@ -11182,7 +11205,7 @@ CONTROLS = [
         id='LB3',
         what='the PLAN\'s copy of the never-swept count drifts, so whoever scopes the overdue full sweep from the plan runs half the set',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='5 回目以後に足した control は **21 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='5 回目以後に足した control は **23 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='5 回目以後に足した control は **0 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],

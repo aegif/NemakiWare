@@ -837,10 +837,14 @@ class Rfc3161AnchorTargetTest {
             assertEquals(RevocationMaterial.Status.CAPTURED, material.status(), material.detail());
             assertArrayEquals(crl, material.der());
             assertEquals(url, material.source());
+            // The Host header is what the pin carries over; a client that did not pin would
+            // send the same value from the URI, so this does NOT identify the branch — the
+            // rewrite itself is measured in TheTestEscapeIsLoopbackOnlyTest. What it holds is
+            // that the pinned fetch arrived with the name the stub expects (subagent, P3).
             assertEquals("localhost:" + server.getAddress().getPort(), hostSeen.get(),
-                    "the stub saw Host " + hostSeen.get() + ". The pin rewrites the URI to the "
-                            + "literal and carries the original name in Host; a fetch that "
-                            + "reached the stub under another Host did not take that branch");
+                    "the stub saw Host " + hostSeen.get() + "; the pin carries the original "
+                            + "name in Host, and a name-based virtual host would answer for the "
+                            + "wrong site without it");
         }
 
         /**
@@ -892,23 +896,55 @@ class Rfc3161AnchorTargetTest {
          * "Not now" is an answer. The retry loop the connectors use sleeps 2, 4 and 8 seconds
          * (or {@code Retry-After}, up to 120 s each) before giving up, which is right for a
          * poll and wrong on the request thread this anchoring runs on (subagent review).
+         *
+         * <p>Measured by COUNTING the requests the stub saw, not by the clock: the stub says
+         * {@code Retry-After: 0}, so a retry loop would come back at once and the count would
+         * read 4 instead of 1 — deterministic on any CI (Codex / subagent, third review; the
+         * first version asserted 1.5 s, which measures neither a retry nor its absence). The
+         * 503 also carries a body that never finishes: the status is read first and the body
+         * never, so the fetch returns without waiting for the body budget either.
          */
         @Test
         @DisplayName("a 503 from the distribution point is UNAVAILABLE at once, not retried on the request thread")
         void notNowIsNotRetried() throws Exception {
+            java.util.concurrent.atomic.AtomicInteger requests = new java.util.concurrent.atomic.AtomicInteger();
+            java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
             String url = startServer("/busy.crl", exchange -> {
-                exchange.sendResponseHeaders(503, -1);
-                exchange.close();
+                requests.incrementAndGet();
+                exchange.getResponseHeaders().add("Retry-After", "0");
+                exchange.sendResponseHeaders(503, 0);
+                OutputStream os = exchange.getResponseBody();
+                os.write("<html>busy".getBytes(StandardCharsets.UTF_8));
+                os.flush();
+                try {
+                    release.await(30, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+                try {
+                    os.close();
+                } catch (IOException ignored) {
+                    // the client is gone by then
+                }
             });
             org.bouncycastle.tsp.TimeStampToken token = tokenWithDistributionPoint(url);
             Rfc3161AnchorTarget target = collecting();
+            target.crlBodyBudget = java.time.Duration.ofSeconds(5);
+            try {
+                // Preemptive as a hang guard only (a body read would wait out the 5 s budget);
+                // the claim is the count below.
+                RevocationMaterial material = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
+                        java.time.Duration.ofSeconds(3), () -> target.collectRevocationMaterial(token));
 
-            // The first retry sleep alone is 2 s; a fetch that takes longer than this took it.
-            RevocationMaterial material = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
-                    java.time.Duration.ofMillis(1500), () -> target.collectRevocationMaterial(token));
-
-            assertEquals(RevocationMaterial.Status.UNAVAILABLE, material.status(), material.detail());
-            assertTrue(material.detail().contains("503"), material.detail());
+                assertEquals(RevocationMaterial.Status.UNAVAILABLE, material.status(), material.detail());
+                assertTrue(material.detail().contains("503"), material.detail());
+                assertEquals(1, requests.get(),
+                        "the distribution point saw " + requests.get() + " request(s) for one "
+                                + "fetch. With Retry-After: 0 a retry loop comes straight back, "
+                                + "so anything above 1 is the loop this fetch must not be on");
+            } finally {
+                release.countDown();
+            }
         }
 
         @Test
