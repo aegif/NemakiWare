@@ -236,7 +236,43 @@ class TheExitCodeIsTheInterfaceTest {
         Object parsed = jp.aegif.nemaki.verifier.Json.parse(
                 Files.readString(SCHEMA, StandardCharsets.UTF_8));
         assertTrue(parsed instanceof Map, "the schema is not a JSON object");
-        return (Map<String, Object>) parsed;
+        Map<String, Object> root = (Map<String, Object>) parsed;
+        // The WHOLE tree is checked for keywords this validator does not implement, before any
+        // instance is validated. Checking only the nodes an instance happens to visit left an
+        // optional property with a `pattern` unchecked as long as no fixture emitted it — and
+        // the day the CLI did, a receiving party's validator would refuse what every lock
+        // here had passed (Codex review, P2).
+        preflight(root, "$");
+        return root;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void preflight(Map<String, Object> node, String at) {
+        for (Map.Entry<String, Object> keyword : node.entrySet()) {
+            String key = keyword.getKey();
+            if (!ANNOTATIONS.contains(key) && !IMPLEMENTED.contains(key)) {
+                throw new IllegalStateException("the schema uses the keyword '" + key + "' at "
+                        + at + ", which this validator does not implement");
+            }
+            if (key.equals("additionalProperties") && !(keyword.getValue() instanceof Boolean)) {
+                // A schema-valued additionalProperties would be read as "allowed" by the
+                // boolean check below, which is the one place this validator would report
+                // an unread constraint as no constraint (review, P3).
+                throw new IllegalStateException("additionalProperties at " + at + " is a "
+                        + "schema, which this validator does not implement");
+            }
+        }
+        Object props = node.get("properties");
+        if (props instanceof Map) {
+            for (Map.Entry<String, Object> p : ((Map<String, Object>) props).entrySet()) {
+                preflight((Map<String, Object>) p.getValue(), at + "." + p.getKey());
+            }
+        }
+        for (String sub : List.of("items", "if", "then", "else", "not")) {
+            if (node.get(sub) instanceof Map) {
+                preflight((Map<String, Object>) node.get(sub), at + "/" + sub);
+            }
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -434,8 +470,11 @@ class TheExitCodeIsTheInterfaceTest {
     @DisplayName("--json output conforms to the published schema for every profile and every refusal")
     void theJsonConformsToThePublishedSchema(@TempDir Path tmp) throws Exception {
         // Every profile the CLI knows (read from the CLI, not copied), each asked to echo the
-        // profile it was given; and one package per refusal the reader can raise, so every
-        // reason-code path the CLI has is exercised and its JSON shape judged. The first
+        // profile it was given; and one package per refusal the reader can raise. What this
+        // exercises is the CLI's own reason-code path (refusal.reasonCode()) plus the ledger
+        // profiles' LEGACY_PACKAGE_LAYOUT — five codes of the registry's seventeen. The other
+        // twelve need anchor material the good package does not carry; their SHAPE is held
+        // by the schema-driven validator and the registry, not by this fixture. The first
         // version ran one package against six profiles and called it twelve outputs — the
         // non-zip is refused BEFORE the profile branch, so that was one case six times, and
         // only NOT_A_ZIP and LEGACY_PACKAGE_LAYOUT ever appeared (both reviews, P2).
@@ -451,6 +490,15 @@ class TheExitCodeIsTheInterfaceTest {
         refusals.put(unsafe, "UNSAFE_PATH");
         refusals.put(duplicateEntries(tmp), "DUPLICATE_ENTRY");
         refusals.put(tooManyEntries(tmp), "RESOURCE_LIMIT");
+        // One fixture per refusal the reader can raise — tied to the enum, so a fifth refusal
+        // added there is a red run here, not a silently unexercised code (review, P3).
+        java.util.Set<String> everyRefusal = new java.util.TreeSet<>();
+        for (jp.aegif.nemaki.verifier.PackageReader.Refusal r
+                : jp.aegif.nemaki.verifier.PackageReader.Refusal.values()) {
+            everyRefusal.add(r.name());
+        }
+        assertEquals(everyRefusal, new java.util.TreeSet<>(refusals.values()),
+                "the reader can raise a refusal this test has no package for");
 
         List<String> allErrors = new ArrayList<>();
         java.util.SortedSet<String> codesSeen = new java.util.TreeSet<>();

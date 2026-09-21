@@ -10938,7 +10938,7 @@ CONTROLS = [
     ),
     dict(
         id='LV3',
-        what="the CLI drops reasonCode from the JSON — every UNAVAILABLE result then violates the schema's then-required, and only a validator that actually evaluates if/then catches it",
+        what="the CLI drops reasonCode from the JSON — the refusal fixtures then find no code where they expected one (and the schema's then-required is violated too; LX3 is the control that isolates the if/then arm)",
         module='evidence-verifier-cli',
         file='evidence-verifier-cli/src/main/java/jp/aegif/nemaki/verifier/cli/Verify.java',
         find='            if (check.reasonCode() != null) {\n                fields.put("reasonCode", check.reasonCode());\n            }',

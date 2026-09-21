@@ -123,10 +123,17 @@ class TheReasonCodeIsARegistryTest {
                 for (java.nio.file.Path file : walk.filter(p -> p.toString().endsWith(".java")).toList()) {
                     // Comments stripped first: the registry's own javadoc shows the call with
                     // "CODE" as a placeholder, and the scan read it as a literal (measured).
-                    String text = java.nio.file.Files.readString(file,
-                                    java.nio.charset.StandardCharsets.UTF_8)
-                            .replaceAll("(?m)//.*$", "")
-                            .replaceAll("(?s)/\\*.*?\\*/", "");
+                    // Comments removed WITHOUT reading inside string literals: a plain
+                    // replaceAll took the "/*" in "representations/*/data/" as a comment
+                    // opener and swallowed an unavailable(...) call up to the next "*/"
+                    // (review, P2). String literals are matched first and kept as they are.
+                    String text = java.util.regex.Pattern
+                            .compile("(\"(?:\\\\.|[^\"\\\\])*\")|(//[^\\n]*)|(/\\*.*?\\*/)",
+                                    java.util.regex.Pattern.DOTALL)
+                            .matcher(java.nio.file.Files.readString(file,
+                                    java.nio.charset.StandardCharsets.UTF_8))
+                            .replaceAll(m -> m.group(1) != null
+                                    ? java.util.regex.Matcher.quoteReplacement(m.group(1)) : "");
                     java.util.regex.Matcher m = call.matcher(text);
                     while (m.find()) {
                         literals.add(m.group(1));

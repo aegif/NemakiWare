@@ -51,8 +51,13 @@ import java.util.Map;
  * <p>1 is deliberately unused: a shell that runs this and treats "nonzero" as failure is right
  * either way, and leaving 1 free keeps it clear that every code here was chosen.
  *
- * <p><b>Default no-network.</b> Nothing here opens a socket. A check that would need one
- * reports {@code NO_BLOCK_HEADER_SOURCE / REVOCATION_NOT_CAPTURED} and composes to indeterminate.
+ * <p><b>No network, in any mode.</b> Nothing here opens a socket, and there is no flag that
+ * makes it: {@code --allow-network} is refused before a package is read (exit 4, nothing
+ * reported). The one check that would need a network — the OpenTimestamps attestation —
+ * reports {@code NO_BLOCK_HEADER_SOURCE} and composes to indeterminate. Revocation material is
+ * a different matter: it is never fetched at verification time BY DESIGN (a current answer is
+ * not the answer from issuance), so a package carrying none reports
+ * {@code REVOCATION_NOT_CAPTURED} with or without a network.
  */
 public final class Verify {
 
@@ -113,8 +118,12 @@ public final class Verify {
                 case "--allow-network" -> {
                     // Accepted and refused rather than silently ignored: a caller passing it
                     // expects something to happen, and nothing here opens a socket.
-                    err.println("--allow-network is not supported by this version; every check "
-                            + "it would enable reports NO_BLOCK_HEADER_SOURCE / REVOCATION_NOT_CAPTURED instead");
+                    err.println("--allow-network is not supported by this version: verification "
+                            + "is offline, the flag is refused before any package is read, and "
+                            + "nothing is reported. Without it, the one check that would need a "
+                            + "network (the OpenTimestamps attestation) reports "
+                            + "NO_BLOCK_HEADER_SOURCE; revocation material is never fetched at "
+                            + "verification time by design");
                     return EXIT_USAGE;
                 }
                 default -> {

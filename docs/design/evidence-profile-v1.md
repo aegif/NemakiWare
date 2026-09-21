@@ -428,8 +428,10 @@ current == merkleRoot なら PASS
   言えていない）。
 - **accreditation を示す文字列を事実として読まない。** token / 証明書に
   「認定」「適格」と書いてあっても、それは発行者の主張である。
-- 既定 no-network。OCSP を**その場で**取りに行ってよいのは `--allow-network` のときだけで、
-  そのとき得た材料は「発行時の材料」ではない。別の reason code で報告する。
+- **no-network で、この版に network モードは無い**（`--allow-network` は受け付けず、package を
+  開く前に exit 4。何も報告しない）。OCSP を**その場で**取りに行くことは**しない** — 取れたとしても
+  「発行時の材料」ではなく、失効は verify 時に取らない設計（§12）。socket が要る検査は OTS の
+  attestation だけで、`NO_BLOCK_HEADER_SOURCE` を報告する。
 
 ---
 

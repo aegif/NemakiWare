@@ -87,7 +87,7 @@ schema は受け取る側が**自分の**道具で検証するためのもの。
 
 - **集合一致の錠**（1.4）: schema の `reasonCode` enum ＝ 登録簿 `REASON_CODES`。**登録簿の錠**（core）: 未登録の理由と UNAVAILABLE 以外の理由は構築時に拒否、`PackageReader.Refusal` は全部登録済み
 - **出力適合の錠**: `Verify.KNOWN_PROFILES` の**全 profile × 正常 package**（要求した profile の echo も確認）＋ **refusal ごとに 1 package**（非 zip / `../` / 重複エントリ / エントリ過多）。**期待する reasonCode が出力に現れたこと**を assert する — 「分岐を通した」を測る（初版の「6 × 2 = 12 出力」は非 zip が profile 分岐の手前で終わるので 1 ケースの 6 回で、通った code は 2 / 17 だった）。判別の錠: UNAVAILABLE に理由無し／PASSED に理由有りを schema の `items` に通して拒否されること
-- **control**: LP3 schema から `limits` の `required` を外す／LQ3 schema にだけ code を足す／LR3 `asJson` が `limits` を落とす／LS3 登録簿から実在の code を落とす／LT3 PASSED+理由の guard を外す／LU3 登録簿にだけ code を足す／**LV3 `asJson` が `reasonCode` を落とす**（`if/then` が生きて初めて落ちる）／**LW3 未登録拒否の guard を外す**／**LX3 schema の `then` を空にする**
+- **control**: LP3 schema から `limits` の `required` を外す／LQ3 schema にだけ code を足す／LR3 `asJson` が `limits` を落とす／LS3 登録簿から実在の code を落とす／LT3 PASSED+理由の guard を外す／LU3 登録簿にだけ code を足す／**LV3 `asJson` が `reasonCode` を落とす**（refusal の fixture が期待 code を見失って落ちる。`if/then` の生存を単独で測るのは LX3）／**LW3 未登録拒否の guard を外す**／**LX3 schema の `then` を空にする**
 
 ---
 
