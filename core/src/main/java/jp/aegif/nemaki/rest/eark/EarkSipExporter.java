@@ -422,6 +422,11 @@ public class EarkSipExporter {
             // Profile v1's layout when there is a statement to anchor it to; the legacy single
             // file otherwise. NEVER both: the spec makes a package carrying both FAILED, because
             // a verifier would have to choose which one is the evidence.
+            // objectId is passed as BOTH the object and the version key, and that is not an
+            // alias: in this model a document's id denotes exactly one immutable version — the
+            // series is a separate field (Document.versionSeriesId). The assembler's javadoc
+            // says IT does not default the version key from the object id; the caller has to
+            // know the id it holds is a version's own id, and here it is (parallel review, P2).
             jp.aegif.nemaki.evidence.EvidenceBundle bundle = bundleAssembler == null ? null
                     : bundleAssembler.assemble(repositoryId, objectId, objectId);
             // Checked BEFORE anything is written. A package built and then judged would have to

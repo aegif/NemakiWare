@@ -4,6 +4,8 @@
 Phase 0 で決めよと書いていた 2 つを、Phase 3 の着手時に決める。
 棚卸しは [`evidence-phase0-inventory.md`](evidence-phase0-inventory.md)。
 
+**Supersedes** [`e1-content-state-commitment-adr.md`](e1-content-state-commitment-adr.md)（2026-09-19 の spike 期 ADR。決定は同じ案 B だが、digest の取り方（決定 2）はこちらで初めて決めた）。
+
 ---
 
 ## 決定 1 — 案 B（耐久 intent 行）を採る

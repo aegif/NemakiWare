@@ -199,20 +199,48 @@ class EverySupportedCouchDbIsMeasuredTest {
         // 704 + 106 does not equal 805, and cannot: two controls were added after the sweep and
         // then retired. So nothing here derives one figure from the others. What is checked is
         // that the enumeration covers exactly the controls declared from CK3 onward.
-        Matcher boundary = Pattern.compile("\\*\\*([A-Z]{2}3) 以降の (\\d+) 本\\*\\*").matcher(canon);
-        assertTrue(boundary.find(), "the canon does not name the unswept boundary");
-        String from = boundary.group(1);
+        // The set that has NEVER run together is "everything added after the last FULL sweep".
+        // Until the fifth sweep that was "CK3 onward"; the fifth ran all 938, so today it is
+        // empty and the boundary is the highest id that existed then (LM3). The canon names the
+        // boundary and the count; both are checked against the runner, and the count is also
+        // cross-checked against the sweep record itself (declared − swept), so an id added
+        // BELOW the boundary — invisible to the id filter — still shows up as a mismatch.
+        int sweptThen = 0;
+        Matcher sweeps = Pattern.compile("(\\d+) 回目 20\\d\\d-\\d\\d-\\d\\d[^（]*（(\\d+) 本").matcher(canon);
+        int latestRound = 0;
+        while (sweeps.find()) {
+            if (Integer.parseInt(sweeps.group(1)) >= latestRound) {
+                latestRound = Integer.parseInt(sweeps.group(1));
+                sweptThen = Integer.parseInt(sweeps.group(2));
+            }
+        }
+        assertTrue(latestRound > 0, "the canon records no completed sweep");
+        // EVERY statement of the boundary. It is written in §1 and in §5, and reading only the
+        // first let the second drift unread — the same one-arm defect as the counts.
+        Matcher boundary = Pattern.compile("境界 ([A-Z]{2}3)").matcher(canon);
+        String from = null;
+        int boundaries = 0;
+        while (boundary.find()) {
+            boundaries++;
+            if (from == null) {
+                from = boundary.group(1);
+            }
+            assertEquals(from, boundary.group(1), "the canon names the sweep boundary as " + from
+                    + " in one place and " + boundary.group(1) + " in another");
+        }
+        assertTrue(boundaries >= 2, "the canon used to name the sweep boundary in more than one "
+                + "place and now names it " + boundaries + " time(s)");
         java.util.SortedSet<String> unswept = new java.util.TreeSet<>();
         for (String id : seen) {
-            if (id.compareTo(from) >= 0 && id.matches("[A-Z]{2}3")) {
+            if (id.compareTo(from) > 0 && id.matches("[A-Z]{2}3")) {
                 unswept.add(id);
             }
         }
-        assertEquals(unswept.size(), Integer.parseInt(boundary.group(2)),
-                "the canon says " + boundary.group(2) + " controls are unswept from " + from
-                        + " onward and the runner declares " + unswept.size()
-                        + ". This ledger is the only record of which controls have never been "
-                        + "run together");
+        assertEquals(declared - sweptThen, unswept.size(),
+                "the runner declares " + declared + " controls, the last full sweep ran "
+                        + sweptThen + ", and " + unswept.size() + " ids sit above the boundary "
+                        + from + ". A control added with an id below the boundary would be "
+                        + "unswept and invisible to the boundary filter");
 
         // EVERY statement of both counts, in EVERY document that carries them. The counts live
         // in three files and this lock read one; the plan sat at "CK3 以降の 110 本" while the
@@ -223,17 +251,35 @@ class EverySupportedCouchDbIsMeasuredTest {
                 Path.of("../docs/design/v3.4.0-evidence-and-residuals-plan.md"));
         // Phrasings, by meaning. Each is a way one of these documents states one of the two
         // numbers; the minimum counts below catch a rephrase that escapes them all.
+        // TWO numbers, two families. "The total today" and "what the last sweep ran" were one
+        // family until the fifth sweep made them differ by design: the moment a control is
+        // added, the sweep count stays 938 and the total moves. One family would fail on the
+        // historical sentence; no family would let it go stale.
         List<String> totalForms = List.of("コントロール \\*\\*(\\d+)\\*\\*",
-                "負のコントロール \\*\\*(\\d+) 本\\*\\*", "今の総数は (\\d+) 本",
-                "その (\\d+) 本での通し", "RC 前に \\*\\*(\\d+) 本\\*\\*で測り直す",
-                "今の (\\d+) 本が通る", "(?m)^\\| 通し negative-control \\|[^|]*\\|[^|]*\\*\\*(\\d+) 本\\*\\*");
-        List<String> unsweptForms = List.of("CK3 以降の (\\d+) 本", "704 \\+ (\\d+) が総数");
+                "負のコントロール \\*\\*(\\d+) 本\\*\\*",
+                "(?m)^\\| 通し negative-control \\|[^|]*\\| (\\d+) 本 \\|");
+        List<String> sweptForms = List.of("通し negative-control は (\\d+) 本で完走した",
+                "(\\d+) 本すべて", "「(\\d+) 本が通った」", "\\*\\*(\\d+)/\\d+ 発火");
+        // Bold either way: the number alone (**1 本**) or the whole phrase (**…は 1 本**) —
+        // the documents use both, and a regex that accepted one silently dropped the other
+        // two sites out of reach (the guard below is what caught it).
+        List<String> unsweptForms = List.of("以後に足した control は \\*{0,2}(\\d+) 本");
 
         int totalsSeen = 0;
+        int sweptSeen = 0;
         int unsweptSeen = 0;
         for (Path carrier : carriers) {
             assertTrue(Files.exists(carrier), "this lock reads " + carrier + ", which is not there");
             String text = Files.readString(carrier, StandardCharsets.UTF_8);
+            for (String form : sweptForms) {
+                Matcher m = Pattern.compile(form).matcher(text);
+                while (m.find()) {
+                    sweptSeen++;
+                    assertEquals(sweptThen, Integer.parseInt(m.group(1)),
+                            carrier + " says the last sweep ran " + m.group(1) + " and the "
+                                    + "sweep record says " + sweptThen);
+                }
+            }
             for (String form : totalForms) {
                 Matcher m = Pattern.compile(form).matcher(text);
                 while (m.find()) {
@@ -255,91 +301,53 @@ class EverySupportedCouchDbIsMeasuredTest {
                 }
             }
         }
-        assertTrue(totalsSeen >= 6, "the three documents used to state the control total at "
-                + "least six times between them and now state it " + totalsSeen + " time(s). "
+        assertTrue(totalsSeen >= 3, "the three documents used to state the control total at "
+                + "least three times between them and now state it " + totalsSeen + " time(s). "
                 + "Either a statement went away or its wording drifted out of this check's "
                 + "reach, which is exactly how the plan's copy went stale");
-        assertTrue(unsweptSeen >= 5, "the three documents used to state the never-swept count "
-                + "at least five times between them and now state it " + unsweptSeen
+        assertTrue(sweptSeen >= 5, "the three documents used to state what the last sweep ran "
+                + "at least five times and now state it " + sweptSeen + " time(s)");
+        assertTrue(unsweptSeen >= 4, "the three documents used to state the added-since-sweep "
+                + "count at least four times between them and now state it " + unsweptSeen
                 + " time(s), so a statement has drifted out of reach");
 
-        // EVERY statement of the count, not just the bold one. The same fact is written three
-        // times in this document, and only the bold occurrence was read — so while the set grew
-        // 110 → 209 → 211 the other two sat at 110, and the document contradicted itself in the
-        // very paragraph whose subject is that uncounted numbers go stale. One arm of a claim
-        // locked leaves the other arms free; this reads all of them.
-        Matcher anyStatement = Pattern.compile("\\*{0,2}" + from + " 以降の (\\d+) 本").matcher(canon);
-        int statements = 0;
-        while (anyStatement.find()) {
-            statements++;
-            assertEquals(unswept.size(), Integer.parseInt(anyStatement.group(1)),
-                    "the canon states the unswept count as " + anyStatement.group(1)
-                            + " in one place and the runner declares " + unswept.size()
-                            + ". A reader takes whichever sentence they reach first");
-        }
-        assertTrue(statements >= 2,
-                "the canon used to state the unswept count in more than one place and now "
-                        + "states it " + statements + " time(s). Either a statement was deleted "
-                        + "or its wording drifted out of this check's reach — which is how the "
-                        + "other two went stale");
-
-        // The arithmetic-does-not-work parenthetical carries the number too, and it is the one
-        // sentence whose job is to stop anyone deriving the figure. Wrong there, it teaches the
-        // reader a sum that does happen to work.
-        Matcher sum = Pattern.compile("704 \\+ (\\d+) が総数に合わない").matcher(canon);
-        assertTrue(sum.find(), "the canon no longer explains why the sweep total and the "
-                + "unswept count do not add up, so the next reader derives one from the other");
-        assertEquals(unswept.size(), Integer.parseInt(sum.group(1)),
-                "the 'these do not add up' sentence uses " + sum.group(1) + " while the runner "
-                        + "declares " + unswept.size() + " unswept. The one sentence that tells "
-                        + "the reader not to do arithmetic has to have the real numbers in it");
-
-        // And the enumeration beside it names them all — ranges expanded. An arithmetic check
-        // alone let the list fall one short while the numbers agreed with each other.
-        // Scoped to the LEDGER PARAGRAPH. Scanning the whole canon found these ids in the
-        // residual rows as well, so deleting a whole range from the list changed nothing
-        // (measured: GG3 did not fire until this was scoped) — the same file-wide-grep defect
-        // this batch has now hit three times.
-        // Scoped to the ENUMERATION — the parenthetical that lists the ids — and not to the
-        // whole §5 bullet. The wider scope let six ids be satisfied by prose elsewhere in the
-        // same bullet ("CZ3 / DE3 / DH3 は実際に巻き込みがあり…"), so deleting one from the list
-        // changed nothing (subagent review, P2). Third time this batch has had to narrow a
-        // grep from "the file" to "the thing".
-        int listStart = canon.indexOf("（CK3 / CL3");
-        assertTrue(listStart >= 0, "the ledger's enumeration does not start where this looks");
-        int listEnd = canon.indexOf("）は", listStart);
-        assertTrue(listEnd > listStart, "the ledger's enumeration does not end where this looks");
-        String ledger = canon.substring(listStart, listEnd);
-
-        java.util.Set<String> named = new java.util.LinkedHashSet<>();
-        Matcher single = Pattern.compile("\\b([A-Z]{2}3)\\b").matcher(ledger);
-        while (single.find()) {
-            named.add(single.group(1));
-        }
-        Matcher range = Pattern.compile("([A-Z]{2}3)〜([A-Z]{2}3)").matcher(ledger);
-        while (range.find()) {
-            for (String id : unswept) {
-                if (id.compareTo(range.group(1)) >= 0 && id.compareTo(range.group(2)) <= 0) {
-                    named.add(id);
+        // The enumeration is required only while something is unswept. With the set empty a
+        // demanded list would have to be invented, and an invented list is what the ledger
+        // exists to prevent. When it is non-empty it must name exactly the set — both
+        // directions, ranges expanded, retired ids the one thing allowed in the list and not
+        // in the runner.
+        if (!unswept.isEmpty()) {
+            int listStart = canon.indexOf("（" + unswept.first());
+            assertTrue(listStart >= 0, "controls were added after the last full sweep and the "
+                    + "canon does not enumerate them starting at " + unswept.first()
+                    + ". Unlisted, they read as already swept: " + unswept);
+            int listEnd = canon.indexOf("）は", listStart);
+            assertTrue(listEnd > listStart, "the ledger's enumeration does not end where this looks");
+            String ledger = canon.substring(listStart, listEnd);
+            java.util.Set<String> named = new java.util.LinkedHashSet<>();
+            Matcher single = Pattern.compile("\\b([A-Z]{2}3)\\b").matcher(ledger);
+            while (single.find()) {
+                named.add(single.group(1));
+            }
+            Matcher range = Pattern.compile("([A-Z]{2}3)〜([A-Z]{2}3)").matcher(ledger);
+            while (range.find()) {
+                for (String id : unswept) {
+                    if (id.compareTo(range.group(1)) >= 0 && id.compareTo(range.group(2)) <= 0) {
+                        named.add(id);
+                    }
                 }
             }
+            java.util.SortedSet<String> namedButAbsent = new java.util.TreeSet<>(named);
+            namedButAbsent.removeAll(seen);
+            namedButAbsent.removeAll(java.util.Set.of("DG3", "DJ3"));
+            assertTrue(namedButAbsent.isEmpty(),
+                    "the ledger names a control the runner does not declare: " + namedButAbsent);
+            java.util.SortedSet<String> unnamed = new java.util.TreeSet<>(unswept);
+            unnamed.removeAll(named);
+            assertTrue(unnamed.isEmpty(),
+                    "a control is unswept and is not named in the canon's list, so the next full "
+                            + "sweep would treat it as already covered: " + unnamed);
         }
-        // Both directions. Only unswept-minus-named was checked, so an id that does not exist,
-        // or a range wider than the runner has, could be added to the ledger and the word
-        // "exactly" would still read as measured (Codex review, P2). Retired ids are named on
-        // purpose and are the one thing allowed to be in the list and not in the set.
-        java.util.SortedSet<String> namedButAbsent = new java.util.TreeSet<>(named);
-        namedButAbsent.removeAll(seen);
-        namedButAbsent.removeAll(java.util.Set.of("DG3", "DJ3"));
-        assertTrue(namedButAbsent.isEmpty(),
-                "the ledger names a control the runner does not declare, so the next sweep is "
-                        + "planned against a set that does not exist: " + namedButAbsent);
-
-        java.util.SortedSet<String> unnamed = new java.util.TreeSet<>(unswept);
-        unnamed.removeAll(named);
-        assertTrue(unnamed.isEmpty(),
-                "a control is unswept and is not named in the canon's list, so the next full "
-                        + "sweep would treat it as already covered: " + unnamed);
 
     }
 

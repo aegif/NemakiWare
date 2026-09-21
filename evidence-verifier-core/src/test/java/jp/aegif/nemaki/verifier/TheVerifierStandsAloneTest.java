@@ -55,7 +55,11 @@ class TheVerifierStandsAloneTest {
      * library a receiving party has to trust.
      */
     private static final List<String> FORBIDDEN = List.of(
-            "jp.aegif.nemaki.core", "org.springframework", "com.ibm.cloud",
+            // The whole product root. The first version named "jp.aegif.nemaki.core", a
+            // package that does not exist, so the product ban matched nothing while the pom
+            // check carried the rule alone (parallel review, P2). The module's own package is
+            // exempted below, not here.
+            "jp.aegif.nemaki.", "org.springframework", "com.ibm.cloud",
             "org.apache.chemistry", "jakarta.servlet", "tools.jackson",
             "com.fasterxml.jackson", "org.roda_project");
 
@@ -90,6 +94,9 @@ class TheVerifierStandsAloneTest {
                         .matcher(text);
                 while (imports.find()) {
                     String imported = imports.group(2).trim();
+                    if (imported.startsWith("jp.aegif.nemaki.verifier")) {
+                        continue; // this module importing itself is the one product-root import allowed
+                    }
                     for (String forbidden : FORBIDDEN) {
                         if (imported.startsWith(forbidden)) {
                             offences.add(file + " imports " + imported);

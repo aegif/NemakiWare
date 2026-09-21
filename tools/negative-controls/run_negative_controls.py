@@ -9621,8 +9621,10 @@ CONTROLS = [
         file='docs/design/fail-closed-reads.md',
         # Same reason as FZ3: the span brackets the number so the anchor survives the next
         # batch that adds a control.
-        find_span=('**CK3 以降の ', ' 本**'),
-        replace='**CK3 以降の 101 本**',
+        # Re-pointed after the fifth sweep: the boundary in §1 (KQ3 takes the one in §5 — two
+        # sites, one control each, so a lock reading only the first would be caught).
+        find='（境界 LM3 — 5 回目時点の最大 ID。',
+        replace='（境界 LA3 — 5 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -9835,11 +9837,10 @@ CONTROLS = [
     ),
     dict(
         id='GY3',
-        what="the readiness document stops marking the sweep outstanding, so a finished sweep of 704 controls reads as a measurement of today's 821",
+        what="the readiness document stops saying the control added since the fifth sweep is unswept, so a finished sweep of 938 reads as a measurement of today's tree",
         file='docs/design/v3.4-release-readiness.md',
-        # The WORD, not the row: the row carries the control count, which changes.
-        find='| **期限切れ**（下記） |',
-        replace='| 済 |',
+        find='**その 2 本は通し未実施**',
+        replace='**その 2 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10783,8 +10784,9 @@ CONTROLS = [
         id='KP3',
         what='a second statement of the unswept count drifts from the locked one, so the document contradicts itself about how many controls have never been run together',
         file='docs/design/fail-closed-reads.md',
-        find_span=('（CK3 以降の ', ' 本は ID 指定でしか測っていない）'),
-        replace='（CK3 以降の 110 本は ID 指定でしか測っていない）',
+        # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
+        find='  **5 回目以後に足した control は 2 本**（境界 LM3 — 5 回目時点の最大 ID。',
+        replace='  **5 回目以後に足した control は 0 本**（境界 LM3 — 5 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -10792,8 +10794,10 @@ CONTROLS = [
         id='KQ3',
         what="the 'these do not add up' sentence keeps a number that does add up, teaching the next reader to derive the unswept count by subtraction",
         file='docs/design/fail-closed-reads.md',
-        find_span=('（704 + ', ' が総数に合わないのは'),
-        replace='（704 + 1 が総数に合わないのは',
+        # Re-pointed: the boundary id moves below LM3, so ids above it exist while the sweep
+        # record says nothing was added — the cross-check (declared − swept ≠ ids above) fires.
+        find='**5 回目以後に足した control は 2 本**（境界 LM3）: ',
+        replace='**5 回目以後に足した control は 2 本**（境界 LA3）: ',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -10843,6 +10847,24 @@ CONTROLS = [
         replace='                "The capture boundary is tamper-proof. The capture boundary is not wired in this deployment, so no custody rows "',
         test='NoForbiddenClaimShipsTest',
         expect_fail=['noForbiddenClaimShipsInEnglish'],
+    ),
+    dict(
+        id='LN3',
+        what="the canon stops saying the control added since the fifth sweep is unswept — the canon-side twin of GY3 — and, being itself the first control after the sweep, the one that forces the ledger back from 0 to 1",
+        file='docs/design/fail-closed-reads.md',
+        find='**その 2 本は通し未実施**',
+        replace='**その 2 本も通し済み**',
+        test='ReleaseReadinessIsMeasuredTest',
+        expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
+    ),
+    dict(
+        id='LO3',
+        what="the readiness document's §4 stops saying the added controls are unswept while §1.4 still does — the second exit, which a once-per-file check let through (GY3 did not fire)",
+        file='docs/design/v3.4-release-readiness.md',
+        find='5 回目以後に足した control は **2 本**（通し未実施）。',
+        replace='5 回目以後に足した control は **2 本**（通し済み）。',
+        test='ReleaseReadinessIsMeasuredTest',
+        expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
     dict(
         id='LI3',
@@ -10958,8 +10980,8 @@ CONTROLS = [
         id='LB3',
         what='the PLAN\'s copy of the never-swept count drifts, so whoever scopes the overdue full sweep from the plan runs half the set',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find_span=('**CK3 以降の ', ' 本は一度も通しに入っていない**'),
-        replace='**CK3 以降の 110 本は一度も通しに入っていない**',
+        find='5 回目以後に足した control は **2 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        replace='5 回目以後に足した control は **0 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),

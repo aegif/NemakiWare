@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -629,25 +630,34 @@ class ReleaseReadinessIsMeasuredTest {
                         + "do not exist — one of the two figures is wrong");
 
         boolean outstanding = sweptThen < declared;
-        boolean canonSaysOutstanding = canon.contains("通しは未実施");
-        boolean readinessSaysOutstanding = readiness.contains("期限切れ");
-
-        if (outstanding) {
-            assertTrue(canonSaysOutstanding,
-                    "the last completed sweep ran " + sweptThen + " of today's " + declared
-                            + " controls and the canon does not say the sweep is outstanding. "
-                            + "'704 本で完走した' then reads as a statement about this tree");
-            assertTrue(readinessSaysOutstanding,
-                    "the last completed sweep ran " + sweptThen + " of today's " + declared
-                            + " controls and the readiness document does not mark the sweep "
-                            + "outstanding");
-        } else {
-            assertFalse(canonSaysOutstanding,
-                    "the last sweep covered every declared control and the canon still says the "
-                            + "sweep is outstanding");
-            assertFalse(readinessSaysOutstanding,
-                    "the last sweep covered every declared control and the readiness document "
-                            + "still marks it outstanding");
+        // One phrase for both documents: 「通し未実施」. And required AT EVERY SITE that states
+        // the added-since-sweep count, on the same line — not once per file. The readiness
+        // document states the count in §1.4 and in §4; a single contains() was satisfied by §4
+        // after GY3 deleted the phrase from §1.4, so the control did not fire (measured).
+        Pattern site = Pattern.compile("(?m)^.*以後に足した control は \\*{0,2}\\d+ 本.*$");
+        for (var doc : List.of(Map.entry("canon", canon), Map.entry("readiness", readiness))) {
+            Matcher m = site.matcher(doc.getValue());
+            int sites = 0;
+            while (m.find()) {
+                sites++;
+                boolean saysOutstanding = m.group().contains("通し未実施");
+                if (outstanding) {
+                    assertTrue(saysOutstanding,
+                            "the last completed sweep ran " + sweptThen + " of today's "
+                                    + declared + " controls, and the " + doc.getKey()
+                                    + " states the added-since-sweep count without saying those "
+                                    + "controls are unswept: 「" + m.group().trim() + "」. A "
+                                    + "finished sweep of fewer controls then reads as a "
+                                    + "measurement of today's tree");
+                } else {
+                    assertFalse(saysOutstanding,
+                            "the last sweep covered every declared control and the "
+                                    + doc.getKey() + " still marks the sweep outstanding: 「"
+                                    + m.group().trim() + "」");
+                }
+            }
+            assertTrue(sites >= 1, "the " + doc.getKey() + " no longer states the "
+                    + "added-since-sweep count anywhere, so nothing here can be checked");
         }
     }
 }

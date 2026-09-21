@@ -13,11 +13,11 @@ custody の正典は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md)。
   復元する、ジョブ行の `upsertDocument` が原子的、DLQ の保存**全体**が原子的。
   DLQ の個々の書き込みは読んだ `_rev` への compare-and-swap（R1、バッチ 3）だが、
   メタデータ書き込み → 添付 PUT → 確定書き込みの 3 段を 1 つにはしない。
-- **通し negative-control は 704 本で完走した**（2026-09-19、exit 0。§5）。言えるのはそこまでで、
+- **通し negative-control は 938 本で完走した**（5 回目、2026-09-21〜22、exit 0。§5）。言えるのはそこまでで、
   コントロール×兄弟錠 2,403 組（R15）をはじめ §5 の測定の穴は測っていない。
-  **今の総数は 938 本で、その 938 本での通しは未実施**（CK3 以降の 235 本は ID 指定でしか測っていない）。
-  計画 §16 は「Phase 1 の製品コミットのあと 1 回」と定めており、**Phase 1 は完了したので
-  この 1 回は期限が来ている**。「704 本が通った」を「今の木が通る」と読まないこと。
+  **5 回目以後に足した control は 2 本**（境界 LM3 — 5 回目時点の最大 ID。§5 に列挙。**その 2 本は通し未実施**）。
+  計画 §16 の「Phase 1 の製品コミットのあと 1 回」は**この 5 回目で満たした**。
+  「938 本が通った」を「次に足した control も通る」と読まないこと。
 
 ## 2. 凍結（CAS のためだけに限定解除、2026-09-15 バッチ 3）
 
@@ -114,7 +114,7 @@ attachment 行を作る → body を PUT」の順で（`ArchiveDaoDelegate` の 
 大きさだけかかる**ので、大きな文書ほど開く。**割り込みが入ったときは読み直さず、その旨を
 述べる別の文面で拒否する**（「2 回訊いた」と「訊けなかった」を混ぜない）。根治は復元の順序を変えること（body が入ってから文書を公開する）で、復元の意味に関わる（確認レビュー 2 巡目の P1 を、過剰拒否側の処置と残件に分けたもの） | 復元の順序を変えるとき | |
 | R57 | **cold へ MOVE した文書を復元すると、body の無い attachment 行が恒久的に残る。** MOVE は archive 行の `content` 添付だけを消して行を残すので、復元の事前検査は「在る」と答え、`restoreAttachment` は body の PUT に失敗しても `archiveHasBinary == false` のため**例外を投げずに正常終了**する。以後その文書の checkOut / checkIn / copy は**永久に** R54 の拒否になり、文面は「復元中なら少し待って再実行」と言う — 復元は進行中ではなく、**失敗せずに終わっている**。製品に cold から読み戻す経路は無い（`adapter.get` の呼び出しは 0 件、ダウンロードは 410 Gone）。根治は復元側で「binary が無いまま終わったこと」を答えることで、W11 / W12 の意味に関わる（5 巡目の確認レビュー P2） | 復元が「内容なしで終わった」と答えるようになるとき | |
-| R58 | **SIP 検証器の残りの精度**（11 巡目のレビューが記録した 4 件・いずれも `UNAVAILABLE` / `NOT_PRESENT` の**文面**の問題で、判定そのものは fail-closed）: (a) `inclusionProofFailed` が非文字列のときの腕、`not-chained` の既定文、message 無しの `unavailable` 腕 — **到達はするが fixture が無い**。(b) `{"inclusionProof": "n/a", "status":"success"}` が「proof が無い」の文に落ち、`noProofCheck` の「inclusionProof is not an object」に到達しない。(c) 読めない `status` について「この版が知らない理由」と述べる（注記が別文で救っている）。**この検証器は本番の呼び出し元を持たず、Phase 5 で独立 CLI として作り直す対象**なので、そこで正典ごと書き直す | Phase 5（独立 verifier） | |
+| R58 | **SIP 検証器の残りの精度**（11 巡目のレビューが記録した 4 件・いずれも `UNAVAILABLE` / `NOT_PRESENT` の**文面**の問題で、判定そのものは fail-closed）: (a) `inclusionProofFailed` が非文字列のときの腕、`not-chained` の既定文、message 無しの `unavailable` 腕 — **到達はするが fixture が無い**。(b) `{"inclusionProof": "n/a", "status":"success"}` が「proof が無い」の文に落ち、`noProofCheck` の「inclusionProof is not an object」に到達しない。(c) 読めない `status` について「この版が知らない理由」と述べる（注記が別文で救っている）。**所属の訂正（2026-09-22）**: Phase 5 は**独立 CLI として別物で着地**し、この検証器は書き直されて**いない**。`verify` の本番呼び出しは 0 だが、**`EvidenceProfileV1VectorsTest` が「3 実装が同じベクタを読む」の製品側実装としてこれを使っている**ので、消せば Phase 5 の主張が崩れる。したがって 4 件の文面は今もこの検証器に残っており、処置は (i) 文面だけ直す、(ii) ベクタ試験の製品側実装を `evidence-verifier-core` に寄せて本体を消す、のどちらか — **製品判断なのでここでは記録のみ** | (i) か (ii) を決めるとき | |
 | R59 | **順序の保証が無い listing で last-edited の high-water を上げること自体は直していない。** Notion の `/search` に sort を渡していないので返る順は未規定で、limit や 50 ページ上限で切れたlisting の max(見た last_edited) を checkpoint にすると、**見ていないページのうち last_edited がそれより小さいものは以後の poll で恒久的に除外される**。A-8 で直したのは「切れたことを黙っていた」側で（`incompleteReads` / PARTIAL）、切り詰め自体は残る。閉じ方は `sort: {direction: ascending, timestamp: last_edited_time}` を足して listing を編集時刻の prefix にし、境界の同時刻グループを次回に回すこと — **実機の Notion が無いと検証できないので、このセッションでは足していない**（検証できない API パラメータを入れると、落ちたときに connector ごと止まる）。**checkpoint を上げない**という選択は採らなかった: 既定 limit は 50 なので、50 ページを超えるworkspace で前進しなくなる（過剰拒否）。**同じ形は他の connector にもある** — `incompleteReads` の経路は用意したが、埋めているのは Notion だけ | 実機 Notion で sort を確認できるとき、および connector ごとに | |
 | R60 | **A-8 の拒否が届く範囲**（subagent P3、方向は正しいので記録のみ）: `/search` と `blocks/{id}/children` の**間に削除・共有解除されたページ**は Notion が 404 を返し、新しい拒否がそれも巻き込む → エラー + 二度と replay で成功しない DLQ 行。また全ページ 429 の poll は `imported()==0 && hasErrors()` になり circuit breaker が進む（修正前は「添付なしで取り込み」＝ breaker reset だった）。**空ページ・空 `results` は巻き込んでいない**（両方向とも錠と control FG3 で測れている）。閉じ方は 404 を「このページはもう無い」という**答え**として分けること — Notion の 404 は「無い」と「見えない」を区別しないので、区別できない以上どちらに倒すかは設計判断 | 404 の意味を決めるとき | |
 | R61 | **凍結（ユーザー指示 2026-09-20）— 開かない。** **`has_more` の欠落・不正型を `false`（= 後続なし）として読む。** `root.path("has_more").asBoolean(false)` は、field が無い応答を黙って「もう無い」にする (`NotionConnectorAdapter` の search と block listing の両方)。同じメソッドの直前で **`results` の欠落は malformed として拒否している**ので非対称で、javadoc の 「`complete` is true only where Notion has ANSWERED」はコードより強い。塞ぎ方は `results` の腕と同じ（`root.has("has_more")` が偽なら refuse）。**直していない理由**: 計画 §13 の「同じ領域の 2 度目の P1 は残件に戻して止まる」— listing の完了判定は 1 巡目で既に P1 を 2 件出しており、これがその領域の 3 件目。旧コードも同じ `asBoolean(false)` だったので、このバッチが作った欠陥ではない （Codex 2 巡目 P1 / subagent 2 巡目 P2-1、指摘は独立に一致） | listing の領域を開けるとき | |
@@ -127,16 +127,19 @@ attachment 行を作る → body を PUT」の順で（`ArchiveDaoDelegate` の 
 
 ## 5. 測定
 
-- コントロール **938**（2026-09-21 時点）。**4 回目の通しが流したのは 704 本**（当時の総数）。
-  以後に足した **CK3 以降の 235 本**は一度も通しに入れていない。
-  （704 + 235 が総数に合わないのは、DG3 / DJ3 を足した後に退役させたため。
+- コントロール **940**（2026-09-22 時点）。**5 回目の通し（2026-09-21〜22、8 時間 52 分、exit 0）が
+  938 本すべてを流した。巻き添え 0、宣言漏れ 0、不発 0。**
+  **5 回目以後に足した control は 2 本**（境界 LM3）: （LN3 / LO3 通しの記録の錠 — 正典側と準備文書 §4 側）は ID 指定でしか測っていない（通し未実施）。
+  4 回目（704 本）までに入っていなかった 235 本は以下で、**5 回目で初めて一緒に走った**
+  （~~704 + 235 が総数に合わないのは、DG3 / DJ3 を足した後に退役させたため。~~ — 5 回目で全数が入ったので、この差はもう存在しない。
   SIP 検証器の読みを手組みからパーサに替えたので、細工の対象そのものが無くなった。
   **合わない差を計算で埋めない** — 錠が突き合わせるのは「CK3 以降の集合」であって、導出した数ではない）（CK3 / CL3 BagIt、CM3 stamp、CN3 / CO3 強制変換ログ、CP3 setup URL、CQ3 指紋、
   CR3 / CS3 / CT3 SIP の verdict、CU3〜CX3 内容複製、CY3 / CZ3 / DA3 / DC3〜DF3 / DL3〜DP3
   証拠 JSON の読み、DR3〜EF3 package 自身が述べた理由・重複キー・BOM・未知の理由・規則の一本化、
   DB3 / DH3 / DI3 / DK3 / DQ3 中身の無い添付行・復元の窓・割り込み、EG3〜EI3 mapper の一本化、EJ3〜EL3 purge の走査上限、EM3 一覧の overload、EN3〜EP3 パス解決の期待値表、EQ3〜ES3 二重保護の各錨、ET3 / EU3 装飾の scope 付き列挙、EV3〜EZ3 版ごとの実測とその fail-closed、FA3〜FG3 Notion の読み切れなかった listing、FH3〜FR3 確認レビュー 1 巡目の処置、FS3〜FX3 2 巡目の処置、FY3 / FZ3 / GA3 3 巡目の処置、GB3 / GC3 4 巡目の処置、GD3〜GF3 5・6 巡目の処置、GG3〜GJ3 7 巡目、GK3 Phase 2 の配置、GL3〜GO3 8 巡目、GP3〜GR3 Phase 2 の profile 仕様、GS3〜GZ3 進捗文書の数・凍結・G0・通しの期限、HA3〜HH3 Phase 2 の正準形・chain・合成、HI3〜HM3 Phase 3 の耐久 gap と列挙範囲、HN3 / HO3 journal store、HP3〜HS3 書き込み経路の digest と配線、HT3 / HU3 その場書き換えの記録、HV3〜HX3 observe と未解決一覧、HY3 停滞した読み、HZ3〜IE3 Phase 4 の束と書き出し、IF3〜IH3 statement の保存、II3 / IJ3 束の組み立て、IK3 / IL3 package への配線、IM3〜IO3 assurance、IP3 PREMIS の曖昧さ、IQ3〜IS3 独立 verifier、IT3〜IY3 P0 の検査、IZ3〜JD3 P1 の再計算、JE3〜JH3 CLI の exit code、JI3〜JN3 P2 の chain、JO3〜JU3 P3 の trust、JV3〜JZ3 P4 / P5、KA3〜KC3 発行時の失効材料、KD3 / KE3 禁じ手 lint、KF3 制度文書の責任分界、KG3 / KH3 段の列挙、KI3 / KJ3 両方の描画、KK3〜KM3 失効材料の運搬、KN3 / KO3 renewal の境界、KP3 / KQ3 数え落ちた兄弟の数字、KR3 / KS3 運用文書の新しい行、KT3 / KU3 片付いた残件の居座り、KV3 / KW3 Phase の現在地、KX3〜LD3 レビュー 6 巡目の処置、LE3〜LH3 制度要件表、LI3〜LM3 通し前の最終チェック）は
-  **ID 指定で 1 本ずつ実測しただけ**で、通しに入れたことはない。次の通しで初めて
-  「他の錠を巻き添えにしないか」が測られる（CZ3 / DE3 / DH3 は実際に巻き込みがあり、宣言を足した）。
+  5 回目まで **ID 指定で 1 本ずつ実測しただけ**だった。5 回目で「他の錠を巻き添えにしないか」が
+  初めて測られ、**0 件**だった（4 回目までは毎回出ていた — CZ3 / DE3 / DH3 は実際に巻き込みがあり、宣言を足した。
+  5 回目の前に 2 巡のレビューで宣言漏れ 13 + 1 本と不発火 5 本を潰したのが、そのまま効いた）。
   **3 本が「発火しない」ことも分かった** — 新しい arm（空の path は `UNAVAILABLE`）が
   細工の結果を覆い隠していたため、錠の fixture を作り直した。
   **錠を足した直後に control を回すだけでは足りず、arm が増えたら既存の control も回す。**
@@ -214,6 +217,7 @@ attachment 行を作る → body を PUT」の順で（`ArchiveDaoDelegate` の 
   以後、通しは毎バッチでは走らせない。事前検査は exit code と `== summary` の
   存在で確認（出力が無いことを clean と読むな）。**runner は錠が自分の assertion で落ちたときだけ
   発火と認める** — 例外が素通りする欠陥の錠は `assertDoesNotThrow` で包む。
+  **5 回目 2026-09-21〜22（938 本、8 時間 52 分、exit 0）: 938 発火、不発 0、宣言漏れ 0、巻き添え 0。HEAD `0bbcbd25a`（復旧の `SystemExit` 化・LM3・設計 3 本を含む木）。4 回目までに入っていなかった CK3 以降 235 本を含む全数。**過去 4 回とも出ていた巻き添えが初めて 0** —通しの前に 2 巡（Codex・サブエージェント）で宣言漏れと不発火を潰した分。`--compile-check` を CK3 以降の .java 187 本に事前に流した（HM3 がそこで 1 度落ちた）。**
 - 全ユニット 7,002 本 green（バッチ 4 適用時点。Phase C 適用時点は 6,978、`bfc5629db` 時点は 6,927。
   `!MultiThreadTest,!InheritedFlagTest,!*IT,!jp.aegif.nemaki.cmis.tck.**,!AtlasManualDataLoader` を除外）。
 - 製品差分の目安は 1 バッチ 100 行/ID。Phase C は 9 ID で +420/−71。
