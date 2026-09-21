@@ -48,14 +48,46 @@ public record EvidenceBundle(
         String repositoryId,
         String objectId,
         String versionObjectId,
-        RecordContentStatementV1 statement,
+        RecordStatement statement,
         EvidenceLedgerEntry entry,
         InclusionProof inclusionProof,
         EvidenceCheckpoint coveringCheckpoint,
         List<EvidenceCheckpoint> checkpointChain,
         EvidenceCheckpoint anchorTargetCheckpoint,
         Map<AnchorKind, AnchorPart> anchors,
-        String createdAt) {
+        String createdAt,
+        Prior prior) {
+
+    /** A bundle with no prior — every state statement, and a transition that cites none. */
+    public EvidenceBundle(String repositoryId, String objectId, String versionObjectId,
+            RecordStatement statement, EvidenceLedgerEntry entry, InclusionProof inclusionProof,
+            EvidenceCheckpoint coveringCheckpoint, List<EvidenceCheckpoint> checkpointChain,
+            EvidenceCheckpoint anchorTargetCheckpoint, Map<AnchorKind, AnchorPart> anchors,
+            String createdAt) {
+        this(repositoryId, objectId, versionObjectId, statement, entry, inclusionProof,
+                coveringCheckpoint, checkpointChain, anchorTargetCheckpoint, anchors, createdAt,
+                null);
+    }
+
+    /**
+     * The statement a transition copied its prior digest from, with the entry that commits to
+     * it — shipped under {@code prior/} so a verifier can check the copy against its source
+     * (spec §4.2, §10). Null when the transition cites no prior, or when the cited pair could
+     * not be read; the verifier then answers UNAVAILABLE with a reason, not PASSED.
+     */
+    public record Prior(RecordStatement statement, EvidenceLedgerEntry entry) {
+        public Prior {
+            if (statement == null || entry == null) {
+                throw new IllegalArgumentException("a prior is the statement AND the entry that "
+                        + "commits to it; half of the pair cannot be checked against the other");
+            }
+        }
+    }
+
+    /** Whether the statement says what happened to the bytes rather than what they are. */
+    public boolean statementIsTransition() {
+        return statement instanceof RecordContentTransitionV1;
+    }
 
     /**
      * An audit path, or the reason there is none.
@@ -161,6 +193,14 @@ public record EvidenceBundle(
     public String highestProfileSupported() {
         if (statement == null || entry == null || !inclusionProofPresent()
                 || coveringCheckpoint == null) {
+            return "PACKAGE_INTEGRITY_V1";
+        }
+        // A transition claims no bytes, so P1's content binding is NOT_PRESENT for it by
+        // definition and no profile above P0 can reach VERIFIED (spec §10). The package still
+        // carries the transition — the ledger checks run and a reader learns what happened to
+        // the bytes — but an export that REQUIRES P1 or above is refused rather than handed a
+        // package that cannot meet the bar.
+        if (statementIsTransition()) {
             return "PACKAGE_INTEGRITY_V1";
         }
         if (anchorTargetCheckpoint == null || checkpointChain.isEmpty()

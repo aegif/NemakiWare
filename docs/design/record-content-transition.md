@@ -6,8 +6,17 @@
 **2026-09-22 に台帳側を実装した（sub-batch 1）。** `SubjectKind.RECORD_CONTENT_TRANSITION`、`RecordContentTransitionV1`、
 `CommitmentKind.RESTORED`、`RecordContentStateRecorder.recordTransition / priorFor / abandon`、journal の
 `latestRecorded / abandon`、6 経路の配線（W10 / W11 / W12 / W13 / W14 / `deleteContentStream`）、E1 の錠 15 本、
-crash test。**package 側（exporter が遷移文と prior を出す、verifier P1 の `content binding` / `transition continuity`、
-仕様 §10 / §4.2、schema の `TRANSITION_PRIOR_NOT_IN_PACKAGE`）は sub-batch 2 で、それまで残件 R67。**
+crash test。**package 側も 2026-09-22 に実装した（sub-batch 2、R67 を閉じた）**: `EvidenceBundle.statement` は `RecordStatement`、
+assembler は journal の文書を形で型に読み戻し（entry の kind と一致しない対は entry 無しで出す）、遷移文が引く prior を
+`journal.recordedAt(sequence)` と `ledgerStore.range(seq, seq)` の**両方**から読んで一致するときだけ `prior/` に出す。
+verifier P1 は kind を **entry から**読み、`content binding` は遷移文で payload 無し → `NOT_PRESENT`／有り → `FAILED`、
+`transition continuity` を全 P1 package で報告（必須ではない — 遷移文の package は `content binding` で既に P1 に届かない）。
+reason code `TRANSITION_PRIOR_NOT_IN_PACKAGE`（登録簿 18 値、schema の enum）。`highestProfileSupported` は遷移文で
+`PACKAGE_INTEGRITY_V1`（P1 以上を要求する export は拒否）。**設計 §1.5 から動いた点**: 「`INDETERMINATE` に落とす方向を
+既定にしない」は §15 の合成と両立しない — bytes を主張しない statement に `CONTENT_BINDING` は `NOT_PRESENT` で、
+必須 check の `NOT_PRESENT` は `INDETERMINATE`。遷移文の package は **P0 まで**、と仕様 §5.3b / §10 に書いた。
+§1.3 の「W12 MOVE では両方が在ること」は verifier が確かめない（package は entry を 1 つしか運ばない）— 期待として
+仕様に残し、検査とは言わない。
 所有者の決定（2026-09-21）: 新 kind／digest を nullable にしない／`priorContentDigest` は台帳から写す／W12 は 2 行／
 W11 は `RESTORED` — 採用。W14 はこのバッチでは削除経路に確かめさせない。`bytesNow: UNKNOWN` のまま。crash test は
 実装と同じバッチで書く — すべて写した。
@@ -133,9 +142,18 @@ Phase 2 のベクタに `RESTORED` の 1 件を足し、3 実装で一致を取�
 
 ### 1.6 記録に失敗したとき
 
-E1 と同じ **耐久 intent 行**（案 B）。`ContentWriteJournal` の `WriteKind` は既に
-W10〜W14 と `CONTENT_REMOVED` を持っている（**未配線なだけ**）。open → close の形もそのまま。
-違いは close 時に書く statement の型だけ。
+E1 と同じ **耐久 intent 行**（案 B）。`ContentWriteJournal` の `WriteKind` は W10〜W14 と
+`CONTENT_REMOVED` を最初から持っていて、2026-09-22 に 6 経路が open → close で配線された。
+違いは close 時に書く statement の型と、W12 だけが持つ **abandon**（取り消しが確かめられた書き込み）。
+
+**1 巡目のレビュー（Codex、P1 × 3）で直した落ち方**: (1) journal の `latestRecorded` は sequence の読めない
+statement 行を**飛ばして**他の行を最新と答えていた — 読めない行が在れば「最新は確定できない」（null）。
+(2) W11 は PUT 成功後の確認 GET が答えないと `NOTHING`（何も書いていない）として行を abandon していた —
+bytes が通った時点で「書いた・digest は保証しない」に切り替え、行は開いたまま。(3) W12 は外側 catch の
+cleanup（put 後の失敗で cold の object を消し戻す）が成功しても行を abandon できず永久に開いたままだった —
+`coldRow` をメソッド scope に上げ、消し戻しが確かめられたときだけ abandon。錠は
+`aRowWithoutASequenceMakesTheNewestUndeterminable` / `RestoredBytesAreVouchedForTest` /
+`RetentionSchedulerColdMoveTest` の 2 本、control MY3〜NA3。
 
 ---
 
@@ -160,10 +178,20 @@ W10〜W14 と `CONTENT_REMOVED` を持っている（**未配線なだけ**）�
 - **kind の錠** `aTransitionIsChainedUnderItsOwnKind`: 遷移文は `RECORD_CONTENT_TRANSITION` で chain に入る
 - **写しの錠** `thePriorIsCopiedFromTheLedgerNotComputed` / `aSecondTransitionCarriesThePriorForward` / `noPriorWhen…`
 - **順序の錠** `TheNewestStatementIsByLedgerSequenceTest`: 行順が逆でも sequence 最大が最新
-- **矛盾の錠**（`MOVED_TO_COLD` と `DISPOSITION` の対）: **sub-batch 2（verifier）で**。R67
+- **矛盾の錠**（`MOVED_TO_COLD` と `DISPOSITION` の対）: **verifier の検査にはしない**（package は entry を 1 つしか運ばない）。
+  仕様 §10 に「主張しないこと」として書いた
+- **package 側の錠**（sub-batch 2）: verifier `TransitionPackagesAreReadTest` 10 本（整合する遷移文は全部再計算でき P1 は
+  `INDETERMINATE` であって `FAILED` でない／payload 同梱は `FAILED`／写しの不一致は `FAILED`／引いた prior が無ければ
+  `UNAVAILABLE` + code／prior 不明は `NOT_PRESENT`／片方だけは `FAILED`／entry が commit しない prior は `FAILED`／sequence 違いは
+  `FAILED`／kind は entry から／state package は `VERIFIED` のまま）。exporter `TransitionPackagesAreExportedTest` 6 本
+  （遷移文と prior を組む／P0 まで／`prior/` 4 ファイルと manifest／kind 不一致は entry 無し／対でない prior は出さない／
+  state は不変）
 - **control**: MK3 W14 の `UNKNOWN` を `COLD` に／ML3 W11 を `CAPTURED` に／MM3 prior を写さない／MN3 遷移文を
   `RECORD_CONTENT_STATE` で chain に入れる／MO3 取り消し未確認で abandon／MP3 E1 の宣言から 1 本落とす／
-  MQ3 abandon が statement を書く／MR3 DAO が書き戻しを報告しない（既定の null に戻す）／IG3 順序を sequence 最小に
+  MQ3 abandon が statement を書く／MR3 DAO が書き戻しを報告しない（既定の null に戻す）／IG3 順序を sequence 最小に／
+  **sub-batch 2**: MS3 verifier が遷移文 + payload を `PASSED` に／MT3 写しの不一致を `FAILED` にしない／MU3 exporter が
+  `prior/` を出さない／MV3 kind 不一致の対を出す／MW3 遷移文の bundle が P1 を名乗る／MX3 journal の `recordedAt` が
+  引いた sequence でなく最新を返す
 
 ---
 

@@ -280,8 +280,19 @@ public class CouchContentWriteJournal implements ContentWriteJournal {
             Map<String, Object> props = doc == null ? null : doc.getProperties();
             Object statement = props == null ? null : props.get("statement");
             Object sequence = props == null ? null : props.get("entrySequence");
-            if (!(statement instanceof Map) || !(sequence instanceof Number)) {
+            if (!(statement instanceof Map)) {
                 continue;
+            }
+            if (!(sequence instanceof Number)) {
+                // This view emits closed rows only, so a statement with no readable sequence is
+                // not an open row: it is a row whose place in time cannot be read. Skipping it
+                // would call whichever OTHER row is highest "the newest", and a transition
+                // would copy that row's digest as the prior — an older statement passed off as
+                // the latest (Codex review, P1). Not knowing which is newest is the answer.
+                logger.warn("A statement row for {} has no readable ledger sequence; which "
+                        + "statement is newest cannot be determined, so none is reported.",
+                        versionObjectId);
+                return null;
             }
             long at = ((Number) sequence).longValue();
             if (newest == null || at > newest.entrySequence()) {
@@ -289,6 +300,40 @@ public class CouchContentWriteJournal implements ContentWriteJournal {
             }
         }
         return newest;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public Recorded recordedAt(String repositoryId, String versionObjectId, long entrySequence) {
+        if (versionObjectId == null) {
+            return null;
+        }
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("include_docs", true);
+        params.put("key", List.of(repositoryId, versionObjectId));
+        ViewResult result;
+        try {
+            result = client().queryView(CouchEvidenceLedgerStore.DESIGN_DOC, VIEW_STATEMENTS,
+                    params);
+        } catch (RuntimeException e) {
+            logger.warn("The statement for {} at sequence {} could not be read.", versionObjectId,
+                    entrySequence, e);
+            return null;
+        }
+        if (result == null || result.getRows() == null) {
+            return null;
+        }
+        for (ViewResultRow row : result.getRows()) {
+            Document doc = row.getDoc();
+            Map<String, Object> props = doc == null ? null : doc.getProperties();
+            Object statement = props == null ? null : props.get("statement");
+            Object sequence = props == null ? null : props.get("entrySequence");
+            if (statement instanceof Map && sequence instanceof Number
+                    && ((Number) sequence).longValue() == entrySequence) {
+                return new Recorded((Map<String, Object>) statement, entrySequence);
+            }
+        }
+        return null;
     }
 
     @Override

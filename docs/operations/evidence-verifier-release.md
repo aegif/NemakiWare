@@ -23,7 +23,7 @@ profile spec、vectors。
 |---|---|
 | **SBOM** | `cyclonedx-maven-plugin` が**このマシンのローカルリポジトリに無い**ため、オフラインでは配線できない。ネットワークのある環境で `org.cyclonedx:cyclonedx-maven-plugin` を追加して `makeAggregateBom` を回す |
 | **detached signature** | **鍵は持っていない。** 署名はリリース担当者が自分の鍵で行う作業で、自動化してはならない（鍵を CI に置くことと同義になる） |
-| ~~**result schema**~~ | **書いた（2026-09-22）**: `docs/evidence-profile/v1/verifier-result.schema.json`。閉じた schema、`reasonCode` は登録簿 `Outcome.Check.REASON_CODES`（17 値）と両方向で一致、`limits` 必須。**verifier は schema を読まない** — 受け取る側が自分の validator で検証する。`SHA-256SUMS` に載せる（下記） |
+| ~~**result schema**~~ | **書いた（2026-09-22）**: `docs/evidence-profile/v1/verifier-result.schema.json`。閉じた schema、`reasonCode` は登録簿 `Outcome.Check.REASON_CODES`（18 値）と両方向で一致、`limits` 必須。**verifier は schema を読まない** — 受け取る側が自分の validator で検証する。`SHA-256SUMS` に載せる（下記） |
 
 ---
 
@@ -44,6 +44,10 @@ java -cp evidence-verifier-cli/target/classes:evidence-verifier-core/target/clas
 ```
 
 **exit code を見ること。** `0` は `VERIFIED` だけで、`3`（`INDETERMINATE`）は成功ではない。
+
+**遷移文の package**（`ledger-entry.json` の `subjectKind` が `RECORD_CONTENT_TRANSITION` — 内容が archive へ移った・cold へ移った・
+消された版）は **P1 以上で `VERIFIED` に届かない**（`content binding` が `NOT_PRESENT`）。`transition continuity` は
+写した prior を `prior/` の出所と突き合わせ、`TRANSITION_PRIOR_NOT_IN_PACKAGE` は「出所を運んでいない」であって「写しが誤り」ではない。
 
 ### 3. SHA-256SUMS
 

@@ -391,6 +391,81 @@ public class RetentionSchedulerColdMoveTest {
         verify(contentService).resetColdMoveMetadata("bedroom", "arch-011");
     }
 
+    // ===== E1 (W12): the COLD_TRANSFER row after a failure past the put =====
+
+    private static jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending coldRowFor(String originalId) {
+        return new jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending("intent-1", "bedroom",
+                originalId, originalId, jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.COLD_TRANSFER);
+    }
+
+    /**
+     * The window the first review found (Codex, P1): the cold write succeeded, something after it
+     * threw, the cleanup deleted the cold object again — and the row stayed open for ever, a
+     * gap listed for a write that provably left nothing behind. The row was declared inside
+     * the try, out of the cleanup's reach.
+     */
+    @Test
+    public void testExceptionAfterPut_abandonsTheColdTransferRowWhenTheCleanupSucceeded() throws Exception {
+        Archive archive = createTestArchive("arch-012", "orig-012");
+        InputStream stream = new ByteArrayInputStream("data".getBytes(StandardCharsets.UTF_8));
+        LongTermStorageAdapter mockAdapter = mock(LongTermStorageAdapter.class);
+        when(mockAdapter.put(eq("bedroom"), eq("orig-012"), any(InputStream.class), any()))
+                .thenReturn("version-012");
+        when(propertyManager.readValue(PropertyKey.LONGTERM_STORAGE_TYPE))
+                .thenThrow(new RuntimeException("Config read error"));
+        when(contentService.getArchiveContentStream("bedroom", "arch-012")).thenReturn(stream);
+        when(propertyManager.readBoolean(PropertyKey.RETENTION_COLD_KEEP_LOCAL_COPY)).thenReturn(false);
+
+        jp.aegif.nemaki.evidence.RecordContentStateRecorder recorder =
+                mock(jp.aegif.nemaki.evidence.RecordContentStateRecorder.class);
+        jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending row = coldRowFor("orig-012");
+        when(recorder.openBeforeWriting(eq("bedroom"), eq("orig-012"), eq("orig-012"),
+                eq(jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.COLD_TRANSFER), anyString()))
+                .thenReturn(row);
+        scheduler.setRecordContentState(recorder);
+
+        try {
+            getMoveToColdMethod().invoke(scheduler, "bedroom", archive, mockAdapter);
+            fail("Should have thrown an exception");
+        } catch (Exception e) {
+            assertTrue(e.getCause() instanceof RuntimeException);
+        }
+
+        verify(mockAdapter).delete("bedroom", "orig-012", "version-012");
+        verify(recorder).abandon(eq(row), anyString());
+        verify(recorder, never()).recordTransition(any(), any(), any());
+    }
+
+    @Test
+    public void testExceptionAfterPut_keepsTheRowOpenWhenTheCleanupDeleteFailed() throws Exception {
+        Archive archive = createTestArchive("arch-013", "orig-013");
+        InputStream stream = new ByteArrayInputStream("data".getBytes(StandardCharsets.UTF_8));
+        LongTermStorageAdapter mockAdapter = mock(LongTermStorageAdapter.class);
+        when(mockAdapter.put(eq("bedroom"), eq("orig-013"), any(InputStream.class), any()))
+                .thenReturn("version-013");
+        doThrow(new RuntimeException("s3 down")).when(mockAdapter).delete("bedroom", "orig-013", "version-013");
+        when(propertyManager.readValue(PropertyKey.LONGTERM_STORAGE_TYPE))
+                .thenThrow(new RuntimeException("Config read error"));
+        when(contentService.getArchiveContentStream("bedroom", "arch-013")).thenReturn(stream);
+        when(propertyManager.readBoolean(PropertyKey.RETENTION_COLD_KEEP_LOCAL_COPY)).thenReturn(false);
+
+        jp.aegif.nemaki.evidence.RecordContentStateRecorder recorder =
+                mock(jp.aegif.nemaki.evidence.RecordContentStateRecorder.class);
+        when(recorder.openBeforeWriting(anyString(), anyString(), anyString(), any(), anyString()))
+                .thenReturn(coldRowFor("orig-013"));
+        scheduler.setRecordContentState(recorder);
+
+        try {
+            getMoveToColdMethod().invoke(scheduler, "bedroom", archive, mockAdapter);
+            fail("Should have thrown an exception");
+        } catch (Exception e) {
+            assertTrue(e.getCause() instanceof RuntimeException);
+        }
+
+        // A blob may remain in cold storage; the open row is the only record that it may.
+        verify(recorder, never()).abandon(any(), anyString());
+    }
+
     // ===== Edge case: no content stream =====
 
     @Test

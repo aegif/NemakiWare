@@ -88,8 +88,9 @@ public class EvidenceBundleAssembler {
     public EvidenceBundle assemble(String repositoryId, String objectId, String versionObjectId) {
         String createdAt = java.time.Instant.now().toString();
 
-        RecordContentStatementV1 statement = statementFor(repositoryId, versionObjectId);
+        RecordStatement statement = statementFor(repositoryId, versionObjectId);
         EvidenceLedgerEntry entry = entryFor(versionObjectId, statement);
+        EvidenceBundle.Prior prior = priorFor(repositoryId, versionObjectId, statement);
 
         EvidenceCheckpoint covering = entry == null ? null : coveringFor(entry.sequence());
         EvidenceBundle.InclusionProof proof = proofFor(entry, covering);
@@ -98,10 +99,10 @@ public class EvidenceBundleAssembler {
         Map<AnchorKind, EvidenceBundle.AnchorPart> anchors = anchorsFor(target);
 
         return new EvidenceBundle(repositoryId, objectId, versionObjectId, statement, entry,
-                proof, covering, chain, target, anchors, createdAt);
+                proof, covering, chain, target, anchors, createdAt, prior);
     }
 
-    private RecordContentStatementV1 statementFor(String repositoryId, String versionObjectId) {
+    private RecordStatement statementFor(String repositoryId, String versionObjectId) {
         if (journal == null || !journal.isActive()) {
             return null;
         }
@@ -109,7 +110,30 @@ public class EvidenceBundleAssembler {
         if (document == null) {
             return null;
         }
+        return readBack(document, versionObjectId);
+    }
+
+    /**
+     * A stored statement document, as the typed statement it is.
+     *
+     * <p>The shape decides which type is tried — a transition has a {@code transition} field,
+     * a state statement never does — and the typed constructor then validates every field.
+     * The KIND the package relies on is not this guess but the ledger entry's, which
+     * {@link #entryFor} checks agrees with the type read here.
+     */
+    private RecordStatement readBack(Map<String, Object> document, String versionObjectId) {
         try {
+            if (document.containsKey("transition")) {
+                Object from = document.get("priorStatementEntrySequence");
+                return new RecordContentTransitionV1(
+                        text(document.get("repositoryId")), text(document.get("objectId")),
+                        text(document.get("versionObjectId")),
+                        RecordContentTransitionV1.Transition.valueOf(text(document.get("transition"))),
+                        RecordContentTransitionV1.BytesNow.valueOf(text(document.get("bytesNow"))),
+                        text(document.get("priorContentDigest")),
+                        from == null ? null : ((Number) from).longValue(),
+                        text(document.get("recordedAt")));
+            }
             return new RecordContentStatementV1(
                     text(document.get("repositoryId")), text(document.get("objectId")),
                     text(document.get("versionObjectId")), text(document.get("contentStreamId")),
@@ -128,8 +152,53 @@ public class EvidenceBundleAssembler {
         }
     }
 
-    private EvidenceLedgerEntry entryFor(String versionObjectId,
-            RecordContentStatementV1 statement) {
+    /**
+     * The cited prior of a transition: the statement at the cited sequence and the entry that
+     * commits to it. Null when there is nothing to cite, or when either half could not be read
+     * — the verifier then says UNAVAILABLE ({@code TRANSITION_PRIOR_NOT_IN_PACKAGE}), which is
+     * the honest answer for "the package does not carry it".
+     */
+    private EvidenceBundle.Prior priorFor(String repositoryId, String versionObjectId,
+            RecordStatement statement) {
+        if (!(statement instanceof RecordContentTransitionV1 transition)
+                || transition.priorStatementEntrySequence() == null) {
+            return null;
+        }
+        if (journal == null || !journal.isActive() || ledgerStore == null
+                || !ledgerStore.isActive()) {
+            return null;
+        }
+        long cited = transition.priorStatementEntrySequence();
+        ContentWriteJournal.Recorded recorded;
+        List<EvidenceLedgerEntry> at;
+        try {
+            recorded = journal.recordedAt(repositoryId, versionObjectId, cited);
+            at = ledgerStore.range(RecordContentStateRecorder.DOMAIN, cited, cited, 1);
+        } catch (RuntimeException e) {
+            logger.warn("The prior cited by the transition for {} (entry {}) could not be read; "
+                    + "the package will not carry it.", versionObjectId, cited, e);
+            return null;
+        }
+        if (recorded == null || recorded.statement() == null || at == null || at.isEmpty()
+                || at.get(0) == null) {
+            return null;
+        }
+        RecordStatement prior = readBack(recorded.statement(), versionObjectId);
+        EvidenceLedgerEntry entry = at.get(0);
+        // The pair has to be a pair: the entry at the cited sequence commits to this statement.
+        // A prior that did not would be shipped only to fail the verifier's continuity check,
+        // and a mismatch here is this node's problem to log, not the recipient's to find.
+        if (prior == null || entry.sequence() != cited
+                || !prior.digest().equals(entry.payloadDigest())) {
+            logger.warn("The prior cited by the transition for {} (entry {}) does not match the "
+                    + "ledger entry at that sequence; the package will not carry it.",
+                    versionObjectId, cited);
+            return null;
+        }
+        return new EvidenceBundle.Prior(prior, entry);
+    }
+
+    private EvidenceLedgerEntry entryFor(String versionObjectId, RecordStatement statement) {
         if (ledgerStore == null || !ledgerStore.isActive() || statement == null) {
             return null;
         }
@@ -153,6 +222,17 @@ public class EvidenceBundleAssembler {
             if (candidate != null && digest.equals(candidate.payloadDigest())) {
                 match = candidate;
             }
+        }
+        // The entry's kind is what a verifier reads the statement's shape from (spec §5.3b). An
+        // entry that commits to this document under the OTHER kind is a contradiction this node
+        // wrote; shipping the pair would hand the recipient a package whose entry says "state"
+        // over a document with no content digest, or the reverse. Shipped as no entry instead,
+        // which the verifier reports as NOT_PRESENT.
+        if (match != null && match.subjectKind() != statement.subjectKind()) {
+            logger.warn("The ledger entry for {} is a {} and the statement is a {}; the package "
+                    + "will carry no entry for it.", versionObjectId, match.subjectKind(),
+                    statement.subjectKind());
+            return null;
         }
         return match;
     }

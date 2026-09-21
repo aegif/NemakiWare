@@ -575,6 +575,10 @@ public class RetentionScheduler {
         final String lineageOperationId = java.util.UUID.randomUUID().toString();
         boolean coldPutSucceeded = false;
         String storageRef = null;
+        // E1 (W12): method scope, because the outer cleanup below has to reach it. Declared
+        // inside the try it was out of reach there, and a cold write undone by that cleanup
+        // left a row open for ever (Codex review, P1).
+        jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending coldRow = null;
 
         // Set transitional state
         contentService.updateArchiveState(repositoryId, archiveId,
@@ -597,8 +601,7 @@ public class RetentionScheduler {
                 metadata.put("originalId", originalId != null ? originalId : "");
 
                 // E1 (W12): opened before the bytes leave for cold storage.
-                jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending coldRow =
-                        openColdTransfer(repositoryId, originalId);
+                coldRow = openColdTransfer(repositoryId, originalId);
                 storageRef = adapter.put(repositoryId, originalId, contentStream, metadata);
                 coldPutSucceeded = true;
                 adapter.enforceImmutability(repositoryId, originalId);
@@ -772,8 +775,10 @@ public class RetentionScheduler {
                     log.warn("removeProtection failed during cleanup (will still attempt delete): "
                             + rpEx.getMessage());
                 }
+                boolean coldUndone = false;
                 try {
                     adapter.delete(repositoryId, originalId, storageRef);
+                    coldUndone = true;
                     log.info("Cleaned up orphaned cold storage blob: originalId=" + originalId
                             + ", storageRef=" + storageRef);
                 } catch (Exception delEx) {
@@ -781,7 +786,14 @@ public class RetentionScheduler {
                             + ", storageRef=" + storageRef + " — manual cleanup may be required: "
                             + delEx.getMessage());
                 }
+                if (coldUndone) {
+                    abandonColdTransfer(coldRow, "the cold move failed after the write and the "
+                            + "cold object was deleted again: " + e.getMessage());
+                }
+                // Not undone: the row stays open — a blob may remain, and that is listable.
             }
+            // Failed before or at the put: the row stays open, because whether a partial write
+            // reached cold storage is not known.
 
             try {
                 contentService.resetColdMoveMetadata(repositoryId, archiveId);

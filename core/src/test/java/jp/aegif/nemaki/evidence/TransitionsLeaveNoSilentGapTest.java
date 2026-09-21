@@ -344,8 +344,9 @@ class TransitionsLeaveNoSilentGapTest {
                             + "succeeded. An undo that failed leaves a blob whose existence the "
                             + "open row is the only record of");
         }
-        assertEquals(2, count, "the scheduler abandons the row at " + count + " site(s); the two "
-                + "undo paths (refused disposition, failed local delete) are the ones there are");
+        assertEquals(3, count, "the scheduler abandons the row at " + count + " site(s); the three "
+                + "undo paths (refused disposition, failed local delete, and the outer cleanup "
+                + "after a failure past the put) are the ones there are");
     }
 
     /**

@@ -153,6 +153,19 @@ public interface ContentWriteJournal {
     }
 
     /**
+     * The statement a version's row was closed with at exactly {@code entrySequence}, or null
+     * when this journal holds none (or could not be asked).
+     *
+     * <p>For the exporter: a transition cites the entry its prior digest was copied from, and
+     * the package ships that entry's statement under {@code prior/} so a verifier can check
+     * the copy against its source (spec §4.2). "Exactly": the newest statement is not the
+     * cited one once a second transition has been recorded.
+     */
+    default Recorded recordedAt(String repositoryId, String versionObjectId, long entrySequence) {
+        return null;
+    }
+
+    /**
      * Closes an open row WITHOUT a statement, because the write it announced verifiably did
      * not happen.
      *

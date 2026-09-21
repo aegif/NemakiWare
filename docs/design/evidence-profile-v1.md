@@ -165,9 +165,17 @@ metadata/other/nemaki-evidence/
   checkpoint-chain.json
   anchor-target-checkpoint.json      + anchor-target-checkpoint.c14n
   anchors/
+  prior/                             （遷移文が prior を引くときだけ、§5.3b）
+    record-content-statement.json    + record-content-statement.c14n
+    ledger-entry.json                + ledger-entry.c14n
 ```
 
-9 エントリ・**12 ファイル** + `anchors/` ディレクトリ。
+9 エントリ・**12 ファイル** + `anchors/` ディレクトリ + 任意の `prior/`（4 ファイル）。
+
+- `prior/` は **statement が遷移文で `priorStatementEntrySequence` を持つときだけ**置く。中身は
+  その sequence の entry と、その entry が commit する state statement（遷移文が digest を写した出所）。
+  **2 つで 1 組** — 片方だけは置かない。exporter は出所が journal と台帳の両方から読めて、両者が
+  一致するときだけ置く（一致しなければ置かず、verifier が `TRANSITION_PRIOR_NOT_IN_PACKAGE` で答える）。
 
 - `anchors/` は**種別ごとに 1 ファイル**（`rfc3161.der` / `ots.ots` / `atlas.json`）。
   **無い種別は file を置かない。** 置かない理由は `bundle-manifest.json` の
@@ -241,8 +249,11 @@ statement が「bytes に何が起きたか」を述べる別の文書である�
 | `priorStatementEntrySequence` | LONG or NULL | `priorContentDigest` の出所の entry。digest と**対**（片方だけは不正） |
 | `recordedAt` | STRING | 台帳へ書いた時刻 |
 
-**この版の verifier は遷移文を読まない**（P1 の `CONTENT_BINDING` は `contentDigest` が無いので `NOT_PRESENT` になる。
-遷移文の検査 — payload 同梱は矛盾、`transition continuity` — は残件 R67）。
+**verifier は遷移文を entry の `subjectKind` で見分ける**（文書の形からではない — 形で決めると、鍵を持たない文書が
+自分に掛かる検査を選べる）。遷移文の package での P1 は §10 の 2 行（`CONTENT_BINDING` の遷移文の読み方、
+`TRANSITION_CONTINUITY`）。**遷移文の package は P1 で `VERIFIED` に届かない** — bytes を主張しない statement に
+`CONTENT_BINDING` は `NOT_PRESENT` で、それは必須 check である。届くのは P0 まで。exporter の
+`highestProfileSupported` もそう答え、P1 以上を要求する export は package を渡さず拒否する。
 
 ### 5.4 `ledger-entry.json`
 
@@ -377,14 +388,18 @@ current == merkleRoot なら PASS
 | check | PASS の条件 |
 |---|---|
 | `STATEMENT_C14N` | `record-content-statement.c14n` が §3.2 の再計算と**バイト一致** |
-| `CONTENT_BINDING` | statement の `contentDigest` / `contentLength` が package 内 payload と一致 |
+| `CONTENT_BINDING` | statement の `contentDigest` / `contentLength` が package 内 payload と一致。**statement が遷移文（entry の `subjectKind` が `RECORD_CONTENT_TRANSITION`）なら**: payload が無ければ `NOT_PRESENT`（bytes を主張していない — だから遷移文の package は P1 に届かない）、payload が在れば **`FAILED`**（「bytes は無くなった／移った」と同梱の bytes は矛盾） |
 | `ENTRY_RECOMPUTE` | §6 で再計算した `entryHash` が記録と一致 |
 | `ENTRY_BINDS_STATEMENT` | entry の `payloadDigest` == `documentDigest(record-content-statement.json)` |
 | `INCLUSION_PROOF` | §8 の手順で `covering-checkpoint.merkleRoot` に到達 |
 | `COVERING_RANGE` | `covering.fromSequence ≤ entry.sequence ≤ covering.toSequence` |
 | `CHECKPOINT_RECOMPUTE` | §7 で再計算した `checkpointHash` が記録と一致 |
+| `TRANSITION_CONTINUITY`（**必須ではない**。全 P1 package で報告する） | statement が state なら `NOT_PRESENT`（続くものが無い）。遷移文で prior が両方 NULL なら `NOT_PRESENT`（「知らない」は主張であって欠陥ではない）。片方だけ NULL は `FAILED`。prior を引いていて `prior/` が無ければ `UNAVAILABLE`（`TRANSITION_PRIOR_NOT_IN_PACKAGE`）。`prior/` が在れば: `prior/ledger-entry.sequence == priorStatementEntrySequence`、その entry が §6 で再計算に一致、`payloadDigest == documentDigest(prior/record-content-statement.json)`、その entry が `RECORD_CONTENT_STATE`、そして `prior/record-content-statement.contentDigest == priorContentDigest` — 全部で PASS、1 つでも違えば `FAILED` |
 
-主張しないこと: 外部の暗号的信頼。
+主張しないこと: 外部の暗号的信頼。W12 MOVE で `DISPOSITION` 行と遷移文の**両方**が台帳に在ること
+（設計 §1.3 の期待）— package は entry を 1 つしか運ばないので verifier は確かめない。
+`TRANSITION_CONTINUITY` が必須でないのは、遷移文の package は `CONTENT_BINDING` で既に P1 に
+届かず、必須にしても verdict が変わらないから。`FAILED` は §15 のとおり全体を `FAILED` にする。
 
 **`ENTRY_BINDS_STATEMENT` と `CONTENT_BINDING` は別の check であり、両方が要る。**
 片方だけでは「payload と statement は合っているが、台帳が指しているのは別の statement」
@@ -505,7 +520,7 @@ check の結果は **4 値**。「調べて正しい」「調べて誤り」「�
 | `PASSED` | 調べて正しい |
 | `FAILED` | 調べて誤り |
 | `NOT_PRESENT` | package がその check に要るものを持っていない |
-| `UNAVAILABLE` | 調べられなかった。**理由は reason code で述べる** — `RESOURCE_LIMIT`（上限到達）、`NO_BLOCK_HEADER_SOURCE / REVOCATION_NOT_CAPTURED`、`UNKNOWN_ALGORITHM`、`LEGACY_PACKAGE_LAYOUT` など |
+| `UNAVAILABLE` | 調べられなかった。**理由は reason code で述べる** — `RESOURCE_LIMIT`（上限到達）、`NO_BLOCK_HEADER_SOURCE / REVOCATION_NOT_CAPTURED`、`UNKNOWN_ALGORITHM`、`LEGACY_PACKAGE_LAYOUT`、`TRANSITION_PRIOR_NOT_IN_PACKAGE` など（全 18 値は verifier の登録簿 `Outcome.Check.REASON_CODES` と result schema の enum） |
 
 合成:
 

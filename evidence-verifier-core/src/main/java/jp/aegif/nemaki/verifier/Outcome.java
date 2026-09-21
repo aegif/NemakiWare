@@ -71,7 +71,8 @@ public enum Outcome {
                 "CERTIFICATE_UNREADABLE", "DUPLICATE_ENTRY", "LEGACY_PACKAGE_LAYOUT", "NOT_A_ZIP",
                 "NO_BLOCK_HEADER_SOURCE", "OTS_NOT_PARSED", "PKIX_UNAVAILABLE", "RESOURCE_LIMIT",
                 "REVOCATION_NOT_CAPTURED", "REVOCATION_NOT_PARSED", "REVOCATION_NOT_REQUIRED",
-                "UNKNOWN_ALGORITHM", "UNSAFE_PATH", "UNSUPPORTED_ERS_VERSION");
+                "TRANSITION_PRIOR_NOT_IN_PACKAGE", "UNKNOWN_ALGORITHM", "UNSAFE_PATH",
+                "UNSUPPORTED_ERS_VERSION");
 
         public Check {
             if (outcome == UNAVAILABLE && (reasonCode == null || reasonCode.isBlank())) {

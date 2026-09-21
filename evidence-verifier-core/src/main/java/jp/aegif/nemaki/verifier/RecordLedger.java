@@ -71,10 +71,15 @@ public final class RecordLedger {
         }
 
         Map<String, Object> statement = parseOrNull(statementJson);
-        checks.add(statementCanonicalForm(statementJson, statementC14n));
-        checks.add(contentBinding(entries, statement));
-
         Map<String, Object> entry = parseOrNull(entryJson);
+        // The KIND comes from the entry, not from the statement's shape: the entry is what the
+        // chain commits to, and a statement read as "whatever its keys suggest" would let a
+        // document with the wrong keys choose which checks apply to it (§5.3b).
+        boolean transition = isTransition(entry);
+        checks.add(statementCanonicalForm(statementJson, statementC14n));
+        checks.add(contentBinding(entries, statement, transition));
+        checks.add(transitionContinuity(entries, statement, transition));
+
         checks.add(entryRecompute(entry));
         checks.add(entryBindsStatement(entry, statementJson));
 
@@ -111,10 +116,42 @@ public final class RecordLedger {
         return Outcome.Check.passed("statement canonical form");
     }
 
+    /** The entry kind under which a statement says what HAPPENED to the bytes (§5.3b). */
+    static final String TRANSITION_KIND = "RECORD_CONTENT_TRANSITION";
+
+    static boolean isTransition(Map<String, Object> entry) {
+        return entry != null && TRANSITION_KIND.equals(entry.get("subjectKind"));
+    }
+
     static Outcome.Check contentBinding(Map<String, byte[]> entries,
             Map<String, Object> statement) {
+        return contentBinding(entries, statement, false);
+    }
+
+    /**
+     * @param transition whether the entry says the statement is a transition. A transition
+     *        claims no bytes, so there is nothing to bind: with no payload the check is
+     *        NOT_PRESENT — which is why a transition package cannot reach VERIFIED at P1 —
+     *        and WITH a payload it is FAILED, because "the bytes were moved or removed" and
+     *        "here are the bytes" cannot both be true of one package (design §1.5)
+     */
+    static Outcome.Check contentBinding(Map<String, byte[]> entries,
+            Map<String, Object> statement, boolean transition) {
         if (statement == null) {
             return Outcome.Check.absent("content binding", "there is no statement to bind");
+        }
+        if (transition) {
+            int payloads = payloadsIn(entries).size();
+            if (payloads == 0) {
+                return Outcome.Check.absent("content binding",
+                        "the statement is a transition — it says what happened to the bytes, "
+                                + "not what they are — and the package carries no payload. "
+                                + "There is nothing to bind, so P1 cannot be VERIFIED for it");
+            }
+            return Outcome.Check.failed("content binding",
+                    "the statement says the bytes were moved or removed and the package carries "
+                            + payloads + " payload(s). A transition and a payload in one package "
+                            + "contradict each other");
         }
         Object digest = statement.get("contentDigest");
         Object length = statement.get("contentLength");
@@ -122,13 +159,7 @@ public final class RecordLedger {
             return Outcome.Check.absent("content binding",
                     "the statement records no content digest or length");
         }
-        List<Map.Entry<String, byte[]>> payloads = new ArrayList<>();
-        for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
-            String path = "/" + entry.getKey();
-            if (path.contains("/representations/") && path.contains("/data/")) {
-                payloads.add(entry);
-            }
-        }
+        List<Map.Entry<String, byte[]>> payloads = payloadsIn(entries);
         if (payloads.isEmpty()) {
             return Outcome.Check.absent("content binding", "the package carries no payload");
         }
@@ -148,6 +179,111 @@ public final class RecordLedger {
                             + recordedLength);
         }
         return Outcome.Check.passed("content binding");
+    }
+
+    private static List<Map.Entry<String, byte[]>> payloadsIn(Map<String, byte[]> entries) {
+        List<Map.Entry<String, byte[]>> payloads = new ArrayList<>();
+        for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
+            String path = "/" + entry.getKey();
+            if (path.contains("/representations/") && path.contains("/data/")) {
+                payloads.add(entry);
+            }
+        }
+        return payloads;
+    }
+
+    /**
+     * A transition's copied prior digest is checked against its source (design §1.5).
+     *
+     * <p>The statement names {@code priorContentDigest} and the ledger entry it was copied
+     * from. The package may carry that entry and its statement under {@code prior/} (§4.2);
+     * when it does, the copy is checked: the cited entry has that sequence, commits to the
+     * shipped prior statement, and that statement's {@code contentDigest} is the copied value.
+     * When the transition says the prior is not known (both null) the check is NOT_PRESENT —
+     * "not known" is a statement, not a defect. When the prior is cited but not shipped it is
+     * UNAVAILABLE with {@code TRANSITION_PRIOR_NOT_IN_PACKAGE}: the copy could not be checked,
+     * which is not the same as the copy being wrong.
+     *
+     * <p>Emitted for every P1 package and required by none: a state statement has nothing to
+     * be continuous with (NOT_PRESENT), and a transition package is INDETERMINATE at P1 through
+     * {@code content binding} whatever this says. A FAILED here still fails the package (§15:
+     * FAILED is over the whole set).
+     */
+    static Outcome.Check transitionContinuity(Map<String, byte[]> entries,
+            Map<String, Object> statement, boolean transition) {
+        String name = "transition continuity";
+        if (!transition) {
+            return Outcome.Check.absent(name, "the statement is a state, not a transition; "
+                    + "there is nothing earlier it claims to continue from");
+        }
+        if (statement == null) {
+            return Outcome.Check.absent(name, "there is no statement");
+        }
+        Object prior = statement.get("priorContentDigest");
+        Object from = statement.get("priorStatementEntrySequence");
+        if (prior == null && from == null) {
+            return Outcome.Check.absent(name, "the transition says the prior digest is not "
+                    + "known; a copy nobody made cannot be checked, and 'not known' is not 'none'");
+        }
+        if (!(prior instanceof String priorDigest) || !(from instanceof Long cited)) {
+            return Outcome.Check.failed(name, "the transition names a prior digest without its "
+                    + "source entry, or the reverse; the two are set together or not at all");
+        }
+        byte[] priorStatementJson = fileIn(entries, "prior/record-content-statement.json");
+        Map<String, Object> priorEntry = parseOrNull(fileIn(entries, "prior/ledger-entry.json"));
+        if (priorStatementJson == null || priorEntry == null) {
+            return Outcome.Check.unavailable(name, "TRANSITION_PRIOR_NOT_IN_PACKAGE",
+                    "the transition cites ledger entry " + cited + " and the package does not "
+                            + "carry that entry and its statement under prior/, so the copied "
+                            + "digest could not be checked against its source");
+        }
+        Map<String, Object> priorStatement;
+        String priorStatementDigest;
+        try {
+            Object parsed = Json.parse(new String(priorStatementJson, StandardCharsets.UTF_8));
+            priorStatement = parsed instanceof Map ? (Map<String, Object>) parsed : null;
+            priorStatementDigest = Canonical.documentDigest(parsed);
+        } catch (Json.NotCanonicalisable | Canonical.NotEncodable e) {
+            return Outcome.Check.failed(name, "the prior statement has no canonical form: "
+                    + e.getMessage());
+        }
+        if (priorStatement == null) {
+            return Outcome.Check.failed(name, "the prior statement is not a document");
+        }
+        if (!(priorEntry.get("sequence") instanceof Long at) || at != cited) {
+            return Outcome.Check.failed(name, "the transition cites entry " + cited
+                    + " and the shipped prior entry is " + priorEntry.get("sequence"));
+        }
+        for (String field : List.of("domain", "sequence", "subjectKind", "subjectId",
+                "payloadDigest", "occurredAt", "prevEntryHash", "entryHash")) {
+            if (!priorEntry.containsKey(field)) {
+                return Outcome.Check.failed(name, "the shipped prior entry omits " + field
+                        + ", so it cannot be the entry it claims to be");
+            }
+        }
+        String recomputed = Canonical.hash("LEDGER_ENTRY_V1", priorEntry.get("domain"),
+                priorEntry.get("sequence"), priorEntry.get("subjectKind"),
+                priorEntry.get("subjectId"), priorEntry.get("payloadDigest"),
+                priorEntry.get("occurredAt"), priorEntry.get("prevEntryHash"));
+        if (!recomputed.equals(priorEntry.get("entryHash"))) {
+            return Outcome.Check.failed(name, "the shipped prior entry's fields hash to "
+                    + recomputed + " and it records " + priorEntry.get("entryHash"));
+        }
+        if (!priorStatementDigest.equals(priorEntry.get("payloadDigest"))) {
+            return Outcome.Check.failed(name, "the shipped prior statement digests to "
+                    + priorStatementDigest + " and entry " + cited + " commits to "
+                    + priorEntry.get("payloadDigest") + ", so it is not the statement cited");
+        }
+        if (!"RECORD_CONTENT_STATE".equals(priorEntry.get("subjectKind"))
+                || !(priorStatement.get("contentDigest") instanceof String source)) {
+            return Outcome.Check.failed(name, "the cited entry is not a state statement with a "
+                    + "content digest, so nothing there could have been copied");
+        }
+        if (!source.equals(priorDigest)) {
+            return Outcome.Check.failed(name, "the transition copied " + priorDigest
+                    + " and the cited statement's contentDigest is " + source);
+        }
+        return Outcome.Check.passed(name);
     }
 
     static Outcome.Check entryRecompute(Map<String, Object> entry) {

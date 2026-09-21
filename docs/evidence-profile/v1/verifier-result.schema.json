@@ -65,6 +65,7 @@
               "REVOCATION_NOT_CAPTURED",
               "REVOCATION_NOT_PARSED",
               "REVOCATION_NOT_REQUIRED",
+              "TRANSITION_PRIOR_NOT_IN_PACKAGE",
               "UNKNOWN_ALGORITHM",
               "UNSAFE_PATH",
               "UNSUPPORTED_ERS_VERSION"

@@ -831,6 +831,12 @@ public class ArchiveDaoDelegate {
 						};
 						client.createAttachment(originalId, revision, "content", counted, mimeType);
 						String restoredDigest = hexOf(digestOfRestored.digest());
+						// The bytes went past. From here on the answer is never NOTHING: if the
+						// confirmation read below does not answer, the digest is not vouched for
+						// (null) and the caller keeps its row OPEN — but "we could not confirm" must
+						// not become "nothing was written", which abandons the row over bytes that
+						// are back (Codex review, P1).
+						restored = new jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes(originalId, null, -1L);
 
 						// Update length metadata, preserving _attachments stubs
 						com.ibm.cloud.cloudant.v1.model.Document updatedDoc = client.get(originalId);

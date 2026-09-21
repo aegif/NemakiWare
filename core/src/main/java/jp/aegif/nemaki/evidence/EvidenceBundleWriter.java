@@ -86,7 +86,16 @@ public final class EvidenceBundleWriter {
 
         putDocumentAndCanonicalForm(files, "record-content-statement",
                 bundle.statement() == null ? null : bundle.statement().toDocument());
-        putDocumentAndCanonicalForm(files, "ledger-entry", entryDocument());
+        putDocumentAndCanonicalForm(files, "ledger-entry", entryDocument(bundle.entry()));
+        if (bundle.prior() != null) {
+            // The source a transition copied its prior digest from, so a verifier can check
+            // the copy (spec §4.2 prior/, §10 TRANSITION_CONTINUITY). Both halves or neither:
+            // the record refuses half a pair.
+            putDocumentAndCanonicalForm(files, "prior/record-content-statement",
+                    bundle.prior().statement().toDocument());
+            putDocumentAndCanonicalForm(files, "prior/ledger-entry",
+                    entryDocument(bundle.prior().entry()));
+        }
         if (bundle.inclusionProof() != null) {
             files.put("inclusion-proof.json", json(inclusionProofDocument()));
         }
@@ -145,8 +154,7 @@ public final class EvidenceBundleWriter {
         return doc;
     }
 
-    private Map<String, Object> entryDocument() {
-        EvidenceLedgerEntry entry = bundle.entry();
+    private static Map<String, Object> entryDocument(EvidenceLedgerEntry entry) {
         if (entry == null) {
             return null;
         }

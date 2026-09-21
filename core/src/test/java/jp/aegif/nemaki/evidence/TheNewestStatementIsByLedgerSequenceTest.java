@@ -104,17 +104,41 @@ class TheNewestStatementIsByLedgerSequenceTest {
                 "statementFor and latestRecorded disagree about which statement is newest");
     }
 
+    /**
+     * The first version of this test SKIPPED such a row and asserted the other one was the
+     * newest — codifying the defect (Codex review, P1): the view emits closed rows only, so a
+     * statement with no readable sequence is a row whose place in time cannot be read, and
+     * calling any other row "newest" is an older statement passed off as the latest.
+     */
     @Test
-    @DisplayName("a row with no sequence is not the newest of anything")
-    void aRowWithoutASequenceIsSkipped() {
-        CouchContentWriteJournal journal = journalOver(clientReturning(
-                row("a".repeat(64), 10L), row("z".repeat(64), null)));
-
-        assertEquals(10L, journal.latestRecorded("bedroom", "v-1").entrySequence(),
-                "a row that was never chained (no entrySequence) was read as the newest statement");
+    @DisplayName("a statement row with no readable sequence makes 'newest' undeterminable — null, not the other row")
+    void aRowWithoutASequenceMakesTheNewestUndeterminable() {
+        assertNull(journalOver(clientReturning(row("a".repeat(64), 10L), row("z".repeat(64), null)))
+                        .latestRecorded("bedroom", "v-1"),
+                "a statement whose sequence could not be read was skipped and another row was "
+                        + "reported as the newest; a transition would copy that row's digest as "
+                        + "the prior of bytes it may not describe");
         assertNull(journalOver(clientReturning(row("z".repeat(64), null)))
                         .latestRecorded("bedroom", "v-1"),
-                "a version whose only row was never chained answered a statement");
+                "a version whose only row has no readable sequence answered a statement");
+        assertNull(journalOver(clientReturning(row("a".repeat(64), 10L), row("z".repeat(64), "10")))
+                        .latestRecorded("bedroom", "v-1"),
+                "a sequence stored as text is not a readable sequence");
+    }
+
+    @Test
+    @DisplayName("recordedAt answers the cited sequence, not the first row it meets")
+    void recordedAtIsTheCitedSequenceNotTheFirstRow() {
+        CouchContentWriteJournal journal = journalOver(clientReturning(
+                row("c".repeat(64), 90L), row("a".repeat(64), 10L), row("b".repeat(64), 50L)));
+
+        ContentWriteJournal.Recorded at10 = journal.recordedAt("bedroom", "v-1", 10L);
+        assertEquals(10L, at10.entrySequence());
+        assertEquals("a".repeat(64), at10.statement().get("contentDigest"),
+                "the transition cites entry 10 and the package would carry a different "
+                        + "statement as its prior");
+        assertNull(journal.recordedAt("bedroom", "v-1", 77L),
+                "a sequence no row was closed with answered a statement");
     }
 
     @Test
