@@ -27,6 +27,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -215,5 +216,147 @@ class TheExitCodeIsTheInterfaceTest {
         assertEquals(5, java.util.Set.of(Verify.EXIT_VERIFIED, Verify.EXIT_FAILED,
                 Verify.EXIT_INDETERMINATE, Verify.EXIT_USAGE, Verify.EXIT_INTERNAL).size());
         assertEquals(0, Verify.EXIT_VERIFIED, "0 is VERIFIED and nothing else is");
+    }
+
+
+    // ------------------------------------------------------------------------------------
+    // The JSON is the interface too (R66). The schema at docs/evidence-profile/v1/ is what a
+    // receiving party validates the output against with THEIR tools; this module never reads
+    // it at run time (a validator would be one more library they have to trust). These locks
+    // keep the schema and the implementation pointing at the same shape.
+    // ------------------------------------------------------------------------------------
+
+    private static final Path SCHEMA =
+            Path.of("../docs/evidence-profile/v1/verifier-result.schema.json");
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> schema() throws Exception {
+        assertTrue(Files.exists(SCHEMA), "the result schema is not at " + SCHEMA);
+        Object parsed = jp.aegif.nemaki.verifier.Json.parse(
+                Files.readString(SCHEMA, StandardCharsets.UTF_8));
+        assertTrue(parsed instanceof Map, "the schema is not a JSON object");
+        return (Map<String, Object>) parsed;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> properties(Map<String, Object> node) {
+        return (Map<String, Object>) node.get("properties");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Object> list(Object o) {
+        return (List<Object>) o;
+    }
+
+    @Test
+    @DisplayName("--json output conforms to the published schema, judged BY the schema")
+    void theJsonConformsToThePublishedSchema(@TempDir Path tmp) throws Exception {
+        // The schema's own required/enum/additionalProperties drive the checks, so editing the
+        // schema changes what is demanded here. A hand-written list beside the schema would
+        // pass while the two disagreed — the defect this branch keeps meeting.
+        Map<String, Object> schema = schema();
+        Path sip = zip(tmp, "good.zip", goodPackage("the minutes"));
+        Run result = run("verify", sip.toString(), "--json");
+        Map<String, Object> body = (Map<String, Object>) jp.aegif.nemaki.verifier.Json.parse(
+                result.out().trim());
+
+        for (Object required : list(schema.get("required"))) {
+            assertTrue(body.containsKey(String.valueOf(required)),
+                    "the output lacks the key the schema requires: " + required);
+        }
+        assertEquals(Boolean.FALSE, schema.get("additionalProperties"), "the schema is not closed");
+        for (String key : body.keySet()) {
+            assertTrue(properties(schema).containsKey(key),
+                    "the output carries a key the CLOSED schema does not declare: " + key
+                            + ". A receiving party validating with the schema would reject "
+                            + "every result this version prints");
+        }
+        Map<String, Object> verdict = (Map<String, Object>) properties(schema).get("verdict");
+        assertTrue(list(verdict.get("enum")).contains(body.get("verdict")),
+                "verdict " + body.get("verdict") + " is not in the schema's enum");
+        assertTrue(!String.valueOf(body.get("limits")).isEmpty(), "limits is empty");
+
+        Map<String, Object> items = (Map<String, Object>) ((Map<String, Object>)
+                properties(schema).get("checks")).get("items");
+        Map<String, Object> checkProps = properties(items);
+        List<Object> outcomes = list(((Map<String, Object>) checkProps.get("outcome")).get("enum"));
+        List<Object> reasonCodes = list(((Map<String, Object>) checkProps.get("reasonCode")).get("enum"));
+        List<Object> checks = list(body.get("checks"));
+        assertTrue(!checks.isEmpty(), "the output has no checks");
+        for (Object o : checks) {
+            Map<String, Object> check = (Map<String, Object>) o;
+            for (Object required : list(items.get("required"))) {
+                assertTrue(check.containsKey(String.valueOf(required)),
+                        "a check lacks " + required + ": " + check);
+            }
+            for (String key : check.keySet()) {
+                assertTrue(checkProps.containsKey(key),
+                        "a check carries a key the closed schema does not declare: " + key);
+            }
+            assertTrue(outcomes.contains(check.get("outcome")),
+                    "outcome " + check.get("outcome") + " is not in the schema's enum");
+            if (check.containsKey("reasonCode")) {
+                assertTrue(reasonCodes.contains(check.get("reasonCode")),
+                        "reasonCode " + check.get("reasonCode") + " is not in the schema's enum");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("the schema's reasonCode enum is exactly the codes the verifier can emit")
+    void theSchemasReasonCodesAreTheSourcesReasonCodes() throws Exception {
+        // Derived from BOTH modules' main sources, compared in BOTH directions. A code the
+        // source emits and the schema lacks makes every such result non-conforming; a code the
+        // schema lists and nothing emits is a branch a receiving party writes for nothing.
+        java.util.SortedSet<String> inSource = new java.util.TreeSet<>();
+        for (Path root : List.of(Path.of("../evidence-verifier-core/src/main/java"),
+                Path.of("src/main/java"))) {
+            try (java.util.stream.Stream<Path> walk = Files.walk(root)) {
+                for (Path file : walk.filter(p -> p.toString().endsWith(".java")).toList()) {
+                    java.util.regex.Matcher m = java.util.regex.Pattern
+                            .compile("unavailable\\(\"[^\"]+\",\\s*\"([A-Z_]+)\"")
+                            .matcher(Files.readString(file, StandardCharsets.UTF_8));
+                    while (m.find()) {
+                        inSource.add(m.group(1));
+                    }
+                }
+            }
+        }
+        assertTrue(!inSource.isEmpty(), "no reason code found in the sources — the pattern "
+                + "no longer matches how unavailable(...) is written, and this would pass empty");
+        Map<String, Object> items = (Map<String, Object>) ((Map<String, Object>)
+                properties(schema()).get("checks")).get("items");
+        java.util.SortedSet<String> inSchema = new java.util.TreeSet<>();
+        for (Object code : list(((Map<String, Object>) properties(items).get("reasonCode")).get("enum"))) {
+            inSchema.add(String.valueOf(code));
+        }
+        assertEquals(inSource, inSchema,
+                "the schema's reasonCode enum and the codes the verifier emits differ. "
+                        + "Source: " + inSource + " / schema: " + inSchema);
+    }
+
+    @Test
+    @DisplayName("the schema is closed, pins the limits, and is versioned in its id")
+    void theSchemaIsClosedAndPinsTheLimits() throws Exception {
+        Map<String, Object> schema = schema();
+        assertEquals(Boolean.FALSE, schema.get("additionalProperties"),
+                "the top level admits undeclared keys");
+        Map<String, Object> items = (Map<String, Object>) ((Map<String, Object>)
+                properties(schema).get("checks")).get("items");
+        assertEquals(Boolean.FALSE, items.get("additionalProperties"),
+                "a check admits undeclared keys");
+        assertTrue(list(schema.get("required")).contains("limits"),
+                "limits is not required. A schema that lets the limits go is a schema that "
+                        + "accepts a CLI which dropped them");
+        Map<String, Object> limits = (Map<String, Object>) properties(schema).get("limits");
+        assertTrue(((Number) limits.get("minLength")).intValue() >= 1,
+                "limits may be empty under the schema");
+        assertTrue(String.valueOf(schema.get("$id")).contains("/v1/"),
+                "the schema's $id does not carry the profile version");
+        // Deliberately NOT an enum (owner's decision): the CLI refuses unknown profiles with
+        // exit 4 before any output exists, so the schema closing it too would only mean two
+        // lists to keep equal.
+        Map<String, Object> profile = (Map<String, Object>) properties(schema).get("profile");
+        assertTrue(!profile.containsKey("enum"), "profile became an enum");
     }
 }

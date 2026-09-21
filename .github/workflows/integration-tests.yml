@@ -22,7 +22,7 @@ on:
       # The evidence profile spec and the vectors both languages read. A change to
       # either is a change to what every external verifier must do.
       - 'docs/design/evidence-profile-v1.md'
-      - 'docs/evidence-profile/v1/vectors/**'
+      - 'docs/evidence-profile/v1/**'
       # The progress documents. A lock reads their counts against the canon and the
       # runner, and reads the Phase 0 gate against the profile spec. Editing a number
       # in either of these is exactly the change that has to start this workflow.
@@ -70,7 +70,7 @@ on:
       # The evidence profile spec and the vectors both languages read. A change to
       # either is a change to what every external verifier must do.
       - 'docs/design/evidence-profile-v1.md'
-      - 'docs/evidence-profile/v1/vectors/**'
+      - 'docs/evidence-profile/v1/**'
       # The progress documents. A lock reads their counts against the canon and the
       # runner, and reads the Phase 0 gate against the profile spec. Editing a number
       # in either of these is exactly the change that has to start this workflow.

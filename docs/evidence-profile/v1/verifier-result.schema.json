@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nemakiware.org/evidence-profile/v1/verifier-result",
+  "title": "NemakiWare evidence verifier result (profile v1)",
+  "description": "The object `nemaki-evidence verify --json` prints. A CONTRACT OF SHAPE, not of meaning: conforming output is not a correct verdict. `checks` order is the CLI's, not semantic. `detail` is human-readable and NOT a contract — a machine branches on `reasonCode`. `profile` is deliberately not an enum: an unknown profile is refused by the CLI (exit 4) before any output exists.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "verdict",
+    "checks",
+    "limits"
+  ],
+  "properties": {
+    "profile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "VERIFIED",
+        "FAILED",
+        "INDETERMINATE"
+      ]
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "outcome"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "PASSED",
+              "FAILED",
+              "NOT_PRESENT",
+              "UNAVAILABLE"
+            ]
+          },
+          "reasonCode": {
+            "type": "string",
+            "enum": [
+              "AMBIGUOUS_PAYLOAD",
+              "AMBIGUOUS_PREMIS",
+              "ANCHOR_NOT_PARSED",
+              "CERTIFICATE_UNREADABLE",
+              "NO_BLOCK_HEADER_SOURCE",
+              "OTS_NOT_PARSED",
+              "PKIX_UNAVAILABLE",
+              "REVOCATION_NOT_CAPTURED",
+              "REVOCATION_NOT_PARSED",
+              "REVOCATION_NOT_REQUIRED",
+              "UNKNOWN_ALGORITHM",
+              "UNSUPPORTED_ERS_VERSION"
+            ],
+            "description": "Present only when outcome is UNAVAILABLE. Derived from the verifier's source; a lock keeps this list equal to it in both directions."
+          },
+          "detail": {
+            "type": "string",
+            "description": "Not a contract. Do not branch on it."
+          }
+        }
+      }
+    },
+    "limits": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What a pass does NOT establish. Required and non-empty: a schema that admitted an empty limits string would admit a CLI that dropped them."
+    }
+  }
+}
