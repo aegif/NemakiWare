@@ -52,7 +52,7 @@ import java.util.Map;
  * either way, and leaving 1 free keeps it clear that every code here was chosen.
  *
  * <p><b>Default no-network.</b> Nothing here opens a socket. A check that would need one
- * reports {@code NO_NETWORK} and composes to indeterminate.
+ * reports {@code NO_BLOCK_HEADER_SOURCE / REVOCATION_NOT_CAPTURED} and composes to indeterminate.
  */
 public final class Verify {
 
@@ -114,7 +114,7 @@ public final class Verify {
                     // Accepted and refused rather than silently ignored: a caller passing it
                     // expects something to happen, and nothing here opens a socket.
                     err.println("--allow-network is not supported by this version; every check "
-                            + "it would enable reports NO_NETWORK instead");
+                            + "it would enable reports NO_BLOCK_HEADER_SOURCE / REVOCATION_NOT_CAPTURED instead");
                     return EXIT_USAGE;
                 }
                 default -> {

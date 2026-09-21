@@ -47,8 +47,9 @@ public enum Outcome {
     }
 
     /**
-     * @param reasonCode null for PASSED and FAILED. For UNAVAILABLE it is required: "could not
-     *        check" without a why is not actionable, and the CLI prints it
+     * @param reasonCode null for everything but UNAVAILABLE (the constructor refuses it on
+     *        PASSED, FAILED and NOT_PRESENT alike). For UNAVAILABLE it is required and must be
+     *        registered: "could not check" without a why is not actionable, and the CLI prints it
      */
     public record Check(String name, Outcome outcome, String reasonCode, String detail) {
         /**
@@ -80,8 +81,10 @@ public enum Outcome {
             if (outcome == UNAVAILABLE && !REASON_CODES.contains(reasonCode)) {
                 // Fail-closed at construction: a code the registry does not know is a code the
                 // published schema does not know, and a result a receiving party's validator
-                // would reject. Registering it is a one-line change; emitting it unregistered
-                // is not allowed to compile into a green run.
+                // would reject. This is a RUNTIME check — it fires on the branch that reaches
+                // it. The literal form is also caught at build time by a source scan in
+                // TheReasonCodeIsARegistryTest, so a typo in an unexercised branch does not
+                // wait for a package in the field to turn exit 3 into exit 5.
                 throw new IllegalArgumentException("reason code " + reasonCode + " is not in "
                         + "Outcome.Check.REASON_CODES. Register it there — the result schema's "
                         + "enum is kept equal to that set, and an unregistered code is one the "

@@ -44,7 +44,7 @@ JSON Schema の draft は **2020-12**。
   「空でない STRING」
 - `checks[].reasonCode` は **enum にする**。理由コードは受け取る側が分岐する値であり、
   自由文にすると `REVOCATION_NOT_REQUIRED` と `REVOCATION_NOT_REQUIRE` が別物になる。
-  値は **`Outcome.Check.REASON_CODES` という登録簿**から取る（17 値）。**初版は grep で導出して 5 値を落とした**
+  値は **`Outcome.Check.REASON_CODES` という登録簿**から取る — `REASON_CODES`（17 値）。**初版は grep で導出して 5 つを落とした**
   — 第 1 引数が変数の呼び出しと、第 2 引数がメソッド呼び出し（`refusal.reasonCode()`）を拾えなかった。
   grep は「コードがどう書かれているか」の推測であり、constructor はそうではない。**未登録の理由は構築時に拒否**する
 - `limits` は `minLength: 1`。**空の limits を通す schema は、限界文を落とした CLI を通す**
@@ -63,10 +63,10 @@ schema は受け取る側が**自分の**道具で検証するためのもの。
 代わりに錠は「schema が要求すること」を**自前で**検査する:
 
 - `Verify.asJson` の出力を **verifier 自身の `Json.parse`** で読み（cli の pom に Jackson は無い。この parser は整数のみ・重複 key 拒否・深さ 64 で、schema はその範囲内）、
-  **schema の語彙（type / enum / const / minLength / minItems / required / additionalProperties / items / if-then-else / not）を再帰的に評価する小さな validator** で判定する。手書きの要求は置かない
+  **schema の語彙を再帰的に評価する小さな validator** で判定する。**適用は JSON Schema どおりインスタンス駆動**（値が object なら required / properties / additionalProperties、array なら items / minItems、string なら minLength — `type` の有無とは独立）。初版は `type` の枝の中でしか評価せず、`type` を持たない `if` / `then` / `else` / `not` が**全部 no-op**だった（2 つの誤りが打ち消し合って緑。両レビュー P1）。**実装していないキーワードは throw**する — 読めなかった制約を「制約なし」と報告しない
 - **schema ファイルの `enum` 配列**と、登録簿 `Outcome.Check.REASON_CODES` が**一致**する
   （両方向 — schema にだけ在る値も、登録簿にだけ在る値も落とす）
-- schema の `required` と `asJson` が常に出すキーが一致する
+- schema の `required` のキーを `asJson` が常に出す（片方向。逆は閉じた schema の `additionalProperties` が担う）
 
 これは「validator 相当を手で書く」のではなく「schema と実装が**同じ集合を指す**ことを
 測る」錠。validator が無くても、schema が実装から乖離したら赤になる。
@@ -86,9 +86,8 @@ schema は受け取る側が**自分の**道具で検証するためのもの。
 ## 3. 錠と control
 
 - **集合一致の錠**（1.4）: schema の `reasonCode` enum ＝ 登録簿 `REASON_CODES`。**登録簿の錠**（core）: 未登録の理由と UNAVAILABLE 以外の理由は構築時に拒否、`PackageReader.Refusal` は全部登録済み
-- **出力適合の錠**: **6 profile × 2 package（正常・非 zip）= 12 出力**で `asJson` を読み、schema の要求を満たす。UNAVAILABLE が 1 つも出なければ落ちる（初版は 1×1 で reasonCode の分岐を一度も通していなかった）
-- **control**: schema から `limits` の `required` を外す細工／`reasonCode` を 1 つ schema に
-  足すだけの細工（ソースに無い理由が契約に入る）／`asJson` が `limits` を落とす細工
+- **出力適合の錠**: `Verify.KNOWN_PROFILES` の**全 profile × 正常 package**（要求した profile の echo も確認）＋ **refusal ごとに 1 package**（非 zip / `../` / 重複エントリ / エントリ過多）。**期待する reasonCode が出力に現れたこと**を assert する — 「分岐を通した」を測る（初版の「6 × 2 = 12 出力」は非 zip が profile 分岐の手前で終わるので 1 ケースの 6 回で、通った code は 2 / 17 だった）。判別の錠: UNAVAILABLE に理由無し／PASSED に理由有りを schema の `items` に通して拒否されること
+- **control**: LP3 schema から `limits` の `required` を外す／LQ3 schema にだけ code を足す／LR3 `asJson` が `limits` を落とす／LS3 登録簿から実在の code を落とす／LT3 PASSED+理由の guard を外す／LU3 登録簿にだけ code を足す／**LV3 `asJson` が `reasonCode` を落とす**（`if/then` が生きて初めて落ちる）／**LW3 未登録拒否の guard を外す**／**LX3 schema の `then` を空にする**
 
 ---
 

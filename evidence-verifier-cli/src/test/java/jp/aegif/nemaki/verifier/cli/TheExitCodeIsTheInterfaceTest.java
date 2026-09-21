@@ -249,30 +249,63 @@ class TheExitCodeIsTheInterfaceTest {
         return (List<Object>) o;
     }
 
+    /** Keywords that carry no constraint. Anything else the validator does not implement is refused. */
+    private static final java.util.Set<String> ANNOTATIONS =
+            java.util.Set.of("$schema", "$id", "title", "description");
+
+    /** Keywords this validator implements. A schema using any other keyword makes it throw. */
+    private static final java.util.Set<String> IMPLEMENTED = java.util.Set.of("type", "enum",
+            "const", "minLength", "minItems", "required", "additionalProperties", "properties",
+            "items", "if", "then", "else", "not");
+
     /**
      * A validator for the subset of JSON Schema this schema uses, driven by the schema text.
      *
-     * <p>Not a hand-written list of what the schema "means". The first version checked
-     * required / enum / additionalProperties by hand and nothing else, so an empty
-     * {@code name} passed the lock while the schema's {@code minLength: 1} would have rejected
-     * it — and it demanded a non-empty {@code checks} the schema did not (both reviews, P2).
-     * Everything below is read from the schema node it is validating against.
+     * <p>Applicators are INSTANCE-driven, as in JSON Schema: {@code required} and
+     * {@code properties} apply whenever the value is an object, {@code items} whenever it is an
+     * array, {@code minLength} whenever it is a string — independent of whether the node also
+     * says {@code type}. The first version evaluated them only under {@code type: "object"} (and
+     * the array/string keywords likewise), so the schema's {@code if}/{@code then}/{@code else}
+     * /{@code not} nodes — which carry no {@code type} — were never evaluated at all: {@code if}
+     * always matched, {@code then} checked nothing, and {@code not} would have refused every
+     * non-UNAVAILABLE check had {@code else} ever been reached. Two defects cancelling into
+     * green (both reviews, P1).
+     *
+     * <p>Unknown keywords are refused, not skipped. A keyword this validator does not implement
+     * would otherwise be read as "no constraint" — a could-not-check reported as passed, the
+     * defect this branch is named after, in the lock that guards the schema.
      */
     @SuppressWarnings("unchecked")
     private static void validate(Object value, Map<String, Object> node, String at,
             List<String> errors) {
+        for (String key : node.keySet()) {
+            if (!ANNOTATIONS.contains(key) && !IMPLEMENTED.contains(key)) {
+                throw new IllegalStateException("the schema uses the keyword '" + key + "' at "
+                        + at + ", which this validator does not implement. Skipping it would "
+                        + "report 'conforms' for a constraint nobody checked");
+            }
+        }
         if (node.containsKey("const") && !java.util.Objects.equals(node.get("const"), value)) {
             errors.add(at + ": expected const " + node.get("const") + ", got " + value);
         }
         if (node.containsKey("enum") && !list(node.get("enum")).contains(value)) {
             errors.add(at + ": " + value + " is not in enum " + node.get("enum"));
         }
-        String type = (String) node.get("type");
-        if ("object".equals(type)) {
-            if (!(value instanceof Map)) {
-                errors.add(at + ": expected object");
-                return;
+        if (node.containsKey("type")) {
+            String type = String.valueOf(node.get("type"));
+            boolean ok = switch (type) {
+                case "object" -> value instanceof Map;
+                case "array" -> value instanceof List;
+                case "string" -> value instanceof String;
+                default -> throw new IllegalStateException("type '" + type + "' at " + at
+                        + " is not one this validator implements");
+            };
+            if (!ok) {
+                errors.add(at + ": expected " + type + ", got "
+                        + (value == null ? "null" : value.getClass().getSimpleName()));
             }
+        }
+        if (value instanceof Map) {
             Map<String, Object> object = (Map<String, Object>) value;
             for (Object required : list(node.getOrDefault("required", List.of()))) {
                 if (!object.containsKey(String.valueOf(required))) {
@@ -280,19 +313,16 @@ class TheExitCodeIsTheInterfaceTest {
                 }
             }
             Map<String, Object> props = (Map<String, Object>) node.getOrDefault("properties", Map.of());
-            for (Map.Entry<String, Object> e : object.entrySet()) {
-                if (props.containsKey(e.getKey())) {
-                    validate(e.getValue(), (Map<String, Object>) props.get(e.getKey()),
-                            at + "." + e.getKey(), errors);
+            for (Map.Entry<String, Object> entry : object.entrySet()) {
+                if (props.containsKey(entry.getKey())) {
+                    validate(entry.getValue(), (Map<String, Object>) props.get(entry.getKey()),
+                            at + "." + entry.getKey(), errors);
                 } else if (Boolean.FALSE.equals(node.get("additionalProperties"))) {
-                    errors.add(at + ": undeclared key " + e.getKey());
+                    errors.add(at + ": undeclared key " + entry.getKey());
                 }
             }
-        } else if ("array".equals(type)) {
-            if (!(value instanceof List)) {
-                errors.add(at + ": expected array");
-                return;
-            }
+        }
+        if (value instanceof List) {
             List<Object> array = list(value);
             if (node.containsKey("minItems")
                     && array.size() < ((Number) node.get("minItems")).intValue()) {
@@ -302,17 +332,11 @@ class TheExitCodeIsTheInterfaceTest {
             for (int i = 0; items != null && i < array.size(); i++) {
                 validate(array.get(i), items, at + "[" + i + "]", errors);
             }
-        } else if ("string".equals(type)) {
-            if (!(value instanceof String)) {
-                errors.add(at + ": expected string, got " + value);
-                return;
-            }
-            if (node.containsKey("minLength")
-                    && ((String) value).length() < ((Number) node.get("minLength")).intValue()) {
-                errors.add(at + ": shorter than minLength " + node.get("minLength"));
-            }
         }
-        // if / then / else and not — the only applicators this schema uses beyond the above.
+        if (value instanceof String && node.containsKey("minLength")
+                && ((String) value).length() < ((Number) node.get("minLength")).intValue()) {
+            errors.add(at + ": shorter than minLength " + node.get("minLength"));
+        }
         if (node.containsKey("if")) {
             List<String> ifErrors = new ArrayList<>();
             validate(value, (Map<String, Object>) node.get("if"), at, ifErrors);
@@ -330,47 +354,142 @@ class TheExitCodeIsTheInterfaceTest {
         }
     }
 
+    /** The per-check schema node (checks.items). */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> checkItems() throws Exception {
+        return (Map<String, Object>) ((Map<String, Object>)
+                properties(schema()).get("checks")).get("items");
+    }
+
     @Test
-    @DisplayName("--json output conforms to the published schema for EVERY profile and refusal")
+    @DisplayName("the schema's reasonCode rule actually discriminates, judged by the schema")
+    void theReasonCodeRuleDiscriminates() throws Exception {
+        // The two objects the if/then/else exists to reject, run through the schema's own
+        // per-check node. Expected values come from the schema, not from a hand-written list:
+        // empty the schema's `then` and this goes red. The first validator let both through
+        // (both reviews, P1).
+        Map<String, Object> items = checkItems();
+        List<String> missingReason = new ArrayList<>();
+        validate(Map.of("name", "x", "outcome", "UNAVAILABLE"), items, "unavailable-no-reason",
+                missingReason);
+        assertTrue(!missingReason.isEmpty(),
+                "an UNAVAILABLE check with no reasonCode passed the schema's per-check node, so "
+                        + "the if/then rule is not being evaluated");
+        List<String> reasonOnPassed = new ArrayList<>();
+        validate(Map.of("name", "x", "outcome", "PASSED", "reasonCode", "UNKNOWN_ALGORITHM"),
+                items, "passed-with-reason", reasonOnPassed);
+        assertTrue(!reasonOnPassed.isEmpty(),
+                "a PASSED check carrying a reasonCode passed the schema's per-check node, so "
+                        + "the else/not rule is not being evaluated");
+        // And the honest pair passes, or the rule refuses everything.
+        List<String> fine = new ArrayList<>();
+        validate(Map.of("name", "x", "outcome", "UNAVAILABLE", "reasonCode", "UNKNOWN_ALGORITHM"),
+                items, "unavailable-with-reason", fine);
+        validate(Map.of("name", "x", "outcome", "PASSED"), items, "passed-plain", fine);
+        assertTrue(fine.isEmpty(), "a conforming check was refused: " + fine);
+    }
+
+    /** A zip with more entries than the reader admits — the RESOURCE_LIMIT refusal. */
+    private static Path tooManyEntries(Path dir) throws Exception {
+        Path file = dir.resolve("too-many.zip");
+        try (OutputStream out = Files.newOutputStream(file);
+                ZipOutputStream zip = new ZipOutputStream(out)) {
+            for (int i = 0; i <= jp.aegif.nemaki.verifier.PackageReader.MAX_ENTRIES; i++) {
+                zip.putNextEntry(new ZipEntry(ROOT + "e" + i));
+                zip.closeEntry();
+            }
+        }
+        return file;
+    }
+
+    /** Two entries with one name — ZipOutputStream refuses to write that, so the bytes are patched. */
+    private static Path duplicateEntries(Path dir) throws Exception {
+        Path file = dir.resolve("duplicate.zip");
+        try (OutputStream out = Files.newOutputStream(file);
+                ZipOutputStream zip = new ZipOutputStream(out)) {
+            zip.putNextEntry(new ZipEntry("a/premis.xml"));
+            zip.write("first".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+            zip.putNextEntry(new ZipEntry("b/premis.xml"));
+            zip.write("second".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        byte[] raw = Files.readAllBytes(file);
+        byte[] from = "b/premis.xml".getBytes(StandardCharsets.UTF_8);
+        byte[] to = "a/premis.xml".getBytes(StandardCharsets.UTF_8);
+        for (int i = 0; i + from.length <= raw.length; i++) {
+            boolean match = true;
+            for (int j = 0; j < from.length && match; j++) {
+                match = raw[i + j] == from[j];
+            }
+            if (match) {
+                System.arraycopy(to, 0, raw, i, to.length);
+            }
+        }
+        Files.write(file, raw);
+        return file;
+    }
+
+    @Test
+    @DisplayName("--json output conforms to the published schema for every profile and every refusal")
     void theJsonConformsToThePublishedSchema(@TempDir Path tmp) throws Exception {
-        // Every profile, plus the two refusal paths — because the first version ran one
-        // package against one profile, produced no UNAVAILABLE check at all, and so never
-        // reached the reasonCode branch: five codes the CLI really prints were missing from
-        // the schema and this lock was green (both reviews, P1). A lock that exercises one
-        // happy path measures the happy path.
+        // Every profile the CLI knows (read from the CLI, not copied), each asked to echo the
+        // profile it was given; and one package per refusal the reader can raise, so every
+        // reason-code path the CLI has is exercised and its JSON shape judged. The first
+        // version ran one package against six profiles and called it twelve outputs — the
+        // non-zip is refused BEFORE the profile branch, so that was one case six times, and
+        // only NOT_A_ZIP and LEGACY_PACKAGE_LAYOUT ever appeared (both reviews, P2).
         Map<String, Object> schema = schema();
         Path good = zip(tmp, "good.zip", goodPackage("the minutes"));
         Path notAZip = tmp.resolve("broken.zip");
         Files.writeString(notAZip, "this is not a zip");
+        Map<String, String> traversal = new LinkedHashMap<>(goodPackage("the minutes"));
+        traversal.put("../escape.txt", "x");
+        Path unsafe = zip(tmp, "unsafe.zip", traversal);
+        Map<Path, String> refusals = new LinkedHashMap<>();
+        refusals.put(notAZip, "NOT_A_ZIP");
+        refusals.put(unsafe, "UNSAFE_PATH");
+        refusals.put(duplicateEntries(tmp), "DUPLICATE_ENTRY");
+        refusals.put(tooManyEntries(tmp), "RESOURCE_LIMIT");
 
         List<String> allErrors = new ArrayList<>();
-        int outputs = 0;
-        int unavailableSeen = 0;
-        for (String profile : List.of("PACKAGE_INTEGRITY_V1", "RECORD_LEDGER_V1",
-                "ANCHORED_CHECKPOINT_V1", "TRUSTED_RFC3161_V1", "ANCHORED_OTS_V1",
-                "LONG_TERM_ERS_V1")) {
-            for (Path sip : List.of(good, notAZip)) {
-                Run result = run("verify", sip.toString(), "--profile", profile, "--json");
-                assertTrue(result.code() != Verify.EXIT_USAGE && result.code() != Verify.EXIT_INTERNAL,
-                        profile + " on " + sip.getFileName() + " did not produce a result: "
-                                + result.err());
-                Object body = jp.aegif.nemaki.verifier.Json.parse(result.out().trim());
-                List<String> errors = new ArrayList<>();
-                validate(body, schema, profile + "/" + sip.getFileName(), errors);
-                allErrors.addAll(errors);
-                outputs++;
-                for (Object c : list(((Map<String, Object>) body).get("checks"))) {
-                    if ("UNAVAILABLE".equals(((Map<String, Object>) c).get("outcome"))) {
-                        unavailableSeen++;
-                    }
+        java.util.SortedSet<String> codesSeen = new java.util.TreeSet<>();
+        for (String profile : Verify.KNOWN_PROFILES) {
+            Run result = run("verify", good.toString(), "--profile", profile, "--json");
+            assertTrue(result.code() != Verify.EXIT_USAGE && result.code() != Verify.EXIT_INTERNAL,
+                    profile + " did not produce a result: " + result.err());
+            Map<String, Object> body = (Map<String, Object>) jp.aegif.nemaki.verifier.Json.parse(
+                    result.out().trim());
+            assertEquals(profile, body.get("profile"),
+                    "the output does not echo the profile it was asked for");
+            validate(body, schema, profile + "/good.zip", allErrors);
+            for (Object c : list(body.get("checks"))) {
+                Object code = ((Map<String, Object>) c).get("reasonCode");
+                if (code != null) {
+                    codesSeen.add(String.valueOf(code));
                 }
             }
         }
-        assertEquals(12, outputs, "six profiles times two packages were meant to be exercised");
-        assertTrue(unavailableSeen > 0,
-                "no UNAVAILABLE check was produced across every profile and both packages, so "
-                        + "the reasonCode branch of the schema was never exercised — which is "
-                        + "exactly how five codes went missing from it");
+        for (Map.Entry<Path, String> refusal : refusals.entrySet()) {
+            Run result = run("verify", refusal.getKey().toString(), "--json");
+            assertEquals(Verify.EXIT_INDETERMINATE, result.code(),
+                    refusal.getValue() + " did not come back INDETERMINATE: " + result.err());
+            Map<String, Object> body = (Map<String, Object>) jp.aegif.nemaki.verifier.Json.parse(
+                    result.out().trim());
+            validate(body, schema, refusal.getValue(), allErrors);
+            java.util.Set<Object> codes = new java.util.HashSet<>();
+            for (Object c : list(body.get("checks"))) {
+                codes.add(((Map<String, Object>) c).get("reasonCode"));
+            }
+            assertTrue(codes.contains(refusal.getValue()),
+                    "the " + refusal.getKey().getFileName() + " package was meant to exercise "
+                            + refusal.getValue() + " and the output carries " + codes
+                            + " — the branch this fixture exists for was not reached");
+            codesSeen.add(refusal.getValue());
+        }
+        assertTrue(codesSeen.contains("LEGACY_PACKAGE_LAYOUT"),
+                "no profile produced LEGACY_PACKAGE_LAYOUT on the legacy good package, so the "
+                        + "ledger profiles' UNAVAILABLE path went unexercised: " + codesSeen);
         assertTrue(allErrors.isEmpty(),
                 "output the CLI really prints does not conform to the published schema. A "
                         + "receiving party validating with it would reject these results:\n  "

@@ -28,8 +28,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>These are the guards that make the published schema's {@code reasonCode} enum complete.
  * The enum used to be derived by grepping the sources and missed five codes; now the set is a
- * declared registry, the schema is held equal to it by a lock in the CLI module, and this class
- * holds the registry to the code — a code nothing can construct is a code nothing can emit.
+ * declared registry, the schema is held equal to it by {@link #theSchemaEnumIsTheRegistry}
+ * HERE (in the registry's own module — a CLI-side lock reads the installed core jar and never
+ * sees a change to this file), and the guards below hold the registry to the code — a code
+ * nothing can construct is a code nothing can emit.
  */
 class TheReasonCodeIsARegistryTest {
 
@@ -99,5 +101,74 @@ class TheReasonCodeIsARegistryTest {
                         + "validator rejects; one the schema has and nothing emits is a branch "
                         + "they write for nothing. Registry: " + registered + " / schema: "
                         + inSchema);
+    }
+
+    @Test
+    @DisplayName("every reason code written as a literal in the sources is registered")
+    void everyLiteralCodeIsRegistered() throws java.io.IOException {
+        // One direction, and a SUBSET on purpose. The constructor guard is a runtime check and
+        // only fires on a branch a test actually reaches; a typo in a branch nothing exercises
+        // would ship, and the first package to reach it in the field would turn "could not
+        // check, here is why" (exit 3) into "the program failed" (exit 5). This scan catches
+        // the literal form at build time regardless of which branches run. It cannot see a code
+        // passed through a variable — for that the guard and everyRefusalIsRegistered remain —
+        // and that is the safe side: a literal it cannot read is not a false alarm, it is a
+        // literal that does not exist (review, P2).
+        java.util.SortedSet<String> literals = new java.util.TreeSet<>();
+        java.util.regex.Pattern call = java.util.regex.Pattern.compile(
+                "unavailable\\(\\s*[^,]+,\\s*\"([A-Z_]+)\"", java.util.regex.Pattern.DOTALL);
+        for (java.nio.file.Path root : java.util.List.of(java.nio.file.Path.of("src/main/java"),
+                java.nio.file.Path.of("../evidence-verifier-cli/src/main/java"))) {
+            try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(root)) {
+                for (java.nio.file.Path file : walk.filter(p -> p.toString().endsWith(".java")).toList()) {
+                    // Comments stripped first: the registry's own javadoc shows the call with
+                    // "CODE" as a placeholder, and the scan read it as a literal (measured).
+                    String text = java.nio.file.Files.readString(file,
+                                    java.nio.charset.StandardCharsets.UTF_8)
+                            .replaceAll("(?m)//.*$", "")
+                            .replaceAll("(?s)/\\*.*?\\*/", "");
+                    java.util.regex.Matcher m = call.matcher(text);
+                    while (m.find()) {
+                        literals.add(m.group(1));
+                    }
+                }
+            }
+        }
+        assertTrue(literals.size() >= 10, "the literal scan found only " + literals
+                + "; the pattern no longer matches how unavailable(...) is written and this "
+                + "would pass by finding nothing");
+        java.util.SortedSet<String> unregistered = new java.util.TreeSet<>(literals);
+        unregistered.removeAll(Outcome.Check.REASON_CODES);
+        assertTrue(unregistered.isEmpty(),
+                "reason codes written in the sources are not in the registry: " + unregistered
+                        + ". Whichever branch first reaches one in the field exits 5 instead of "
+                        + "answering 3 with a reason");
+    }
+
+    @Test
+    @DisplayName("the documents that state the registry's size state the measured size")
+    void theDocumentsStateTheMeasuredSize() throws java.io.IOException {
+        // "17 値" was hand-written in three documents by the same batch whose design document
+        // says hand-copied tables always go stale (review, P3). Now it is read.
+        int size = Outcome.Check.REASON_CODES.size();
+        for (String doc : java.util.List.of("../docs/design/verifier-result-schema.md",
+                "../docs/design/fail-closed-reads.md",
+                "../docs/operations/evidence-verifier-release.md")) {
+            String text = java.nio.file.Files.readString(java.nio.file.Path.of(doc),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            // ONE form: 「REASON_CODES（N 値）」 or 「登録簿 … （N 値）」. A looser "any N 値 near
+            // reasonCode" read the design document's "5 値を落とした" — the five that were
+            // MISSING — as the registry's size (measured).
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                    .compile("(?:REASON_CODES|登録簿)[^（。]{0,40}（(\\d+) 値）").matcher(text);
+            int stated = 0;
+            while (m.find()) {
+                stated++;
+                org.junit.jupiter.api.Assertions.assertEquals(size, Integer.parseInt(m.group(1)),
+                        doc + " states the registry as " + m.group(1) + " values and it has " + size);
+            }
+            assertTrue(stated >= 1, doc + " no longer states the registry's size in the form "
+                    + "「REASON_CODES（N 値）」, so its number has drifted out of this check's reach");
+        }
     }
 }
