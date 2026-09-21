@@ -259,37 +259,56 @@ class EveryStageIsListedTest {
         // the line that says exit 3 is not success left a bare `INDETERMINATE` needle satisfied
         // by O5-2 two sections earlier, and deleting the whole on/off explanation left every
         // needle satisfied by a heading (subagent review, P2).
-        Map<String, String> claims = Map.of(
-                "`3` (`INDETERMINATE`) は成功ではありません",
-                "an operator scripting on 'not 1' ships an INDETERMINATE result as a pass",
-                "CRL distribution point",
-                "turning collection on makes this node talk to an outside endpoint, which is "
-                        + "the operator's decision to take knowingly",
-                "`NOT_ATTEMPTED`",
-                "off records 'nothing was asked', and read as 'asked and clean' it overstates "
-                        + "what the package carries",
-                "`NOT_PRESENT`",
-                "without a trust profile the PKIX check does not pass, it abstains — and an "
-                        + "operator who does not know that reads a silent check as a passed one",
-                "--trust-profile",
-                "trust from inside the package would let a re-signed package name its own "
-                        + "issuer, so the operator has to know they supply it",
+        Map<String, String> claims = Map.ofEntries(
+                Map.entry("`3` (`INDETERMINATE`) は成功ではありません",
+                        "an operator scripting on 'not 1' ships an INDETERMINATE result as a pass"),
+                Map.entry("CRL distribution point",
+                        "turning collection on makes this node talk to an outside endpoint, which "
+                                + "is the operator's decision to take knowingly"),
+                Map.entry("`NOT_ATTEMPTED`",
+                        "off records 'nothing was asked', and read as 'asked and clean' it "
+                                + "overstates what the package carries"),
+                Map.entry("`NOT_PRESENT`",
+                        "without a trust profile the PKIX check does not pass, it abstains — and "
+                                + "an operator who does not know that reads a silent check as a "
+                                + "passed one"),
+                Map.entry("--trust-profile",
+                        "trust from inside the package would let a re-signed package name its own "
+                                + "issuer, so the operator has to know they supply it"),
                 // The setter has no caller anywhere, so 'off by default' was standing in for
                 // 'cannot be switched on' — the weaker fact reading as the stronger one, in the
                 // operator's own document (parallel review, P1).
-                "`anchor.rfc3161.revocation.collect-at-issuance`",
-                "collection is now something an operator can switch on, so the runbook has to "
-                        + "name the key — the previous edition said it could not be enabled",
-                "既定 **`false`**",
-                "collection reaches an outside endpoint the TSA chose; the default has to be "
-                        + "stated as off, or an upgrade silently starts talking to it",
-                "閉じていません",
-                "the HTTPS TCP-connect window is the same residual every other outbound path "
-                        + "carries; a runbook that stopped saying so would claim the guard "
-                        + "closes what it does not (owner's decision, R65)",
-                "`VERIFIED` に届きません",
-                "an operator who turns collection on expecting P3 to pass tunes a trust profile "
-                        + "forever; this version collects so a later one can evaluate");
+                Map.entry("`anchor.rfc3161.revocation.collect-at-issuance`",
+                        "collection is now something an operator can switch on, so the runbook "
+                                + "has to name the key — the previous edition said it could not "
+                                + "be enabled"),
+                Map.entry("既定 **`false`**",
+                        "collection reaches an outside endpoint the TSA chose; the default has to "
+                                + "be stated as off, or an upgrade silently starts talking to it"),
+                // The SENTENCE, not the word: 「閉じていません」 alone was satisfied by 「3.3 では
+                // 閉じていませんでした」 beside a claim that it is now closed (subagent P3-2).
+                Map.entry("TCP-connect の窓（内部ホストへの接続試行）は**閉じていません**",
+                        "the HTTPS TCP-connect window is the same residual every other outbound "
+                                + "path carries; a runbook that stopped saying so would claim the "
+                                + "guard closes what it does not (owner's decision, R65)"),
+                Map.entry("`VERIFIED` に届きません",
+                        "an operator who turns collection on expecting P3 to pass tunes a trust "
+                                + "profile forever; this version collects so a later one can "
+                                + "evaluate"),
+                // The HTTP pin sets Host, which the JDK allows only under this flag. Docker sets
+                // it; a bare Tomcat does not, and every fetch there is UNAVAILABLE with a detail
+                // that does not name the flag (subagent P2-4).
+                Map.entry("`-Djdk.httpclient.allowRestrictedHeaders=host`",
+                        "an operator on a non-Docker deployment turns collection on and gets "
+                                + "UNAVAILABLE on every anchoring with nothing pointing at the "
+                                + "JVM flag the pin needs"),
+                // The one escape from the guard, stated with its scope. It used to turn the
+                // whole guard off and the runbook read as if there were no escape (both
+                // reviews).
+                Map.entry("**loopback だけ**を通します",
+                        "the runbook says the fetch is pinned to a validated address; the test "
+                                + "property is the one thing that widens that, and its scope — "
+                                + "loopback, nothing else — has to be in the same document"));
         claims.forEach((needle, why) -> assertTrue(section.contains(needle),
                 "the runbook's evidence section no longer says 「" + needle + "」 — " + why));
 

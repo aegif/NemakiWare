@@ -285,6 +285,20 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
     /** The most a CRL may be before it is refused as UNAVAILABLE rather than captured. */
     static final long MAX_CRL_BYTES = 8L * 1024 * 1024;
 
+    /**
+     * The longest the body of a CRL may take to arrive once its headers have.
+     *
+     * <p>Separate from the request timeout, which covers the headers only: with
+     * {@code ofInputStream()} the body is read by this class, outside any timer the client
+     * keeps, and a distribution point that sends one byte and stops parks the anchoring — and
+     * the admin request thread waiting on it — until the JVM is killed. Both reviews of the
+     * first R65 batch found the byte cap and no time cap (2026-09-22).
+     */
+    static final java.time.Duration CRL_BODY_BUDGET = java.time.Duration.ofSeconds(20);
+
+    /** {@link #CRL_BODY_BUDGET} except in tests, which cannot wait 20 seconds for a stall. */
+    java.time.Duration crlBodyBudget = CRL_BODY_BUDGET;
+
     private boolean collectRevocationAtIssuance;
 
     /**
@@ -333,23 +347,42 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             }
             // The URL came out of the TSA's certificate, not out of this node's configuration,
             // so it is treated as the input of a party this node did not choose. It goes through
-            // AdapterHttpClient.sendWithRetry — the path every other outbound call in this
-            // product takes — which re-resolves the host AT SEND TIME and pins HTTP to the
-            // validated address (HTTPS is TLS-bounded; see that method's javadoc for the
-            // window it does not close). A one-shot check before connecting is not used: it
-            // leaves the resolve-then-connect gap, and its enforce flag defaults to off (R65).
+            // AdapterHttpClient.sendPinned — the pin every other outbound call in this product
+            // takes — which re-resolves the host AT SEND TIME and pins HTTP to the validated
+            // address (HTTPS is TLS-bounded; see that method's javadoc for the window it does
+            // not close). A one-shot check before connecting is not used: it leaves the
+            // resolve-then-connect gap, and its enforce flag defaults to off (R65). Pinned
+            // ONCE, not sendWithRetry: a 503 from a distribution point is "not now", reported
+            // below as UNAVAILABLE, and the retry loop's sleeps would hold the admin request
+            // thread this anchoring runs on.
             java.net.http.HttpClient client = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.shared();
             java.net.http.HttpResponse<java.io.InputStream> response =
-                    jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRetry(client,
+                    jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendPinned(client,
                             java.net.http.HttpRequest.newBuilder(java.net.URI.create(url))
                                     .timeout(java.time.Duration.ofSeconds(20)).GET().build(),
                             java.net.http.HttpResponse.BodyHandlers.ofInputStream());
             byte[] body;
+            // Bounded twice. In bytes: a CRL can be megabytes and an unbounded read is the
+            // RESOURCE_LIMIT shape the verifier already refuses; over the cap the material is
+            // UNAVAILABLE, never a truncated CAPTURED. In time: the request timeout above ends
+            // at the headers, so the body read gets its own watchdog, which closes the stream
+            // when the distribution point starts answering and does not finish.
+            jp.aegif.nemaki.rest.ingest.BodyBudget budget = null;
             try (java.io.InputStream in = response.body()) {
-                // Bounded. A CRL can be megabytes and an unbounded read is the RESOURCE_LIMIT
-                // shape the verifier already refuses; over the cap the material is UNAVAILABLE,
-                // never a truncated CAPTURED.
-                body = in == null ? new byte[0] : in.readNBytes((int) MAX_CRL_BYTES + 1);
+                budget = new jp.aegif.nemaki.rest.ingest.BodyBudget(in, crlBodyBudget);
+                body = in.readNBytes((int) MAX_CRL_BYTES + 1);
+            } catch (java.io.IOException e) {
+                if (budget != null && budget.fired()) {
+                    return RevocationMaterial.unavailable(url, "CRL_READ_TIMEOUT: the "
+                            + "distribution point started answering and had not finished after "
+                            + crlBodyBudget.toMillis() + " ms; a stalled body must not hold "
+                            + "the anchoring");
+                }
+                throw e;
+            } finally {
+                if (budget != null) {
+                    budget.close();
+                }
             }
             if (response.statusCode() != 200 || body.length == 0) {
                 return RevocationMaterial.unavailable(url,

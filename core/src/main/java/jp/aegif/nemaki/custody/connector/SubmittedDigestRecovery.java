@@ -17,6 +17,7 @@
 package jp.aegif.nemaki.custody.connector;
 
 import jp.aegif.nemaki.rest.ingest.AdapterHttpClient;
+import jp.aegif.nemaki.rest.ingest.BodyBudget;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -471,58 +472,9 @@ public class SubmittedDigestRecovery {
         }
     }
 
-    /**
-     * Closes a stalled body read after {@link #BODY_BUDGET}, so a receiver cannot park a thread.
-     *
-     * <p>A daemon thread per read. Not free, but this path runs once per custody transfer rather
-     * than once per request, and the alternative is a thread parked for ever.
-     *
-     * <p>Closing is the lever, not a clock check: a receiver that stalls blocks INSIDE
-     * {@code read()}, so a loop testing a deadline at the top of each iteration never reaches
-     * the test. Closing the response stream makes the blocked read throw.
-     */
-    static final class BodyBudget implements AutoCloseable {
-
-        private final Thread watchdog;
-        private final java.util.concurrent.atomic.AtomicBoolean fired =
-                new java.util.concurrent.atomic.AtomicBoolean(false);
-
-        BodyBudget(java.io.InputStream body) {
-            this(body, BODY_BUDGET);
-        }
-
-        /** Visible for tests, which cannot wait out {@link #BODY_BUDGET}. */
-        BodyBudget(java.io.InputStream body, Duration budget) {
-            this.watchdog = new Thread(() -> {
-                try {
-                    Thread.sleep(budget.toMillis());
-                } catch (InterruptedException e) {
-                    return;
-                }
-                fired.set(true);
-                closeQuietly(body);
-            }, "custody-body-budget");
-            this.watchdog.setDaemon(true);
-            this.watchdog.start();
-        }
-
-        /**
-         * Whether the budget ran out.
-         *
-         * <p>Asked AFTER the read fails, because what the reader sees is an ordinary
-         * {@code IOException} from a stream someone else closed — indistinguishable, at the
-         * catch site, from the receiver dropping the connection. Reporting the wrong one sends
-         * an operator to the network for a problem that is a stalled receiver, or the reverse.
-         */
-        boolean fired() {
-            return fired.get();
-        }
-
-        @Override
-        public void close() {
-            watchdog.interrupt();
-        }
-    }
+    // BodyBudget — the watchdog that closes a stalled read — lived here as a nested class until
+    // the RFC 3161 CRL fetch (R65) needed the same bound. It is now
+    // jp.aegif.nemaki.rest.ingest.BodyBudget, one implementation for both reads.
 
     /** The part after the last {@code /}, or the whole string when there is none. */
     private static String lastSegment(String path) {

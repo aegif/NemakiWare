@@ -16,6 +16,7 @@
  */
 package jp.aegif.nemaki.custody.connector;
 
+import jp.aegif.nemaki.rest.ingest.BodyBudget;
 import jp.aegif.nemaki.util.test.JavaSource;
 
 import org.junit.jupiter.api.DisplayName;
@@ -93,8 +94,8 @@ class StalledReceiverBudgetTest {
         };
 
         long started = System.nanoTime();
-        try (SubmittedDigestRecovery.BodyBudget budget =
-                new SubmittedDigestRecovery.BodyBudget(stalling, Duration.ofMillis(200))) {
+        try (BodyBudget budget =
+                new BodyBudget(stalling, Duration.ofMillis(200))) {
             assertThrows(IOException.class, () -> {
                 byte[] buffer = new byte[8192];
                 while (stalling.read(buffer) != -1) {
@@ -117,8 +118,8 @@ class StalledReceiverBudgetTest {
     @DisplayName("a read that finishes inside its budget is untouched — the control")
     void aPromptReadIsNotDisturbed() throws Exception {
         InputStream prompt = new java.io.ByteArrayInputStream("a manifest line\n".getBytes());
-        try (SubmittedDigestRecovery.BodyBudget budget =
-                new SubmittedDigestRecovery.BodyBudget(prompt, Duration.ofSeconds(30))) {
+        try (BodyBudget budget =
+                new BodyBudget(prompt, Duration.ofSeconds(30))) {
             assertTrue(prompt.readAllBytes().length > 0);
             assertFalse(budget.fired(),
                     "an ordinary read was reported as a stall, which would turn every recovery "

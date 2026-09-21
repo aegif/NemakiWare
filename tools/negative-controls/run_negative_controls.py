@@ -9839,8 +9839,8 @@ CONTROLS = [
         id='GY3',
         what="the readiness document stops saying the control added since the fifth sweep is unswept, so a finished sweep of 938 reads as a measurement of today's tree",
         file='docs/design/v3.4-release-readiness.md',
-        find='**その 15 本は通し未実施**',
-        replace='**その 15 本も通し済み**',
+        find='**その 21 本は通し未実施**',
+        replace='**その 21 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10785,7 +10785,7 @@ CONTROLS = [
         what='a second statement of the unswept count drifts from the locked one, so the document contradicts itself about how many controls have never been run together',
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **5 回目以後に足した control は 15 本**（境界 LM3 — 5 回目時点の最大 ID。',
+        find='  **5 回目以後に足した control は 21 本**（境界 LM3 — 5 回目時点の最大 ID。',
         replace='  **5 回目以後に足した control は 0 本**（境界 LM3 — 5 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10796,7 +10796,7 @@ CONTROLS = [
         file='docs/design/fail-closed-reads.md',
         # Re-pointed: the boundary id moves below LM3, so ids above it exist while the sweep
         # record says nothing was added — the cross-check (declared − swept ≠ ids above) fires.
-        find='**5 回目以後に足した control は 15 本**（境界 LM3）: ',
+        find='**5 回目以後に足した control は 21 本**（境界 LM3）: ',
         replace='**5 回目以後に足した control は 5 本**（境界 LA3）: ',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10852,8 +10852,8 @@ CONTROLS = [
         id='LN3',
         what="the canon stops saying the control added since the fifth sweep is unswept — the canon-side twin of GY3 — and, being itself the first control after the sweep, the one that forces the ledger back from 0 to 1",
         file='docs/design/fail-closed-reads.md',
-        find='**その 15 本は通し未実施**',
-        replace='**その 15 本も通し済み**',
+        find='**その 21 本は通し未実施**',
+        replace='**その 21 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10861,8 +10861,8 @@ CONTROLS = [
         id='LO3',
         what="the readiness document's §4 stops saying the added controls are unswept while §1.4 still does — the second exit, which a once-per-file check let through (GY3 did not fire)",
         file='docs/design/v3.4-release-readiness.md',
-        find='5 回目以後に足した control は **15 本**（通し未実施）。',
-        replace='5 回目以後に足した control は **15 本**（通し済み）。',
+        find='5 回目以後に足した control は **21 本**（通し未実施）。',
+        replace='5 回目以後に足した control は **21 本**（通し済み）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10970,7 +10970,9 @@ CONTROLS = [
         id='LY3',
         what='the toggle stays wired while the CRL fetch goes back to a bare HttpClient — toggle before guard, the one order R65 forbids',
         file='core/src/main/java/jp/aegif/nemaki/rest/purview/anchor/Rfc3161AnchorTarget.java',
-        find='            java.net.http.HttpClient client = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.shared();\n            java.net.http.HttpResponse<java.io.InputStream> response =\n                    jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRetry(client,',
+        # Re-pointed after the second review: the pinned entry point is sendPinned (one
+        # attempt), not sendWithRetry.
+        find='            java.net.http.HttpClient client = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.shared();\n            java.net.http.HttpResponse<java.io.InputStream> response =\n                    jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendPinned(client,',
         replace='            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder().build();\n            java.net.http.HttpResponse<java.io.InputStream> response =\n                    client.send(',
         test='TheGuardComesBeforeTheToggleTest',
         expect_fail=['theToggleIsNeverWiredAheadOfTheGuard'],
@@ -11002,9 +11004,69 @@ CONTROLS = [
         test='EveryStageIsListedTest',
         expect_fail=['theRunbookExplainsTheNewRows'],
     ),
+    # R65, second review (2026-09-22). Both reviewers, independently: the byte cap had no time
+    # cap, and the test property turned the whole guard off. Plus what the source lock did not
+    # measure.
+    dict(
+        id='MC3',
+        what='the body watchdog is taken off the CRL read, so a distribution point that sends one byte and stops parks the anchoring — and the admin request waiting on it — until the JVM dies',
+        file='core/src/main/java/jp/aegif/nemaki/rest/purview/anchor/Rfc3161AnchorTarget.java',
+        find='                budget = new jp.aegif.nemaki.rest.ingest.BodyBudget(in, crlBodyBudget);\n',
+        replace='',
+        test='Rfc3161AnchorTargetTest',
+        # Fails on its own clock: assertTimeoutPreemptively, because a fetch that never
+        # returns never fails a test that waits for it.
+        expect_fail=['aStalledBodyIsUnavailableWithinTheBudget'],
+    ),
+    dict(
+        id='MD3',
+        what='the test property goes back to skipping the send-time pin whole — no check, no rewrite, any destination — under a name that says "localhost"',
+        file='core/src/main/java/jp/aegif/nemaki/rest/ingest/AdapterHttpClient.java',
+        find='        InetAddress[] addrs;\n        try {\n            addrs = InetAddress.getAllByName(host);',
+        replace='        if (isLocalhostAllowed()) {\n            return request;\n        }\n        InetAddress[] addrs;\n        try {\n            addrs = InetAddress.getAllByName(host);',
+        test='TheTestEscapeIsLoopbackOnlyTest',
+        expect_fail=['privateAddressesStayRefused', 'loopbackIsAcceptedThroughThePin'],
+    ),
+    dict(
+        id='ME3',
+        what='the fetch is sent through a method reference — neither a pinned entry point nor a bare send by name — while the toggle stays wired: the arm of the order lock that LY3 does not reach',
+        file='core/src/main/java/jp/aegif/nemaki/rest/purview/anchor/Rfc3161AnchorTarget.java',
+        find='            java.net.http.HttpResponse<java.io.InputStream> response =\n                    jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendPinned(client,\n',
+        replace='            interface Sender {\n                java.net.http.HttpResponse<java.io.InputStream> go(java.net.http.HttpRequest r,\n                        java.net.http.HttpResponse.BodyHandler<java.io.InputStream> h)\n                        throws java.io.IOException, InterruptedException;\n            }\n            Sender sender = client::send;\n            java.net.http.HttpResponse<java.io.InputStream> response =\n                    sender.go(\n',
+        test='TheGuardComesBeforeTheToggleTest',
+        expect_fail=['theToggleIsNeverWiredAheadOfTheGuard'],
+    ),
+    dict(
+        id='MF3',
+        what='the bounded read becomes readAllBytes — the cap check after it still refuses an oversized CRL, but only after the whole of it is on the heap (subagent P2-2: every lock stayed green)',
+        file='core/src/main/java/jp/aegif/nemaki/rest/purview/anchor/Rfc3161AnchorTarget.java',
+        find='                body = in.readNBytes((int) MAX_CRL_BYTES + 1);',
+        replace='                body = in.readAllBytes();',
+        test='TheGuardComesBeforeTheToggleTest',
+        expect_fail=['theFetchIsBounded'],
+    ),
+    dict(
+        id='MG3',
+        what='the runbook states a cap the code does not enforce — 16 MiB where the constant is 8 (subagent P3-3: the number in the runbook was unlocked)',
+        file='docs/operations/v3.4.0-upgrade-runbook.md',
+        find='- **上限 8 MiB。** 超えた CRL は',
+        replace='- **上限 16 MiB。** 超えた CRL は',
+        test='TheGuardComesBeforeTheToggleTest',
+        expect_fail=['theFetchIsBounded'],
+    ),
+    dict(
+        id='MH3',
+        what='the CRL fetch goes back on the retry loop, so a 503 holds the admin request thread through 2 + 4 + 8 seconds of sleeps (or Retry-After, up to 120 s each) before it is reported',
+        file='core/src/main/java/jp/aegif/nemaki/rest/purview/anchor/Rfc3161AnchorTarget.java',
+        find='                    jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendPinned(client,\n',
+        replace='                    jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRetry(client,\n',
+        test='Rfc3161AnchorTargetTest',
+        # Preemptive 1.5 s: the first retry sleep alone is 2 s.
+        expect_fail=['notNowIsNotRetried'],
+    ),
     dict(
         id='LI3',
-        what='the runbook goes back to telling the operator they decide revocation collection with a setter that has no caller anywhere — "off by default" standing in for "cannot be switched on"',
+        what='the runbook stops naming the key that switches revocation collection on, so "decided by configuration" stands where the operator needs the name — the sabotage deletes the key; the lock reads the key',
         file='docs/operations/v3.4.0-upgrade-runbook.md',
         # Re-pointed after R65: the runbook now names the key; deleting the name is the claim
         # the lock reads.
@@ -11015,7 +11077,7 @@ CONTROLS = [
     ),
     dict(
         id='LJ3',
-        what='the runbook asserts the OPPOSITE — that the collection path goes through SsrfGuard — so whoever wires the toggle is told the guard is already there',
+        what='the runbook flips the reachability claim — on, P3 reaches VERIFIED — so an operator who enables collection tunes a trust profile for a verdict this version cannot give',
         file='docs/operations/v3.4.0-upgrade-runbook.md',
         # Flips the negation rather than deleting the word. The first version deleted
         # "SsrfGuard" entirely, which fired only because the lock grepped for that word; the
@@ -11120,7 +11182,7 @@ CONTROLS = [
         id='LB3',
         what='the PLAN\'s copy of the never-swept count drifts, so whoever scopes the overdue full sweep from the plan runs half the set',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='5 回目以後に足した control は **15 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='5 回目以後に足した control は **21 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='5 回目以後に足した control は **0 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],

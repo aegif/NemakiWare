@@ -164,24 +164,56 @@ public final class AdapterHttpClient {
     }
 
     /**
+     * System property that lets tests reach a stub on THIS machine.
+     *
+     * <p>{@code -Dnemaki.ingest.allowLocalhost=true} makes a LOOPBACK address acceptable to
+     * {@link #validateExternalUrl} and to the send-time pin, and changes nothing else: private,
+     * link-local and special-use addresses stay refused, and HTTP is still pinned to the
+     * resolved literal. Until R65's second review the property returned before any check ran —
+     * the whole guard off, for every destination, under a name that said "localhost" (both
+     * reviews, 2026-09-22). A JVM started with it now accepts a stub on 127.0.0.1 and nothing
+     * more.
+     *
+     * <p>Test-only: set in surefire or in a test's {@code @BeforeEach}, never in a deployment.
+     * The first call it lets through is logged at WARN, so a production JVM carrying it by
+     * mistake says so instead of quietly accepting loopback.
+     */
+    private static final String ALLOW_LOCALHOST_PROP = "nemaki.ingest.allowLocalhost";
+
+    private static final java.util.concurrent.atomic.AtomicBoolean LOOPBACK_ESCAPE_ANNOUNCED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /** Whether the test property is set (read from System property on every call). */
+    static boolean isLocalhostAllowed() {
+        return "true".equalsIgnoreCase(System.getProperty(ALLOW_LOCALHOST_PROP, "false"));
+    }
+
+    /**
+     * Whether an outbound call may reach {@code address}: safe by {@link #isAddressSafe}, or
+     * loopback while the test property is set. The ONE place the property is consulted, so
+     * that "what does the escape allow" has one answer.
+     */
+    static boolean isAcceptable(InetAddress address) {
+        if (isAddressSafe(address)) {
+            return true;
+        }
+        if (address.isLoopbackAddress() && isLocalhostAllowed()) {
+            if (LOOPBACK_ESCAPE_ANNOUNCED.compareAndSet(false, true)) {
+                log.warn("{} is set: outbound calls to loopback addresses are accepted on this "
+                        + "JVM. That is for tests against a local stub; a deployment carrying "
+                        + "it accepts them too.", ALLOW_LOCALHOST_PROP);
+            }
+            return true;
+        }
+        return false;
+    }
+
     /**
      * Validate that a URL is safe for server-side requests (SSRF prevention).
      * Rejects private IPs, loopback, link-local, and non-http(s) schemes.
      *
      * @throws SecurityException if the URL targets an unsafe destination
      */
-    /**
-     * System property to allow localhost URLs in SSRF validation.
-     * Set {@code -Dnemaki.ingest.allowLocalhost=true} for WireMock tests.
-     * Never enable in production.
-     */
-    private static final String ALLOW_LOCALHOST_PROP = "nemaki.ingest.allowLocalhost";
-
-    /** Check if localhost URLs are allowed (read from System property). */
-    static boolean isLocalhostAllowed() {
-        return "true".equalsIgnoreCase(System.getProperty(ALLOW_LOCALHOST_PROP, "false"));
-    }
-
     public static void validateExternalUrl(String url) {
         if (url == null || url.isBlank()) {
             throw new SecurityException("URL is required");
@@ -198,11 +230,11 @@ public final class AdapterHttpClient {
             }
             // Check ALL resolved addresses to prevent DNS rebinding attacks
             // where public + private IPs are mixed in the same A/AAAA record set.
-            if (!isLocalhostAllowed()) {
-                for (InetAddress addr : InetAddress.getAllByName(host)) {
-                    if (!isAddressSafe(addr)) {
-                        throw new SecurityException("URL must not target private/loopback/special-use addresses");
-                    }
+            // The test property is inside isAcceptable, per address: it used to skip this
+            // whole loop, which let a JVM carrying it reach anything.
+            for (InetAddress addr : InetAddress.getAllByName(host)) {
+                if (!isAcceptable(addr)) {
+                    throw new SecurityException("URL must not target private/loopback/special-use addresses");
                 }
             }
         } catch (SecurityException se) {
@@ -277,6 +309,16 @@ public final class AdapterHttpClient {
      * fail with a network error" to "fail fast with a security-flavoured
      * error", which is the right side of the trade-off for outbound
      * connector requests.
+     *
+     * <p><strong>There is no switch that skips this method.</strong> The
+     * test property {@code nemaki.ingest.allowLocalhost} makes a loopback
+     * address acceptable inside {@link #isAcceptable} and nothing else:
+     * a stub on 127.0.0.1 is reached, and reached THROUGH the pin (the
+     * literal rewrite and the {@code Host} header included), so tests
+     * exercise the branch production takes. It used to return here before
+     * resolving — no check, no pin, any destination — which both R65
+     * reviews read as "the guard is unconditional except for a JVM flag
+     * that turns it off" (2026-09-22).
      */
     static HttpRequest pinRequestToValidatedAddress(HttpRequest request) {
         URI uri = request.uri();
@@ -291,12 +333,6 @@ public final class AdapterHttpClient {
         if (!scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https")) {
             return request;
         }
-        if (isLocalhostAllowed()) {
-            // Test mode (WireMock): bypass pinning + validation. The
-            // -Dnemaki.ingest.allowLocalhost=true property is documented
-            // as test-only; never set in production.
-            return request;
-        }
         InetAddress[] addrs;
         try {
             addrs = InetAddress.getAllByName(host);
@@ -307,7 +343,7 @@ public final class AdapterHttpClient {
             throw new SecurityException("Host resolved to no addresses at send time: " + host);
         }
         for (InetAddress addr : addrs) {
-            if (!isAddressSafe(addr)) {
+            if (!isAcceptable(addr)) {
                 throw new SecurityException(
                         "URL must not target private/loopback/special-use addresses "
                         + "(DNS rebinding check at send time): "
@@ -441,6 +477,24 @@ public final class AdapterHttpClient {
                                                      HttpResponse.BodyHandler<T> bodyHandler)
             throws IOException, InterruptedException {
         return sendWithRetry(SHARED, request, bodyHandler);
+    }
+
+    /**
+     * One pinned send, no retry.
+     *
+     * <p>For a fetch whose caller cannot wait. {@link #sendWithRetry} sleeps on 429/503 —
+     * {@code Retry-After}, capped at 120 s, up to {@link #MAX_RETRIES} times — which is right
+     * for a connector poll and wrong on a request thread: the RFC 3161 CRL fetch (R65) runs
+     * inside the anchoring an admin API call is waiting on, and a distribution point saying
+     * "not now" is an answer the caller reports as UNAVAILABLE, not a reason to hold that
+     * thread for six minutes (subagent review, 2026-09-22). Same pin as
+     * {@link #sendWithRetry}; only the loop is gone.
+     */
+    public static <T> HttpResponse<T> sendPinned(HttpClient client,
+                                                  HttpRequest request,
+                                                  HttpResponse.BodyHandler<T> bodyHandler)
+            throws IOException, InterruptedException {
+        return client.send(pinRequestToValidatedAddress(request), bodyHandler);
     }
 
     /** Overload accepting a custom HttpClient (for tests). */

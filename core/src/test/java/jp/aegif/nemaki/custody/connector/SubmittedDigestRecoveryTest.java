@@ -189,10 +189,17 @@ class SubmittedDigestRecoveryTest {
                 .fromRodaTransfer("http://localhost:18080/", "tr-uuid-1", "Basic abc");
 
         assertEquals(1, http.asked.size());
-        assertEquals("http://localhost:18080/api/v2/transfers/tr-uuid-1/download",
-                http.asked.get(0),
+        // Path and port, not the whole string: the send-time pin rewrites the loopback NAME
+        // to the resolved literal (the test escape now goes THROUGH the pin, R65 second
+        // review), so the recorded URI is http://127.0.0.1:18080/..., with the name in Host.
+        java.net.URI asked = java.net.URI.create(http.asked.get(0));
+        assertEquals("/api/v2/transfers/tr-uuid-1/download", asked.getPath(),
                 "the URL changed. This endpoint is the one that serves the bytes the receiver "
                         + "still holds; a response-field read would give no digest at all");
+        assertEquals(18080, asked.getPort());
+        assertTrue(java.net.InetAddress.getByName(asked.getHost()).isLoopbackAddress(),
+                "the fetch went to " + asked.getHost() + ", which is not the pinned loopback "
+                        + "literal — the request did not take the pin");
         assertTrue(recovered.present(), recovered.unavailable());
         assertEquals(sha256(PAYLOAD), recovered.sha256Hex(),
                 "the recovered value is not the digest of what the receiver returned, so it is "
@@ -351,7 +358,11 @@ class SubmittedDigestRecoveryTest {
                         "nemaki-sip.zip", "ApiKey test:test");
 
         String asked = http.asked.get(0);
-        assertTrue(asked.startsWith("http://localhost:62081/api/v2/file/aip-uuid-1/extract_file/"),
+        // Path and port, not the whole string: the pin rewrites the loopback name to the
+        // literal (see rodaFetchesTheSubmittedBytes).
+        java.net.URI askedUri = java.net.URI.create(asked);
+        assertTrue(askedUri.getPath().startsWith("/api/v2/file/aip-uuid-1/extract_file/")
+                        && askedUri.getPort() == 62081,
                 "the fetch is no longer extract_file: " + asked);
         // withAuth is called at TWO sites -- hashOf for RODA and bodyOf here -- and only the
         // first was asserted. Archivematica's Storage Service answers 401 without this header,

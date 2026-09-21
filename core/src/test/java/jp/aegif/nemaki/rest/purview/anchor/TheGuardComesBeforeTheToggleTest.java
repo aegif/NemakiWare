@@ -23,11 +23,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -41,6 +41,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * so the two are held together: the toggle may be wired only while the fetch is on the pinned
  * path, and a fetch on the pinned path with no toggle is the earlier state, also allowed.
  * Toggle without guard is the one combination refused.
+ *
+ * <p>These read SOURCE, which is a structural claim: the body of one method names the pinned
+ * entry point and names no bare one. The behavioural half — that a loopback distribution
+ * point is refused with the escape off, that a stalled body and a 503 come back as
+ * UNAVAILABLE in bounded time — is in {@code Rfc3161AnchorTargetTest}. Neither alone is the
+ * lock: the source reading cannot tell a dead pinned call from a live one, and the behaviour
+ * cannot tell a one-shot check from the pin (both refuse loopback). Together they can.
  */
 class TheGuardComesBeforeTheToggleTest {
 
@@ -48,18 +55,54 @@ class TheGuardComesBeforeTheToggleTest {
             "src/main/java/jp/aegif/nemaki/rest/purview/anchor/Rfc3161AnchorTarget.java");
     private static final Path WIRING = Path.of(
             "src/main/java/jp/aegif/nemaki/rest/purview/anchor/AnchorWiringConfig.java");
+    private static final Path RUNBOOK = Path.of("../docs/operations/v3.4.0-upgrade-runbook.md");
+
+    /** The entry points that pin at send time. Any of them is the guard; nothing else is. */
+    private static final List<String> PINNED = List.of(
+            "AdapterHttpClient.sendPinned(",
+            "AdapterHttpClient.sendWithRetry(",
+            "AdapterHttpClient.sendWithRedirectValidation(");
+
+    /**
+     * Ways of sending that do not pin. The first version listed two; the reviews listed the
+     * rest (`newHttpClient()`, `sendAsync`, and the {@code HttpURLConnection} that the same
+     * class's {@code post()} uses — the most natural "make it consistent" edit).
+     */
+    private static final List<String> BARE = List.of(
+            "HttpClient.newHttpClient(",
+            "HttpClient.newBuilder(",
+            ".send(",
+            ".sendAsync(",
+            "HttpURLConnection",
+            "openConnection(",
+            "openStream(");
+
+    private static final Pattern COMMENTS_AND_LITERALS = Pattern.compile(
+            "(\"(?:\\\\.|[^\"\\\\])*\")|('(?:\\\\.|[^'\\\\])')|(//[^\\n]*)|(/\\*.*?\\*/)",
+            Pattern.DOTALL);
 
     /** Source with comments removed and string literals kept intact. */
     private static String code(Path file) throws IOException {
         assertTrue(Files.exists(file), "this lock reads " + file + ", which is not there");
-        return Pattern.compile("(\"(?:\\\\.|[^\"\\\\])*\")|(//[^\\n]*)|(/\\*.*?\\*/)", Pattern.DOTALL)
-                .matcher(Files.readString(file, StandardCharsets.UTF_8))
-                .replaceAll(m -> m.group(1) != null ? Matcher.quoteReplacement(m.group(1)) : "");
+        return COMMENTS_AND_LITERALS.matcher(Files.readString(file, StandardCharsets.UTF_8))
+                .replaceAll(m -> m.group(1) != null ? Matcher.quoteReplacement(m.group(1))
+                        : m.group(2) != null ? Matcher.quoteReplacement(m.group(2)) : "");
+    }
+
+    /**
+     * Source with comments removed AND literals blanked, for brace matching. A {@code "}"}
+     * inside a message, or a {@code '"'} char literal, would otherwise end or extend the body
+     * (Codex P2, subagent P3-5).
+     */
+    private static String structure(Path file) throws IOException {
+        assertTrue(Files.exists(file), "this lock reads " + file + ", which is not there");
+        return COMMENTS_AND_LITERALS.matcher(Files.readString(file, StandardCharsets.UTF_8))
+                .replaceAll(m -> m.group(1) != null ? "\"\"" : m.group(2) != null ? "' '" : "");
     }
 
     /** The body of collectRevocationMaterial, by brace matching from its declaration. */
     private static String collectBody() throws IOException {
-        String text = code(TARGET);
+        String text = structure(TARGET);
         // The DECLARATION. indexOf of the bare name found the call site in anchor() first and
         // brace-matched an unrelated block, which had neither a pinned nor a bare send — so
         // the lock reported "toggle wired ahead of the guard" on a tree where the guard was
@@ -78,24 +121,37 @@ class TheGuardComesBeforeTheToggleTest {
         throw new AssertionError("collectRevocationMaterial's body does not close");
     }
 
+    private static String o52() throws IOException {
+        assertTrue(Files.exists(RUNBOOK), "the runbook is not at " + RUNBOOK);
+        String text = Files.readString(RUNBOOK, StandardCharsets.UTF_8);
+        int start = text.indexOf("### O5-2.");
+        assertTrue(start >= 0, "the runbook no longer has §O5-2 on revocation collection");
+        int end = text.indexOf("### O5-3.", start);
+        assertTrue(end > start, "§O5-2 does not end where this lock looks");
+        return text.substring(start, end);
+    }
+
     @Test
     @DisplayName("the toggle is wired only while the fetch rides the send-time-pinned path")
     void theToggleIsNeverWiredAheadOfTheGuard() throws IOException {
         boolean toggleWired = code(WIRING).contains("setCollectRevocationAtIssuance(");
         String body = collectBody();
-        boolean fetchPinned = body.contains("AdapterHttpClient.sendWithRetry(");
-        boolean fetchBare = body.contains("HttpClient.newBuilder(") || body.contains("client.send(");
+        boolean fetchPinned = PINNED.stream().anyMatch(body::contains);
+        List<String> bare = BARE.stream().filter(body::contains).toList();
 
-        assertFalse(fetchBare,
-                "collectRevocationMaterial opens its own HttpClient or calls send() directly. "
-                        + "That path resolves the TSA-supplied host once, or not at all, and is "
-                        + "the SSRF the guard exists to close");
+        assertTrue(bare.isEmpty(),
+                "collectRevocationMaterial sends through " + bare + ". That path resolves the "
+                        + "TSA-supplied host once, or not at all, and is the SSRF the guard "
+                        + "exists to close. A one-shot validateExternalUrl before it is not "
+                        + "the pin either: it leaves the resolve-then-connect gap");
         if (toggleWired) {
             assertTrue(fetchPinned,
                     "AnchorWiringConfig wires the revocation toggle while the fetch is not on "
-                            + "AdapterHttpClient.sendWithRetry. Toggle before guard is the one "
-                            + "order R65 forbids: the moment an operator sets the key, this node "
-                            + "connects to whatever the TSA certificate names, unchecked");
+                            + "any of " + PINNED + ". Toggle before guard is the one order R65 "
+                            + "forbids: the moment an operator sets the key, this node connects "
+                            + "to whatever the TSA certificate names, unchecked. A fetch moved "
+                            + "out of this method into a helper trips this arm too — the lock "
+                            + "reads this body and would not see the helper");
         }
     }
 
@@ -110,11 +166,46 @@ class TheGuardComesBeforeTheToggleTest {
                         + "one taken for them by a default");
     }
 
+    /**
+     * Bounded in bytes AND in time, and both bounds are the ones the runbook states.
+     *
+     * <p>The first version compared the constant with a literal and nothing else: the read
+     * could have gone back to {@code readAllBytes()} with every lock green (the 8 MiB + 1
+     * fixture is refused AFTER being read whole), and the runbook's "8 MiB" was unlocked
+     * (subagent review, P2-2 / P3-3). Now the body has to name the bounded read and the
+     * watchdog, and the runbook's numbers are read from the runbook.
+     */
     @Test
-    @DisplayName("the fetch is bounded, and the bound is the one the runbook states")
-    void theFetchIsBounded() {
+    @DisplayName("the fetch is bounded in bytes and time, and the bounds are the ones the runbook states")
+    void theFetchIsBounded() throws IOException {
         assertEquals(8L * 1024 * 1024, Rfc3161AnchorTarget.MAX_CRL_BYTES,
-                "the CRL cap moved. The runbook states 8 MiB; a cap the runbook does not state "
-                        + "is a limit an operator meets in production");
+                "the CRL cap moved. A cap the runbook does not state is a limit an operator "
+                        + "meets in production");
+        assertEquals(20, Rfc3161AnchorTarget.CRL_BODY_BUDGET.getSeconds(),
+                "the body budget moved. Same reason");
+
+        String body = collectBody();
+        assertTrue(body.contains("readNBytes((int) MAX_CRL_BYTES + 1)"),
+                "collectRevocationMaterial no longer reads at most MAX_CRL_BYTES + 1 bytes. "
+                        + "The cap check after the read refuses an oversized CRL, but only a "
+                        + "bounded read keeps a 2 GB one out of the heap first");
+        assertTrue(Pattern.compile("new (jp\\.aegif\\.nemaki\\.rest\\.ingest\\.)?BodyBudget\\(")
+                        .matcher(body).find(),
+                "collectRevocationMaterial reads the body with no BodyBudget on it. The request "
+                        + "timeout ends at the headers; a distribution point that sends one "
+                        + "byte and stops then parks the anchoring, and the admin request "
+                        + "waiting on it, until the JVM is killed");
+
+        // The BULLETS that state each bound, not the bare number: "8 MiB" also appears in
+        // the UNAVAILABLE row, so a bullet changed to 16 MiB would leave a bare needle true.
+        String runbook = o52();
+        String cap = "**上限 " + (Rfc3161AnchorTarget.MAX_CRL_BYTES / (1024 * 1024)) + " MiB。**";
+        String budget = "**本文の上限 " + Rfc3161AnchorTarget.CRL_BODY_BUDGET.getSeconds() + " 秒。**";
+        assertTrue(runbook.contains(cap),
+                "§O5-2 no longer states the cap as 「" + cap + "」, which is what the code "
+                        + "enforces. An operator reads the runbook's number, not the constant");
+        assertTrue(runbook.contains(budget),
+                "§O5-2 no longer states the body budget as 「" + budget + "」, which is what "
+                        + "the code enforces");
     }
 }

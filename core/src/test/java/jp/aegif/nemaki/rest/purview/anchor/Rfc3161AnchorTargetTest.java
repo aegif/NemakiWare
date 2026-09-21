@@ -723,17 +723,26 @@ class Rfc3161AnchorTargetTest {
         private java.security.KeyPair keyPair;
         private java.security.cert.X509Certificate certificate;
 
+        private String escapeBefore;
+
         @org.junit.jupiter.api.BeforeEach
         void allowTheLocalStub() {
             // The CRL fetch rides the send-time-pinned path, which refuses loopback — as it
             // should in production. The stub below IS loopback, so the test-only escape the
-            // adapter tests use is set here and cleared after (R65).
+            // adapter tests use is set here and put back after (R65). Put back, not cleared:
+            // a JVM started with the property set would otherwise leave this class with it
+            // off (Codex review, P3).
+            escapeBefore = System.getProperty("nemaki.ingest.allowLocalhost");
             System.setProperty("nemaki.ingest.allowLocalhost", "true");
         }
 
         @org.junit.jupiter.api.AfterEach
-        void forbidItAgain() {
-            System.clearProperty("nemaki.ingest.allowLocalhost");
+        void putTheEscapeBack() {
+            if (escapeBefore == null) {
+                System.clearProperty("nemaki.ingest.allowLocalhost");
+            } else {
+                System.setProperty("nemaki.ingest.allowLocalhost", escapeBefore);
+            }
         }
 
         /** A token whose signer certificate names {@code crlUrl} as its CRL distribution point. */
@@ -793,22 +802,113 @@ class Rfc3161AnchorTargetTest {
             return target;
         }
 
+        /**
+         * A stub reached by NAME, so the fetch takes the HTTP pinning branch production takes:
+         * the URI rewritten to the resolved literal and the {@code Host} header carried over,
+         * which needs the {@code jdk.httpclient.allowRestrictedHeaders=host} flag surefire
+         * sets. With the escape narrowed to loopback, this branch is no longer skipped for a
+         * local stub (subagent review, P2-4: until then no test in the suite sent through it).
+         * That the rewrite itself happens for a loopback NAME under the escape is measured
+         * directly in {@code TheTestEscapeIsLoopbackOnlyTest}; here, the fetch succeeding
+         * through it is the claim.
+         */
         @Test
         @DisplayName("with collection on, the signer's CRL is captured through the pinned path")
         void materialIsCapturedThroughThePinnedPath() throws Exception {
             byte[] crl = "-- a CRL, as far as this test is concerned --".getBytes(StandardCharsets.UTF_8);
-            String url = startServer("/ca.crl", exchange -> {
+            java.util.concurrent.atomic.AtomicReference<String> hostSeen =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            // Bound by the same name the URL carries, so the stub sits on whichever loopback
+            // address "localhost" resolves to first — the one the pin picks.
+            server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
+            server.createContext("/ca.crl", exchange -> {
+                hostSeen.set(exchange.getRequestHeaders().getFirst("Host"));
                 exchange.sendResponseHeaders(200, crl.length);
                 try (OutputStream os = exchange.getResponseBody()) {
                     os.write(crl);
                 }
             });
+            server.start();
+            String url = "http://localhost:" + server.getAddress().getPort() + "/ca.crl";
+
             RevocationMaterial material = collecting()
                     .collectRevocationMaterial(tokenWithDistributionPoint(url));
 
             assertEquals(RevocationMaterial.Status.CAPTURED, material.status(), material.detail());
             assertArrayEquals(crl, material.der());
             assertEquals(url, material.source());
+            assertEquals("localhost:" + server.getAddress().getPort(), hostSeen.get(),
+                    "the stub saw Host " + hostSeen.get() + ". The pin rewrites the URI to the "
+                            + "literal and carries the original name in Host; a fetch that "
+                            + "reached the stub under another Host did not take that branch");
+        }
+
+        /**
+         * The body has its own clock. {@code HttpRequest.timeout} ends at the headers, and a
+         * distribution point that sends one byte and stops would otherwise park the anchoring
+         * — and the admin request waiting on it — for ever (both reviews, 2026-09-22).
+         */
+        @Test
+        @DisplayName("a distribution point that starts answering and stops is UNAVAILABLE within the body budget")
+        void aStalledBodyIsUnavailableWithinTheBudget() throws Exception {
+            java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+            String url = startServer("/slow.crl", exchange -> {
+                exchange.sendResponseHeaders(200, 0);
+                OutputStream os = exchange.getResponseBody();
+                os.write(0x30);
+                os.flush();
+                try {
+                    release.await(30, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+                try {
+                    os.close();
+                } catch (IOException ignored) {
+                    // the client is gone by then, which is the point
+                }
+            });
+            org.bouncycastle.tsp.TimeStampToken token = tokenWithDistributionPoint(url);
+            Rfc3161AnchorTarget target = collecting();
+            target.crlBodyBudget = java.time.Duration.ofMillis(500);
+            try {
+                // Preemptive: if the budget is not on the path, the fetch never returns, and a
+                // test that waits for it never fails. This one fails on its own clock.
+                RevocationMaterial material = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
+                        java.time.Duration.ofSeconds(10), () -> target.collectRevocationMaterial(token));
+
+                assertEquals(RevocationMaterial.Status.UNAVAILABLE, material.status(),
+                        "a stalled body was reported as " + material.status() + ". The material "
+                                + "is one byte of a CRL; shipping it as CAPTURED would be a "
+                                + "truncated presence, and NOT_ATTEMPTED would deny the fetch "
+                                + "was made");
+                assertTrue(material.detail().contains("CRL_READ_TIMEOUT"), material.detail());
+            } finally {
+                release.countDown();
+            }
+        }
+
+        /**
+         * "Not now" is an answer. The retry loop the connectors use sleeps 2, 4 and 8 seconds
+         * (or {@code Retry-After}, up to 120 s each) before giving up, which is right for a
+         * poll and wrong on the request thread this anchoring runs on (subagent review).
+         */
+        @Test
+        @DisplayName("a 503 from the distribution point is UNAVAILABLE at once, not retried on the request thread")
+        void notNowIsNotRetried() throws Exception {
+            String url = startServer("/busy.crl", exchange -> {
+                exchange.sendResponseHeaders(503, -1);
+                exchange.close();
+            });
+            org.bouncycastle.tsp.TimeStampToken token = tokenWithDistributionPoint(url);
+            Rfc3161AnchorTarget target = collecting();
+
+            // The first retry sleep alone is 2 s; a fetch that takes longer than this took it.
+            RevocationMaterial material = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
+                    java.time.Duration.ofMillis(1500), () -> target.collectRevocationMaterial(token));
+
+            assertEquals(RevocationMaterial.Status.UNAVAILABLE, material.status(), material.detail());
+            assertTrue(material.detail().contains("503"), material.detail());
         }
 
         @Test
