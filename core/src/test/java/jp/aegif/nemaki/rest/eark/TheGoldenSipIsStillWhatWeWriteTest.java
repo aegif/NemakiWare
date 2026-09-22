@@ -70,13 +70,22 @@ class TheGoldenSipIsStillWhatWeWriteTest {
         return entries;
     }
 
-    /** Every {@code xlink:href} in every METS, as text, so the comparison is about references. */
-    private static Set<String> referencesIn(Map<String, byte[]> entries) {
-        Set<String> references = new LinkedHashSet<>();
+    /**
+     * Which METS names what — per METS, not one flat set.
+     *
+     * <p>Flattening them meant a reference MOVING between METS files went unnoticed: the entry
+     * names and the set of href strings are both unchanged, while the base each one resolves
+     * against is not, so the verifier would refuse today's package and pass the golden (Codex,
+     * thirteenth review, P1). Which METS wrote a reference is exactly what the resolution
+     * depends on.
+     */
+    private static Map<String, Set<String>> referencesIn(Map<String, byte[]> entries) {
+        Map<String, Set<String>> references = new TreeMap<>();
         for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
             if (!entry.getKey().endsWith("METS.xml")) {
                 continue;
             }
+            Set<String> named = new LinkedHashSet<>();
             String mets = new String(entry.getValue(), StandardCharsets.UTF_8);
             int at = 0;
             while ((at = mets.indexOf("href=\"", at)) >= 0) {
@@ -84,9 +93,10 @@ class TheGoldenSipIsStillWhatWeWriteTest {
                 if (end < 0) {
                     break;
                 }
-                references.add(mets.substring(at + 6, end));
+                named.add(mets.substring(at + 6, end));
                 at = end;
             }
+            references.put(entry.getKey(), named);
         }
         return references;
     }
@@ -106,10 +116,25 @@ class TheGoldenSipIsStillWhatWeWriteTest {
                 goldenName + " no longer has the layout this product writes. The verifier runs "
                         + "its real checks over these bytes, so a drift here leaves it passing a "
                         + "package nobody produces");
-        assertEquals(referencesIn(checkedIn), referencesIn(now),
+        Map<String, Set<String>> checkedInReferences = referencesIn(checkedIn);
+        assertEquals(checkedInReferences, referencesIn(now),
                 goldenName + " no longer names what this product's METS names. This is the "
                         + "exact shape the seam exists for: the references are what the verifier "
                         + "resolves");
+
+        // WHY this is compared per METS: the two METS files name DIFFERENT things, so a
+        // comparison that flattened them into one set would not see a reference moving between
+        // them — entry names and the union of href strings both unchanged, while the base each
+        // resolves against is not (Codex, thirteenth review, P1). If a future exporter made the
+        // two name the same things, the per-METS comparison would stop being load-bearing and
+        // this assertion says so rather than letting it go quiet.
+        assertTrue(checkedInReferences.size() > 1,
+                goldenName + " carries one METS, so there is nothing for a per-METS comparison "
+                        + "to see: " + checkedInReferences.keySet());
+        assertEquals(checkedInReferences.size(),
+                new LinkedHashSet<>(checkedInReferences.values()).size(),
+                goldenName + "'s METS files name the SAME things, so a reference moving between "
+                        + "them would be invisible: " + checkedInReferences);
     }
 
     @Test
@@ -126,7 +151,9 @@ class TheGoldenSipIsStillWhatWeWriteTest {
         // And it is still ENCODED. Without this the pair above could agree perfectly while
         // measuring nothing about decoding, which is the whole reason the second golden exists.
         Set<String> references = referencesIn(entriesOf(
-                GOLDEN_DIRECTORY.resolve(SipGoldenWriter.ENCODED_GOLDEN)));
+                GOLDEN_DIRECTORY.resolve(SipGoldenWriter.ENCODED_GOLDEN)))
+                .values().stream().flatMap(Set::stream)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
         assertFalse(references.stream().anyMatch(r -> r.endsWith(SipGoldenWriter.ENCODED_NAME)),
                 "commons-ip2 now writes the payload name unencoded, so this golden no longer "
                         + "exercises the decoding the verifier does: " + references);

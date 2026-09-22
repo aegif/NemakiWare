@@ -93,9 +93,15 @@ class PackageIntegrityIsCheckedNotAssumedTest {
 
     /** A METS whose single reference declares a non-URL {@code LOCTYPE}. */
     private static String metsWithLocType(String locType, String href, String... local) {
+        return metsWithOtherLocType(locType, href, "external-id", local);
+    }
+
+    /** The same, with {@code OTHERLOCTYPE} chosen — it is what decides for {@code OTHER}. */
+    private static String metsWithOtherLocType(String locType, String href, String otherLocType,
+            String... local) {
         return mets(local).replace("</mets:fileSec>",
                 "</mets:fileSec><mets:mdRef LOCTYPE=\"" + locType + "\" "
-                        + "OTHERLOCTYPE=\"external-id\" xlink:href=\"" + href + "\"/>");
+                        + "OTHERLOCTYPE=\"" + otherLocType + "\" xlink:href=\"" + href + "\"/>");
     }
 
     private static String sha256(String text) {
@@ -907,8 +913,11 @@ class PackageIntegrityIsCheckedNotAssumedTest {
      *
      * <ul>
      *   <li>{@code ..%2F..%2Floose.txt} — the escapes became separators AFTER the literal
-     *       spelling had been checked and BEFORE dot segments were removed, so a climb the
-     *       locks refuse when it is spelled {@code ../../} went through spelled as escapes;</li>
+     *       spelling had been checked and BEFORE dot segments were removed. <b>The same climb
+     *       spelled {@code ../../} is NOT refused</b> when no other METS owns what it lands on;
+     *       what this measures is that the ENCODED spelling does not reach further than the
+     *       plain one (subagent, thirteenth review, P2 — the earlier wording here claimed the
+     *       plain climb was refused, and it is not);</li>
      *   <li>{@code metadata%3Zpremis.xml} — {@code %3Z} is not an escape, and
      *       {@code digit('3')*16 + digit('Z')} is {@code 48 + -1 = 47}, which is {@code '/'}.
      *       A malformed reference decoded into a path separator.</li>
@@ -923,8 +932,7 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         Outcome.Check encoded = checkNamed(PackageIntegrity.check(PackageReader.open(
                 zip(tmp, "encoded-climb.zip", climbing)).entries()), "mets closure");
         assertEquals(Outcome.FAILED, encoded.outcome(),
-                "a climb spelled with %2F reached a file outside the package, while the same "
-                        + "climb spelled ../ is refused: " + encoded.detail());
+                "a climb spelled with %2F invented separators and resolved: " + encoded.detail());
 
         // %4Z is not an escape either, and digit('4')*16 + digit('Z') is 64 + -1 = 63, which is
         // '?'. Deliberately NOT a separator: the per-segment guard answers those, so a fixture
@@ -1037,15 +1045,18 @@ class PackageIntegrityIsCheckedNotAssumedTest {
     @DisplayName("file:// with an authority is local, and a drive letter is not a scheme")
     void aFileUrlIsLocalAndADriveLetterIsNotAScheme(@TempDir Path tmp) throws Exception {
         String payload = "the minutes";
+        // The PAYLOAD is named through the file: URI and nothing else names it, so a spelling
+        // that is skipped instead of resolved shows up as "payload the METS does not name" —
+        // skipping and resolving both answered PASSED while the reference was to metadata.
         Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
-        entries.put(ROOT + "METS.xml", mets("representations/rep1/data/minutes.txt",
-                "file:///metadata/preservation/premis.xml",
+        entries.put(ROOT + "METS.xml", mets(
+                "file:///representations/rep1/data/minutes.txt",
                 "file://localhost/metadata/preservation/premis.xml"));
         Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
                 zip(tmp, "file-url.zip", entries)).entries()), "mets closure");
         assertEquals(Outcome.PASSED, closure.outcome(),
-                "a file:// URL with an authority was reported as a file the package does not "
-                        + "carry: " + closure.detail());
+                "a file:// URL with an empty or localhost authority was not read as the local "
+                        + "path it names: " + closure.detail());
 
         Map<String, String> drive = new LinkedHashMap<>(goodPackage(payload));
         drive.put(ROOT + "METS.xml", mets("representations/rep1/data/minutes.txt",
@@ -1082,6 +1093,190 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         assertEquals(Outcome.PASSED, closure.outcome(),
                 "a sub-METS naming the package's own metadata was told the package does not "
                         + "carry it: " + closure.detail());
+    }
+
+    /**
+     * A name outside the BMP, and a {@code %XX} run that is not valid UTF-8.
+     *
+     * <p>Two faults in one decoder, found from opposite directions (both reviewers, thirteenth
+     * review, P1):
+     *
+     * <ul>
+     *   <li>every character was written out through {@code String.valueOf(c).getBytes(UTF_8)},
+     *       which splits a surrogate pair into two lone surrogates and turns each into
+     *       {@code ?}. A payload named 𠮟 — outside the BMP, ordinary in Japanese names — was
+     *       decoded into something else and reported as missing, while a BMP name beside it
+     *       passed;</li>
+     *   <li>{@code new String(bytes, UTF_8)} replaces what it cannot decode with U+FFFD in
+     *       silence, so {@code %FF} claimed a file literally named {@code \uFFFD.txt} — a
+     *       DIFFERENT file satisfying the reference.</li>
+     * </ul>
+     */
+    @Test
+    @DisplayName("a name outside the BMP resolves; an invalid %XX run does not")
+    void aNameOutsideTheBmpResolvesAndAnInvalidEscapeDoesNot(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> outside = new LinkedHashMap<>(goodPackage(payload));
+        outside.put(ROOT + "METS.xml", mets("representations/rep1/METS.xml"));
+        outside.put(ROOT + "representations/rep1/METS.xml",
+                mets("data/minutes.txt", "data/\uD842\uDF9F.txt"));
+        outside.put(ROOT + "representations/rep1/data/\uD842\uDF9F.txt", "outside the BMP");
+        Outcome.Check bmp = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "outside-bmp.zip", outside)).entries()), "mets closure");
+        assertEquals(Outcome.PASSED, bmp.outcome(),
+                "a payload whose name is outside the BMP was told the package does not carry "
+                        + "it, while a BMP name beside it resolved: " + bmp.detail());
+
+        Map<String, String> invalid = new LinkedHashMap<>(goodPackage(payload));
+        invalid.put(ROOT + "METS.xml", mets("representations/rep1/METS.xml"));
+        invalid.put(ROOT + "representations/rep1/METS.xml",
+                mets("data/minutes.txt", "data/%FF.txt"));
+        // The file the SILENT replacement would land on.
+        invalid.put(ROOT + "representations/rep1/data/\uFFFD.txt", "a different file");
+        Outcome.Check broken = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "invalid-utf8.zip", invalid)).entries()), "mets closure");
+        assertEquals(Outcome.FAILED, broken.outcome(),
+                "a %XX run that is not valid UTF-8 was decoded into U+FFFD and claimed a "
+                        + "different file: " + broken.detail());
+    }
+
+    /**
+     * {@code file:} on ANOTHER host is not this package, and {@code file:///} is absolute.
+     *
+     * <p>The authority was stripped whatever it was, so {@code file://archive.example.org/x}
+     * claimed a local entry — "points somewhere else" answered as "here it is" (both
+     * reviewers, thirteenth review, P1/P2). And dropping the leading slash made
+     * {@code file:///x} RELATIVE, so it resolved beside the METS that wrote it: the same
+     * "directory-first claims a different file" defect the absolute arm exists to prevent,
+     * arriving by another spelling. The fixture has the COLLISION that shows it.
+     */
+    @Test
+    @DisplayName("file: on another host is not local, and file:/// is absolute")
+    void aForeignFileUriIsNotLocalAndAnEmptyAuthorityIsAbsolute(@TempDir Path tmp)
+            throws Exception {
+        String payload = "the minutes";
+        // The foreign URI is the ONLY thing naming the payload. Stripping the authority makes
+        // it claim the local entry and closure passes; reading it as a file somewhere else
+        // leaves the payload unnamed, which is the honest answer — and the two differ, which a
+        // fixture pointing at metadata did not (measured: the control stayed green).
+        Map<String, String> foreign = new LinkedHashMap<>(goodPackage(payload));
+        foreign.put(ROOT + "METS.xml", mets(
+                "file://archive.example.org/representations/rep1/data/minutes.txt",
+                "metadata/preservation/premis.xml"));
+        Outcome.Check elsewhere = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "foreign-file-uri.zip", foreign)).entries()), "mets closure");
+        assertEquals(Outcome.FAILED, elsewhere.outcome(),
+                "a file: URI on ANOTHER MACHINE claimed an entry in this package, so closure "
+                        + "was reported over a file the METS does not name locally: "
+                        + elsewhere.detail());
+
+        Map<String, String> collision = new LinkedHashMap<>(goodPackage(payload));
+        collision.put(ROOT + "METS.xml", mets("representations/rep1/METS.xml"));
+        collision.put(ROOT + "representations/rep1/METS.xml", mets("data/minutes.txt",
+                "file:///metadata/other/catalogue.xml"));
+        collision.put(ROOT + "metadata/other/catalogue.xml", "the one it means");
+        collision.put(ROOT + "representations/rep1/metadata/other/catalogue.xml", "a DIFFERENT one");
+        Map<String, String> without = new LinkedHashMap<>(collision);
+        without.remove(ROOT + "metadata/other/catalogue.xml");
+        Outcome.Check missing = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "file-uri-collision.zip", without)).entries()), "mets closure");
+        assertEquals(Outcome.FAILED, missing.outcome(),
+                "with the file the absolute file: URI means REMOVED, the one beside the METS "
+                        + "was accepted in its place: " + missing.detail());
+    }
+
+    /**
+     * {@code LOCTYPE="OTHER"} says what {@code OTHERLOCTYPE} says.
+     *
+     * <p>Every {@code OTHER} locator was dropped without reading {@code OTHERLOCTYPE} — which
+     * the javadoc claimed to read — so a METS naming its own payload that way was told it
+     * carries content nobody committed to (subagent, thirteenth review, P1).
+     */
+    @Test
+    @DisplayName("OTHERLOCTYPE decides whether an OTHER locator is a path")
+    void anOtherLocTypeIsReadBeforeDroppingTheReference(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "METS.xml",
+                metsWithOtherLocType("OTHER", "representations/rep1/data/minutes.txt", "SYSTEM"));
+
+        Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "otherloctype.zip", entries)).entries()), "mets closure");
+
+        assertEquals(Outcome.PASSED, closure.outcome(),
+                "a payload named by a locator the METS declares as a SYSTEM path was dropped, "
+                        + "so the package was accused of carrying content nobody named: "
+                        + closure.detail());
+    }
+
+    /**
+     * {@code xml:base} is merged per RFC 3986 §5.2.2, and locality is judged on the RESULT.
+     *
+     * <p>A base ending in a segment had the reference concatenated onto it
+     * ({@code /representations/rep1/data} + {@code p.bin}), and an {@code xml:base} with a
+     * SCHEME produced a URL that was then looked for as a package path (both reviewers,
+     * thirteenth review, P2).
+     */
+    @Test
+    @DisplayName("xml:base replaces its last segment, and an external base is external")
+    void anXmlBaseIsMergedAndJudgedOnTheResult(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        // §5.2.2 REPLACES the base's last segment, so "…/rep1/catalogue.xml" as a base makes
+        // "premis.xml" mean "…/rep1/premis.xml". Concatenation would look for
+        // "…/rep1/catalogue.xmlpremis.xml", and adding a slash would look for
+        // "…/rep1/catalogue.xml/premis.xml" — neither is in the package, so the fixture tells
+        // the three apart.
+        Map<String, String> segment = new LinkedHashMap<>();
+        segment.put(ROOT + "METS.xml",
+                metsWithBase("representations/rep1/catalogue.xml", "premis.xml",
+                        "data/minutes.txt"));
+        segment.put(ROOT + "representations/rep1/data/minutes.txt", payload);
+        segment.put(ROOT + "representations/rep1/premis.xml", premis(sha256(payload), "SHA-256"));
+        Outcome.Check merged = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "base-segment.zip", segment)).entries()), "mets closure");
+        assertEquals(Outcome.PASSED, merged.outcome(),
+                "a base ending in a segment was concatenated rather than merged (RFC 3986 "
+                        + "§5.2.2 replaces the last segment): " + merged.detail());
+
+        Map<String, String> external = new LinkedHashMap<>(goodPackage(payload));
+        external.put(ROOT + "METS.xml", mets("representations/rep1/data/minutes.txt"));
+        external.put(ROOT + "metadata/other/catalogue-mets.xml", "not read");
+        external.put(ROOT + "representations/rep1/METS.xml",
+                metsWithBase("https://example.invalid/archive/", "catalog.xml"));
+        Outcome.Check url = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "base-external.zip", external)).entries()), "mets closure");
+        assertEquals(Outcome.PASSED, url.outcome(),
+                "a reference under an xml:base with a scheme was looked for as a path inside "
+                        + "the package: " + url.detail());
+    }
+
+    /**
+     * Two packages in one zip: each absolute reference resolves at ITS OWN package's root.
+     *
+     * <p>One root for the whole zip belonged to one of them, so every absolute reference in the
+     * other was refused — the shape {@code v1Layout} answers {@code MULTIPLE_PACKAGES} for, so
+     * it is expected, not exotic. And "shallowest" was implemented as the SHORTEST directory
+     * string, which made {@code a/b/} the root over {@code verylongpackage/} (both reviewers,
+     * thirteenth review, P2).
+     */
+    @Test
+    @DisplayName("each package's absolute references resolve at its own root")
+    void twoPackagesEachResolveAtTheirOwnRoot(@TempDir Path tmp) throws Exception {
+        Map<String, String> entries = new LinkedHashMap<>();
+        for (String root : List.of("a/b/", "verylongpackage/")) {
+            entries.put(root + "METS.xml", mets("representations/rep1/data/minutes.txt",
+                    "/metadata/preservation/premis.xml"));
+            entries.put(root + "representations/rep1/data/minutes.txt", "the minutes");
+            entries.put(root + "metadata/preservation/premis.xml",
+                    premis(sha256("the minutes"), "SHA-256"));
+        }
+
+        Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "two-packages.zip", entries)).entries()), "mets closure");
+
+        assertEquals(Outcome.PASSED, closure.outcome(),
+                "a zip carrying two packages gave one of them the other's root, so its "
+                        + "absolute references were refused: " + closure.detail());
     }
 
     @Test
