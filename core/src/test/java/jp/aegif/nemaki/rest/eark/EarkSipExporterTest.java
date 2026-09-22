@@ -1150,4 +1150,65 @@ class EarkSipExporterTest {
                 "the capture failure never reached the header, so a caller writing the zip "
                         + "straight to disk is not told: " + notes);
     }
+
+    /**
+     * The PREMIS a package ships carries the payload's fixity, and it is the payload's.
+     *
+     * <h2>Why this was missing</h2>
+     *
+     * <p>{@code PACKAGE_INTEGRITY_V1}'s {@code payload fixity} compares the bytes against the
+     * digest PREMIS records, and the receiving organisation's verifier is where that happens.
+     * Every fixture in this class builds a report with an {@code identity} section and no
+     * {@code content} one, so the PREMIS they produce records NO digest at all — and a package
+     * built that way answers {@code NOT_PRESENT} and composes to {@code INDETERMINATE} at P0.
+     * Measured end to end on 2026-09-22 by running the CLI over a package this class built.
+     *
+     * <p>Nothing was wrong with the product: the digest comes from the authenticity report's
+     * content section, which a real export has. What was missing is any measurement that the
+     * wiring from that section to the PREMIS still works — so "a package this product writes
+     * can reach P0" rested on a hand-built fixture on the verifier's side alone.
+     */
+    @Test
+    @DisplayName("the PREMIS carries the payload's own fixity, as the verifier will recompute it")
+    void thePremisCarriesThePayloadsFixity(@TempDir Path tmp) throws Exception {
+        byte[] payload = "the minutes".getBytes(StandardCharsets.UTF_8);
+        String digest = sha256Hex(payload);
+        Map<String, Object> content = new LinkedHashMap<>();
+        content.put("recordedDigest", digest);
+        content.put("algorithm", "SHA-256");
+        AuthenticityReport report = new AuthenticityReport(REPO, OBJECT, "2026-08-25T00:00:00Z",
+                List.of(new Section("content", Verdict.REPORTED, content, "measured")));
+
+        Path sip = exporterOver(report, payload)
+                .export(REPO, OBJECT, EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp)
+                .sip();
+        String premis = entriesOf(sip).entrySet().stream()
+                .filter(e -> e.getKey().endsWith("premis.xml")).map(Map.Entry::getValue)
+                .findFirst().orElseThrow(() -> new AssertionError(
+                        "the package carries no PREMIS, so a verifier has nothing to check the "
+                                + "bytes against"));
+
+        assertTrue(premis.contains("<premis:messageDigestAlgorithm>SHA-256"
+                        + "</premis:messageDigestAlgorithm>"),
+                "the PREMIS states no digest algorithm. A verifier answers NOT_PRESENT for "
+                        + "that rather than assuming SHA-256, so the package cannot reach P0: "
+                        + premis);
+        assertTrue(premis.contains("<premis:messageDigest>" + digest + "</premis:messageDigest>"),
+                "the PREMIS does not record the payload's own digest, so the one check P0 "
+                        + "performs on the bytes compares them with something else: " + premis);
+        // ONE fixity. The verifier answers AMBIGUOUS_PREMIS for more than one, so a second
+        // would make every package this product writes INDETERMINATE at P0.
+        assertEquals(1, premis.split("<premis:messageDigest>", -1).length - 1,
+                "the PREMIS records more than one message digest: " + premis);
+    }
+
+    private static String sha256Hex(byte[] bytes) throws Exception {
+        byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes);
+        StringBuilder out = new StringBuilder(digest.length * 2);
+        for (byte b : digest) {
+            out.append(Character.forDigit((b >> 4) & 0xF, 16));
+            out.append(Character.forDigit(b & 0xF, 16));
+        }
+        return out.toString();
+    }
 }
