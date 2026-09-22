@@ -97,7 +97,7 @@ v1 を壊さずに v2 を足すことでしか行わない。**
 | §9 に `V1_LAYOUT` を必須 check として追加 | 狭める | §4.2 と §5.2 が**既に**「legacy と併存 → `FAILED`」「manifest に無いファイル → `FAILED`」と規定していた。**拒否されるようになるのは、既に規定違反だった package だけ**で、適合 package は 1 つも動かない（両端の錠で示す） |
 | §14 の `ERS_PARSE` から `digestAlgorithm [0]` 必須を外し、縮約を「2 つ以上のときだけ hash」に | **緩める** | **書いた規定のほうが RFC より狭かった**。間違った狭め方を戻すので、適合記録の判定は**通る方向にしか動かない** |
 | §9 の矛盾判定を「1 object の digest の個数」から「**1 つの算法の中で食い違ったとき**」に | **緩める** | **`premis:fixity` は PREMIS で repeatable** であり、同じ bytes を MD5 と SHA-256 で記録するのがその用途。個数で見た規定のほうが PREMIS より狭く、**問い 2 に「拒否されるようになる」と答えていた**（2 名が独立に実測）。戻すので通る方向にしか動かない |
-| §9 の METS href 解決を「どこかの entry が同名で終わる」から「**METS 自身のディレクトリ、または zip root から、dot segment を畳んで厳密に**」に | 狭める + 緩める | **狭める側**: 別の METS の近所や payload の中の写しが参照を満たすのをやめる — これは fail-open の是正で、**適合 package は動かない**（参照は自分の場所から解決できるのが適合の条件）。**緩める側**: `../` を RFC 3986 §5.2.4 どおり畳むので、第三者の上向き参照が**拒否されなくなる**。製品の出力が例外なく自分の場所から解決できることは錠で測っている |
+| §9 の METS href 解決を「どこかの entry が同名で終わる」から「**URI reference として、3 通りの綴りを、名前のついた base に対して厳密に**」に | 狭める + 緩める | **狭める側**: 別の METS の近所や payload の中の写しが参照を満たすのをやめる — これは fail-open の是正で、**適合 package は動かない**（参照は自分の場所から解決できるのが適合の条件）。**緩める側**: `../` を畳み、**producer が percent-encode した href を decode し**、`file:` を剥がし、`LOCTYPE` が指す非ローカル locator を数えないので、第三者の正当な METS が**拒否されなくなる**。**この「緩める側」は実測で必須だった** — commons-ip2 は href を `URLEncoder` で encode して zip entry は生のまま書くため、**空白や非 ASCII を含む名前の payload を持つ package は、この製品が書いたものを含めて全部拒否されていた**（日本語の repository では普通の場合）|
 
 3 件目は「問い 2 に変わると答える」ように読めるが、**変わるのは拒否 → 受理の向き**である。
 規則は「読めなくなるか」を問うので、これは訂正にあたる。**狭めた当初の規定のほうが
@@ -436,7 +436,7 @@ current == merkleRoot なら PASS
 | `ONE_EVIDENCE_SECTION` | §4.2 の各文書名が package 内で 1 回しか現れない（**payload は数えない** — 内容が別 package の evidence フォルダの写しであっても、それは content であって section ではない）。**ただし重複の原因が「完全な section を持つ root が 2 つ以上」であれば `UNAVAILABLE` + `MULTIPLE_PACKAGES`** — `V1_LAYOUT` と同じ答えをここでも返す。この check の方が**先**に走るので、ここで `FAILED` にすると合成が `FAILED` に落ち、`V1_LAYOUT` 側の訂正が verdict に届かない |
 | — | `V1_LAYOUT` は併せて **section を持つ root が 2 つ以上のとき**を見る（下表の最後の 2 行）|
 | `V1_LAYOUT` | **v1 section が在るなら** §4.2 のとおりに在る（下記） |
-| `METS_CLOSURE` | **payload でない全 METS**（CSIP では root と各 representation の 2 階層）が名指す file が package に在り、**逆に** `representations/*/data/` 配下の全 file がそのいずれかに名指されている。**参照の解決は、その href を書いた METS 自身のディレクトリ、または zip root から、dot segment を畳んで（RFC 3986 §5.2.4）厳密に行う** — 他の METS の近所や payload の中の写しは参照を満たさない。**両方向とも同じ解決を読む** |
+| `METS_CLOSURE` | **payload でない全 METS**（CSIP では root と各 representation の 2 階層）が名指す file が package に在り、**逆に** `representations/*/data/` 配下の全 file がそのいずれかに名指されている。**両方向とも同じ解決を読む**。参照は URI reference として解決する: fragment と query を落とし、`file://./` / `file:` を剥がし、**「そのまま」「percent-decode」「`+` を空白として decode」の 3 通りの綴り**を試し、base は**その href を書いた METS 自身のディレクトリ → IP root**（root METS のみ zip root も）、dot segment は畳む（§5.2.4）が**余った `..` は破棄せず拒否**する。**別の package（自分より上の METS を持つ木）に着地する参照は解決とみなさない。** **scheme を持つ locator（`urn:` / `doi:` / `hdl:` / `http:` …）は「package 内の file への参照」ではないので数えない** — METS の `LOCTYPE` がそのために在る。`file:` だけは例外（commons-ip2 が local path に使う）|
 | `PAYLOAD_FIXITY` | payload の bytes が PREMIS の記録する digest と一致する（不一致は `FAILED`）。**一対一そのものは判定しない**（下記の訂正）— digest が 2 つ以上、payload が 2 つ以上のときは `UNAVAILABLE`。**1 つの `premis:object` が 1 つの算法で 2 つの異なる digest を記録している**ときだけ、突き合わせる前に `FAILED` |
 
 `V1_LAYOUT` の答え:
