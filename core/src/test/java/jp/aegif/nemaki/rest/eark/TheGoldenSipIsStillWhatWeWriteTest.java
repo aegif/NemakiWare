@@ -150,10 +150,9 @@ class TheGoldenSipIsStillWhatWeWriteTest {
         assertTrue(Files.exists(golden), golden + " is missing. Regenerate with SipGoldenWriter");
 
         Map<String, byte[]> checkedIn = entriesOf(golden);
-        Map<String, byte[]> now = entriesOf(EarkSipExporterTest.buildOneWithBundleAndFixity(tmp,
-                SipGoldenWriter.ENCODED_NAME,
-                TheSipLayoutIsWhereCommonsIpPutsItTest.assemblerReturning(
-                        TheSipLayoutIsWhereCommonsIpPutsItTest.oneBundle())));
+        // The SAME bundle the golden was written with. Building with the layout test's stub
+        // would compare a package against one the writer does not produce.
+        Map<String, byte[]> now = entriesOf(SipGoldenWriter.buildV1(tmp));
 
         assertEquals(checkedIn.keySet(), now.keySet(),
                 SipGoldenWriter.V1_GOLDEN + " no longer has the layout this product writes");

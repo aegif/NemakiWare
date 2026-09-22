@@ -107,6 +107,45 @@ class TheProductsOwnPackageIsVerifiedTest {
     }
 
     /**
+     * The v1 golden verifies at P1 as well, not only at P0.
+     *
+     * <p>Measured with the CLI before it was locked: the first v1 golden was built from the
+     * layout test's STUB bundle ({@code "a".repeat(64)} for the content digest, {@code "aa"}
+     * for the Merkle root, an empty audit path), so it answered {@code FAILED} at
+     * {@code RECORD_LEDGER_V1} — {@code content binding} and {@code inclusion proof} — and the
+     * seam would have measured a package this product never produces. The golden now carries a
+     * bundle computed from the real bytes.
+     */
+    @Test
+    @DisplayName("the v1 golden verifies at RECORD_LEDGER_V1 too")
+    void theV1GoldenVerifiesAtP1() throws Exception {
+        java.util.Map<String, byte[]> entries =
+                PackageReader.open(golden("product-sip-v1-section.zip")).entries();
+        List<Outcome.Check> p0 = PackageIntegrity.check(entries);
+        List<Outcome.Check> p1 = RecordLedger.check(entries);
+
+        assertEquals(Outcome.PASSED, checkNamed(p1, "content binding").outcome(),
+                checkNamed(p1, "content binding").detail());
+        assertEquals(Outcome.PASSED, checkNamed(p1, "inclusion proof").outcome(),
+                checkNamed(p1, "inclusion proof").detail());
+        // Composed the way the CLI composes: over the profile's REQUIRED names, not over every
+        // check. `transition continuity` is NOT_PRESENT here — the statement is a state, not a
+        // transition — and it is not required, so it must not lower the verdict.
+        List<Outcome.Check> both = new java.util.ArrayList<>(p0);
+        both.addAll(p1);
+        List<Outcome.Check> required = new java.util.ArrayList<>();
+        for (String name : PackageIntegrity.REQUIRED) {
+            required.add(checkNamed(both, name));
+        }
+        for (String name : RecordLedger.REQUIRED) {
+            required.add(checkNamed(both, name));
+        }
+        assertEquals(Outcome.Verdict.VERIFIED, Outcome.combine(both, required),
+                "the package this product writes with a v1 section does not verify at P1: "
+                        + p1);
+    }
+
+    /**
      * The v1 golden really carries a section, or the arm it was added for is still vacuous.
      */
     @Test

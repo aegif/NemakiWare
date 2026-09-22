@@ -103,12 +103,60 @@ public final class SipGoldenWriter {
         write(into, ASCII_NAME, ASCII_GOLDEN);
         write(into, ENCODED_NAME, ENCODED_GOLDEN);
 
-        Path scratch = Files.createTempDirectory("sip-golden-v1");
-        Path v1 = EarkSipExporterTest.buildOneWithBundleAndFixity(scratch, ENCODED_NAME,
-                TheSipLayoutIsWhereCommonsIpPutsItTest.assemblerReturning(
-                        TheSipLayoutIsWhereCommonsIpPutsItTest.oneBundle()));
-        Files.copy(v1, into.resolve(V1_GOLDEN), StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(buildV1(Files.createTempDirectory("sip-golden-v1")),
+                into.resolve(V1_GOLDEN), StandardCopyOption.REPLACE_EXISTING);
         System.out.println("wrote " + into.resolve(V1_GOLDEN) + " (v1 section)");
+    }
+
+    /**
+     * An evidence bundle that is CONSISTENT with the payload the golden carries.
+     *
+     * <p>The layout test's {@code oneBundle} is a stub — {@code "a".repeat(64)} for the content
+     * digest, {@code "aa"} for the Merkle root, an empty audit path — which is all the layout
+     * test needs. Using it for the golden made the v1 package answer {@code FAILED} at P1
+     * ({@code content binding} and {@code inclusion proof}), so the seam would have measured a
+     * package this product never produces (measured with the CLI, 2026-09-23). The digest, the
+     * root and the proof are computed from the real bytes here.
+     */
+    private static jp.aegif.nemaki.evidence.EvidenceBundle consistentBundle(byte[] payload)
+            throws Exception {
+        String digest = java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256").digest(payload));
+        jp.aegif.nemaki.evidence.RecordContentStatementV1 statement =
+                new jp.aegif.nemaki.evidence.RecordContentStatementV1("bedroom", "doc-1", "doc-1",
+                        "att-1", digest, (long) payload.length,
+                        jp.aegif.nemaki.evidence.RecordContentStatementV1.CommitmentKind.CAPTURED,
+                        null, "2026-09-20T00:00:00Z");
+        jp.aegif.nemaki.evidence.EvidenceLedgerEntry entry =
+                jp.aegif.nemaki.evidence.EvidenceLedgerEntry.of("record-content", 1L,
+                        jp.aegif.nemaki.evidence.EvidenceLedgerEntry.SubjectKind
+                                .RECORD_CONTENT_STATE,
+                        "doc-1", statement.digest(), "2026-09-20T00:00:00Z", null);
+        java.util.List<String> leaves = java.util.List.of(entry.entryHash());
+        String root = jp.aegif.nemaki.evidence.MerkleTree.root(leaves);
+        jp.aegif.nemaki.evidence.EvidenceCheckpoint covering =
+                jp.aegif.nemaki.evidence.EvidenceCheckpoint.of("record-content", 1, 1, root, null,
+                        "2026-09-20T00:00:00Z");
+        return new jp.aegif.nemaki.evidence.EvidenceBundle("bedroom", "doc-1", "doc-1", statement,
+                entry,
+                new jp.aegif.nemaki.evidence.EvidenceBundle.InclusionProof(
+                        jp.aegif.nemaki.evidence.MerkleTree.hashLeaf(entry.entryHash()),
+                        jp.aegif.nemaki.evidence.MerkleTree.proof(leaves, 0).stream()
+                                .map(step -> new jp.aegif.nemaki.evidence.EvidenceBundle
+                                        .InclusionProof.Step(step.siblingHash(),
+                                                step.siblingIsLeft()))
+                                .toList(),
+                        null),
+                covering, java.util.List.of(covering), covering, java.util.Map.of(),
+                "2026-09-20T01:00:00Z");
+    }
+
+    /** The v1-section package, built the ONE way — so the freshness check compares like. */
+    static Path buildV1(Path tmp) throws Exception {
+        return EarkSipExporterTest.buildOneWithBundleAndFixity(tmp, ENCODED_NAME,
+                TheSipLayoutIsWhereCommonsIpPutsItTest.assemblerReturning(
+                        consistentBundle("the minutes".getBytes(
+                                java.nio.charset.StandardCharsets.UTF_8))));
     }
 
     private static void write(Path into, String name, String fileName) throws Exception {
