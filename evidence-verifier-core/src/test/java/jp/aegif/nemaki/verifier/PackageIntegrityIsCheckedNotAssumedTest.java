@@ -1695,6 +1695,49 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         assertEquals(Outcome.PASSED, closure.outcome(),
                 "a reference with no path of its own was resolved as a sibling of the base "
                         + "rather than as the base: " + closure.detail());
+
+        // With NO xml:base at all it names the METS ITSELF (the document base, §5.1.3), and
+        // with an xml:base that is itself path-less the outer base stands. Requiring an
+        // explicit file-path base left both resolving to the package root (Codex, seventeenth
+        // review, P2).
+        Map<String, String> noBase = new LinkedHashMap<>(goodPackage(payload));
+        noBase.put(ROOT + "METS.xml", mets("representations/rep1/data/minutes.txt", "?download"));
+        assertEquals(Outcome.PASSED, checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "no-base-empty-path.zip", noBase)).entries()), "mets closure").outcome(),
+                "a path-less reference in a METS with no xml:base did not name the METS itself");
+
+        Map<String, String> nested = new LinkedHashMap<>(goodPackage(payload));
+        nested.put(ROOT + "METS.xml", metsWithBase("representations/rep1/data/minutes.txt",
+                "?download").replace("<mets:fileSec", "<mets:fileSec xml:base=\"?download\""));
+        assertEquals(Outcome.PASSED, checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "path-less-base.zip", nested)).entries()), "mets closure").outcome(),
+                "an xml:base with no path of its own was merged as a path");
+    }
+
+    /**
+     * A refused reference is refused the SAME WAY wherever the question is asked.
+     *
+     * <p>{@code resolve} stripped {@code file:} before deciding, and the refused/missing
+     * classification asked on the raw href — so {@code file:%2e%2e/secret.txt} was refused by
+     * one and counted as a missing file by the other, and the answer was a FINDING about a
+     * package that may carry a file of that name (Codex, seventeenth review, P2).
+     */
+    @Test
+    @DisplayName("a refused reference is refused the same way however it is spelled")
+    void aRefusedReferenceIsRefusedTheSameWayHoweverSpelled(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "METS.xml", mets("representations/rep1/data/minutes.txt",
+                "file:%2e%2e/secret.txt"));
+
+        Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "file-prefixed-refusal.zip", entries)).entries()), "mets closure");
+
+        assertEquals(Outcome.UNAVAILABLE, closure.outcome(),
+                "a reference this verifier refused to follow was reported as a file the package "
+                        + "does not carry, because the two questions read it differently: "
+                        + closure.detail());
+        assertTrue(closure.detail().contains("will not follow"), closure.detail());
     }
 
     @Test

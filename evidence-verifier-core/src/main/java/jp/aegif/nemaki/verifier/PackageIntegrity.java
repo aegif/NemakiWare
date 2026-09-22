@@ -635,7 +635,7 @@ public final class PackageIntegrity {
         int external = 0;
         for (String metsPath : metsPaths) {
             String mets = new String(entries.get(metsPath), StandardCharsets.UTF_8);
-            List<String> hrefs = hrefsIn(mets);
+            List<String> hrefs = hrefsIn(mets, metsPath);
             if (hrefs == null) {
                 // The package HAS a METS and this verifier could not read it. Saying the METS
                 // names nothing would turn that into a fact about the package.
@@ -672,7 +672,7 @@ public final class PackageIntegrity {
                         packageRootOf(wrote.getKey(), metsPaths), metsPaths, href);
                 if (entry != null) {
                     claimed.add(entry);
-                } else if (spellingsOf(withoutFragmentOrQuery(href)).isEmpty()) {
+                } else if (isRefused(href)) {
                     // REFUSED, not missing: decoding it would invent a separator or a dot
                     // segment. Counting it as "a file the package does not carry" said
                     // something FALSE about a package that may well carry a file of that name
@@ -739,6 +739,12 @@ public final class PackageIntegrity {
         return external == 0 ? "" : " " + external + " locator(s) name something OUTSIDE the "
                 + "package (a URN, a DOI, a handle, a file: URI on another host, an http URL) "
                 + "and were NOT evaluated here.";
+    }
+
+    /** Was this reference REFUSED rather than looked for? Read exactly as {@code resolve} reads it. */
+    private static boolean isRefused(String href) {
+        String reference = referenceOf(href);
+        return reference != null && spellingsOf(reference).isEmpty();
     }
 
     /** What to add when some references were refused rather than looked for. */
@@ -1034,6 +1040,18 @@ public final class PackageIntegrity {
         return authority.equals(".") && path.startsWith("/") ? path.substring(1) : path;
     }
 
+    /**
+     * The reference string every rule reads — ONE normalisation, used twice.
+     *
+     * <p>{@code resolve} stripped {@code file:} before deciding whether a reference could be
+     * followed, and the refused/missing classification made the same decision on the RAW href.
+     * So {@code file:%2e%2e/secret.txt} was REFUSED by one and counted as a file the package
+     * does not carry by the other — one reference, two answers (Codex, seventeenth review, P2).
+     */
+    private static String referenceOf(String href) {
+        return localPathOfFileUri(withoutFragmentOrQuery(href.replace('\\', '/')));
+    }
+
     private static String withoutFragmentOrQuery(String href) {
         int cut = href.length();
         for (char mark : new char[] { '#', '?' }) {
@@ -1128,6 +1146,15 @@ public final class PackageIntegrity {
      */
 
     static List<String> hrefsIn(String xml) {
+        return hrefsIn(xml, "");
+    }
+
+    /**
+     * @param metsPath the METS's own path — the DOCUMENT BASE (RFC 3986 §5.1.3). A reference
+     *        with no path of its own and no {@code xml:base} names the document itself, and
+     *        without this it resolved to the package root instead (Codex, seventeenth review)
+     */
+    static List<String> hrefsIn(String xml, String metsPath) {
         // Cleared at the ENTRY, so a caller that gets null back — or a second caller — never
         // reads the count the previous METS left behind (subagent, fifteenth review, P3).
         LAST_EXTERNAL.set(0);
@@ -1160,7 +1187,7 @@ public final class PackageIntegrity {
             return null;
         }
         List<String> hrefs = new ArrayList<>();
-        collectHrefs(document.getDocumentElement(), hrefs);
+        collectHrefs(document.getDocumentElement(), "", metsPath, hrefs);
         LAST_EXTERNAL.set(externalLocatorsIn(document.getDocumentElement()));
         return hrefs;
     }
@@ -1177,7 +1204,7 @@ public final class PackageIntegrity {
     private static final ThreadLocal<Integer> LAST_EXTERNAL = ThreadLocal.withInitial(() -> 0);
 
     private static void collectHrefs(org.w3c.dom.Element element, List<String> hrefs) {
-        collectHrefs(element, "", hrefs);
+        collectHrefs(element, "", "", hrefs);
     }
 
     /**
@@ -1190,7 +1217,7 @@ public final class PackageIntegrity {
      */
     private static int externalLocatorsIn(org.w3c.dom.Element element) {
         List<String> local = new ArrayList<>();
-        collectHrefs(element, "", local);
+        collectHrefs(element, "", "", local);
         List<String> all = new ArrayList<>();
         collectEveryHref(element, all);
         return all.size() - local.size();
@@ -1216,7 +1243,7 @@ public final class PackageIntegrity {
      * @param base the {@code xml:base} in force here, accumulated down the tree
      */
     private static void collectHrefs(org.w3c.dom.Element element, String base,
-            List<String> hrefs) {
+            String documentBase, List<String> hrefs) {
         if (element == null) {
             return;
         }
@@ -1232,7 +1259,11 @@ public final class PackageIntegrity {
         // was reported as naming files the package does not carry (Codex, twelfth review, P2).
         String declared = element.getAttributeNS(javax.xml.XMLConstants.XML_NS_URI, "base");
         declared = declared == null ? null : declared.replace('\\', '/');
-        if (declared != null && !declared.isEmpty()) {
+        // An xml:base with no path of its own means THE CURRENT BASE, so it changes nothing.
+        // Merging it produced "…/data/?download" and every reference below it went looking in
+        // a directory (Codex, seventeenth review, P2).
+        if (declared != null && !declared.isEmpty()
+                && !withoutFragmentOrQuery(declared).isEmpty()) {
             // MERGED per RFC 3986 §5.2.2: a base's last segment is REPLACED, not kept. Adding a
             // "/" to a relative base and nothing to an absolute one produced
             // "/representations/rep1/datap.bin" for a base ending in a segment (subagent,
@@ -1258,9 +1289,17 @@ public final class PackageIntegrity {
         // once the query was dropped, and the METS was told it names a folder (Codex,
         // sixteenth review, P1). It is the base verbatim, with no merge.
         boolean namesTheBase = href != null && !href.isEmpty()
-                && withoutFragmentOrQuery(href).isEmpty() && !base.isEmpty();
+                && withoutFragmentOrQuery(href).isEmpty();
         if (namesTheBase) {
-            href = withoutFragmentOrQuery(base);
+            // The base, or — when none was declared — the METS ITSELF. Requiring an explicit
+            // xml:base left "?download" in a METS without one resolving to the package root
+            // (Codex, seventeenth review, P2).
+            String target = base.isEmpty() ? documentBase : withoutFragmentOrQuery(base);
+            if (target.isEmpty()) {
+                namesTheBase = false;
+            } else {
+                href = target;
+            }
         }
         // A METS can point outside the package. Those are not files it is closing over and
         // reporting them as missing would turn a legitimate external reference into a failure.
@@ -1284,7 +1323,7 @@ public final class PackageIntegrity {
         org.w3c.dom.NodeList children = element.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
             if (children.item(i) instanceof org.w3c.dom.Element child) {
-                collectHrefs(child, base, hrefs);
+                collectHrefs(child, base, documentBase, hrefs);
             }
         }
     }
