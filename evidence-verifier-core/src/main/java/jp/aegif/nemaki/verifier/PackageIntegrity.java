@@ -647,10 +647,16 @@ public final class PackageIntegrity {
             named.addAll(hrefs);
             external += LAST_EXTERNAL.get();
         }
-        if (named.isEmpty()) {
+        if (named.isEmpty() && payloadsIn(entries).isEmpty()) {
             return Outcome.Check.absent("mets closure",
-                    "the METS names no files, so there is nothing to close over");
+                    "the METS names no files, so there is nothing to close over"
+                            + (external == 0 ? "" : ". " + external + " locator(s) name "
+                                    + "something OUTSIDE the package and were NOT evaluated"));
         }
+        // NOT an early return when the package HAS payload. Leaving here the moment no local
+        // reference was collected skipped the reverse direction, so a payload whose ONLY name
+        // was a non-URL locator answered "the METS names no files" — NOT_PRESENT — instead of
+        // "the package carries payload the METS does not name" (Codex, fifteenth review, P1).
 
         // BOTH directions read one resolution. The reverse one used to ask whether some entry's
         // path ENDED with some href — a different question from the one the forward direction
@@ -816,6 +822,10 @@ public final class PackageIntegrity {
      */
     private static List<String> spellingsOf(String reference) {
         List<String> spellings = new ArrayList<>();
+        if (wouldInventSeparator(reference)) {
+            // Refused outright: no decoded spelling, and no literal one either.
+            return spellings;
+        }
         String decoded = decodedPerSegment(reference, false);
         if (decoded != null) {
             spellings.add(decoded);
@@ -848,14 +858,37 @@ public final class PackageIntegrity {
         StringBuilder out = new StringBuilder();
         for (int i = 0; i < segments.length; i++) {
             String decoded = percentDecoded(segments[i], plusIsSpace);
-            if (decoded == null || decoded.indexOf('/') >= 0
-                    || (!segments[i].equals(decoded)
-                            && (decoded.equals("..") || decoded.equals(".")))) {
+            if (decoded == null) {
                 return null;
             }
             out.append(i == 0 ? "" : "/").append(decoded);
         }
         return out.toString();
+    }
+
+    /**
+     * Would decoding this reference INVENT a separator or a dot segment?
+     *
+     * <p>Asked apart from decoding, because the two failures need different answers. A
+     * MALFORMED escape means "this verifier could not read the reference", and the literal
+     * spelling is then the last thing left to try. A decode that produces {@code /} or
+     * {@code ..} means the reference is trying to reach further than it says — and falling back
+     * to the literal after refusing it reopened the hole the refusal exists for: a package
+     * carrying a file literally NAMED {@code data/%2e%2e/secret.txt} satisfied a reference to
+     * {@code data/../secret.txt} (Codex, fifteenth review, P1).
+     */
+    private static boolean wouldInventSeparator(String reference) {
+        for (String segment : reference.split("/", -1)) {
+            for (boolean plusIsSpace : new boolean[] { false, true }) {
+                String decoded = percentDecoded(segment, plusIsSpace);
+                if (decoded != null && !segment.equals(decoded)
+                        && (decoded.indexOf('/') >= 0 || decoded.equals("..")
+                                || decoded.equals("."))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -1216,6 +1249,14 @@ public final class PackageIntegrity {
 
     /** {@code base} with its last segment replaced by {@code reference} — RFC 3986 §5.2.2. */
     private static String merge(String base, String reference) {
+        if (reference.startsWith("//")) {
+            // The reference carries its OWN authority (§5.2.2, the arm before the path one), so
+            // the base contributes only its scheme. Treating it as a plain "/" reference kept
+            // the base's authority and produced "file://localhost//remote.example/…" (Codex,
+            // fifteenth review, P1).
+            int scheme = base.indexOf(':');
+            return (scheme < 0 ? "" : base.substring(0, scheme + 1)) + reference;
+        }
         if (reference.startsWith("/") && hasAuthority(base)) {
             // An absolute reference under a base with an authority keeps the authority and
             // replaces the WHOLE path.

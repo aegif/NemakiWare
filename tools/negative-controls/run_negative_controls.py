@@ -9839,8 +9839,8 @@ CONTROLS = [
         id='GY3',
         what="the readiness document stops saying the control added since the fifth sweep is unswept, so a finished sweep of 938 reads as a measurement of today's tree",
         file='docs/design/v3.4-release-readiness.md',
-        find='**その 173 本は通し未実施**',
-        replace='**その 173 本も通し済み**',
+        find='**その 176 本は通し未実施**',
+        replace='**その 176 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10797,7 +10797,7 @@ CONTROLS = [
         what='a second statement of the unswept count drifts from the locked one, so the document contradicts itself about how many controls have never been run together',
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **5 回目以後に足した control は 173 本**（境界 LM3 — 5 回目時点の最大 ID。',
+        find='  **5 回目以後に足した control は 176 本**（境界 LM3 — 5 回目時点の最大 ID。',
         replace='  **5 回目以後に足した control は 0 本**（境界 LM3 — 5 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10808,7 +10808,7 @@ CONTROLS = [
         file='docs/design/fail-closed-reads.md',
         # Re-pointed: the boundary id moves below LM3, so ids above it exist while the sweep
         # record says nothing was added — the cross-check (declared − swept ≠ ids above) fires.
-        find='**5 回目以後に足した control は 173 本**（境界 LM3）: ',
+        find='**5 回目以後に足した control は 176 本**（境界 LM3）: ',
         replace='**5 回目以後に足した control は 5 本**（境界 LA3）: ',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10864,8 +10864,8 @@ CONTROLS = [
         id='LN3',
         what="the canon stops saying the control added since the fifth sweep is unswept — the canon-side twin of GY3 — and, being itself the first control after the sweep, the one that forces the ledger back from 0 to 1",
         file='docs/design/fail-closed-reads.md',
-        find='**その 173 本は通し未実施**',
-        replace='**その 173 本も通し済み**',
+        find='**その 176 本は通し未実施**',
+        replace='**その 176 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10873,8 +10873,8 @@ CONTROLS = [
         id='LO3',
         what="the readiness document's §4 stops saying the added controls are unswept while §1.4 still does — the second exit, which a once-per-file check let through (GY3 did not fire)",
         file='docs/design/v3.4-release-readiness.md',
-        find='5 回目以後に足した control は **173 本**（通し未実施）。',
-        replace='5 回目以後に足した control は **173 本**（通し済み）。',
+        find='5 回目以後に足した control は **176 本**（通し未実施）。',
+        replace='5 回目以後に足した control は **176 本**（通し済み）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11689,7 +11689,7 @@ CONTROLS = [
         id='LB3',
         what='the PLAN\'s copy of the never-swept count drifts, so whoever scopes the overdue full sweep from the plan runs half the set',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='5 回目以後に足した control は **173 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='5 回目以後に足した control は **176 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='5 回目以後に足した control は **0 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -12738,10 +12738,15 @@ CONTROLS = [
         what='the literal spelling of a %-escaped href is tried, so a file named a%20b.txt satisfies a reference to a b.txt and closure is reported over a different file',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='        List<String> spellings = new ArrayList<>();\n        String decoded',
-        replace='        List<String> spellings = new ArrayList<>();\n        spellings.add(reference);\n        String decoded',
+        # Re-pointed 2026-09-23 (15 巡目): the refusal guard now sits between them, so the
+        # sabotage adds the literal spelling FIRST from just after it.
+        find='        List<String> spellings = new ArrayList<>();\n        if (wouldInventSeparator(reference)) {',
+        replace='        List<String> spellings = new ArrayList<>();\n        spellings.add(reference);\n        if (wouldInventSeparator(reference)) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['anEscapedHrefIsNotSatisfiedByItsLiteralSpelling'],
+        # Both literal-spelling locks, measured: adding it first satisfies a reference with
+        # a different file, and also revives it after a refusal.
+        expect_fail=['anEscapedHrefIsNotSatisfiedByItsLiteralSpelling',
+                     'aRefusedTraversalDoesNotFallBackToItsLiteralSpelling'],
     ),
     dict(
         id='RI3',
@@ -12775,8 +12780,10 @@ CONTROLS = [
         what='a %2F in a METS href decodes into a separator, so a climb spelled with escapes walks out of the package while the same climb spelled ../ is refused',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='            if (decoded == null || decoded.indexOf(\'/\') >= 0',
-        replace='            if (decoded == null || false',
+        # Re-pointed 2026-09-23 (15 巡目): the separator refusal moved out of the decoder into
+        # wouldInventSeparator, so that is what the sabotage blinds.
+        find='                        && (decoded.indexOf(\'/\') >= 0 || decoded.equals("..")',
+        replace='                        && (false || decoded.equals("..")',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['anEncodedSeparatorDoesNotWalkOutOfThePackage'],
     ),
@@ -13091,6 +13098,40 @@ CONTROLS = [
     # (14 locks) is what measures v1Layout. What the v1-section golden DOES add is
     # measured: `one evidence section`, `payload fixity` and the composite verdict now
     # run over a package with a real §4.2 section rather than the legacy single file.
+
+    dict(
+        id='SN3',
+        what='the literal spelling is tried after a REFUSED encoded traversal, so a file named like the escape satisfies a reference the verifier declined to follow',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        # The sabotage puts the literal spelling back INSIDE the refusal, which is exactly
+        # what the fourteenth review's revival did. Removing the refusal itself is RK3's
+        # territory and reddens a different lock (measured).
+        find='            // Refused outright: no decoded spelling, and no literal one either.\n            return spellings;',
+        replace='            spellings.add(reference);\n            return spellings;',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aRefusedTraversalDoesNotFallBackToItsLiteralSpelling'],
+    ),
+    dict(
+        id='SO3',
+        what='the check returns the moment no local reference was collected, so a payload named only by an external locator answers "the METS names no files" instead of being reported as unnamed',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        if (named.isEmpty() && payloadsIn(entries).isEmpty()) {',
+        replace='        if (named.isEmpty()) {',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aPayloadNamedOnlyByAnExternalLocatorIsUnnamed'],
+    ),
+    dict(
+        id='SP3',
+        what="a reference carrying its OWN authority keeps the base's, so //remote.example/x under file://localhost/ is looked for inside the package",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        if (reference.startsWith("//")) {',
+        replace='        if (false) {',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aReferenceWithItsOwnAuthorityReplacesTheBases'],
+    ),
 ]
 
 

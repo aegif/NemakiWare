@@ -1419,6 +1419,82 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                         + closure.detail());
     }
 
+    /**
+     * The literal spelling is the last resort for a MALFORMED reference — not for a refused one.
+     *
+     * <p>Reviving the fallback (fourteenth review) made it fire after the SAFETY refusal too,
+     * so a package carrying a file literally NAMED {@code data/%2e%2e/secret.txt} satisfied a
+     * reference the verifier had just declined to follow — the twelfth review's fail-open, back
+     * in a narrower shape (Codex, fifteenth review, P1). "Could not read it" and "read it and
+     * will not follow it" are different answers.
+     */
+    @Test
+    @DisplayName("a refused encoded traversal does not fall back to its literal spelling")
+    void aRefusedTraversalDoesNotFallBackToItsLiteralSpelling(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "METS.xml", mets("representations/rep1/data/minutes.txt",
+                "data/%2e%2e/secret.txt"));
+        // A file whose NAME is the reference as written. The decoded form is refused; the
+        // literal one must not be tried after that.
+        entries.put(ROOT + "data/%2e%2e/secret.txt", "a file named like the escape");
+
+        Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "refused-literal.zip", entries)).entries()), "mets closure");
+
+        assertEquals(Outcome.FAILED, closure.outcome(),
+                "a reference this verifier refused to follow was satisfied by a file named the "
+                        + "way it is written: " + closure.detail());
+    }
+
+    /**
+     * A payload whose ONLY name is a non-local locator is UNNAMED, not "the METS names nothing".
+     *
+     * <p>Returning the moment no local reference was collected skipped the reverse direction,
+     * so the package answered {@code NOT_PRESENT} — "there is nothing to close over" — while
+     * carrying content no local reference names (Codex, fifteenth review, P1).
+     */
+    @Test
+    @DisplayName("a payload named only by an external locator is unnamed, not 'nothing to close'")
+    void aPayloadNamedOnlyByAnExternalLocatorIsUnnamed(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "METS.xml", metsWithOtherLocType("URI",
+                "representations/rep1/data/minutes.txt", ""));
+
+        Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "only-external.zip", entries)).entries()), "mets closure");
+
+        assertEquals(Outcome.FAILED, closure.outcome(),
+                "a package whose payload is named only by a locator this verifier does not "
+                        + "follow answered 'the METS names no files': " + closure.detail());
+        assertTrue(closure.detail().contains("does not name"), closure.detail());
+    }
+
+    /**
+     * A reference with its OWN authority replaces the base's — RFC 3986 §5.2.2.
+     *
+     * <p>Treating {@code //remote.example/x} under {@code file://localhost/archive/} as a plain
+     * absolute reference kept the base's authority and produced
+     * {@code file://localhost//remote.example/x}, which was then read as a path in this package
+     * (Codex, fifteenth review, P1).
+     */
+    @Test
+    @DisplayName("a reference with its own authority replaces the base's")
+    void aReferenceWithItsOwnAuthorityReplacesTheBases(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "METS.xml", metsWithBase("file://localhost/archive/",
+                "//remote.example/catalogue", "/representations/rep1/data/minutes.txt"));
+
+        Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "own-authority.zip", entries)).entries()), "mets closure");
+
+        assertEquals(Outcome.PASSED, closure.outcome(),
+                "a reference carrying its own authority kept the base's and was looked for "
+                        + "inside the package: " + closure.detail());
+    }
+
     @Test
     @DisplayName("a METS with an internal DOCTYPE is still read")
     void aMetsWithAnInternalDoctypeIsStillRead(@TempDir Path tmp) throws Exception {
