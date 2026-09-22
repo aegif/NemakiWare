@@ -1483,6 +1483,10 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                         + "follow got a settled answer: " + closure.detail());
         assertEquals("AMBIGUOUS_PAYLOAD", closure.reasonCode(), closure.detail());
         assertTrue(closure.detail().contains("NOT been established"), closure.detail());
+        // The COUNT on this arm too. The lock written for "every arm states it" measured the
+        // absent and missing-reference arms only, so deleting it from THIS one left both it and
+        // the control green (Codex, sixteenth review, P3).
+        assertTrue(closure.detail().contains("1 locator(s)"), closure.detail());
     }
 
     /**
@@ -1668,6 +1672,29 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         assertNotEquals(Outcome.PASSED, closure.outcome(),
                 "a reference under a base naming ANOTHER MACHINE was satisfied by this "
                         + "package's own payload: " + closure.detail());
+    }
+
+    /**
+     * An empty-path reference names the BASE DOCUMENT, not a sibling.
+     *
+     * <p>{@code ?download} and {@code #page=2} have no path of their own, and RFC 3986 §5.2.2
+     * makes them the base itself. Merging them as paths produced the base's DIRECTORY once the
+     * query was dropped, so the METS was told it names a folder (Codex, sixteenth review, P1).
+     */
+    @Test
+    @DisplayName("an empty-path reference names the base document")
+    void anEmptyPathReferenceNamesTheBase(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "METS.xml",
+                metsWithBase("representations/rep1/data/minutes.txt", "?download"));
+
+        Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "empty-path-reference.zip", entries)).entries()), "mets closure");
+
+        assertEquals(Outcome.PASSED, closure.outcome(),
+                "a reference with no path of its own was resolved as a sibling of the base "
+                        + "rather than as the base: " + closure.detail());
     }
 
     @Test

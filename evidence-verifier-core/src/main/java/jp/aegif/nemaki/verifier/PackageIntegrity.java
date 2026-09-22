@@ -1253,6 +1253,15 @@ public final class PackageIntegrity {
         // the very misreading this method was rewritten to remove).
         String href = element.getAttributeNS(XLINK, "href");
         href = href == null ? null : href.replace('\\', '/');
+        // An EMPTY-PATH reference — "?download", "#page=2" — names the base document ITSELF
+        // (RFC 3986 §5.2.2), not a sibling. Merging it as a path produced the base's DIRECTORY
+        // once the query was dropped, and the METS was told it names a folder (Codex,
+        // sixteenth review, P1). It is the base verbatim, with no merge.
+        boolean namesTheBase = href != null && !href.isEmpty()
+                && withoutFragmentOrQuery(href).isEmpty() && !base.isEmpty();
+        if (namesTheBase) {
+            href = withoutFragmentOrQuery(base);
+        }
         // A METS can point outside the package. Those are not files it is closing over and
         // reporting them as missing would turn a legitimate external reference into a failure.
         if (href != null && !href.isEmpty() && isLocalLocType(element)) {
@@ -1261,7 +1270,7 @@ public final class PackageIntegrity {
             // "https://example.invalid/x", not a path in this package. Skipping the merge for
             // every absolute href left that arm judging the bare "/x" (subagent, fourteenth
             // review, P2).
-            String merged = hasScheme(href) || base.isEmpty()
+            String merged = namesTheBase || hasScheme(href) || base.isEmpty()
                     || (href.startsWith("/") && !hasAuthority(base))
                     ? href : merge(base, href);
             // Locality is judged on the MERGED reference. Judging the bare href and merging
