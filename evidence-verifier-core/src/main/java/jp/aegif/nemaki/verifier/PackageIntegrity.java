@@ -621,14 +621,22 @@ public final class PackageIntegrity {
         if (metsPaths.isEmpty()) {
             return Outcome.Check.absent("mets closure", "the package carries no METS");
         }
-        // The IP root: the one directory every entry sits under, or "" for a zip with no
-        // wrapping folder. References resolve against it as well as against their own METS's
+        // The IP root: the directory of the SHALLOWEST METS, which in CSIP is the package's own
+        // root METS. References resolve against it as well as against their own METS's
         // directory — a sub-METS writing package-root-relative paths is an ordinary CSIP shape.
         //
-        // NOT the shallowest METS's directory: a package whose only METS sits at
-        // metadata/METS.xml would then have an "IP root" two levels below its own, and its
-        // ordinary ../ reference was refused (measured here).
-        String ipRoot = commonDirectory(entries.keySet());
+        // NOT the common directory of every entry: a single stray file beside the package — the
+        // __MACOSX folder macOS writes, a .sha256 sidecar — collapsed it to "", and the package
+        // then answered differently about ITSELF because of a file that is not part of it
+        // (subagent, twelfth review, P2). It also never went deeper than one level.
+        String ipRoot = null;
+        for (String metsPath : metsPaths) {
+            int at = metsPath.lastIndexOf('/');
+            String directory = at < 0 ? "" : metsPath.substring(0, at + 1);
+            if (ipRoot == null || directory.length() < ipRoot.length()) {
+                ipRoot = directory;
+            }
+        }
         // Each href stays PAIRED with the METS that wrote it. Collecting them into one list and
         // then trying each against every METS directory let a reference written by one METS be
         // resolved by another one's neighbourhood: a package missing the file its root METS
@@ -691,21 +699,6 @@ public final class PackageIntegrity {
     }
 
     /**
-     * Does the package carry the file this METS names?
-     *
-     * <p>A METS href is relative to the METS's OWN directory, so that is tried first and exactly.
-     * The loose suffix match stays as a fallback for producers that write the path from some
-     * other base — but it no longer resolves into the PAYLOAD. The two halves of this check were
-     * asymmetric: the METS was searched for with payload excluded while its references were
-     * resolved with payload included, so a METS naming {@code metadata/preservation/premis.xml}
-     * that the package carried only as a copy INSIDE a payload answered "closure complete" while
-     * {@code payload fixity} answered "the package carries no PREMIS" — two checks of one profile
-     * reading one name in opposite directions (subagent, ninth review, P3).
-     *
-     * <p>Payload the METS names in the ordinary way still resolves: it is at
-     * {@code <mets dir>/representations/…/data/…}, which the exact arm finds.
-     */
-    /**
      * The package entry this METS's href names, or null.
      *
      * <p>A METS {@code xlink:href} is a URI reference. Resolving one here means:
@@ -723,15 +716,17 @@ public final class PackageIntegrity {
      *       another — <b>and this verifier refused every such package this product writes</b>,
      *       which for a Japanese repository is the ordinary case, not an edge one (subagent,
      *       eleventh review, P1, measured against the real commons-ip2 jar);</li>
-     *   <li>resolve against a BASE: the METS's own directory, then the IP root (an absolute
-     *       reference has its leading slash dropped and resolves there). For the ROOT METS
-     *       only, the zip root is tried as well — for it the two differ only by the wrapping
-     *       folder's name, and producers write both;</li>
-     *   <li>remove dot segments (RFC 3986 §5.2.4) and REFUSE a result that climbs out of the IP
-     *       root. §5.2.4 discards the excess {@code ..}, which with a zip as the base silently
-     *       turns "points outside this package" into "names a file inside it" — measured: a
-     *       METS naming {@code ../aip-2/secret.txt} reported its own package as closed over a
-     *       file belonging to another one (subagent, eleventh review, P2).</li>
+     *   <li>resolve against a BASE: an absolute reference ({@code /…}) against the IP root and
+     *       nothing else; a relative one against the METS's own directory, then the IP root.
+     *       For the ROOT METS only, the zip root is tried as well — for it the two differ only
+     *       by the wrapping folder's name, and producers write both;</li>
+     *   <li>remove dot segments (RFC 3986 §5.2.4) and REFUSE an excess {@code ..} rather than
+     *       discarding it. §5.2.4 discards it, which with a zip as the base silently turns
+     *       "points outside this package" into "names a file inside it". A reference that ends
+     *       up inside ANOTHER package — one with its own METS above it, sideways from this one
+     *       — is refused by {@link #belongsToTheSamePackage}; there is no separate check
+     *       against the IP root, and the javadoc used to promise one (subagent, eleventh and
+     *       twelfth reviews, P2).</li>
      * </ol>
      *
      * <p><b>Not a suffix match.</b> "any entry whose path ends with this href" resolved one
@@ -745,14 +740,15 @@ public final class PackageIntegrity {
         String reference = withoutFragmentOrQuery(withoutFilePrefix(href.replace('\\', '/')));
         int slash = metsPath.lastIndexOf('/');
         String directory = slash < 0 ? "" : metsPath.substring(0, slash + 1);
-        boolean rootMets = directory.equals(ipRoot);
         for (String spelling : spellingsOf(reference)) {
-            // No separate arm for an absolute reference. One was written and then MEASURED to
-            // change nothing: with the IP root already among the bases, "/x" resolves there
-            // whether or not it is treated specially, and the control aimed at the arm stayed
-            // green. An arm that changes no answer is not a product change.
-            List<String> bases = rootMets ? List.of(directory, ipRoot, "")
-                    : List.of(directory, ipRoot);
+            // An ABSOLUTE reference has ONE base: the IP root. This arm was written, then
+            // removed on the strength of a control that did not fire — and the control did not
+            // fire because its fixture had no COLLISION: nothing sat at the METS-relative
+            // position, so directory-first and IP-root-only gave the same answer. With a file
+            // at both, directory-first claims the wrong one (Codex, twelfth review, P1). The
+            // arm is back, and the fixture beside it now has the collision.
+            List<String> bases = spelling.startsWith("/") ? List.of(ipRoot)
+                    : List.of(directory, ipRoot, "");
             String relative = spelling.startsWith("/") ? spelling.substring(1) : spelling;
             for (String base : bases) {
                 String candidate = withoutDotSegments(base + relative);
@@ -763,21 +759,6 @@ public final class PackageIntegrity {
             }
         }
         return null;
-    }
-
-    /** The one directory every entry sits under, or "" when they do not share one. */
-    private static String commonDirectory(java.util.Set<String> names) {
-        String prefix = null;
-        for (String name : names) {
-            int at = name.indexOf('/');
-            String top = at < 0 ? "" : name.substring(0, at + 1);
-            if (prefix == null) {
-                prefix = top;
-            } else if (!prefix.equals(top)) {
-                return "";
-            }
-        }
-        return prefix == null ? "" : prefix;
     }
 
     /**
@@ -791,34 +772,89 @@ public final class PackageIntegrity {
      */
     private static boolean belongsToTheSamePackage(String candidate, String metsPath,
             List<String> metsPaths) {
+        // The DEEPEST METS above the candidate owns it. Taking the shallowest meant a root
+        // METS at the zip's top — whose directory is "" and prefixes everything — was the owner
+        // of every path, and the check was then satisfied by every METS: a zip with one METS at
+        // the top switched this off entirely (subagent, twelfth review, P2).
         String owner = null;
         for (String other : metsPaths) {
             int at = other.lastIndexOf('/');
             String directory = at < 0 ? "" : other.substring(0, at + 1);
             if (candidate.startsWith(directory)
-                    && (owner == null || directory.length() < owner.length())) {
+                    && (owner == null || directory.length() > owner.length())) {
                 owner = directory;
             }
         }
-        return owner == null || metsPath.startsWith(owner);
+        if (owner == null || metsPath.startsWith(owner)) {
+            return true;
+        }
+        // DOWNWARD is fine: a root METS pointing into a representation's own tree is the
+        // ordinary CSIP mptr. What this refuses is SIDEWAYS — a reference that leaves its own
+        // package and lands in another one.
+        int at = metsPath.lastIndexOf('/');
+        return owner.startsWith(at < 0 ? "" : metsPath.substring(0, at + 1));
     }
 
-    /** The reference as written, percent-decoded, and decoded with {@code +} for a space. */
+    /**
+     * What this reference can mean, most-meant first.
+     *
+     * <p>A URI reference MEANS its percent-decoded form, so that is what is tried — and when the
+     * reference carries a {@code %} escape, the literal spelling is NOT tried at all. Trying it
+     * first let a package that lacks {@code data/a b.txt} but carries a file literally NAMED
+     * {@code data/a%20b.txt} satisfy the reference with a DIFFERENT file, and a {@code %2e%2e}
+     * reach a literal entry before the traversal refusal could see it (Codex, twelfth review,
+     * P1). A file whose name really contains a percent sign has to be referenced as
+     * {@code %25}, which is what RFC 3986 says.
+     *
+     * <p>The {@code +}-for-space spelling comes second: commons-ip2 encodes with
+     * {@code URLEncoder}, so its packages need it, but a file genuinely named {@code a+b.txt}
+     * and referenced without escapes is read literally by the first spelling.
+     */
     private static List<String> spellingsOf(String reference) {
         List<String> spellings = new ArrayList<>();
-        spellings.add(reference);
-        String decoded = percentDecoded(reference, false);
-        if (decoded != null && !spellings.contains(decoded)) {
+        String decoded = decodedPerSegment(reference, false);
+        if (decoded != null) {
             spellings.add(decoded);
         }
-        String formDecoded = percentDecoded(reference, true);
+        String formDecoded = decodedPerSegment(reference, true);
         if (formDecoded != null && !spellings.contains(formDecoded)) {
             spellings.add(formDecoded);
+        }
+        if (spellings.isEmpty()) {
+            // The escaping is not well formed, so there is nothing to decode it INTO. Read it
+            // as written rather than answering "names nothing".
+            spellings.add(reference);
         }
         return spellings;
     }
 
     /** {@code %XX} decoded as UTF-8, or null when the escaping is not well formed. */
+    /**
+     * The reference with each SEGMENT decoded, or null when decoding would change its shape.
+     *
+     * <p>Decoding the whole string let {@code %2F} become a separator and {@code ..%2F..%2F}
+     * become a climb, AFTER the literal spelling had been checked and BEFORE dot segments were
+     * removed — so an encoded traversal walked out of the package while the locks, whose
+     * fixtures spell {@code ../} plainly, stayed green (subagent, twelfth review, P1). commons-ip2
+     * does not encode {@code /} (its safe set includes it), so nothing this product writes needs
+     * that, and a reference that only means what it means after inventing a separator is not one
+     * this verifier will follow.
+     */
+    private static String decodedPerSegment(String reference, boolean plusIsSpace) {
+        String[] segments = reference.split("/", -1);
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < segments.length; i++) {
+            String decoded = percentDecoded(segments[i], plusIsSpace);
+            if (decoded == null || decoded.indexOf('/') >= 0
+                    || (!segments[i].equals(decoded)
+                            && (decoded.equals("..") || decoded.equals(".")))) {
+                return null;
+            }
+            out.append(i == 0 ? "" : "/").append(decoded);
+        }
+        return out.toString();
+    }
+
     private static String percentDecoded(String reference, boolean plusIsSpace) {
         java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
         for (int i = 0; i < reference.length(); i++) {
@@ -827,12 +863,15 @@ public final class PackageIntegrity {
                 if (i + 2 >= reference.length()) {
                     return null;
                 }
-                int value = Character.digit(reference.charAt(i + 1), 16) * 16
-                        + Character.digit(reference.charAt(i + 2), 16);
-                if (value < 0) {
+                int high = Character.digit(reference.charAt(i + 1), 16);
+                int low = Character.digit(reference.charAt(i + 2), 16);
+                // BOTH digits. Multiplying the first by 16 and adding a -1 from the second is
+                // positive whenever the first is 1 or more, so "%3Z" decoded to '/' and a
+                // broken escape became a path separator (subagent, twelfth review, P1).
+                if (high < 0 || low < 0) {
                     return null;
                 }
-                bytes.write(value);
+                bytes.write(high * 16 + low);
                 i += 2;
             } else if (plusIsSpace && c == '+') {
                 bytes.write(' ');
@@ -845,10 +884,22 @@ public final class PackageIntegrity {
 
     /** The two {@code file:} spellings commons-ip2 accepts when reading a package. */
     private static String withoutFilePrefix(String href) {
-        if (href.startsWith("file://./")) {
-            return href.substring("file://./".length());
+        if (!href.regionMatches(true, 0, "file:", 0, 5)) {
+            return href;
         }
-        return href.startsWith("file:") ? href.substring("file:".length()) : href;
+        String rest = href.substring("file:".length());
+        if (rest.startsWith("//")) {
+            // file://./x, file:///x and file://localhost/x all name a local path. Only the
+            // first was stripped, so the other two — both legal, both written by real tools —
+            // became "a file the package does not carry" (subagent, twelfth review, P3).
+            int slash = rest.indexOf('/', 2);
+            rest = slash < 0 ? "" : rest.substring(slash + 1);
+            if (rest.startsWith("./")) {
+                rest = rest.substring(2);
+            }
+            return rest;
+        }
+        return rest;
     }
 
     private static String withoutFragmentOrQuery(String href) {
@@ -905,18 +956,14 @@ public final class PackageIntegrity {
      * {@code file:} is the exception: commons-ip2 writes and accepts it for a local path.
      */
     private static boolean isPackageLocal(String href) {
+        // Two characters at least: a single letter before a colon is a Windows drive, and
+        // reading "C:/metadata/premis.xml" as a scheme made the reference vanish silently —
+        // "the METS names no files" for a METS that named one (subagent, twelfth review, P3).
         java.util.regex.Matcher scheme =
-                java.util.regex.Pattern.compile("^([A-Za-z][A-Za-z0-9+.-]*):").matcher(href);
+                java.util.regex.Pattern.compile("^([A-Za-z][A-Za-z0-9+.-]+):").matcher(href);
         return !scheme.find() || scheme.group(1).equalsIgnoreCase("file");
     }
 
-    private static String trimLeading(String href) {
-        String value = href.replace('\\', '/');
-        while (value.startsWith("./") || value.startsWith("/")) {
-            value = value.startsWith("./") ? value.substring(2) : value.substring(1);
-        }
-        return value;
-    }
 
     /**
      * The local references a METS makes — read as XML.
@@ -969,8 +1016,24 @@ public final class PackageIntegrity {
     private static final String XLINK = "http://www.w3.org/1999/xlink";
 
     private static void collectHrefs(org.w3c.dom.Element element, List<String> hrefs) {
+        collectHrefs(element, "", hrefs);
+    }
+
+    /**
+     * @param base the {@code xml:base} in force here, accumulated down the tree
+     */
+    private static void collectHrefs(org.w3c.dom.Element element, String base,
+            List<String> hrefs) {
         if (element == null) {
             return;
+        }
+        // xml:base, which a METS may use to say where its references start from. Ignoring it
+        // sent every reference under it to the wrong directory, so a standard third-party METS
+        // was reported as naming files the package does not carry (Codex, twelfth review, P2).
+        String declared = element.getAttributeNS(javax.xml.XMLConstants.XML_NS_URI, "base");
+        if (declared != null && !declared.isEmpty()) {
+            base = declared.startsWith("/") ? declared
+                    : base + (declared.endsWith("/") ? declared : declared + "/");
         }
         // The XLink namespace, never the prefix. A fallback on the literal "xlink:href" was
         // added on the reasoning that a METS without a namespace declaration still says href —
@@ -983,15 +1046,31 @@ public final class PackageIntegrity {
         // A METS can point outside the package. Those are not files it is closing over and
         // reporting them as missing would turn a legitimate external reference into a failure.
         if (href != null && !href.isEmpty()
-                && isPackageLocal(href)) {
-            hrefs.add(href);
+                && isPackageLocal(href) && isLocalLocType(element)) {
+            hrefs.add(href.startsWith("/") || base.isEmpty() ? href : base + href);
         }
         org.w3c.dom.NodeList children = element.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
             if (children.item(i) instanceof org.w3c.dom.Element child) {
-                collectHrefs(child, hrefs);
+                collectHrefs(child, base, hrefs);
             }
         }
+    }
+
+    /**
+     * Does this element's {@code LOCTYPE} say the locator is a path inside the package?
+     *
+     * <p>METS declares the KIND of a locator in {@code LOCTYPE}: {@code URL} is a URL,
+     * {@code URN}/{@code HANDLE}/{@code DOI}/{@code PURL} are not, and {@code OTHER} with an
+     * {@code OTHERLOCTYPE} is whatever the producer says. Only the scheme was read, so an
+     * external locator written as a RELATIVE {@code anyURI} — which {@code LOCTYPE="OTHER"}
+     * allows and the spec's own examples use — had no scheme, was taken for a package path, and
+     * a legitimate third-party METS was reported as missing a file (Codex, twelfth review, P2).
+     * Absent {@code LOCTYPE} means the ordinary case: a local path.
+     */
+    private static boolean isLocalLocType(org.w3c.dom.Element element) {
+        String locType = element.getAttribute("LOCTYPE");
+        return locType == null || locType.isEmpty() || locType.equalsIgnoreCase("URL");
     }
 
     private static Map<String, byte[]> payloadsIn(Map<String, byte[]> entries) {

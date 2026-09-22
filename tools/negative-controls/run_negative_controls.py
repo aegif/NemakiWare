@@ -9839,8 +9839,8 @@ CONTROLS = [
         id='GY3',
         what="the readiness document stops saying the control added since the fifth sweep is unswept, so a finished sweep of 938 reads as a measurement of today's tree",
         file='docs/design/v3.4-release-readiness.md',
-        find='**その 143 本は通し未実施**',
-        replace='**その 143 本も通し済み**',
+        find='**その 155 本は通し未実施**',
+        replace='**その 155 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10797,7 +10797,7 @@ CONTROLS = [
         what='a second statement of the unswept count drifts from the locked one, so the document contradicts itself about how many controls have never been run together',
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **5 回目以後に足した control は 143 本**（境界 LM3 — 5 回目時点の最大 ID。',
+        find='  **5 回目以後に足した control は 155 本**（境界 LM3 — 5 回目時点の最大 ID。',
         replace='  **5 回目以後に足した control は 0 本**（境界 LM3 — 5 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10808,7 +10808,7 @@ CONTROLS = [
         file='docs/design/fail-closed-reads.md',
         # Re-pointed: the boundary id moves below LM3, so ids above it exist while the sweep
         # record says nothing was added — the cross-check (declared − swept ≠ ids above) fires.
-        find='**5 回目以後に足した control は 143 本**（境界 LM3）: ',
+        find='**5 回目以後に足した control は 155 本**（境界 LM3）: ',
         replace='**5 回目以後に足した control は 5 本**（境界 LA3）: ',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10864,8 +10864,8 @@ CONTROLS = [
         id='LN3',
         what="the canon stops saying the control added since the fifth sweep is unswept — the canon-side twin of GY3 — and, being itself the first control after the sweep, the one that forces the ledger back from 0 to 1",
         file='docs/design/fail-closed-reads.md',
-        find='**その 143 本は通し未実施**',
-        replace='**その 143 本も通し済み**',
+        find='**その 155 本は通し未実施**',
+        replace='**その 155 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10873,8 +10873,8 @@ CONTROLS = [
         id='LO3',
         what="the readiness document's §4 stops saying the added controls are unswept while §1.4 still does — the second exit, which a once-per-file check let through (GY3 did not fire)",
         file='docs/design/v3.4-release-readiness.md',
-        find='5 回目以後に足した control は **143 本**（通し未実施）。',
-        replace='5 回目以後に足した control は **143 本**（通し済み）。',
+        find='5 回目以後に足した control は **155 本**（通し未実施）。',
+        replace='5 回目以後に足した control は **155 本**（通し済み）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11689,7 +11689,7 @@ CONTROLS = [
         id='LB3',
         what='the PLAN\'s copy of the never-swept count drifts, so whoever scopes the overdue full sweep from the plan runs half the set',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='5 回目以後に足した control は **143 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='5 回目以後に足した control は **155 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='5 回目以後に足した control は **0 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -12489,23 +12489,10 @@ CONTROLS = [
         test='SipVerifierTest',
         expect_fail=['aSecondDigestUnderAnotherPrefixIsAFindingHereToo'],
     ),
-    dict(
-        id='QM3',
-        what='a METS reference resolves into the PAYLOAD, so a package carrying the named file only as a copy inside its content answers "closure complete" while payload fixity answers "no PREMIS"',
-        module='evidence-verifier-core',
-        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        # The FALLBACK arm, which is what decides here: the exact arm looks for the href under
-        # the METS's own directory and the fixture's package does not carry it there.
-        # Re-pointed 2026-09-22 (10 巡目): the loose suffix fallback is gone — resolution is
-        # now exact against the METS's own directory or the zip root — so what this control
-        # sabotages is the ROOT-based arm, whose absence refuses an href written from there.
-        # Re-pointed 2026-09-22 (11 巡目): resolution became a list of named bases, and the
-        # one this control is about is the zip root, tried for the ROOT METS only.
-        find='            List<String> bases = rootMets ? List.of(directory, ipRoot, "")',
-        replace='            List<String> bases = rootMets ? List.of(directory, ipRoot)',
-        test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['anHrefFromAnotherBaseStillResolves'],
-    ),
+    # QM3 was retired 2026-09-22 (12 巡目). It measured "a reference written from the zip
+    # root stops resolving", and the base list it sabotaged is now measured from both
+    # sides: RO3 for a non-root METS losing the zip root, RR3 for any METS losing the IP
+    # root. Keeping a third control on the same line would have measured neither half.
     dict(
         id='QN3',
         what='a restore that could not READ the archive row closes the journal row as abandoned, so "we could not look" is settled as "the write verifiably did not happen" and an unresolved gap stops being listable',
@@ -12575,11 +12562,13 @@ CONTROLS = [
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
         # Re-pointed 2026-09-22 (11 巡目): the looseness is gone, so the sabotage ADDS it back
         # as a last resort after every named base has failed.
-        find='        return null;\n    }\n\n    /** The one directory every entry sits under',
-        replace='        for (String path : entries.keySet()) {\n            if (path.endsWith(reference)) {\n                return path;\n            }\n        }\n        return null;\n    }\n\n    /** The one directory every entry sits under',
+        find='        return null;\n    }\n\n    /**\n     * Is this candidate inside the package',
+        replace='        for (String path : entries.keySet()) {\n            if (path.endsWith(reference)) {\n                return path;\n            }\n        }\n        return null;\n    }\n\n    /**\n     * Is this candidate inside the package',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['oneMetssReferenceIsNotResolvedByAnothersDirectory',
-                     'aPayloadCopyDoesNotCloseTheMets'],
+                     'aPayloadCopyDoesNotCloseTheMets',
+                     'anAbsoluteReferenceIgnoresTheMetssOwnDirectory',
+                     'anEscapedHrefIsNotSatisfiedByItsLiteralSpelling'],
     ),
     dict(
         id='QT3',
@@ -12653,10 +12642,16 @@ CONTROLS = [
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
         # Both spellings decode %XX, so removing one leaves the other doing the work
         # (measured: the lock stayed green). The sabotage stops the decoding entirely.
-        find='        List<String> spellings = new ArrayList<>();\n        spellings.add(reference);',
-        replace='        List<String> spellings = new ArrayList<>();\n        spellings.add(reference);\n        if (true) { return spellings; }',
+        # Re-pointed 2026-09-22 (12 巡目) TWICE. Killing one of the two decodings left the
+        # other doing the work, both times (measured). The sabotage stops decoding at its
+        # single point instead.
+        find='    private static String percentDecoded(String reference, boolean plusIsSpace) {',
+        replace='    private static String percentDecoded(String reference, boolean plusIsSpace) {\n        if (true) { return reference; }',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['anEncodedHrefResolves'],
+        # Collateral, measured: with no decoding at all the literal spelling is the only
+        # one left, which is the defect RH3 is about.
+        expect_fail=['anEncodedHrefResolves',
+                     'anEscapedHrefIsNotSatisfiedByItsLiteralSpelling'],
     ),
     dict(
         id='RA3',
@@ -12673,20 +12668,22 @@ CONTROLS = [
         what="the file:// prefix commons-ip2 itself writes and accepts is read as part of the path, so a package it produced is reported as naming a file that is not there",
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='        if (href.startsWith("file://./")) {\n            return href.substring("file://./".length());\n        }',
-        replace='        if (false) {\n            return href.substring("file://./".length());\n        }',
+        find='        if (!href.regionMatches(true, 0, "file:", 0, 5)) {\n            return href;\n        }',
+        replace='        if (true) {\n            return href;\n        }',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aNonLocalLocatorIsNotAMissingFile'],
+        expect_fail=['aNonLocalLocatorIsNotAMissingFile',
+                     'aFileUrlIsLocalAndADriveLetterIsNotAScheme'],
     ),
     dict(
         id='RC3',
         what='a METS reference that lands in a DIFFERENT package in the same zip is accepted, so a package is reported as closed over a file that belongs to another one',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='        return owner == null || metsPath.startsWith(owner);',
-        replace='        return true;',
+        find='        if (owner == null || metsPath.startsWith(owner)) {\n            return true;\n        }',
+        replace='        if (true) {\n            return true;\n        }',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aReferenceOutOfThePackageIsRefused'],
+        expect_fail=['aReferenceOutOfThePackageIsRefused',
+                     'aMetsAtTheTopDoesNotOwnEveryPath'],
     ),
     dict(
         id='RD3',
@@ -12708,11 +12705,20 @@ CONTROLS = [
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['aFragmentAndAnAbsoluteReferenceAreResolved'],
     ),
-    # RF3 was retired 2026-09-22 (11 巡目) before it ever ran green. It sabotaged a
-    # separate arm for an absolute reference ("/x" resolved against the IP root), and
-    # the control DID NOT FIRE: with the IP root already among the bases, the arm
-    # changed no answer. The arm was removed rather than kept with a control that
-    # measures nothing.
+    dict(
+        id='RF3',
+        what='an absolute reference is resolved beside the METS that wrote it, so a package with the same relative name in both places closes over the wrong file',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        # Retired at the eleventh review because it did not fire, and RESTORED at the
+        # twelfth: the fixture had no COLLISION, so directory-first and IP-root-only gave
+        # the same answer. The arm was removed on that non-firing; the example was what
+        # measured nothing, not the arm.
+        find='            List<String> bases = spelling.startsWith("/") ? List.of(ipRoot)',
+        replace='            List<String> bases = false ? List.of(ipRoot)',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['anAbsoluteReferenceIgnoresTheMetssOwnDirectory'],
+    ),
     dict(
         id='RG3',
         what="the exporter strips non-ASCII characters out of the payload name, so the fixture that measures the METS encoding asymmetry stops measuring it",
@@ -12721,6 +12727,147 @@ CONTROLS = [
         replace='        cleaned = cleaned.replaceAll("[^ -~]", "_");\n        // Leading dots would make it hidden, or be "." / ".." outright.',
         test='TheSipLayoutIsWhereCommonsIpPutsItTest',
         expect_fail=['aNonAsciiPayloadNameIsEncodedInTheMetsOnly'],
+    ),
+
+    dict(
+        id='RH3',
+        what='the literal spelling of a %-escaped href is tried, so a file named a%20b.txt satisfies a reference to a b.txt and closure is reported over a different file',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        List<String> spellings = new ArrayList<>();\n        String decoded',
+        replace='        List<String> spellings = new ArrayList<>();\n        spellings.add(reference);\n        String decoded',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['anEscapedHrefIsNotSatisfiedByItsLiteralSpelling'],
+    ),
+    dict(
+        id='RI3',
+        what="a locator the METS declares as external with LOCTYPE is read as a package path, so a legitimate third-party reference is reported as a missing file",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        return locType == null || locType.isEmpty() || locType.equalsIgnoreCase("URL");',
+        replace='        return true;',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aRelativeExternalLocatorIsNotAMissingFile'],
+    ),
+    dict(
+        id='RJ3',
+        what='xml:base is ignored, so every reference under it is looked for in the wrong directory and a standard METS is reported as naming files the package does not carry',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        if (declared != null && !declared.isEmpty()) {',
+        replace='        if (false) {',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['anXmlBaseIsHonoured'],
+    ),
+    # NO CONTROL for the null arm of anOrdinaryKeyOfTheSameKindInitialises ("this build could
+    # not put the question at all" -> UNAVAILABLE rather than a finding). Codex named it at the
+    # twelfth review and it is real for a provider-backed key; no fixture here reaches it. What
+    # WAS tried: initVerify raises InvalidKeyException for every ordinary key this JVM can make
+    # (EC, RSA, DSA, EdDSA, XDH) against every signature algorithm it implements, so the arm
+    # that separates them is the only one a fixture can enter. Recorded rather than asserted.
+
+    dict(
+        id='RK3',
+        what='a %2F in a METS href decodes into a separator, so a climb spelled with escapes walks out of the package while the same climb spelled ../ is refused',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='            if (decoded == null || decoded.indexOf(\'/\') >= 0',
+        replace='            if (decoded == null || false',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['anEncodedSeparatorDoesNotWalkOutOfThePackage'],
+    ),
+    dict(
+        id='RL3',
+        what="a broken percent escape is decoded into something else (%3Z becomes '/'), so a malformed reference lands on a path that happens to exist",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='                if (high < 0 || low < 0) {',
+        replace='                if (high * 16 + low < 0) {',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['anEncodedSeparatorDoesNotWalkOutOfThePackage'],
+    ),
+    dict(
+        id='RM3',
+        what='the SHALLOWEST METS owns every path, so one METS at the top of the zip switches off the check that a reference stays inside its own package',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='                    && (owner == null || directory.length() > owner.length())) {',
+        replace='                    && (owner == null || directory.length() < owner.length())) {',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aMetsAtTheTopDoesNotOwnEveryPath'],
+    ),
+    dict(
+        id='RN3',
+        what='the IP root is taken from every zip entry again, so a stray file beside the package (__MACOSX, a checksum sidecar) changes what this verifier says about the package',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='            if (ipRoot == null || directory.length() < ipRoot.length()) {\n                ipRoot = directory;\n            }\n        }',
+        replace='            if (ipRoot == null || directory.length() < ipRoot.length()) {\n                ipRoot = directory;\n            }\n        }\n        for (String any : entries.keySet()) {\n            int cut = any.indexOf(\'/\');\n            String top = cut < 0 ? "" : any.substring(0, cut + 1);\n            if (!top.equals(ipRoot)) {\n                ipRoot = "";\n            }\n        }',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        # The stray-file lock, whose fixture now carries a reference that NEEDS the IP root
+        # — without one the stray file changed the IP root and nothing depended on it, so the
+        # lock answered the same either way (measured).
+        expect_fail=['aStrayFileBesideThePackageDoesNotChangeTheAnswer'],
+    ),
+    dict(
+        id='RO3',
+        what='only the root METS may write a path from the zip root, so a representation METS that names its own payload with the wrapping folder in the path is refused',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='                    : List.of(directory, ipRoot, "");',
+        replace='                    : directory.equals(ipRoot) ? List.of(directory, ipRoot, "")\n                            : List.of(directory, ipRoot);',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aReferenceFromTheZipRootResolvesFromAnyMets'],
+    ),
+    dict(
+        id='RP3',
+        what='only the file://./ spelling is stripped, so file:///x and file://localhost/x become files the package does not carry',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        if (rest.startsWith("//")) {',
+        replace='        if (rest.startsWith("//./")) {\n            return rest.substring(4);\n        }\n        if (false) {',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aFileUrlIsLocalAndADriveLetterIsNotAScheme'],
+    ),
+    dict(
+        id='RQ3',
+        what='a single letter before a colon is read as a URI scheme, so a Windows path C:/x is dropped SILENTLY and the METS is reported as naming no files',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='                java.util.regex.Pattern.compile("^([A-Za-z][A-Za-z0-9+.-]+):").matcher(href);',
+        replace='                java.util.regex.Pattern.compile("^([A-Za-z][A-Za-z0-9+.-]*):").matcher(href);',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aFileUrlIsLocalAndADriveLetterIsNotAScheme'],
+    ),
+    dict(
+        id='RR3',
+        what='the IP root stops being a base for a relative reference, so a sub-METS writing package-root-relative paths is refused',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        # ONLY the IP root, so the zip-root base RO3 measures is not removed with it.
+        find='                    : List.of(directory, ipRoot, "");',
+        replace='                    : List.of(directory, "");',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        # Both fixtures carry a reference that needs the IP root, measured.
+        expect_fail=['aSubMetsMayWritePackageRootRelativePaths',
+                     'aStrayFileBesideThePackageDoesNotChangeTheAnswer'],
+    ),
+    dict(
+        id='RS3',
+        what="a root METS pointing INTO a representation's own tree is refused as leaving its package, so the ordinary CSIP mptr breaks",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        int at = metsPath.lastIndexOf(\'/\');\n        return owner.startsWith(at < 0 ? "" : metsPath.substring(0, at + 1));',
+        replace='        return false;',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        # Everything that resolves DOWNWARD goes with it, measured.
+        expect_fail=['aRepresentationsMetsIsReadToo',
+                     'aFragmentAndAnAbsoluteReferenceAreResolved',
+                     'aReferenceFromTheZipRootResolvesFromAnyMets',
+                     'aStrayFileBesideThePackageDoesNotChangeTheAnswer',
+                     'aSubMetsMayWritePackageRootRelativePaths',
+                     'anAbsoluteReferenceIgnoresTheMetssOwnDirectory',
+                     'anEncodedHrefResolves'],
     ),
 ]
 
