@@ -144,6 +144,24 @@ class TheGoldenSipIsStillWhatWeWriteTest {
     }
 
     @Test
+    @DisplayName("the v1-section golden is still the package this product writes")
+    void theV1GoldenIsCurrent(@TempDir Path tmp) throws Exception {
+        Path golden = GOLDEN_DIRECTORY.resolve(SipGoldenWriter.V1_GOLDEN);
+        assertTrue(Files.exists(golden), golden + " is missing. Regenerate with SipGoldenWriter");
+
+        Map<String, byte[]> checkedIn = entriesOf(golden);
+        Map<String, byte[]> now = entriesOf(EarkSipExporterTest.buildOneWithBundleAndFixity(tmp,
+                SipGoldenWriter.ENCODED_NAME,
+                TheSipLayoutIsWhereCommonsIpPutsItTest.assemblerReturning(
+                        TheSipLayoutIsWhereCommonsIpPutsItTest.oneBundle())));
+
+        assertEquals(checkedIn.keySet(), now.keySet(),
+                SipGoldenWriter.V1_GOLDEN + " no longer has the layout this product writes");
+        assertEquals(referencesIn(checkedIn), referencesIn(now),
+                SipGoldenWriter.V1_GOLDEN + " no longer names what this product's METS names");
+    }
+
+    @Test
     @DisplayName("the encoded-name golden is still the package this product writes")
     void theEncodedGoldenIsCurrent(@TempDir Path tmp) throws Exception {
         sameShape(SipGoldenWriter.ENCODED_GOLDEN, SipGoldenWriter.ENCODED_NAME, tmp);

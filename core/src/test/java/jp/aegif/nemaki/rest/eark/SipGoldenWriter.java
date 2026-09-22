@@ -81,6 +81,16 @@ public final class SipGoldenWriter {
     public static final String ASCII_GOLDEN = "product-sip-ascii.zip";
     public static final String ENCODED_GOLDEN = "product-sip-encoded-name.zip";
 
+    /**
+     * A package with the v1 evidence SECTION, not the legacy single file.
+     *
+     * <p>Without it the seam measured {@code v1 layout} and {@code one evidence section} only
+     * through their "there is no section, so §4.2 has nothing to constrain" arm: gutting
+     * {@code v1Layout} entirely left the seam green (subagent, fourteenth review, P2,
+     * measured). P1 and above also have nothing to read in a legacy package.
+     */
+    public static final String V1_GOLDEN = "product-sip-v1-section.zip";
+
     private SipGoldenWriter() {
     }
 
@@ -92,6 +102,13 @@ public final class SipGoldenWriter {
         Files.createDirectories(into);
         write(into, ASCII_NAME, ASCII_GOLDEN);
         write(into, ENCODED_NAME, ENCODED_GOLDEN);
+
+        Path scratch = Files.createTempDirectory("sip-golden-v1");
+        Path v1 = EarkSipExporterTest.buildOneWithBundleAndFixity(scratch, ENCODED_NAME,
+                TheSipLayoutIsWhereCommonsIpPutsItTest.assemblerReturning(
+                        TheSipLayoutIsWhereCommonsIpPutsItTest.oneBundle()));
+        Files.copy(v1, into.resolve(V1_GOLDEN), StandardCopyOption.REPLACE_EXISTING);
+        System.out.println("wrote " + into.resolve(V1_GOLDEN) + " (v1 section)");
     }
 
     private static void write(Path into, String name, String fileName) throws Exception {

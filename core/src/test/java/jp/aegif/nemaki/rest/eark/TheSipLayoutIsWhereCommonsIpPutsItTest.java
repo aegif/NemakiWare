@@ -89,7 +89,7 @@ class TheSipLayoutIsWhereCommonsIpPutsItTest {
      * An assembler that hands back one complete bundle, so a real package is built with the
      * profile v1 layout rather than the legacy file.
      */
-    private static jp.aegif.nemaki.evidence.EvidenceBundleAssembler assemblerReturning(
+    static jp.aegif.nemaki.evidence.EvidenceBundleAssembler assemblerReturning(
             jp.aegif.nemaki.evidence.EvidenceBundle bundle) {
         return new jp.aegif.nemaki.evidence.EvidenceBundleAssembler() {
             @Override
@@ -100,7 +100,7 @@ class TheSipLayoutIsWhereCommonsIpPutsItTest {
         };
     }
 
-    private static jp.aegif.nemaki.evidence.EvidenceBundle oneBundle() {
+    static jp.aegif.nemaki.evidence.EvidenceBundle oneBundle() {
         jp.aegif.nemaki.evidence.RecordContentStatementV1 statement =
                 new jp.aegif.nemaki.evidence.RecordContentStatementV1("bedroom", "doc-1", "doc-1",
                         "att-1", "a".repeat(64), 11L,

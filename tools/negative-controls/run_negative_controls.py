@@ -9839,8 +9839,8 @@ CONTROLS = [
         id='GY3',
         what="the readiness document stops saying the control added since the fifth sweep is unswept, so a finished sweep of 938 reads as a measurement of today's tree",
         file='docs/design/v3.4-release-readiness.md',
-        find='**その 166 本は通し未実施**',
-        replace='**その 166 本も通し済み**',
+        find='**その 173 本は通し未実施**',
+        replace='**その 173 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10797,7 +10797,7 @@ CONTROLS = [
         what='a second statement of the unswept count drifts from the locked one, so the document contradicts itself about how many controls have never been run together',
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **5 回目以後に足した control は 166 本**（境界 LM3 — 5 回目時点の最大 ID。',
+        find='  **5 回目以後に足した control は 173 本**（境界 LM3 — 5 回目時点の最大 ID。',
         replace='  **5 回目以後に足した control は 0 本**（境界 LM3 — 5 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10808,7 +10808,7 @@ CONTROLS = [
         file='docs/design/fail-closed-reads.md',
         # Re-pointed: the boundary id moves below LM3, so ids above it exist while the sweep
         # record says nothing was added — the cross-check (declared − swept ≠ ids above) fires.
-        find='**5 回目以後に足した control は 166 本**（境界 LM3）: ',
+        find='**5 回目以後に足した control は 173 本**（境界 LM3）: ',
         replace='**5 回目以後に足した control は 5 本**（境界 LA3）: ',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10864,8 +10864,8 @@ CONTROLS = [
         id='LN3',
         what="the canon stops saying the control added since the fifth sweep is unswept — the canon-side twin of GY3 — and, being itself the first control after the sweep, the one that forces the ledger back from 0 to 1",
         file='docs/design/fail-closed-reads.md',
-        find='**その 166 本は通し未実施**',
-        replace='**その 166 本も通し済み**',
+        find='**その 173 本は通し未実施**',
+        replace='**その 173 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10873,8 +10873,8 @@ CONTROLS = [
         id='LO3',
         what="the readiness document's §4 stops saying the added controls are unswept while §1.4 still does — the second exit, which a once-per-file check let through (GY3 did not fire)",
         file='docs/design/v3.4-release-readiness.md',
-        find='5 回目以後に足した control は **166 本**（通し未実施）。',
-        replace='5 回目以後に足した control は **166 本**（通し済み）。',
+        find='5 回目以後に足した control は **173 本**（通し未実施）。',
+        replace='5 回目以後に足した control は **173 本**（通し済み）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11689,7 +11689,7 @@ CONTROLS = [
         id='LB3',
         what='the PLAN\'s copy of the never-swept count drifts, so whoever scopes the overdue full sweep from the plan runs half the set',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='5 回目以後に足した control は **166 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='5 回目以後に足した control は **173 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='5 回目以後に足した control は **0 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -12671,9 +12671,12 @@ CONTROLS = [
         find='        if (!href.regionMatches(true, 0, "file:", 0, 5)) {\n            return href;\n        }',
         replace='        if (true) {\n            return href;\n        }',
         test='PackageIntegrityIsCheckedNotAssumedTest',
+        # The third was DECLARED WITHOUT BEING MEASURED and does not fire: making
+        # localPathOfFileUri return the href unchanged lets the foreign URI be collected,
+        # and it then fails to resolve — which is the FAILED that lock already expects
+        # (subagent, fourteenth review, P2). RY3 measures that lock.
         expect_fail=['aNonLocalLocatorIsNotAMissingFile',
-                     'aFileUrlIsLocalAndADriveLetterIsNotAScheme',
-                     'aForeignFileUriIsNotLocalAndAnEmptyAuthorityIsAbsolute'],
+                     'aFileUrlIsLocalAndADriveLetterIsNotAScheme'],
     ),
     dict(
         id='RC3',
@@ -12914,7 +12917,8 @@ CONTROLS = [
         find='        if (candidate == null || candidate.isBlank()) {\n            return "content.bin";\n        }',
         replace='        if (true) {\n            return "content.bin";\n        }',
         test='TheGoldenSipIsStillWhatWeWriteTest',
-        expect_fail=['theAsciiGoldenIsCurrent', 'theEncodedGoldenIsCurrent'],
+        expect_fail=['theAsciiGoldenIsCurrent', 'theEncodedGoldenIsCurrent',
+                     'theV1GoldenIsCurrent'],
     ),
 
     dict(
@@ -12962,7 +12966,7 @@ CONTROLS = [
         what='OTHERLOCTYPE is not read, so every OTHER locator is dropped and a METS naming its own payload that way is accused of carrying content nobody committed to',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='            return other != null && A_PATH.contains(other.toUpperCase(java.util.Locale.ROOT));',
+        find='            return other != null && A_PATH.contains(normalised(other));',
         replace='            return false;',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['anOtherLocTypeIsReadBeforeDroppingTheReference'],
@@ -12989,11 +12993,14 @@ CONTROLS = [
     ),
     dict(
         id='SD3',
-        what="the package root is chosen by the LENGTH of the directory string rather than its depth, so a zip carrying two packages gives one of them the other's root",
+        what="the package root is chosen from EVERY METS in the zip rather than only those above this one, so a zip carrying two packages gives one of them the other's root",
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        # The SCOPING is what this measures. A sabotage of the comparison alone (depth ->
+        # length) changes nothing, because among prefixes of one string the two agree — measured
+        # (subagent, fourteenth review, P2).
         find='            if (metsPath.startsWith(directory) && depthOf(directory) < depthOf(root)) {',
-        replace='            if (directory.length() < root.length()) {',
+        replace='            if (depthOf(directory) < depthOf(root)) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['twoPackagesEachResolveAtTheirOwnRoot'],
     ),
@@ -13004,6 +13011,86 @@ CONTROLS = [
     # METS files is what it wanted to measure, and commons-ip2 decides that, not this
     # product. The premise is asserted instead: the golden's two METS name DIFFERENT
     # things, so a per-METS comparison has something to see.
+
+    dict(
+        id='SF3',
+        what='the literal spelling is never tried, so a payload whose name carries a raw % is reported as a file the package does not carry while it sits in the zip',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        if (spellings.isEmpty()) {',
+        replace='        if (spellings.isEmpty() && reference.indexOf(\'%\') < 0) {',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aRawPercentInAFileNameStillResolves'],
+    ),
+    dict(
+        id='SG3',
+        what='a //host/path reference is read as an absolute path inside the package, so a legitimate network-path locator is reported as a missing file',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        if (href.startsWith("//")) {\n            return false;\n        }',
+        replace='        if (false) {\n            return false;\n        }',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['anAuthorityMeansSomewhereElse'],
+    ),
+    dict(
+        id='SH3',
+        what='an absolute href under a base with an authority skips the merge, so it is looked for inside the package instead of on that host',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='                    || (href.startsWith("/") && !hasAuthority(base))',
+        replace='                    || href.startsWith("/")',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['anAuthorityMeansSomewhereElse'],
+    ),
+    dict(
+        id='SI3',
+        what="an authority-only base merges by its last slash, so the first segment of the reference is read as a host and the payload's only name is dropped",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        if (hasAuthority(base) && base.indexOf(\'/\', base.indexOf("//") + 2) < 0) {',
+        replace='        if (false) {',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['anAuthorityMeansSomewhereElse'],
+    ),
+    dict(
+        id='SJ3',
+        what='a LOCTYPE this verifier has no entry for is read as a package path, so a legitimate external identifier becomes a missing file',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        // Anything else the producer DECLARED is not a URL. Listing the kinds that are not a\n        // path instead let an unlisted one — "URI", which producers write — be read as a\n        // package path, and a legitimate external identifier became a missing file (subagent,\n        // fourteenth review, P2). §9 says "not URL, not counted"; this now says the same.\n        return false;',
+        replace='        return !java.util.Set.of("URN", "HANDLE", "DOI", "PURL", "ARK")\n                .contains(locType.toUpperCase(java.util.Locale.ROOT));',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aNonUrlLocTypeIsExternalAndOtherLocTypeMatchesOnTheWord'],
+    ),
+    dict(
+        id='SK3',
+        what="OTHERLOCTYPE is matched on its exact spelling, so relativePath and RELATIVE PATH drop the payload's only name",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        return value.replaceAll("[^A-Za-z0-9]", "").toUpperCase(java.util.Locale.ROOT);',
+        replace='        return value.toUpperCase(java.util.Locale.ROOT);',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aNonUrlLocTypeIsExternalAndOtherLocTypeMatchesOnTheWord'],
+    ),
+    dict(
+        id='SL3',
+        what='locators this check did not evaluate are skipped in silence, so "closure complete" is answered over a METS whose references were mostly declined',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        return external == 0 ? Outcome.Check.passed("mets closure")',
+        replace='        return true ? Outcome.Check.passed("mets closure")',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['skippedLocatorsAreCountedInTheAnswer'],
+    ),
+
+    # SM3 was retired 2026-09-23 (14 巡目) before it ran green. It gutted v1Layout to always
+    # PASS and the golden-SIP seam did not notice — correctly: the seam asserts that the
+    # product's own packages PASS, and a check that always passes still passes them. A
+    # seam over packages the product writes cannot detect a gutted rule, because the
+    # product does not write a package that rule should refuse. TheV1LayoutIsCheckedTest
+    # (14 locks) is what measures v1Layout. What the v1-section golden DOES add is
+    # measured: `one evidence section`, `payload fixity` and the composite verdict now
+    # run over a package with a real §4.2 section rather than the legacy single file.
 ]
 
 

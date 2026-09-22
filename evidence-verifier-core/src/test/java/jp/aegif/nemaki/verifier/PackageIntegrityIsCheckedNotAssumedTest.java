@@ -1279,6 +1279,146 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                         + "absolute references were refused: " + closure.detail());
     }
 
+    /**
+     * A raw {@code %} in a file name still resolves — the literal spelling is the LAST resort.
+     *
+     * <p>Trying it FIRST was a fail-open (Codex, twelfth review). Removing it altogether
+     * refused a payload named {@code 50%off.txt} that the package carries, and the guard meant
+     * to keep it was {@code reference.indexOf('%') < 0} — unsatisfiable, because every path
+     * that fails to decode needs a {@code %} to get there. The fallback was dead code and the
+     * refusal was real (subagent, fourteenth review, P2, measured).
+     *
+     * <p>Last resort does not reopen the fail-open: {@code data/a%20b.txt} DECODES, so a
+     * package carrying a file literally spelled that way never reaches the fallback — which
+     * {@code anEscapedHrefIsNotSatisfiedByItsLiteralSpelling} holds shut.
+     */
+    @Test
+    @DisplayName("a raw % in a file name resolves, as the last resort")
+    void aRawPercentInAFileNameStillResolves(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>();
+        entries.put(ROOT + "METS.xml", mets("representations/rep1/data/50%off.txt"));
+        entries.put(ROOT + "representations/rep1/data/50%off.txt", payload);
+        entries.put(ROOT + "metadata/preservation/premis.xml", premis(sha256(payload), "SHA-256"));
+
+        Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "raw-percent.zip", entries)).entries()), "mets closure");
+
+        assertEquals(Outcome.PASSED, closure.outcome(),
+                "a payload whose name carries a raw % was reported as a file the package does "
+                        + "not carry, while it sits in the zip: " + closure.detail());
+    }
+
+    /**
+     * An authority means somewhere else — in the reference, in the base, and after merging.
+     *
+     * <p>Three shapes, all measured (both reviewers, fourteenth review, P2):
+     *
+     * <ul>
+     *   <li>{@code //archive.example.org/x} is a NETWORK-PATH reference (RFC 3986 §4.2) and was
+     *       read as an absolute path inside the package;</li>
+     *   <li>an ABSOLUTE href under a base with an authority skipped the merge, so
+     *       {@code /catalogue/x} under {@code https://example.invalid/archive/} was looked for
+     *       in the package;</li>
+     *   <li>a base that is authority-only ({@code file://localhost}) merged by its last slash,
+     *       giving {@code file://} + the reference — which then read the first segment as a
+     *       host and dropped the only reference to the payload.</li>
+     * </ul>
+     */
+    @Test
+    @DisplayName("an authority means somewhere else — bare, under a base, and authority-only")
+    void anAuthorityMeansSomewhereElse(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> network = new LinkedHashMap<>(goodPackage(payload));
+        network.put(ROOT + "METS.xml", mets("representations/rep1/data/minutes.txt",
+                "//archive.example.org/catalogue/entry-7.xml"));
+        assertEquals(Outcome.PASSED, checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "network-path.zip", network)).entries()), "mets closure").outcome(),
+                "a //host/path reference was read as a path inside the package");
+
+        Map<String, String> underBase = new LinkedHashMap<>(goodPackage(payload));
+        underBase.put(ROOT + "METS.xml", mets("representations/rep1/METS.xml",
+                "representations/rep1/data/minutes.txt"));
+        underBase.put(ROOT + "representations/rep1/METS.xml",
+                metsWithBase("https://example.invalid/archive/", "/catalogue/entry-7.xml"));
+        Outcome.Check under = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "absolute-under-base.zip", underBase)).entries()), "mets closure");
+        assertEquals(Outcome.PASSED, under.outcome(),
+                "an absolute href under a base with an authority was looked for in the package: "
+                        + under.detail());
+
+        Map<String, String> authorityOnly = new LinkedHashMap<>(goodPackage(payload));
+        authorityOnly.put(ROOT + "METS.xml",
+                metsWithBase("file://localhost", "representations/rep1/data/minutes.txt",
+                        "metadata/preservation/premis.xml"));
+        Outcome.Check only = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "authority-only-base.zip", authorityOnly)).entries()), "mets closure");
+        assertEquals(Outcome.PASSED, only.outcome(),
+                "an authority-only base merged by its last slash, so the first segment of the "
+                        + "reference was read as a host: " + only.detail());
+    }
+
+    /**
+     * {@code LOCTYPE} that is not {@code URL} is not a path — and {@code OTHERLOCTYPE} is
+     * matched on its WORD, not its punctuation.
+     *
+     * <p>Listing the kinds that are NOT paths let an unlisted one — {@code URI}, which
+     * producers write — be read as a package path, so a legitimate external identifier became
+     * a missing file. And the {@code OTHERLOCTYPE} whitelist matched one spelling, so
+     * {@code relativePath} and {@code RELATIVE PATH} dropped a payload's only name (subagent,
+     * fourteenth review, P2). §9 now says what the code does.
+     */
+    @Test
+    @DisplayName("a non-URL LOCTYPE is external; OTHERLOCTYPE matches on the word")
+    void aNonUrlLocTypeIsExternalAndOtherLocTypeMatchesOnTheWord(@TempDir Path tmp)
+            throws Exception {
+        String payload = "the minutes";
+        Map<String, String> uri = new LinkedHashMap<>(goodPackage(payload));
+        uri.put(ROOT + "METS.xml", metsWithOtherLocType("URI", "catalogue/entry-7", "",
+                "representations/rep1/data/minutes.txt"));
+        assertEquals(Outcome.PASSED, checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "loctype-uri.zip", uri)).entries()), "mets closure").outcome(),
+                "a LOCTYPE this verifier has no entry for was read as a package path");
+
+        for (String spelling : List.of("relativePath", "RELATIVE PATH", "relative_path")) {
+            Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+            entries.put(ROOT + "METS.xml", metsWithOtherLocType("OTHER",
+                    "representations/rep1/data/minutes.txt", spelling));
+            Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
+                    zip(tmp, "otherloctype-" + spelling.hashCode() + ".zip", entries)).entries()),
+                    "mets closure");
+            assertEquals(Outcome.PASSED, closure.outcome(),
+                    "OTHERLOCTYPE=" + spelling + " dropped the payload's only name, so the "
+                            + "package was accused of carrying content nobody committed to: "
+                            + closure.detail());
+        }
+    }
+
+    /**
+     * A locator this check did NOT evaluate is counted in the answer.
+     *
+     * <p>They were skipped in silence, so {@code mets closure} answered PASSED over a METS
+     * whose references it had mostly declined to look at — "checked and complete" for work that
+     * was not done (subagent, fourteenth review, P3).
+     */
+    @Test
+    @DisplayName("locators that were not evaluated are counted in the answer")
+    void skippedLocatorsAreCountedInTheAnswer(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "METS.xml", mets("representations/rep1/data/minutes.txt",
+                "urn:uuid:1b671a64-40d5-491e-99b0-da01ff1f3341",
+                "https://example.invalid/catalogue"));
+
+        Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "skipped-counted.zip", entries)).entries()), "mets closure");
+
+        assertEquals(Outcome.PASSED, closure.outcome(), closure.detail());
+        assertTrue(closure.detail() != null && closure.detail().contains("2 locator(s)"),
+                "the answer does not say that two locators were not evaluated: "
+                        + closure.detail());
+    }
+
     @Test
     @DisplayName("a METS with an internal DOCTYPE is still read")
     void aMetsWithAnInternalDoctypeIsStillRead(@TempDir Path tmp) throws Exception {

@@ -161,6 +161,22 @@ class EarkSipExporterTest {
                 .sip();
     }
 
+    /** The same as {@link #buildOneWithFixity}, plus the v1 evidence section. */
+    static Path buildOneWithBundleAndFixity(Path tmp, String name,
+            jp.aegif.nemaki.evidence.EvidenceBundleAssembler assembler) throws Exception {
+        byte[] payload = "the minutes".getBytes(StandardCharsets.UTF_8);
+        Map<String, Object> content = new LinkedHashMap<>();
+        content.put("recordedDigest", sha256Hex(payload));
+        content.put("algorithm", "SHA-256");
+        AuthenticityReport report = new AuthenticityReport(REPO, OBJECT, "2026-08-25T00:00:00Z",
+                List.of(new Section("content", Verdict.REPORTED, content, "measured")));
+        EarkSipExporter exporter = exporterOver(report, payload, name);
+        exporter.setBundleAssembler(assembler);
+        return exporter
+                .export(REPO, OBJECT, EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp)
+                .sip();
+    }
+
     static Path buildOneNamed(Path tmp, String name) throws Exception {
         return exporterOver(reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
                 "the minutes".getBytes(StandardCharsets.UTF_8), name)

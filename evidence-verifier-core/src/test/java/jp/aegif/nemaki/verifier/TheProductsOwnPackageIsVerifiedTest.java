@@ -51,6 +51,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * example that discriminates nothing: {@code encodeHref("minutes.txt")} is
  * {@code minutes.txt}, so it answers the same whether the resolver decodes or not.
  *
+ * <p><b>Three packages, and the third carries the v1 SECTION.</b> The first two are legacy
+ * §4.1 layout, so {@code v1 layout} and {@code one evidence section} passed through their
+ * "there is no section, so §4.2 has nothing to constrain" arm (subagent, fourteenth review,
+ * P2, measured). The third makes {@code one evidence section}, {@code payload fixity} and the
+ * composite verdict run over a package with a real §4.2 section.
+ *
+ * <p><b>What this still cannot do</b>, stated because it was measured rather than assumed:
+ * gutting {@code v1Layout} to always PASS leaves this test green, and correctly so — a seam
+ * over the packages the product WRITES cannot catch a rule that always passes, because the
+ * product does not write a package that rule should refuse. {@code TheV1LayoutIsCheckedTest}
+ * is what measures the rule; this measures that the product's output survives it.
+ *
  * <p><b>VERIFIED, not "not FAILED".</b> The first pair of goldens was built without the
  * report's {@code content} section, so their PREMIS recorded no digest and both answered
  * {@code INDETERMINATE} — every structural check passing over a package that could not reach
@@ -70,7 +82,8 @@ class TheProductsOwnPackageIsVerifiedTest {
     @Test
     @DisplayName("a package this product writes is not refused by this product's verifier")
     void theProductsOwnPackagePassesTheStructuralChecks() throws Exception {
-        for (String name : List.of("product-sip-ascii.zip", "product-sip-encoded-name.zip")) {
+        for (String name : List.of("product-sip-ascii.zip", "product-sip-encoded-name.zip",
+                "product-sip-v1-section.zip")) {
             List<Outcome.Check> checks =
                     PackageIntegrity.check(PackageReader.open(golden(name)).entries());
 
@@ -100,6 +113,24 @@ class TheProductsOwnPackageIsVerifiedTest {
      * the test above would pass for a reason that has nothing to do with the decoding it is
      * there to measure, and the seam would be silently open again.
      */
+    /**
+     * The v1 golden really carries a section, or the arm it was added for is still vacuous.
+     */
+    @Test
+    @DisplayName("the v1 golden carries the section, or it measures nothing")
+    void theV1GoldenCarriesTheSection() throws Exception {
+        java.util.Map<String, byte[]> entries =
+                PackageReader.open(golden("product-sip-v1-section.zip")).entries();
+
+        assertTrue(entries.keySet().stream().anyMatch(n -> n.endsWith("/profile.json")),
+                "the v1 golden carries no profile.json, so v1 layout is still answered by its "
+                        + "'nothing to constrain' arm: " + entries.keySet());
+        assertTrue(entries.keySet().stream()
+                        .noneMatch(n -> n.endsWith("metadata/other/nemaki-evidence.json")),
+                "the v1 golden carries the legacy file as well, which §4.2 makes FAILED: "
+                        + entries.keySet());
+    }
+
     @Test
     @DisplayName("the encoded-name golden really is encoded, or it measures nothing")
     void theEncodedGoldenIsActuallyEncoded() throws Exception {
