@@ -240,7 +240,12 @@ public final class SipVerifier {
             factory.setFeature(
                     "http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
             factory.setXIncludeAware(false);
-            factory.setExpandEntityReferences(false);
+            // INTERNAL entities are expanded. External resolution is off above, and secure
+            // processing caps expansion (measured: a billion-laughs document expands to
+            // nothing in 19 ms). Leaving expansion off while allowing a DOCTYPE made a digest
+            // written as an internal entity read as "PREMIS records no message digest" —
+            // "read and absent" for something that was not read (subagent, seventh review, P3).
+            factory.setExpandEntityReferences(true);
             org.w3c.dom.Document document = factory.newDocumentBuilder().parse(
                     new org.xml.sax.InputSource(new java.io.StringReader(premis)));
             digests = premisTexts(document.getDocumentElement(), "messageDigest");
@@ -300,11 +305,13 @@ public final class SipVerifier {
             // endpoint calls verified. The independent verifier answers AMBIGUOUS_PAYLOAD for
             // exactly this, and an operator reaches THIS endpoint far more often (subagent,
             // sixth review, P2 — the PREMIS reading was aligned and this was not).
-            return new Check("payload digest", Outcome.UNAVAILABLE,
+            // FAILED, as §9 names it: one digest cannot describe two payloads under any
+            // pairing, and this verifier READ that (Codex, seventh review, P1).
+            return new Check("payload digest", Outcome.FAILED,
                     "the package carries " + payloads.size() + " payload files and PREMIS "
-                            + "records one digest, so the one-to-one relationship it requires "
-                            + "does not hold. Checked: "
-                            + payloads.stream().map(Map.Entry::getKey).toList());
+                            + "records one digest, so the one-to-one relationship §9 requires "
+                            + "does not hold and one of them is content nobody committed to. "
+                            + "Checked: " + payloads.stream().map(Map.Entry::getKey).toList());
         }
         for (Map.Entry<String, byte[]> payload : payloads) {
             String computed = sha256Hex(payload.getValue());

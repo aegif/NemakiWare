@@ -110,7 +110,7 @@ public final class TrustProfile {
         Object parsed;
         try {
             parsed = Json.parse(text);
-        } catch (Json.NotCanonicalisable e) {
+        } catch (RuntimeException e) {
             throw new Unreadable("the trust profile is not readable JSON: " + e.getMessage());
         }
         if (!(parsed instanceof Map<?, ?> map)) {

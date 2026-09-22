@@ -179,9 +179,14 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         Path sip = zip(tmp, "two-fixities.zip", entries);
         Outcome.Check fixity = checkNamed(
                 PackageIntegrity.check(PackageReader.open(sip).entries()), "payload fixity");
-        assertEquals(Outcome.UNAVAILABLE, fixity.outcome(),
-                "a PREMIS with two message digests was read by taking the first: " + fixity.detail());
-        assertEquals("AMBIGUOUS_PREMIS", fixity.reasonCode());
+        // FAILED, as §9 names it. Two digests and one payload cannot be paired under any
+        // reading, and that is something this verifier READ. Reporting it as "could not tell"
+        // diluted a finding the specification already named — and this lock pinned the diluted
+        // answer (Codex, seventh review, P1).
+        assertEquals(Outcome.FAILED, fixity.outcome(),
+                "a PREMIS with two message digests for one payload was not reported as breaking "
+                        + "the one-to-one relationship §9 requires: " + fixity.detail());
+        assertTrue(fixity.detail().contains("one-to-one"), fixity.detail());
     }
 
     /**
@@ -214,10 +219,10 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         Outcome.Check fixity = checkNamed(
                 PackageIntegrity.check(PackageReader.open(sip).entries()), "payload fixity");
 
-        assertEquals(Outcome.UNAVAILABLE, fixity.outcome(),
+        assertEquals(Outcome.FAILED, fixity.outcome(),
                 "a PREMIS carrying a matching digest and a contradicting one under a different "
                         + "prefix was read as carrying one: " + fixity.detail());
-        assertEquals("AMBIGUOUS_PREMIS", fixity.reasonCode());
+        assertTrue(fixity.detail().contains("2 message digests"), fixity.detail());
     }
 
     /**
@@ -354,6 +359,87 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                 "a package turned the verifier into a crash rather than an answer");
 
         assertEquals(Outcome.FAILED, layout.outcome(), layout.detail());
+    }
+
+    /**
+     * The lookups exclude payload too, not only the counting.
+     *
+     * <p>Stopping {@code one evidence section} from counting a payload copy was right — content
+     * is not metadata — but the LOOKUPS kept matching it, and they take the first path in the
+     * zip's order. A substituted {@code anchor-target-checkpoint.json} placed earlier was read
+     * by every check above P0 while P0 answered PASSED: the correction opened the hole the
+     * check existed to close (subagent, seventh review, P1, measured).
+     */
+    @Test
+    @DisplayName("a payload copy is not read by the lookups either")
+    void aPayloadCopyIsNotReadByTheLookups() {
+        Map<String, byte[]> entries = new LinkedHashMap<>();
+        // FIRST in the map's order, which is what a lookup takes.
+        entries.put("sip/representations/rep1/data/metadata/other/nemaki-evidence/"
+                + "anchor-target-checkpoint.json",
+                "{\"merkleRoot\":\"bb\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        entries.put("sip/metadata/other/nemaki-evidence/anchor-target-checkpoint.json",
+                "{\"merkleRoot\":\"aa\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        byte[] read = Section.fileIn(entries, "anchor-target-checkpoint.json");
+
+        assertEquals("{\"merkleRoot\":\"aa\"}",
+                new String(read, java.nio.charset.StandardCharsets.UTF_8),
+                "a lookup read the PAYLOAD copy because it came first in the zip. P0 no longer "
+                        + "counts that copy as a second section, so nothing else would have "
+                        + "reported it");
+    }
+
+    /**
+     * Equal counts are NOT a finding — this verifier simply cannot pair them.
+     *
+     * <p>CSIP allows several representations, each with its own fixity, so two digests for two
+     * payloads may be a perfectly good package. This verifier does not read the PREMIS
+     * object-to-file linkage, so which belongs to which is genuinely unknown. Calling that
+     * FAILED would report tampering that was never found — the over-refusal mirror of the
+     * defect the two tests above fix.
+     */
+    @Test
+    @DisplayName("two digests for two payloads is 'cannot pair', not a finding")
+    void equalCountsAreUnavailableNotFailed(@TempDir Path tmp) throws Exception {
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage("the minutes"));
+        entries.put(ROOT + "representations/rep2/data/appendix.txt", "the appendix");
+        entries.put(ROOT + "METS.xml", mets("representations/rep1/data/minutes.txt",
+                "representations/rep2/data/appendix.txt"));
+        entries.put(ROOT + "metadata/preservation/premis.xml",
+                premis(sha256("the minutes"), "SHA-256").replace("</premis:object>",
+                        "</premis:object><premis:object><premis:objectCharacteristics>"
+                                + "<premis:fixity><premis:messageDigestAlgorithm>SHA-256"
+                                + "</premis:messageDigestAlgorithm><premis:messageDigest>"
+                                + sha256("the appendix") + "</premis:messageDigest>"
+                                + "</premis:fixity></premis:objectCharacteristics>"
+                                + "</premis:object>"));
+
+        Path sip = zip(tmp, "two-and-two.zip", entries);
+        Outcome.Check fixity = checkNamed(
+                PackageIntegrity.check(PackageReader.open(sip).entries()), "payload fixity");
+
+        assertEquals(Outcome.UNAVAILABLE, fixity.outcome(),
+                "a package that may well be conformant was reported as breaking the one-to-one "
+                        + "relationship. This verifier cannot pair them; that is not a finding "
+                        + "about the package: " + fixity.detail());
+        assertEquals("AMBIGUOUS_PREMIS", fixity.reasonCode());
+    }
+
+    @Test
+    @DisplayName("a METS with an internal DOCTYPE is still read")
+    void aMetsWithAnInternalDoctypeIsStillRead(@TempDir Path tmp) throws Exception {
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage("the minutes"));
+        entries.put(ROOT + "METS.xml", "<?xml version=\"1.0\"?><!DOCTYPE mets:mets [ ]>"
+                + mets("representations/rep1/data/minutes.txt"));
+
+        Path sip = zip(tmp, "mets-doctype.zip", entries);
+
+        assertEquals(Outcome.PASSED, checkNamed(
+                        PackageIntegrity.check(PackageReader.open(sip).entries()),
+                        "mets closure").outcome(),
+                "a METS carrying an internal DOCTYPE was refused while a PREMIS carrying one "
+                        + "was accepted — the same over-refusal, corrected on one side only");
     }
 
     /**

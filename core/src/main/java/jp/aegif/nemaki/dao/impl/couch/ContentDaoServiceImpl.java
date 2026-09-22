@@ -2773,6 +2773,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public String contentAbsenceReason(String repositoryId, String attachmentId) {
+		return attachmentDao.contentAbsenceReason(repositoryId, attachmentId);
+	}
+
+	@Override
 	public void setStream(String repositoryId, AttachmentNode attachmentNode) {
 		attachmentDao.setStream(repositoryId, attachmentNode);
 	}

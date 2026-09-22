@@ -103,7 +103,7 @@ public final class RecordLedger {
         byte[] recomputed;
         try {
             recomputed = Canonical.encode(Json.parse(new String(json, StandardCharsets.UTF_8)));
-        } catch (Json.NotCanonicalisable | Canonical.NotEncodable e) {
+        } catch (RuntimeException e) {
             // Malformed is FAILED, not UNAVAILABLE: the document was read and found to have no
             // canonical form, which is a finding about the package.
             return Outcome.Check.failed("statement canonical form",
@@ -244,7 +244,7 @@ public final class RecordLedger {
             Object parsed = Json.parse(new String(priorStatementJson, StandardCharsets.UTF_8));
             priorStatement = parsed instanceof Map ? (Map<String, Object>) parsed : null;
             priorStatementDigest = Canonical.documentDigest(parsed);
-        } catch (Json.NotCanonicalisable | Canonical.NotEncodable e) {
+        } catch (RuntimeException e) {
             return Outcome.Check.failed(name, "the prior statement has no canonical form: "
                     + e.getMessage());
         }
@@ -360,7 +360,7 @@ public final class RecordLedger {
         byte[] recomputed;
         try {
             recomputed = Canonical.encode(Json.parse(new String(json, StandardCharsets.UTF_8)));
-        } catch (Json.NotCanonicalisable | Canonical.NotEncodable e) {
+        } catch (RuntimeException e) {
             return Outcome.Check.failed(name, path.replace(".c14n", ".json")
                     + " has no canonical form: " + e.getMessage());
         }
@@ -404,7 +404,7 @@ public final class RecordLedger {
         try {
             digest = Canonical.documentDigest(
                     Json.parse(new String(statementJson, StandardCharsets.UTF_8)));
-        } catch (Json.NotCanonicalisable | Canonical.NotEncodable e) {
+        } catch (RuntimeException e) {
             return Outcome.Check.failed("entry binds statement",
                     "the statement has no canonical form, so nothing can bind to it");
         }
@@ -523,17 +523,13 @@ public final class RecordLedger {
         try {
             Object value = Json.parse(new String(json, StandardCharsets.UTF_8));
             return value instanceof Map ? (Map<String, Object>) value : null;
-        } catch (Json.NotCanonicalisable malformed) {
+        } catch (RuntimeException malformed) {
             return null;
         }
     }
 
+    /** Delegated to {@link Section}, which is the ONE place that excludes payload. */
     private static byte[] fileIn(Map<String, byte[]> entries, String name) {
-        for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
-            if (("/" + entry.getKey()).endsWith(DIR + name)) {
-                return entry.getValue();
-            }
-        }
-        return null;
+        return Section.fileIn(entries, name);
     }
 }

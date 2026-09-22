@@ -35,6 +35,34 @@ public class AttachmentDaoDelegate {
 	}
 
 	/**
+	 * Why this row carries no content body, as the row itself records it — R57.
+	 *
+	 * <p>Called only when a caller is ABOUT TO REFUSE, so nothing on the read path pays for it.
+	 * A restore that finished without bytes writes the reason
+	 * ({@code ArchiveDaoDelegate.CONTENT_ABSENCE_FIELD}); a row that says nothing answers null,
+	 * which is "the row does not say" and never "there is no reason".
+	 *
+	 * <p>A read failure also answers null, and the caller's message is written so that null
+	 * claims nothing either way.
+	 */
+	public String contentAbsenceReason(String repositoryId, String attachmentId) {
+		try {
+			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
+			com.ibm.cloud.cloudant.v1.model.Document row = client.get(attachmentId);
+			if (row == null || row.getProperties() == null) {
+				return null;
+			}
+			Object reason = row.getProperties()
+					.get(ArchiveDaoDelegate.CONTENT_ABSENCE_FIELD);
+			return reason == null ? null : String.valueOf(reason);
+		} catch (Exception couldNotRead) {
+			log.warn("contentAbsenceReason: could not read " + attachmentId + " (" + couldNotRead
+					+ "), so why its body is missing stays unstated");
+			return null;
+		}
+	}
+
+	/**
 	 * The attachment's metadata WITHOUT opening its binary stream.
 	 *
 	 * <p>{@link #getAttachment} eagerly opens the CouchDB attachment body and hands the caller an

@@ -181,6 +181,47 @@ class OneTokenGetsOneAnswerTest {
     }
 
     /**
+     * A SUBSTITUTED signer certificate is a finding — measured, not assumed.
+     *
+     * <p>A review predicted that swapping the embedded certificate for one carrying another
+     * key would end in {@code InvalidKeyException} and be excused as "this build cannot compute
+     * it". It does not: BouncyCastle compares the ESSCertID hash BEFORE it tries the signature,
+     * so the token itself says this is not the certificate it was signed with, and that is a
+     * fact about the package. Measured here rather than reasoned about, because the answer
+     * decides whether a substitution exits 2 or 3.
+     *
+     * <p>What remains for {@code SIGNATURE_NOT_COMPUTED} is the narrower case the seventh
+     * review named: the certID matches and no installed provider will initialise with the key.
+     * No fixture can produce that, so the rule is measured on its own below.
+     */
+    @Test
+    @DisplayName("a substituted signer certificate is a FINDING, caught by the certID hash")
+    void aSubstitutedCertificateIsAFinding() throws Exception {
+        java.security.KeyPairGenerator ec = java.security.KeyPairGenerator.getInstance("EC");
+        ec.initialize(256);
+        java.security.KeyPair other = ec.generateKeyPair();
+        org.bouncycastle.asn1.x500.X500Name subject =
+                new org.bouncycastle.asn1.x500.X500Name("CN=One Answer TSA");
+        JcaX509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(subject,
+                BigInteger.ONE, new Date(System.currentTimeMillis() - 86_400_000L),
+                new Date(System.currentTimeMillis() + 86_400_000L), subject, other.getPublic());
+        X509Certificate wrongKey = new JcaX509CertificateConverter().getCertificate(
+                builder.build(new JcaContentSignerBuilder("SHA256withECDSA")
+                        .build(other.getPrivate())));
+
+        org.bouncycastle.tsp.TimeStampToken token = new org.bouncycastle.tsp.TimeStampToken(
+                new org.bouncycastle.cms.CMSSignedData(tokenOver(ROOT, true)));
+        Outcome.Check answer = TokenSignature.verify("token signature", "the token", token,
+                new X509CertificateHolder(wrongKey.getEncoded()));
+
+        assertEquals(Outcome.FAILED, answer.outcome(),
+                "a token checked against a certificate it was not signed with was not reported "
+                        + "as a finding. The token names its own certificate by hash, so this "
+                        + "is something the package says about itself: " + answer.detail());
+        assertTrue(answer.detail().contains("does not verify"), answer.detail());
+    }
+
+    /**
      * The one case no fixture here can produce: a signature algorithm with no provider.
      *
      * <p>Every algorithm this test could sign with is one this JVM implements, so the token
@@ -220,19 +261,23 @@ class OneTokenGetsOneAnswerTest {
                 "a CMS signature that does not match was excused as uncheckable. Only a MISSING "
                         + "provider is a limit of this build; a mismatch is a finding");
 
-        // The one that got through: BouncyCastle wraps InvalidKeyException in
-        // OperatorCreationException too. A token signed with RSA whose embedded certificate
-        // carries an EC key of the same issuer and serial fails to initialise — and that is a
-        // fact about the token, not about this build (Codex, sixth review, P1). No
-        // NoSuchAlgorithmException anywhere in this chain, so it discriminates.
-        assertFalse(TokenSignature.uncheckable(new TSPException("unable to process signature",
-                        new CMSException("can't create digest calculator",
-                                new OperatorCreationException("exception on setup",
-                                        new java.security.InvalidKeyException(
-                                                "EC key given for RSA signature"))))),
-                "a key that does not go with the signature was excused as an algorithm this "
-                        + "build cannot compute, so a substituted certificate answers "
-                        + "'could not check' instead of naming the mismatch");
+        // A key that will not initialise is its OWN answer. Two reviews pushed this in
+        // opposite directions — one called UNAVAILABLE "a mismatch excused", the other called
+        // FAILED "a comparison nobody made" — and the resolution is that neither
+        // UNKNOWN_ALGORITHM nor "does not verify" is true. Nothing was compared, and the reason
+        // code says which kind of nothing.
+        TSPException keyUnusable = new TSPException("unable to process signature",
+                new CMSException("can't create digest calculator",
+                        new OperatorCreationException("exception on setup",
+                                new java.security.InvalidKeyException(
+                                        "EC key given for RSA signature"))));
+        assertTrue(TokenSignature.keyNotUsable(keyUnusable),
+                "a key the token's own certificate carries that will not initialise was not "
+                        + "recognised, so this case falls into one of the two answers that are "
+                        + "both wrong for it");
+        assertFalse(TokenSignature.keyNotUsable(providerMissing),
+                "a MISSING provider was classified as an unusable key, so the two kinds of "
+                        + "'nothing was compared' can no longer be told apart");
 
         // The second arm, on its own fixture: a provider that reports the absence as a bare
         // GeneralSecurityException rather than as one of the three types above.

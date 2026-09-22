@@ -362,6 +362,36 @@ class TheV1LayoutIsCheckedTest {
     }
 
     /**
+     * A package that CONTAINS another complete package is not a broken one.
+     *
+     * <p>A CSIP AIP may carry the original SIP under {@code submission/}, and every root there
+     * declares its own {@code profile.json}. Nothing in §4.2 says which of them a verifier was
+     * asked about, so "cannot tell" is the honest answer — calling it FAILED would report a
+     * defect nobody found (subagent, seventh review, P3).
+     */
+    @Test
+    @DisplayName("a package containing another complete package is UNAVAILABLE, not FAILED")
+    void aNestedCompletePackageCannotBeToldApart() {
+        Map<String, byte[]> entries = v1Package(wholeSection());
+        // A whole second section, under its own root, with no name shared with the first.
+        Map<String, byte[]> inner = new LinkedHashMap<>();
+        inner.put("profile.json", bytes("{\"profileVersion\":\"1\","
+                + "\"declaredProfiles\":[\"PACKAGE_INTEGRITY_V1\"]}"));
+        inner.put("bundle-manifest.json", manifestOver(inner));
+        for (Map.Entry<String, byte[]> file : inner.entrySet()) {
+            entries.put(ROOT + "submission/inner/metadata/other/nemaki-evidence/"
+                    + file.getKey(), file.getValue());
+        }
+
+        Outcome.Check layout = layoutOf(entries);
+
+        assertEquals(Outcome.UNAVAILABLE, layout.outcome(),
+                "a package carrying a complete second package was reported as broken: "
+                        + layout.detail());
+        assertEquals("MULTIPLE_PACKAGES", layout.reasonCode());
+    }
+
+    /**
      * The check is REQUIRED, and a P0 run that skipped it would compose to VERIFIED.
      *
      * <p>Named here rather than left to the profile list: a check that runs and is reported but

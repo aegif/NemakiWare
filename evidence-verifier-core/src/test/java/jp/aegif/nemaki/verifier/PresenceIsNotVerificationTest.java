@@ -463,6 +463,127 @@ class PresenceIsNotVerificationTest {
                         + "the same bytes");
     }
 
+    /**
+     * A §5.3 renewal with NO hash tree is the shape a standard tool produces.
+     *
+     * <p>BouncyCastle's {@code renewHash} puts {@code h'} straight into the new token's imprint
+     * and writes no list; §4.2 allows an Archive Timestamp "only of a timestamp with no hash
+     * value lists" anywhere, and §14 never required a tree here. Demanding one reported every
+     * §5.3 renewal a standard tool builds as FAILED — exit 2, "checked and wrong" — while this
+     * product's OWN {@code ErsVerifier} accepted the same bytes one function over (subagent,
+     * seventh review, P1, measured against BouncyCastle).
+     */
+    @Test
+    @DisplayName("a chain started with no hash tree is read, not refused")
+    void aChainStartedWithNoTreeIsRead() throws Exception {
+        ASN1Sequence sequence = GoldenErs.timestampSequence();
+        ASN1Sequence chainZero = ASN1Sequence.getInstance(sequence.getObjectAt(0));
+        ASN1Sequence ats = ASN1Sequence.getInstance(chainZero.getObjectAt(0));
+
+        byte[] previousSequenceDer = new DERSequence(
+                new org.bouncycastle.asn1.ASN1Encodable[] { chainZero }).getEncoded("DER");
+        byte[] ha = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(previousSequenceDer);
+        byte[] root = java.util.HexFormat.of().parseHex(GoldenErs.root());
+        byte[] hPrime = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(LongTermErs.sortedConcat(List.of(root, ha)));
+
+        // No [2] at all: the algorithm, then the token over h'.
+        ASN1EncodableVector renewal = new ASN1EncodableVector();
+        renewal.add(new org.bouncycastle.asn1.DERTaggedObject(false, 0,
+                new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
+                        new org.bouncycastle.asn1.ASN1ObjectIdentifier(
+                                "2.16.840.1.101.3.4.2.1"))));
+        renewal.add(ASN1Sequence.getInstance(org.bouncycastle.asn1.ASN1Primitive.fromByteArray(
+                TestAuthority.tokenOver(hPrime))));
+        byte[] der = GoldenErs.withElement(2, new DERSequence(
+                new org.bouncycastle.asn1.ASN1Encodable[] {
+                        chainZero, new DERSequence(new DERSequence(renewal)) }));
+
+        Map<String, byte[]> entries = new LinkedHashMap<>();
+        entries.put(DIR + "anchor-target-checkpoint.json",
+                GoldenErs.anchorTarget(GoldenErs.root()));
+        entries.put(DIR + "anchors/ers.der", der);
+
+        List<Outcome.Check> checks = LongTermErs.check(entries);
+        assertEquals(Outcome.PASSED, named(checks, "ers chain").outcome(),
+                "a hash-tree renewal in the shape BouncyCastle produces was reported as a "
+                        + "finding, so a standard record exits 2 against this verifier: "
+                        + checks);
+        assertEquals(Outcome.PASSED, named(checks, "ers parse").outcome(), checks + "");
+    }
+
+    /**
+     * The duplicate-field rejections, on the shapes that slipped past the first version.
+     *
+     * <p>"[2] seen" was inferred from whether a tree had been collected, so an EMPTY first [2]
+     * let a second through; [1] was type-checked and never counted; and a second non-tagged
+     * SEQUENCE silently overwrote the token — the record would then be judged on whichever
+     * timestamp came last (Codex, seventh review, P2). Each shape below is a sibling of the
+     * one PG3 measures, and none of them fired it.
+     */
+    @Test
+    @DisplayName("an empty first reduced tree does not let a second one through")
+    void anEmptyFirstTreeDoesNotHideASecond() throws Exception {
+        assertEquals(Outcome.FAILED, named(LongTermErs.check(atsWithExtra(
+                new org.bouncycastle.asn1.DERTaggedObject(false, 2, new DERSequence()),
+                new org.bouncycastle.asn1.DERTaggedObject(false, 2,
+                        new DERSequence(new DERSequence(new DEROctetString(new byte[32])))))),
+                "ers parse").outcome(),
+                "an ArchiveTimeStamp carrying an empty tree and then a real one was accepted, "
+                        + "so which one it commits to was decided by nothing");
+    }
+
+    @Test
+    @DisplayName("attributes [1] twice is a finding")
+    void attributesTwiceIsAFinding() throws Exception {
+        org.bouncycastle.asn1.ASN1Encodable set =
+                new org.bouncycastle.asn1.DERSet(new DEROctetString(new byte[] { 1 }));
+        assertEquals(Outcome.FAILED, named(LongTermErs.check(atsWithExtra(
+                new org.bouncycastle.asn1.DERTaggedObject(false, 1, set),
+                new org.bouncycastle.asn1.DERTaggedObject(false, 1, set))),
+                "ers parse").outcome(),
+                "an ArchiveTimeStamp carrying attributes twice was accepted");
+    }
+
+    @Test
+    @DisplayName("a second timeStamp is a finding, not an overwrite")
+    void aSecondTimeStampIsAFinding() throws Exception {
+        ASN1Sequence ats = ASN1Sequence.getInstance(ASN1Sequence.getInstance(
+                GoldenErs.timestampSequence().getObjectAt(0)).getObjectAt(0));
+        org.bouncycastle.asn1.ASN1Encodable token = null;
+        for (int i = 0; i < ats.size(); i++) {
+            if (!(ats.getObjectAt(i) instanceof org.bouncycastle.asn1.ASN1TaggedObject)) {
+                token = ats.getObjectAt(i);
+            }
+        }
+        assertTrue(token != null, "the golden's own token was not found");
+        assertEquals(Outcome.FAILED, named(LongTermErs.check(atsWithExtra(token)), "ers parse")
+                .outcome(),
+                "an ArchiveTimeStamp carrying two timestamps was accepted, and the record was "
+                        + "judged on whichever came last");
+    }
+
+    /** The golden's Archive Timestamp with {@code extra} appended, as a whole package. */
+    private static Map<String, byte[]> atsWithExtra(
+            org.bouncycastle.asn1.ASN1Encodable... extra) throws Exception {
+        ASN1Sequence ats = ASN1Sequence.getInstance(ASN1Sequence.getInstance(
+                GoldenErs.timestampSequence().getObjectAt(0)).getObjectAt(0));
+        ASN1EncodableVector rebuilt = new ASN1EncodableVector();
+        for (int i = 0; i < ats.size(); i++) {
+            rebuilt.add(ats.getObjectAt(i));
+        }
+        for (org.bouncycastle.asn1.ASN1Encodable one : extra) {
+            rebuilt.add(one);
+        }
+        Map<String, byte[]> entries = new LinkedHashMap<>();
+        entries.put(DIR + "anchor-target-checkpoint.json",
+                GoldenErs.anchorTarget(GoldenErs.root()));
+        entries.put(DIR + "anchors/ers.der", GoldenErs.withElement(2,
+                new DERSequence(new DERSequence(new DERSequence(rebuilt)))));
+        return entries;
+    }
+
     /** The golden record's Archive Timestamp, given {@code tree} as its reducedHashtree. */
     private static byte[] withTree(DERSequence tree) throws Exception {
         ASN1Sequence sequence = GoldenErs.timestampSequence();

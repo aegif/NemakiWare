@@ -241,6 +241,12 @@ public final class LongTermErs {
         String algorithm = null;
         List<List<byte[]>> tree = new ArrayList<>();
         byte[] token = null;
+        // Counted, not inferred. "[2] seen" was inferred from `tree.isEmpty()`, so an EMPTY
+        // first [2] let a second one through; [1] was type-checked and never counted; and a
+        // second non-tagged SEQUENCE silently overwrote the token. RFC 4998 gives each of these
+        // fields once (Codex, seventh review, P2).
+        boolean sawTree = false;
+        boolean sawAttributes = false;
         for (int i = 0; i < ats.size(); i++) {
             Object element = ats.getObjectAt(i);
             if (element instanceof ASN1TaggedObject tagged) {
@@ -254,6 +260,11 @@ public final class LongTermErs {
                             + "[2] only. This reader does not know what it says");
                 }
                 if (tagged.getTagNo() == 1) {
+                    if (sawAttributes) {
+                        throw new NotAnEvidenceRecord("an ArchiveTimeStamp carries attributes "
+                                + "[1] twice, and RFC 4998 gives it once");
+                    }
+                    sawAttributes = true;
                     try {
                         org.bouncycastle.asn1.ASN1Set.getInstance(tagged, false);
                     } catch (RuntimeException notASet) {
@@ -271,11 +282,12 @@ public final class LongTermErs {
                     algorithm = AlgorithmIdentifier.getInstance(tagged, false)
                             .getAlgorithm().getId();
                 } else if (tagged.getTagNo() == 2) {
-                    if (!tree.isEmpty()) {
+                    if (sawTree) {
                         throw new NotAnEvidenceRecord("an ArchiveTimeStamp carries two reduced "
                                 + "hash trees, so which one it commits to is not decided by the "
                                 + "record");
                     }
+                    sawTree = true;
                     ASN1Sequence lists = ASN1Sequence.getInstance(tagged, false);
                     for (int level = 0; level < lists.size(); level++) {
                         ASN1Sequence partial = asSequence(lists.getObjectAt(level),
@@ -293,6 +305,10 @@ public final class LongTermErs {
                     }
                 }
                 continue;
+            }
+            if (token != null) {
+                throw new NotAnEvidenceRecord("an ArchiveTimeStamp carries more than one "
+                        + "timeStamp, so which one fixes its time is not decided by the record");
             }
             try {
                 token = ASN1Sequence.getInstance(element).getEncoded(ASN1Encoding.DER);
@@ -345,7 +361,7 @@ public final class LongTermErs {
                 return null;
             }
             return unhex(hex);
-        } catch (Json.NotCanonicalisable | IllegalArgumentException unreadable) {
+        } catch (RuntimeException unreadable) {
             return null;
         }
     }
@@ -554,12 +570,6 @@ public final class LongTermErs {
     private static Outcome.Check chainStart(List<List<ArchiveTimeStamp>> chains,
             ASN1Sequence sequence, int c, byte[] wanted) {
         ArchiveTimeStamp first = chains.get(c).get(0);
-        if (first.tree().isEmpty()) {
-            return Outcome.Check.failed("ers chain",
-                    "chain " + c + " starts with an Archive Timestamp that has no hash tree, so "
-                            + "nothing in it names the chains before it. §5.3 requires its first "
-                            + "list to hold H(sorted(h, ha))");
-        }
         if (wanted == null) {
             return Outcome.Check.absent("ers chain",
                     "the package states no anchor target Merkle root, so the h term of §5.3's "
@@ -580,6 +590,24 @@ public final class LongTermErs {
         }
         byte[] ha = digest(first.digestOid(), previousSequenceDer);
         byte[] expected = digest(first.digestOid(), sortedConcat(List.of(wanted, ha)));
+        byte[] imprint = tokenOf(first.tokenDer()).getTimeStampInfo().getMessageImprintDigest();
+        if (first.tree().isEmpty()) {
+            // The DEGENERATE form, which §4.2 allows anywhere ("An Archive Timestamp may
+            // consist ... only of a timestamp with no hash value lists") and which
+            // BouncyCastle's renewHash actually produces: h' goes straight into the token's
+            // imprint and there is no list. Requiring a tree here reported every §5.3 renewal a
+            // standard tool builds as FAILED — exit 2, "checked and wrong" — while this
+            // product's OWN ErsVerifier accepted the same bytes one function over (subagent,
+            // seventh review, P1, measured against BouncyCastle).
+            if (!Arrays.equals(expected, imprint)) {
+                return Outcome.Check.failed("ers chain",
+                        "chain " + c + " covers " + Canonical.hex(imprint) + " and §5.3 requires "
+                                + "it to cover " + Canonical.hex(expected)
+                                + ", H(sorted(h, ha)) — so it does not commit to the chains "
+                                + "before it and is a timestamp filed beside them");
+            }
+            return null;
+        }
         if (first.tree().get(0).stream().noneMatch(value -> Arrays.equals(value, expected))) {
             return Outcome.Check.failed("ers chain",
                     "chain " + c + " does not commit to the chains before it: its first hash "
@@ -591,7 +619,6 @@ public final class LongTermErs {
         // about anything at all passed, and the whole profile composed to VERIFIED (subagent,
         // sixth review, P2).
         byte[] root = walk(first);
-        byte[] imprint = tokenOf(first.tokenDer()).getTimeStampInfo().getMessageImprintDigest();
         if (!Arrays.equals(root, imprint)) {
             return Outcome.Check.failed("ers chain",
                     "chain " + c + "'s first hash tree reduces to " + Canonical.hex(root)
@@ -693,13 +720,8 @@ public final class LongTermErs {
         return null;
     }
 
+    /** Delegated to {@link Section}, which is the ONE place that excludes payload. */
     private static byte[] fileIn(Map<String, byte[]> entries, String name) {
-        String wanted = RecordLedger.DIR + name;
-        for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
-            if (("/" + entry.getKey()).endsWith(wanted)) {
-                return entry.getValue();
-            }
-        }
-        return null;
+        return Section.fileIn(entries, name);
     }
 }

@@ -279,14 +279,9 @@ public final class TrustedRfc3161 {
         return null;
     }
 
+    /** Delegated to {@link Section}, which is the ONE place that excludes payload. */
     private static byte[] fileIn(Map<String, byte[]> entries, String name) {
-        String wanted = RecordLedger.DIR + name;
-        for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
-            if (("/" + entry.getKey()).endsWith(wanted)) {
-                return entry.getValue();
-            }
-        }
-        return null;
+        return Section.fileIn(entries, name);
     }
 
     @SuppressWarnings("unchecked")
@@ -298,7 +293,7 @@ public final class TrustedRfc3161 {
         try {
             Object value = Json.parse(new String(bytes, StandardCharsets.UTF_8));
             return value instanceof Map ? (Map<String, Object>) value : null;
-        } catch (Json.NotCanonicalisable malformed) {
+        } catch (RuntimeException malformed) {
             return null;
         }
     }

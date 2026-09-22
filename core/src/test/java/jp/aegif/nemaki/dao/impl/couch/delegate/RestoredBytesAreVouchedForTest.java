@@ -34,6 +34,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -172,14 +173,29 @@ class RestoredBytesAreVouchedForTest {
                         + "of what went past was vouched for anyway");
     }
 
+    /**
+     * An archive with no binary is a known outcome — and now says WHICH one (R57).
+     *
+     * <p>This asserted {@code NOTHING}, the value the restore also returns when the archive row
+     * could not be read at all. Three situations shared one answer, and the one that matters
+     * most — the content was MOVED to cold storage, so the row will never get a body — was
+     * indistinguishable from "we could not look". Every later refusal then told the operator to
+     * retry shortly.
+     */
     @Test
-    @DisplayName("an archive with no binary is NOTHING — a known outcome, not an unreported one")
+    @DisplayName("an archive with no binary says WHY, not just 'nothing'")
     void noBinaryIsNothing() {
         ContentDaoService.RestoredBytes restored = new Fixture(null, false).delegate
                 .restoreAttachmentRecording("bedroom", attachmentArchive());
 
         assertFalse(restored.wroteBytes(), "no binary was in the archive and the restore "
                 + "reported bytes written");
-        assertEquals(ContentDaoService.RestoredBytes.NOTHING, restored);
+        assertEquals(ContentDaoService.RestoredBytes.ContentAbsence.ARCHIVE_HAD_NO_CONTENT,
+                restored.absence(),
+                "the restore answered without saying why, so a caller cannot tell a version "
+                        + "that never had content from one whose content is in cold storage");
+        assertNotEquals(ContentDaoService.RestoredBytes.NOTHING, restored,
+                "the answer is still the one that also means 'the archive row could not be "
+                        + "read', so the three situations remain indistinguishable");
     }
 }

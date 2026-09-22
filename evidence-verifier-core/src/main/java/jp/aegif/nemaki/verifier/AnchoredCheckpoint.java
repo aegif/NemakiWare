@@ -421,19 +421,8 @@ public final class AnchoredCheckpoint {
         return entries.keySet().stream().anyMatch(path -> ("/" + path).endsWith(wanted));
     }
 
-    @SuppressWarnings("unchecked")
+    /** Delegated to {@link Section}: one lookup, payload excluded, every parse failure caught. */
     private static Map<String, Object> documentIn(Map<String, byte[]> entries, String name) {
-        for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
-            if (("/" + entry.getKey()).endsWith(RecordLedger.DIR + name)) {
-                try {
-                    Object value = Json.parse(
-                            new String(entry.getValue(), StandardCharsets.UTF_8));
-                    return value instanceof Map ? (Map<String, Object>) value : null;
-                } catch (Json.NotCanonicalisable malformed) {
-                    return null;
-                }
-            }
-        }
-        return null;
+        return Section.documentIn(entries, name);
     }
 }

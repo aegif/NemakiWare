@@ -205,17 +205,34 @@ public final class PackageIntegrity {
                     + "which one is the evidence, and whichever it chose would be its own choice "
                     + "rather than the package's statement");
         }
+        // NESTED first. A package that contains another complete package duplicates every
+        // relative name by construction, so asking about duplicates before asking about roots
+        // reports a CSIP AIP carrying its original SIP as a broken package. The answer is
+        // UNAVAILABLE either way — INDETERMINATE, never a pass — so nothing escapes a finding
+        // by nesting (subagent, seventh review, P3).
         java.util.SortedSet<String> roots = sectionRoots(entries);
         if (roots.size() > 1) {
-            // Two sections under DIFFERENT roots were folded into one relative-name map, so a
-            // package could split its evidence across them — profile and manifest under one,
-            // the documents under the other — and satisfy both the duplicate check and the
-            // manifest closure. A complete second section was caught; a split one was not
+            // COMPLETE means both files §4.2 makes mandatory, not just a profile: a root
+            // carrying one loose profile.json beside another root's documents is a SPLIT
+            // wearing a profile, and treating it as a package would let a split escape into
+            // "cannot tell" (measured — the duplicate lock went UNAVAILABLE).
+            long complete = roots.stream().filter(root ->
+                    hasFile(entries, root, "profile.json")
+                            && hasFile(entries, root, "bundle-manifest.json")).count();
+            if (complete == roots.size()) {
+                return Outcome.Check.unavailable("v1 layout", "MULTIPLE_PACKAGES",
+                        "the package carries " + roots.size() + " complete evidence sections, "
+                                + "each under its own root (" + roots + "). Nothing states "
+                                + "which of them this verifier was asked about");
+            }
+            // A SPLIT: the profile and manifest under one root, the documents under another.
+            // No root holds a whole section, so neither the duplicate check nor the manifest
+            // closure catches it, and every check above this takes the first path that matches
             // (Codex, sixth review, P1).
-            failures.add("the package carries evidence sections under " + roots.size()
-                    + " different roots (" + roots + "). Every check above this one takes the "
-                    + "first path that matches, so the zip's order would decide which section "
-                    + "is verified — and a section split across both would be verified as one");
+            failures.add("the package carries evidence section files under " + roots.size()
+                    + " different roots (" + roots + ") and " + complete + " of them declare a "
+                    + "profile. A section split across roots is verified as one, because every "
+                    + "check above this takes the first path that matches");
         }
         java.util.SortedSet<String> duplicated = duplicatesIn(entries);
         if (!duplicated.isEmpty()) {
@@ -380,6 +397,12 @@ public final class PackageIntegrity {
         return twice;
     }
 
+    /** Whether {@code root}'s own section carries {@code name}. */
+    private static boolean hasFile(Map<String, byte[]> entries, String root, String name) {
+        String wanted = root + RecordLedger.DIR + name;
+        return entries.keySet().stream().anyMatch(path -> ("/" + path).equals(wanted));
+    }
+
     /** The distinct archival roots that carry evidence-section files. */
     private static java.util.SortedSet<String> sectionRoots(Map<String, byte[]> entries) {
         java.util.SortedSet<String> roots = new java.util.TreeSet<>();
@@ -472,10 +495,26 @@ public final class PackageIntegrity {
                     "the package presents " + premisPaths.get(0) + " as PREMIS and this "
                             + "verifier could not read it as XML: " + fixity.unreadable());
         }
+        int payloadCount = payloadsIn(entries).size();
         if (fixity.digests().size() > 1) {
+            if (fixity.digests().size() != payloadCount) {
+                // §9: "PREMIS が 1 つの payload に 2 つ fixity を持つ … 場合は FAILED（一対一が
+                // 崩れている）". The counts cannot be paired at all, and that is something this
+                // verifier READ, not something it failed to read. Reporting it as "could not
+                // tell" diluted a finding the specification already named (Codex, seventh
+                // review, P1).
+                return Outcome.Check.failed("payload fixity",
+                        "the PREMIS records " + fixity.digests().size() + " message digests and "
+                                + "the package carries " + payloadCount + " payload(s), so the "
+                                + "one-to-one relationship §9 requires does not hold");
+            }
+            // Equal counts COULD be a legitimate package: CSIP allows several representations,
+            // each with its own fixity. This verifier does not read the PREMIS object-to-file
+            // linkage, so which digest belongs to which payload is genuinely unknown here.
             return Outcome.Check.unavailable("payload fixity", "AMBIGUOUS_PREMIS",
-                    "the PREMIS records " + fixity.digests().size() + " message digests and "
-                            + "this verifier cannot tell which describes the payload");
+                    "the PREMIS records " + fixity.digests().size() + " message digests for "
+                            + payloadCount + " payload(s), and this verifier does not read the "
+                            + "object-to-file linkage that would pair them");
         }
         String recorded = fixity.digests().isEmpty() ? null : fixity.digests().get(0);
         if (recorded == null || recorded.isBlank()) {
@@ -508,9 +547,12 @@ public final class PackageIntegrity {
                     "the package carries no payload under representations/*/data/");
         }
         if (payloads.size() > 1) {
-            return Outcome.Check.unavailable("payload fixity", "AMBIGUOUS_PAYLOAD",
-                    "the package carries " + payloads.size() + " payloads and one recorded "
-                            + "digest, so the one-to-one PREMIS requires does not hold");
+            // Read, and found broken — §9 names this FAILED. One digest cannot describe two
+            // payloads under any pairing (Codex, seventh review, P1).
+            return Outcome.Check.failed("payload fixity",
+                    "the package carries " + payloads.size() + " payloads and PREMIS records "
+                            + "one digest, so the one-to-one relationship §9 requires does not "
+                            + "hold and one of them is content nobody committed to");
         }
         Map.Entry<String, byte[]> payload = payloads.entrySet().iterator().next();
         String actual = Canonical.hex(Canonical.sha256(payload.getValue()));
@@ -613,11 +655,21 @@ public final class PackageIntegrity {
                     javax.xml.parsers.DocumentBuilderFactory.newInstance();
             factory.setNamespaceAware(true);
             factory.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true);
-            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            // The same configuration Premis.read uses, for the same reason: external entity
+            // resolution stays off, an internal DOCTYPE is allowed. Refusing DTDs here while
+            // allowing them there meant a legitimate third-party METS could not reach P0 —
+            // one half of an over-refusal corrected (Codex, seventh review, P2).
             factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
             factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            factory.setFeature(
+                    "http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
             factory.setXIncludeAware(false);
-            factory.setExpandEntityReferences(false);
+            // INTERNAL entities are expanded. External resolution is off above, and secure
+            // processing caps expansion (measured: a billion-laughs document expands to
+            // nothing in 19 ms). Leaving expansion off while allowing a DOCTYPE made a digest
+            // written as an internal entity read as "PREMIS records no message digest" —
+            // "read and absent" for something that was not read (subagent, seventh review, P3).
+            factory.setExpandEntityReferences(true);
             document = factory.newDocumentBuilder().parse(new org.xml.sax.InputSource(
                     new java.io.StringReader(xml)));
         } catch (Exception notXml) {
@@ -635,11 +687,14 @@ public final class PackageIntegrity {
         if (element == null) {
             return;
         }
+        // The XLink namespace, never the prefix. A fallback on the literal "xlink:href" was
+        // added on the reasoning that a METS without a namespace declaration still says href —
+        // which is false: such a document does not parse namespace-aware at all, so the
+        // fallback never fires for it. What it DID fire on is a document that binds the prefix
+        // `xlink` to something else, where it produced references the METS never made and a
+        // phantom "names a file the package does not carry" (subagent, seventh review, P3 —
+        // the very misreading this method was rewritten to remove).
         String href = element.getAttributeNS(XLINK, "href");
-        if (href == null || href.isEmpty()) {
-            // A METS written without a namespace declaration still says href.
-            href = element.getAttribute("xlink:href");
-        }
         // A METS can point outside the package. Those are not files it is closing over and
         // reporting them as missing would turn a legitimate external reference into a failure.
         if (href != null && !href.isEmpty()

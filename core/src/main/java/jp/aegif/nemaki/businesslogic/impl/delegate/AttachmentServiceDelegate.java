@@ -216,7 +216,8 @@ public class AttachmentServiceDelegate {
 		// 2026-09-19).
 		if (!hasBody(original)) {
 			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisStorageException(
-					bodyMissing(repositoryId, attachmentId));
+					bodyMissing(repositoryId, attachmentId,
+							contentDaoService.contentAbsenceReason(repositoryId, attachmentId)));
 		}
 
 		String mimeType = original.getMimeType();
@@ -246,11 +247,39 @@ public class AttachmentServiceDelegate {
 		return newAttachmentId;
 	}
 
-	private static String bodyMissing(String repositoryId, String attachmentId) {
-		return "the attachment '" + attachmentId + "' in '" + repositoryId + "' has a row but no "
-				+ "content body, so there is nothing to copy. This is NOT a finding that the "
-				+ "document has no content. If a restore from the archive is in progress for "
-				+ "this document, retry shortly.";
+	/**
+	 * The refusal, told the truth when the row says why — R57.
+	 *
+	 * <p>"Retry shortly" is right for one cause and wrong for another. Restoring a version whose
+	 * content was MOVED to cold storage finishes WITHOUT bytes: the row is back, the body never
+	 * comes, and this product has no read-back path from cold. Telling that caller to wait
+	 * describes an operation that has already ended, and every later checkOut / checkIn / copy
+	 * repeats it forever. {@code contentAbsenceReason} is read only here, on the path that is
+	 * already refusing.
+	 *
+	 * @param reason what the row records, or null when it records nothing — which is "not
+	 *        stated", so the message then says both possibilities rather than choosing one
+	 */
+	static String bodyMissing(String repositoryId, String attachmentId, String reason) {
+		String head = "the attachment '" + attachmentId + "' in '" + repositoryId + "' has a row "
+				+ "but no content body, so there is nothing to copy. This is NOT a finding that "
+				+ "the document has no content. ";
+		if (jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.ContentAbsence.MOVED_TO_COLD
+				.name().equals(reason)) {
+			return head + "The row records that its content was MOVED to cold storage and the "
+					+ "restore brought back its metadata only. This product has no path that "
+					+ "reads cold storage back, so WAITING WILL NOT CHANGE THIS: the bytes have "
+					+ "to be put back from outside before this document can be copied.";
+		}
+		if (jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.ContentAbsence
+				.ARCHIVE_HAD_NO_CONTENT.name().equals(reason)) {
+			return head + "The row records that the archived version carried no content of its "
+					+ "own, so there is nothing to wait for.";
+		}
+		return head + "The row does not record why. If a restore from the archive is in progress "
+				+ "for this document, retry shortly — but a restore of a version whose content "
+				+ "was moved to cold storage finishes WITHOUT bytes, and that one does not "
+				+ "resolve by waiting.";
 	}
 
 	/**

@@ -243,7 +243,10 @@ class SipVerifierTest {
 
         SipVerifier.Result result = SipVerifier.verify(sip);
 
-        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "payload digest"),
+        // FAILED, as §9 names it and as the independent verifier now answers. One digest
+        // cannot describe two payloads under any pairing (Codex, seventh review, P1 — this
+        // lock pinned the diluted answer).
+        assertEquals(SipVerifier.Outcome.FAILED, outcomeOf(result, "payload digest"),
                 "a package carrying two payloads and one recorded digest was reported as "
                         + "verified on the strength of whichever one matched: " + result.asMap());
     }

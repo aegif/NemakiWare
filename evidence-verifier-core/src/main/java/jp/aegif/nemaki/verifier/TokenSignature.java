@@ -74,6 +74,21 @@ final class TokenSignature {
                     what + "'s signature does not verify against its own signer certificate: "
                             + invalid.getMessage());
         } catch (Exception cannotAsk) {
+            if (keyNotUsable(cannotAsk)) {
+                // The signature was NOT computed: no provider would initialise with the key the
+                // token's own certificate carries. Two reviews pushed this in opposite
+                // directions — one called UNAVAILABLE "a mismatch excused", the other called
+                // FAILED "a comparison nobody made" — and both were right about the OTHER
+                // reading. It gets its own reason code: this says what happened without
+                // claiming an algorithm is unknown and without claiming a signature was
+                // compared. The verdict is INDETERMINATE either way, so a substituted
+                // certificate still cannot reach VERIFIED (Codex, sixth and seventh reviews).
+                return Outcome.Check.unavailable(name, "SIGNATURE_NOT_COMPUTED",
+                        "the signature on " + what + " could not be computed against the key its "
+                                + "own certificate carries (" + cannotAsk.getMessage() + "). It "
+                                + "has NOT been compared — that is neither a finding that it is "
+                                + "wrong nor a statement that it is right");
+            }
             if (uncheckable(cannotAsk)) {
                 return Outcome.Check.unavailable(name, "UNKNOWN_ALGORITHM",
                         "the signature on " + what + " could not be computed by this build ("
@@ -94,24 +109,42 @@ final class TokenSignature {
      * {@code NoSuchAlgorithmException}), and looking only at the exception thrown reports every
      * one of them as a bad signature.
      */
-    static boolean uncheckable(Throwable thrown) {
-        // A FINDING first. BouncyCastle wraps InvalidKeyException in OperatorCreationException
-        // too, so treating that wrapper as "no provider" excused a token whose embedded
-        // certificate carries a key the signature was not made with — a real mismatch reported
-        // as "could not check" (Codex, sixth review, P1).
+    /**
+     * Whether no signature was computed because the KEY could not be used.
+     *
+     * <p>Distinct from {@link #uncheckable}: there the algorithm is unknown to this build; here
+     * the algorithm is known and the key its own certificate carries would not initialise. Both
+     * mean nothing was compared, and neither is a finding — but they are different facts and a
+     * machine branching on {@code reasonCode} has to be able to tell them apart.
+     */
+    static boolean keyNotUsable(Throwable thrown) {
         for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
-            if (cause instanceof java.security.InvalidKeyException
-                    || cause instanceof java.security.SignatureException) {
-                return false;
+            if (cause instanceof java.security.InvalidKeyException) {
+                return true;
             }
             if (cause.getCause() == cause) {
                 break;
             }
         }
+        return false;
+    }
+
+    static boolean uncheckable(Throwable thrown) {
         for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
             if (cause instanceof NoSuchAlgorithmException
                     || cause instanceof NoSuchProviderException
-                    || cause instanceof org.bouncycastle.operator.OperatorCreationException) {
+                    || cause instanceof org.bouncycastle.operator.OperatorCreationException
+                    || cause instanceof org.bouncycastle.operator.RuntimeOperatorException) {
+                return true;
+            }
+            if (cause instanceof java.security.SignatureException) {
+                // A curve or parameter set no installed provider implements arrives here — a
+                // brainpool ECDSA token, which eIDAS authorities really issue and which the
+                // JDK dropped from SunEC in 16, raises "Curve not supported" (measured by the
+                // subagent's seventh review). Nothing was computed. A signature that WAS
+                // computed and did not match arrives as TSPValidationException or CMSException
+                // and is caught before this method is reached, so nothing is excused here that
+                // was actually compared.
                 return true;
             }
             if (cause instanceof java.security.cert.CertificateException) {

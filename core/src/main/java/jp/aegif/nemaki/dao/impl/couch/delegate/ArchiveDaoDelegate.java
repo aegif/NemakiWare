@@ -879,7 +879,28 @@ public class ArchiveDaoDelegate {
 					throw new RuntimeException("Failed to restore binary attachment for: " + originalId
 						+ " (binary exists in archive)", attachmentError);
 				}
-				log.info("restoreAttachment: no binary content in archive for " + originalId);
+				// WHY there is no binary, recorded ON the restored row — R57.
+				//
+				// The restore finishes here without bytes and used to answer NOTHING, the same
+				// value it answers when the archive row could not be read at all. For a
+				// cold-MOVEd version that is the permanent state: the content is in cold
+				// storage, this product has no read-back path (adapter.get has no callers), and
+				// every later checkOut / checkIn / copy is refused with "if a restore is in
+				// progress, retry shortly" — a restore that has already finished. The archive
+				// row is the only place that can tell the two apart, and the copy above
+				// deliberately drops its cold fields, so the reason is written explicitly.
+				jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.ContentAbsence absence =
+						movedToCold(archive, archivedDoc)
+								? jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes
+										.ContentAbsence.MOVED_TO_COLD
+								: jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes
+										.ContentAbsence.ARCHIVE_HAD_NO_CONTENT;
+				recordContentAbsence(client, originalId, absence,
+						archivedDoc == null ? null : archivedDoc.getProperties());
+				restored = jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes
+						.nothingBecause(absence);
+				log.info("restoreAttachment: no binary content in archive for " + originalId
+						+ " (" + absence + ")");
 			}
 
 			log.info("Attachment restored from archive: " + archiveId + " to original ID: " + originalId);
@@ -898,6 +919,69 @@ public class ArchiveDaoDelegate {
 			out.append(Character.forDigit(b & 0xF, 16));
 		}
 		return out.toString();
+	}
+
+	/** The property a restored row carries when it finished without bytes — R57. */
+	public static final String CONTENT_ABSENCE_FIELD = "contentAbsentBecause";
+
+	/** Where the bytes went, kept beside the reason so an operator can find them. */
+	public static final String CONTENT_REF_FIELD = "contentRefAtRestore";
+
+	/**
+	 * Was the content MOVED to cold storage rather than simply never present?
+	 *
+	 * <p>Read from the archive row, which is the only thing that knows: the restored document
+	 * deliberately drops {@code coldMoveMode} and {@code contentRef}. A COPY leaves the binary
+	 * in the archive, so only a MOVE ends here.
+	 */
+	static boolean movedToCold(Archive archive, com.ibm.cloud.cloudant.v1.model.Document archivedDoc) {
+		if (archive != null && "MOVE".equalsIgnoreCase(archive.getColdMoveMode())) {
+			return true;
+		}
+		if (archive != null && Archive.STATE_ARCHIVED_COLD.equals(archive.getArchiveState())
+				&& archive.getContentRef() != null) {
+			return true;
+		}
+		Map<String, Object> properties = archivedDoc == null ? null : archivedDoc.getProperties();
+		if (properties == null) {
+			return false;
+		}
+		return "MOVE".equalsIgnoreCase(String.valueOf(properties.get("coldMoveMode")));
+	}
+
+	/**
+	 * Writes the reason onto the restored row. Never fails the restore.
+	 *
+	 * <p>A restore that finished is still a restore; refusing to report it because the note
+	 * could not be written would turn a recording problem into a business failure. What the
+	 * caller gets back says the same thing, so the answer is not lost even when this is.
+	 */
+	private void recordContentAbsence(CloudantClientWrapper client, String originalId,
+			jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.ContentAbsence absence,
+			Map<String, Object> archiveProperties) {
+		try {
+			com.ibm.cloud.cloudant.v1.model.Document row = client.get(originalId);
+			if (row == null) {
+				log.warn("restoreAttachment: the restored row " + originalId + " could not be "
+						+ "read back, so why it has no body is not recorded on it");
+				return;
+			}
+			Map<String, Object> update = new HashMap<>();
+			update.put("_id", originalId);
+			update.put("_rev", row.getRev());
+			Map<String, Object> properties = row.getProperties();
+			if (properties != null) {
+				update.putAll(properties);
+			}
+			update.put(CONTENT_ABSENCE_FIELD, absence.name());
+			if (archiveProperties != null && archiveProperties.get("contentRef") != null) {
+				update.put(CONTENT_REF_FIELD, archiveProperties.get("contentRef"));
+			}
+			client.update(update);
+		} catch (Exception couldNotRecord) {
+			log.warn("restoreAttachment: could not record why " + originalId + " has no body ("
+					+ couldNotRecord + "). The restore itself stands", couldNotRecord);
+		}
 	}
 
 	public void restoreDocumentWithArchive(String repositoryId, Archive contentArchive) {

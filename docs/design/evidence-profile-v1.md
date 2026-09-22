@@ -69,30 +69,43 @@ verifier は **既定で network を使わない**。network を使う check は
 `docs/evidence-profile/v1/` が一緒に動く。**v1 の package を読めなくする変更は、
 v1 を壊さずに v2 を足すことでしか行わない。**
 
-**凍結と「誤りの訂正」の境目**（2026-09-22）。判定は **2 つ**の問いで行う —
+**凍結と「誤りの訂正」の境目**（2026-09-22）。判定は **1 つの規則**である —
 
-1. **これまでに出荷した、契約に適合する package の読み方が変わるか。**
-2. **第三者が標準どおりに書いた package の読み方が変わるか。**
+> **契約に適合する package が、読めなくなるか、新たに拒否されるか。**
+> **なる**なら contract の変更であり、v2 が要る。**ならない**なら訂正であり、v1 のまま直す。
 
-どちらも「変わらない」なら訂正であり、どちらかが「変わる」なら v2 が要る。
+規則は 1 つだが、**問いは 2 つ立てる**（片方だけでは取りこぼす）。
 
-> 問い 2 は後から足した（2026-09-22、6 巡目）。1 だけだと、**自分が一度も書いたことのない形を
-> 狭める変更を構造的に検出できない**。実例: §14 の `ERS_PARSE` に `digestAlgorithm [0]` 必須を
-> 書いたとき、出荷物は 0 なので問い 1 は「変わらない」と答えたが、**BouncyCastle が作る記録は
-> 全部拒否される**ようになっていた。
+1. これまでに**出荷した**適合 package について。
+2. **第三者が標準どおりに書いた**適合 package について。
+
+> 問い 2 は後から足した（6 巡目）。1 だけだと、**自分が一度も書いたことのない形を狭める変更を
+> 構造的に検出できない**。実例: §14 の `ERS_PARSE` に `digestAlgorithm [0]` 必須を書いたとき、
+> 出荷物は 0 なので問い 1 は「変わらない」と答えたが、**BouncyCastle が作る適合記録は全部拒否される**
+> ようになっていた。
+
+**向きが効く。** 規則は「読めなくなるか」を問う。**緩める**変更（契約が許すものを受け入れる、
+誤って狭めた規定を戻す）は、どの適合 package も読めなくしないので**常に訂正**である。
+**狭める**変更（契約が任意と定めたものを必須にする、新しい拒否を足す）は、
+適合 package を 1 つでも拒否するなら contract の変更である。
 
 この版で 3 件、訂正として直した。
 
-| 訂正 | なぜ contract の変更ではないか |
-|---|---|
-| §14 の ERS data object（`SHA-256(c14n)` → `merkleRoot` の bytes） | どの token もその値を覆わないので、規定どおりの verifier は本物を必ず拒否した。かつ**この版は ERS を 1 本も出荷していない** |
-| §9 に `V1_LAYOUT` を必須 check として追加 | §4.2 と §5.2 が**既に**「legacy と併存 → `FAILED`」「manifest に無いファイル → `FAILED`」と規定していたのに、それを出す check が §9 に無かった。**仕様が自分と矛盾していた**。適合する package の判定は動かない（動くのは、既に規定違反だった package だけ） |
-| §14 の `ERS_PARSE` から `digestAlgorithm [0]` 必須を外し、縮約を「2 つ以上のときだけ hash」に | **書いた規定のほうが RFC より狭かった**。問い 2 に「変わる」と答える変更だったので、そのまま出せば v2 が要った。**間違った狭め方を戻すので、適合記録の判定は緩む方向にしか動かない** |
+| 訂正 | 向き | なぜ contract の変更ではないか |
+|---|---|---|
+| §14 の ERS data object（`SHA-256(c14n)` → `merkleRoot` の bytes） | 訂正（誤りの是正） | どの token もその値を覆わないので、規定どおりの verifier は本物を必ず拒否した。かつ**この版は ERS を 1 本も出荷していない** |
+| §9 に `V1_LAYOUT` を必須 check として追加 | 狭める | §4.2 と §5.2 が**既に**「legacy と併存 → `FAILED`」「manifest に無いファイル → `FAILED`」と規定していた。**拒否されるようになるのは、既に規定違反だった package だけ**で、適合 package は 1 つも動かない（両端の錠で示す） |
+| §14 の `ERS_PARSE` から `digestAlgorithm [0]` 必須を外し、縮約を「2 つ以上のときだけ hash」に | **緩める** | **書いた規定のほうが RFC より狭かった**。間違った狭め方を戻すので、適合記録の判定は**通る方向にしか動かない** |
 
-後者は必須 check の集合を動かすので、**表の左列に触れた唯一の例**である。
-これを許す条件は上の 1 文だけで、「実装が楽だから」「見落としていたから」は理由にならない
-— **v1 の package を読めなくする変更ではない**ことを、適合 package が通る錠で示すこと
-（`TheV1LayoutIsCheckedTest` と `TheWriterWritesWhatTheLayoutRequiresTest`）。
+3 件目は「問い 2 に変わると答える」ように読めるが、**変わるのは拒否 → 受理の向き**である。
+規則は「読めなくなるか」を問うので、これは訂正にあたる。**狭めた当初の規定のほうが
+contract の変更だった** — それは出荷していない。
+
+2 件目は必須 check の集合を動かすので、**表の左列に触れた唯一の例**である。
+これを許す条件は上の規則だけで、「実装が楽だから」「見落としていたから」は理由にならない
+— **適合 package が通る**ことを錠で示すこと
+（`TheV1LayoutIsCheckedTest` と `TheWriterWritesWhatTheLayoutRequiresTest`、および
+製品が build した package に CLI をかけた実測）。
 
 **凍結の対象は contract であって、製品の実装ではない。** 例えば遷移文（§5.3b）は v1 の
 一部だが、この版の NemakiWare は内容を失った版の package を**書き出せない**（正典 R67）。
@@ -449,8 +462,12 @@ current == merkleRoot なら PASS
 - **重複エントリ名は `FAILED`**。片方だけ検査して PASS と言う形を封じる。
 - **上限到達は crash でも FAIL でもなく `UNAVAILABLE` + reason `RESOURCE_LIMIT`**
   （→ `INDETERMINATE`）。「大きすぎて調べられなかった」は「調べて問題が無かった」ではない。
-- PREMIS が 1 つの payload に 2 つ fixity を持つ、あるいは 2 つの payload が同じ
-  PREMIS object を指す場合は `FAILED`（一対一が崩れている）。
+- **一対一が崩れているなら `FAILED`。** 数が合わない組（digest 2 個に payload 1 つ、
+  payload 2 つに digest 1 個）は**どう組んでも一対一にならない**ので、読んだ上での finding である。
+  **数が合う組（digest N 個に payload N 個）は `UNAVAILABLE`（`AMBIGUOUS_PREMIS`）** —
+  CSIP は複数 representation を許すので適合しうるが、この verifier は PREMIS の
+  object → file の結び付きを読まないので、**どれがどれかを言えない**。
+  「言えない」を「壊れている」と呼ぶのは、見つけていない欠陥を報告する形。
 
 ---
 
@@ -661,10 +678,9 @@ DER を走査する読み方は**本物を必ず拒否し、偽物を通す**（
 
   > **2026-09-22 の訂正。** この行は当初 `SHA-256(anchor-target-checkpoint.c14n)` と書いていた。
   > **どの token もその値を覆わない**ので、規定どおりに実装した verifier は本物の record を
-  > 必ず拒否する。v1 は凍結済み（§1.1）だが、**この版は ERS を 1 本も出荷していない**
-  > （製品側が同じ食い違いで record を作れなかった）ため、v1 の package で壊れるものは無い。
-  > **誤りの訂正であって、contract の変更ではない** — v2 を要する変更との違いは、
-  > 「これまでに出荷した package の読み方が変わるかどうか」で判断する。
+  > 必ず拒否する。v1 は凍結済み（§1.1）だが、**この版は ERS を 1 本も出荷しておらず**、
+  > かつ**この訂正で読めなくなる適合記録は無い**（拒否 → 受理の向きにしか動かない）。
+  > **誤りの訂正であって、contract の変更ではない** — 判定は §1.1 の規則による。
 - **未知の algorithm は `INDETERMINATE`** であり、「不一致」と呼んではならない。
   計算できなかったことを、計算して違ったことにする形。
 - renewal は**前段を覆っていなければ `FAILED`**。覆っているかを調べずに
@@ -682,7 +698,7 @@ check の結果は **4 値**。「調べて正しい」「調べて誤り」「�
 | `PASSED` | 調べて正しい |
 | `FAILED` | 調べて誤り |
 | `NOT_PRESENT` | package がその check に要るものを持っていない |
-| `UNAVAILABLE` | 調べられなかった。**理由は reason code で述べる** — `RESOURCE_LIMIT`（上限到達）、`NO_BLOCK_HEADER_SOURCE / REVOCATION_NOT_CAPTURED`、`UNKNOWN_ALGORITHM`、`LEGACY_PACKAGE_LAYOUT`、`TRANSITION_PRIOR_NOT_IN_PACKAGE` など（全 21 値は verifier の登録簿 `Outcome.Check.REASON_CODES` と result schema の enum） |
+| `UNAVAILABLE` | 調べられなかった。**理由は reason code で述べる** — `RESOURCE_LIMIT`（上限到達）、`NO_BLOCK_HEADER_SOURCE / REVOCATION_NOT_CAPTURED`、`UNKNOWN_ALGORITHM`、`LEGACY_PACKAGE_LAYOUT`、`TRANSITION_PRIOR_NOT_IN_PACKAGE` など（全 23 値は verifier の登録簿 `Outcome.Check.REASON_CODES` と result schema の enum） |
 
 合成:
 

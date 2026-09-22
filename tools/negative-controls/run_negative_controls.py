@@ -9839,8 +9839,8 @@ CONTROLS = [
         id='GY3',
         what="the readiness document stops saying the control added since the fifth sweep is unswept, so a finished sweep of 938 reads as a measurement of today's tree",
         file='docs/design/v3.4-release-readiness.md',
-        find='**その 100 本は通し未実施**',
-        replace='**その 100 本も通し済み**',
+        find='**その 113 本は通し未実施**',
+        replace='**その 113 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10797,7 +10797,7 @@ CONTROLS = [
         what='a second statement of the unswept count drifts from the locked one, so the document contradicts itself about how many controls have never been run together',
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **5 回目以後に足した control は 100 本**（境界 LM3 — 5 回目時点の最大 ID。',
+        find='  **5 回目以後に足した control は 113 本**（境界 LM3 — 5 回目時点の最大 ID。',
         replace='  **5 回目以後に足した control は 0 本**（境界 LM3 — 5 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10808,7 +10808,7 @@ CONTROLS = [
         file='docs/design/fail-closed-reads.md',
         # Re-pointed: the boundary id moves below LM3, so ids above it exist while the sweep
         # record says nothing was added — the cross-check (declared − swept ≠ ids above) fires.
-        find='**5 回目以後に足した control は 100 本**（境界 LM3）: ',
+        find='**5 回目以後に足した control は 113 本**（境界 LM3）: ',
         replace='**5 回目以後に足した control は 5 本**（境界 LA3）: ',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10864,8 +10864,8 @@ CONTROLS = [
         id='LN3',
         what="the canon stops saying the control added since the fifth sweep is unswept — the canon-side twin of GY3 — and, being itself the first control after the sweep, the one that forces the ledger back from 0 to 1",
         file='docs/design/fail-closed-reads.md',
-        find='**その 100 本は通し未実施**',
-        replace='**その 100 本も通し済み**',
+        find='**その 113 本は通し未実施**',
+        replace='**その 113 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10873,8 +10873,8 @@ CONTROLS = [
         id='LO3',
         what="the readiness document's §4 stops saying the added controls are unswept while §1.4 still does — the second exit, which a once-per-file check let through (GY3 did not fire)",
         file='docs/design/v3.4-release-readiness.md',
-        find='5 回目以後に足した control は **100 本**（通し未実施）。',
-        replace='5 回目以後に足した control は **100 本**（通し済み）。',
+        find='5 回目以後に足した control は **113 本**（通し未実施）。',
+        replace='5 回目以後に足した control は **113 本**（通し済み）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11689,7 +11689,7 @@ CONTROLS = [
         id='LB3',
         what='the PLAN\'s copy of the never-swept count drifts, so whoever scopes the overdue full sweep from the plan runs half the set',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='5 回目以後に足した control は **100 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='5 回目以後に足した control は **113 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='5 回目以後に足した control は **0 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -11948,7 +11948,9 @@ CONTROLS = [
         what='a signature algorithm this build has no provider for is classified as a bad signature, which names a defect nobody found',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/TokenSignature.java',
-        find='            if (cause instanceof NoSuchAlgorithmException\n                    || cause instanceof NoSuchProviderException\n                    || cause instanceof org.bouncycastle.operator.OperatorCreationException) {\n                return true;\n            }',
+        # Re-pointed 2026-09-22 (7 巡目): RuntimeOperatorException joined the list when an
+        # unsupported curve turned out to arrive that way.
+        find='            if (cause instanceof NoSuchAlgorithmException\n                    || cause instanceof NoSuchProviderException\n                    || cause instanceof org.bouncycastle.operator.OperatorCreationException\n                    || cause instanceof org.bouncycastle.operator.RuntimeOperatorException) {\n                return true;\n            }',
         replace='            if (false) {\n                return true;\n            }',
         test='OneTokenGetsOneAnswerTest',
         expect_fail=['aProviderFailureIsNotAFinding'],
@@ -12074,8 +12076,10 @@ CONTROLS = [
         what='a new chain commits to the older ones and its timestamp is about anything at all, so the newest time claim is tied to nothing and P5 composes to VERIFIED',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/LongTermErs.java',
-        find='        byte[] root = walk(first);\n        byte[] imprint = tokenOf(first.tokenDer()).getTimeStampInfo().getMessageImprintDigest();\n        if (!Arrays.equals(root, imprint)) {',
-        replace='        byte[] root = walk(first);\n        byte[] imprint = tokenOf(first.tokenDer()).getTimeStampInfo().getMessageImprintDigest();\n        if (false) {',
+        # Re-pointed 2026-09-22 (7 巡目): the imprint is read before the degenerate-form
+        # branch now, so the anchor moves to the comparison itself.
+        find='        byte[] root = walk(first);\n        if (!Arrays.equals(root, imprint)) {',
+        replace='        byte[] root = walk(first);\n        if (false) {',
         test='PresenceIsNotVerificationTest',
         expect_fail=['aSecondChainMustCoverItsOwnTree'],
     ),
@@ -12127,6 +12131,86 @@ CONTROLS = [
         test='SipVerifierTest',
         expect_fail=['premisV2IsStillRead'],
     ),
+    dict(
+        id='PK3',
+        what='a known one-to-one violation is diluted into "could not tell", so a package carrying a payload nobody committed to exits 3 instead of 2',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='            if (fixity.digests().size() != payloadCount) {',
+        replace='            if (false) {',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['twoFixitiesInOnePremisAreAmbiguous',
+                     'aSecondDigestUnderAnotherPrefixIsFound'],
+    ),
+    dict(
+        id='PL3',
+        what="a package that may well be conformant (N digests for N payloads) is reported as breaking the one-to-one relationship, which names a defect nobody found",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='            return Outcome.Check.unavailable("payload fixity", "AMBIGUOUS_PREMIS",\n                    "the PREMIS records " + fixity.digests().size() + " message digests for "',
+        replace='            return Outcome.Check.failed("payload fixity",\n                    "the PREMIS records " + fixity.digests().size() + " message digests for "',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['equalCountsAreUnavailableNotFailed'],
+    ),
+    dict(
+        id='PM3',
+        what='the METS reader refuses an internal DOCTYPE again, so a legitimate third-party METS cannot reach P0 while a PREMIS carrying one can',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);\n            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);\n            factory.setFeature(\n                    "http://apache.org/xml/features/nonvalidating/load-external-dtd", false);\n            factory.setXIncludeAware(false);',
+        replace='            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);\n            factory.setXIncludeAware(false);',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aMetsWithAnInternalDoctypeIsStillRead'],
+    ),
+    dict(
+        id='PN3',
+        what='an empty first reduced tree lets a second one through, so which tree an Archive Timestamp commits to is decided by nothing',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/LongTermErs.java',
+        find='                    if (sawTree) {',
+        replace='                    if (!tree.isEmpty()) {',
+        test='PresenceIsNotVerificationTest',
+        expect_fail=['anEmptyFirstTreeDoesNotHideASecond'],
+    ),
+    dict(
+        id='PO3',
+        what='a second timeStamp silently overwrites the first, so the record is judged on whichever timestamp came last',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/LongTermErs.java',
+        find='            if (token != null) {\n                throw new NotAnEvidenceRecord("an ArchiveTimeStamp carries more than one "',
+        replace='            if (false) {\n                throw new NotAnEvidenceRecord("an ArchiveTimeStamp carries more than one "',
+        test='PresenceIsNotVerificationTest',
+        expect_fail=['aSecondTimeStampIsAFinding'],
+    ),
+    dict(
+        id='PP3',
+        what='attributes [1] appearing twice is accepted, so a field RFC 4998 gives once is given twice and nothing decides which applies',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/LongTermErs.java',
+        find='                    if (sawAttributes) {',
+        replace='                    if (false) {',
+        test='PresenceIsNotVerificationTest',
+        expect_fail=['attributesTwiceIsAFinding'],
+    ),
+    dict(
+        id='PQ3',
+        what='a key the token\'s own certificate carries that will not initialise is reported as an algorithm this build cannot compute, so two different kinds of "nothing was compared" carry one reason code',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/TokenSignature.java',
+        find='            if (cause instanceof java.security.InvalidKeyException) {\n                return true;\n            }',
+        replace='            if (false) {\n                return true;\n            }',
+        test='OneTokenGetsOneAnswerTest',
+        expect_fail=['aProviderFailureIsNotAFinding'],
+    ),
+    dict(
+        id='PR3',
+        what="the product's own /verify dilutes a known one-to-one violation into 'could not tell', so an operator sees exit-3-shaped doubt where the CLI reports a finding",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='            return new Check("payload digest", Outcome.FAILED,\n                    "the package carries " + payloads.size() + " payload files and PREMIS "',
+        replace='            return new Check("payload digest", Outcome.UNAVAILABLE,\n                    "the package carries " + payloads.size() + " payload files and PREMIS "',
+        test='SipVerifierTest',
+        expect_fail=['twoPayloadsAndOneDigestIsAmbiguousHereToo'],
+    ),
 
     # ---- Sixth review (Codex, 2026-09-22) ----
     dict(
@@ -12149,16 +12233,14 @@ CONTROLS = [
         test='PresenceIsNotVerificationTest',
         expect_fail=['anUnknownTaggedFieldIsAFinding'],
     ),
-    dict(
-        id='PH3',
-        what='a key that does not go with the signature is excused as an algorithm this build cannot compute, so a substituted signer certificate answers "could not check" instead of naming the mismatch',
-        module='evidence-verifier-core',
-        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/TokenSignature.java',
-        find='            if (cause instanceof java.security.InvalidKeyException\n                    || cause instanceof java.security.SignatureException) {\n                return false;\n            }',
-        replace='            if (false) {\n                return false;\n            }',
-        test='OneTokenGetsOneAnswerTest',
-        expect_fail=['aProviderFailureIsNotAFinding'],
-    ),
+    # There is NO control for "the two kinds of 'nothing was compared' are collapsed", and
+    # the reason is measured rather than an omission. Removing the keyNotUsable branch leaves
+    # the uncheckable branch answering the same OUTCOME (UNAVAILABLE) with a different reason
+    # code, and no fixture can produce the case: a REAL token checked against another
+    # certificate is caught by BouncyCastle's certID hash comparison first and is a FAILED
+    # finding (measured — aSubstitutedCertificateIsAFinding). The rule itself is measured by
+    # PQ3 on a crafted exception chain; the reason code's distinctness is not reachable from
+    # any package this test can build.
     dict(
         id='PI3',
         what="a section split across two roots is read as one, so a package can put its profile and manifest under one root and its documents under another and satisfy both the duplicate check and the manifest closure",
@@ -12179,6 +12261,68 @@ CONTROLS = [
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['aPremisWithAnInternalDoctypeIsStillRead'],
     ),
+    # ---- Seventh review (subagent, 2026-09-22), and R57 ----
+    dict(
+        id='PS3',
+        what="a §5.3 renewal with no hash tree — the shape BouncyCastle's renewHash produces — is reported as FAILED, so a standard record exits 2 while this product's own ErsVerifier accepts the same bytes",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/LongTermErs.java',
+        # Restores the OLD behaviour exactly — refuse a chain that starts with no tree. Simply
+        # disabling the branch ran walk() over an empty tree and broke the harness, which proves
+        # nothing about the protection (measured).
+        find='        byte[] imprint = tokenOf(first.tokenDer()).getTimeStampInfo().getMessageImprintDigest();\n        if (first.tree().isEmpty()) {',
+        replace='        byte[] imprint = tokenOf(first.tokenDer()).getTimeStampInfo().getMessageImprintDigest();\n        if (first.tree().isEmpty()) {\n            return Outcome.Check.failed("ers chain", "chain starts with no hash tree");\n        }\n        if (false) {',
+        test='PresenceIsNotVerificationTest',
+        expect_fail=['aChainStartedWithNoTreeIsRead'],
+    ),
+    dict(
+        id='PT3',
+        what='the lookups match a PAYLOAD copy of an evidence document again, so a substituted file placed earlier in the zip is read by every check above P0 while P0 answers PASSED',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/Section.java',
+        find='            if (!isPayload(entry.getKey()) && ("/" + entry.getKey()).endsWith(wanted)) {',
+        replace='            if (("/" + entry.getKey()).endsWith(wanted)) {',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aPayloadCopyIsNotReadByTheLookups'],
+    ),
+    dict(
+        id='PU3',
+        what='a package that contains another complete package is reported as broken, so a CSIP AIP carrying its original SIP cannot reach P0',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='            if (complete == roots.size()) {',
+        replace='            if (false) {',
+        test='TheV1LayoutIsCheckedTest',
+        expect_fail=['aNestedCompletePackageCannotBeToldApart'],
+    ),
+    dict(
+        id='PV3',
+        what='a restore that finished without bytes answers the same value it answers when the archive could not be read, so a cold-moved document is told to retry shortly forever',
+        file='core/src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/ArchiveDaoDelegate.java',
+        find='\t\t\t\trestored = jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes\n\t\t\t\t\t\t.nothingBecause(absence);',
+        replace='\t\t\t\trestored = jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.NOTHING;',
+        test='RestoredBytesAreVouchedForTest',
+        expect_fail=['noBinaryIsNothing'],
+    ),
+    dict(
+        id='PW3',
+        what='the refusal tells a document whose content went to cold storage to retry shortly, describing a restore that has already finished',
+        file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/delegate/AttachmentServiceDelegate.java',
+        find='\t\tif (jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.ContentAbsence.MOVED_TO_COLD\n\t\t\t\t.name().equals(reason)) {',
+        replace='\t\tif (false) {',
+        test='TheRefusalSaysWhetherWaitingHelpsTest',
+        expect_fail=['theRefusalSaysWaitingWillNotHelp'],
+    ),
+    dict(
+        id='PX3',
+        what='a cold MOVE is read as a version that never had content, so an operator is told there is nothing to fetch when the bytes are sitting in cold storage',
+        file='core/src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/ArchiveDaoDelegate.java',
+        find='\t\tif (archive != null && "MOVE".equalsIgnoreCase(archive.getColdMoveMode())) {\n\t\t\treturn true;\n\t\t}',
+        replace='\t\tif (false) {\n\t\t\treturn true;\n\t\t}',
+        test='ARestoreThatEndsWithoutBytesSaysSoTest',
+        expect_fail=['aColdMoveIsToldApartFromNoContent'],
+    ),
+
 ]
 
 

@@ -2642,11 +2642,24 @@ public class ContentServiceImpl implements ContentService {
 		}
 		String copied = copyAttachment(callContext, repositoryId, sourceAttachmentId);
 		if (copied == null) {
+			// The same distinction the other refusal makes (R57): a restore of a cold-MOVEd
+			// version has already finished, so "retry shortly" describes an operation that
+			// ended. Read only here, on the path that is already refusing.
+			String reason = contentDaoService.contentAbsenceReason(repositoryId,
+					sourceAttachmentId);
 			throw new CmisStorageException("the attachment '" + sourceAttachmentId
 					+ "' this document names is not in '" + repositoryId + "', so its content "
 					+ "could not be copied. This is NOT a finding that the document has no "
-					+ "content. If a restore from the archive is in progress for this document, "
-					+ "retry shortly.");
+					+ "content. "
+					+ (jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.ContentAbsence
+							.MOVED_TO_COLD.name().equals(reason)
+							? "The row records that its content was MOVED to cold storage and "
+									+ "the restore brought back its metadata only, so WAITING "
+									+ "WILL NOT CHANGE THIS."
+							: "If a restore from the archive is in progress for this document, "
+									+ "retry shortly — but a restore of a version whose content "
+									+ "was moved to cold storage finishes WITHOUT bytes, and "
+									+ "that one does not resolve by waiting."));
 		}
 		return copied;
 	}

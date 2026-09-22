@@ -101,13 +101,8 @@ public final class AnchoredOts {
         return true;
     }
 
+    /** Delegated to {@link Section}, which is the ONE place that excludes payload. */
     private static byte[] fileIn(Map<String, byte[]> entries, String name) {
-        String wanted = RecordLedger.DIR + name;
-        for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
-            if (("/" + entry.getKey()).endsWith(wanted)) {
-                return entry.getValue();
-            }
-        }
-        return null;
+        return Section.fileIn(entries, name);
     }
 }

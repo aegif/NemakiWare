@@ -945,13 +945,65 @@ public interface ContentDaoService {
 	 *        the same pass; NULL when the bytes went past but the digest cannot be vouched for
 	 *        (the stored length differed from what was counted) — "not known", never a guess
 	 */
-	record RestoredBytes(String attachmentId, String contentDigest, long length) {
-		/** The archive carried no binary, so nothing was written back. NOT the same as null. */
-		public static final RestoredBytes NOTHING = new RestoredBytes(null, null, 0L);
+	record RestoredBytes(String attachmentId, String contentDigest, long length,
+			ContentAbsence absence) {
+
+		/**
+		 * Why a restore wrote no bytes back — R57.
+		 *
+		 * <p>{@link #NOTHING} used to answer three different situations with one value: the
+		 * archive row could not be read, the version never had content, and <b>the content was
+		 * MOVED to cold storage and this product has no way to read it back</b>. Only the last
+		 * of those is permanent, and it is the one a caller must not describe as "a restore is
+		 * in progress, retry shortly" — that restore has finished and waiting will not change
+		 * anything.
+		 */
+		public enum ContentAbsence {
+			/** Bytes were written back, or nothing has been determined. */
+			NONE,
+			/** The archive row was unreadable or absent. Says nothing about the content. */
+			NOT_DETERMINED,
+			/** The archived version carried no content of its own. */
+			ARCHIVE_HAD_NO_CONTENT,
+			/**
+			 * The content was moved to cold storage and the archive kept only its reference.
+			 * This product has no read-back path, so the row will stay body-less until
+			 * something outside it puts the bytes back.
+			 */
+			MOVED_TO_COLD
+		}
+
+		/** The pre-R57 shape, kept so existing construction does not change meaning. */
+		public RestoredBytes(String attachmentId, String contentDigest, long length) {
+			this(attachmentId, contentDigest, length, ContentAbsence.NONE);
+		}
+
+		/** Nothing was written back and nothing was determined about why. */
+		public static final RestoredBytes NOTHING =
+				new RestoredBytes(null, null, 0L, ContentAbsence.NOT_DETERMINED);
+
+		/** Nothing was written back, and this is why. */
+		public static RestoredBytes nothingBecause(ContentAbsence absence) {
+			return new RestoredBytes(null, null, 0L, absence);
+		}
 
 		public boolean wroteBytes() {
 			return attachmentId != null;
 		}
+	}
+
+	/**
+	 * Why an attachment row carries no content body, as the row itself records it — R57.
+	 *
+	 * <p>Read only when a caller is about to refuse, so nothing on the read path changes. The
+	 * restore writes this when it finishes without bytes; a row that says nothing answers null,
+	 * which is "not stated", never "there is no reason".
+	 *
+	 * @return one of {@link RestoredBytes.ContentAbsence}'s names, or null when the row does not
+	 *         say
+	 */
+	default String contentAbsenceReason(String repositoryId, String attachmentId) {
+		return null;
 	}
 
 	/**
