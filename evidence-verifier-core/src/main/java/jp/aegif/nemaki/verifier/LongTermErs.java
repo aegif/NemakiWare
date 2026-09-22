@@ -22,6 +22,7 @@ import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -91,13 +92,27 @@ public final class LongTermErs {
         }
         checks.add(Outcome.Check.passed("ers parse"));
 
-        byte[] c14n = fileIn(entries, "anchor-target-checkpoint.c14n");
-        if (c14n == null) {
+        // The data object is the anchor target's MERKLE ROOT, because an evidence record's
+        // first Archive Timestamp is the RFC 3161 token that anchored it, and that token is
+        // over the root's bytes (§14). This looked for SHA-256 of the checkpoint's canonical
+        // form — a value no token in this system ever covers — which is the same class of
+        // mistake as the imprint double-hash, one layer up (residual R70, 2026-09-22).
+        Object root = null;
+        byte[] targetJson = fileIn(entries, "anchor-target-checkpoint.json");
+        if (targetJson != null) {
+            try {
+                Object parsed = Json.parse(new String(targetJson, StandardCharsets.UTF_8));
+                root = parsed instanceof Map<?, ?> document ? document.get("merkleRoot") : null;
+            } catch (Json.NotCanonicalisable malformed) {
+                root = null;
+            }
+        }
+        if (!(root instanceof String merkleRoot)) {
             checks.add(Outcome.Check.absent("ers data object",
-                    "the package carries no anchor-target-checkpoint.c14n, so what the record "
+                    "the package carries no anchor target Merkle root, so what the record "
                             + "should cover is not in the package"));
         } else {
-            String wanted = Canonical.hex(Canonical.sha256(c14n));
+            String wanted = merkleRoot;
             List<String> found = firstHashList(record);
             if (found == null) {
                 checks.add(Outcome.Check.absent("ers data object",

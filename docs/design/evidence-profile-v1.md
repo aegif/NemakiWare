@@ -526,12 +526,21 @@ checkpoint の root を commit している」であって、その誰かを信�
 | check | PASS の条件 |
 |---|---|
 | `ERS_PARSE` | RFC 4998 `EvidenceRecord`（version 1）として読める |
-| `ERS_DATA_OBJECT` | 最初の hash list が `SHA-256(anchor-target-checkpoint.c14n)` を含む |
+| `ERS_DATA_OBJECT` | 最初の hash list が **anchor target の `merkleRoot`**（の bytes）を含む |
 | `ERS_CHAIN` | 各 ArchiveTimeStamp の imprint が前段を覆う |
 | `ERS_ALGORITHMS` | 宣言された digest algorithm を verifier が**知っている** |
 
-- **data object は `anchor-target-checkpoint.c14n` のバイト列**であり、payload ではない。
-  ERS が覆っているのは checkpoint であって、個別文書の長期署名ではない。
+- **data object は anchor target の `merkleRoot` の bytes** であり、payload ではない。
+  ERS の最初の Archive Timestamp は **その checkpoint を anchor した RFC 3161 token そのもの**で、
+  その token が覆っているのは root の bytes（§11・§12 と同じ規約）。ERS が覆っているのは
+  checkpoint の**その root**であって、個別文書の長期署名ではない。
+
+  > **2026-09-22 の訂正。** この行は当初 `SHA-256(anchor-target-checkpoint.c14n)` と書いていた。
+  > **どの token もその値を覆わない**ので、規定どおりに実装した verifier は本物の record を
+  > 必ず拒否する。v1 は凍結済み（§1.1）だが、**この版は ERS を 1 本も出荷していない**
+  > （製品側が同じ食い違いで record を作れなかった）ため、v1 の package で壊れるものは無い。
+  > **誤りの訂正であって、contract の変更ではない** — v2 を要する変更との違いは、
+  > 「これまでに出荷した package の読み方が変わるかどうか」で判断する。
 - **未知の algorithm は `INDETERMINATE`** であり、「不一致」と呼んではならない。
   計算できなかったことを、計算して違ったことにする形。
 - renewal は**前段を覆っていなければ `FAILED`**。覆っているかを調べずに

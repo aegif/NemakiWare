@@ -152,6 +152,49 @@ class PackageIntegrityIsCheckedNotAssumedTest {
     }
 
     @Test
+    @DisplayName("two fixities in ONE PREMIS are ambiguous too — reading the first was a free choice")
+    void twoFixitiesInOnePremisAreAmbiguous(@TempDir Path tmp) throws Exception {
+        // between() took the first of each element, so a PREMIS whose first digest matched and
+        // whose second contradicted it passed. The writer produces one; an adversary's package
+        // is not the writer's (Codex, fourth review, P1).
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "metadata/preservation/premis.xml",
+                premis(sha256(payload), "SHA-256").replace("</premis:premis>",
+                        "<premis:fixity><premis:messageDigestAlgorithm>SHA-256"
+                                + "</premis:messageDigestAlgorithm><premis:messageDigest>"
+                                + "ff".repeat(32) + "</premis:messageDigest></premis:fixity>"
+                                + "</premis:premis>"));
+
+        Path sip = zip(tmp, "two-fixities.zip", entries);
+        Outcome.Check fixity = checkNamed(
+                PackageIntegrity.check(PackageReader.open(sip).entries()), "payload fixity");
+        assertEquals(Outcome.UNAVAILABLE, fixity.outcome(),
+                "a PREMIS with two message digests was read by taking the first: " + fixity.detail());
+        assertEquals("AMBIGUOUS_PREMIS", fixity.reasonCode());
+    }
+
+    @Test
+    @DisplayName("a digest with no algorithm stated is NOT_PRESENT — SHA-256 was an assumption")
+    void aDigestWithNoAlgorithmIsNotPresent(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "metadata/preservation/premis.xml",
+                "<premis:premis><premis:object><premis:objectCharacteristics><premis:fixity>"
+                        + "<premis:messageDigest>" + sha256(payload) + "</premis:messageDigest>"
+                        + "</premis:fixity></premis:objectCharacteristics></premis:object>"
+                        + "</premis:premis>");
+
+        Path sip = zip(tmp, "no-algorithm.zip", entries);
+        Outcome.Check fixity = checkNamed(
+                PackageIntegrity.check(PackageReader.open(sip).entries()), "payload fixity");
+        assertEquals(Outcome.NOT_PRESENT, fixity.outcome(),
+                "a digest with no stated algorithm was checked as SHA-256, which is a guess "
+                        + "that happens to be right for packages this product writes: "
+                        + fixity.detail());
+    }
+
+    @Test
     @DisplayName("a file the METS does not name is a failure, not an extra")
     void anUnnamedPayloadFails(@TempDir Path tmp) throws Exception {
         Map<String, String> entries = goodPackage("the minutes");

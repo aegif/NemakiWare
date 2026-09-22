@@ -316,6 +316,90 @@ class Rfc3161AnchorTargetTest {
             return startTsaGenerating(withAccuracy);
         }
 
+        /**
+         * What the TSA is actually asked to timestamp.
+         *
+         * <p>The Merkle root is already a SHA-256 digest, so {@code anchor()} decodes it and
+         * sends the 32 bytes: {@code hex(messageImprint) == merkleRoot}. Every verifier
+         * comparison in this product and in the independent verifier rests on that, and until
+         * the fourth review NOTHING measured the request — {@code decodeSha256Hex} was tested
+         * in isolation, and the stub TSA echoed whatever it was given, so a second hash added
+         * here would have left every test and every control green while making the shipped
+         * tokens unverifiable (both reviewers, 2026-09-22).
+         */
+        @Test
+        @DisplayName("the request carries the root's BYTES — the writer's side of the imprint rule")
+        void theRequestCarriesTheRootsBytes() throws Exception {
+            java.util.concurrent.atomic.AtomicReference<String> imprintSeen =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            String url = startTsaRecording(imprintSeen);
+
+            AnchorReceipt receipt = new Rfc3161AnchorTarget(url, null, null).anchor(DIGEST);
+
+            assertEquals(AnchorStatus.CONFIRMED, receipt.status(), receipt.failureReason());
+            assertEquals(DIGEST, imprintSeen.get(),
+                    "the TSA was asked to timestamp " + imprintSeen.get() + " and the digest "
+                            + "handed to anchor() was " + DIGEST + ". A verifier compares a "
+                            + "token's imprint with the checkpoint's root, so anything else "
+                            + "here makes every token this deployment produces unverifiable");
+        }
+
+        /** The success stub, with the imprint it was asked for recorded. */
+        private String startTsaRecording(
+                java.util.concurrent.atomic.AtomicReference<String> imprintSeen) throws Exception {
+            java.security.KeyPairGenerator kpg = java.security.KeyPairGenerator.getInstance("RSA");
+            kpg.initialize(2048);
+            java.security.KeyPair kp = kpg.generateKeyPair();
+            org.bouncycastle.asn1.x500.X500Name subject =
+                    new org.bouncycastle.asn1.x500.X500Name("CN=Recording TSA");
+            java.util.Date from = new java.util.Date(System.currentTimeMillis() - 86_400_000L);
+            java.util.Date to = new java.util.Date(System.currentTimeMillis() + 86_400_000L);
+            org.bouncycastle.cert.X509v3CertificateBuilder builder =
+                    new org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder(
+                            subject, BigInteger.TEN, from, to, subject, kp.getPublic());
+            builder.addExtension(org.bouncycastle.asn1.x509.Extension.extendedKeyUsage, true,
+                    new org.bouncycastle.asn1.x509.ExtendedKeyUsage(
+                            org.bouncycastle.asn1.x509.KeyPurposeId.id_kp_timeStamping));
+            java.security.cert.X509Certificate cert =
+                    new org.bouncycastle.cert.jcajce.JcaX509CertificateConverter().getCertificate(
+                            builder.build(new org.bouncycastle.operator.jcajce
+                                    .JcaContentSignerBuilder("SHA256withRSA").build(kp.getPrivate())));
+            org.bouncycastle.tsp.TimeStampTokenGenerator tokenGen =
+                    new org.bouncycastle.tsp.TimeStampTokenGenerator(
+                            new org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoGeneratorBuilder()
+                                    .build("SHA256withRSA", kp.getPrivate(), cert),
+                            new org.bouncycastle.operator.bc.BcDigestCalculatorProvider()
+                                    .get(new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
+                                            new org.bouncycastle.asn1.ASN1ObjectIdentifier(
+                                                    "2.16.840.1.101.3.4.2.1"))),
+                            new org.bouncycastle.asn1.ASN1ObjectIdentifier("1.2.3.4.1"));
+            tokenGen.addCertificates(new org.bouncycastle.cert.jcajce.JcaCertStore(
+                    java.util.List.of(cert)));
+            tokenGen.setAccuracySeconds(1);
+            org.bouncycastle.tsp.TimeStampResponseGenerator responseGen =
+                    new org.bouncycastle.tsp.TimeStampResponseGenerator(
+                            tokenGen, java.util.Set.of("2.16.840.1.101.3.4.2.1"));
+            return startServer("/tsr", exchange -> {
+                byte[] body;
+                try {
+                    TimeStampRequest request =
+                            new TimeStampRequest(exchange.getRequestBody().readAllBytes());
+                    imprintSeen.set(java.util.HexFormat.of()
+                            .formatHex(request.getMessageImprintDigest()));
+                    body = responseGen.generate(request, BigInteger.valueOf(99), new Date())
+                            .getEncoded();
+                } catch (Exception e) {
+                    body = new byte[0];
+                }
+                exchange.getResponseHeaders().add("Content-Type",
+                        Rfc3161AnchorTarget.RESPONSE_CONTENT_TYPE);
+                exchange.sendResponseHeaders(200, body.length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(body);
+                }
+            });
+        }
+
         /** Serve tokens signed by the given key, presenting the given certificates. */
         private String startTsaWith(java.security.KeyPair kp,
                 java.security.cert.X509Certificate cert,

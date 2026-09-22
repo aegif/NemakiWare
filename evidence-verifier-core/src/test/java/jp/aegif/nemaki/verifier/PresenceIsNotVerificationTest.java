@@ -103,13 +103,30 @@ class PresenceIsNotVerificationTest {
         return new DERSequence(record).getEncoded();
     }
 
+    /** A Merkle root the way the ledger writes one. */
+    private static final String ROOT =
+            "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+
+    /** An anchor target document carrying {@code root}. */
+    private static byte[] anchorTarget(String root) {
+        return ("{\"domain\":\"record-content\",\"merkleRoot\":\"" + root + "\"}")
+                .getBytes(StandardCharsets.UTF_8);
+    }
+
+    /**
+     * The data object is the anchor target's MERKLE ROOT, because the record's first Archive
+     * Timestamp is the RFC 3161 token that anchored it and that token is over the root's bytes.
+     * This fixture asked for {@code SHA-256(c14n)} — a value no token in this system covers —
+     * which is why it agreed with a verifier that looked for the same wrong thing (R70,
+     * 2026-09-22).
+     */
     @Test
-    @DisplayName("an evidence record covering the anchor target's canonical bytes passes")
-    void anErsOverTheCheckpointPasses() throws Exception {
-        byte[] c14n = Canonical.encode(Map.of("domain", "record-content"));
+    @DisplayName("an evidence record covering the anchor target's Merkle root passes")
+    void anEvidenceRecordOverTheAnchorTargetPasses() throws Exception {
         Map<String, byte[]> entries = new LinkedHashMap<>();
-        entries.put(DIR + "anchor-target-checkpoint.c14n", c14n);
-        entries.put(DIR + "anchors/ers.der", ersOver(Canonical.sha256(c14n), 1));
+        entries.put(DIR + "anchor-target-checkpoint.json", anchorTarget(ROOT));
+        entries.put(DIR + "anchors/ers.der",
+                ersOver(java.util.HexFormat.of().parseHex(ROOT), 1));
 
         List<Outcome.Check> checks = LongTermErs.check(entries);
 
@@ -120,9 +137,8 @@ class PresenceIsNotVerificationTest {
     @Test
     @DisplayName("an evidence record covering something else FAILS, however well formed")
     void anErsOverSomethingElseFails() throws Exception {
-        byte[] c14n = Canonical.encode(Map.of("domain", "record-content"));
         Map<String, byte[]> entries = new LinkedHashMap<>();
-        entries.put(DIR + "anchor-target-checkpoint.c14n", c14n);
+        entries.put(DIR + "anchor-target-checkpoint.json", anchorTarget(ROOT));
         entries.put(DIR + "anchors/ers.der",
                 ersOver(Canonical.sha256("something else".getBytes(StandardCharsets.UTF_8)), 1));
 

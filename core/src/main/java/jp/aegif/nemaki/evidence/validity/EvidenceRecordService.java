@@ -174,19 +174,29 @@ public class EvidenceRecordService {
                     + "record's timestamp is an RFC 3161 token, and this is a statement about "
                     + "what has been anchored — not about the records the checkpoint covers");
         }
+        // THE MERKLE ROOT, because that is what this repository anchors: AnchorService calls
+        // receiptFrom(target, checkpoint.merkleRoot()) and the token's imprint is that root's
+        // bytes. An evidence record's first Archive Timestamp IS that token, so the only data
+        // object it can cover is the root.
+        //
+        // This asked for the CHECKPOINT HASH until 2026-09-22. The two are different by
+        // construction — one hashes the checkpoint's fields, the other is a field — so the
+        // comparison below never held and this deployment built NO evidence record at all,
+        // while writing "the token is about a different value" into a package that left the
+        // organisation. Two reviewers found it independently (residual R70).
         byte[] dataObjectHash;
         try {
-            dataObjectHash = HexFormat.of().parseHex(checkpoint.checkpointHash());
+            dataObjectHash = HexFormat.of().parseHex(checkpoint.merkleRoot());
         } catch (RuntimeException e) {
-            return absent("the checkpoint hash is not a hex digest, so it cannot be the message "
+            return absent("the Merkle root is not a hex digest, so it cannot be the message "
                     + "imprint of an RFC 3161 token");
         }
         // The receipt's FIELD first, because a mismatch there is the cheap diagnosis.
-        if (!checkpoint.checkpointHash().equalsIgnoreCase(token.anchoredDigest())) {
+        if (!checkpoint.merkleRoot().equalsIgnoreCase(token.anchoredDigest())) {
             return absent("the confirmed token for checkpoint " + checkpoint.toSequence()
                     + " is recorded as being over " + token.anchoredDigest() + ", and this "
-                    + "checkpoint's hash is " + checkpoint.checkpointHash() + ". A record built "
-                    + "from it would be about a different value");
+                    + "checkpoint's Merkle root is " + checkpoint.merkleRoot() + ". A record "
+                    + "built from it would be about a different value");
         }
         // Then the TOKEN ITSELF. The field is this repository's own note about what it asked
         // for; the imprint is what the authority actually signed over, and they are two facts.
@@ -207,7 +217,7 @@ public class EvidenceRecordService {
         if (!java.util.Arrays.equals(imprint, dataObjectHash)) {
             return absent("the confirmed token for checkpoint " + checkpoint.toSequence()
                     + " was SIGNED over " + HexFormat.of().formatHex(imprint) + ", not over "
-                    + "this checkpoint's hash. The receipt says otherwise; the token is the one "
+                    + "this checkpoint's Merkle root. The receipt says otherwise; the token is the one "
                     + "that counts, and a record built from it would verify internally while "
                     + "being about a different value");
         }

@@ -299,12 +299,20 @@ public final class RecordLedger {
             // Present STRINGs, as §5.3 requires of both documents. Objects.equals alone let
             // two absent fields — or two nulls — agree, so a prior with no identity at all
             // passed as this record's (Codex, third review, P2).
+            // §5: a MISSING required field makes the check NOT_PRESENT; a field of the wrong
+            // TYPE is a finding. The first version failed both, which reported "these are
+            // different records" about a package that simply did not carry the field
+            // (Codex, fourth review, P2).
+            if (!statement.containsKey(field) || !priorStatement.containsKey(field)) {
+                return Outcome.Check.absent(name, "the transition or its prior omits " + field
+                        + ", so whether they are about the same record cannot be checked");
+            }
             Object here = statement.get(field);
             Object there = priorStatement.get(field);
             if (!(here instanceof String mine) || !(there instanceof String theirs)) {
                 return Outcome.Check.failed(name, "the transition's " + field + " is " + here
                         + " and the prior statement's is " + there + "; §5.3 requires both to "
-                        + "be text, and two absences do not make them the same record");
+                        + "be text");
             }
             if (!mine.equals(theirs)) {
                 return Outcome.Check.failed(name, "the prior statement's " + field + " is "

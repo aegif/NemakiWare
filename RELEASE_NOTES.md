@@ -789,7 +789,8 @@ java -jar evidence-verifier-cli.jar verify <package.zip> --profile RECORD_LEDGER
 
 **この版で `VERIFIED` に到達できるのは `PACKAGE_INTEGRITY_V1`・`RECORD_LEDGER_V1`・
 `ANCHORED_CHECKPOINT_V1` までです。** その上 (`TRUSTED_RFC3161_V1` /
-`ANCHORED_OTS_V1` / `LONG_TERM_ERS_V1`) は**必ず exit 3** になります — 失効材料を
+`ANCHORED_OTS_V1` / `LONG_TERM_ERS_V1`) は **`VERIFIED` に到達できません** — 整合した package なら
+exit 3 で、**食い違いが見つかれば exit 2** です (`FAILED` は profile を問わず優先されます) — 失効材料を
 評価しない、OpenTimestamps の block header を持たない、といった**この版の限界**が
 必須検査に残っているためで、package の欠陥ではありません。詳細は
 [独立 verifier のリリース手順](docs/operations/evidence-verifier-release.md)。

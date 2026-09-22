@@ -166,6 +166,18 @@ public final class AnchoredCheckpoint {
                     "the package carries no covering checkpoint or no anchor target, so there "
                             + "is nothing to check the chain's ends against");
         }
+        // The documents are recomputed FIRST. Comparing a stated hash with a key that is not
+        // there reports "the walk does not begin where the entry was proved" for a document
+        // that simply omits the field — §5 calls that NOT_PRESENT, and the recompute below
+        // says so (Codex, fourth review, P2).
+        Outcome.Check coveringSelf = selfConsistent("chain ends", covering, "covering checkpoint");
+        if (coveringSelf != null) {
+            return coveringSelf;
+        }
+        Outcome.Check targetSelf = selfConsistent("chain ends", target, "anchor target checkpoint");
+        if (targetSelf != null) {
+            return targetSelf;
+        }
         Object first = links.get(0).get("checkpointHash");
         Object last = links.get(links.size() - 1).get("checkpointHash");
         if (!java.util.Objects.equals(first, covering.get("checkpointHash"))) {
@@ -179,20 +191,6 @@ public final class AnchoredCheckpoint {
                     "the chain ends at " + last + " and the anchor target is "
                             + target.get("checkpointHash") + ", so the walk does not reach what "
                             + "was anchored");
-        }
-        // The two DOCUMENTS are recomputed too, not only their stated hashes. The chain's own
-        // links are recomputed by chainRecompute; covering-checkpoint.json and
-        // anchor-target-checkpoint.json are separate files, and comparing only their
-        // checkpointHash field leaves their other fields free: a target carrying the chain's
-        // hash and SOMEONE ELSE'S merkleRoot passed every check while the anchor committed to
-        // a root the chain never reached (Codex, third review, P1).
-        Outcome.Check coveringSelf = selfConsistent("chain ends", covering, "covering checkpoint");
-        if (coveringSelf != null) {
-            return coveringSelf;
-        }
-        Outcome.Check targetSelf = selfConsistent("chain ends", target, "anchor target checkpoint");
-        if (targetSelf != null) {
-            return targetSelf;
         }
         return Outcome.Check.passed("chain ends");
     }
@@ -223,8 +221,12 @@ public final class AnchoredCheckpoint {
      * The anchor material commits to the anchor target's Merkle root.
      *
      * <p>Reads the manifest's record of what each rung holds, then READS the material it can:
-     * an RFC 3161 token is parsed and its imprint compared with the anchor target's Merkle root
-     * (SHA-256 over the root's UTF-8 bytes, which is what the product anchors). Until 2026-09-22
+     * an RFC 3161 token is parsed and its imprint compared with the CHAIN'S last Merkle root.
+     * The imprint IS that root — the root is already a SHA-256 digest and the product
+     * timestamps its bytes — and the token's own signature is verified against the certificate
+     * it carries. This javadoc said "SHA-256 over the root's UTF-8 bytes, which is what the
+     * product anchors" until both reviewers pointed out that the code below had stopped saying
+     * so (2026-09-22). Until 2026-09-22
      * the material was only checked for presence and the outcome was always UNAVAILABLE
      * ({@code ANCHOR_NOT_PARSED}), so no package could reach VERIFIED at P2 (release condition
      * 3). OTS and ERS material stays unread here — their own profiles read them — and a package
@@ -336,18 +338,28 @@ public final class AnchoredCheckpoint {
                 break;
             }
             if (signer == null) {
-                return Outcome.Check.unavailable("anchor commits root", "CERTIFICATE_UNREADABLE",
+                // NOT_PRESENT, the same answer P3 gives the same token: the certificate is
+                // absent, which is a fact about the package, not a failure to read one
+                // (Codex, fourth review, P2 — the two profiles disagreed about one input).
+                return Outcome.Check.absent("anchor commits root",
                         path + " carries no signer certificate, so its signature cannot be "
-                                + "verified from the package alone and what it commits to is "
-                                + "not established");
+                                + "verified from the package alone");
             }
             try {
                 token.validate(new org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoVerifierBuilder()
                         .build(signer));
-            } catch (Exception invalid) {
+            } catch (org.bouncycastle.tsp.TSPException invalid) {
                 return Outcome.Check.failed("anchor commits root",
                         path + "'s signature does not verify against its own signer "
                                 + "certificate: " + invalid.getMessage());
+            } catch (Exception cannotAsk) {
+                // A signature algorithm this JVM has no provider for is one this verifier has
+                // NOT checked. Reporting it as a bad signature names a defect nobody found —
+                // and the CLI registers no BouncyCastle provider, so this is reachable
+                // (subagent, fourth review, P2).
+                return Outcome.Check.unavailable("anchor commits root", "UNKNOWN_ALGORITHM",
+                        path + "'s signature could not be checked by this JVM: "
+                                + cannotAsk.getMessage());
             }
             committing.add(path);
         }

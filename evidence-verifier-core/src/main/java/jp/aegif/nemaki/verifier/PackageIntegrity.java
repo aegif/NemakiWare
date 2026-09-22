@@ -130,6 +130,16 @@ public final class PackageIntegrity {
                             + "the payload");
         }
         String premis = new String(entries.get(premisPaths.get(0)), StandardCharsets.UTF_8);
+        // ONE fixity, and the algorithm stated. Reading the first of each let a PREMIS carry a
+        // matching digest followed by a contradicting one, and an omitted algorithm be treated
+        // as SHA-256 — a package the writer never produces, which is not a reason to accept it
+        // from someone else (Codex, fourth review, P1).
+        int digests = occurrences(premis, "<premis:messageDigest>");
+        if (digests > 1) {
+            return Outcome.Check.unavailable("payload fixity", "AMBIGUOUS_PREMIS",
+                    "the PREMIS records " + digests + " message digests and this verifier "
+                            + "cannot tell which describes the payload");
+        }
         String recorded = between(premis, "<premis:messageDigest>", "</premis:messageDigest>");
         if (recorded == null || recorded.isBlank()) {
             return Outcome.Check.absent("payload fixity",
@@ -138,7 +148,12 @@ public final class PackageIntegrity {
         }
         String algorithm = between(premis, "<premis:messageDigestAlgorithm>",
                 "</premis:messageDigestAlgorithm>");
-        if (algorithm != null && !"SHA-256".equalsIgnoreCase(algorithm.trim())) {
+        if (algorithm == null || algorithm.isBlank()) {
+            return Outcome.Check.absent("payload fixity",
+                    "PREMIS records a digest and no algorithm, so which function produced it "
+                            + "is not stated and nothing here can recompute it");
+        }
+        if (!"SHA-256".equalsIgnoreCase(algorithm.trim())) {
             // UNSUPPORTED, not FAILED. A digest this verifier cannot compute is one it has not
             // checked; calling it a mismatch would report tampering that was never found.
             return Outcome.Check.unavailable("payload fixity", "UNKNOWN_ALGORITHM",
@@ -265,6 +280,14 @@ public final class PackageIntegrity {
             }
         }
         return paths;
+    }
+
+    private static int occurrences(String text, String needle) {
+        int count = 0;
+        for (int at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + 1)) {
+            count++;
+        }
+        return count;
     }
 
     private static String between(String text, String open, String close) {

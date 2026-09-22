@@ -164,8 +164,11 @@ class TheReleaseNotesSayBothHalvesTest {
                 "`TRUSTED_RFC3161_V1`",
                 "the profiles above P2 always exit 3 in this version, and a reader who does not "
                         + "know that tunes a trust profile forever",
-                "**必ず exit 3**",
-                "the same fact as a value the reader will actually see",
+                // "always exit 3" was itself too strong: a FAILED finding at any profile is
+                // exit 2 (Codex, fourth review). The claim to protect is the corrected one.
+                "**食い違いが見つかれば exit 2**",
+                "a package whose token is broken exits 2 even at P3+, and a caller told to "
+                        + "expect only 3 there treats that as the verifier misbehaving",
                 "認定タイムスタンプ事業者かどうかを判定しません",
                 "accreditation is a fact of contract and registry, and the product judges none "
                         + "of it",

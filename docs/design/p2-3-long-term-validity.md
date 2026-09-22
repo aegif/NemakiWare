@@ -253,8 +253,13 @@ RFC 4998 §4.3 は検証器に **`h = H(d)` を計算させ、最初のハッシ
 リストに `C` を入れると、検証器は `H(C)` を探して `C` を見つけ、
 **token を見る前に**落とす。
 
-正しくはもっと単純だった。`C` は既に `H(checkpoint の正規化バイト列)` であり、
+正しくはもっと単純だった。`C` は既に digest であり、
 本製品の RFC 3161 アンカーは **message imprint がちょうど `C` の token** である。
+
+> **2026-09-22 の訂正。** ここで `C` と書いていたものを「checkpoint の正規化バイト列の hash」
+> と説明していたが、**製品が anchor するのは `checkpoint.merkleRoot()`**（`AnchorService`）で、
+> `C` はその **root** である。正規化バイト列の hash を覆う token は存在しない。
+> 残件 R70 として 2 名のレビューアが独立に指摘し、製品・仕様・verifier の 3 つを root に揃えた。
 つまり data object はその正規化バイト列で、`h = C`。そして **reducedHashtree は
 要らない** — RFC 4998 §4.2 が明示的に許している:「An Archive Timestamp may consist
 ... only of a timestamp with no hash value lists」。§4.3 は
@@ -368,7 +373,7 @@ boolean と件数しか無かったので、**呼び手が新アルゴリズム�
 ### 新しくタイムスタンプは取らない
 
 §8 の帰結。checkpoint hash は **checkpoint の正規化バイト列の SHA-256** であり、
-本製品の RFC 3161 アンカーは **message imprint がちょうどその値の token** である。
+本製品の RFC 3161 アンカーは **message imprint がちょうどその値（= `merkleRoot` の bytes）の token** である。
 だから evidence record は**既に在るものの組み立て**であって、
 2 度目の TSA 往復も 2 つ目のアンカーも要らず、**新しい主張も生まれない**。
 

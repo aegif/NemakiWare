@@ -105,8 +105,16 @@ class EvidenceRecordServiceTest {
         return response.getTimeStampToken().getEncoded();
     }
 
+    /** A Merkle root the way the ledger writes one. */
+    private static final String ROOT =
+            "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+
     private static EvidenceCheckpoint checkpoint() {
-        return EvidenceCheckpoint.of(DOMAIN, 0, 4, "mh1:root", null, "2026-08-26T00:00:00Z");
+        // A real Merkle root: 64 lowercase hex characters, because that is what the ledger
+        // writes and what AnchorService hands to the TSA. "mh1:root" was not even hex, so
+        // every test here ran against a checkpoint this product cannot produce (measured when
+        // the data object moved to the root, R70).
+        return EvidenceCheckpoint.of(DOMAIN, 0, 4, ROOT, null, "2026-08-26T00:00:00Z");
     }
 
     private static AnchorReceipt confirmedOver(String digest, byte[] token) throws Exception {
@@ -137,9 +145,9 @@ class EvidenceRecordServiceTest {
     @DisplayName("a confirmed RFC 3161 anchor becomes an evidence record that verifies")
     void anAnchorBecomesAnEvidenceRecord() throws Exception {
         EvidenceCheckpoint checkpoint = checkpoint();
-        byte[] imprint = HexFormat.of().parseHex(checkpoint.checkpointHash());
+        byte[] imprint = HexFormat.of().parseHex(checkpoint.merkleRoot());
         EvidenceRecordService service = serviceWith(checkpoint,
-                List.of(confirmedOver(checkpoint.checkpointHash(), tokenOver(imprint))));
+                List.of(confirmedOver(checkpoint.merkleRoot(), tokenOver(imprint))));
 
         EvidenceRecordService.Built built = service.latest(DOMAIN);
 
@@ -175,8 +183,8 @@ class EvidenceRecordServiceTest {
         // "checkpoint" while its proof covers the merkle root — a value also to hand at
         // anchoring time — assembles cleanly and is about something else.
         EvidenceCheckpoint checkpoint = checkpoint();
-        byte[] merkleRoot = MessageDigest.getInstance("SHA-256").digest("mh1:root".getBytes());
-        AnchorReceipt lying = confirmedOver(checkpoint.checkpointHash(), tokenOver(merkleRoot));
+        byte[] somethingElse = MessageDigest.getInstance("SHA-256").digest("another value".getBytes());
+        AnchorReceipt lying = confirmedOver(checkpoint.merkleRoot(), tokenOver(somethingElse));
 
         EvidenceRecordService.Built built =
                 serviceWith(checkpoint, List.of(lying)).latest(DOMAIN);
@@ -193,7 +201,7 @@ class EvidenceRecordServiceTest {
     @DisplayName("an unreadable token is not built from, and is not called wrong")
     void anUnreadableTokenIsNotAFinding() throws Exception {
         EvidenceCheckpoint checkpoint = checkpoint();
-        AnchorReceipt garbage = confirmedOver(checkpoint.checkpointHash(),
+        AnchorReceipt garbage = confirmedOver(checkpoint.merkleRoot(),
                 "this is not a token".getBytes());
 
         EvidenceRecordService.Built built =
@@ -210,9 +218,9 @@ class EvidenceRecordServiceTest {
         // goes to another organisation, and "it came out of the exporter" is not a reason for
         // them to accept it.
         EvidenceCheckpoint checkpoint = checkpoint();
-        byte[] imprint = HexFormat.of().parseHex(checkpoint.checkpointHash());
+        byte[] imprint = HexFormat.of().parseHex(checkpoint.merkleRoot());
         EvidenceRecordService.Built built = serviceWith(checkpoint,
-                List.of(confirmedOver(checkpoint.checkpointHash(), tokenOver(imprint))))
+                List.of(confirmedOver(checkpoint.merkleRoot(), tokenOver(imprint))))
                 .latest(DOMAIN);
 
         assertTrue(built.present(), built.unavailable());
@@ -228,11 +236,11 @@ class EvidenceRecordServiceTest {
         // assembled record still fails §4.2 step 5, because the tree and the timestamp are not
         // about the same algorithm. Without the read-back this ships.
         EvidenceCheckpoint checkpoint = checkpoint();
-        byte[] imprint = HexFormat.of().parseHex(checkpoint.checkpointHash());
+        byte[] imprint = HexFormat.of().parseHex(checkpoint.merkleRoot());
         // SHA3-256: also 32 bytes, so the imprint BYTES still equal the checkpoint hash and
         // every earlier check passes. The record declares SHA-256, and §4.2 step 5 says the
         // timestamp's algorithm must be the tree's — so the assembled record does not verify.
-        AnchorReceipt mislabelled = confirmedOver(checkpoint.checkpointHash(),
+        AnchorReceipt mislabelled = confirmedOver(checkpoint.merkleRoot(),
                 tokenOverWithAlgorithm(imprint, "2.16.840.1.101.3.4.2.8"));
 
         EvidenceRecordService.Built built =
