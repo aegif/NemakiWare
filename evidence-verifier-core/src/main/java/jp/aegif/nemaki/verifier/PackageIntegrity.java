@@ -522,17 +522,16 @@ public final class PackageIntegrity {
                     "the package presents " + premisPaths.get(0) + " as PREMIS and this "
                             + "verifier could not read it as XML: " + fixity.unreadable());
         }
-        if (fixity.mostDigestsInOneObject() > 1) {
-            // §9 on its own terms: ONE premis:object describing one file with TWO digests is
-            // PREMIS contradicting itself, and seeing that needs no object-to-file linkage.
-            // Withdrawing the count rule took this with it; it comes back separately (subagent,
-            // ninth review, P2). The twin in core's SipVerifier.payloadDigestCheck answers the
-            // same — it did NOT for one batch, and the CLI and the product's own /verify gave
-            // opposite answers about the same zip.
+        if (fixity.contradiction() != null) {
+            // §9 on its own terms: ONE premis:object recording two DIFFERENT digests under ONE
+            // algorithm is PREMIS contradicting itself, and seeing that needs no object-to-file
+            // linkage. Two digests under two algorithms is not that — premis:fixity is
+            // repeatable exactly so one file can carry an MD5 and a SHA-256 (subagent, tenth
+            // review, P1). The twin in core's SipVerifier.payloadDigestCheck answers the same.
             return Outcome.Check.failed("payload fixity",
-                    "one premis:object records " + fixity.mostDigestsInOneObject()
-                            + " message digests for the file it describes, so the PREMIS "
-                            + "contradicts itself about that file");
+                    "one premis:object records two different " + fixity.contradiction()
+                            + " digests for the file it describes, so the PREMIS contradicts "
+                            + "itself about that file");
         }
         if (fixity.digests().size() > 1) {
             // UNAVAILABLE, and NOT a count comparison.
@@ -611,10 +610,23 @@ public final class PackageIntegrity {
      * committed to — which is how an addition travels inside a package that verifies.
      */
     static Outcome.Check metsClosure(Map<String, byte[]> entries) {
-        List<String> metsPaths = packageLevel(pathsEndingWith(entries, "METS.xml"));
+        // EVERY non-payload METS, not just the package-level one. packageLevel() exists to stop
+        // a representation's own PREMIS being counted as a second PACKAGE PREMIS; applied to
+        // METS it DROPPED representations/<id>/METS.xml — and in CSIP that is the METS that
+        // names the payload. So `named` never contained the payload, the reverse direction
+        // accused the package of carrying "payload the METS does not name", and every package
+        // this product writes answered FAILED, exit 2, from its own verifier (subagent, tenth
+        // review, measured end to end with the real exporter).
+        List<String> metsPaths = pathsEndingWith(entries, "METS.xml");
         if (metsPaths.isEmpty()) {
             return Outcome.Check.absent("mets closure", "the package carries no METS");
         }
+        // Each href stays PAIRED with the METS that wrote it. Collecting them into one list and
+        // then trying each against every METS directory let a reference written by one METS be
+        // resolved by another one's neighbourhood: a package missing the file its root METS
+        // names answered PASSED because an unrelated METS beside an unrelated copy happened to
+        // sit one directory over (Codex, tenth review, P1).
+        Map<String, List<String>> namedBy = new LinkedHashMap<>();
         List<String> named = new ArrayList<>();
         for (String metsPath : metsPaths) {
             String mets = new String(entries.get(metsPath), StandardCharsets.UTF_8);
@@ -626,6 +638,7 @@ public final class PackageIntegrity {
                         "the package presents " + metsPath + " as a METS and this verifier "
                                 + "could not read it as XML, so what it names is unknown");
             }
+            namedBy.put(metsPath, hrefs);
             named.addAll(hrefs);
         }
         if (named.isEmpty()) {
@@ -633,10 +646,19 @@ public final class PackageIntegrity {
                     "the METS names no files, so there is nothing to close over");
         }
 
+        // BOTH directions read one resolution. The reverse one used to ask whether some entry's
+        // path ENDED with some href — a different question from the one the forward direction
+        // asked, so the two halves of this check could disagree about the same reference.
         List<String> missing = new ArrayList<>();
-        for (String href : named) {
-            if (!resolves(entries, metsPaths, href)) {
-                missing.add(href);
+        java.util.Set<String> claimed = new java.util.LinkedHashSet<>();
+        for (Map.Entry<String, List<String>> wrote : namedBy.entrySet()) {
+            for (String href : wrote.getValue()) {
+                String entry = resolve(entries, wrote.getKey(), href);
+                if (entry == null) {
+                    missing.add(wrote.getKey() + " -> " + href);
+                } else {
+                    claimed.add(entry);
+                }
             }
         }
         if (!missing.isEmpty()) {
@@ -647,8 +669,7 @@ public final class PackageIntegrity {
 
         List<String> unnamed = new ArrayList<>();
         for (String path : payloadsIn(entries).keySet()) {
-            boolean claimed = named.stream().anyMatch(href -> path.endsWith(trimLeading(href)));
-            if (!claimed) {
+            if (!claimed.contains(path)) {
                 unnamed.add(path);
             }
         }
@@ -676,18 +697,55 @@ public final class PackageIntegrity {
      * <p>Payload the METS names in the ordinary way still resolves: it is at
      * {@code <mets dir>/representations/…/data/…}, which the exact arm finds.
      */
-    private static boolean resolves(Map<String, byte[]> entries, List<String> metsPaths,
-            String href) {
+    /**
+     * The package entry this METS's href names, or null.
+     *
+     * <p>Two bases, both exact after dot segments are removed (RFC 3986 §5.2.4): the METS's OWN
+     * directory, which is what a relative reference means, and the zip root, which is how some
+     * producers write the same path.
+     *
+     * <p><b>Not a suffix match.</b> "any entry whose path ends with this href" resolved one
+     * METS's reference in ANOTHER METS's neighbourhood, so a package missing the file its root
+     * METS names answered PASSED because an unrelated copy sat one directory over (Codex, tenth
+     * review, P1). It also let a copy INSIDE the payload stand in for a metadata file the
+     * package did not carry, which is the hole {@code aPayloadCopyDoesNotCloseTheMets} locks —
+     * both are the same looseness, and one rule closes both.
+     */
+    private static String resolve(Map<String, byte[]> entries, String metsPath, String href) {
         String wanted = trimLeading(href);
-        for (String metsPath : metsPaths) {
-            int slash = metsPath.lastIndexOf('/');
-            String directory = slash < 0 ? "" : metsPath.substring(0, slash + 1);
-            if (entries.containsKey(directory + wanted)) {
-                return true;
-            }
+        int slash = metsPath.lastIndexOf('/');
+        String directory = slash < 0 ? "" : metsPath.substring(0, slash + 1);
+        String besideTheMets = withoutDotSegments(directory + wanted);
+        if (entries.containsKey(besideTheMets)) {
+            return besideTheMets;
         }
-        return entries.keySet().stream()
-                .anyMatch(path -> !isPayload(path) && path.endsWith(wanted));
+        String fromTheRoot = withoutDotSegments(wanted);
+        return entries.containsKey(fromTheRoot) ? fromTheRoot : null;
+    }
+
+    /**
+     * A path with {@code .} and {@code ..} segments removed — RFC 3986 §5.2.4.
+     *
+     * <p>A METS href is a relative URI reference, and resolving one means removing dot segments.
+     * Concatenating the strings instead looked for a literal
+     * {@code sip/metadata/../representations/…} that no zip contains, so a third party's
+     * perfectly ordinary {@code ../} reference was reported as a file the package does not
+     * carry (Codex, tenth review, P2). A {@code ..} that would climb above the root is dropped,
+     * as §5.2.4 specifies.
+     */
+    private static String withoutDotSegments(String path) {
+        java.util.Deque<String> out = new java.util.ArrayDeque<>();
+        for (String segment : path.split("/", -1)) {
+            if (segment.equals(".")) {
+                continue;
+            }
+            if (segment.equals("..")) {
+                out.pollLast();
+                continue;
+            }
+            out.addLast(segment);
+        }
+        return String.join("/", out);
     }
 
     private static String trimLeading(String href) {

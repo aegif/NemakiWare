@@ -21,9 +21,7 @@ import org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoVerifierBuilder;
 import org.bouncycastle.tsp.TSPValidationException;
 import org.bouncycastle.tsp.TimeStampToken;
 
-import java.security.GeneralSecurityException;
 import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
 
 /**
  * Whether a timestamp token's CMS signature verifies against the certificate it carries.
@@ -40,13 +38,16 @@ import java.security.NoSuchProviderException;
  * <p>So the decision lives here, once, and both call it. A profile may still choose the check's
  * NAME; it may not choose what an outcome means.
  *
- * <h2>Why the cause chain and not the exception type</h2>
+ * <h2>Why nothing is read from the exception</h2>
  *
- * <p>BouncyCastle raises {@link TSPValidationException} when the token really does not verify,
- * and a plain {@code TSPException} wrapping a {@code CMSException} when the machinery could not
- * run — including when no provider implements the signature algorithm. Catching
- * {@code TSPException} as a finding therefore reports "the signature does not verify" for a
- * signature nobody computed. The exception TYPE does not separate them; the cause does.
+ * <p>BouncyCastle raises {@link TSPValidationException} when the token really does not verify.
+ * Everything else arrives as a {@code TSPException} wrapping something, and four rounds of
+ * review found a defect in every rule that tried to tell those apart by TYPE or by MESSAGE —
+ * and then in the rule that read the CAUSE CHAIN instead. So neither is read now: the JCA is
+ * asked directly, and {@link #classify} states the three questions.
+ *
+ * <p>This heading used to say "Why the cause chain and not the exception type", which outlived
+ * the cause chain by one batch (subagent, tenth review, P3).
  */
 final class TokenSignature {
 
@@ -91,9 +92,17 @@ final class TokenSignature {
      * <ol>
      *   <li><b>Is the algorithm implemented here?</b> {@code Signature.getInstance}. No →
      *       {@code UNKNOWN_ALGORITHM}, which is what §12 says for this case.</li>
-     *   <li><b>Can this key be used with it?</b> {@code initVerify}. No → the token names an
-     *       algorithm its own certificate's key cannot be used with, which no build could
-     *       compute — a contradiction the package states about itself, so a FINDING.</li>
+     *   <li><b>Can this key be used with it?</b> {@code initVerify}. No → ask once more whether
+     *       an ORDINARY key of the same kind initialises with the same algorithm. It does not →
+     *       the algorithm and the key kind do not go together at all, which no build could
+     *       compute: a contradiction the package states about itself, so a FINDING. It does →
+     *       the refusal is about THIS key (explicit domain parameters, a provider-backed key),
+     *       so {@code SIGNATURE_NOT_COMPUTED}.
+     *       <p>No fixture in this build reaches that second arm: the one real key this JVM
+     *       cannot handle — a brainpool curve — is ACCEPTED by {@code initVerify} and answered
+     *       by the third question below (measured, ninth review). The arm is here because a
+     *       PKCS#11 or HSM-backed key reaches it in deployment, and calling that a finding
+     *       would report tampering nobody found.</p></li>
      *   <li><b>Can this build compute a signature with this key?</b> {@code verify} over a
      *       well-formed dummy. Throws → the key's parameters are beyond this build (a brainpool
      *       curve, which initVerify accepts and verify refuses) → {@code SIGNATURE_NOT_COMPUTED}.
@@ -119,9 +128,26 @@ final class TokenSignature {
                                     new org.bouncycastle.asn1.ASN1ObjectIdentifier(
                                             info.getEncryptionAlgOID())));
         } catch (Exception couldNotInspect) {
-            // This method's OWN work failed. That says nothing about the signature, so the
-            // original failure stands as what it was: a verification that did not succeed.
-            return failure(name, what, cannotAsk);
+            // This method's OWN work failed: the SignerInfo could not be read, or the signer
+            // certificate could not be converted, so the algorithm was never established and
+            // NOTHING WAS COMPARED.
+            //
+            // Not FAILED. Letting the original exception "stand as what it was" made this
+            // answer "the token's signature does not verify against its own signer
+            // certificate" — a comparison nobody made, for a package whose certificate this
+            // build simply could not parse (subagent, tenth review, P1, measured against the
+            // previous commit). The deleted cause-chain walk had an arm for exactly this and
+            // the rewrite dropped it.
+            //
+            // Not SIGNATURE_NOT_COMPUTED either: that reason names a specific finding — this
+            // build cannot compute a signature with this key — and nothing here established
+            // it (QG3). UNKNOWN_ALGORITHM is §12's code for "this check was not performed",
+            // and the detail says which of its situations this is.
+            return Outcome.Check.unavailable(name, "UNKNOWN_ALGORITHM",
+                    "this verifier could not read " + what + "'s signer certificate or the "
+                            + "algorithm its SignerInfo names (" + said(couldNotInspect)
+                            + "), so the signature has NOT been compared. That is not a finding "
+                            + "that it is wrong");
         }
 
         java.security.Signature probe;
@@ -136,14 +162,34 @@ final class TokenSignature {
         try {
             probe.initVerify(key);
         } catch (Exception keyDoesNotGoWithIt) {
-            // No build could compute this: the token names an algorithm that cannot be used
-            // with the key its own certificate carries.
-            return Outcome.Check.failed(name,
-                    what + " names " + sigAlg + " and carries a "
-                            + key.getAlgorithm() + " key, which cannot be used with it ("
-                            + said(keyDoesNotGoWithIt) + ")");
+            // WHICH kind of refusal? Reporting every one of them as a contradiction the package
+            // states about itself made a finding out of a key this build's providers merely
+            // could not handle — an explicit-parameters EC key, an HSM-backed one — where
+            // nothing was compared (Codex, tenth review, P1).
+            //
+            // Asked of the JCA, not of the algorithm's NAME: does an ORDINARY key of the same
+            // kind initialise with this same signature algorithm? If it does, the refusal is
+            // about THIS key. If even a fresh one is refused, the algorithm and the key kind do
+            // not go together at all, and no build could compute it.
+            if (Boolean.FALSE.equals(anOrdinaryKeyOfTheSameKindInitialises(sigAlg,
+                    key.getAlgorithm()))) {
+                return Outcome.Check.failed(name,
+                        what + " names " + sigAlg + " and carries a "
+                                + key.getAlgorithm() + " key, which cannot be used with it ("
+                                + said(keyDoesNotGoWithIt) + ")");
+            }
+            return Outcome.Check.unavailable(name, "SIGNATURE_NOT_COMPUTED",
+                    "no provider in this build would initialise " + what + "'s "
+                            + key.getAlgorithm() + " key for " + sigAlg + " ("
+                            + said(keyDoesNotGoWithIt) + "), and an ordinary key of that kind "
+                            + "does initialise — so this is about THIS key and the signature has "
+                            + "NOT been compared");
         }
         byte[] dummy = wellFormedDummySignature(key);
+        // A key family this method has no dummy shape for (Ed25519, SM2, ...) SKIPS the third
+        // question, and the answer below is then a finding. That is deliberate — the first two
+        // questions passed, so the algorithm is implemented here and the key initialises with
+        // it — but it was not stated anywhere (subagent, tenth review, P3).
         if (dummy != null) {
             try {
                 probe.update(new byte[] { 0 });
@@ -175,6 +221,30 @@ final class TokenSignature {
         return thrown.getMessage() == null
                 ? thrown.getClass().getSimpleName() + " with no message"
                 : thrown.getMessage();
+    }
+
+    /**
+     * Does a fresh, ordinary key of {@code keyAlgorithm} initialise with {@code sigAlg}?
+     *
+     * @return TRUE when it does, FALSE when even an ordinary key is refused (so the algorithm
+     *         and the key kind do not go together), and null when this build cannot make such a
+     *         key at all — in which case NOTHING has been established, and the caller must not
+     *         call the package contradictory on the strength of it
+     */
+    private static Boolean anOrdinaryKeyOfTheSameKindInitialises(String sigAlg,
+            String keyAlgorithm) {
+        java.security.KeyPair ordinary;
+        try {
+            ordinary = java.security.KeyPairGenerator.getInstance(keyAlgorithm).generateKeyPair();
+        } catch (Exception cannotAskAtAll) {
+            return null;
+        }
+        try {
+            java.security.Signature.getInstance(sigAlg).initVerify(ordinary.getPublic());
+            return Boolean.TRUE;
+        } catch (Exception refusedThatToo) {
+            return Boolean.FALSE;
+        }
     }
 
     /** A signature of the right SHAPE for {@code key}'s family, or null when unknown. */

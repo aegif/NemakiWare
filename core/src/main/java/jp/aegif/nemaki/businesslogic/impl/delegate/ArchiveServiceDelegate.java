@@ -119,14 +119,25 @@ public class ArchiveServiceDelegate {
 					+ "was recorded. The journal row stays open.", versionId);
 			return;
 		}
+		jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.ContentAbsence absence =
+				restored.absence();
 		if (!restored.wroteBytes()
-				&& restored.absence() == jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes
-						.ContentAbsence.NOT_DETERMINED) {
+				&& (absence == null
+						|| absence == jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes
+								.ContentAbsence.NOT_DETERMINED
+						|| absence == jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes
+								.ContentAbsence.NONE)) {
 			// The row stays OPEN. `abandon` closes a row because the write VERIFIABLY did not
 			// happen; NOT_DETERMINED is "the archive row could not be read", which is not that.
 			// Closing it took an unresolved gap off the list of unresolved gaps — "we could not
 			// look" recorded as "there was nothing", one state transition further in than the
 			// sentence (Codex, ninth review, P1).
+			//
+			// NONE and null belong here too. NONE means "bytes were written back, OR nothing has
+			// been determined" (ContentDaoService), so reaching this point with NONE is the
+			// second half of that — undetermined. It used to fall into the `default` arm below
+			// and have "the archived version carried no content of its own" PERSISTED about it
+			// (subagent, tenth review, P3); null used to raise an NPE in the switch.
 			log.warn("E1 (W11): the restore of {} did not report WHY nothing was written back, "
 					+ "so the journal row stays open rather than being closed as abandoned.",
 					versionId);
@@ -139,12 +150,18 @@ public class ArchiveServiceDelegate {
 			// read at all. The sentence is PERSISTED by journal.abandon, so the false one stays
 			// in the content-write journal (subagent, eighth review, P2). R57 gave the answer a
 			// reason; this is the only product reader of it.
-			recorder.abandon(pending, switch (restored.absence()) {
+			//
+			// EVERY constant is named and there is no `default`: a new ContentAbsence value then
+			// fails to compile here rather than silently inheriting a sentence about a situation
+			// nobody checked it against.
+			recorder.abandon(pending, switch (absence) {
 				case MOVED_TO_COLD -> "the archived content was MOVED to cold storage, so the "
 						+ "restore brought back metadata only. The bytes are not lost: they are "
 						+ "in cold storage, and this product has no path that reads them back";
-				default -> "the archived version carried no content of its own; nothing was "
-						+ "written back";
+				case ARCHIVE_HAD_NO_CONTENT -> "the archived version carried no content of its "
+						+ "own; nothing was written back";
+				case NONE, NOT_DETERMINED -> "why nothing was written back is NOT stated by the "
+						+ "restore, so this row records only that nothing was";
 			});
 			return;
 		}

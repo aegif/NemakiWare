@@ -47,6 +47,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -476,9 +477,19 @@ class OneTokenGetsOneAnswerTest {
         Outcome.Check answer = TokenSignature.verify("token signature", "the token", token,
                 unreadable);
 
+        // THE REQUIREMENT, not the withdrawn sentence. This lock used to assert only that the
+        // reason code was not SIGNATURE_NOT_COMPUTED — and a later rewrite made this case answer
+        // FAILED "the signature does not verify against its own signer certificate", whose
+        // reason code is null, so the lock stayed green over a claim that a comparison had been
+        // made and lost (subagent, tenth review, P1, measured). Nothing was compared: the answer
+        // must not be a finding at all.
+        assertNotEquals(Outcome.FAILED, answer.outcome(),
+                "a probe that could not read the token's certificate reported that its signature "
+                        + "does not verify — a comparison nobody made: " + answer);
         assertFalse("SIGNATURE_NOT_COMPUTED".equals(answer.reasonCode()),
                 "a probe that could not read the token at all answered as though it had "
                         + "established that this build cannot compute the signature: " + answer);
+        assertTrue(answer.detail().contains("NOT been compared"), answer.detail());
     }
 
     /** A structurally valid certificate the JCA converter will not accept. */

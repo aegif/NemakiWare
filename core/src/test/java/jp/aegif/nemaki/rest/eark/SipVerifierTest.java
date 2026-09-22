@@ -33,6 +33,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -65,6 +66,21 @@ class SipVerifierTest {
             for (Map.Entry<String, String> entry : entries.entrySet()) {
                 zip.putNextEntry(new ZipEntry(entry.getKey()));
                 zip.write(entry.getValue().getBytes(StandardCharsets.UTF_8));
+                zip.closeEntry();
+            }
+        }
+        return file;
+    }
+
+    /** The same, for a fixture whose BYTES are the point (an encoding other than UTF-8). */
+    private static Path zipBytes(Path dir, String name, Map<String, byte[]> entries)
+            throws Exception {
+        Path file = dir.resolve(name);
+        try (OutputStream out = Files.newOutputStream(file);
+                ZipOutputStream zip = new ZipOutputStream(out)) {
+            for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
+                zip.putNextEntry(new ZipEntry(entry.getKey()));
+                zip.write(entry.getValue());
                 zip.closeEntry();
             }
         }
@@ -301,6 +317,107 @@ class SipVerifierTest {
         assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "payload digest"),
                 "a package carrying two payloads and one recorded digest was reported as "
                         + "verified on the strength of whichever one matched: " + result.asMap());
+    }
+
+    /**
+     * TWO algorithms for one file is not the PREMIS contradicting itself — here either.
+     *
+     * <p>The twin of
+     * {@code PackageIntegrityIsCheckedNotAssumedTest#twoAlgorithmsForOneFileIsNotAContradiction}.
+     * Counting {@code messageDigest} elements refused a conformant package recording an MD5 and
+     * a SHA-256 of the same payload, and this endpoint is the one an operator reaches
+     * (subagent, tenth review, P1).
+     */
+    @Test
+    @DisplayName("two algorithms for one file is not a contradiction here either")
+    void twoAlgorithmsForOneFileIsNotAContradictionHereToo(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> proof = realProofFor(2);
+        Path sip = zip(tmp, "two-algorithms.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                "<premis:premis xmlns:premis=\"http://www.loc.gov/premis/v3\">"
+                        + "<premis:object><premis:objectCharacteristics>"
+                        + "<premis:fixity><premis:messageDigestAlgorithm>MD5"
+                        + "</premis:messageDigestAlgorithm><premis:messageDigest>"
+                        + "5d41402abc4b2a76b9719d911017c592</premis:messageDigest>"
+                        + "</premis:fixity>"
+                        + "<premis:fixity><premis:messageDigestAlgorithm>SHA-256"
+                        + "</premis:messageDigestAlgorithm><premis:messageDigest>"
+                        + SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))
+                        + "</premis:messageDigest>"
+                        + "</premis:fixity>"
+                        + "</premis:objectCharacteristics></premis:object></premis:premis>",
+                "sip/metadata/other/nemaki-evidence.json", proof.get("json")));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertNotEquals(SipVerifier.Outcome.FAILED, outcomeOf(result, "payload digest"),
+                "a PREMIS recording the same payload under MD5 and under SHA-256 — which "
+                        + "premis:fixity is repeatable for — was reported as contradicting "
+                        + "itself: " + result.asMap());
+    }
+
+    /**
+     * Three inputs on which this endpoint and the CLI used to disagree about one zip.
+     *
+     * <p>Each was measured by running the same bytes through both (subagent, tenth review, P2):
+     *
+     * <ul>
+     *   <li>a representation's OWN PREMIS beside the package's — the CLI prefers the
+     *       package-level one, this counted both and said "2 PREMIS documents";</li>
+     *   <li>a zip with no wrapping directory — the payload test here omitted the leading slash
+     *       its own exclusion adds, so the file was payload to one and not to the other;</li>
+     *   <li>a PREMIS in UTF-16 — decoded as UTF-8 before parsing, so its encoding declaration
+     *       was thrown away and the document "could not be read as XML".</li>
+     * </ul>
+     *
+     * <p>All three in one lock, because what is being locked is the AGREEMENT: the expected
+     * value on each line is the CLI's answer for the same input.
+     */
+    @Test
+    @DisplayName("the endpoint agrees with the CLI on three zips it used to differ on")
+    void theEndpointAgreesWithTheCliOnThreeShapes(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        String digest = SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8));
+        Map<String, String> proof = realProofFor(2);
+
+        Path withRepresentationPremis = zip(tmp, "representation-premis.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml", premisWithDigest(digest),
+                "sip/representations/rep1/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex("something else"
+                        .getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", proof.get("json")));
+        assertEquals(SipVerifier.Outcome.PASSED,
+                outcomeOf(SipVerifier.verify(withRepresentationPremis), "payload digest"),
+                "a representation's own PREMIS was counted as a second PACKAGE PREMIS, so an "
+                        + "ordinary CSIP AIP got 'cannot tell which describes the payload' here "
+                        + "and a checked answer from the CLI");
+
+        Path noWrapper = zip(tmp, "no-wrapper.zip", Map.of(
+                "representations/rep1/data/minutes.txt", payload,
+                "metadata/preservation/premis.xml", premisWithDigest(digest),
+                "metadata/other/nemaki-evidence.json", proof.get("json")));
+        assertEquals(SipVerifier.Outcome.PASSED,
+                outcomeOf(SipVerifier.verify(noWrapper), "payload digest"),
+                "a zip whose representations/ sits at the top answered 'carries no payload "
+                        + "file under a representation' — the same file the exclusion above "
+                        + "treats AS payload");
+
+        Map<String, byte[]> utf16 = new LinkedHashMap<>();
+        utf16.put("sip/representations/rep1/data/minutes.txt",
+                payload.getBytes(StandardCharsets.UTF_8));
+        utf16.put("sip/metadata/preservation/premis.xml",
+                ("<?xml version=\"1.0\" encoding=\"UTF-16\"?>" + premisWithDigest(digest))
+                        .getBytes(StandardCharsets.UTF_16));
+        utf16.put("sip/metadata/other/nemaki-evidence.json",
+                proof.get("json").getBytes(StandardCharsets.UTF_8));
+        assertEquals(SipVerifier.Outcome.PASSED,
+                outcomeOf(SipVerifier.verify(zipBytes(tmp, "utf16.zip", utf16)),
+                        "payload digest"),
+                "a PREMIS in UTF-16 was read as UTF-8 before parsing, so a document the CLI "
+                        + "reads fine was reported as one this verifier could not read");
     }
 
     @Test

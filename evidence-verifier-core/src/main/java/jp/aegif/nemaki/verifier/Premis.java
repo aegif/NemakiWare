@@ -55,13 +55,14 @@ final class Premis {
      * What was found.
      *
      * @param unreadable non-null when the document did not parse
-     * @param mostDigestsInOneObject the largest number of {@code messageDigest} elements inside
-     *        a SINGLE {@code premis:object}. Two of them there is PREMIS contradicting ITSELF
-     *        about one file, which needs no object-to-file linkage to see — unlike two digests
-     *        spread across two objects, which is what an ordinary CSIP package looks like
+     * @param contradiction the algorithm one {@code premis:object} records TWO DIFFERENT
+     *        digests under, or null. That is PREMIS contradicting ITSELF about one file, and
+     *        seeing it needs no object-to-file linkage — unlike two digests spread across two
+     *        objects (an ordinary CSIP package) or two digests under two DIFFERENT algorithms
+     *        (what {@code premis:fixity} is repeatable FOR)
      */
     record Fixity(List<String> digests, List<String> algorithms, String unreadable,
-            int mostDigestsInOneObject) {
+            String contradiction) {
 
         boolean parsed() {
             return unreadable == null;
@@ -111,30 +112,60 @@ final class Premis {
             factory.setExpandEntityReferences(true);
             document = factory.newDocumentBuilder().parse(new ByteArrayInputStream(xml));
         } catch (Exception notXml) {
-            return new Fixity(List.of(), List.of(), String.valueOf(notXml.getMessage()), 0);
+            return new Fixity(List.of(), List.of(), String.valueOf(notXml.getMessage()), null);
         }
         return new Fixity(textsOf(document, "messageDigest"),
                 textsOf(document, "messageDigestAlgorithm"), null,
-                mostDigestsInOneObject(document.getDocumentElement()));
+                contradictionIn(document.getDocumentElement()));
     }
 
     /**
-     * The largest number of {@code messageDigest} elements inside one {@code premis:object}.
+     * The algorithm one {@code premis:object} records two DIFFERENT digests under, or null.
      *
      * <p>§9 asks for this by name: one object describing one file twice is visible without
-     * reading WHICH file it describes. A withdrawal of the count rule took this with it; it
-     * comes back on its own terms (subagent, ninth review, P2). The sentence it used to quote
-     * verbatim is no longer in the spec — the correction rewrote it — so it is paraphrased
-     * here, and §9 is the canon.
+     * reading WHICH file it describes. The sentence it used to quote verbatim is no longer in
+     * the spec — the correction rewrote it — so it is paraphrased here, and §9 is the canon.
+     *
+     * <p><b>Counting the digests was wrong.</b> {@code objectCharacteristics/fixity} is
+     * REPEATABLE in PREMIS, and recording the same bytes under MD5 and under SHA-256 is what
+     * that repetition is for. Counting made a conformant package with two correct digests read
+     * as "the PREMIS contradicts itself", exit 2 — and the check thirty lines below, on the same
+     * document, calls two algorithms an AMBIGUITY. One document, two answers from one profile
+     * (subagent, tenth review, P1, measured). So the digests are grouped by the algorithm that
+     * produced them, and only a disagreement WITHIN one algorithm is a contradiction.
+     *
+     * <p>Grouped per {@code fixity} element when there is one, because that is where an
+     * algorithm and its digest belong together; an object with no {@code fixity} wrapper is
+     * treated as a single group, so a digest is never silently left ungrouped.
      */
-    private static int mostDigestsInOneObject(Element root) {
-        int most = 0;
+    private static String contradictionIn(Element root) {
         for (Element object : elementsNamed(root, "object")) {
-            List<String> inside = new ArrayList<>();
-            collect(object, "messageDigest", inside);
-            most = Math.max(most, inside.size());
+            List<Element> groups = elementsNamed(object, "fixity");
+            if (groups.isEmpty()) {
+                groups = List.of(object);
+            }
+            java.util.Map<String, java.util.Set<String>> byAlgorithm =
+                    new java.util.LinkedHashMap<>();
+            for (Element group : groups) {
+                List<String> algorithms = new ArrayList<>();
+                collect(group, "messageDigestAlgorithm", algorithms);
+                List<String> digests = new ArrayList<>();
+                collect(group, "messageDigest", digests);
+                String algorithm = algorithms.isEmpty() ? ""
+                        : algorithms.get(0).trim().toUpperCase(java.util.Locale.ROOT);
+                for (String digest : digests) {
+                    byAlgorithm.computeIfAbsent(algorithm, any -> new java.util.LinkedHashSet<>())
+                            .add(digest.trim().toLowerCase(java.util.Locale.ROOT));
+                }
+            }
+            for (java.util.Map.Entry<String, java.util.Set<String>> entry
+                    : byAlgorithm.entrySet()) {
+                if (entry.getValue().size() > 1) {
+                    return entry.getKey().isEmpty() ? "an unstated algorithm" : entry.getKey();
+                }
+            }
         }
-        return most;
+        return null;
     }
 
     /** Every descendant element with this local name, in the PREMIS namespace. */

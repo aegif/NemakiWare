@@ -9839,8 +9839,8 @@ CONTROLS = [
         id='GY3',
         what="the readiness document stops saying the control added since the fifth sweep is unswept, so a finished sweep of 938 reads as a measurement of today's tree",
         file='docs/design/v3.4-release-readiness.md',
-        find='**その 125 本は通し未実施**',
-        replace='**その 125 本も通し済み**',
+        find='**その 136 本は通し未実施**',
+        replace='**その 136 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10797,7 +10797,7 @@ CONTROLS = [
         what='a second statement of the unswept count drifts from the locked one, so the document contradicts itself about how many controls have never been run together',
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **5 回目以後に足した control は 125 本**（境界 LM3 — 5 回目時点の最大 ID。',
+        find='  **5 回目以後に足した control は 136 本**（境界 LM3 — 5 回目時点の最大 ID。',
         replace='  **5 回目以後に足した control は 0 本**（境界 LM3 — 5 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10808,7 +10808,7 @@ CONTROLS = [
         file='docs/design/fail-closed-reads.md',
         # Re-pointed: the boundary id moves below LM3, so ids above it exist while the sweep
         # record says nothing was added — the cross-check (declared − swept ≠ ids above) fires.
-        find='**5 回目以後に足した control は 125 本**（境界 LM3）: ',
+        find='**5 回目以後に足した control は 136 本**（境界 LM3）: ',
         replace='**5 回目以後に足した control は 5 本**（境界 LA3）: ',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10864,8 +10864,8 @@ CONTROLS = [
         id='LN3',
         what="the canon stops saying the control added since the fifth sweep is unswept — the canon-side twin of GY3 — and, being itself the first control after the sweep, the one that forces the ledger back from 0 to 1",
         file='docs/design/fail-closed-reads.md',
-        find='**その 125 本は通し未実施**',
-        replace='**その 125 本も通し済み**',
+        find='**その 136 本は通し未実施**',
+        replace='**その 136 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10873,8 +10873,8 @@ CONTROLS = [
         id='LO3',
         what="the readiness document's §4 stops saying the added controls are unswept while §1.4 still does — the second exit, which a once-per-file check let through (GY3 did not fire)",
         file='docs/design/v3.4-release-readiness.md',
-        find='5 回目以後に足した control は **125 本**（通し未実施）。',
-        replace='5 回目以後に足した control は **125 本**（通し済み）。',
+        find='5 回目以後に足した control は **136 本**（通し未実施）。',
+        replace='5 回目以後に足した control は **136 本**（通し済み）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11689,7 +11689,7 @@ CONTROLS = [
         id='LB3',
         what='the PLAN\'s copy of the never-swept count drifts, so whoever scopes the overdue full sweep from the plan runs half the set',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='5 回目以後に足した control は **125 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='5 回目以後に足した control は **136 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='5 回目以後に足した control は **0 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -11954,8 +11954,10 @@ CONTROLS = [
         # cannotSetUp started asking up front.
         # Re-pointed 2026-09-22 (9 巡目): the cause-chain walk is gone. The same claim is now
         # the FIRST of the three questions put to the JCA — is this algorithm implemented here?
-        find='            return Outcome.Check.unavailable(name, "UNKNOWN_ALGORITHM",',
-        replace='            if (true) { return failure(name, what, cannotAsk); }\n            return Outcome.Check.unavailable(name, "UNKNOWN_ALGORITHM",',
+        # Re-pointed 2026-09-22 (10 巡目): a SECOND arm now answers UNKNOWN_ALGORITHM (the probe
+        # that could not read the certificate), so the anchor names the getInstance catch.
+        find='        } catch (NoSuchAlgorithmException unimplemented) {\n            return Outcome.Check.unavailable(name, "UNKNOWN_ALGORITHM",',
+        replace='        } catch (NoSuchAlgorithmException unimplemented) {\n            if (true) { return failure(name, what, cannotAsk); }\n            return Outcome.Check.unavailable(name, "UNKNOWN_ALGORITHM",',
         test='OneTokenGetsOneAnswerTest',
         expect_fail=['anUnimplementedAlgorithmIsUnknownAlgorithm'],
     ),
@@ -12209,8 +12211,10 @@ CONTROLS = [
         # InvalidKeyException from initVerify is now a FINDING, because no build could compute
         # a signature the token's own certificate contradicts. The sabotage restores the
         # withdrawn answer.
-        find='            return Outcome.Check.failed(name,\n                    what + " names " + sigAlg + " and carries a "',
-        replace='            return Outcome.Check.unavailable(name, "SIGNATURE_NOT_COMPUTED",\n                    what + " names " + sigAlg + " and carries a "',
+        # Re-pointed 2026-09-22 (10 巡目): the FAILED arm moved inside the second question's
+        # "even an ordinary key of this kind is refused" guard, one indent deeper.
+        find='                return Outcome.Check.failed(name,\n                        what + " names " + sigAlg + " and carries a "',
+        replace='                return Outcome.Check.unavailable(name, "SIGNATURE_NOT_COMPUTED",\n                        what + " names " + sigAlg + " and carries a "',
         test='OneTokenGetsOneAnswerTest',
         expect_fail=['anAlgorithmThatDoesNotGoWithItsOwnKeyIsAFinding'],
     ),
@@ -12395,8 +12399,8 @@ CONTROLS = [
         id='QE3',
         what='the abandoned journal row says "the archive carried no binary content" for a cold MOVE, putting a falsehood in the content-write journal',
         file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/delegate/ArchiveServiceDelegate.java',
-        find='			recorder.abandon(pending, switch (restored.absence()) {',
-        replace='			recorder.abandon(pending, "the archive carried no binary content"); if (true) { return; }\n			recorder.abandon(pending, switch (restored.absence()) {',
+        find='			recorder.abandon(pending, switch (absence) {',
+        replace='			recorder.abandon(pending, "the archive carried no binary content"); if (true) { return; }\n			recorder.abandon(pending, switch (absence) {',
         test='TheAbandonedRowSaysWhichAbsenceTest',
         # One sentence for three situations reddens all three locks (measured).
         # NOT_DETERMINED was dropped from this list 2026-09-22 (9 巡目): that case now returns
@@ -12424,8 +12428,8 @@ CONTROLS = [
         # Re-pointed when the classification was rewritten to ask the JCA three questions
         # instead of reading exception types: the old `cannotSetUp` helper (and its `return
         # null`) no longer exists, and a stale anchor here blocks EVERY control in this tree.
-        find='            return failure(name, what, cannotAsk);\n        }\n\n        java.security.Signature probe;',
-        replace='            return Outcome.Check.unavailable(name, "SIGNATURE_NOT_COMPUTED",\n                    what + " could not be inspected (" + couldNotInspect.getMessage() + ")");\n        }\n\n        java.security.Signature probe;',
+        find='"UNKNOWN_ALGORITHM",\n                    "this verifier could not read "',
+        replace='"SIGNATURE_NOT_COMPUTED",\n                    "this verifier could not read "',
         test='OneTokenGetsOneAnswerTest',
         expect_fail=['aProbeThatCannotRunConcludesNothing'],
     ),
@@ -12447,7 +12451,7 @@ CONTROLS = [
         what='one premis:object recording two digests for the file it describes is no longer a finding, so a PREMIS contradicting itself about one file passes P0',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='        if (fixity.mostDigestsInOneObject() > 1) {',
+        find='        if (fixity.contradiction() != null) {',
         replace='        if (false) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['twoFixitiesInOnePremisAreAmbiguous',
@@ -12480,7 +12484,7 @@ CONTROLS = [
         id='QL3',
         what="the product's own /verify does not call a PREMIS that contradicts itself a finding, so the CLI answers FAILED and the endpoint an operator actually reaches answers UNAVAILABLE about the same zip",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='        if (mostInOneObject > 1) {',
+        find='        if (contradiction != null) {',
         replace='        if (false) {',
         test='SipVerifierTest',
         expect_fail=['aSecondDigestUnderAnotherPrefixIsAFindingHereToo'],
@@ -12492,19 +12496,25 @@ CONTROLS = [
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
         # The FALLBACK arm, which is what decides here: the exact arm looks for the href under
         # the METS's own directory and the fixture's package does not carry it there.
-        find='                .anyMatch(path -> !isPayload(path) && path.endsWith(wanted));',
-        replace='                .anyMatch(path -> path.endsWith(wanted));',
+        # Re-pointed 2026-09-22 (10 巡目): the loose suffix fallback is gone — resolution is
+        # now exact against the METS's own directory or the zip root — so what this control
+        # sabotages is the ROOT-based arm, whose absence refuses an href written from there.
+        find='        String fromTheRoot = withoutDotSegments(wanted);',
+        replace='        String fromTheRoot = "not-a-path";',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aPayloadCopyDoesNotCloseTheMets'],
+        expect_fail=['anHrefFromAnotherBaseStillResolves'],
     ),
     dict(
         id='QN3',
         what='a restore that could not READ the archive row closes the journal row as abandoned, so "we could not look" is settled as "the write verifiably did not happen" and an unresolved gap stops being listable',
         file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/delegate/ArchiveServiceDelegate.java',
-        find='\t\tif (!restored.wroteBytes()\n\t\t\t\t&& restored.absence()',
-        replace='\t\tif (false\n\t\t\t\t&& restored.absence()',
+        find='\t\tif (!restored.wroteBytes()\n\t\t\t\t&& (absence == null',
+        replace='\t\tif (false\n\t\t\t\t&& (absence == null',
         test='TheAbandonedRowSaysWhichAbsenceTest',
-        expect_fail=['anUndeterminedAbsenceLeavesTheRowOpen'],
+        # Both, measured: the sabotage kills the whole early return, so the UNSTATED absence
+        # falls through to `abandon` as well.
+        expect_fail=['anUndeterminedAbsenceLeavesTheRowOpen',
+                     'anUnstatedAbsenceLeavesTheRowOpen'],
     ),
     # NO CONTROL for TheSipLayoutIsWhereCommonsIpPutsItTest#everyMetsReferenceResolvesBesideItsOwnMets
     # (2026-09-22, 9 巡目). It observes what commons-ip2 writes — the hrefs are the LIBRARY's,
@@ -12512,6 +12522,119 @@ CONTROLS = [
     # Not left as reasoning: GK3, IK3 and IL3, the three controls that already move files around
     # in EarkSipExporter for this same test class, were RUN against it and all three left it
     # green. So it is neither controlled nor collateral, and both halves of that are measured.
+
+    dict(
+        id='QO3',
+        what="a probe that could not read the token's own certificate reports that its signature does not verify, so a package this build cannot parse exits 2 as if it had been tampered with",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/TokenSignature.java',
+        find='            return Outcome.Check.unavailable(name, "UNKNOWN_ALGORITHM",\n                    "this verifier could not read "',
+        replace='            if (true) { return failure(name, what, cannotAsk); }\n            return Outcome.Check.unavailable(name, "UNKNOWN_ALGORITHM",\n                    "this verifier could not read "',
+        test='OneTokenGetsOneAnswerTest',
+        expect_fail=['aProbeThatCannotRunConcludesNothing'],
+    ),
+    dict(
+        id='QP3',
+        what='the contradiction rule counts digests again instead of grouping them by algorithm, so a conformant PREMIS recording one file under MD5 and SHA-256 is reported as contradicting itself',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/Premis.java',
+        find='                    byAlgorithm.computeIfAbsent(algorithm, any -> new java.util.LinkedHashSet<>())',
+        replace='                    byAlgorithm.computeIfAbsent("", any -> new java.util.LinkedHashSet<>())',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['twoAlgorithmsForOneFileIsNotAContradiction'],
+    ),
+    dict(
+        id='QQ3',
+        what="the product's own /verify counts digests instead of grouping them by algorithm, so it refuses a conformant PREMIS the CLI accepts",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='                    byAlgorithm.computeIfAbsent(algorithm, any -> new java.util.LinkedHashSet<>())',
+        replace='                    byAlgorithm.computeIfAbsent("", any -> new java.util.LinkedHashSet<>())',
+        test='SipVerifierTest',
+        expect_fail=['twoAlgorithmsForOneFileIsNotAContradictionHereToo'],
+    ),
+    dict(
+        id='QR3',
+        what='the METS lookup drops representations/<id>/METS.xml again, so the METS that names the payload is never read and every package this product writes is accused of carrying content nobody committed to',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        List<String> metsPaths = pathsEndingWith(entries, "METS.xml");',
+        replace='        List<String> metsPaths = packageLevel(pathsEndingWith(entries, "METS.xml"));',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aRepresentationsMetsIsReadToo'],
+    ),
+    dict(
+        id='QS3',
+        what='a METS reference resolves against any entry that ends with it again, so a package missing the file its own METS names passes because an unrelated copy sits one directory over',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        return entries.containsKey(fromTheRoot) ? fromTheRoot : null;',
+        replace='        if (entries.containsKey(fromTheRoot)) {\n            return fromTheRoot;\n        }\n        for (String path : entries.keySet()) {\n            if (path.endsWith(wanted)) {\n                return path;\n            }\n        }\n        return null;',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['oneMetssReferenceIsNotResolvedByAnothersDirectory',
+                     'aPayloadCopyDoesNotCloseTheMets'],
+    ),
+    dict(
+        id='QT3',
+        what="dot segments in a METS href are searched for literally again, so a third party's ordinary ../ reference is reported as a file the package does not carry",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='            if (segment.equals("..")) {\n                out.pollLast();\n                continue;\n            }',
+        replace='            if (segment.equals("..")) {\n                out.addLast(segment);\n                continue;\n            }',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['anUpwardHrefIsResolved'],
+    ),
+    dict(
+        id='QU3',
+        what='the reverse direction stops reading the SAME resolution as the forward one, so payload the METS does not name travels inside a package that verifies',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='            if (!claimed.contains(path)) {',
+        replace='            if (false) {',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['anUnnamedPayloadFails'],
+    ),
+    dict(
+        id='QV3',
+        what="the product's own /verify counts a representation's own PREMIS as a second package one, so an ordinary CSIP AIP gets 'cannot tell which describes the payload' at the endpoint and a checked answer from the CLI",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='        List<String> premisPaths = packageLevel(pathsEndingWith(entries, "premis.xml"));',
+        replace='        List<String> premisPaths = pathsEndingWith(entries, "premis.xml");',
+        test='SipVerifierTest',
+        expect_fail=['theEndpointAgreesWithTheCliOnThreeShapes'],
+    ),
+    dict(
+        id='QW3',
+        what="the product's payload loop keeps its own copy of the payload test, which omits the leading slash the exclusion adds — so a zip with no wrapping directory answers 'carries no payload' while the CLI checks it",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='            if (isPayloadPath(entry.getKey()) && !entry.getKey().endsWith("/")) {',
+        replace='            if (entry.getKey().contains("/representations/") && entry.getKey().contains("/data/")\n                    && !entry.getKey().endsWith("/")) {',
+        test='SipVerifierTest',
+        expect_fail=['theEndpointAgreesWithTheCliOnThreeShapes'],
+    ),
+    dict(
+        id='QX3',
+        what="the product's /verify decodes the PREMIS as UTF-8 before parsing, so a document in another encoding that the CLI reads fine is reported as one it could not read",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='                    new java.io.ByteArrayInputStream(premis));',
+        replace='                    new org.xml.sax.InputSource(new java.io.StringReader(\n                            new String(premis, StandardCharsets.UTF_8))));',
+        test='SipVerifierTest',
+        expect_fail=['theEndpointAgreesWithTheCliOnThreeShapes'],
+    ),
+    dict(
+        id='QY3',
+        what='an UNSTATED absence closes the journal row as abandoned with a sentence about content nobody looked at',
+        file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/delegate/ArchiveServiceDelegate.java',
+        find='\t\t\t\t\t\t|| absence == jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes\n\t\t\t\t\t\t\t\t.ContentAbsence.NONE)) {',
+        replace='\t\t\t\t\t\t|| absence == jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes\n\t\t\t\t\t\t\t\t.ContentAbsence.NOT_DETERMINED)) {',
+        test='TheAbandonedRowSaysWhichAbsenceTest',
+        expect_fail=['anUnstatedAbsenceLeavesTheRowOpen'],
+    ),
+    # NO CONTROL for the second arm of the initVerify question (an ordinary key of the same kind
+    # DOES initialise, so the refusal is about THIS key -> SIGNATURE_NOT_COMPUTED). Measured, not
+    # reasoned: the one key this JVM cannot handle is a brainpool curve, and initVerify ACCEPTS
+    # it — the third question answers that case (ninth review). A key that reaches this arm comes
+    # from a provider-backed store (PKCS#11, HSM), which no fixture here can stand up. The FAILED
+    # arm beside it is controlled by PQ3.
 ]
 
 

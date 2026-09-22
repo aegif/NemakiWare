@@ -231,8 +231,13 @@ class TheSipLayoutIsWhereCommonsIpPutsItTest {
                 org.w3c.dom.Element element = (org.w3c.dom.Element) all.item(i);
                 String href = element.getAttributeNS(
                         "http://www.w3.org/1999/xlink", "href");
-                if (href == null || href.isBlank() || href.contains(":")) {
-                    // Absent, or not a local reference (a URL, a URN, a schema location).
+                if (href == null || href.isBlank()
+                        || href.startsWith("http://") || href.startsWith("https://")) {
+                    // The INDEPENDENT VERIFIER'S rule, verbatim (PackageIntegrity.collectHrefs
+                    // skips exactly these two). Skipping every href containing a colon was
+                    // wider, so this lock was green about references the check does resolve —
+                    // it measured a subset of what it was said to measure (subagent, tenth
+                    // review, P2).
                     continue;
                 }
                 references++;

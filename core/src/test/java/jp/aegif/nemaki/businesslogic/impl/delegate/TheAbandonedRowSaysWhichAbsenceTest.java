@@ -107,6 +107,22 @@ class TheAbandonedRowSaysWhichAbsenceTest {
     }
 
     /**
+     * NONE means "bytes were written, OR nothing was determined" — so here it is the latter.
+     *
+     * <p>It used to fall into a {@code default} arm and have "the archived version carried no
+     * content of its own" PERSISTED about it, which is a statement the restore never made
+     * (subagent, tenth review, P3). Today's callers do not produce this combination; the public
+     * three-argument {@code RestoredBytes} constructor makes it in one line.
+     */
+    @Test
+    @DisplayName("an UNSTATED absence leaves the row open, like the undetermined one")
+    void anUnstatedAbsenceLeavesTheRowOpen() throws Exception {
+        assertEquals(0, abandonCallsFor(ContentAbsence.NONE),
+                "a restore that wrote no bytes and stated no reason closed the journal row as "
+                        + "abandoned, with a sentence about content nobody looked at");
+    }
+
+    /**
      * "We could not look" leaves the row OPEN — it does not close it with a better sentence.
      *
      * <p>{@code abandon} closes a row because the write VERIFIABLY did not happen.

@@ -202,9 +202,10 @@ public final class SipVerifier {
      * <p>The strongest check available here, and the only one that needs nothing but SHA-256.
      */
     private static Check payloadDigestCheck(Map<String, byte[]> entries) {
-        String premis = textOf(entries, "premis.xml");
+        List<String> premisPaths = packageLevel(pathsEndingWith(entries, "premis.xml"));
+        byte[] premis = premisPaths.size() == 1 ? entries.get(premisPaths.get(0)) : null;
         if (premis == null) {
-            int matches = countMatching(entries, "premis.xml");
+            int matches = premisPaths.size();
             if (matches > 1) {
                 // Ambiguity is UNAVAILABLE, not NOT_PRESENT: the package HAS fixity metadata
                 // and this verifier cannot tell which document is about the payload beside it.
@@ -227,7 +228,7 @@ public final class SipVerifier {
         // answered PASSED here (subagent, fifth review, P2).
         List<String> digests;
         List<String> algorithms;
-        int mostInOneObject;
+        String contradiction;
         try {
             javax.xml.parsers.DocumentBuilderFactory factory =
                     javax.xml.parsers.DocumentBuilderFactory.newInstance();
@@ -249,29 +250,32 @@ public final class SipVerifier {
             // digest" — "read and absent" for something that was not read (subagent, seventh
             // and eighth reviews, P3).
             factory.setExpandEntityReferences(true);
+            // From BYTES, not from a String. Decoding as UTF-8 first threw away the
+            // document's own encoding declaration, so a UTF-16 PREMIS the independent
+            // verifier read fine was "could not be read as XML" here (subagent, tenth
+            // review, P2).
             org.w3c.dom.Document document = factory.newDocumentBuilder().parse(
-                    new org.xml.sax.InputSource(new java.io.StringReader(premis)));
+                    new java.io.ByteArrayInputStream(premis));
             digests = premisTexts(document.getDocumentElement(), "messageDigest");
             algorithms = premisTexts(document.getDocumentElement(), "messageDigestAlgorithm");
-            mostInOneObject = mostDigestsInOneObject(document.getDocumentElement());
+            contradiction = contradictionIn(document.getDocumentElement());
         } catch (Exception notXml) {
             return new Check("payload digest", Outcome.UNAVAILABLE,
                     "the package presents a PREMIS document this verifier could not read as "
                             + "XML (" + notXml.getMessage() + "), so nothing about the bytes is "
                             + "established either way.");
         }
-        if (mostInOneObject > 1) {
-            // §9's own sentence on its own terms, and the twin of the same arm in
-            // PackageIntegrity.payloadFixity. ONE premis:object recording TWO digests for the
-            // file it describes is PREMIS contradicting ITSELF, which needs no object-to-file
-            // linkage to see. Withdrawing the count rule below took this with it on the CLI
-            // side; it came back there and NOT here, so for one batch the CLI answered FAILED
-            // and this endpoint answered UNAVAILABLE about the same file — the exact divergence
-            // the twin rule exists to forbid.
+        if (contradiction != null) {
+            // The twin of the same arm in PackageIntegrity.payloadFixity. ONE premis:object
+            // recording two DIFFERENT digests under ONE algorithm is PREMIS contradicting
+            // ITSELF, which needs no object-to-file linkage to see. Two digests under two
+            // ALGORITHMS is not that — premis:fixity is repeatable exactly so one file can
+            // carry an MD5 and a SHA-256, and counting them refused a conformant package
+            // (subagent, tenth review, P1).
             return new Check("payload digest", Outcome.FAILED,
-                    "one premis:object records " + mostInOneObject + " message digests for the "
-                            + "file it describes, so the PREMIS contradicts itself about that "
-                            + "file.");
+                    "one premis:object records two different " + contradiction + " digests for "
+                            + "the file it describes, so the PREMIS contradicts itself about "
+                            + "that file.");
         }
         if (digests.size() > 1) {
             // NOT a count comparison — the twin of PackageIntegrity.payloadFixity. CSIP and
@@ -311,9 +315,12 @@ public final class SipVerifier {
         }
         List<Map.Entry<String, byte[]>> payloads = new ArrayList<>();
         for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
-            // The payload lives under representations/<id>/data. Metadata and METS do not.
-            if (entry.getKey().contains("/representations/") && entry.getKey().contains("/data/")
-                    && !entry.getKey().endsWith("/")) {
+            // isPayloadPath, NOT a second copy of its test. The copy here omitted the leading
+            // slash isPayloadPath adds, so in a zip with no wrapping directory the same file
+            // was payload to the exclusion above and not payload to this loop — the package
+            // answered "carries no payload" while the CLI checked it (subagent, tenth review,
+            // P2).
+            if (isPayloadPath(entry.getKey()) && !entry.getKey().endsWith("/")) {
                 payloads.add(entry);
             }
         }
@@ -638,21 +645,76 @@ public final class SipVerifier {
     }
 
     /**
-     * The largest number of {@code messageDigest} elements inside one {@code premis:object}.
+     * The algorithm one {@code premis:object} records two DIFFERENT digests under, or null.
      *
-     * <p>The twin of {@code Premis.mostDigestsInOneObject}. Two digests in ONE object is the
-     * document contradicting itself about one file; two digests spread over two objects is what
-     * an ordinary CSIP package looks like, and telling those apart is the whole reason this is
-     * grouped rather than counted flat.
+     * <p>The twin of {@code Premis.contradictionIn}. Two digests in ONE object under ONE
+     * algorithm is the document contradicting itself about one file; two digests under two
+     * algorithms is what {@code premis:fixity} is repeatable FOR, and two digests across two
+     * objects is what an ordinary CSIP package looks like. Telling those apart is the whole
+     * reason this groups rather than counts.
      */
-    private static int mostDigestsInOneObject(org.w3c.dom.Element root) {
-        int most = 0;
+    private static String contradictionIn(org.w3c.dom.Element root) {
         for (org.w3c.dom.Element object : premisElements(root, "object")) {
-            List<String> inside = new ArrayList<>();
-            collectPremis(object, "messageDigest", inside);
-            most = Math.max(most, inside.size());
+            List<org.w3c.dom.Element> groups = premisElements(object, "fixity");
+            if (groups.isEmpty()) {
+                groups = List.of(object);
+            }
+            Map<String, java.util.Set<String>> byAlgorithm = new LinkedHashMap<>();
+            for (org.w3c.dom.Element group : groups) {
+                List<String> algorithms = new ArrayList<>();
+                collectPremis(group, "messageDigestAlgorithm", algorithms);
+                List<String> digests = new ArrayList<>();
+                collectPremis(group, "messageDigest", digests);
+                String algorithm = algorithms.isEmpty() ? ""
+                        : algorithms.get(0).trim().toUpperCase(java.util.Locale.ROOT);
+                for (String digest : digests) {
+                    byAlgorithm.computeIfAbsent(algorithm, any -> new java.util.LinkedHashSet<>())
+                            .add(digest.trim().toLowerCase(java.util.Locale.ROOT));
+                }
+            }
+            for (Map.Entry<String, java.util.Set<String>> entry : byAlgorithm.entrySet()) {
+                if (entry.getValue().size() > 1) {
+                    return entry.getKey().isEmpty() ? "an unstated algorithm" : entry.getKey();
+                }
+            }
         }
-        return most;
+        return null;
+    }
+
+    /**
+     * Metadata files whose path ends with {@code suffix} — PAYLOAD excluded.
+     *
+     * <p>The twin of {@code PackageIntegrity.pathsEndingWith}. Without the exclusion, a CSIP
+     * AIP keeping the original SIP as CONTENT was "2 PREMIS documents" here and one document
+     * there — the same file, two answers.
+     */
+    private static List<String> pathsEndingWith(Map<String, byte[]> entries, String suffix) {
+        List<String> paths = new ArrayList<>();
+        for (String key : entries.keySet()) {
+            if (!isPayloadPath(key) && key.endsWith(suffix)) {
+                paths.add(key);
+            }
+        }
+        return paths;
+    }
+
+    /**
+     * The package's own metadata, preferred over a representation's.
+     *
+     * <p>The twin of {@code PackageIntegrity.packageLevel}, and it was MISSING here: an
+     * ordinary CSIP AIP carrying {@code representations/rep1/metadata/preservation/premis.xml}
+     * beside the package's own was "2 PREMIS documents" at this endpoint and one on the CLI
+     * (subagent, tenth review, P2). Falls back to everything found, so a package that only has
+     * representation-level metadata is still read.
+     */
+    private static List<String> packageLevel(List<String> paths) {
+        List<String> top = new ArrayList<>();
+        for (String path : paths) {
+            if (!("/" + path).contains("/representations/")) {
+                top.add(path);
+            }
+        }
+        return top.isEmpty() ? paths : top;
     }
 
     /** Every descendant element with this local name, in a PREMIS namespace. */

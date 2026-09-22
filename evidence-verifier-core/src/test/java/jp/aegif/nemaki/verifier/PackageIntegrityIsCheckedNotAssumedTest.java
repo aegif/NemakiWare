@@ -31,6 +31,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -432,11 +433,14 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         // The shape an ORDINARY CSIP package has: one payload, and a PREMIS that also
         // describes the METS. A count rule called this a one-to-one violation (measured).
         Map<String, String> ordinary = new LinkedHashMap<>(goodPackage("the minutes"));
+        // ONE messageDigestAlgorithm between the two objects. With two, the "two algorithms
+        // for one digest" arm answers UNAVAILABLE as well and a sabotage of the digest-count
+        // arm leaves this green — the product-side twin was given this treatment and this side
+        // was not (subagent, tenth review, P3).
         ordinary.put(ROOT + "metadata/preservation/premis.xml",
                 premis(sha256("the minutes"), "SHA-256").replace("</premis:object>",
                         "</premis:object><premis:object><premis:objectCharacteristics>"
-                                + "<premis:fixity><premis:messageDigestAlgorithm>SHA-256"
-                                + "</premis:messageDigestAlgorithm><premis:messageDigest>"
+                                + "<premis:fixity><premis:messageDigest>"
                                 + sha256("<mets:mets/>") + "</premis:messageDigest>"
                                 + "</premis:fixity></premis:objectCharacteristics>"
                                 + "</premis:object>"));
@@ -492,6 +496,164 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                 "the other half of the disagreement changed shape, so this lock no longer "
                         + "measures the two checks reading one name the same way: "
                         + fixity.detail());
+    }
+
+    /**
+     * TWO algorithms for one file is what {@code premis:fixity} is repeatable FOR.
+     *
+     * <p>The arm above counted {@code messageDigest} elements inside one {@code premis:object},
+     * so a conformant PREMIS recording an MD5 and a SHA-256 of the SAME payload — both correct —
+     * read as "the PREMIS contradicts itself", exit 2. Meanwhile the check thirty lines further
+     * down calls two algorithms an AMBIGUITY: one document, two answers from one profile
+     * (subagent, tenth review, P1, measured).
+     *
+     * <p>So this is the control that keeps the contradiction arm narrow, and
+     * {@code aSecondDigestUnderAnotherPrefixIsFound} — two digests under ONE algorithm — is the
+     * lock on it. Only the pair discriminates.
+     */
+    @Test
+    @DisplayName("two algorithms for one file is not the PREMIS contradicting itself")
+    void twoAlgorithmsForOneFileIsNotAContradiction(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "metadata/preservation/premis.xml",
+                "<premis:premis xmlns:premis=\"http://www.loc.gov/premis/v3\">"
+                        + "<premis:object><premis:objectCharacteristics>"
+                        + "<premis:fixity><premis:messageDigestAlgorithm>MD5"
+                        + "</premis:messageDigestAlgorithm><premis:messageDigest>"
+                        + "5d41402abc4b2a76b9719d911017c592</premis:messageDigest>"
+                        + "</premis:fixity>"
+                        + "<premis:fixity><premis:messageDigestAlgorithm>SHA-256"
+                        + "</premis:messageDigestAlgorithm><premis:messageDigest>"
+                        + sha256(payload) + "</premis:messageDigest>"
+                        + "</premis:fixity>"
+                        + "</premis:objectCharacteristics></premis:object></premis:premis>");
+
+        Path sip = zip(tmp, "two-algorithms.zip", entries);
+        Outcome.Check fixity = checkNamed(
+                PackageIntegrity.check(PackageReader.open(sip).entries()), "payload fixity");
+
+        assertNotEquals(Outcome.FAILED, fixity.outcome(),
+                "a PREMIS recording the same payload under MD5 and under SHA-256 — which "
+                        + "premis:fixity is repeatable for — was reported as contradicting "
+                        + "itself: " + fixity.detail());
+    }
+
+    /**
+     * The METS that names the payload is the REPRESENTATION's, and it has to be read.
+     *
+     * <p>CSIP puts a root METS that points at each representation's METS, and the payload
+     * reference lives in the latter. {@code packageLevel} — written to stop a representation's
+     * own PREMIS being counted as a second PACKAGE PREMIS — was applied to METS as well, so the
+     * representation METS was dropped, nothing named the payload, and the reverse direction
+     * accused the package of carrying content nobody committed to. <b>Every package this
+     * product writes answered FAILED at its own verifier</b> (subagent, tenth review, measured
+     * end to end with the real exporter).
+     */
+    @Test
+    @DisplayName("the representation's own METS is read, so CSIP's payload reference counts")
+    void aRepresentationsMetsIsReadToo(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        // The CSIP shape: the root METS points at the representation's METS, and only the
+        // representation's METS names the payload.
+        entries.put(ROOT + "METS.xml", mets("representations/rep1/METS.xml"));
+        entries.put(ROOT + "representations/rep1/METS.xml", mets("data/minutes.txt"));
+
+        Path sip = zip(tmp, "csip-two-mets.zip", entries);
+        Outcome.Check closure = checkNamed(
+                PackageIntegrity.check(PackageReader.open(sip).entries()), "mets closure");
+
+        assertEquals(Outcome.PASSED, closure.outcome(),
+                "the payload is named by the representation's own METS, and this verifier "
+                        + "refused to read that METS — so it reported the package as carrying "
+                        + "content nobody committed to: " + closure.detail());
+    }
+
+    /**
+     * An href written from ANOTHER base still resolves — even when it names payload.
+     *
+     * <p>Resolving relative to the METS's own directory is right, and the loose suffix match
+     * stays for producers that write the path from the zip root. Excluding payload from that
+     * fallback outright turned "this package carries the file under a slightly different base"
+     * into "the METS names a file the package does not carry", exit 2 (subagent, tenth review,
+     * P2). The exclusion is narrower: a METS naming METADATA must not be satisfied by a copy
+     * inside content, which {@code aPayloadCopyDoesNotCloseTheMets} locks.
+     */
+    @Test
+    @DisplayName("an href written from the zip root still resolves, payload included")
+    void anHrefFromAnotherBaseStillResolves(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "METS.xml", mets(ROOT + "representations/rep1/data/minutes.txt"));
+
+        Path sip = zip(tmp, "root-based-href.zip", entries);
+        Outcome.Check closure = checkNamed(
+                PackageIntegrity.check(PackageReader.open(sip).entries()), "mets closure");
+
+        assertEquals(Outcome.PASSED, closure.outcome(),
+                "a METS naming its own payload from the zip root was told the package does not "
+                        + "carry a file the package is carrying: " + closure.detail());
+    }
+
+    /**
+     * An href is resolved against the METS THAT WROTE IT, not against any METS in the package.
+     *
+     * <p>Collecting every reference into one list and then trying each against every METS
+     * directory let a second METS's neighbourhood satisfy the first one's reference: the root
+     * METS names a file that is NOT there, an unrelated METS sits beside an unrelated copy of
+     * the same relative name, and the closure answered PASSED (Codex, tenth review, P1).
+     */
+    @Test
+    @DisplayName("another METS's neighbourhood does not satisfy this METS's reference")
+    void oneMetssReferenceIsNotResolvedByAnothersDirectory(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        // The root METS names its own metadata/preservation/premis.xml — and the package does
+        // NOT carry one at the root. A second METS one directory over does, beside its own copy.
+        entries.remove(ROOT + "metadata/preservation/premis.xml");
+        entries.put(ROOT + "METS.xml", mets("representations/rep1/data/minutes.txt",
+                "metadata/preservation/premis.xml"));
+        entries.put(ROOT + "other/METS.xml", mets("metadata/preservation/premis.xml"));
+        entries.put(ROOT + "other/metadata/preservation/premis.xml",
+                premis(sha256(payload), "SHA-256"));
+
+        Path sip = zip(tmp, "two-neighbourhoods.zip", entries);
+        Outcome.Check closure = checkNamed(
+                PackageIntegrity.check(PackageReader.open(sip).entries()), "mets closure");
+
+        assertEquals(Outcome.FAILED, closure.outcome(),
+                "the root METS names a file the package does not carry, and a DIFFERENT METS's "
+                        + "neighbour was accepted as it: " + closure.detail());
+        assertTrue(closure.detail().contains(ROOT + "METS.xml"),
+                "the finding does not say WHICH METS named the missing file, so an operator "
+                        + "cannot tell the two references apart: " + closure.detail());
+    }
+
+    /**
+     * {@code ../} in an href is resolved, not searched for literally.
+     *
+     * <p>A METS href is a relative URI reference and RFC 3986 §5.2.4 removes dot segments.
+     * Concatenating the strings looked for a literal {@code sip/metadata/../representations/…}
+     * that no zip contains, so a third party's ordinary upward reference was reported as a file
+     * the package does not carry (Codex, tenth review, P2).
+     */
+    @Test
+    @DisplayName("an href with ../ resolves, rather than being searched for literally")
+    void anUpwardHrefIsResolved(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.remove(ROOT + "METS.xml");
+        entries.put(ROOT + "metadata/METS.xml",
+                mets("../representations/rep1/data/minutes.txt"));
+
+        Path sip = zip(tmp, "upward-href.zip", entries);
+        Outcome.Check closure = checkNamed(
+                PackageIntegrity.check(PackageReader.open(sip).entries()), "mets closure");
+
+        assertEquals(Outcome.PASSED, closure.outcome(),
+                "a METS naming its payload one directory up was told the package does not carry "
+                        + "a file the package is carrying: " + closure.detail());
     }
 
     @Test
