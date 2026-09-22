@@ -9839,8 +9839,8 @@ CONTROLS = [
         id='GY3',
         what="the readiness document stops saying the control added since the fifth sweep is unswept, so a finished sweep of 938 reads as a measurement of today's tree",
         file='docs/design/v3.4-release-readiness.md',
-        find='**その 119 本は通し未実施**',
-        replace='**その 119 本も通し済み**',
+        find='**その 123 本は通し未実施**',
+        replace='**その 123 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10797,7 +10797,7 @@ CONTROLS = [
         what='a second statement of the unswept count drifts from the locked one, so the document contradicts itself about how many controls have never been run together',
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **5 回目以後に足した control は 119 本**（境界 LM3 — 5 回目時点の最大 ID。',
+        find='  **5 回目以後に足した control は 123 本**（境界 LM3 — 5 回目時点の最大 ID。',
         replace='  **5 回目以後に足した control は 0 本**（境界 LM3 — 5 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10808,7 +10808,7 @@ CONTROLS = [
         file='docs/design/fail-closed-reads.md',
         # Re-pointed: the boundary id moves below LM3, so ids above it exist while the sweep
         # record says nothing was added — the cross-check (declared − swept ≠ ids above) fires.
-        find='**5 回目以後に足した control は 119 本**（境界 LM3）: ',
+        find='**5 回目以後に足した control は 123 本**（境界 LM3）: ',
         replace='**5 回目以後に足した control は 5 本**（境界 LA3）: ',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10864,8 +10864,8 @@ CONTROLS = [
         id='LN3',
         what="the canon stops saying the control added since the fifth sweep is unswept — the canon-side twin of GY3 — and, being itself the first control after the sweep, the one that forces the ledger back from 0 to 1",
         file='docs/design/fail-closed-reads.md',
-        find='**その 119 本は通し未実施**',
-        replace='**その 119 本も通し済み**',
+        find='**その 123 本は通し未実施**',
+        replace='**その 123 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10873,8 +10873,8 @@ CONTROLS = [
         id='LO3',
         what="the readiness document's §4 stops saying the added controls are unswept while §1.4 still does — the second exit, which a once-per-file check let through (GY3 did not fire)",
         file='docs/design/v3.4-release-readiness.md',
-        find='5 回目以後に足した control は **119 本**（通し未実施）。',
-        replace='5 回目以後に足した control は **119 本**（通し済み）。',
+        find='5 回目以後に足した control は **123 本**（通し未実施）。',
+        replace='5 回目以後に足した control は **123 本**（通し済み）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11689,7 +11689,7 @@ CONTROLS = [
         id='LB3',
         what='the PLAN\'s copy of the never-swept count drifts, so whoever scopes the overdue full sweep from the plan runs half the set',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='5 回目以後に足した control は **119 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='5 回目以後に足した control は **123 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='5 回目以後に足した control は **0 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -11963,8 +11963,10 @@ CONTROLS = [
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/Premis.java',
         # Re-pointed: v2's namespace joined v3, so the comparison is against a Set.
-        find='        if (localName.equals(name) && (namespace == null || NAMESPACES.contains(namespace))) {',
-        replace='        if (("premis:" + localName).equals(element.getNodeName())) {',
+        # Re-pointed 2026-09-22 (9 巡目): elementsNamed now makes the same comparison, so the
+        # bare line matches twice. Anchored on collect's own body.
+        find='        if (localName.equals(name) && (namespace == null || NAMESPACES.contains(namespace))) {\n            found.add(element.getTextContent());',
+        replace='        if (("premis:" + localName).equals(element.getNodeName())) {\n            found.add(element.getTextContent());',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['aSecondDigestUnderAnotherPrefixIsFound'],
     ),
@@ -12353,13 +12355,11 @@ CONTROLS = [
         expect_fail=['anAlgorithmThatDoesNotGoWithItsOwnKeyIsAFinding',
                      'aSubstitutedCertificateIsAFinding'],
     ),
-    # There is NO control for "asking up front instead of inferring from an exception". The
-    # difference is observable only when this build CANNOT compute a signature — a brainpool
-    # curve, a provider that is not installed — and no fixture here can produce one: every
-    # algorithm this test can sign with is one the JVM implements. Removing the pre-flight
-    # leaves every producible case answering the same way, so a control would measure nothing
-    # (measured: the lock stayed green). PZ3 measures the half that IS producible — a token
-    # whose algorithm does not go with its own key.
+    # QA3 was retired on the reasoning that "no fixture here can produce a missing provider".
+    # That was WRONG and measured so: BouncyCastle is on the test classpath, and
+    # Security.addProvider -> generate a brainpoolP256r1 token -> removeProvider builds exactly
+    # that case in thirty lines (subagent, ninth review, P1). The control the reasoning left
+    # out is the one that would have caught the regression it enabled. QH3 below is it.
     # QB3 retired 2026-09-22 (8 巡目), for the same reason as PL3: it measured the product
     # endpoint's count comparison, which was withdrawn. PR3 measures the answer that remains.
     dict(
@@ -12419,6 +12419,49 @@ CONTROLS = [
         replace='        } catch (Exception couldNotInspect) {\n            return String.valueOf(couldNotInspect.getMessage());\n        }',
         test='OneTokenGetsOneAnswerTest',
         expect_fail=['aProbeThatCannotRunConcludesNothing'],
+    ),
+    dict(
+        id='QH3',
+        what="a VALID token on a curve this build cannot compute is reported as a signature that does not verify, so an eIDAS authority's brainpool token exits 2 as if it had been tampered with",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/TokenSignature.java',
+        find='            if (cannotComputeAnySignature(token, signer)) {',
+        replace='            if (false) {',
+        test='OneTokenGetsOneAnswerTest',
+        expect_fail=['aCurveThisBuildCannotComputeIsNotAFinding'],
+    ),
+    dict(
+        id='QI3',
+        what='one premis:object recording two digests for the file it describes is no longer a finding, so a PREMIS contradicting itself about one file passes P0',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        if (fixity.mostDigestsInOneObject() > 1) {',
+        replace='        if (false) {',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['twoFixitiesInOnePremisAreAmbiguous',
+                     'aSecondDigestUnderAnotherPrefixIsFound'],
+    ),
+    dict(
+        id='QJ3',
+        what="a representation's own metadata is counted as a second package PREMIS, so an ordinary CSIP AIP cannot reach P0",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        return top.isEmpty() ? paths : top;',
+        replace='        return paths;',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aRepresentationsOwnMetadataIsNotThePackages'],
+    ),
+    dict(
+        id='QK3',
+        what="the product's own /verify counts a payload copy of the PREMIS, so it disagrees with the CLI about one file",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        # textOf, which is the lookup the lock exercises: countMatching only builds the message
+        # once textOf has already returned null (measured — sabotaging countMatching alone left
+        # the lock green).
+        find='            if (!isPayloadPath(entry.getKey()) && entry.getKey().endsWith(suffix)) {',
+        replace='            if (entry.getKey().endsWith(suffix)) {',
+        test='SipVerifierTest',
+        expect_fail=['aPayloadCopyOfThePremisIsNotASecondOne'],
     ),
 ]
 

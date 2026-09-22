@@ -89,6 +89,23 @@ final class TokenSignature {
                     what + "'s signature does not verify against its own signer certificate: "
                             + invalid.getMessage());
         } catch (Exception cannotAsk) {
+            // Asked AFTER the attempt, and about the build rather than about the bytes: can
+            // this build compute ANY signature with this key and algorithm? A curve no
+            // installed provider implements fails identically whatever the signature contains
+            // — brainpoolP256r1, which eIDAS authorities really use, is ACCEPTED by
+            // initVerify and refused at verify(), so the pre-flight cannot see it and removing
+            // SignatureException from the classification turned a valid token into FAILED
+            // (subagent, ninth review, P1, measured).
+            //
+            // A signature whose ENCODING is wrong fails only for that signature: the same key
+            // verifies a well-formed dummy (returning false), so the two are told apart by
+            // what the build can do, not by an exception type or a message.
+            if (cannotComputeAnySignature(token, signer)) {
+                return Outcome.Check.unavailable(name, "SIGNATURE_NOT_COMPUTED",
+                        "this build cannot compute any signature with the key " + what
+                                + "'s certificate carries (" + cannotAsk.getMessage() + "), so "
+                                + "the signature has NOT been compared");
+            }
             if (keyNotUsable(cannotAsk)) {
                 // The signature was NOT computed: no provider would initialise with the key the
                 // token's own certificate carries. Two reviews pushed this in opposite
@@ -116,14 +133,6 @@ final class TokenSignature {
         }
     }
 
-    /**
-     * Whether a failure is about this build rather than about the token.
-     *
-     * <p>Walks the cause chain: the algorithm failure arrives several wrappers down
-     * ({@code TSPException} → {@code CMSException} → {@code OperatorCreationException} →
-     * {@code NoSuchAlgorithmException}), and looking only at the exception thrown reports every
-     * one of them as a bad signature.
-     */
     /**
      * Whether this build can even begin the verification — asked directly.
      *
@@ -169,8 +178,11 @@ final class TokenSignature {
             return null;
         }
         if (!familyMatchesQuietly(encryption, key.getAlgorithm())) {
-            // The token names a signature algorithm its own certificate's key cannot be used
-            // with. Read, and contradictory — the verification below says so.
+            // STEP OUT OF THE WAY. When the algorithm and the key are not even the same family
+            // this pre-flight would answer "could not compute" — and BouncyCastle, running
+            // next, usually has a FINDING about such a package (a substituted certificate does
+            // not match its certID either). Pre-empting a finding with "could not check" is the
+            // collapse this branch removes, so the question is left to the verification.
             return null;
         }
         // From here on, a failure IS about this build: the algorithm is one the JCA does not
@@ -183,6 +195,63 @@ final class TokenSignature {
         } catch (java.security.InvalidKeyException | RuntimeException cannot) {
             return String.valueOf(cannot.getMessage());
         }
+    }
+
+    /**
+     * Whether this build can compute ANY signature with the token's key and algorithm.
+     *
+     * <p>Runs the verification against a WELL-FORMED dummy signature. A key or curve no
+     * installed provider implements throws for that too; a key it does implement returns false.
+     * Nothing about the token's own signature bytes enters into it, which is the point: the
+     * question is what this build can do.
+     *
+     * <p>Answers false when it cannot tell — an unknown family, an unbuildable probe. False
+     * means "do not excuse", so an uncertainty here never turns a finding into a gap.
+     */
+    private static boolean cannotComputeAnySignature(TimeStampToken token,
+            X509CertificateHolder signer) {
+        try {
+            org.bouncycastle.cms.SignerInformation info =
+                    token.toCMSSignedData().getSignerInfos().getSigners().iterator().next();
+            java.security.PublicKey key = new org.bouncycastle.cert.jcajce
+                    .JcaX509CertificateConverter().getCertificate(signer).getPublicKey();
+            String sigAlg = new org.bouncycastle.cms.DefaultCMSSignatureAlgorithmNameGenerator()
+                    .getSignatureName(
+                            new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
+                                    new org.bouncycastle.asn1.ASN1ObjectIdentifier(
+                                            info.getDigestAlgOID())),
+                            new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
+                                    new org.bouncycastle.asn1.ASN1ObjectIdentifier(
+                                            info.getEncryptionAlgOID())));
+            byte[] dummy = wellFormedDummySignature(key);
+            if (dummy == null) {
+                return false;
+            }
+            java.security.Signature probe = java.security.Signature.getInstance(sigAlg);
+            probe.initVerify(key);
+            probe.update(new byte[] { 0 });
+            probe.verify(dummy);
+            return false;
+        } catch (java.security.SignatureException | java.security.NoSuchAlgorithmException
+                | java.security.InvalidKeyException cannot) {
+            return true;
+        } catch (Exception couldNotProbe) {
+            return false;
+        }
+    }
+
+    /** A signature of the right SHAPE for {@code key}'s family, or null when unknown. */
+    private static byte[] wellFormedDummySignature(java.security.PublicKey key) {
+        String algorithm = key.getAlgorithm() == null ? ""
+                : key.getAlgorithm().toUpperCase(java.util.Locale.ROOT);
+        if (algorithm.contains("RSA") && key instanceof java.security.interfaces.RSAPublicKey rsa) {
+            return new byte[(rsa.getModulus().bitLength() + 7) / 8];
+        }
+        if (algorithm.contains("EC") || algorithm.contains("DSA")) {
+            // SEQUENCE { INTEGER 1, INTEGER 1 } — a syntactically valid (r, s).
+            return new byte[] { 0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x01 };
+        }
+        return null;
     }
 
     /** {@link #familyMatches}, answering "cannot tell" as a match so the verification decides. */
@@ -234,6 +303,14 @@ final class TokenSignature {
         return false;
     }
 
+    /**
+     * Whether a failure is about this build rather than about the token.
+     *
+     * <p>Walks the cause chain: the algorithm failure arrives several wrappers down
+     * ({@code TSPException} → {@code CMSException} → {@code OperatorCreationException} →
+     * {@code NoSuchAlgorithmException}), and looking only at the exception thrown reports every
+     * one of them as a bad signature.
+     */
     static boolean uncheckable(Throwable thrown) {
         for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
             if (cause instanceof NoSuchAlgorithmException

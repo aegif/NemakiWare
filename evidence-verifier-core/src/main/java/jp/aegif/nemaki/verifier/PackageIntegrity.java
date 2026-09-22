@@ -490,7 +490,7 @@ public final class PackageIntegrity {
 
     /** Payload bytes against the digest PREMIS records for them. */
     static Outcome.Check payloadFixity(Map<String, byte[]> entries) {
-        List<String> premisPaths = pathsEndingWith(entries, "premis.xml");
+        List<String> premisPaths = packageLevel(pathsEndingWith(entries, "premis.xml"));
         if (premisPaths.isEmpty()) {
             return Outcome.Check.absent("payload fixity", "the package carries no PREMIS");
         }
@@ -521,6 +521,16 @@ public final class PackageIntegrity {
             return Outcome.Check.unavailable("payload fixity", "PREMIS_NOT_PARSED",
                     "the package presents " + premisPaths.get(0) + " as PREMIS and this "
                             + "verifier could not read it as XML: " + fixity.unreadable());
+        }
+        if (fixity.mostDigestsInOneObject() > 1) {
+            // §9's own sentence, on its own terms: ONE premis:object describing one file with
+            // TWO digests is PREMIS contradicting itself, and seeing that needs no
+            // object-to-file linkage. Withdrawing the count rule took this with it; it comes
+            // back separately (subagent, ninth review, P2).
+            return Outcome.Check.failed("payload fixity",
+                    "one premis:object records " + fixity.mostDigestsInOneObject()
+                            + " message digests for the file it describes, so the PREMIS "
+                            + "contradicts itself about that file");
         }
         if (fixity.digests().size() > 1) {
             // UNAVAILABLE, and NOT a count comparison.
@@ -599,7 +609,7 @@ public final class PackageIntegrity {
      * committed to — which is how an addition travels inside a package that verifies.
      */
     static Outcome.Check metsClosure(Map<String, byte[]> entries) {
-        List<String> metsPaths = pathsEndingWith(entries, "METS.xml");
+        List<String> metsPaths = packageLevel(pathsEndingWith(entries, "METS.xml"));
         if (metsPaths.isEmpty()) {
             return Outcome.Check.absent("mets closure", "the package carries no METS");
         }
@@ -748,6 +758,27 @@ public final class PackageIntegrity {
             }
         }
         return payloads;
+    }
+
+    /**
+     * The PACKAGE's own copies, not a representation's.
+     *
+     * <p>CSIP gives every representation its own {@code metadata/} and its own METS, at
+     * {@code representations/<id>/…}. Those describe that representation, not the package, and
+     * counting them made an ordinary AIP "2 PREMIS documents" — the same over-refusal the
+     * payload exclusion removed, one directory up (subagent, ninth review, P2).
+     *
+     * <p>When there is no package-level copy the list is returned unchanged, so a package that
+     * only has representation-level metadata is still read rather than treated as having none.
+     */
+    private static List<String> packageLevel(List<String> paths) {
+        List<String> top = new ArrayList<>();
+        for (String path : paths) {
+            if (!("/" + path).contains("/representations/")) {
+                top.add(path);
+            }
+        }
+        return top.isEmpty() ? paths : top;
     }
 
     /**

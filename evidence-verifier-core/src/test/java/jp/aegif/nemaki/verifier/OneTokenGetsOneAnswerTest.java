@@ -223,15 +223,22 @@ class OneTokenGetsOneAnswerTest {
     }
 
     /**
-     * A token naming an algorithm its OWN key cannot be used with is a finding.
+     * The pre-flight does not PRE-EMPT a finding BouncyCastle would make.
      *
-     * <p>The certificate and its certID hash are untouched, so BouncyCastle's first check
-     * passes; what is wrong is inside the token — the SignerInfo names an RSA signature over a
-     * certificate carrying an EC key. Reporting "this build could not compute it" would excuse
-     * a contradiction the package states about itself (Codex, eighth review, P1).
+     * <p>What this actually measures, stated after it was measured rather than before: the
+     * certificate handed in here is a fresh EC one, so its certID hash does not match and
+     * BouncyCastle refuses the token on that — a finding about the package. If
+     * {@code cannotSetUp} answered first (it would, because {@code initVerify} refuses an EC
+     * key for an RSA signature), that finding would be replaced by "this build could not
+     * compute it". {@code familyMatches} exists to step out of the way in exactly that case.
+     *
+     * <p>The javadoc here used to claim the certID check passes and the family mismatch is what
+     * fires. A review measured both: the certID check fires, and a token that really does name
+     * an algorithm incompatible with its own key answers the same before and after the family
+     * check was added (subagent, ninth review, P1). The claim is now the measured one.
      */
     @Test
-    @DisplayName("a token whose algorithm does not go with its own key is a FINDING")
+    @DisplayName("the pre-flight does not pre-empt the finding BouncyCastle would make")
     void anAlgorithmThatDoesNotGoWithItsOwnKeyIsAFinding() throws Exception {
         java.security.KeyPairGenerator ec = java.security.KeyPairGenerator.getInstance("EC");
         ec.initialize(256);
@@ -245,18 +252,19 @@ class OneTokenGetsOneAnswerTest {
                 builder.build(new JcaContentSignerBuilder("SHA256withECDSA")
                         .build(other.getPrivate())));
 
-        // The token is RSA-signed; the certificate handed to the check carries an EC key. The
-        // ALGORITHM FAMILY disagrees with the key, which cannotSetUp deliberately does not
-        // excuse.
+        // The token is RSA-signed; the certificate handed to the check carries an EC key, and
+        // its certID hash does not match either. BouncyCastle refuses on the certID — and
+        // cannotSetUp must not answer first with "could not compute", which is what
+        // familyMatches prevents.
         org.bouncycastle.tsp.TimeStampToken token = new org.bouncycastle.tsp.TimeStampToken(
                 new org.bouncycastle.cms.CMSSignedData(tokenOver(ROOT, true)));
         Outcome.Check answer = TokenSignature.verify("token signature", "the token", token,
                 new X509CertificateHolder(ecCertificate.getEncoded()));
 
         assertEquals(Outcome.FAILED, answer.outcome(),
-                "a token naming a signature algorithm its own certificate's key cannot be used "
-                        + "with was excused as something this build could not compute: "
-                        + answer);
+                "a finding BouncyCastle makes about this package was replaced by 'this build "
+                        + "could not compute it': " + answer);
+        assertTrue(answer.detail().contains("does not verify"), answer.detail());
     }
 
     /**
@@ -313,6 +321,88 @@ class OneTokenGetsOneAnswerTest {
         assertEquals(Outcome.FAILED, answer.outcome(),
                 "a signature whose encoding is not a signature at all was excused as something "
                         + "this build could not compute: " + answer);
+    }
+
+    /**
+     * A VALID token on a curve this build does not implement is NOT a finding.
+     *
+     * <p>brainpoolP256r1 is a curve eIDAS timestamp authorities really use, and the JDK dropped
+     * it from SunEC in 16. A previous round removed {@code SignatureException} from the
+     * classification so a mangled signature would be reported as a finding — and turned this
+     * valid token into "the signature does not verify", exit 2, for a signature nobody computed
+     * (subagent, ninth review, P1, measured).
+     *
+     * <p>The pre-flight cannot see it: {@code initVerify} ACCEPTS a brainpool key and the
+     * refusal happens at {@code verify}. So the question is asked again afterwards, and asked
+     * about the build: can it compute ANY signature with this key?
+     *
+     * <p>BouncyCastle is registered only long enough to MAKE the token; the verification runs
+     * with it removed, which is the state the CLI runs in. A previous round wrote that no
+     * fixture here could produce this case — that was wrong, and the control it justified
+     * leaving out is the one that would have caught the regression.
+     */
+    @Test
+    @DisplayName("a valid token on a curve this build cannot compute is not a finding")
+    void aCurveThisBuildCannotComputeIsNotAFinding() throws Exception {
+        java.security.Provider bc = new org.bouncycastle.jce.provider.BouncyCastleProvider();
+        byte[] tokenDer;
+        byte[] certificateDer;
+        java.security.Security.addProvider(bc);
+        try {
+            java.security.KeyPairGenerator ec =
+                    java.security.KeyPairGenerator.getInstance("EC", bc.getName());
+            ec.initialize(new java.security.spec.ECGenParameterSpec("brainpoolP256r1"));
+            java.security.KeyPair keys = ec.generateKeyPair();
+            org.bouncycastle.asn1.x500.X500Name subject =
+                    new org.bouncycastle.asn1.x500.X500Name("CN=Brainpool TSA");
+            JcaX509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(subject,
+                    BigInteger.ONE, new Date(System.currentTimeMillis() - 86_400_000L),
+                    new Date(System.currentTimeMillis() + 86_400_000L), subject,
+                    keys.getPublic());
+            builder.addExtension(org.bouncycastle.asn1.x509.Extension.extendedKeyUsage, true,
+                    new org.bouncycastle.asn1.x509.ExtendedKeyUsage(
+                            org.bouncycastle.asn1.x509.KeyPurposeId.id_kp_timeStamping));
+            X509Certificate certificate = new JcaX509CertificateConverter().setProvider(bc)
+                    .getCertificate(builder.build(new JcaContentSignerBuilder("SHA256withECDSA")
+                            .setProvider(bc).build(keys.getPrivate())));
+            certificateDer = certificate.getEncoded();
+
+            TimeStampRequestGenerator requests = new TimeStampRequestGenerator();
+            requests.setCertReq(true);
+            TimeStampRequest request = requests.generate(new ASN1ObjectIdentifier(SHA256),
+                    HexFormat.of().parseHex(ROOT));
+            TimeStampTokenGenerator generator = new TimeStampTokenGenerator(
+                    new org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoGeneratorBuilder()
+                            .setProvider(bc)
+                            .build("SHA256withECDSA", keys.getPrivate(), certificate),
+                    new JcaDigestCalculatorProviderBuilder().setProvider(bc).build().get(
+                            new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
+                                    new ASN1ObjectIdentifier(SHA256))),
+                    new ASN1ObjectIdentifier("1.2.3.4.2"));
+            generator.addCertificates(
+                    new org.bouncycastle.cert.jcajce.JcaCertStore(List.of(certificate)));
+            tokenDer = generator.generate(request, BigInteger.ONE, new Date()).getEncoded();
+        } finally {
+            // THE STATE THE CLI RUNS IN. Verifying with BC still registered would measure a
+            // build that can compute the curve, which is not the one that ships. Put back
+            // afterwards, because other classes in this JVM registered it and a test that
+            // removes it for good would change what THEY measure.
+            java.security.Security.removeProvider(bc.getName());
+        }
+        Outcome.Check answer;
+        try {
+            org.bouncycastle.tsp.TimeStampToken token = new org.bouncycastle.tsp.TimeStampToken(
+                    new org.bouncycastle.cms.CMSSignedData(tokenDer));
+            answer = TokenSignature.verify("token signature", "the token", token,
+                    new X509CertificateHolder(certificateDer));
+        } finally {
+            java.security.Security.addProvider(bc);
+        }
+
+        assertEquals(Outcome.UNAVAILABLE, answer.outcome(),
+                "a VALID token on a curve this build does not implement was reported as a "
+                        + "signature that does not verify. Nothing was computed: " + answer);
+        assertEquals("SIGNATURE_NOT_COMPUTED", answer.reasonCode(), answer + "");
     }
 
     /**

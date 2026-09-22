@@ -524,19 +524,31 @@ public final class SipVerifier {
         }
     }
 
+    /** Content, not metadata: a file under a representation's own data directory. */
+    private static boolean isPayloadPath(String path) {
+        String slashed = "/" + path;
+        return slashed.contains("/representations/") && slashed.contains("/data/");
+    }
+
     /**
-     * The one entry whose path ends with {@code suffix}, or null.
+     * The one metadata file whose path ends with {@code suffix}, or null when there is not
+     * exactly one.
      *
      * <p><b>Null when there is more than one, too.</b> The first version returned whichever the
      * zip iteration reached first, so a package carrying two PREMIS documents — a derived copy
      * brings its own — was verified against an arbitrary one of them, and which one depended on
      * the order the entries happened to be written in. That is a verifier choosing the evidence
      * it likes; {@link #countMatching} lets the caller say so instead.
+     *
+     * <p>PAYLOAD excluded, as the independent verifier excludes it. Without that, a CSIP AIP
+     * keeping the original SIP as CONTENT was "2 PREMIS documents" here and one document there
+     * — the same file, two answers, which is the rule {@code Premis} was written to keep
+     * (subagent, ninth review, P2).
      */
     private static String textOf(Map<String, byte[]> entries, String suffix) {
         String found = null;
         for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
-            if (entry.getKey().endsWith(suffix)) {
+            if (!isPayloadPath(entry.getKey()) && entry.getKey().endsWith(suffix)) {
                 if (found != null) {
                     return null;
                 }
@@ -550,7 +562,7 @@ public final class SipVerifier {
     private static int countMatching(Map<String, byte[]> entries, String suffix) {
         int n = 0;
         for (String key : entries.keySet()) {
-            if (key.endsWith(suffix)) {
+            if (!isPayloadPath(key) && key.endsWith(suffix)) {
                 n++;
             }
         }

@@ -712,8 +712,12 @@ public final class LongTermErs {
             return inSection;
         }
         for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
-            if (entry.getKey().endsWith("/metadata/other/ers.der")
-                    || entry.getKey().endsWith("metadata/other/ers.der")) {
+            // PAYLOAD excluded here too. This arm was the eighth lookup, and the only one left
+            // scanning: a package carrying no record of its own answered "ers parse PASSED"
+            // off a copy sitting in its content (subagent, ninth review, P2, measured).
+            if (!Section.isPayload(entry.getKey())
+                    && (entry.getKey().endsWith("/metadata/other/ers.der")
+                            || entry.getKey().endsWith("metadata/other/ers.der"))) {
                 return entry.getValue();
             }
         }

@@ -51,8 +51,17 @@ import java.util.List;
  */
 final class Premis {
 
-    /** What was found. {@code null} {@code fixities} means the document did not parse. */
-    record Fixity(List<String> digests, List<String> algorithms, String unreadable) {
+    /**
+     * What was found.
+     *
+     * @param unreadable non-null when the document did not parse
+     * @param mostDigestsInOneObject the largest number of {@code messageDigest} elements inside
+     *        a SINGLE {@code premis:object}. Two of them there is PREMIS contradicting ITSELF
+     *        about one file, which needs no object-to-file linkage to see — unlike two digests
+     *        spread across two objects, which is what an ordinary CSIP package looks like
+     */
+    record Fixity(List<String> digests, List<String> algorithms, String unreadable,
+            int mostDigestsInOneObject) {
 
         boolean parsed() {
             return unreadable == null;
@@ -102,10 +111,50 @@ final class Premis {
             factory.setExpandEntityReferences(true);
             document = factory.newDocumentBuilder().parse(new ByteArrayInputStream(xml));
         } catch (Exception notXml) {
-            return new Fixity(List.of(), List.of(), String.valueOf(notXml.getMessage()));
+            return new Fixity(List.of(), List.of(), String.valueOf(notXml.getMessage()), 0);
         }
         return new Fixity(textsOf(document, "messageDigest"),
-                textsOf(document, "messageDigestAlgorithm"), null);
+                textsOf(document, "messageDigestAlgorithm"), null,
+                mostDigestsInOneObject(document.getDocumentElement()));
+    }
+
+    /**
+     * The largest number of {@code messageDigest} elements inside one {@code premis:object}.
+     *
+     * <p>§9's "PREMIS が 1 つの payload に 2 つ fixity を持つ … は FAILED" is about ONE object
+     * describing one file twice, and that is visible without reading which file it describes.
+     * A withdrawal of the count rule took this with it; it comes back on its own terms
+     * (subagent, ninth review, P2).
+     */
+    private static int mostDigestsInOneObject(Element root) {
+        int most = 0;
+        for (Element object : elementsNamed(root, "object")) {
+            List<String> inside = new ArrayList<>();
+            collect(object, "messageDigest", inside);
+            most = Math.max(most, inside.size());
+        }
+        return most;
+    }
+
+    /** Every descendant element with this local name, in the PREMIS namespace. */
+    private static List<Element> elementsNamed(Element element, String localName) {
+        List<Element> found = new ArrayList<>();
+        if (element == null) {
+            return found;
+        }
+        String name = element.getLocalName() == null ? element.getNodeName()
+                : element.getLocalName();
+        String namespace = element.getNamespaceURI();
+        if (localName.equals(name) && (namespace == null || NAMESPACES.contains(namespace))) {
+            found.add(element);
+        }
+        NodeList children = element.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            if (children.item(i) instanceof Element child) {
+                found.addAll(elementsNamed(child, localName));
+            }
+        }
+        return found;
     }
 
     /**

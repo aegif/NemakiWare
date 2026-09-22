@@ -180,16 +180,16 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         Path sip = zip(tmp, "two-fixities.zip", entries);
         Outcome.Check fixity = checkNamed(
                 PackageIntegrity.check(PackageReader.open(sip).entries()), "payload fixity");
-        // UNAVAILABLE, and this lock has now been written BOTH ways. A seventh-round review
-        // read §9 as a rule about counts and it was changed to FAILED; an eighth measured what
-        // that does to ordinary CSIP packages, whose PREMIS describes the METS as well — one
-        // payload, two digests, refused with "the one-to-one relationship does not hold".
-        // §9's sentence is about the LINKAGE, and this verifier does not read it.
-        assertEquals(Outcome.UNAVAILABLE, fixity.outcome(),
-                "a PREMIS with two message digests was answered as though this verifier could "
-                        + "tell which described the payload: " + fixity.detail());
-        assertEquals("AMBIGUOUS_PREMIS", fixity.reasonCode());
-        assertTrue(fixity.detail().contains("linkage"), fixity.detail());
+        // FAILED, and this lock has been written three ways. A seventh-round review read §9 as
+        // a rule about COUNTS and it became FAILED for any two digests; an eighth measured what
+        // that does to ordinary CSIP packages, whose PREMIS describes the METS as well, and it
+        // went to UNAVAILABLE for all of them; a ninth pointed out that §9's own sentence — one
+        // premis:object describing one file TWICE — needs no object-to-file linkage to see.
+        // This fixture is that sentence: both digests are inside one object.
+        assertEquals(Outcome.FAILED, fixity.outcome(),
+                "a PREMIS whose single object records two contradicting digests for one file "
+                        + "was not reported as contradicting itself: " + fixity.detail());
+        assertTrue(fixity.detail().contains("contradicts itself"), fixity.detail());
     }
 
     /**
@@ -222,11 +222,11 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         Outcome.Check fixity = checkNamed(
                 PackageIntegrity.check(PackageReader.open(sip).entries()), "payload fixity");
 
-        assertEquals(Outcome.UNAVAILABLE, fixity.outcome(),
+        assertEquals(Outcome.FAILED, fixity.outcome(),
                 "a PREMIS carrying a matching digest and a contradicting one under a different "
-                        + "prefix was read as carrying one: " + fixity.detail());
-        assertEquals("AMBIGUOUS_PREMIS", fixity.reasonCode());
-        assertTrue(fixity.detail().contains("2 message digests"), fixity.detail());
+                        + "prefix, both inside ONE object, was read as carrying one: "
+                        + fixity.detail());
+        assertTrue(fixity.detail().contains("contradicts itself"), fixity.detail());
     }
 
     /**
@@ -499,6 +499,32 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         assertEquals("AMBIGUOUS_PAYLOAD", fixity.reasonCode(),
                 "the check stopped at the PREMIS count rather than reaching the payloads: "
                         + fixity);
+    }
+
+    /**
+     * A representation's OWN metadata is not a second package PREMIS.
+     *
+     * <p>CSIP gives every representation its own {@code metadata/}, at
+     * {@code representations/<id>/metadata/…}. That is not payload, so the payload exclusion
+     * does not reach it, and counting it made an ordinary AIP "2 PREMIS documents" —
+     * {@code payload fixity} UNAVAILABLE for a package with nothing wrong with it (subagent,
+     * ninth review, P2, measured).
+     */
+    @Test
+    @DisplayName("a representation's own metadata is not the package's")
+    void aRepresentationsOwnMetadataIsNotThePackages(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "representations/rep1/metadata/preservation/premis.xml",
+                premis(sha256(payload), "SHA-256"));
+
+        Path sip = zip(tmp, "representation-metadata.zip", entries);
+        Outcome.Check fixity = checkNamed(
+                PackageIntegrity.check(PackageReader.open(sip).entries()), "payload fixity");
+
+        assertEquals(Outcome.PASSED, fixity.outcome(),
+                "a representation's own PREMIS was counted as a second package PREMIS, so an "
+                        + "ordinary CSIP AIP cannot reach P0: " + fixity.detail());
     }
 
     /**

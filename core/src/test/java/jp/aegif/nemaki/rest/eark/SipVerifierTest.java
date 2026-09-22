@@ -278,6 +278,41 @@ class SipVerifierTest {
                         + result.asMap());
     }
 
+    /**
+     * A payload copy of the PREMIS is content, not a second PREMIS — here too.
+     *
+     * <p>The independent verifier stopped counting payload copies; this endpoint did not, so a
+     * CSIP AIP keeping the original SIP as content answered "2 PREMIS documents" here and one
+     * document there. The same file, two answers, which is the rule this reader was aligned to
+     * keep (subagent, ninth review, P2).
+     */
+    @Test
+    @DisplayName("a payload copy of the PREMIS is not a second one")
+    void aPayloadCopyOfThePremisIsNotASecondOne(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> proof = realProofFor(2);
+        Path sip = zip(tmp, "payload-premis.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/representations/rep2/data/inner/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex("someone else's bytes"
+                        .getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", proof.get("json")));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        // The package's OWN PREMIS is found and read. Without the payload exclusion the
+        // lookup sees two and returns none, so the check never reaches the bytes at all — it
+        // answers "the package carries no PREMIS document" about a package that carries one.
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "payload digest"),
+                "the package's own PREMIS was not read, because a copy sitting in its CONTENT "
+                        + "made the lookup ambiguous: " + result.asMap());
+        assertTrue(String.valueOf(result.asMap()).contains("payload files"),
+                "the check stopped at the PREMIS lookup instead of reaching the payloads, so "
+                        + "the package's own metadata went unread: " + result.asMap());
+    }
+
     @Test
     @DisplayName("a payload edited after packaging FAILS the digest check")
     void anEditedPayloadFails(@TempDir Path tmp) throws Exception {
