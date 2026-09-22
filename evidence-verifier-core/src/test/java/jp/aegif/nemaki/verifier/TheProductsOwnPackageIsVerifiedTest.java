@@ -1,0 +1,120 @@
+/**
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ */
+package jp.aegif.nemaki.verifier;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.nio.file.Path;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * The packages this product really writes, read by this verifier.
+ *
+ * <h2>The seam this closes</h2>
+ *
+ * <p>{@code evidence-verifier-core} may not depend on {@code core}, so for months nothing ran
+ * the product's own output through the product's own reader. The gap was not theoretical: the
+ * same defect — <b>this verifier refusing packages this product writes</b> — shipped into the
+ * branch TWICE in three days, and both times a reviewer found it by rebuilding the layout by
+ * hand rather than a lock finding it.
+ *
+ * <ul>
+ *   <li>The METS lookup dropped {@code representations/<id>/METS.xml}, which in CSIP is the one
+ *       that names the payload, so every package answered "carries payload the METS does not
+ *       name" (canon R80(a)).</li>
+ *   <li>commons-ip2 percent-encodes the href and writes the zip entry raw, so a payload named
+ *       {@code 契約書 v2.txt} was named one way and stored another (canon R81(a)).</li>
+ * </ul>
+ *
+ * <p>The bytes are written by {@code core}'s {@code SipGoldenWriter} and checked in. The twin
+ * of {@code AStandardReaderAcceptsOurEvidenceRecordTest}, for the same reason.
+ *
+ * <p><b>Two packages, and the second is the one that matters.</b> An ASCII payload name is the
+ * example that discriminates nothing: {@code encodeHref("minutes.txt")} is
+ * {@code minutes.txt}, so it answers the same whether the resolver decodes or not.
+ */
+class TheProductsOwnPackageIsVerifiedTest {
+
+    private static Path golden(String name) throws Exception {
+        return Path.of(TheProductsOwnPackageIsVerifiedTest.class.getResource(
+                "/golden/" + name).toURI());
+    }
+
+    private static Outcome.Check checkNamed(List<Outcome.Check> checks, String name) {
+        return checks.stream().filter(c -> c.name().equals(name)).findFirst().orElseThrow();
+    }
+
+    @Test
+    @DisplayName("a package this product writes is not refused by this product's verifier")
+    void theProductsOwnPackagePassesTheStructuralChecks() throws Exception {
+        for (String name : List.of("product-sip-ascii.zip", "product-sip-encoded-name.zip")) {
+            List<Outcome.Check> checks =
+                    PackageIntegrity.check(PackageReader.open(golden(name)).entries());
+
+            assertEquals(Outcome.PASSED, checkNamed(checks, "mets closure").outcome(),
+                    name + ": this verifier says the package this product writes does not close "
+                            + "over its own files — " + checkNamed(checks, "mets closure")
+                                    .detail());
+            assertEquals(Outcome.PASSED, checkNamed(checks, "zip safe").outcome(), name);
+            assertEquals(Outcome.PASSED, checkNamed(checks, "one evidence section").outcome(),
+                    name + ": " + checkNamed(checks, "one evidence section").detail());
+            assertEquals(Outcome.PASSED, checkNamed(checks, "v1 layout").outcome(),
+                    name + ": " + checkNamed(checks, "v1 layout").detail());
+            assertNotEquals(Outcome.Verdict.FAILED, Outcome.combine(checks, checks),
+                    name + ": P0 reports a finding about a package this product wrote: " + checks);
+        }
+    }
+
+    /**
+     * The encoded-name package really does carry an encoded reference.
+     *
+     * <p>Stated before the answer above is trusted: if a later commons-ip2 stopped encoding,
+     * the test above would pass for a reason that has nothing to do with the decoding it is
+     * there to measure, and the seam would be silently open again.
+     */
+    @Test
+    @DisplayName("the encoded-name golden really is encoded, or it measures nothing")
+    void theEncodedGoldenIsActuallyEncoded() throws Exception {
+        java.util.Map<String, byte[]> entries =
+                PackageReader.open(golden("product-sip-encoded-name.zip")).entries();
+
+        String payload = entries.keySet().stream()
+                .filter(n -> n.contains("/data/") && !n.endsWith("/"))
+                .findFirst().orElseThrow();
+        assertTrue(payload.endsWith("契約書 v2.txt"),
+                "the golden's payload is not stored under its raw name: " + payload);
+
+        boolean encoded = false;
+        for (java.util.Map.Entry<String, byte[]> entry : entries.entrySet()) {
+            if (!entry.getKey().endsWith("METS.xml")) {
+                continue;
+            }
+            String mets = new String(entry.getValue(), java.nio.charset.StandardCharsets.UTF_8);
+            if (mets.contains("%E5%A5%91") || mets.contains("+v2.txt")) {
+                encoded = true;
+            }
+        }
+        assertTrue(encoded,
+                "no METS in the golden carries an encoded reference, so the package no longer "
+                        + "exercises the decoding it was checked in for");
+    }
+}

@@ -9839,8 +9839,8 @@ CONTROLS = [
         id='GY3',
         what="the readiness document stops saying the control added since the fifth sweep is unswept, so a finished sweep of 938 reads as a measurement of today's tree",
         file='docs/design/v3.4-release-readiness.md',
-        find='**その 155 本は通し未実施**',
-        replace='**その 155 本も通し済み**',
+        find='**その 158 本は通し未実施**',
+        replace='**その 158 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10797,7 +10797,7 @@ CONTROLS = [
         what='a second statement of the unswept count drifts from the locked one, so the document contradicts itself about how many controls have never been run together',
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **5 回目以後に足した control は 155 本**（境界 LM3 — 5 回目時点の最大 ID。',
+        find='  **5 回目以後に足した control は 158 本**（境界 LM3 — 5 回目時点の最大 ID。',
         replace='  **5 回目以後に足した control は 0 本**（境界 LM3 — 5 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10808,7 +10808,7 @@ CONTROLS = [
         file='docs/design/fail-closed-reads.md',
         # Re-pointed: the boundary id moves below LM3, so ids above it exist while the sweep
         # record says nothing was added — the cross-check (declared − swept ≠ ids above) fires.
-        find='**5 回目以後に足した control は 155 本**（境界 LM3）: ',
+        find='**5 回目以後に足した control は 158 本**（境界 LM3）: ',
         replace='**5 回目以後に足した control は 5 本**（境界 LA3）: ',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10864,8 +10864,8 @@ CONTROLS = [
         id='LN3',
         what="the canon stops saying the control added since the fifth sweep is unswept — the canon-side twin of GY3 — and, being itself the first control after the sweep, the one that forces the ledger back from 0 to 1",
         file='docs/design/fail-closed-reads.md',
-        find='**その 155 本は通し未実施**',
-        replace='**その 155 本も通し済み**',
+        find='**その 158 本は通し未実施**',
+        replace='**その 158 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10873,8 +10873,8 @@ CONTROLS = [
         id='LO3',
         what="the readiness document's §4 stops saying the added controls are unswept while §1.4 still does — the second exit, which a once-per-file check let through (GY3 did not fire)",
         file='docs/design/v3.4-release-readiness.md',
-        find='5 回目以後に足した control は **155 本**（通し未実施）。',
-        replace='5 回目以後に足した control は **155 本**（通し済み）。',
+        find='5 回目以後に足した control は **158 本**（通し未実施）。',
+        replace='5 回目以後に足した control は **158 本**（通し済み）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11689,7 +11689,7 @@ CONTROLS = [
         id='LB3',
         what='the PLAN\'s copy of the never-swept count drifts, so whoever scopes the overdue full sweep from the plan runs half the set',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='5 回目以後に足した control は **155 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='5 回目以後に足した control は **158 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='5 回目以後に足した control は **0 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -12868,6 +12868,42 @@ CONTROLS = [
                      'aSubMetsMayWritePackageRootRelativePaths',
                      'anAbsoluteReferenceIgnoresTheMetssOwnDirectory',
                      'anEncodedHrefResolves'],
+    ),
+
+    # The three below repeat sabotages that already have controls, against a DIFFERENT test
+    # class. The runner executes only control['test'], so a lock in another class is neither
+    # measured nor collateral — and the golden-SIP seam lives in its own class precisely so it
+    # can be run on its own. Measured: without these, QR3 and QZ3 left the seam untouched.
+    dict(
+        id='RT3',
+        what="the METS lookup drops representations/<id>/METS.xml, and the package this product ACTUALLY writes is refused by this product's own verifier",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        List<String> metsPaths = pathsEndingWith(entries, "METS.xml");',
+        replace='        List<String> metsPaths = packageLevel(pathsEndingWith(entries, "METS.xml"));',
+        test='TheProductsOwnPackageIsVerifiedTest',
+        expect_fail=['theProductsOwnPackagePassesTheStructuralChecks'],
+    ),
+    dict(
+        id='RU3',
+        what="the METS href is looked for literally, and the package this product ACTUALLY writes for a non-ASCII document name is refused by this product's own verifier",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='    private static String percentDecoded(String reference, boolean plusIsSpace) {',
+        replace='    private static String percentDecoded(String reference, boolean plusIsSpace) {\n        if (true) { return reference; }',
+        test='TheProductsOwnPackageIsVerifiedTest',
+        expect_fail=['theProductsOwnPackagePassesTheStructuralChecks'],
+    ),
+    dict(
+        id='RV3',
+        what='the exporter stops naming the payload after the document, so the checked-in golden SIPs are no longer the packages this product writes and the verifier is measuring a package nobody produces',
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/EarkSipExporter.java',
+        # The folder-chain sabotage (IL3's) does NOT reach this: the golden packages wire
+        # no evidence bundle, so that branch never runs for them (measured).
+        find='        if (candidate == null || candidate.isBlank()) {\n            return "content.bin";\n        }',
+        replace='        if (true) {\n            return "content.bin";\n        }',
+        test='TheGoldenSipIsStillWhatWeWriteTest',
+        expect_fail=['theAsciiGoldenIsCurrent', 'theEncodedGoldenIsCurrent'],
     ),
 ]
 
