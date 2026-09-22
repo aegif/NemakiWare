@@ -60,6 +60,11 @@ import java.nio.file.StandardCopyOption;
  *      evidence-verifier-core/src/test/resources/golden
  * </pre>
  *
+ * <p><b>With the payload's fixity.</b> A package built without the report's {@code content}
+ * section records no digest in its PREMIS, so it cannot reach P0 {@code VERIFIED} — the first
+ * pair of goldens answered {@code INDETERMINATE} for that reason, and a golden that cannot pass
+ * measures the structural checks only.
+ *
  * <p>The zips are NOT reproducible byte for byte (timestamps in the report), so regenerating
  * replaces them rather than confirming them. What keeps them honest is
  * {@code TheGoldenSipIsStillWhatWeWriteTest}, which builds a package NOW and compares its shape
@@ -91,7 +96,7 @@ public final class SipGoldenWriter {
 
     private static void write(Path into, String name, String fileName) throws Exception {
         Path scratch = Files.createTempDirectory("sip-golden");
-        Path sip = EarkSipExporterTest.buildOneNamed(scratch, name);
+        Path sip = EarkSipExporterTest.buildOneWithFixity(scratch, name);
         Files.copy(sip, into.resolve(fileName), StandardCopyOption.REPLACE_EXISTING);
         System.out.println("wrote " + into.resolve(fileName) + " (payload named " + name + ")");
     }

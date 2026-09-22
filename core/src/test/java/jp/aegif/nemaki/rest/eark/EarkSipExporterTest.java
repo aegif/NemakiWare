@@ -141,6 +141,26 @@ class EarkSipExporterTest {
      * writes the zip entry raw, so a name with a space or a non-ASCII character is the only
      * fixture that tells a decoding resolver from a non-decoding one.
      */
+    /**
+     * One package whose PREMIS carries the payload's own fixity, named {@code name}.
+     *
+     * <p>{@link #buildOneNamed} hands the exporter a report with no {@code content} section, so
+     * its PREMIS records no digest and the package cannot reach P0 {@code VERIFIED} — measured
+     * on the golden SIPs, which answered {@code INDETERMINATE} for exactly that reason. A
+     * golden that cannot pass measures the structural checks only.
+     */
+    static Path buildOneWithFixity(Path tmp, String name) throws Exception {
+        byte[] payload = "the minutes".getBytes(StandardCharsets.UTF_8);
+        Map<String, Object> content = new LinkedHashMap<>();
+        content.put("recordedDigest", sha256Hex(payload));
+        content.put("algorithm", "SHA-256");
+        AuthenticityReport report = new AuthenticityReport(REPO, OBJECT, "2026-08-25T00:00:00Z",
+                List.of(new Section("content", Verdict.REPORTED, content, "measured")));
+        return exporterOver(report, payload, name)
+                .export(REPO, OBJECT, EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp)
+                .sip();
+    }
+
     static Path buildOneNamed(Path tmp, String name) throws Exception {
         return exporterOver(reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
                 "the minutes".getBytes(StandardCharsets.UTF_8), name)

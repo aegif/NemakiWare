@@ -99,7 +99,8 @@ class TheGoldenSipIsStillWhatWeWriteTest {
                         + "measurement of this product's own packages reads it");
 
         Map<String, byte[]> checkedIn = entriesOf(golden);
-        Map<String, byte[]> now = entriesOf(EarkSipExporterTest.buildOneNamed(tmp, payloadName));
+        Map<String, byte[]> now =
+                entriesOf(EarkSipExporterTest.buildOneWithFixity(tmp, payloadName));
 
         assertEquals(checkedIn.keySet(), now.keySet(),
                 goldenName + " no longer has the layout this product writes. The verifier runs "

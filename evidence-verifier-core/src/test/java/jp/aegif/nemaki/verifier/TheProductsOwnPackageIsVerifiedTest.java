@@ -23,7 +23,6 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -51,6 +50,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p><b>Two packages, and the second is the one that matters.</b> An ASCII payload name is the
  * example that discriminates nothing: {@code encodeHref("minutes.txt")} is
  * {@code minutes.txt}, so it answers the same whether the resolver decodes or not.
+ *
+ * <p><b>VERIFIED, not "not FAILED".</b> The first pair of goldens was built without the
+ * report's {@code content} section, so their PREMIS recorded no digest and both answered
+ * {@code INDETERMINATE} — every structural check passing over a package that could not reach
+ * P0 either way. Measured with the CLI before it was noticed here.
  */
 class TheProductsOwnPackageIsVerifiedTest {
 
@@ -79,8 +83,13 @@ class TheProductsOwnPackageIsVerifiedTest {
                     name + ": " + checkNamed(checks, "one evidence section").detail());
             assertEquals(Outcome.PASSED, checkNamed(checks, "v1 layout").outcome(),
                     name + ": " + checkNamed(checks, "v1 layout").detail());
-            assertNotEquals(Outcome.Verdict.FAILED, Outcome.combine(checks, checks),
-                    name + ": P0 reports a finding about a package this product wrote: " + checks);
+            assertEquals(Outcome.PASSED, checkNamed(checks, "payload fixity").outcome(),
+                    name + ": " + checkNamed(checks, "payload fixity").detail());
+            // VERIFIED, not merely "not FAILED". A package whose PREMIS records no digest
+            // answers INDETERMINATE and every structural check above still passes — which is
+            // what the first pair of goldens did, so they measured the structure only.
+            assertEquals(Outcome.Verdict.VERIFIED, Outcome.combine(checks, checks),
+                    name + ": P0 does not verify a package this product wrote: " + checks);
         }
     }
 
