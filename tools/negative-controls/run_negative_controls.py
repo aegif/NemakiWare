@@ -9839,8 +9839,8 @@ CONTROLS = [
         id='GY3',
         what="the readiness document stops saying the control added since the fifth sweep is unswept, so a finished sweep of 938 reads as a measurement of today's tree",
         file='docs/design/v3.4-release-readiness.md',
-        find='**その 183 本は通し未実施**',
-        replace='**その 183 本も通し済み**',
+        find='**その 184 本は通し未実施**',
+        replace='**その 184 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10797,7 +10797,7 @@ CONTROLS = [
         what='a second statement of the unswept count drifts from the locked one, so the document contradicts itself about how many controls have never been run together',
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **5 回目以後に足した control は 183 本**（境界 LM3 — 5 回目時点の最大 ID。',
+        find='  **5 回目以後に足した control は 184 本**（境界 LM3 — 5 回目時点の最大 ID。',
         replace='  **5 回目以後に足した control は 0 本**（境界 LM3 — 5 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10808,7 +10808,7 @@ CONTROLS = [
         file='docs/design/fail-closed-reads.md',
         # Re-pointed: the boundary id moves below LM3, so ids above it exist while the sweep
         # record says nothing was added — the cross-check (declared − swept ≠ ids above) fires.
-        find='**5 回目以後に足した control は 183 本**（境界 LM3）: ',
+        find='**5 回目以後に足した control は 184 本**（境界 LM3）: ',
         replace='**5 回目以後に足した control は 5 本**（境界 LA3）: ',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10864,8 +10864,8 @@ CONTROLS = [
         id='LN3',
         what="the canon stops saying the control added since the fifth sweep is unswept — the canon-side twin of GY3 — and, being itself the first control after the sweep, the one that forces the ledger back from 0 to 1",
         file='docs/design/fail-closed-reads.md',
-        find='**その 183 本は通し未実施**',
-        replace='**その 183 本も通し済み**',
+        find='**その 184 本は通し未実施**',
+        replace='**その 184 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10873,8 +10873,8 @@ CONTROLS = [
         id='LO3',
         what="the readiness document's §4 stops saying the added controls are unswept while §1.4 still does — the second exit, which a once-per-file check let through (GY3 did not fire)",
         file='docs/design/v3.4-release-readiness.md',
-        find='5 回目以後に足した control は **183 本**（通し未実施）。',
-        replace='5 回目以後に足した control は **183 本**（通し済み）。',
+        find='5 回目以後に足した control は **184 本**（通し未実施）。',
+        replace='5 回目以後に足した control は **184 本**（通し済み）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11689,7 +11689,7 @@ CONTROLS = [
         id='LB3',
         what='the PLAN\'s copy of the never-swept count drifts, so whoever scopes the overdue full sweep from the plan runs half the set',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='5 回目以後に足した control は **183 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='5 回目以後に足した control は **184 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='5 回目以後に足した control は **0 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -12758,7 +12758,7 @@ CONTROLS = [
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['aRelativeExternalLocatorIsNotAMissingFile',
                      'aNonUrlLocTypeIsExternalAndOtherLocTypeMatchesOnTheWord',
-                     'aPayloadNamedOnlyByAnExternalLocatorIsUnnamed'],
+                     'aPayloadNamedOnlyByAnExternalLocatorIsNotEstablished'],
     ),
     dict(
         id='RJ3',
@@ -13123,7 +13123,7 @@ CONTROLS = [
         find='        if (named.isEmpty() && payloadsIn(entries).isEmpty()) {',
         replace='        if (named.isEmpty()) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aPayloadNamedOnlyByAnExternalLocatorIsUnnamed'],
+        expect_fail=['aPayloadNamedOnlyByAnExternalLocatorIsNotEstablished'],
     ),
     dict(
         id='SP3',
@@ -13144,18 +13144,13 @@ CONTROLS = [
         find='        String kind = normalised(locType);',
         replace='        String kind = locType.toUpperCase(java.util.Locale.ROOT);',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aLocTypeIsNormalisedAndAPathWordMeansAPath'],
+        expect_fail=['aLocTypeIsNormalisedAndANonUrlIsExternal'],
     ),
-    dict(
-        id='SR3',
-        what='a path-word in LOCTYPE answers the opposite of the same word in OTHERLOCTYPE, so LOCTYPE="FILE" drops the reference while OTHERLOCTYPE="FILE" keeps it',
-        module='evidence-verifier-core',
-        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='        if (kind.equals("URL") || A_PATH.contains(kind)) {',
-        replace='        if (kind.equals("URL")) {',
-        test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aLocTypeIsNormalisedAndAPathWordMeansAPath'],
-    ),
+    # SR3 was retired 2026-09-23 (16 巡目). It measured the arm that read a path-word in
+    # LOCTYPE as a path — WITHDRAWN: METS enumerates LOCTYPE and leaves OTHERLOCTYPE free
+    # text, so the two attributes are not the same question, and reading "LOCAL" as a
+    # path turned a relative external identifier into a file the package does not carry
+    # (subagent, sixteenth review). SQ3 still measures the normalisation beside it.
     dict(
         id='SS3',
         what='an absolute xml:base drops the outer base even when that base has an authority, so a reference on another host becomes a package path',
@@ -13176,16 +13171,11 @@ CONTROLS = [
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['notEvaluatedIsStatedOnEveryArm', 'skippedLocatorsAreCountedInTheAnswer'],
     ),
-    dict(
-        id='SU3',
-        what='a UNC path is read as a path inside the package, because the authority rule only knows the forward-slash spelling and runs before backslashes are normalised',
-        module='evidence-verifier-core',
-        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='        return href.startsWith("//") || href.startsWith(UNC_PREFIX);',
-        replace='        return href.startsWith("//");',
-        test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aUncPathIsNotInsideThePackage'],
-    ),
+    # SU3 was retired 2026-09-23 (16 巡目). It sabotaged a UNC arm in namesAnotherHost,
+    # and after backslashes were normalised where references are READ that arm never sees
+    # one — the control did not fire, so the arm came out rather than being kept with a
+    # control that measures nothing. SX3 measures the normalisation, which is what
+    # handles the UNC spelling now.
     dict(
         id='SV3',
         what="a javadoc block in evidence-verifier-core is orphaned and the lock that exists for it does not notice, because its roots never leave core/",
@@ -13210,6 +13200,39 @@ CONTROLS = [
         replace='        String actual = Canonical.hex(Canonical.sha256(new byte[] { 0 }));',
         test='TheProductsOwnPackageIsVerifiedTest',
         expect_fail=['theV1GoldenVerifiesAtP1'],
+    ),
+
+    dict(
+        id='SX3',
+        what='backslash and forward-slash spellings of an authority are treated differently, so an xml:base of \\\\host\\share\\ is dropped and the package\'s own payload satisfies a reference to another machine',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        declared = declared == null ? null : declared.replace(\'\\\\\', \'/\');',
+        replace='        declared = declared;',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aUncXmlBaseIsAnAuthorityToo'],
+    ),
+    dict(
+        id='SY3',
+        what='"the payload is not named" is reported as a FINDING even when locators were declined, so a check that admits it did not look also says content nobody committed to is inside',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='            if (external > 0) {',
+        replace='            if (false) {',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aPayloadNamedOnlyByAnExternalLocatorIsNotEstablished',
+                     'aForeignFileUriIsNotLocalAndAnEmptyAuthorityIsAbsolute'],
+    ),
+    dict(
+        id='SZ3',
+        what='a reference this verifier REFUSED to follow is counted as a file the package does not carry, which says something false about a package that may well carry a file of that name',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='                } else if (spellingsOf(withoutFragmentOrQuery(href)).isEmpty()) {',
+        replace='                } else if (false) {',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aRefusedTraversalDoesNotFallBackToItsLiteralSpelling',
+                     'anEncodedSeparatorDoesNotWalkOutOfThePackage'],
     ),
 ]
 

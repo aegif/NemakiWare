@@ -641,7 +641,8 @@ public final class PackageIntegrity {
                 // names nothing would turn that into a fact about the package.
                 return Outcome.Check.unavailable("mets closure", "METS_NOT_PARSED",
                         "the package presents " + metsPath + " as a METS and this verifier "
-                                + "could not read it as XML, so what it names is unknown");
+                                + "could not read it as XML, so what it names is unknown"
+                                + notEvaluated(external));
             }
             namedBy.put(metsPath, hrefs);
             named.addAll(hrefs);
@@ -649,8 +650,10 @@ public final class PackageIntegrity {
         }
         if (named.isEmpty() && payloadsIn(entries).isEmpty()) {
             return Outcome.Check.absent("mets closure",
-                    "the METS names no files, so there is nothing to close over."
-                            + notEvaluated(external));
+                    external == 0
+                            ? "the METS names no files, so there is nothing to close over."
+                            : "the METS names no file INSIDE the package."
+                                    + notEvaluated(external));
         }
         // NOT an early return when the package HAS payload. Leaving here the moment no local
         // reference was collected skipped the reverse direction, so a payload whose ONLY name
@@ -661,22 +664,37 @@ public final class PackageIntegrity {
         // path ENDED with some href — a different question from the one the forward direction
         // asked, so the two halves of this check could disagree about the same reference.
         List<String> missing = new ArrayList<>();
+        List<String> refused = new ArrayList<>();
         java.util.Set<String> claimed = new java.util.LinkedHashSet<>();
         for (Map.Entry<String, List<String>> wrote : namedBy.entrySet()) {
             for (String href : wrote.getValue()) {
                 String entry = resolve(entries, wrote.getKey(),
                         packageRootOf(wrote.getKey(), metsPaths), metsPaths, href);
-                if (entry == null) {
-                    missing.add(wrote.getKey() + " -> " + href);
-                } else {
+                if (entry != null) {
                     claimed.add(entry);
+                } else if (spellingsOf(withoutFragmentOrQuery(href)).isEmpty()) {
+                    // REFUSED, not missing: decoding it would invent a separator or a dot
+                    // segment. Counting it as "a file the package does not carry" said
+                    // something FALSE about a package that may well carry a file of that name
+                    // — §9 draws the distinction and the answer did not (subagent, sixteenth
+                    // review, P3).
+                    refused.add(wrote.getKey() + " -> " + href);
+                } else {
+                    missing.add(wrote.getKey() + " -> " + href);
                 }
             }
         }
         if (!missing.isEmpty()) {
             return Outcome.Check.failed("mets closure",
                     "the METS names " + missing.size() + " file(s) the package does not carry: "
-                            + missing + notEvaluated(external));
+                            + missing + wouldNotFollow(refused) + notEvaluated(external));
+        }
+        if (!refused.isEmpty()) {
+            return Outcome.Check.unavailable("mets closure", "METS_NOT_PARSED",
+                    "this verifier will not follow " + refused.size() + " reference(s) the METS "
+                            + "makes, because decoding them would invent a path separator or a "
+                            + "dot segment: " + refused + ". Whether the package carries what "
+                            + "they name has NOT been established" + notEvaluated(external));
         }
 
         List<String> unnamed = new ArrayList<>();
@@ -686,10 +704,23 @@ public final class PackageIntegrity {
             }
         }
         if (!unnamed.isEmpty()) {
+            if (external > 0) {
+                // NOT a finding. Some locators were not followed, so "no reference names this
+                // payload" is not something this check established — one of the ones it
+                // declined may name it. Reporting FAILED said "checked, and content nobody
+                // committed to is inside" while the same sentence admitted it had not looked
+                // (subagent, sixteenth review, P2). The early return this replaced hid the
+                // case; answering exit 2 for it was the other half of the same mistake.
+                return Outcome.Check.unavailable("mets closure", "AMBIGUOUS_PAYLOAD",
+                        "no reference this verifier follows names " + unnamed + ", and "
+                                + external + " locator(s) name something OUTSIDE the package "
+                                + "and were NOT evaluated — so whether the payload is named "
+                                + "has NOT been established");
+            }
             return Outcome.Check.failed("mets closure",
                     "the package carries payload the METS does not name: " + unnamed
                             + ". Content nobody committed to travels inside a package that "
-                            + "would otherwise verify" + notEvaluated(external));
+                            + "would otherwise verify");
         }
         return external == 0 ? Outcome.Check.passed("mets closure")
                 : Outcome.Check.passed("mets closure",
@@ -708,6 +739,12 @@ public final class PackageIntegrity {
         return external == 0 ? "" : " " + external + " locator(s) name something OUTSIDE the "
                 + "package (a URN, a DOI, a handle, a file: URI on another host, an http URL) "
                 + "and were NOT evaluated here.";
+    }
+
+    /** What to add when some references were refused rather than looked for. */
+    private static String wouldNotFollow(List<String> refused) {
+        return refused.isEmpty() ? "" : " " + refused.size() + " further reference(s) were not "
+                + "followed at all (decoding them would invent a separator): " + refused + ".";
     }
 
     /**
@@ -1183,10 +1220,18 @@ public final class PackageIntegrity {
         if (element == null) {
             return;
         }
+        // BACKSLASHES ARE NORMALISED HERE, once, before any rule looks at a reference. The UNC
+        // rule was added to isPackageLocal only, and the three siblings that decide the base
+        // (hasAuthority, merge's authority arm, the absolute-href guard) still knew the forward
+        // spelling alone — so an xml:base of "\\host\share\" was DROPPED and the package's own
+        // payload satisfied a reference to another machine (subagent, sixteenth review, P1).
+        // One spelling in, and every rule below agrees. A Windows drive still reads as one:
+        // "C:\x" becomes "C:/x", which is the shape isPackageLocal recognises.
         // xml:base, which a METS may use to say where its references start from. Ignoring it
         // sent every reference under it to the wrong directory, so a standard third-party METS
         // was reported as naming files the package does not carry (Codex, twelfth review, P2).
         String declared = element.getAttributeNS(javax.xml.XMLConstants.XML_NS_URI, "base");
+        declared = declared == null ? null : declared.replace('\\', '/');
         if (declared != null && !declared.isEmpty()) {
             // MERGED per RFC 3986 §5.2.2: a base's last segment is REPLACED, not kept. Adding a
             // "/" to a relative base and nothing to an absolute one produced
@@ -1207,6 +1252,7 @@ public final class PackageIntegrity {
         // phantom "names a file the package does not carry" (subagent, seventh review, P3 —
         // the very misreading this method was rewritten to remove).
         String href = element.getAttributeNS(XLINK, "href");
+        href = href == null ? null : href.replace('\\', '/');
         // A METS can point outside the package. Those are not files it is closing over and
         // reporting them as missing would turn a legitimate external reference into a failure.
         if (href != null && !href.isEmpty() && isLocalLocType(element)) {
@@ -1292,20 +1338,21 @@ public final class PackageIntegrity {
         return (slash < 0 ? "" : base.substring(0, slash + 1)) + reference;
     }
 
-    /** The UNC prefix, as a constant so a control can name this rule without escaping it. */
-    private static final String UNC_PREFIX = "\\\\";
-
     /**
      * Does this reference carry an AUTHORITY — {@code //host/path} or {@code \\host\share}?
      *
      * <p>A network-path reference (RFC 3986 §4.2) names something on that host, so it is not a
      * path in this package; reading it as one made an absolute package path out of it (Codex,
-     * fourteenth review, P2). Both spellings, because this runs BEFORE {@code resolve}
-     * normalises backslashes, and knowing only the forward one left a UNC path read as local
-     * (subagent, fifteenth review, P3).
+     * fourteenth review, P2).
+     *
+     * <p>ONE spelling. A {@code \\host\share} arm was added here for the UNC form and then
+     * REMOVED: backslashes are normalised where references are read, so this never sees one,
+     * and the control aimed at the arm did not fire (measured, sixteenth review). Normalising
+     * early is what makes every rule agree; a second spelling in one of them was what let the
+     * others disagree.
      */
     private static boolean namesAnotherHost(String href) {
-        return href.startsWith("//") || href.startsWith(UNC_PREFIX);
+        return href.startsWith("//");
     }
 
     /** Does this base carry an authority — {@code scheme://host…} or {@code //host…}? */
@@ -1338,12 +1385,17 @@ public final class PackageIntegrity {
         // read as declaring something external, and its payload became content nobody
         // committed to (subagent, fifteenth review, P2).
         String kind = normalised(locType);
-        if (kind.equals("URL") || A_PATH.contains(kind)) {
-            // A path-word in LOCTYPE means what it means in OTHERLOCTYPE. Accepting "FILE"
-            // there and refusing it here made the SAME WORD answer opposite ways depending on
-            // which attribute carried it (subagent, fifteenth review, P2).
+        if (kind.equals("URL")) {
             return true;
         }
+        // WITHDRAWN (subagent, sixteenth review, P2/P3): the fifteenth review asked for a
+        // path-word in LOCTYPE to mean what it means in OTHERLOCTYPE, on the ground that the
+        // same word should not answer two ways. It should, and the reason is the spec: METS
+        // ENUMERATES LOCTYPE (ARK, URN, URL, PURL, HANDLE, DOI, OTHER) and leaves OTHERLOCTYPE
+        // free text. "FILE" in LOCTYPE is not a path declaration, it is a value the enumeration
+        // does not have — and reading it as a path turned a relative external identifier into a
+        // file the package does not carry. §9's first clause said "not URL, not counted" all
+        // along; accepting the path-words contradicted it in the same line.
         if (kind.equals("OTHER")) {  // NOPMD — the one exception §9 names
             // OTHER means "whatever OTHERLOCTYPE says", and the javadoc said so while the code
             // read nothing: every OTHER locator was dropped, so a METS naming its own payload

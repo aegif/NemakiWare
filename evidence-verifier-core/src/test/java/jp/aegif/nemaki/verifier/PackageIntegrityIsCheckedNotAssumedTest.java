@@ -931,8 +931,9 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         climbing.put("loose.txt", "outside the package");
         Outcome.Check encoded = checkNamed(PackageIntegrity.check(PackageReader.open(
                 zip(tmp, "encoded-climb.zip", climbing)).entries()), "mets closure");
-        assertEquals(Outcome.FAILED, encoded.outcome(),
+        assertNotEquals(Outcome.PASSED, encoded.outcome(),
                 "a climb spelled with %2F invented separators and resolved: " + encoded.detail());
+        assertTrue(encoded.detail().contains("will not follow"), encoded.detail());
 
         // %4Z is not an escape either, and digit('4')*16 + digit('Z') is 64 + -1 = 63, which is
         // '?'. Deliberately NOT a separator: the per-segment guard answers those, so a fixture
@@ -1165,10 +1166,14 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                 "metadata/preservation/premis.xml"));
         Outcome.Check elsewhere = checkNamed(PackageIntegrity.check(PackageReader.open(
                 zip(tmp, "foreign-file-uri.zip", foreign)).entries()), "mets closure");
-        assertEquals(Outcome.FAILED, elsewhere.outcome(),
+        // NOT PASSED: stripping the authority would let the foreign URI claim the local entry
+        // and close over it. NOT FAILED either — a locator that was declined may be the one
+        // that names the payload, so "the METS does not name it" is not established.
+        assertEquals(Outcome.UNAVAILABLE, elsewhere.outcome(),
                 "a file: URI on ANOTHER MACHINE claimed an entry in this package, so closure "
                         + "was reported over a file the METS does not name locally: "
                         + elsewhere.detail());
+        assertEquals("AMBIGUOUS_PAYLOAD", elsewhere.reasonCode(), elsewhere.detail());
 
         Map<String, String> collision = new LinkedHashMap<>(goodPackage(payload));
         collision.put(ROOT + "METS.xml", mets("representations/rep1/METS.xml"));
@@ -1442,9 +1447,13 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
                 zip(tmp, "refused-literal.zip", entries)).entries()), "mets closure");
 
-        assertEquals(Outcome.FAILED, closure.outcome(),
+        // UNAVAILABLE, not FAILED: the package may well carry a file of that name, and saying
+        // "does not carry" about it is a false statement (subagent, sixteenth review, P3).
+        // What this locks is that the literal spelling did NOT satisfy the reference.
+        assertEquals(Outcome.UNAVAILABLE, closure.outcome(),
                 "a reference this verifier refused to follow was satisfied by a file named the "
                         + "way it is written: " + closure.detail());
+        assertTrue(closure.detail().contains("will not follow"), closure.detail());
     }
 
     /**
@@ -1455,8 +1464,8 @@ class PackageIntegrityIsCheckedNotAssumedTest {
      * carrying content no local reference names (Codex, fifteenth review, P1).
      */
     @Test
-    @DisplayName("a payload named only by an external locator is unnamed, not 'nothing to close'")
-    void aPayloadNamedOnlyByAnExternalLocatorIsUnnamed(@TempDir Path tmp) throws Exception {
+    @DisplayName("a payload named only by an external locator is NOT ESTABLISHED, either way")
+    void aPayloadNamedOnlyByAnExternalLocatorIsNotEstablished(@TempDir Path tmp) throws Exception {
         String payload = "the minutes";
         Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
         entries.put(ROOT + "METS.xml", metsWithOtherLocType("URI",
@@ -1465,10 +1474,15 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
                 zip(tmp, "only-external.zip", entries)).entries()), "mets closure");
 
-        assertEquals(Outcome.FAILED, closure.outcome(),
+        // NOT "the METS names no files" (which skipped the reverse direction), and NOT FAILED
+        // (which asserts a finding the check did not establish — one of the locators it
+        // declined may name this payload). Both were wrong, in opposite directions, one review
+        // apart.
+        assertEquals(Outcome.UNAVAILABLE, closure.outcome(),
                 "a package whose payload is named only by a locator this verifier does not "
-                        + "follow answered 'the METS names no files': " + closure.detail());
-        assertTrue(closure.detail().contains("does not name"), closure.detail());
+                        + "follow got a settled answer: " + closure.detail());
+        assertEquals("AMBIGUOUS_PAYLOAD", closure.reasonCode(), closure.detail());
+        assertTrue(closure.detail().contains("NOT been established"), closure.detail());
     }
 
     /**
@@ -1505,10 +1519,10 @@ class PackageIntegrityIsCheckedNotAssumedTest {
      * carried it ({@code OTHERLOCTYPE="FILE"} local, {@code LOCTYPE="FILE"} external).
      */
     @Test
-    @DisplayName("LOCTYPE is normalised, and a path-word means a path wherever it is written")
-    void aLocTypeIsNormalisedAndAPathWordMeansAPath(@TempDir Path tmp) throws Exception {
+    @DisplayName("LOCTYPE is normalised; anything but URL is external")
+    void aLocTypeIsNormalisedAndANonUrlIsExternal(@TempDir Path tmp) throws Exception {
         String payload = "the minutes";
-        for (String locType : List.of("URL ", " URL", "URL\n", "FILE", "SYSTEM")) {
+        for (String locType : List.of("URL ", " URL", "URL\n")) {
             Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
             entries.put(ROOT + "METS.xml", metsWithOtherLocType(locType,
                     "representations/rep1/data/minutes.txt", ""));
@@ -1518,6 +1532,23 @@ class PackageIntegrityIsCheckedNotAssumedTest {
             assertEquals(Outcome.PASSED, closure.outcome(),
                     "LOCTYPE=\"" + locType + "\" dropped the payload's only name: "
                             + closure.detail());
+        }
+
+        // WITHDRAWN, and the withdrawal is the assertion. The fifteenth review asked for a
+        // path-word in LOCTYPE to mean what it means in OTHERLOCTYPE; the sixteenth measured
+        // what that does — a relative external identifier written as LOCTYPE="LOCAL" became a
+        // file the package does not carry. METS ENUMERATES LOCTYPE and leaves OTHERLOCTYPE free
+        // text, so the two attributes are not the same question, and §9's first clause said so
+        // all along.
+        for (String locType : List.of("FILE", "SYSTEM", "LOCAL")) {
+            Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+            entries.put(ROOT + "METS.xml", metsWithOtherLocType(locType,
+                    "representations/rep1/data/minutes.txt", ""));
+            Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
+                    zip(tmp, "nonurl-" + locType + ".zip", entries)).entries()), "mets closure");
+            assertNotEquals(Outcome.PASSED, closure.outcome(),
+                    "LOCTYPE=\"" + locType + "\" was followed as a path, and METS does not "
+                            + "have that value: " + closure.detail());
         }
     }
 
@@ -1609,6 +1640,34 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         assertEquals(Outcome.PASSED, closure.outcome(),
                 "a UNC path naming another machine was reported as a file the package does not "
                         + "carry: " + closure.detail());
+    }
+
+    /**
+     * A UNC {@code xml:base} is an authority too — the rule reached only one of four places.
+     *
+     * <p>{@code namesAnotherHost} was added for the UNC spelling and wired into
+     * {@code isPackageLocal} ALONE. The three siblings that decide the base — the
+     * absolute-href guard, the base stack, {@code hasAuthority} — still knew the forward
+     * spelling, so an {@code xml:base} of {@code \\host\share\} was DROPPED (it has no
+     * forward slash for {@code merge} to find) and the package's own payload satisfied a
+     * reference to another machine. The two legal spellings of the same base answered
+     * opposite ways (subagent, sixteenth review, P1). Backslashes are now normalised ONCE,
+     * where references are read, so every rule below sees one spelling.
+     */
+    @Test
+    @DisplayName("a UNC xml:base is an authority too, like its forward-slash spelling")
+    void aUncXmlBaseIsAnAuthorityToo(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "METS.xml", metsWithBase("\\\\archive.example.org\\catalogue\\",
+                "representations/rep1/data/minutes.txt"));
+
+        Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "unc-base.zip", entries)).entries()), "mets closure");
+
+        assertNotEquals(Outcome.PASSED, closure.outcome(),
+                "a reference under a base naming ANOTHER MACHINE was satisfied by this "
+                        + "package's own payload: " + closure.detail());
     }
 
     @Test
