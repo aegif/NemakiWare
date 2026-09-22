@@ -1737,16 +1737,30 @@ class PackageIntegrityIsCheckedNotAssumedTest {
             assertEquals(Outcome.PASSED, closure.outcome(),
                     shape.getKey() + ": a reference with no path of its own was not resolved "
                             + "against the base in effect: " + closure.detail());
+            // A reference that names a DIRECTORY in this package is not a reference to
+            // somewhere else. It was neither followed nor declined, and the external count is
+            // a subtraction, so it landed in the one bucket that describes it wrongly
+            // (subagent, nineteenth review, P3).
+            // String.valueOf: a PASSED with nothing to report carries a null detail, and
+            // that is the answer this shape should now give — the folder reference is not
+            // announced at all, because there is nothing about it that was not evaluated.
+            assertFalse(String.valueOf(closure.detail()).contains("OUTSIDE"),
+                    shape.getKey() + ": a reference naming a folder inside this package was "
+                            + "reported as naming something outside it: " + closure.detail());
         }
 
         // AND THE OTHER DIRECTION. A base naming a file the package does NOT carry must not be
         // answered as "the METS, which is here". This is the fail-open half: a reference to
         // something absent reported as satisfied.
+        // The payload is named by an ABSOLUTE reference, which §5.2.2 resolves by REPLACING
+        // the base's path — so it names the payload whatever the base is. The first version of
+        // this shape used xml:base="" to cancel the base, which collectHrefs ignores (an empty
+        // xml:base means the current base), so the reference was merged under the absent base,
+        // doubled, and this assertion failed for a reason of its own: it measured nothing
+        // about the path-less reference (subagent, nineteenth review, P2).
         Map<String, String> absentBase = new LinkedHashMap<>(goodPackage(payload));
         absentBase.put(ROOT + "METS.xml", metsWithBase("representations/rep1/data/absent.txt",
-                "?download").replace("<mets:fileSec>", "<mets:fileSec><mets:file><mets:FLocat "
-                        + "xml:base=\"\" xlink:href=\"representations/rep1/data/minutes.txt\"/>"
-                        + "</mets:file>"));
+                "/representations/rep1/data/minutes.txt", "?download"));
         Outcome.Check absent = checkNamed(PackageIntegrity.check(PackageReader.open(
                 zip(tmp, "absent-base.zip", absentBase)).entries()), "mets closure");
         assertEquals(Outcome.FAILED, absent.outcome(),
@@ -1801,7 +1815,58 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                             + "the smuggled-content finding to 'could not tell': "
                             + closure.detail());
             assertTrue(closure.detail().contains("smuggled.bin"), closure.detail());
+            // AND IT SAYS IT DID NOT LOOK AT ONE. §9 requires every answer to state what was
+            // not evaluated, and this — the arm that ACCUSES the package — was the one arm
+            // without it (subagent, nineteenth review, P2). The narrowing made it the default
+            // destination for every declined locator, so the omission is widest here.
+            // Either sentence will do — the external-base locator really is outside the
+            // package and is described by the first one. What must not happen is silence.
+            assertTrue(closure.detail().contains("locator(s)"),
+                    shape.getKey() + ": the finding does not say a locator was declined, so "
+                            + "'checked, and nothing names it' reads the same as 'did not "
+                            + "look at one of the names': " + closure.detail());
         }
+
+        // A declined locator this verifier ALSO REFUSED to follow. resolve() answers null for
+        // "the package does not carry it" and for "following it would invent a separator", and
+        // reading the second as the first let the finding be ASSERTED over a locator that had
+        // been declined twice over (subagent, nineteenth review, P2).
+        Map<String, String> refused = new LinkedHashMap<>(goodPackage(payload));
+        refused.put(smuggled, "content nobody committed to");
+        refused.put(ROOT + "METS.xml", metsWithLocType("URN",
+                "representations/rep1%2f../data/smuggled.bin",
+                "representations/rep1/data/minutes.txt"));
+        Outcome.Check couldNotTell = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "refused-declined.zip", refused)).entries()), "mets closure");
+        assertEquals(Outcome.UNAVAILABLE, couldNotTell.outcome(),
+                "a locator this verifier refused to follow was read as 'it does not name the "
+                        + "payload', and the smuggled-content finding was asserted over it: "
+                        + couldNotTell.detail());
+
+        // TWO unnamed payloads, and the declined locator resolves to ONE of them. The finding
+        // for the OTHER is established and must be reported: answering "could not tell" about
+        // the whole set let one legitimately-declined locator cover for a smuggled file beside
+        // it (Codex, nineteenth review, P1). The fixtures above carry one unnamed payload
+        // each, which cannot tell the two rules apart.
+        Map<String, String> mixed = new LinkedHashMap<>(goodPackage(payload));
+        mixed.put(ROOT + "representations/rep1/data/declined.bin", "named by a locator we skip");
+        mixed.put(smuggled, "content nobody committed to");
+        mixed.put(ROOT + "METS.xml", metsWithLocType("URN",
+                "representations/rep1/data/declined.bin",
+                "representations/rep1/data/minutes.txt"));
+        Outcome.Check both = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "mixed-declined.zip", mixed)).entries()), "mets closure");
+        assertEquals(Outcome.FAILED, both.outcome(),
+                "one declined locator that names ONE payload made every unnamed payload "
+                        + "ambiguous, so an established finding went unreported: "
+                        + both.detail());
+        assertTrue(both.detail().contains("smuggled.bin"), both.detail());
+        // And the ambiguous one is NOT accused — it is stated separately.
+        assertFalse(both.detail().split("Content nobody committed to")[0]
+                        .contains("declined.bin"),
+                "a payload a declined locator names was accused along with the smuggled one: "
+                        + both.detail());
+        assertTrue(both.detail().contains("may be named by"), both.detail());
 
         // AND THE ARM IS REACHABLE. A non-URL locator that DOES resolve to the unnamed payload
         // is the case the ambiguity answer exists for; without this the narrowing could be
@@ -1821,11 +1886,57 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         // written as a package path but declared non-URL was also announced as naming
         // "something OUTSIDE the package" — the same locator, counted twice and described
         // wrongly once (subagent, eighteenth review, P3).
-        assertTrue(ambiguous.detail().contains("written as package-relative paths but declared "
-                        + "as non-URL"), ambiguous.detail());
         assertFalse(ambiguous.detail().contains("OUTSIDE"),
                 "the declined package-path locator was also counted as naming something outside "
                         + "the package: " + ambiguous.detail());
+        // And not twice in the other direction either. The locator that RESOLVES to the
+        // payload is named in the first sentence; adding the whole declined count after it
+        // announced the same one again as a "further" locator (subagent, nineteenth review,
+        // P2).
+        assertFalse(ambiguous.detail().contains("further locator"),
+                "the one declined locator was described twice — once as resolving to the "
+                        + "payload and once as a further locator: " + ambiguous.detail());
+    }
+
+    /**
+     * A base is merged on its PATH, not on its query string.
+     *
+     * <p>RFC 3986 §5.2.2 merges {@code base.path}; the base's query belongs to the base. The
+     * whole base string was scanned for the last {@code /}, so one inside a query was taken
+     * for the last segment separator — and because the reference is stripped of its query
+     * before it is looked up, the merged string then collapsed BACK to the base itself. A file
+     * the package does not carry passed, and a file it does carry was reported missing (Codex,
+     * nineteenth review, P1).
+     */
+    @Test
+    @DisplayName("a base is merged on its path, not on its query")
+    void aBaseIsMergedOnItsPathNotItsQuery(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        String base = "metadata/cover.xml?part=/ignored";
+        // The payload is named by an ABSOLUTE reference, which replaces the base's path, so
+        // these shapes turn only on what the RELATIVE reference beside it merges to.
+        String absolute = "/representations/rep1/data/minutes.txt";
+
+        // FAIL-OPEN: the merged string collapses back to the base, which the package carries.
+        Map<String, String> collapses = new LinkedHashMap<>(goodPackage(payload));
+        collapses.put(ROOT + "metadata/cover.xml", "the cover");
+        collapses.put(ROOT + "METS.xml", metsWithBase(base, "absent.xml", absolute));
+        Outcome.Check passed = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "query-base-collapses.zip", collapses)).entries()), "mets closure");
+        assertEquals(Outcome.FAILED, passed.outcome(),
+                "a reference to a file the package does NOT carry was satisfied by the base "
+                        + "itself, because the base's query was merged as part of its path: "
+                        + passed.detail());
+
+        // OVER-REFUSAL: the sibling the reference really names is there, and the base is not.
+        Map<String, String> sibling = new LinkedHashMap<>(goodPackage(payload));
+        sibling.put(ROOT + "metadata/sibling.txt", "beside the cover");
+        sibling.put(ROOT + "METS.xml", metsWithBase(base, "sibling.txt", absolute));
+        Outcome.Check found = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "query-base-sibling.zip", sibling)).entries()), "mets closure");
+        assertEquals(Outcome.PASSED, found.outcome(),
+                "a reference beside a base carrying a query was looked for at the base instead "
+                        + "of beside it: " + found.detail());
     }
 
     /**
@@ -1863,9 +1974,19 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         drive.put(ROOT + "METS.xml", metsWithBase("C:/archive/", absolute));
         Outcome.Check onTheDrive = checkNamed(PackageIntegrity.check(PackageReader.open(
                 zip(tmp, "drive-base.zip", drive)).entries()), "mets closure");
-        assertNotEquals(Outcome.PASSED, onTheDrive.outcome(),
+        // FAILED, and stated as FAILED rather than "not PASSED". A drive-spelled reference is
+        // a path this verifier LOOKS FOR (isPackageLocal recognises the shape, and
+        // aFileUrlIsLocalAndADriveLetterIsNotAScheme requires that answer), so keeping the
+        // drive moves this from "our payload satisfied it" to "the package does not carry
+        // it" — NOT to "it is outside the package". assertNotEquals could not tell those two
+        // apart and would have passed for either (subagent, nineteenth review, P2). R91 holds
+        // the open question of which answer is right.
+        assertEquals(Outcome.FAILED, onTheDrive.outcome(),
                 "a reference under a base on another DRIVE was satisfied by this package's own "
                         + "payload: " + onTheDrive.detail());
+        assertTrue(onTheDrive.detail().contains("C:/representations/rep1/data/minutes.txt"),
+                "the drive was dropped from the reference this verifier went looking for: "
+                        + onTheDrive.detail());
 
         // AND NOT OVER-REFUSED. "file:/archive/" is a legal file URI with no authority; an
         // absolute reference under it REPLACES the path, so it names this package's payload.

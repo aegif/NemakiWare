@@ -714,17 +714,38 @@ public final class PackageIntegrity {
             // said "could not tell" about references that resolve to the METS itself or to an
             // external host: one such line was enough to turn this from a finding into exit 3
             // (both reviewers, eighteenth review, P1).
+            //
+            // PER PAYLOAD, not for the whole set. One declined locator that resolves to ONE
+            // unnamed payload made EVERY unnamed payload ambiguous, so a package carrying a
+            // smuggled file alongside a legitimately declined one answered "could not tell"
+            // about both — the finding for the smuggled one was established and was not
+            // reported (Codex, nineteenth review, P1).
             List<String> mayName = new ArrayList<>();
+            java.util.Set<String> couldBeNamed = new java.util.LinkedHashSet<>();
             for (Map.Entry<String, List<String>> wrote : declinedBy.entrySet()) {
                 for (String href : wrote.getValue()) {
                     String entry = resolve(entries, wrote.getKey(),
                             packageRootOf(wrote.getKey(), metsPaths), metsPaths, href);
                     if (entry != null && unnamed.contains(entry)) {
                         mayName.add(wrote.getKey() + " -> " + href);
+                        couldBeNamed.add(entry);
+                    } else if (entry == null && isRefused(href)) {
+                        // REFUSED, not "does not name it". Following it would invent a
+                        // separator, so what it names was never established — and reading
+                        // that null as "it names something else" let the narrowed rule
+                        // ASSERT the smuggled-content finding over a locator it had twice
+                        // declined to read (subagent, nineteenth review, P2). The forward
+                        // direction draws this distinction; this one did not.
+                        mayName.add(wrote.getKey() + " -> " + href + " (refused)");
+                        // A reference this verifier would not read could name ANY of them.
+                        // Narrowing it to one payload would be a claim about what it says.
+                        couldBeNamed.addAll(unnamed);
                     }
                 }
             }
-            if (!mayName.isEmpty()) {
+            List<String> stillUnnamed = new ArrayList<>(unnamed);
+            stillUnnamed.removeAll(couldBeNamed);
+            if (stillUnnamed.isEmpty() && !mayName.isEmpty()) {
                 // NOT a finding. Some locators were not followed, so "no reference names this
                 // payload" is not something this check established — one of the ones it
                 // declined DOES name it. Reporting FAILED said "checked, and content nobody
@@ -737,12 +758,28 @@ public final class PackageIntegrity {
                                 + "resolve to one of them: " + mayName + ". This verifier does "
                                 + "not follow a non-URL locator, so whether the payload is "
                                 + "named has NOT been established"
-                                + notEvaluated(external, declinedLocal));
+                                // MINUS the ones just named. They are declined locators too,
+                                // so adding the whole count here described one locator twice
+                                // and called the second mention "further" (subagent,
+                                // nineteenth review, P2).
+                                + notEvaluated(external, declinedLocal - mayName.size()));
             }
             return Outcome.Check.failed("mets closure",
-                    "the package carries payload the METS does not name: " + unnamed
+                    "the package carries payload the METS does not name: " + stillUnnamed
                             + ". Content nobody committed to travels inside a package that "
-                            + "would otherwise verify");
+                            + "would otherwise verify"
+                            // The ambiguous ones are NAMED here rather than folded into the
+                            // accusation: they are a different fact about different files.
+                            + (mayName.isEmpty() ? "" : " A further " + couldBeNamed.size()
+                                    + " payload(s) may be named by " + mayName.size()
+                                    + " locator(s) this verifier does not follow: " + mayName
+                                    + ".")
+                            // §9 says every answer states what was not evaluated, and R87(g)
+                            // claimed every arm had it. THIS arm did not — the one that
+                            // accuses the package (subagent, nineteenth review, P2). The
+                            // narrowing made it the default destination for declined
+                            // locators, so the omission covers more ground than it did.
+                            + notEvaluated(external, declinedLocal));
         }
         return external == 0 ? Outcome.Check.passed("mets closure")
                 : Outcome.Check.passed("mets closure",
@@ -826,9 +863,11 @@ public final class PackageIntegrity {
             List<String> metsPaths, String href) {
         String reference = referenceOf(href);
         if (reference != null && reference.isEmpty()) {
-            // A reference with no path of its own names the base in effect, and reaching here
-            // means there was no xml:base — collectHrefs substitutes one when there is. So it
-            // names the DOCUMENT: this METS.
+            // A reference with no path of its own names the base in effect, and this is the
+            // arm for the base that is the METS itself. It is NOT only reachable when no
+            // xml:base was declared: a base of "file://localhost" or "file:." is package-local
+            // and reduces to the empty reference here too, and saying otherwise was a claim
+            // about reachability that does not hold (subagent, nineteenth review, P3).
             //
             // Not guarded by entries.containsKey(metsPath). metsPath is one of the zip's own
             // entries by construction (pathsEndingWith), so the null side of that guard was an
@@ -1229,7 +1268,7 @@ public final class PackageIntegrity {
         // says. A separate walk was the previous shape and it asked a different question
         // (eighteenth review, P1) — and it also ran twice, because collectHrefs does.
         List<String> declined = new ArrayList<>();
-        collectHrefs(document.getDocumentElement(), "", hrefs, declined);
+        collectHrefs(document.getDocumentElement(), "", hrefs, declined, new ArrayList<>());
         LAST_EXTERNAL.set(externalLocatorsIn(document.getDocumentElement()));
         COULD_STILL_NAME_IT.set(declined);
         return hrefs;
@@ -1265,7 +1304,7 @@ public final class PackageIntegrity {
             ThreadLocal.withInitial(List::of);
 
     private static void collectHrefs(org.w3c.dom.Element element, List<String> hrefs) {
-        collectHrefs(element, "", hrefs, new ArrayList<>());
+        collectHrefs(element, "", hrefs, new ArrayList<>(), new ArrayList<>());
     }
 
     /**
@@ -1279,14 +1318,15 @@ public final class PackageIntegrity {
     private static int externalLocatorsIn(org.w3c.dom.Element element) {
         List<String> local = new ArrayList<>();
         List<String> declined = new ArrayList<>();
-        collectHrefs(element, "", local, declined);
+        List<String> namesNoFile = new ArrayList<>();
+        collectHrefs(element, "", local, declined, namesNoFile);
         List<String> all = new ArrayList<>();
         collectEveryHref(element, all);
         // The DECLINED ones are not outside the package — they are package paths this verifier
         // did not follow because the LOCTYPE says they are not URLs. Counting them here made
         // one locator read as two in the detail, described first as a package-relative path and
         // then as "something OUTSIDE the package" (subagent, eighteenth review, P3).
-        return all.size() - local.size() - declined.size();
+        return all.size() - local.size() - declined.size() - namesNoFile.size();
     }
 
     private static void collectEveryHref(org.w3c.dom.Element element, List<String> hrefs) {
@@ -1313,9 +1353,13 @@ public final class PackageIntegrity {
      * @param declined the same, for locators whose {@code LOCTYPE} says they are not URLs —
      *        collected by the same rule so the caller can ask {@code resolve} whether one of
      *        them would have named a payload, instead of guessing from the raw spelling
+     * @param namesNoFile references that name a DIRECTORY rather than a file. They are neither
+     *        followed nor declined, and they are not outside the package either — counting
+     *        them as external told the reader a reference to a folder in this package "names
+     *        something OUTSIDE the package" (subagent, nineteenth review, P3)
      */
     private static void collectHrefs(org.w3c.dom.Element element, String base,
-            List<String> hrefs, List<String> declined) {
+            List<String> hrefs, List<String> declined, List<String> namesNoFile) {
         if (element == null) {
             return;
         }
@@ -1359,6 +1403,9 @@ public final class PackageIntegrity {
         if (element.hasAttributeNS(XLINK, "href")) {
             String href = normalisedSlashes(element.getAttributeNS(XLINK, "href"));
             String merged = referenceInEffect(base, href);
+            if (merged == null) {
+                namesNoFile.add(href);
+            }
             // Locality is judged on the MERGED reference. Judging the bare href and merging
             // afterwards made an xml:base of "https://example.org/" produce a package path to
             // look for, and the package was told it does not carry a URL (both reviewers,
@@ -1374,7 +1421,7 @@ public final class PackageIntegrity {
         org.w3c.dom.NodeList children = element.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
             if (children.item(i) instanceof org.w3c.dom.Element child) {
-                collectHrefs(child, base, hrefs, declined);
+                collectHrefs(child, base, hrefs, declined, namesNoFile);
             }
         }
     }
@@ -1423,8 +1470,18 @@ public final class PackageIntegrity {
      * reported a package that carries {@code x} as missing it.
      *
      * <p>A WINDOWS DRIVE is a path root, not a scheme, and it is kept for the same reason an
-     * authority is: {@code /x} under {@code C:/archive/} is {@code C:/x}, which is on that
-     * drive and not in this package.
+     * authority is: {@code /x} under {@code C:/archive/} is {@code C:/x}, on that drive rather
+     * than at this package's root.
+     *
+     * <p><b>What this verifier then does with {@code C:/x} is a separate question, and the
+     * answer is not "outside the package".</b> {@link #isPackageLocal} recognises a drive by
+     * its shape and treats it as a path to look for — {@code aFileUrlIsLocalAndADriveLetterIsNotAScheme}
+     * requires a drive-spelled reference to answer FAILED — so keeping the drive turns a
+     * reference that used to resolve to THIS package's payload into one reported as missing.
+     * That is a fail-open traded for an over-refusal, not a defect removed, and it reaches
+     * one-character schemes too: {@code x:catalog-entry} plus {@code /a} is {@code x:/a},
+     * which has a drive's shape. Recorded as R91 rather than settled here, because settling it
+     * means deciding what a drive-spelled reference IS, which §9 and a lock both answer today.
      */
     private static String against(String base, String reference) {
         if (base.isEmpty() || hasScheme(reference)) {
@@ -1442,7 +1499,11 @@ public final class PackageIntegrity {
             // An absolute reference REPLACES the whole path. It does not merge into it.
             return scheme + authority + drive + reference;
         }
-        String path = base.substring(scheme.length() + authority.length() + drive.length());
+        // The base's PATH, which is what §5.2.2 merges — its query and fragment belong to the
+        // base, not to what the reference is relative to. A "/" inside a query was being taken
+        // for the last segment separator (subagent, nineteenth review, P3).
+        String path = withoutFragmentOrQuery(
+                base.substring(scheme.length() + authority.length() + drive.length()));
         int slash = path.lastIndexOf('/');
         // §5.2.3: a base with an authority and no path of its own merges to "/" + reference.
         String merged = slash < 0 ? (authority.isEmpty() ? "" : "/") + reference
