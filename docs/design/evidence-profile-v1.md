@@ -431,11 +431,11 @@ current == merkleRoot なら PASS
 |---|---|
 | `ZIP_SAFE` | 全エントリ名が相対で、`..` 成分を含まず、絶対 path でなく、**重複しない** |
 | `ZIP_LIMITS` | 展開後の合計 size とエントリ数が verifier の上限内 |
-| `ONE_EVIDENCE_SECTION` | §4.2 の各文書名が package 内で 1 回しか現れない（**payload は数えない** — 内容が別 package の evidence フォルダの写しであっても、それは content であって section ではない） |
+| `ONE_EVIDENCE_SECTION` | §4.2 の各文書名が package 内で 1 回しか現れない（**payload は数えない** — 内容が別 package の evidence フォルダの写しであっても、それは content であって section ではない）。**ただし重複の原因が「完全な section を持つ root が 2 つ以上」であれば `UNAVAILABLE` + `MULTIPLE_PACKAGES`** — `V1_LAYOUT` と同じ答えをここでも返す。この check の方が**先**に走るので、ここで `FAILED` にすると合成が `FAILED` に落ち、`V1_LAYOUT` 側の訂正が verdict に届かない |
 | — | `V1_LAYOUT` は併せて **section を持つ root が 2 つ以上のとき**を見る（下表の最後の 2 行）|
 | `V1_LAYOUT` | **v1 section が在るなら** §4.2 のとおりに在る（下記） |
 | `METS_CLOSURE` | METS が名指す全 file が package に在り、**逆に** `representations/*/data/` 配下の全 file が METS に名指されている |
-| `PAYLOAD_FIXITY` | 各 payload と PREMIS の fixity が**一対一**で一致する |
+| `PAYLOAD_FIXITY` | payload の bytes が PREMIS の記録する digest と一致する。**一対一そのものは判定しない**（下記の訂正）— digest が 2 つ以上、payload が 2 つ以上のときは `UNAVAILABLE`。**1 つの `premis:object` の中に digest が 2 つ**のときだけ `FAILED` |
 
 `V1_LAYOUT` の答え:
 
@@ -485,6 +485,19 @@ current == merkleRoot なら PASS
   > **exit 2** を返した。実測で否定して取り下げた。
   > **結び付きを読まないなら、その digest が payload のものかどうかも言えない** —
   > 片方の腕で「言えない」と述べ、もう片方で同じ数から断定するのは自己矛盾である。
+
+- **ただし 1 つの `premis:object` の中に `messageDigest` が 2 つ以上あれば `FAILED`。**
+  これは結び付きを読まなくても見える —「この object が describe している file」について
+  PREMIS が**自分で 2 つの答えを書いている**。取り下げたのは**数の比較**であって、
+  §9 が名指していたこの形ではない。両者は object ごとに束ねれば区別でき、
+  **2 つの object に 1 つずつ**（普通の CSIP）は `UNAVAILABLE` のまま。
+
+  > **2 つの reader が同じ file に逆の答えを返してはならない。** この腕は独立 verifier
+  > （`PackageIntegrity.payloadFixity`）に先に入り、製品の `/verify`
+  > （`SipVerifier.payloadDigestCheck`）に入っていなかった。同じ zip に対して CLI が `FAILED`、
+  > 運用者が叩く endpoint が `UNAVAILABLE` を返す状態が 1 バッチ続いた。
+  > 錠は**両側に 1 本ずつ**（`aSecondDigestUnderAnotherPrefixIsFound` /
+  > `aSecondDigestUnderAnotherPrefixIsAFindingHereToo`）、対照の CSIP の形も両側に置く。
 
 ---
 
