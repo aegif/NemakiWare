@@ -5403,19 +5403,6 @@ public class ContentServiceImpl implements ContentService {
 				jp.aegif.nemaki.evidence.RecordContentStatementV1.CommitmentKind.UPDATED);
 	}
 
-	/**
-	 * E1: record what this version's bytes were, once the version exists.
-	 *
-	 * <p>Never throws. An evidence outage that failed a {@code createDocument} would convert a
-	 * recording problem into a business failure, which the plan forbids (§8). What it must not
-	 * do instead is stay quiet: the recorder returns which of the five outcomes happened, and
-	 * a gap it could not even list is a different outcome from one it could.
-	 *
-	 * <p><b>No digest means no statement.</b> {@code DigestingInputStream} answers null when it
-	 * cannot vouch for the bytes — a short read, a rewind it could not snapshot. Recording a
-	 * digest that may cover the wrong bytes would put a falsehood in the chain, and every later
-	 * check of that version would fail against bytes that were never wrong.
-	 */
 	/** E1 transitions (W10 / deleteContentStream): opens the row BEFORE the bytes move. */
 	private jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending openTransition(String repositoryId,
 			String versionObjectId, jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind kind) {
@@ -5436,6 +5423,19 @@ public class ContentServiceImpl implements ContentService {
 		recordContentState.recordTransition(pending, transition, bytesNow);
 	}
 
+	/**
+	 * E1: record what this version's bytes were, once the version exists.
+	 *
+	 * <p>Never throws. An evidence outage that failed a {@code createDocument} would convert a
+	 * recording problem into a business failure, which the plan forbids (§8). What it must not
+	 * do instead is stay quiet: the recorder returns which of the five outcomes happened, and
+	 * a gap it could not even list is a different outcome from one it could.
+	 *
+	 * <p><b>No digest means no statement.</b> {@code DigestingInputStream} answers null when it
+	 * cannot vouch for the bytes — a short read, a rewind it could not snapshot. Recording a
+	 * digest that may cover the wrong bytes would put a falsehood in the chain, and every later
+	 * check of that version would fail against bytes that were never wrong.
+	 */
 	private void recordCreatedContentState(String repositoryId, Document created,
 			jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written written,
 			jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pending) {

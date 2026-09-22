@@ -9839,8 +9839,8 @@ CONTROLS = [
         id='GY3',
         what="the readiness document stops saying the control added since the fifth sweep is unswept, so a finished sweep of 938 reads as a measurement of today's tree",
         file='docs/design/v3.4-release-readiness.md',
-        find='**その 67 本は通し未実施**',
-        replace='**その 67 本も通し済み**',
+        find='**その 84 本は通し未実施**',
+        replace='**その 84 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10624,8 +10624,10 @@ CONTROLS = [
         what="an evidence record covering something other than this package's checkpoint passes, so an ERS about anything reads as this record's long-term evidence",
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/LongTermErs.java',
         module='evidence-verifier-core',
-        find='            } else if (found.contains(wanted)) {',
-        replace='            } else if (true) {',
+        # Re-pointed 2026-09-22: the comparison moved into dataObject() and is over the
+        # token's imprint BYTES rather than a scan of the DER (R72).
+        find='            if (Arrays.equals(imprint, wanted)) {',
+        replace='            if (true) {',
         test='PresenceIsNotVerificationTest',
         expect_fail=['anErsOverSomethingElseFails'],
     ),
@@ -10795,7 +10797,7 @@ CONTROLS = [
         what='a second statement of the unswept count drifts from the locked one, so the document contradicts itself about how many controls have never been run together',
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **5 回目以後に足した control は 67 本**（境界 LM3 — 5 回目時点の最大 ID。',
+        find='  **5 回目以後に足した control は 84 本**（境界 LM3 — 5 回目時点の最大 ID。',
         replace='  **5 回目以後に足した control は 0 本**（境界 LM3 — 5 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10806,7 +10808,7 @@ CONTROLS = [
         file='docs/design/fail-closed-reads.md',
         # Re-pointed: the boundary id moves below LM3, so ids above it exist while the sweep
         # record says nothing was added — the cross-check (declared − swept ≠ ids above) fires.
-        find='**5 回目以後に足した control は 67 本**（境界 LM3）: ',
+        find='**5 回目以後に足した control は 84 本**（境界 LM3）: ',
         replace='**5 回目以後に足した control は 5 本**（境界 LA3）: ',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10862,8 +10864,8 @@ CONTROLS = [
         id='LN3',
         what="the canon stops saying the control added since the fifth sweep is unswept — the canon-side twin of GY3 — and, being itself the first control after the sweep, the one that forces the ledger back from 0 to 1",
         file='docs/design/fail-closed-reads.md',
-        find='**その 67 本は通し未実施**',
-        replace='**その 67 本も通し済み**',
+        find='**その 84 本は通し未実施**',
+        replace='**その 84 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10871,8 +10873,8 @@ CONTROLS = [
         id='LO3',
         what="the readiness document's §4 stops saying the added controls are unswept while §1.4 still does — the second exit, which a once-per-file check let through (GY3 did not fire)",
         file='docs/design/v3.4-release-readiness.md',
-        find='5 回目以後に足した control は **67 本**（通し未実施）。',
-        replace='5 回目以後に足した control は **67 本**（通し済み）。',
+        find='5 回目以後に足した control は **84 本**（通し未実施）。',
+        replace='5 回目以後に足した control は **84 本**（通し済み）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10941,10 +10943,11 @@ CONTROLS = [
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/Outcome.java',
         # Re-pointed 2026-09-22 when TRANSITION_PRIOR_NOT_IN_PACKAGE re-wrapped the list.
-        find='                "UNSUPPORTED_ERS_VERSION");',
-        replace='                "UNSUPPORTED_ERS_VERSION", "NEW_CODE");',
+        # Re-pointed 2026-09-22 when UNSUPPORTED_PROFILE_VERSION re-wrapped the list.
+        find='                "UNSUPPORTED_ERS_VERSION", "UNSUPPORTED_PROFILE_VERSION");',
+        replace='                "UNSUPPORTED_ERS_VERSION", "UNSUPPORTED_PROFILE_VERSION", "NEW_CODE");',
         test='TheReasonCodeIsARegistryTest',
-        # Adding a code also moves the registry's size away from the documents' 18 (measured).
+        # Adding a code also moves the registry's size away from the documents' count (measured).
         expect_fail=['theSchemaEnumIsTheRegistry', 'theDocumentsStateTheMeasuredSize'],
     ),
     dict(
@@ -11363,10 +11366,11 @@ CONTROLS = [
         what='P2 reads a field out of an unverified CMS structure and calls it a commitment — anyone can write a TSTInfo, so a token whose signature does not verify anchors anything',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/AnchoredCheckpoint.java',
-        # Re-pointed after the fourth review split the catch into "bad signature" and "could
-        # not ask".
-        find='            try {\n                token.validate(new org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoVerifierBuilder()\n                        .build(signer));\n            } catch (org.bouncycastle.tsp.TSPException invalid) {',
-        replace='            try {\n                committing.size();\n            } catch (RuntimeException invalid) {',
+        # Re-pointed 2026-09-22: the signature decision moved into the shared classifier
+        # (TokenSignature), so P2 and P3 cannot answer one token differently. The sabotage
+        # moves to the call site, which is what P2 would have to stop doing.
+        find='            Outcome.Check signature =\n                    TokenSignature.verify("anchor commits root", path, token, signer);\n            if (signature.outcome() != Outcome.PASSED) {\n                return signature;\n            }',
+        replace='            if (false) {\n                return Outcome.Check.failed("anchor commits root", "unreachable");\n            }',
         test='TheAnchorIsReadNotAssumedTest',
         expect_fail=['aTokenWithABrokenSignatureIsFailed'],
     ),
@@ -11441,7 +11445,13 @@ CONTROLS = [
         find='            dataObjectHash = HexFormat.of().parseHex(checkpoint.merkleRoot());',
         replace='            dataObjectHash = HexFormat.of().parseHex(checkpoint.checkpointHash());',
         test='AStandardReaderAcceptsOurEvidenceRecordTest',
-        expect_fail=['theDataObjectIsTheCheckpointHashBytes', 'theServiceAsksForWhatTheAnchorCarries'],
+        # The lock was renamed with the value it names (R70), so the control follows it.
+        # A fifth-round review predicted that EvidenceRecordServiceTest would also go red and
+        # asked for it to be declared; the runner executes ONLY control['test'], so collateral
+        # in another class never runs and cannot mis-report this control. Written down rather
+        # than acted on, because adding a key the runner does not read would look like a
+        # declaration and be none.
+        expect_fail=['theDataObjectIsTheMerkleRootsBytes', 'theServiceAsksForWhatTheAnchorCarries'],
     ),
     dict(
         id='NW3',
@@ -11472,10 +11482,15 @@ CONTROLS = [
         what='a PREMIS with two message digests is read by taking the first, so a package whose second digest contradicts the payload passes P0',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='        if (digests > 1) {',
+        # Re-pointed: the count moved from a text scan to Premis.read's parsed elements,
+        # because a prefix is not part of an XML name (Codex, fifth review).
+        find='        if (fixity.digests().size() > 1) {',
         replace='        if (false) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['twoFixitiesInOnePremisAreAmbiguous'],
+        # Both digest-ambiguity locks go through this one arm now that neither fixture
+        # carries a second ALGORITHM to be caught by (measured).
+        expect_fail=['twoFixitiesInOnePremisAreAmbiguous',
+                     'aSecondDigestUnderAnotherPrefixIsFound'],
     ),
     dict(
         id='NZ3',
@@ -11485,8 +11500,8 @@ CONTROLS = [
         # The OLD behaviour, restored as it was: an absent algorithm silently assumed SHA-256.
         # Deleting the guard alone left `algorithm` null for the trim() below, so the control
         # fired on an NPE rather than on the lock's own assertion (measured).
-        find='        if (algorithm == null || algorithm.isBlank()) {\n            return Outcome.Check.absent("payload fixity",\n                    "PREMIS records a digest and no algorithm, so which function produced it "\n                            + "is not stated and nothing here can recompute it");\n        }\n        if (!"SHA-256".equalsIgnoreCase(algorithm.trim())) {',
-        replace='        if (algorithm != null && !"SHA-256".equalsIgnoreCase(algorithm.trim())) {',
+        find='        String algorithm = fixity.algorithms().isEmpty() ? null : fixity.algorithms().get(0);\n        if (algorithm == null || algorithm.isBlank()) {',
+        replace='        String algorithm = fixity.algorithms().isEmpty() ? "SHA-256" : fixity.algorithms().get(0);\n        if (algorithm == null || algorithm.isBlank()) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['aDigestWithNoAlgorithmIsNotPresent'],
     ),
@@ -11504,10 +11519,15 @@ CONTROLS = [
         what='the verifier looks for SHA-256 of the checkpoint document again — a value no token in this system covers, so every real ERS package is FAILED (the specification side of R70)',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/LongTermErs.java',
-        find='            String wanted = merkleRoot;',
-        replace='            String wanted = Canonical.hex(Canonical.sha256(targetJson));',
+        # Re-pointed: the check now reads the token's imprint out of the parsed structure
+        # instead of scanning the DER, so the sabotage moves to what it is compared against.
+        find='        byte[] wanted = anchoredRoot(entries);',
+        replace='        byte[] wanted = Canonical.sha256(fileIn(entries, "anchor-target-checkpoint.json"));',
         test='PresenceIsNotVerificationTest',
-        expect_fail=['anEvidenceRecordOverTheAnchorTargetPasses'],
+        # The chain lock's fixture also asserts the FIRST timestamp still covers the root,
+        # so a sabotage of what that is compared against reddens it too (measured).
+        expect_fail=['anEvidenceRecordOverTheAnchorTargetPasses',
+                     'aRenewalThatCoversNothingFails'],
     ),
     dict(
         id='NE3',
@@ -11669,7 +11689,7 @@ CONTROLS = [
         id='LB3',
         what='the PLAN\'s copy of the never-swept count drifts, so whoever scopes the overdue full sweep from the plan runs half the set',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='5 回目以後に足した control は **67 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='5 回目以後に足した control は **84 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='5 回目以後に足した control は **0 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -11806,6 +11826,196 @@ CONTROLS = [
                 '            }',
         test='SipVerifierTest',
         expect_fail=['aNullStepIsNotAbsorbed'],
+    ),
+
+    # ---- Fifth review (Codex and subagent, 2026-09-22), and R71 / R72 ----
+    dict(
+        id='OC3',
+        what="the v1 section's own layout goes unread again, so a hand-assembled directory with no profile.json and no manifest reaches VERIFIED at P2 (R71)",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        checks.add(v1Layout(entries));',
+        replace='        checks.add(Outcome.Check.passed("v1 layout"));',
+        test='TheV1LayoutIsCheckedTest',
+        expect_fail=['aSectionWithoutAProfileFails', 'aSectionWithoutAManifestFails',
+                     'bothLayoutsInOnePackageFails', 'aDigestMismatchFails',
+                     'anUnlistedFileFails', 'aNamedFileThatIsNotThereFails',
+                     'aDuplicatedSectionFileFails', 'theCheckIsRequired',
+                     'aManifestEntryWithoutADigestIsAGapNotAPass', 'aFindingOutranksAGap',
+                     'theVersionSeparatesUnstatedFromUnsupported',
+                     # The stub passes with no detail, and the legacy lock requires the pass
+                     # to say WHY there was nothing to check (measured).
+                     'aLegacyPackageIsNotRefused'],
+    ),
+    dict(
+        id='OD3',
+        what='the manifest is checked only in one direction, so a file dropped into the section after the bundle was fixed travels inside a package that verifies',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        if (!unlisted.isEmpty()) {',
+        replace='        if (false) {',
+        test='TheV1LayoutIsCheckedTest',
+        expect_fail=['anUnlistedFileFails'],
+    ),
+    dict(
+        id='OE3',
+        what='a section declaring a profile version this verifier does not implement is reported as violating v1 — a contract that package was never written to',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        if (!PROFILE_VERSION.equals(stated)) {',
+        replace='        if (false) {',
+        test='TheV1LayoutIsCheckedTest',
+        expect_fail=['theVersionSeparatesUnstatedFromUnsupported'],
+    ),
+    dict(
+        id='OF3',
+        what='the exporter stops writing profile.json, so every package this product ships is refused at P0 by the check meant to read its layout — the over-refusal half of R71',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/EvidenceBundleWriter.java',
+        find='        files.put("profile.json", json(profileDocument()));',
+        replace='        if (false) {\n            files.put("profile.json", json(profileDocument()));\n        }',
+        test='TheWriterWritesWhatTheLayoutRequiresTest',
+        expect_fail=['theSectionDeclaresItsProfileAndStandsAlone'],
+    ),
+    dict(
+        id='OG3',
+        what='the manifest stops covering the files beside it, so nothing in a package states which files belong to the bundle',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/EvidenceBundleWriter.java',
+        find='        doc.put("files", listed);',
+        replace='        doc.put("files", new ArrayList<Map<String, Object>>());',
+        test='TheWriterWritesWhatTheLayoutRequiresTest',
+        expect_fail=['theManifestCoversTheSection'],
+    ),
+    dict(
+        id='OH3',
+        what="the evidence record is scanned for a loose 32-byte OCTET STRING again, so our own verifier FAILS every record this product writes and passes any DER that carries the digest somewhere (R72, and its mirror)",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/LongTermErs.java',
+        # The structural read is what both directions turn on: with the first Archive
+        # Timestamp's own token no longer consulted, a real record (whose root is inside the
+        # token) cannot pass.
+        find='        byte[] imprint;\n        try {\n            imprint = tokenOf(first.tokenDer()).getTimeStampInfo().getMessageImprintDigest();',
+        replace='        byte[] imprint;\n        try {\n            imprint = new byte[32];',
+        test='PresenceIsNotVerificationTest',
+        # Same reason as OB3: the chain lock asserts the first timestamp covers the root.
+        expect_fail=['anEvidenceRecordOverTheAnchorTargetPasses',
+                     'aRenewalThatCoversNothingFails'],
+    ),
+    # There is NO control for "a DER that merely carries the digest is accepted", and the
+    # reason is measurable rather than an omission. That lock
+    # (PresenceIsNotVerificationTest#aDerThatMerelyCarriesTheDigestIsNotARecord) is held by the
+    # structural read as a WHOLE — version, digestAlgorithms, the sequence as the last element,
+    # a chain with at least one Archive Timestamp, a [0] algorithm, and a ContentInfo that
+    # parses as an RFC 3161 token. Removing any one of those still leaves the next one refusing
+    # the fixture, so no single-point sabotage reopens it; restoring the old behaviour means
+    # rewriting the method, which is not a control. OH3 measures the same claim from the
+    # refusing side, where one edit does decide it.
+    dict(
+        id='OJ3',
+        what='the reduced hash tree is no longer reduced, so a first hash list holding the right value beside a timestamp about something else passes',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/LongTermErs.java',
+        find='        if (!Arrays.equals(root, imprint)) {',
+        replace='        if (false) {',
+        test='PresenceIsNotVerificationTest',
+        expect_fail=['aTreeTheTokenDoesNotCoverFails'],
+    ),
+    dict(
+        id='OK3',
+        what='ERS_CHAIN leaves the required set, so a record whose renewals cover nothing composes to VERIFIED at P5 (R72)',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/LongTermErs.java',
+        find='            List.of("ers parse", "ers data object", "ers chain", "ers algorithms");',
+        replace='            List.of("ers parse", "ers data object", "ers algorithms");',
+        test='PresenceIsNotVerificationTest',
+        # Re-pointed after measuring: removing the name from REQUIRED leaves every lock
+        # that ITERATES REQUIRED green, so the lock has to name the check itself.
+        expect_fail=['aRenewalThatCoversNothingFails'],
+    ),
+    dict(
+        id='OL3',
+        what="P3 decides for itself what a signature failure means again, so one token exits 2 there and 3 at P2 — a tampering finding for a signature nobody checked",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/TrustedRfc3161.java',
+        find='        return TokenSignature.verify("token signature", "the token", token, signer);',
+        replace='        if (signer == null) {\n            return Outcome.Check.failed("token signature", "no signer certificate");\n        }\n        return TokenSignature.verify("token signature", "the token", token, signer);',
+        test='OneTokenGetsOneAnswerTest',
+        expect_fail=['anAbsentCertificateIsAbsentAtBoth'],
+    ),
+    dict(
+        id='OM3',
+        what='a signature algorithm this build has no provider for is classified as a bad signature, which names a defect nobody found',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/TokenSignature.java',
+        find='            if (cause instanceof NoSuchAlgorithmException\n                    || cause instanceof NoSuchProviderException\n                    || cause instanceof org.bouncycastle.operator.OperatorCreationException) {\n                return true;\n            }',
+        replace='            if (false) {\n                return true;\n            }',
+        test='OneTokenGetsOneAnswerTest',
+        expect_fail=['aProviderFailureIsNotAFinding'],
+    ),
+    dict(
+        id='ON3',
+        what='PREMIS is counted as text again, so a second digest under another prefix is invisible and a contradicting fixity passes P0',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/Premis.java',
+        find='        if (localName.equals(name) && (namespace == null || NAMESPACE.equals(namespace))) {',
+        replace='        if (("premis:" + localName).equals(element.getNodeName())) {',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aSecondDigestUnderAnotherPrefixIsFound'],
+    ),
+    dict(
+        id='OO3',
+        what="the product's own /verify reads PREMIS differently from the independent verifier again, so an adversarial document answers PASSED at the endpoint an operator actually reaches",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='        if (digests.size() > 1) {',
+        replace='        if (false) {',
+        test='SipVerifierTest',
+        expect_fail=['aSecondDigestUnderAnotherPrefixIsAmbiguousHereToo'],
+    ),
+    dict(
+        id='OP3',
+        what='an omitted identity field stops the prior canonical forms being recomputed, so two of the four files under prior/ can say anything and the package still reaches VERIFIED',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/RecordLedger.java',
+        find='                if (gap == null) {\n                    gap = Outcome.Check.absent(name, "the transition or its prior omits " + field\n                            + ", so whether they are about the same record cannot be checked");\n                }\n                continue;',
+        replace='                return Outcome.Check.absent(name, "the transition or its prior omits " + field\n                        + ", so whether they are about the same record cannot be checked");',
+        test='TransitionPackagesAreReadTest',
+        expect_fail=['anOmittedFieldStillLetsTheCanonicalFormsBeChecked'],
+    ),
+    dict(
+        id='OQ3',
+        what='chain ends compares stated hashes before recomputing the documents, so a checkpoint that omits its own hash is reported as disagreeing with the chain',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/AnchoredCheckpoint.java',
+        find='        Outcome.Check coveringSelf = selfConsistent("chain ends", covering, "covering checkpoint");',
+        replace='        Object firstEarly = links.get(0).get("checkpointHash");\n        if (!java.util.Objects.equals(firstEarly, covering.get("checkpointHash"))) {\n            return Outcome.Check.failed("chain ends", "the walk does not begin where the entry was proved");\n        }\n        Object lastEarly = links.get(links.size() - 1).get("checkpointHash");\n        if (!java.util.Objects.equals(lastEarly, target.get("checkpointHash"))) {\n            return Outcome.Check.failed("chain ends", "the walk does not reach what was anchored");\n        }\n        Outcome.Check coveringSelf = selfConsistent("chain ends", covering, "covering checkpoint");',
+        test='TheAnchorIsReadNotAssumedTest',
+        expect_fail=['aCheckpointWithNoHashOfItsOwnIsAGap'],
+    ),
+    dict(
+        id='OR3',
+        what="the specification's §13 goes back to saying an OpenTimestamps proof starts from the merkleRoot, a shape the sidecar never produces — the first implementation of it would refuse every genuine package",
+        file='docs/design/evidence-profile-v1.md',
+        find='| `OTS_COMMITS_ROOT` | proof の `file_digest` が **`SHA-256(merkleRoot の bytes)`**（下記） |',
+        replace='| `OTS_COMMITS_ROOT` | proof の起点が anchor target の `merkleRoot` |',
+        test='TheAnchoredDigestIsTheRootTest',
+        expect_fail=['theSpecificationSaysOtsIsOneLayerUp'],
+    ),
+    dict(
+        id='OS3',
+        what='the shipped disclaimer names the checkpoint\'s canonical bytes as the data object again — a value no token in this system covers, sent to another organisation inside the package',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/validity/ErsRecord.java',
+        find='            "The data object hash of this evidence record is the MERKLE ROOT of one CHECKPOINT "',
+        replace='            "The data object of this evidence record is the canonical serialisation of one CHECKPOINT "',
+        test='ErsRecordTest',
+        expect_fail=['theLimitsNameWhatItIsAbout'],
+    ),
+    dict(
+        id='OT3',
+        what='the golden evidence record stops being the shape this product writes, so the independent verifier is measured against bytes nobody produces',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/validity/ErsRecord.java',
+        find='        chain.add(new ArchiveTimeStamp(List.of(), timeStampTokenDer.clone(), SHA256_OID));',
+        replace='        chain.add(new ArchiveTimeStamp(List.of(List.of(new byte[32])), timeStampTokenDer.clone(), SHA256_OID));',
+        test='TheGoldenEvidenceRecordIsStillWhatWeWriteTest',
+        expect_fail=['afreshRecordMatchesTheGoldensShape'],
     ),
 ]
 

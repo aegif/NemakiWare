@@ -218,16 +218,64 @@ public final class SipVerifier {
             return new Check("payload digest", Outcome.NOT_PRESENT,
                     "the package carries no PREMIS document");
         }
-        String recorded = between(premis, "<premis:messageDigest>", "</premis:messageDigest>");
+        // Read as XML, and with the same rules the independent verifier applies
+        // (evidence-verifier-core's PackageIntegrity.payloadFixity and Premis). An operator
+        // reaching THIS endpoint and a receiving organisation running the CLI must not get
+        // different answers about one file: this method used to take the first
+        // "<premis:messageDigest>" it could find as text and to assume SHA-256 when no
+        // algorithm was stated, so an adversarial PREMIS that the CLI answered UNAVAILABLE was
+        // answered PASSED here (subagent, fifth review, P2).
+        List<String> digests;
+        List<String> algorithms;
+        try {
+            javax.xml.parsers.DocumentBuilderFactory factory =
+                    javax.xml.parsers.DocumentBuilderFactory.newInstance();
+            factory.setNamespaceAware(true);
+            factory.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            // No DTD, no entity resolution: a package is untrusted input and this runs inside
+            // the product.
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            factory.setXIncludeAware(false);
+            factory.setExpandEntityReferences(false);
+            org.w3c.dom.Document document = factory.newDocumentBuilder().parse(
+                    new org.xml.sax.InputSource(new java.io.StringReader(premis)));
+            digests = premisTexts(document.getDocumentElement(), "messageDigest");
+            algorithms = premisTexts(document.getDocumentElement(), "messageDigestAlgorithm");
+        } catch (Exception notXml) {
+            return new Check("payload digest", Outcome.UNAVAILABLE,
+                    "the package presents a PREMIS document this verifier could not read as "
+                            + "XML (" + notXml.getMessage() + "), so nothing about the bytes is "
+                            + "established either way.");
+        }
+        if (digests.size() > 1) {
+            return new Check("payload digest", Outcome.UNAVAILABLE,
+                    "the PREMIS records " + digests.size() + " message digests and this "
+                            + "verifier cannot tell which one describes the payload. Taking the "
+                            + "first would check the bytes against whichever was written first.");
+        }
+        String recorded = digests.isEmpty() ? null : digests.get(0);
         if (recorded == null || recorded.isBlank()) {
             return new Check("payload digest", Outcome.NOT_PRESENT,
                     "PREMIS records no message digest for this object, so there is nothing to "
                             + "check the bytes against. That is a gap in what was captured, not "
                             + "a failure of this check.");
         }
-        String algorithm = between(premis, "<premis:messageDigestAlgorithm>",
-                "</premis:messageDigestAlgorithm>");
-        if (algorithm != null && !"SHA-256".equalsIgnoreCase(algorithm.trim())) {
+        if (algorithms.size() > 1) {
+            return new Check("payload digest", Outcome.UNAVAILABLE,
+                    "the PREMIS records " + algorithms.size() + " digest algorithms for one "
+                            + "digest, so which function produced it is not stated.");
+        }
+        String algorithm = algorithms.isEmpty() ? null : algorithms.get(0);
+        if (algorithm == null || algorithm.isBlank()) {
+            // NOT an assumption of SHA-256. It happens to be right for packages this product
+            // writes, which is no reason to accept it from someone else.
+            return new Check("payload digest", Outcome.NOT_PRESENT,
+                    "PREMIS records a digest and no algorithm, so which function produced it "
+                            + "is not stated and nothing here can recompute it.");
+        }
+        if (!"SHA-256".equalsIgnoreCase(algorithm.trim())) {
             return new Check("payload digest", Outcome.UNAVAILABLE,
                     "the digest is recorded as " + algorithm + ", which this verifier does not "
                             + "compute. Nothing about the bytes is established either way.");
@@ -490,6 +538,42 @@ public final class SipVerifier {
         }
         int end = text.indexOf(close, start + open.length());
         return end < 0 ? null : text.substring(start + open.length(), end);
+    }
+
+    /** The PREMIS namespace, so a prefix bound to something else is not read as PREMIS. */
+    private static final String PREMIS_NAMESPACE = "http://www.loc.gov/premis/v3";
+
+    /**
+     * The text of every PREMIS element with this local name, in document order.
+     *
+     * <p>Local name, never prefix: a document may bind the PREMIS namespace to any prefix it
+     * likes, and matching the literal {@code "<premis:messageDigest>"} counted two digests as
+     * one. The twin of this method is {@code Premis} in {@code evidence-verifier-core}, which
+     * that module cannot share because it may not depend on this one.
+     */
+    private static List<String> premisTexts(org.w3c.dom.Element element, String localName) {
+        List<String> found = new ArrayList<>();
+        collectPremis(element, localName, found);
+        return found;
+    }
+
+    private static void collectPremis(org.w3c.dom.Element element, String localName,
+            List<String> found) {
+        if (element == null) {
+            return;
+        }
+        String name = element.getLocalName() == null ? element.getNodeName()
+                : element.getLocalName();
+        String namespace = element.getNamespaceURI();
+        if (localName.equals(name) && (namespace == null || PREMIS_NAMESPACE.equals(namespace))) {
+            found.add(element.getTextContent());
+        }
+        org.w3c.dom.NodeList children = element.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            if (children.item(i) instanceof org.w3c.dom.Element child) {
+                collectPremis(child, localName, found);
+            }
+        }
     }
 
     /**

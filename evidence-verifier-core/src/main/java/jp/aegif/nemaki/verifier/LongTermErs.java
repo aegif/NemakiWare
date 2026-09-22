@@ -16,38 +16,79 @@
  */
 package jp.aegif.nemaki.verifier;
 
-import org.bouncycastle.asn1.ASN1Encodable;
+import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1Integer;
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
+import org.bouncycastle.asn1.ASN1TaggedObject;
+import org.bouncycastle.asn1.DERSequence;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.cms.CMSSignedData;
+import org.bouncycastle.tsp.TimeStampToken;
 
+import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * {@code LONG_TERM_ERS_V1} — the checks of {@code evidence-profile-v1.md} §14.
  *
- * <h2>The data object is a CHECKPOINT</h2>
+ * <h2>The data object is the anchor target's MERKLE ROOT</h2>
  *
- * <p>Not the record. An evidence record beside a document is read by almost everyone as a long
- * term signature ON THAT DOCUMENT, and it is not: it covers the canonical bytes of the anchor
- * target checkpoint. The check below is exactly that — the first hash list must contain
- * {@code SHA-256(anchor-target-checkpoint.c14n)} — and a package whose ERS covers something
- * else fails rather than passing on the strength of being well formed.
+ * <p>Not the record, and not the checkpoint's canonical bytes. An evidence record beside a
+ * document is read by almost everyone as a long term signature ON THAT DOCUMENT, and it is not:
+ * its first Archive Timestamp <b>is</b> the RFC 3161 token this repository already had, and that
+ * token was taken over the {@code merkleRoot}'s bytes (§11, §12). So the only value the record
+ * can be about is that root, and a package whose record covers something else fails rather than
+ * passing on the strength of being well formed.
+ *
+ * <p>What a receiver therefore cannot do alone: RFC 4998 §4.3 step 1 computes {@code h = H(d)}
+ * from the data object {@code d}. Here {@code d} is the Merkle tree's top-level concatenation,
+ * which <b>no package carries</b>. A receiver checks that the record covers the {@code merkleRoot}
+ * this package states, not that the root was correctly derived from anything. §14 says so, and
+ * so does the text that ships with the record.
+ *
+ * <h2>The record is read as a structure, not scanned for a value</h2>
+ *
+ * <p>The first version collected every 32-byte {@code OCTET STRING} anywhere in the DER and
+ * asked whether the wanted digest was among them. That was wrong in both directions at once
+ * (both reviews, fifth round):
+ *
+ * <ul>
+ *   <li><b>It refused every real record.</b> A record this product writes has no reduced hash
+ *       tree at all — the root lives inside the timestamp token's {@code TSTInfo}, inside the
+ *       CMS {@code eContent} — and the scan stopped at that {@code OCTET STRING} without
+ *       descending. Our own verifier would have answered {@code FAILED} on our own package.</li>
+ *   <li><b>It accepted made-up ones.</b> Any DER declaring version 1 with the right 32 bytes
+ *       lying anywhere inside it passed all three checks (residual R72).</li>
+ * </ul>
+ *
+ * <p>So the record is now walked the way RFC 4998 defines it: version, digest algorithms, and
+ * the {@code ArchiveTimeStampSequence} as the LAST element (the two optional tagged fields sit
+ * between, so counting from the front reads an {@code encryptionInfo} as the timestamps).
  *
  * <h2>Unknown algorithms are not mismatches</h2>
  *
  * <p>§14 is explicit. A digest algorithm this version cannot compute means the record has not
- * been checked; calling it a mismatch would report a defect nobody found.
+ * been checked; calling it a mismatch would report a defect nobody found. Which algorithms are
+ * looked at is now precise as well: the record's declared ones, each Archive Timestamp's own,
+ * and each token's message imprint algorithm. The previous version walked the entire DER, so a
+ * timestamp authority whose CMS signature used SHA-384 made a conformant record
+ * {@code UNAVAILABLE} over an algorithm the record does not use for hashing anything.
  */
 public final class LongTermErs {
 
     /** The checks this profile will not pass without — §14. */
     public static final List<String> REQUIRED =
-            List.of("ers parse", "ers data object", "ers algorithms");
+            List.of("ers parse", "ers data object", "ers chain", "ers algorithms");
 
     /** RFC 4998 defines version 1 only. */
     private static final int VERSION = 1;
@@ -55,6 +96,29 @@ public final class LongTermErs {
     private static final String SHA256_OID = "2.16.840.1.101.3.4.2.1";
 
     private LongTermErs() {
+    }
+
+    /** One {@code ArchiveTimeStamp}: its algorithm, its reduced hash tree, and its token. */
+    record ArchiveTimeStamp(String digestOid, List<List<byte[]>> tree, byte[] tokenDer,
+            ASN1Sequence encoded) {
+    }
+
+    /** Raised while reading the structure; the message is what the report says. */
+    private static final class NotAnEvidenceRecord extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        NotAnEvidenceRecord(String message) {
+            super(message);
+        }
+    }
+
+    /** Raised when this build cannot compute something; never reported as a mismatch. */
+    private static final class Uncheckable extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        Uncheckable(String message) {
+            super(message);
+        }
     }
 
     public static List<Outcome.Check> check(Map<String, byte[]> entries) {
@@ -68,139 +132,450 @@ public final class LongTermErs {
             return checks;
         }
 
-        ASN1Sequence record;
+        List<String> declared = new ArrayList<>();
+        List<List<ArchiveTimeStamp>> chains;
+        ASN1Sequence sequence;
         try {
-            record = ASN1Sequence.getInstance(ASN1Primitive.fromByteArray(der));
-            ASN1Integer version = ASN1Integer.getInstance(record.getObjectAt(0));
-            if (version.getValue().intValue() != VERSION) {
+            ASN1Sequence record = ASN1Sequence.getInstance(ASN1Primitive.fromByteArray(der));
+            // The version FIRST, and before the shape: the rest of the structure is defined by
+            // the version, so a record of a later version whose layout this reader does not know
+            // must be reported as unread rather than as malformed.
+            int version = record.size() == 0 ? -1
+                    : ASN1Integer.getInstance(record.getObjectAt(0)).intValueExact();
+            if (version != VERSION) {
                 // UNSUPPORTED, not failed: a version this reader does not know has not been
                 // checked, and nothing about it is a finding.
                 checks.add(Outcome.Check.unavailable("ers parse", "UNSUPPORTED_ERS_VERSION",
-                        "the record declares version " + version.getValue()
+                        "the record declares version " + version
                                 + " and RFC 4998 defines version " + VERSION + " only"));
-                checks.add(Outcome.Check.absent("ers data object", "the record did not parse"));
-                checks.add(Outcome.Check.absent("ers algorithms", "the record did not parse"));
+                for (String name : REQUIRED.subList(1, REQUIRED.size())) {
+                    checks.add(Outcome.Check.absent(name, "the record did not parse"));
+                }
                 return checks;
             }
+            if (record.size() < 3) {
+                throw new NotAnEvidenceRecord("an EvidenceRecord has at least version, "
+                        + "digestAlgorithms and archiveTimeStampSequence; this one has "
+                        + record.size() + " element(s)");
+            }
+            ASN1Sequence algorithms = ASN1Sequence.getInstance(record.getObjectAt(1));
+            for (int i = 0; i < algorithms.size(); i++) {
+                declared.add(AlgorithmIdentifier.getInstance(algorithms.getObjectAt(i))
+                        .getAlgorithm().getId());
+            }
+            // The LAST element: cryptoInfos [0] and encryptionInfo [1] sit between the digest
+            // algorithms and the sequence, so counting from the front reads one of them as the
+            // timestamps on any record that carries one.
+            sequence = ASN1Sequence.getInstance(record.getObjectAt(record.size() - 1));
+            chains = readChains(sequence);
+        } catch (NotAnEvidenceRecord malformed) {
+            checks.add(Outcome.Check.failed("ers parse",
+                    "the package presents a file as an RFC 4998 evidence record and it does "
+                            + "not parse as one: " + malformed.getMessage()));
+            for (String name : REQUIRED.subList(1, REQUIRED.size())) {
+                checks.add(Outcome.Check.absent(name, "the record did not parse"));
+            }
+            return checks;
         } catch (Exception notAnErs) {
             checks.add(Outcome.Check.failed("ers parse",
                     "the package presents a file as an RFC 4998 evidence record and it does "
-                            + "not parse as one: " + notAnErs.getMessage()));
-            checks.add(Outcome.Check.absent("ers data object", "the record did not parse"));
-            checks.add(Outcome.Check.absent("ers algorithms", "the record did not parse"));
+                            + "not parse as one: " + notAnErs));
+            for (String name : REQUIRED.subList(1, REQUIRED.size())) {
+                checks.add(Outcome.Check.absent(name, "the record did not parse"));
+            }
             return checks;
         }
         checks.add(Outcome.Check.passed("ers parse"));
 
-        // The data object is the anchor target's MERKLE ROOT, because an evidence record's
-        // first Archive Timestamp is the RFC 3161 token that anchored it, and that token is
-        // over the root's bytes (§14). This looked for SHA-256 of the checkpoint's canonical
-        // form — a value no token in this system ever covers — which is the same class of
-        // mistake as the imprint double-hash, one layer up (residual R70, 2026-09-22).
-        Object root = null;
-        byte[] targetJson = fileIn(entries, "anchor-target-checkpoint.json");
-        if (targetJson != null) {
-            try {
-                Object parsed = Json.parse(new String(targetJson, StandardCharsets.UTF_8));
-                root = parsed instanceof Map<?, ?> document ? document.get("merkleRoot") : null;
-            } catch (Json.NotCanonicalisable malformed) {
-                root = null;
-            }
-        }
-        if (!(root instanceof String merkleRoot)) {
-            checks.add(Outcome.Check.absent("ers data object",
-                    "the package carries no anchor target Merkle root, so what the record "
-                            + "should cover is not in the package"));
-        } else {
-            String wanted = merkleRoot;
-            List<String> found = firstHashList(record);
-            if (found == null) {
-                checks.add(Outcome.Check.absent("ers data object",
-                        "the record carries no first hash list to compare"));
-            } else if (found.contains(wanted)) {
-                checks.add(Outcome.Check.passed("ers data object"));
-            } else {
-                checks.add(Outcome.Check.failed("ers data object",
-                        "the record's first hash list does not contain " + wanted + ", the "
-                                + "digest of this package's anchor target checkpoint. An "
-                                + "evidence record beside a document is NOT a signature on the "
-                                + "document, and one covering something else is not this "
-                                + "package's evidence"));
-            }
-        }
-
-        checks.add(algorithms(record));
+        byte[] wanted = anchoredRoot(entries);
+        checks.add(dataObject(chains.get(0).get(0), wanted));
+        checks.add(chain(chains, sequence, wanted));
+        checks.add(algorithms(declared, chains));
         return checks;
     }
 
+    // ------------------------------------------------------------------ structure
+
+    private static List<List<ArchiveTimeStamp>> readChains(ASN1Sequence sequence) {
+        List<List<ArchiveTimeStamp>> chains = new ArrayList<>();
+        for (int i = 0; i < sequence.size(); i++) {
+            ASN1Sequence chainSeq = asSequence(sequence.getObjectAt(i),
+                    "an ArchiveTimeStampChain is a SEQUENCE OF ArchiveTimeStamp");
+            List<ArchiveTimeStamp> chain = new ArrayList<>();
+            for (int j = 0; j < chainSeq.size(); j++) {
+                chain.add(readArchiveTimeStamp(asSequence(chainSeq.getObjectAt(j),
+                        "an ArchiveTimeStamp is a SEQUENCE")));
+            }
+            if (chain.isEmpty()) {
+                throw new NotAnEvidenceRecord("chain " + i + " holds no Archive Timestamp, so "
+                        + "the record declares a chain that timestamps nothing");
+            }
+            chains.add(chain);
+        }
+        if (chains.isEmpty()) {
+            throw new NotAnEvidenceRecord("the archiveTimeStampSequence is empty, so the record "
+                    + "carries no timestamp at all");
+        }
+        return chains;
+    }
+
+    private static ASN1Sequence asSequence(Object value, String what) {
+        try {
+            return ASN1Sequence.getInstance(value);
+        } catch (RuntimeException notASequence) {
+            throw new NotAnEvidenceRecord(what + "; this is " + notASequence.getMessage());
+        }
+    }
+
     /**
-     * Every digest algorithm the record declares must be one this version can compute.
-     *
-     * <p>Walks the whole structure rather than the first entry: a renewal introduces a new
-     * algorithm, and a reader that only looked at the first would report a record it cannot
-     * evaluate as one it did.
+     * {@code ArchiveTimeStamp ::= SEQUENCE { digestAlgorithm [0], attributes [1] OPTIONAL,
+     * reducedHashtree [2] OPTIONAL, timeStamp ContentInfo }} — IMPLICIT tags.
      */
-    static Outcome.Check algorithms(ASN1Sequence record) {
+    private static ArchiveTimeStamp readArchiveTimeStamp(ASN1Sequence ats) {
+        String algorithm = null;
+        List<List<byte[]>> tree = new ArrayList<>();
+        byte[] token = null;
+        for (int i = 0; i < ats.size(); i++) {
+            Object element = ats.getObjectAt(i);
+            if (element instanceof ASN1TaggedObject tagged) {
+                if (tagged.getTagNo() == 0) {
+                    algorithm = AlgorithmIdentifier.getInstance(tagged, false)
+                            .getAlgorithm().getId();
+                } else if (tagged.getTagNo() == 2) {
+                    ASN1Sequence lists = ASN1Sequence.getInstance(tagged, false);
+                    for (int level = 0; level < lists.size(); level++) {
+                        ASN1Sequence partial = asSequence(lists.getObjectAt(level),
+                                "a PartialHashtree is a SEQUENCE OF OCTET STRING");
+                        List<byte[]> values = new ArrayList<>();
+                        for (int k = 0; k < partial.size(); k++) {
+                            values.add(ASN1OctetString.getInstance(partial.getObjectAt(k))
+                                    .getOctets());
+                        }
+                        if (values.isEmpty()) {
+                            throw new NotAnEvidenceRecord("a PartialHashtree holds no hash "
+                                    + "value, so a level of the reduced tree commits to nothing");
+                        }
+                        tree.add(values);
+                    }
+                }
+                continue;
+            }
+            try {
+                token = ASN1Sequence.getInstance(element).getEncoded(ASN1Encoding.DER);
+            } catch (Exception notAContentInfo) {
+                throw new NotAnEvidenceRecord("an ArchiveTimeStamp's timeStamp field is a "
+                        + "ContentInfo; this one is " + notAContentInfo);
+            }
+        }
+        if (algorithm == null) {
+            throw new NotAnEvidenceRecord("an ArchiveTimeStamp carries no digestAlgorithm, so "
+                    + "which function built its tree is unstated");
+        }
+        if (token == null) {
+            throw new NotAnEvidenceRecord("an ArchiveTimeStamp carries no timestamp token, so "
+                    + "there is nothing in it that fixes a time");
+        }
+        // Parsed here, so a "record" whose token is not one is a parse finding rather than a
+        // silent absence three checks later.
+        tokenOf(token);
+        return new ArchiveTimeStamp(algorithm, tree, token, ats);
+    }
+
+    private static TimeStampToken tokenOf(byte[] der) {
+        try {
+            return new TimeStampToken(new CMSSignedData(new ByteArrayInputStream(der)));
+        } catch (Exception notAToken) {
+            throw new NotAnEvidenceRecord("an ArchiveTimeStamp's timeStamp is not an RFC 3161 "
+                    + "token: " + notAToken);
+        }
+    }
+
+    // ------------------------------------------------------------------ the checks
+
+    /** The root the package says was anchored, or {@code null} when it states none. */
+    private static byte[] anchoredRoot(Map<String, byte[]> entries) {
+        byte[] targetJson = fileIn(entries, "anchor-target-checkpoint.json");
+        if (targetJson == null) {
+            return null;
+        }
+        try {
+            Object parsed = Json.parse(new String(targetJson, StandardCharsets.UTF_8));
+            Object root = parsed instanceof Map<?, ?> document ? document.get("merkleRoot") : null;
+            if (!(root instanceof String hex) || hex.isBlank()) {
+                return null;
+            }
+            return unhex(hex);
+        } catch (Json.NotCanonicalisable | IllegalArgumentException unreadable) {
+            return null;
+        }
+    }
+
+    private static byte[] unhex(String hex) {
+        String value = hex.trim();
+        if (value.length() % 2 != 0) {
+            throw new IllegalArgumentException("odd-length hex");
+        }
+        byte[] out = new byte[value.length() / 2];
+        for (int i = 0; i < out.length; i++) {
+            int high = Character.digit(value.charAt(i * 2), 16);
+            int low = Character.digit(value.charAt(i * 2 + 1), 16);
+            if (high < 0 || low < 0) {
+                throw new IllegalArgumentException("not hex");
+            }
+            out[i] = (byte) ((high << 4) | low);
+        }
+        return out;
+    }
+
+    /**
+     * RFC 4998 §4.3 over the first Archive Timestamp, with {@code h} = the anchored root.
+     *
+     * <p>Case-insensitive, because hex case is not meaning: the product writes lowercase and
+     * accepts either when it anchors, so a package stating an uppercase root would otherwise be
+     * reported as covering something else (both reviews, fifth round).
+     */
+    static Outcome.Check dataObject(ArchiveTimeStamp first, byte[] wanted) {
+        if (wanted == null) {
+            return Outcome.Check.absent("ers data object",
+                    "the package states no anchor target Merkle root, so what the record should "
+                            + "cover is not in the package");
+        }
+        byte[] imprint;
+        try {
+            imprint = tokenOf(first.tokenDer()).getTimeStampInfo().getMessageImprintDigest();
+        } catch (NotAnEvidenceRecord unreadable) {
+            return Outcome.Check.failed("ers data object", unreadable.getMessage());
+        }
+        if (first.tree().isEmpty()) {
+            // §4.2: "An Archive Timestamp may consist ... only of a timestamp with no hash value
+            // lists." §4.3 then degenerates to "the root hash value must correspond to
+            // hashedMessage", and the root IS h.
+            if (Arrays.equals(imprint, wanted)) {
+                return Outcome.Check.passed("ers data object");
+            }
+            return Outcome.Check.failed("ers data object", mismatch(wanted, imprint));
+        }
+        if (first.tree().get(0).stream().noneMatch(value -> Arrays.equals(value, wanted))) {
+            return Outcome.Check.failed("ers data object",
+                    "the first hash list does not contain " + Canonical.hex(wanted)
+                            + ", the Merkle root this package says was anchored, so this "
+                            + "Archive Timestamp is about something else");
+        }
+        byte[] root;
+        try {
+            root = walk(first);
+        } catch (Uncheckable cannot) {
+            return Outcome.Check.unavailable("ers data object", "UNKNOWN_ALGORITHM",
+                    cannot.getMessage());
+        }
+        if (!Arrays.equals(root, imprint)) {
+            return Outcome.Check.failed("ers data object",
+                    "the reduced hash tree reduces to " + Canonical.hex(root) + " and the token "
+                            + "covers " + Canonical.hex(imprint) + ", so the tree and the "
+                            + "timestamp are not about the same thing");
+        }
+        return Outcome.Check.passed("ers data object");
+    }
+
+    private static String mismatch(byte[] wanted, byte[] imprint) {
+        return "the record's first timestamp covers " + Canonical.hex(imprint) + " and this "
+                + "package says the anchored Merkle root is " + Canonical.hex(wanted)
+                + ". An evidence record beside a document is NOT a signature on the document, "
+                + "and one covering something else is not this package's evidence";
+    }
+
+    /**
+     * §4.3 step 3: hash the first list, and let the result join each next list in turn.
+     *
+     * <p>The computed value BECOMES a member of the next list; it is not stored there. Requiring
+     * it to be stored rejects every standard record — the same reading the product's own
+     * {@code ErsVerifier} had to be corrected on.
+     */
+    private static byte[] walk(ArchiveTimeStamp ats) {
+        byte[] current = digest(ats.digestOid(), sortedConcat(ats.tree().get(0)));
+        for (int level = 1; level < ats.tree().size(); level++) {
+            List<byte[]> withParent = new ArrayList<>(ats.tree().get(level));
+            withParent.add(current);
+            current = digest(ats.digestOid(), sortedConcat(withParent));
+        }
+        return current;
+    }
+
+    /**
+     * {@code ERS_CHAIN} — every Archive Timestamp after the first covers the one before it (§14).
+     *
+     * <p>Two operations, and they are not the same one (RFC 4998 §5.2, §5.3):
+     *
+     * <ul>
+     *   <li><b>Timestamp renewal</b> stays in the chain: the new token's imprint is
+     *       {@code H(previous timeStamp field's DER)}, under the chain's algorithm.</li>
+     *   <li><b>Hash-tree renewal</b> starts a chain: the new Archive Timestamp's first list
+     *       holds {@code H(sorted(h, ha))} where {@code ha} is the digest of the DER of every
+     *       previous chain. Without the {@code ha} term the new chain commits to nothing that
+     *       came before — an unrelated timestamp filed beside the record.</li>
+     * </ul>
+     *
+     * <p>A record with one Archive Timestamp — which is all this product writes — has nothing to
+     * chain, and that is a PASS with the reason stated rather than a silent one.
+     */
+    static Outcome.Check chain(List<List<ArchiveTimeStamp>> chains, ASN1Sequence sequence,
+            byte[] wanted) {
+        int total = chains.stream().mapToInt(List::size).sum();
+        if (total == 1) {
+            return Outcome.Check.passed("ers chain",
+                    "the record holds one Archive Timestamp, so there is no renewal to follow. "
+                            + "What that timestamp covers is reported by 'ers data object'");
+        }
+        try {
+            for (int c = 0; c < chains.size(); c++) {
+                List<ArchiveTimeStamp> chain = chains.get(c);
+                if (c > 0) {
+                    Outcome.Check started = chainStart(chains, sequence, c, wanted);
+                    if (started != null) {
+                        return started;
+                    }
+                }
+                for (int i = 1; i < chain.size(); i++) {
+                    ArchiveTimeStamp previous = chain.get(i - 1);
+                    ArchiveTimeStamp current = chain.get(i);
+                    if (!current.digestOid().equals(previous.digestOid())) {
+                        return Outcome.Check.failed("ers chain",
+                                "chain " + c + " changes digest algorithm at position " + i
+                                        + " (" + previous.digestOid() + " to "
+                                        + current.digestOid() + "). §5.2 keeps the algorithm; a "
+                                        + "new one starts a new chain");
+                    }
+                    byte[] expected = digest(current.digestOid(), previous.tokenDer());
+                    byte[] imprint = tokenOf(current.tokenDer()).getTimeStampInfo()
+                            .getMessageImprintDigest();
+                    if (!Arrays.equals(expected, imprint)) {
+                        return Outcome.Check.failed("ers chain",
+                                "the timestamp at chain " + c + " position " + i + " covers "
+                                        + Canonical.hex(imprint) + " and §5.2 requires it to "
+                                        + "cover " + Canonical.hex(expected) + ", the digest of "
+                                        + "the timestamp before it. A renewal that does not "
+                                        + "cover what it renews is a timestamp filed beside the "
+                                        + "record, not part of it");
+                    }
+                }
+            }
+        } catch (Uncheckable cannot) {
+            return Outcome.Check.unavailable("ers chain", "UNKNOWN_ALGORITHM", cannot.getMessage());
+        } catch (NotAnEvidenceRecord unreadable) {
+            return Outcome.Check.failed("ers chain", unreadable.getMessage());
+        }
+        return Outcome.Check.passed("ers chain");
+    }
+
+    /** §5.3: the first Archive Timestamp of chain {@code c} commits to every earlier chain. */
+    private static Outcome.Check chainStart(List<List<ArchiveTimeStamp>> chains,
+            ASN1Sequence sequence, int c, byte[] wanted) {
+        ArchiveTimeStamp first = chains.get(c).get(0);
+        if (first.tree().isEmpty()) {
+            return Outcome.Check.failed("ers chain",
+                    "chain " + c + " starts with an Archive Timestamp that has no hash tree, so "
+                            + "nothing in it names the chains before it. §5.3 requires its first "
+                            + "list to hold H(sorted(h, ha))");
+        }
+        if (wanted == null) {
+            return Outcome.Check.absent("ers chain",
+                    "the package states no anchor target Merkle root, so the h term of §5.3's "
+                            + "H(sorted(h, ha)) is not available to recompute");
+        }
+        org.bouncycastle.asn1.ASN1EncodableVector earlier =
+                new org.bouncycastle.asn1.ASN1EncodableVector();
+        for (int i = 0; i < c; i++) {
+            earlier.add(sequence.getObjectAt(i));
+        }
+        byte[] previousSequenceDer;
+        try {
+            previousSequenceDer = new DERSequence(earlier).getEncoded(ASN1Encoding.DER);
+        } catch (Exception cannotEncode) {
+            return Outcome.Check.unavailable("ers chain", "ANCHOR_NOT_PARSED",
+                    "the earlier chains could not be re-encoded to recompute §5.3's ha term: "
+                            + cannotEncode);
+        }
+        byte[] ha = digest(first.digestOid(), previousSequenceDer);
+        byte[] expected = digest(first.digestOid(), sortedConcat(List.of(wanted, ha)));
+        if (first.tree().get(0).stream().noneMatch(value -> Arrays.equals(value, expected))) {
+            return Outcome.Check.failed("ers chain",
+                    "chain " + c + " does not commit to the chains before it: its first hash "
+                            + "list holds no " + Canonical.hex(expected) + ", which §5.3 "
+                            + "computes as H(sorted(h, ha))");
+        }
+        return null;
+    }
+
+    /**
+     * Every digest algorithm the record USES must be one this version can compute.
+     *
+     * <p>The declared set, each Archive Timestamp's own, and each token's message imprint
+     * algorithm. Not every OID in the DER: a timestamp authority signing its CMS under SHA-384
+     * does not make the record's hash tree a SHA-384 tree, and reporting it as uncheckable made
+     * a conformant record {@code INDETERMINATE} over something the record never hashes with.
+     */
+    static Outcome.Check algorithms(List<String> declared,
+            List<List<ArchiveTimeStamp>> chains) {
+        Set<String> used = new LinkedHashSet<>(declared);
+        for (List<ArchiveTimeStamp> chain : chains) {
+            for (ArchiveTimeStamp ats : chain) {
+                used.add(ats.digestOid());
+                try {
+                    used.add(tokenOf(ats.tokenDer()).getTimeStampInfo()
+                            .getMessageImprintAlgOID().getId());
+                } catch (NotAnEvidenceRecord unreadable) {
+                    return Outcome.Check.failed("ers algorithms", unreadable.getMessage());
+                }
+            }
+        }
         List<String> unknown = new ArrayList<>();
-        collectOids(record, unknown);
+        for (String oid : used) {
+            if (!SHA256_OID.equals(oid) && !unknown.contains(oid)) {
+                unknown.add(oid);
+            }
+        }
         if (!unknown.isEmpty()) {
             return Outcome.Check.unavailable("ers algorithms", "UNKNOWN_ALGORITHM",
-                    "the record declares " + unknown + ", which this version cannot compute. "
+                    "the record uses " + unknown + ", which this version cannot compute. "
                             + "That is NOT a mismatch — it means the record has not been checked");
         }
         return Outcome.Check.passed("ers algorithms");
     }
 
-    private static void collectOids(ASN1Encodable node, List<String> unknown) {
-        if (node instanceof org.bouncycastle.asn1.ASN1ObjectIdentifier oid) {
-            String value = oid.getId();
-            // Only digest OIDs are of interest, and the ones that are not SHA-256 are what this
-            // reports. Signature and content-type OIDs live in the embedded tokens, which this
-            // version does not walk into — stated here so the check is not read as exhaustive.
-            if (value.startsWith("2.16.840.1.101.3.4.2.") && !SHA256_OID.equals(value)
-                    && !unknown.contains(value)) {
-                unknown.add(value);
-            }
-            return;
+    // ------------------------------------------------------------------ shared hashing
+
+    /** RFC 4998 §4.2/§4.3: binary ascending sort, then concatenate. No prefixes, no lengths. */
+    static byte[] sortedConcat(List<byte[]> values) {
+        List<byte[]> sorted = new ArrayList<>(values);
+        sorted.sort(Arrays::compareUnsigned);
+        int total = 0;
+        for (byte[] value : sorted) {
+            total += value.length;
         }
-        if (node instanceof ASN1Sequence sequence) {
-            for (ASN1Encodable child : sequence) {
-                collectOids(child, unknown);
-            }
-        } else if (node instanceof org.bouncycastle.asn1.ASN1Set set) {
-            for (ASN1Encodable child : set) {
-                collectOids(child, unknown);
-            }
-        } else if (node instanceof org.bouncycastle.asn1.ASN1TaggedObject tagged) {
-            collectOids(tagged.getBaseObject(), unknown);
+        byte[] out = new byte[total];
+        int at = 0;
+        for (byte[] value : sorted) {
+            System.arraycopy(value, 0, out, at, value.length);
+            at += value.length;
+        }
+        return out;
+    }
+
+    private static byte[] digest(String oid, byte[] input) {
+        if (!SHA256_OID.equals(oid)) {
+            throw new Uncheckable("this version computes SHA-256 only and the record uses "
+                    + oid + ", so nothing here recomputed its hashes");
+        }
+        try {
+            return MessageDigest.getInstance("SHA-256").digest(input);
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new Uncheckable("this JVM does not provide SHA-256");
         }
     }
 
-    /** The hashes in the record's first hash list, as lowercase hex. */
-    static List<String> firstHashList(ASN1Sequence record) {
-        List<String> hashes = new ArrayList<>();
-        collectOctets(record, hashes, 32);
-        return hashes.isEmpty() ? null : hashes;
-    }
-
-    private static void collectOctets(ASN1Encodable node, List<String> out, int length) {
-        if (node instanceof ASN1OctetString octets) {
-            if (octets.getOctets().length == length) {
-                out.add(Canonical.hex(octets.getOctets()));
-            }
-            return;
-        }
-        if (node instanceof ASN1Sequence sequence) {
-            for (ASN1Encodable child : sequence) {
-                collectOctets(child, out, length);
-            }
-        } else if (node instanceof org.bouncycastle.asn1.ASN1Set set) {
-            for (ASN1Encodable child : set) {
-                collectOctets(child, out, length);
-            }
-        } else if (node instanceof org.bouncycastle.asn1.ASN1TaggedObject tagged) {
-            collectOctets(tagged.getBaseObject(), out, length);
-        }
+    /** Kept so a caller can name the OID this version implements. */
+    static ASN1ObjectIdentifier sha256() {
+        return new ASN1ObjectIdentifier(SHA256_OID);
     }
 
     /**

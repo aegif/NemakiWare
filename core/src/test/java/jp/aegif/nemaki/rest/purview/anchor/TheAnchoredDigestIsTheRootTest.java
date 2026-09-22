@@ -108,6 +108,46 @@ class TheAnchoredDigestIsTheRootTest {
     }
 
     /**
+     * §13 is the OPPOSITE rule, and the specification says so.
+     *
+     * <p>RFC 3161 takes the imprint as given, so {@code hex(messageImprint) == merkleRoot}.
+     * OpenTimestamps does not: the sidecar writes the root's decoded bytes to a file and runs
+     * {@code ots stamp <file>}, which HASHES THE FILE, so the detached proof's starting digest
+     * is {@code SHA-256(root bytes)} — one layer up. §13 had been written to match §11 and
+     * §12, which no proof this product makes has ever satisfied. Nothing implements §13 yet
+     * ({@code AnchoredOts} answers UNAVAILABLE), so the first implementation of it would have
+     * rejected every genuine package (both reviews, fifth round — the R70 shape again).
+     *
+     * <p>Read from the sidecar as well as from the specification: the sentence is only worth
+     * anything if the program it describes still behaves that way.
+     */
+    @Test
+    @DisplayName("the specification says the OTS proof is one layer above the root")
+    void theSpecificationSaysOtsIsOneLayerUp() throws IOException {
+        String spec = read(SPEC);
+        assertTrue(spec.contains("SHA-256(merkleRoot の bytes)")
+                        || spec.contains("`SHA-256(merkleRoot の bytes)`"),
+                "§13's OTS_COMMITS_ROOT no longer states the extra layer. Written to match "
+                        + "§11 and §12, it describes a proof this product never produces, and a "
+                        + "verifier implementing it refuses every genuine package");
+        assertFalse(spec.contains("proof の起点が anchor target の `merkleRoot`"),
+                "§13 carries the RFC 3161 reading again — the one that says the proof starts "
+                        + "from the root itself");
+
+        Path sidecar = Path.of("../docker/ots/server.py");
+        assertTrue(Files.exists(sidecar), sidecar + " is not there, so the sentence above is "
+                + "checked against nothing");
+        String server = Files.readString(sidecar, java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(server.contains("hashlib.sha256(_digest_bytes(hex_digest)).digest()"),
+                "the sidecar no longer compares the proof against SHA-256 of the decoded "
+                        + "digest, so which layer the proof starts from has to be measured "
+                        + "again before §13 can say it");
+        assertTrue(server.contains("\"ots\", \"stamp\"") || server.contains("'ots', 'stamp'"),
+                "the sidecar no longer stamps a FILE, which is the whole reason for the extra "
+                        + "layer: ots stamp hashes what it is given");
+    }
+
+    /**
      * Neither verifier check hashes the root again. Source-read because the behaviour is in
      * another module: what this holds is that the operation that was wrong does not return.
      */

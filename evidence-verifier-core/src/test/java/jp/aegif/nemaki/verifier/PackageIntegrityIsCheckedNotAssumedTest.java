@@ -59,7 +59,11 @@ class PackageIntegrityIsCheckedNotAssumedTest {
     }
 
     private static String premis(String digest, String algorithm) {
-        return "<premis:premis><premis:object><premis:objectCharacteristics><premis:fixity>"
+        // The namespace IS declared, because a prefix that binds to nothing is not
+        // namespace-well-formed XML and the reader parses rather than string-matches. A
+        // fixture that omitted it would measure the parse failure, not the check.
+        return "<premis:premis xmlns:premis=\"http://www.loc.gov/premis/v3\">"
+                + "<premis:object><premis:objectCharacteristics><premis:fixity>"
                 + "<premis:messageDigestAlgorithm>" + algorithm
                 + "</premis:messageDigestAlgorithm>"
                 + "<premis:messageDigest>" + digest + "</premis:messageDigest>"
@@ -159,12 +163,13 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         // is not the writer's (Codex, fourth review, P1).
         String payload = "the minutes";
         Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        // ONE algorithm, TWO digests. A second <fixity> with its own algorithm would be caught
+        // by the ALGORITHM arm as well, and the lock would then stay green with the digest arm
+        // removed — satisfied by a branch it is not about (measured: control NY3 did not fire).
         entries.put(ROOT + "metadata/preservation/premis.xml",
-                premis(sha256(payload), "SHA-256").replace("</premis:premis>",
-                        "<premis:fixity><premis:messageDigestAlgorithm>SHA-256"
-                                + "</premis:messageDigestAlgorithm><premis:messageDigest>"
-                                + "ff".repeat(32) + "</premis:messageDigest></premis:fixity>"
-                                + "</premis:premis>"));
+                premis(sha256(payload), "SHA-256").replace("</premis:fixity>",
+                        "<premis:messageDigest>" + "ff".repeat(32)
+                                + "</premis:messageDigest></premis:fixity>"));
 
         Path sip = zip(tmp, "two-fixities.zip", entries);
         Outcome.Check fixity = checkNamed(
@@ -174,13 +179,79 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         assertEquals("AMBIGUOUS_PREMIS", fixity.reasonCode());
     }
 
+    /**
+     * A second digest under ANOTHER PREFIX is still a second digest.
+     *
+     * <p>The ambiguity check counted the literal {@code "<premis:messageDigest>"}, and a prefix
+     * is not part of an XML name: the same namespace bound to {@code p} gave a document with a
+     * matching digest and a contradicting one, counted as one, answered {@code PASSED} (Codex,
+     * fifth review, P1).
+     */
+    @Test
+    @DisplayName("two digests under different prefixes are two digests")
+    void aSecondDigestUnderAnotherPrefixIsFound(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "metadata/preservation/premis.xml",
+                "<premis:premis xmlns:premis=\"http://www.loc.gov/premis/v3\" "
+                        + "xmlns:p=\"http://www.loc.gov/premis/v3\">"
+                        + "<premis:object><premis:objectCharacteristics><premis:fixity>"
+                        + "<premis:messageDigestAlgorithm>SHA-256"
+                        + "</premis:messageDigestAlgorithm>"
+                        + "<premis:messageDigest>" + sha256(payload) + "</premis:messageDigest>"
+                        // One algorithm, so only the DIGEST arm can answer: a second one would
+                        // let the algorithm arm satisfy this lock instead.
+                        + "<p:messageDigest>" + sha256("something else") + "</p:messageDigest>"
+                        + "</premis:fixity></premis:objectCharacteristics></premis:object>"
+                        + "</premis:premis>");
+
+        Path sip = zip(tmp, "two-prefixes.zip", entries);
+        Outcome.Check fixity = checkNamed(
+                PackageIntegrity.check(PackageReader.open(sip).entries()), "payload fixity");
+
+        assertEquals(Outcome.UNAVAILABLE, fixity.outcome(),
+                "a PREMIS carrying a matching digest and a contradicting one under a different "
+                        + "prefix was read as carrying one: " + fixity.detail());
+        assertEquals("AMBIGUOUS_PREMIS", fixity.reasonCode());
+    }
+
+    /**
+     * And the mirror: the same literal inside a COMMENT is not a second digest.
+     *
+     * <p>Counting text would refuse this package over something that is not markup, and an
+     * over-refusal is the same defect as a missed finding on this branch.
+     */
+    @Test
+    @DisplayName("the literal inside a comment is not a second digest")
+    void aCommentIsNotASecondDigest(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "metadata/preservation/premis.xml",
+                "<premis:premis xmlns:premis=\"http://www.loc.gov/premis/v3\">"
+                        + "<!-- <premis:messageDigest>deadbeef</premis:messageDigest> -->"
+                        + "<premis:object><premis:objectCharacteristics><premis:fixity>"
+                        + "<premis:messageDigestAlgorithm>SHA-256"
+                        + "</premis:messageDigestAlgorithm>"
+                        + "<premis:messageDigest>" + sha256(payload) + "</premis:messageDigest>"
+                        + "</premis:fixity></premis:objectCharacteristics></premis:object>"
+                        + "</premis:premis>");
+
+        Path sip = zip(tmp, "commented.zip", entries);
+
+        assertEquals(Outcome.PASSED, checkNamed(
+                        PackageIntegrity.check(PackageReader.open(sip).entries()),
+                        "payload fixity").outcome(),
+                "a package was refused because a COMMENT contained the text of a digest element");
+    }
+
     @Test
     @DisplayName("a digest with no algorithm stated is NOT_PRESENT — SHA-256 was an assumption")
     void aDigestWithNoAlgorithmIsNotPresent(@TempDir Path tmp) throws Exception {
         String payload = "the minutes";
         Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
         entries.put(ROOT + "metadata/preservation/premis.xml",
-                "<premis:premis><premis:object><premis:objectCharacteristics><premis:fixity>"
+                "<premis:premis xmlns:premis=\"http://www.loc.gov/premis/v3\">"
+                        + "<premis:object><premis:objectCharacteristics><premis:fixity>"
                         + "<premis:messageDigest>" + sha256(payload) + "</premis:messageDigest>"
                         + "</premis:fixity></premis:objectCharacteristics></premis:object>"
                         + "</premis:premis>");

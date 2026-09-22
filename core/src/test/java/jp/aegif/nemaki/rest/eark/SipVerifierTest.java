@@ -72,7 +72,11 @@ class SipVerifierTest {
     }
 
     private static String premisWithDigest(String digest) {
-        return "<premis:premis><premis:object><premis:objectCharacteristics><premis:fixity>"
+        // The namespace IS declared, as PremisWriter declares it. The reader parses rather than
+        // string-matches (a prefix is not part of an XML name), so a fixture that left the
+        // prefix unbound would measure the parse failure instead of the check.
+        return "<premis:premis xmlns:premis=\"http://www.loc.gov/premis/v3\">"
+                + "<premis:object><premis:objectCharacteristics><premis:fixity>"
                 + "<premis:messageDigestAlgorithm>SHA-256</premis:messageDigestAlgorithm>"
                 + "<premis:messageDigest>" + digest + "</premis:messageDigest>"
                 + "</premis:fixity></premis:objectCharacteristics></premis:object>"
@@ -151,6 +155,75 @@ class SipVerifierTest {
                 result.asMap().toString());
         assertEquals(SipVerifier.Outcome.PASSED, outcomeOf(result, "audit path"),
                 result.asMap().toString());
+    }
+
+    /**
+     * The product's endpoint gives the same answer as the independent verifier.
+     *
+     * <p>Both read one PREMIS document, and until now they read it differently: this one took
+     * the first {@code "<premis:messageDigest>"} it could find as TEXT and assumed SHA-256 when
+     * no algorithm was stated, so an adversarial PREMIS the CLI answered {@code UNAVAILABLE}
+     * was answered {@code PASSED} here — and an operator reaches this endpoint far more often
+     * than the CLI (subagent, fifth review, P2).
+     *
+     * <p>The twin of these two cases is
+     * {@code PackageIntegrityIsCheckedNotAssumedTest#aSecondDigestUnderAnotherPrefixIsFound}
+     * and {@code #aDigestWithNoAlgorithmIsNotPresent}. The modules cannot share the code, so
+     * they share the expected answers.
+     */
+    @Test
+    @DisplayName("a second digest under another prefix is ambiguous here too")
+    void aSecondDigestUnderAnotherPrefixIsAmbiguousHereToo(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        String matching = SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8));
+        String other = SipVerifier.sha256Hex("something else".getBytes(StandardCharsets.UTF_8));
+        Map<String, String> proof = realProofFor(2);
+        Path sip = zip(tmp, "two-prefixes.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                "<premis:premis xmlns:premis=\"http://www.loc.gov/premis/v3\" "
+                        + "xmlns:p=\"http://www.loc.gov/premis/v3\">"
+                        + "<premis:object><premis:objectCharacteristics><premis:fixity>"
+                        + "<premis:messageDigestAlgorithm>SHA-256"
+                        + "</premis:messageDigestAlgorithm>"
+                        + "<premis:messageDigest>" + matching + "</premis:messageDigest>"
+                        // One algorithm, so only the DIGEST arm can answer here either.
+                        + "<p:messageDigest>" + other + "</p:messageDigest>"
+                        + "</premis:fixity></premis:objectCharacteristics></premis:object>"
+                        + "</premis:premis>",
+                "sip/metadata/other/nemaki-evidence.json", proof.get("json")));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "payload digest"),
+                "a PREMIS with a matching digest and a contradicting one under a different "
+                        + "prefix was read as carrying one. The CLI answers UNAVAILABLE for the "
+                        + "same file: " + result.asMap());
+    }
+
+    @Test
+    @DisplayName("a digest with no algorithm is NOT_PRESENT here too — SHA-256 was an assumption")
+    void aDigestWithNoAlgorithmIsNotAssumedHereEither(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> proof = realProofFor(2);
+        Path sip = zip(tmp, "no-algorithm.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                "<premis:premis xmlns:premis=\"http://www.loc.gov/premis/v3\">"
+                        + "<premis:object><premis:objectCharacteristics><premis:fixity>"
+                        + "<premis:messageDigest>"
+                        + SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))
+                        + "</premis:messageDigest>"
+                        + "</premis:fixity></premis:objectCharacteristics></premis:object>"
+                        + "</premis:premis>",
+                "sip/metadata/other/nemaki-evidence.json", proof.get("json")));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.NOT_PRESENT, outcomeOf(result, "payload digest"),
+                "a digest with no stated algorithm was checked as SHA-256. It happens to be "
+                        + "right for packages this product writes, which is no reason to accept "
+                        + "it from someone else: " + result.asMap());
     }
 
     @Test

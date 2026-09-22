@@ -337,29 +337,14 @@ public final class AnchoredCheckpoint {
                 signer = (org.bouncycastle.cert.X509CertificateHolder) held;
                 break;
             }
-            if (signer == null) {
-                // NOT_PRESENT, the same answer P3 gives the same token: the certificate is
-                // absent, which is a fact about the package, not a failure to read one
-                // (Codex, fourth review, P2 — the two profiles disagreed about one input).
-                return Outcome.Check.absent("anchor commits root",
-                        path + " carries no signer certificate, so its signature cannot be "
-                                + "verified from the package alone");
-            }
-            try {
-                token.validate(new org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoVerifierBuilder()
-                        .build(signer));
-            } catch (org.bouncycastle.tsp.TSPException invalid) {
-                return Outcome.Check.failed("anchor commits root",
-                        path + "'s signature does not verify against its own signer "
-                                + "certificate: " + invalid.getMessage());
-            } catch (Exception cannotAsk) {
-                // A signature algorithm this JVM has no provider for is one this verifier has
-                // NOT checked. Reporting it as a bad signature names a defect nobody found —
-                // and the CLI registers no BouncyCastle provider, so this is reachable
-                // (subagent, fourth review, P2).
-                return Outcome.Check.unavailable("anchor commits root", "UNKNOWN_ALGORITHM",
-                        path + "'s signature could not be checked by this JVM: "
-                                + cannotAsk.getMessage());
+            // The SHARED classification (TokenSignature). Deciding here what a failure meant
+            // is how one token came to exit 3 at this profile and 2 at P3: the two profiles
+            // disagreed about one input, first about an absent certificate and then about an
+            // algorithm this JVM has no provider for (both reviews, fourth and fifth rounds).
+            Outcome.Check signature =
+                    TokenSignature.verify("anchor commits root", path, token, signer);
+            if (signature.outcome() != Outcome.PASSED) {
+                return signature;
             }
             committing.add(path);
         }

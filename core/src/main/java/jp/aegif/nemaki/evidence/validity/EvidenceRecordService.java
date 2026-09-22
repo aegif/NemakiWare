@@ -37,9 +37,9 @@ import java.util.Map;
  *
  * <h2>Nothing new is timestamped</h2>
  *
- * <p>{@link ErsRecord} explains why the data object is a checkpoint's canonical bytes: the
- * checkpoint hash IS their SHA-256, and the RFC 3161 anchor over that checkpoint is a token
- * whose message imprint is exactly that value. So an evidence record can be assembled from what
+ * <p>{@link ErsRecord} explains why the data object hash is the anchor target's
+ * {@code merkleRoot}: the RFC 3161 anchor is a token whose message imprint is exactly that
+ * root's bytes, and a token covers one value. So an evidence record can be assembled from what
  * is already stored — no second TSA round trip, no second anchor, and no new claim.
  *
  * <p>Which also means this can produce nothing a deployment does not already have. A checkpoint

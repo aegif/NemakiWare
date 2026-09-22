@@ -7,8 +7,8 @@
 ## 0. 第 1 段が実装するのは ERS ではない (第 2 段で実装した)
 
 **この節は第 1 段 (2026-08-25) について書かれている。** 第 2 段 (2026-08-26) で
-**RFC 4998 の生成と検証を実装した** — §8 を読むこと。data object は checkpoint の
-正規化バイト列であって文書ではなく、TSA 署名は検証していない。
+**RFC 4998 の生成と検証を実装した** — §8 を読むこと。data object hash は checkpoint の
+**merkleRoot** であって文書ではなく、TSA 署名は検証していない。
 
 第 1 段が実装したのは、**ERS が「本文書の範囲外」と明記して肩代わりしてくれない部分**である。
 
@@ -242,32 +242,39 @@ renewal monitor が既に在るからである — `RenewalNeed` は「そろそ
 
 §7 で形式を決めた。ここで作った。`ErsRecord` (生成・DER 往復) と `ErsVerifier` (検証)。
 
-### data object は checkpoint の**正規化バイト列**であって checkpoint hash ではない
+### `h` は anchor target の **merkleRoot** である（checkpoint hash でも正規化バイト列でもない）
 
 **2026-08-26 訂正 (Codex 指摘・RFC 本文で確認)。** 最初の実装はここを取り違えており、
 その結果**どの標準ツールでも読めない記録**を出していた。自前の検証器が同じ取り違えを
 していたので、テストは緑だった。
 
 RFC 4998 §4.3 は検証器に **`h = H(d)` を計算させ、最初のハッシュリストに `h` が
-在ることを確かめさせる**。checkpoint hash `C` を「data object」と呼びながら
-リストに `C` を入れると、検証器は `H(C)` を探して `C` を見つけ、
-**token を見る前に**落とす。
+在ることを確かめさせる**。ある値 `X` を「data object」と呼びながらリストに `X` を入れると、
+検証器は `H(X)` を探して `X` を見つけ、**token を見る前に**落とす。
 
-正しくはもっと単純だった。`C` は既に digest であり、
-本製品の RFC 3161 アンカーは **message imprint がちょうど `C` の token** である。
+**制約は 1 つだけ**: この記録は**既に在る token を再利用する**。token が覆えるのは
+anchor された値 1 つだけである。`Rfc3161AnchorTarget` が anchor するのは
+`checkpoint.merkleRoot()` を**デコードした bytes**（root は既に SHA-256 digest なので
+再度 hash しない）。したがって `h` は **root の bytes** 以外にありえない。
 
-> **2026-09-22 の訂正。** ここで `C` と書いていたものを「checkpoint の正規化バイト列の hash」
-> と説明していたが、**製品が anchor するのは `checkpoint.merkleRoot()`**（`AnchorService`）で、
-> `C` はその **root** である。正規化バイト列の hash を覆う token は存在しない。
-> 残件 R70 として 2 名のレビューアが独立に指摘し、製品・仕様・verifier の 3 つを root に揃えた。
-つまり data object はその正規化バイト列で、`h = C`。そして **reducedHashtree は
-要らない** — RFC 4998 §4.2 が明示的に許している:「An Archive Timestamp may consist
-... only of a timestamp with no hash value lists」。§4.3 は
-「root hash value must correspond to hashedMessage」に縮退し、root は `h` そのもの。
+> **2026-09-22 の訂正（R70）。** この節は 2 度誤っている。最初は「data object = checkpoint hash `C`」
+> （上の縮退）。次に「data object = checkpoint の正規化バイト列、`h = C`」— hash の話としては
+> 正しいが anchor の話としては誤りで、**`C` を覆う token は存在しない**。2 名のレビューアが
+> 独立に指摘し、製品・仕様・verifier・本文書を `merkleRoot` に揃えた。
+> **`C` と root は別の値である。** 同一視する文をここに書かないこと。
 
-この形は**適合し、かつ既存アンカーをそのまま使える**。代案 —— `H(C)` を 1 ノードの
-木に入れる —— は `H(H(C))` を覆う**新しい token** が要る。§4.3 step 3 は
+`h` = root なので **reducedHashtree は要らない** — RFC 4998 §4.2 が明示的に許している:
+「An Archive Timestamp may consist ... only of a timestamp with no hash value lists」。§4.3 は
+「root hash value must correspond to hashedMessage」に縮退し、その root は `h` そのもの。
+
+この形は**適合し、かつ既存アンカーをそのまま使える**。代案 —— `H(root)` を 1 ノードの
+木に入れる —— は `H(H(root))` を覆う**新しい token** が要る。§4.3 step 3 は
 要素が 1 つでもリストを hash するからである (単一要素の例外は RFC に無い。本文で確認)。
+
+**この形が捨てているもの**（自明ではないので書く）: `h` の元である data object `d` —
+Merkle 木が縮約する連結 —— は**どの package にも入っていない**。受け取る側は §4.3 step 1 を
+自分では実行できず、**「package が述べる root を記録が覆っているか」までしか確かめられない**。
+§9 が 2 度目の TSA 往復を禁じている以上、これは選択の結果である。
 
 **採らなかった案**: entry を RFC 4998 の規則で縮約する。checkpoint ごとに
 2 つ目の root と 2 つ目のアンカーが要る (手元の token は RFC 6962 root ではなく
@@ -372,8 +379,8 @@ boolean と件数しか無かったので、**呼び手が新アルゴリズム�
 
 ### 新しくタイムスタンプは取らない
 
-§8 の帰結。checkpoint hash は **checkpoint の正規化バイト列の SHA-256** であり、
-本製品の RFC 3161 アンカーは **message imprint がちょうどその値（= `merkleRoot` の bytes）の token** である。
+§8 の帰結。本製品の RFC 3161 アンカーは **message imprint がちょうど
+`checkpoint.merkleRoot()` の bytes の token** である（`checkpointHash` ではない —— 両者は別の値）。
 だから evidence record は**既に在るものの組み立て**であって、
 2 度目の TSA 往復も 2 つ目のアンカーも要らず、**新しい主張も生まれない**。
 
@@ -395,7 +402,7 @@ imprint は**当局が実際に署名した対象**である。別の事実で�
 まさにフィールドだけ読むと素通りする組み合わせだった。
 
 いまは 2 段階で見る: 安い診断としてフィールドを見て、そのあと
-**proof を parse して token の `hashedMessage` を checkpoint hash と突き合わせる**。
+**proof を parse して token の `hashedMessage` を `merkleRoot` と突き合わせる**。
 
 さらに、**組み立てたものを `ErsVerifier` に通してから返す**。組み立ては安く、
 標準ツールが落とす記録を他組織へ送るのは高い。「exporter から出てきた」は
@@ -422,7 +429,7 @@ DER を宣言すると少なくとも 1 つの受け手 (RODA 6.3.0) が package
 
 | 壊した箇所 | 落ちたテスト |
 |---|---|
-| token の imprint を checkpoint hash と照合しない | `aTokenAboutSomethingElseIsRefused` |
+| token の imprint を `merkleRoot` と照合しない | `aTokenAboutSomethingElseIsRefused` |
 | OpenTimestamps 受領証を代用にする | `otsDoesNotSubstitute` |
 | 自己検証しない checkpoint の上に組み立てる | `anEditedCheckpointIsNotDressedUp` |
 

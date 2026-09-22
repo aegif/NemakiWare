@@ -526,11 +526,37 @@ class ErsRecordTest {
         assertTrue(report.notChecked().contains("no trust anchors"), report.notChecked());
     }
 
+    /**
+     * The shipped sentence names the Merkle root, and neither withdrawn reading.
+     *
+     * <p>Both halves, because this string has now been wrong twice and a lock that only forbade
+     * the first reading let the second ship. "The checkpoint hash" became "the checkpoint's
+     * canonical bytes", and NO TOKEN IN THIS SYSTEM COVERS EITHER: a token covers what was
+     * anchored, and what is anchored is the {@code merkleRoot} (R70). This string travels
+     * inside {@code nemaki-evidence.json} to another organisation, so a receiver who follows it
+     * compares against a value that is not there and concludes the record is about something
+     * else.
+     */
     @Test
-    @DisplayName("the limits say the data object is a checkpoint's bytes, not a document")
+    @DisplayName("the limits name the Merkle root, and neither value a token here covers")
     void theLimitsNameWhatItIsAbout() {
-        assertTrue(ErsRecord.LIMITS.contains("canonical serialisation"), ErsRecord.LIMITS);
+        assertTrue(ErsRecord.LIMITS.contains("MERKLE ROOT"),
+                "the shipped disclaimer no longer names what the data object hash IS: "
+                        + ErsRecord.LIMITS);
+        assertFalse(ErsRecord.LIMITS.contains("canonical serialisation"),
+                "the withdrawn reading is back: no token covers the checkpoint's canonical "
+                        + "bytes: " + ErsRecord.LIMITS);
+        assertFalse(ErsRecord.LIMITS.contains("data object of this evidence record is the "
+                        + "canonical"),
+                "the first withdrawn reading is back: " + ErsRecord.LIMITS);
         assertTrue(ErsRecord.LIMITS.contains("not a document"), ErsRecord.LIMITS);
+        // What the form gives up. A receiver cannot perform RFC 4998 §4.3 step 1 here — the
+        // root's preimage is in no package — and a disclaimer that promised the stronger,
+        // self-contained reading would be the overstatement this branch exists to refuse.
+        assertTrue(ErsRecord.LIMITS.contains("PREIMAGE"),
+                "the disclaimer no longer says that the root's preimage is not in the package, "
+                        + "so it reads as though a receiver could recompute h = H(d): "
+                        + ErsRecord.LIMITS);
         assertTrue(ErsRecord.LIMITS.contains("does NOT"), ErsRecord.LIMITS);
     }
 
@@ -574,8 +600,13 @@ class ErsRecordTest {
         assertFalse(ErsFormat.LIMITS.contains("nothing generates a record automatically"),
                 "the format limits deny generating records, in a sentence its own next clause "
                         + "contradicts: " + ErsFormat.LIMITS);
-        assertTrue(ErsFormat.LIMITS.contains("canonical serialisation"),
-                "the format limits no longer say what the data object IS: " + ErsFormat.LIMITS);
+        assertFalse(ErsFormat.LIMITS.contains("canonical serialisation of a checkpoint"),
+                "the format limits call the checkpoint's canonical bytes the data object. No "
+                        + "token in this system covers that value either (R70): "
+                        + ErsFormat.LIMITS);
+        assertTrue(ErsFormat.LIMITS.contains("MERKLE ROOT"),
+                "the format limits no longer say what the data object hash IS: "
+                        + ErsFormat.LIMITS);
     }
 
     @org.junit.jupiter.api.Test

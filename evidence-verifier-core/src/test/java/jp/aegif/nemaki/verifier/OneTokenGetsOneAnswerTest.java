@@ -1,0 +1,231 @@
+/**
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ */
+package jp.aegif.nemaki.verifier;
+
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.cert.X509CertificateHolder;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
+import org.bouncycastle.cms.CMSException;
+import org.bouncycastle.operator.OperatorCreationException;
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
+import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
+import org.bouncycastle.tsp.TSPException;
+import org.bouncycastle.tsp.TSPValidationException;
+import org.bouncycastle.tsp.TimeStampRequest;
+import org.bouncycastle.tsp.TimeStampRequestGenerator;
+import org.bouncycastle.tsp.TimeStampTokenGenerator;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.X509Certificate;
+import java.util.Date;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * One token, one answer — whichever profile is asked.
+ *
+ * <h2>The defect this holds shut</h2>
+ *
+ * <p>{@code ANCHORED_CHECKPOINT_V1} and {@code TRUSTED_RFC3161_V1} both verify the timestamp
+ * token's CMS signature, and each decided separately what a failure meant. The disagreement
+ * moved twice: first an absent signer certificate (UNAVAILABLE at P2, NOT_PRESENT at P3), then
+ * a signature algorithm with no provider (UNAVAILABLE at P2, FAILED at P3 — exit 3 from one
+ * profile and exit 2 from the other, over the same bytes). Each time the fix touched one side
+ * (both reviews, fourth and fifth rounds).
+ *
+ * <p>So the answer is compared here, for every token that can be built, rather than being
+ * corrected once more on whichever side was noticed. The classification itself lives in
+ * {@code TokenSignature} and is measured below on the one case no fixture can produce: an
+ * algorithm this JVM has no provider for.
+ */
+class OneTokenGetsOneAnswerTest {
+
+    private static final String SHA256 = "2.16.840.1.101.3.4.2.1";
+    private static final String DIR = "sip/metadata/other/nemaki-evidence/";
+    private static final String ROOT =
+            "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+
+    private static KeyPair keys;
+    private static X509Certificate certificate;
+
+    @BeforeAll
+    static void authority() throws Exception {
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
+        kpg.initialize(2048);
+        keys = kpg.generateKeyPair();
+        org.bouncycastle.asn1.x500.X500Name subject =
+                new org.bouncycastle.asn1.x500.X500Name("CN=One Answer TSA");
+        JcaX509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(subject,
+                BigInteger.ONE, new Date(System.currentTimeMillis() - 86_400_000L),
+                new Date(System.currentTimeMillis() + 86_400_000L), subject, keys.getPublic());
+        builder.addExtension(org.bouncycastle.asn1.x509.Extension.extendedKeyUsage, true,
+                new org.bouncycastle.asn1.x509.ExtendedKeyUsage(
+                        org.bouncycastle.asn1.x509.KeyPurposeId.id_kp_timeStamping));
+        certificate = new JcaX509CertificateConverter().getCertificate(builder.build(
+                new JcaContentSignerBuilder("SHA256withRSA").build(keys.getPrivate())));
+    }
+
+    private static byte[] tokenOver(String merkleRoot, boolean certReq) throws Exception {
+        TimeStampRequestGenerator requests = new TimeStampRequestGenerator();
+        requests.setCertReq(certReq);
+        TimeStampRequest request = requests.generate(new ASN1ObjectIdentifier(SHA256),
+                HexFormat.of().parseHex(merkleRoot));
+        TimeStampTokenGenerator generator = new TimeStampTokenGenerator(
+                new org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoGeneratorBuilder()
+                        .build("SHA256withRSA", keys.getPrivate(), certificate),
+                new JcaDigestCalculatorProviderBuilder().build().get(
+                        new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
+                                new ASN1ObjectIdentifier(SHA256))),
+                new ASN1ObjectIdentifier("1.2.3.4.1"));
+        generator.addCertificates(
+                new org.bouncycastle.cert.jcajce.JcaCertStore(List.of(certificate)));
+        return generator.generate(request, BigInteger.ONE, new Date()).getEncoded();
+    }
+
+    /** A P0+P2-shaped package holding {@code token} as the RFC 3161 rung. */
+    private static Map<String, byte[]> packageWith(byte[] token) {
+        String checkpoint = "{\"domain\":\"record-content\",\"fromSequence\":1,"
+                + "\"toSequence\":10,\"merkleRoot\":\"" + ROOT + "\","
+                + "\"prevCheckpointHash\":null,\"createdAt\":\"2026-09-20T00:00:00Z\","
+                + "\"checkpointHash\":\"cc\"}";
+        Map<String, byte[]> entries = new LinkedHashMap<>();
+        entries.put(DIR + "anchor-target-checkpoint.json",
+                checkpoint.getBytes(StandardCharsets.UTF_8));
+        entries.put(DIR + "checkpoint-chain.json",
+                ("{\"links\":[" + checkpoint + "]}").getBytes(StandardCharsets.UTF_8));
+        entries.put(DIR + "covering-checkpoint.json", checkpoint.getBytes(StandardCharsets.UTF_8));
+        entries.put(DIR + "bundle-manifest.json", ("{\"bundleId\":\"b\",\"files\":[],"
+                + "\"anchors\":[{\"kind\":\"RFC3161_TSA\",\"state\":\"PRESENT\","
+                + "\"path\":\"anchors/rfc3161.der\"}]}").getBytes(StandardCharsets.UTF_8));
+        entries.put(DIR + "anchors/rfc3161.der", token);
+        return entries;
+    }
+
+    private static Outcome.Check named(List<Outcome.Check> checks, String name) {
+        return checks.stream().filter(c -> c.name().equals(name)).findFirst().orElseThrow();
+    }
+
+    /** What P2 and P3 each say about the signature on the same token. */
+    private static void bothAgree(byte[] token, Outcome expected, String why) {
+        Map<String, byte[]> entries = packageWith(token);
+        Outcome.Check p2 = named(AnchoredCheckpoint.check(entries, null), "anchor commits root");
+        Outcome.Check p3 = named(TrustedRfc3161.check(entries, TrustProfile.empty()),
+                "token signature");
+
+        assertEquals(expected, p2.outcome(),
+                "ANCHORED_CHECKPOINT_V1: " + why + " — " + p2.detail());
+        assertEquals(expected, p3.outcome(),
+                "TRUSTED_RFC3161_V1: " + why + " — " + p3.detail());
+        assertEquals(p2.reasonCode(), p3.reasonCode(),
+                "the two profiles give the same token the same outcome and different reason "
+                        + "codes, so a caller branching on reasonCode still sees two answers: "
+                        + p2 + " / " + p3);
+    }
+
+    @Test
+    @DisplayName("a token that verifies passes at both profiles")
+    void aGoodTokenPassesAtBoth() throws Exception {
+        bothAgree(tokenOver(ROOT, true), Outcome.PASSED,
+                "a token whose signature verifies against its own certificate was not passed");
+    }
+
+    @Test
+    @DisplayName("a token whose signature does not verify FAILS at both profiles")
+    void aBrokenSignatureFailsAtBoth() throws Exception {
+        byte[] token = tokenOver(ROOT, true);
+        // The last byte of the DER is inside the signature value, so the imprint is untouched
+        // and only the signature is wrong.
+        byte[] tampered = token.clone();
+        tampered[tampered.length - 1] ^= 0x01;
+
+        bothAgree(tampered, Outcome.FAILED,
+                "a token whose signature does not verify was not reported as a finding");
+    }
+
+    @Test
+    @DisplayName("a token carrying no signer certificate is NOT_PRESENT at both profiles")
+    void anAbsentCertificateIsAbsentAtBoth() throws Exception {
+        // certReq false: RFC 3161 then REQUIRES the authority to omit its certificate, so this
+        // is a legitimate token about which neither profile can say anything.
+        bothAgree(tokenOver(ROOT, false), Outcome.NOT_PRESENT,
+                "a token with no signer certificate was answered as something other than an "
+                        + "absence. Nothing about its signature was established either way");
+    }
+
+    /**
+     * The one case no fixture here can produce: a signature algorithm with no provider.
+     *
+     * <p>Every algorithm this test could sign with is one this JVM implements, so the token
+     * cannot be built. What CAN be measured is the rule — and the rule is the part that was
+     * wrong: BouncyCastle wraps the provider failure several layers down inside a plain
+     * {@code TSPException}, which the old code caught as "the signature does not verify". The
+     * exception TYPE does not separate the two; the cause does.
+     */
+    @Test
+    @DisplayName("a provider failure several wrappers down is 'not checked', not 'does not verify'")
+    void aProviderFailureIsNotAFinding() {
+        // The message deliberately does NOT contain "no such algorithm": the classifier has a
+        // second, message-based arm for providers that raise a bare GeneralSecurityException,
+        // and a fixture matching both would stay green with the TYPE arm removed — satisfied by
+        // a branch it is not about (measured: control OM3 did not fire).
+        TSPException providerMissing = new TSPException("unable to process signature",
+                new CMSException("can't create digest calculator",
+                        new OperatorCreationException("exception on setup",
+                                new NoSuchAlgorithmException("1.2.3.4 MessageDigest not "
+                                        + "available"))));
+
+        assertTrue(TokenSignature.uncheckable(providerMissing),
+                "a signature this build has no provider for was classified as a bad signature, "
+                        + "which names a defect nobody found. The failure arrives as a plain "
+                        + "TSPException, so catching that type as a finding is what produced "
+                        + "exit 2 for an unchecked signature");
+
+        // And the other direction, which matters just as much: a real validation failure must
+        // NOT be excused as something this build could not compute.
+        assertFalse(TokenSignature.uncheckable(
+                        new TSPValidationException("certificate hash does not match certID hash")),
+                "a token that genuinely does not verify was excused as uncheckable, so "
+                        + "tampering would be reported as 'we could not tell'");
+        assertFalse(TokenSignature.uncheckable(new TSPException("unable to process signature",
+                        new CMSException("message-digest attribute value does not match "
+                                + "calculated value"))),
+                "a CMS signature that does not match was excused as uncheckable. Only a MISSING "
+                        + "provider is a limit of this build; a mismatch is a finding");
+
+        // The second arm, on its own fixture: a provider that reports the absence as a bare
+        // GeneralSecurityException rather than as one of the three types above.
+        assertTrue(TokenSignature.uncheckable(new TSPException("unable to process signature",
+                        new java.security.GeneralSecurityException(
+                                "no such algorithm: 1.2.840.113549.1.1.10"))),
+                "a provider reporting a missing algorithm as a plain GeneralSecurityException "
+                        + "was classified as a bad signature");
+    }
+}

@@ -295,6 +295,12 @@ public final class RecordLedger {
                     + " and this transition is about " + statement.get("versionObjectId")
                     + ", so the prior belongs to another record");
         }
+        // A GAP is remembered, not returned. Returning here skipped every check below —
+        // including the canonical forms of the four prior/ files — so a package that omitted
+        // one identity field could ship a prior/.c14n saying anything and reach VERIFIED. §5's
+        // "missing field is NOT_PRESENT" is right; returning on the spot made it fail-open
+        // (subagent, fifth review, P2).
+        Outcome.Check gap = null;
         for (String field : List.of("repositoryId", "objectId", "versionObjectId")) {
             // Present STRINGs, as §5.3 requires of both documents. Objects.equals alone let
             // two absent fields — or two nulls — agree, so a prior with no identity at all
@@ -304,8 +310,11 @@ public final class RecordLedger {
             // different records" about a package that simply did not carry the field
             // (Codex, fourth review, P2).
             if (!statement.containsKey(field) || !priorStatement.containsKey(field)) {
-                return Outcome.Check.absent(name, "the transition or its prior omits " + field
-                        + ", so whether they are about the same record cannot be checked");
+                if (gap == null) {
+                    gap = Outcome.Check.absent(name, "the transition or its prior omits " + field
+                            + ", so whether they are about the same record cannot be checked");
+                }
+                continue;
             }
             Object here = statement.get(field);
             Object there = priorStatement.get(field);
@@ -332,7 +341,8 @@ public final class RecordLedger {
         if (c14n != null) {
             return c14n;
         }
-        return Outcome.Check.passed(name);
+        // Findings first (§15): the gap is reported only when nothing was found.
+        return gap != null ? gap : Outcome.Check.passed(name);
     }
 
     /**

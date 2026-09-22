@@ -61,6 +61,7 @@
               "NO_BLOCK_HEADER_SOURCE",
               "OTS_NOT_PARSED",
               "PKIX_UNAVAILABLE",
+              "PREMIS_NOT_PARSED",
               "RESOURCE_LIMIT",
               "REVOCATION_NOT_CAPTURED",
               "REVOCATION_NOT_PARSED",
@@ -68,7 +69,8 @@
               "TRANSITION_PRIOR_NOT_IN_PACKAGE",
               "UNKNOWN_ALGORITHM",
               "UNSAFE_PATH",
-              "UNSUPPORTED_ERS_VERSION"
+              "UNSUPPORTED_ERS_VERSION",
+              "UNSUPPORTED_PROFILE_VERSION"
             ],
             "description": "Present exactly when outcome is UNAVAILABLE (enforced below with if/then/else, and by the verifier's own constructor). The enum is the verifier's registry Outcome.Check.REASON_CODES; a lock keeps the two equal in both directions."
           },

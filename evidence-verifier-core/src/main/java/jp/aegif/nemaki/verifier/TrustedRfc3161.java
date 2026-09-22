@@ -131,20 +131,17 @@ public final class TrustedRfc3161 {
         return Outcome.Check.passed("token imprint");
     }
 
+    /**
+     * The SHARED classification (TokenSignature), not a second one.
+     *
+     * <p>This method used to catch every exception and call it a bad signature, while P2 split
+     * "does not verify" from "this build cannot compute it". The same token therefore exited 2
+     * here and 3 there — a tampering finding for a signature nobody checked (both reviews,
+     * fifth round). The profile still chooses the check's name; it does not choose what an
+     * outcome means.
+     */
     static Outcome.Check signature(TimeStampToken token, X509CertificateHolder signer) {
-        if (signer == null) {
-            return Outcome.Check.absent("token signature",
-                    "the token carries no signer certificate, so its signature cannot be "
-                            + "verified from the package alone");
-        }
-        try {
-            token.validate(new JcaSimpleSignerInfoVerifierBuilder().build(signer));
-            return Outcome.Check.passed("token signature");
-        } catch (Exception invalid) {
-            return Outcome.Check.failed("token signature",
-                    "the token's CMS signature does not verify against its own signer "
-                            + "certificate: " + invalid.getMessage());
-        }
+        return TokenSignature.verify("token signature", "the token", token, signer);
     }
 
     static Outcome.Check eku(X509CertificateHolder signer) {

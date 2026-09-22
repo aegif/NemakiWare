@@ -187,17 +187,20 @@ public enum ErsFormat {
             // Three sentences here described an artefact this build does not produce, and this
             // string ships to callers as `renewalFormatLimits`. p2-3 §8 records that calling
             // the checkpoint HASH the data object produced records no standard tool could read:
-            // the data object is the checkpoint's canonical BYTES and h = H(d) is its hash --
-            // which is what ErsRecord.LIMITS has always said, so the two shipped strings
-            // disagreed. §8 also rejected the one-node-tree alternative (it needs a second
+            // the data object HASH is the anchor target's merkleRoot, because the first
+            // Archive Timestamp is the token that anchored it (R70, 2026-09-22 -- both this
+            // string and ErsRecord.LIMITS said "the checkpoint's canonical bytes", which no
+            // token covers). §8 also rejected the one-node-tree alternative (it needs a second
             // token) and ErsRecord.first() passes List.of(): the
     // FIRST timestamp has no reduced hash tree. A later one DOES -- withHashTreeRenewal builds
     // a one-node tree -- so this is a statement about the first timestamp, not about the record. And
             // "nothing generates a record automatically" was contradicted by this string's own
             // next sentence.
-            "This product produces and checks RFC 4998 evidence records whose DATA OBJECT is "
-                    + "the canonical serialisation of a checkpoint of its evidence ledger — not "
-                    + "a document. Naming RFC 4998 "
+            "This product produces and checks RFC 4998 evidence records whose DATA OBJECT HASH "
+                    + "is the MERKLE ROOT of a checkpoint of its evidence ledger — not a "
+                    + "document, and not the checkpoint hash: the first Archive Timestamp is "
+                    + "the RFC 3161 token this repository already held, and that token covers "
+                    + "the root's bytes. Naming RFC 4998 "
                     + "is not a claim of conformance to everything the standard covers: the "
                     + "first Archive Timestamp carries no reduced hash tree, the timestamp "
                     + "authority's signature "

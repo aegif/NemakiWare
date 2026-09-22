@@ -69,10 +69,11 @@ public enum Outcome {
         public static final java.util.Set<String> REASON_CODES = java.util.Set.of(
                 "AMBIGUOUS_PAYLOAD", "AMBIGUOUS_PREMIS", "ANCHOR_NOT_PARSED",
                 "CERTIFICATE_UNREADABLE", "DUPLICATE_ENTRY", "LEGACY_PACKAGE_LAYOUT", "NOT_A_ZIP",
-                "NO_BLOCK_HEADER_SOURCE", "OTS_NOT_PARSED", "PKIX_UNAVAILABLE", "RESOURCE_LIMIT",
+                "NO_BLOCK_HEADER_SOURCE", "OTS_NOT_PARSED", "PKIX_UNAVAILABLE", "PREMIS_NOT_PARSED",
+                "RESOURCE_LIMIT",
                 "REVOCATION_NOT_CAPTURED", "REVOCATION_NOT_PARSED", "REVOCATION_NOT_REQUIRED",
                 "TRANSITION_PRIOR_NOT_IN_PACKAGE", "UNKNOWN_ALGORITHM", "UNSAFE_PATH",
-                "UNSUPPORTED_ERS_VERSION");
+                "UNSUPPORTED_ERS_VERSION", "UNSUPPORTED_PROFILE_VERSION");
 
         public Check {
             if (outcome == UNAVAILABLE && (reasonCode == null || reasonCode.isBlank())) {

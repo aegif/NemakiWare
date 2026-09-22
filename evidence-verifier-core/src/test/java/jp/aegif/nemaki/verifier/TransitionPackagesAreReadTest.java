@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -493,6 +494,50 @@ class TransitionPackagesAreReadTest {
         assertEquals(Outcome.FAILED, continuity.outcome(),
                 "a transition and a prior that both omit their identity were read as the same "
                         + "record: " + continuity.detail());
+    }
+
+    /**
+     * A missing identity field does not excuse the rest of the check.
+     *
+     * <p>§5 is right that a MISSING required field is {@code NOT_PRESENT} rather than a
+     * finding. Returning that answer where it was decided, though, skipped everything after it
+     * — including the recomputation of the four {@code prior/} files — so a package that left
+     * one field out could ship a {@code prior/} canonical form saying anything and still reach
+     * {@code VERIFIED}, because {@code transition continuity} is not a required check
+     * (subagent, fifth review, P2).
+     *
+     * <p>The existing identity lock could not see this: it writes {@code put(field, null)},
+     * which leaves the KEY present and takes the wrong-type arm.
+     */
+    @Test
+    @DisplayName("an omitted identity field does not stop the prior's canonical forms being checked")
+    void anOmittedFieldStillLetsTheCanonicalFormsBeChecked() {
+        Fixture fixture = new Fixture();
+        fixture.transition = transitionStatement(
+                String.valueOf(fixture.prior.get("contentDigest")), 1L);
+        // REMOVED, not nulled: the key is gone, which is the arm §5 answers NOT_PRESENT.
+        fixture.transition.remove("repositoryId");
+        Map<String, byte[]> entries = fixture.entries();
+        assertFalse(new String(entries.get(DIR + "record-content-statement.json"),
+                        java.nio.charset.StandardCharsets.UTF_8).contains("repositoryId"),
+                "this fixture still ships repositoryId, so it takes a different arm and "
+                        + "measures nothing below");
+
+        // With nothing else wrong, the omission is reported as the gap it is.
+        assertEquals(Outcome.NOT_PRESENT,
+                named(RecordLedger.check(entries), "transition continuity").outcome(),
+                "an omitted field was reported as a finding about the records rather than as "
+                        + "something that could not be checked");
+
+        // And with a prior/.c14n that is not the canonical form of the .json beside it, the
+        // FINDING is what comes back — not the gap that was met first.
+        entries.put(DIR + "prior/record-content-statement.c14n",
+                bytes("not the canonical form of anything"));
+        Outcome.Check continuity = named(RecordLedger.check(entries), "transition continuity");
+        assertEquals(Outcome.FAILED, continuity.outcome(),
+                "a prior canonical form that is not the canonical form of its own .json went "
+                        + "unchecked because an identity field was missing. Two of the four "
+                        + "prior/ files could then say anything: " + continuity.detail());
     }
 
     @Test

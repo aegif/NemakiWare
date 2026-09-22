@@ -220,6 +220,37 @@ class TheAnchorIsReadNotAssumedTest {
         return checks.stream().filter(c -> c.name().equals(name)).findFirst().orElseThrow();
     }
 
+    /**
+     * Completes a hand-built section into one §4.2 actually defines.
+     *
+     * <p>The fixtures above build only the documents the check under test reads, which is right
+     * for those tests and wrong for the one that composes a whole verdict. Until {@code v1
+     * layout} existed, that section had no {@code profile.json} and a manifest listing no files,
+     * and P0+P1+P2 reported {@code VERIFIED} over it — the package R71 describes, sitting in the
+     * test that stood for "a real one". Completing it here is what makes the P2 pass below a
+     * statement about a conforming package.
+     */
+    private static Map<String, byte[]> conforming(Map<String, byte[]> entries) {
+        Map<String, byte[]> completed = new LinkedHashMap<>(entries);
+        completed.put(DIR + "profile.json", bytes("{\"profileVersion\":\"1\","
+                + "\"declaredProfiles\":[\"ANCHORED_CHECKPOINT_V1\"]}"));
+        Map<String, Object> manifest = manifestWith("RFC3161_TSA", "anchors/rfc3161.der");
+        List<Map<String, Object>> files = new ArrayList<>();
+        for (Map.Entry<String, byte[]> file : new java.util.TreeMap<>(completed).entrySet()) {
+            if (!file.getKey().startsWith(DIR)
+                    || file.getKey().equals(DIR + "bundle-manifest.json")) {
+                continue;
+            }
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("path", file.getKey().substring(DIR.length()));
+            item.put("sha256", Canonical.hex(Canonical.sha256(file.getValue())));
+            files.add(item);
+        }
+        manifest.put("files", files);
+        completed.put(DIR + "bundle-manifest.json", bytes(json(manifest)));
+        return completed;
+    }
+
     // ---------------------------------------------------------------- the check
 
     @Test
@@ -335,6 +366,38 @@ class TheAnchorIsReadNotAssumedTest {
     }
 
     /**
+     * A checkpoint that OMITS its own hash is a gap, not "the walk does not begin here".
+     *
+     * <p>{@code chainEnds} recomputes each document before comparing stated hashes, and nothing
+     * distinguished the two orders: every fixture carried a {@code checkpointHash}, so both
+     * orders reached the same answer and reverting the reorder left the suite green (subagent,
+     * fifth review, P2). The discriminating document is one with the field missing — which §5
+     * answers {@code NOT_PRESENT} and the old order answered {@code FAILED}, reporting a
+     * mismatch against a value the package never stated.
+     */
+    @Test
+    @DisplayName("a checkpoint with no checkpointHash is NOT_PRESENT, not a mismatch")
+    void aCheckpointWithNoHashOfItsOwnIsAGap() throws Exception {
+        Map<String, Object> cp = checkpoint(1, 10, ROOT_A, null);
+        Map<String, byte[]> entries = anchoredChain(cp, tokenOver(authority(), ROOT_A, SHA256));
+        Map<String, Object> hashless = new LinkedHashMap<>(cp);
+        hashless.remove("checkpointHash");
+        entries.put(DIR + "anchor-target-checkpoint.json", bytes(json(hashless)));
+        assertTrue(!new String(entries.get(DIR + "anchor-target-checkpoint.json"),
+                        StandardCharsets.UTF_8).contains("checkpointHash"),
+                "this fixture still ships checkpointHash, so it takes the same arm as every "
+                        + "other one and measures nothing");
+
+        Outcome.Check ends = named(AnchoredCheckpoint.check(entries, null), "chain ends");
+
+        assertEquals(Outcome.NOT_PRESENT, ends.outcome(),
+                "a checkpoint that does not state its own hash was reported as disagreeing "
+                        + "with the chain. §5 makes a missing required field NOT_PRESENT, and "
+                        + "the recompute has to run before the comparison for that to be the "
+                        + "answer: " + ends.detail());
+    }
+
+    /**
      * P2 and P3 read the same file, named the same way. A rung claiming another kind, at
      * another path, is not the RFC 3161 anchor — P3 would find no token at all (Codex, P2).
      */
@@ -402,7 +465,8 @@ class TheAnchorIsReadNotAssumedTest {
                 + "xlink:href=\"representations/rep1/data/minutes.txt\"/></mets:file>"
                 + "</mets:fileSec></mets:mets>"));
         entries.put(ROOT + "representations/rep1/data/minutes.txt", bytes(payload));
-        entries.put(ROOT + "metadata/preservation/premis.xml", bytes("<premis:premis>"
+        entries.put(ROOT + "metadata/preservation/premis.xml", bytes("<premis:premis "
+                + "xmlns:premis=\"http://www.loc.gov/premis/v3\">"
                 + "<premis:object><premis:objectCharacteristics><premis:fixity>"
                 + "<premis:messageDigestAlgorithm>SHA-256</premis:messageDigestAlgorithm>"
                 + "<premis:messageDigest>" + payloadDigest + "</premis:messageDigest>"
@@ -412,6 +476,7 @@ class TheAnchorIsReadNotAssumedTest {
         entries.put(DIR + "ledger-entry.json", bytes(json(entry)));
         entries.put(DIR + "inclusion-proof.json", bytes(json(proof)));
         entries.putAll(anchoredChain(covering, tokenOver(authority(), root, SHA256)));
+        entries = conforming(entries);
 
         List<Outcome.Check> all = new ArrayList<>(PackageIntegrity.check(entries));
         all.addAll(RecordLedger.check(entries));

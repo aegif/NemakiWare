@@ -69,6 +69,20 @@ verifier は **既定で network を使わない**。network を使う check は
 `docs/evidence-profile/v1/` が一緒に動く。**v1 の package を読めなくする変更は、
 v1 を壊さずに v2 を足すことでしか行わない。**
 
+**凍結と「誤りの訂正」の境目**（2026-09-22）。判定は 1 つの問いで行う —
+**これまでに出荷した、契約に適合する package の読み方が変わるか。** 変わらないなら訂正であり、
+変わるなら v2 が要る。この版で 2 件、訂正として直した。
+
+| 訂正 | なぜ contract の変更ではないか |
+|---|---|
+| §14 の ERS data object（`SHA-256(c14n)` → `merkleRoot` の bytes） | どの token もその値を覆わないので、規定どおりの verifier は本物を必ず拒否した。かつ**この版は ERS を 1 本も出荷していない** |
+| §9 に `V1_LAYOUT` を必須 check として追加 | §4.2 と §5.2 が**既に**「legacy と併存 → `FAILED`」「manifest に無いファイル → `FAILED`」と規定していたのに、それを出す check が §9 に無かった。**仕様が自分と矛盾していた**。適合する package の判定は動かない（動くのは、既に規定違反だった package だけ） |
+
+後者は必須 check の集合を動かすので、**表の左列に触れた唯一の例**である。
+これを許す条件は上の 1 文だけで、「実装が楽だから」「見落としていたから」は理由にならない
+— **v1 の package を読めなくする変更ではない**ことを、適合 package が通る錠で示すこと
+（`TheV1LayoutIsCheckedTest` と `TheWriterWritesWhatTheLayoutRequiresTest`）。
+
 **凍結の対象は contract であって、製品の実装ではない。** 例えば遷移文（§5.3b）は v1 の
 一部だが、この版の NemakiWare は内容を失った版の package を**書き出せない**（正典 R67）。
 contract が定義済みであることと、この製品が今それを出せることは、別の事実である。
@@ -393,8 +407,30 @@ current == merkleRoot なら PASS
 |---|---|
 | `ZIP_SAFE` | 全エントリ名が相対で、`..` 成分を含まず、絶対 path でなく、**重複しない** |
 | `ZIP_LIMITS` | 展開後の合計 size とエントリ数が verifier の上限内 |
+| `ONE_EVIDENCE_SECTION` | §4.2 の各文書名が package 内で 1 回しか現れない |
+| `V1_LAYOUT` | **v1 section が在るなら** §4.2 のとおりに在る（下記） |
 | `METS_CLOSURE` | METS が名指す全 file が package に在り、**逆に** `representations/*/data/` 配下の全 file が METS に名指されている |
 | `PAYLOAD_FIXITY` | 各 payload と PREMIS の fixity が**一対一**で一致する |
+
+`V1_LAYOUT` の答え:
+
+| package | 答え |
+|---|---|
+| v1 section が無い（§4.1 の legacy、あるいは evidence を持たない package） | `PASS` — §4.2 が縛るものが無い。P1 以上が `LEGACY_PACKAGE_LAYOUT` で別途答える |
+| `profile.json` が無い / JSON object でない | `FAILED` |
+| `profileVersion` が無い | `NOT_PRESENT`（§5: 欠落した必須 field） |
+| `profileVersion` が STRING でない | `FAILED`（§5: 型違い） |
+| `profileVersion` が `"1"` 以外 | `UNAVAILABLE` + `UNSUPPORTED_PROFILE_VERSION` — **v1 の規則を v2 の package に当てるのは、書かれてもいない契約の違反を報告すること** |
+| legacy の `nemaki-evidence.json` と併存 | `FAILED`（§4.2） |
+| `bundle-manifest.json` が無い / object でない / `files` が LIST でない | `FAILED` |
+| `files` が無い、要素が `path` か `sha256` を欠く | `NOT_PRESENT` |
+| manifest が名指すファイルが section に無い | `FAILED` |
+| section のファイルが manifest に無い（`bundle-manifest.json` 自身を除く） | `FAILED`（§5.2 の未参照の追加物） |
+| digest が合わない | `FAILED` |
+| section 内で同じ相対名が 2 回現れる | `FAILED` |
+
+**`bundle-manifest.json` は自分を列挙しない。** 完成前に自分を hash することになるため。
+この 1 ファイルだけが「manifest に無いファイル」の対象外。
 
 主張しないこと: 台帳・外部 anchor。
 
@@ -442,7 +478,7 @@ current == merkleRoot なら PASS
 | `CHAIN_ENDS` | `links[0]` が covering、`links[last]` が anchor target |
 | `CHAIN_FORWARD` | `links[i].toSequence` が狭義単調増加。covering が target より後なら `FAILED` |
 | `CHAIN_RECOMPUTE` | 各 link の `checkpointHash` を §7 で再計算して一致 |
-| `ANCHOR_COMMITS_ROOT` | manifest が `PRESENT` と記録する rung の**材料を読む**（2026-09-22 まではファイルの有無だけを見て常に `UNAVAILABLE` だった）。RFC 3161（manifest の `kind` が `RFC3161_TSA` で path が `anchors/rfc3161.der` の rung**だけ**）: token を parse し、**`hex(messageImprint) == chain の末尾 link の `merkleRoot`**（root は既に SHA-256 digest なので、timestamp されるのは**その bytes**。hex 文字列を再度 hash しない。§12 の `TOKEN_IMPRINT` と同じ読み）。さらに **token の署名を、token が運ぶ証明書に対して検証**する（「誰かが発行した」を言うために必要。**誰が**は P3）。両方が通れば PASS。parse 不能・不一致は `FAILED`。imprint の算法が SHA-256 でなければ `UNAVAILABLE`（`UNKNOWN_ALGORITHM`）。OTS / ERS / Atlas の材料はこの profile では**読まない**（P4 / P5 が読む）— 読める rung が 1 つも無ければ `UNAVAILABLE`（`ANCHOR_NOT_PARSED`）。rung が 1 つも `PRESENT` でなければ `NOT_PRESENT` |
+| `ANCHOR_COMMITS_ROOT` | manifest が `PRESENT` と記録する rung の**材料を読む**（2026-09-22 まではファイルの有無だけを見て常に `UNAVAILABLE` だった）。RFC 3161（manifest の `kind` が `RFC3161_TSA` で path が `anchors/rfc3161.der` の rung**だけ**）: token を parse し、**`hex(messageImprint) == chain の末尾 link の `merkleRoot`**（root は既に SHA-256 digest なので、timestamp されるのは**その bytes**。hex 文字列を再度 hash しない。§12 の `TOKEN_IMPRINT` と同じ読み）。さらに **token の署名を、token が運ぶ証明書に対して検証**する（「誰かが発行した」を言うために必要。**誰が**は P3）。両方が通れば PASS。parse 不能・不一致は `FAILED`。**署名者証明書が token に無ければ `NOT_PRESENT`**（P3 と同じ答え — package についての事実であって、読めなかったのではない）。**imprint の算法が SHA-256 でない**、または**署名アルゴリズムをこの build が計算できない**ときは `UNAVAILABLE`（どちらも `UNKNOWN_ALGORITHM`。**detail がどちらかを述べる** — 1 つの reason code が 2 つの事情を指すので、機械は「この check は行われていない」までしか読めない）。**署名の判定は P3 と同じ 1 か所**（`TokenSignature`）で行う — 同じ token に 2 つの答えを出さないため。OTS / ERS / Atlas の材料はこの profile では**読まない**（P4 / P5 が読む）— 読める rung が 1 つも無ければ `UNAVAILABLE`（`ANCHOR_NOT_PARSED`）。rung が 1 つも `PRESENT` でなければ `NOT_PRESENT` |
 | `ROLLBACK` | `--expected-checkpoint` が与えられたとき、chain 上にその hash が在る |
 
 主張しないこと: token の PKIX（それは P3）。
@@ -507,9 +543,22 @@ checkpoint の root を commit している」であって、その誰かを信�
 | check | PASS の条件 |
 |---|---|
 | `OTS_PARSE` | OpenTimestamps proof として読める |
-| `OTS_COMMITS_ROOT` | proof の起点が anchor target の `merkleRoot` |
+| `OTS_COMMITS_ROOT` | proof の `file_digest` が **`SHA-256(merkleRoot の bytes)`**（下記） |
 | `OTS_ATTESTATION` | Bitcoin block attestation まで upgrade 済み |
 | `OTS_BLOCK` | その block header が、verifier に与えた header source と一致 |
+
+**OTS は RFC 3161 と 1 層ずれる。**（2026-09-22 訂正 — この行は当初 §11 / §12 と同じく
+「proof の起点が `merkleRoot`」と書いていた。**製品が作る proof は 1 つもその形ではない**。
+2 名が独立に指摘、R70 と同型。`AnchoredOts` はまだ proof を読まず `UNAVAILABLE` を返すので
+出荷物の読み方は変わらない — 誤りの訂正であって contract の変更ではない。§1.1 の判定に従う。）
+
+sidecar (`docker/ots/server.py`) は hex を **unhexlify した 32 バイトをファイルに書いて
+`ots stamp <file>`** する。`ots stamp` は**ファイルを hash する**ので、detached proof の
+起点は `SHA-256(その 32 バイト)` である。RFC 3161 は imprint を**そのまま**受け取るので
+`hex(messageImprint) == merkleRoot`（§11 / §12）だが、**OTS は 1 層多い**。
+sidecar 自身の `info()` も `hashlib.sha256(_digest_bytes(hex_digest)).digest()` と比べている。
+**この差を「どちらも root を覆う」と丸めないこと** — 丸めた規定どおりに実装した verifier は
+本物の proof を必ず拒否する。
 
 - **既定 no-network。** header source が無ければ `OTS_BLOCK` は `NOT_CHECKED` →
   全体は `INDETERMINATE`。**「proof は読めた」を「時刻が確かめられた」と言ってはならない。**
@@ -525,15 +574,40 @@ checkpoint の root を commit している」であって、その誰かを信�
 
 | check | PASS の条件 |
 |---|---|
-| `ERS_PARSE` | RFC 4998 `EvidenceRecord`（version 1）として読める |
-| `ERS_DATA_OBJECT` | 最初の hash list が **anchor target の `merkleRoot`**（の bytes）を含む |
-| `ERS_CHAIN` | 各 ArchiveTimeStamp の imprint が前段を覆う |
-| `ERS_ALGORITHMS` | 宣言された digest algorithm を verifier が**知っている** |
+| `ERS_PARSE` | RFC 4998 `EvidenceRecord`（version 1）として**構造ごと**読める（下記） |
+| `ERS_DATA_OBJECT` | 最初の ArchiveTimeStamp が **anchor target の `merkleRoot`**（の bytes）を覆う（下記の 2 形） |
+| `ERS_CHAIN` | 各 ArchiveTimeStamp の imprint が前段を覆う（§5.2 / §5.3） |
+| `ERS_ALGORITHMS` | 記録が**使う** digest algorithm を verifier が**計算できる** |
+
+**`ERS_PARSE` は構造を見る。** version・`digestAlgorithms`・
+`archiveTimeStampSequence`（**最後の要素**。`cryptoInfos [0]` と `encryptionInfo [1]` が
+間に入るので前から数えない）・各 chain が 1 本以上の ArchiveTimeStamp を持つこと・
+各 ArchiveTimeStamp が `digestAlgorithm [0]` と RFC 3161 token として parse できる
+`timeStamp` を持つこと。**「version 1 を名乗る DER」だけでは足りない**
+（2026-09-22 まではそれだけで、期待する digest が DER のどこかに 32 バイトで
+落ちていれば 3 つとも PASS した。残件 R72）。
+
+**`ERS_DATA_OBJECT` の 2 形**（RFC 4998 §4.3）:
+
+| 最初の ArchiveTimeStamp | 判定 |
+|---|---|
+| reducedHashtree **無し**（§4.2 が明示的に許す。**本製品が書くのはこちら**） | token の `messageImprint` が `merkleRoot` の bytes と一致すれば PASS |
+| reducedHashtree **有り** | 第 1 list が `merkleRoot` を含み、かつ §4.3 step 3 の縮約結果が token の `messageImprint` と一致すれば PASS |
+
+**「DER のどこかに root の 32 バイトが在る」を PASS にしてはならない。**
+本製品の記録では root は token の `TSTInfo` の中にあり、hash list は空である —
+DER を走査する読み方は**本物を必ず拒否し、偽物を通す**（両方向に誤る）。
 
 - **data object は anchor target の `merkleRoot` の bytes** であり、payload ではない。
   ERS の最初の Archive Timestamp は **その checkpoint を anchor した RFC 3161 token そのもの**で、
   その token が覆っているのは root の bytes（§11・§12 と同じ規約）。ERS が覆っているのは
   checkpoint の**その root**であって、個別文書の長期署名ではない。
+
+- **`h` の元 `d` は package に入っていない。** root は Merkle 木の最上位連結の hash であり、
+  その連結はどの package にも無い。したがって受け取る側は RFC 4998 §4.3 step 1（`h = H(d)`）を
+  **自分では実行できず**、「package が述べる `merkleRoot` を記録が覆っているか」までしか確かめられない。
+  §9 が 2 度目の TSA 往復を禁じている以上これは選択の結果であり、`ErsRecord.LIMITS` にも同じ文が入る。
+  **この制限を書かずに `ERS_DATA_OBJECT` の PASS を示すと、実際より強い主張になる。**
 
   > **2026-09-22 の訂正。** この行は当初 `SHA-256(anchor-target-checkpoint.c14n)` と書いていた。
   > **どの token もその値を覆わない**ので、規定どおりに実装した verifier は本物の record を
@@ -558,7 +632,7 @@ check の結果は **4 値**。「調べて正しい」「調べて誤り」「�
 | `PASSED` | 調べて正しい |
 | `FAILED` | 調べて誤り |
 | `NOT_PRESENT` | package がその check に要るものを持っていない |
-| `UNAVAILABLE` | 調べられなかった。**理由は reason code で述べる** — `RESOURCE_LIMIT`（上限到達）、`NO_BLOCK_HEADER_SOURCE / REVOCATION_NOT_CAPTURED`、`UNKNOWN_ALGORITHM`、`LEGACY_PACKAGE_LAYOUT`、`TRANSITION_PRIOR_NOT_IN_PACKAGE` など（全 18 値は verifier の登録簿 `Outcome.Check.REASON_CODES` と result schema の enum） |
+| `UNAVAILABLE` | 調べられなかった。**理由は reason code で述べる** — `RESOURCE_LIMIT`（上限到達）、`NO_BLOCK_HEADER_SOURCE / REVOCATION_NOT_CAPTURED`、`UNKNOWN_ALGORITHM`、`LEGACY_PACKAGE_LAYOUT`、`TRANSITION_PRIOR_NOT_IN_PACKAGE` など（全 20 値は verifier の登録簿 `Outcome.Check.REASON_CODES` と result schema の enum） |
 
 合成:
 

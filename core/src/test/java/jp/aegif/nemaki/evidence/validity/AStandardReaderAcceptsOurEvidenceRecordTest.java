@@ -61,8 +61,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>BouncyCastle's {@code org.bouncycastle.tsp.ers} is an independent implementation of
  * RFC 4998 — it is on the classpath for the RFC 3161 work, it did not consult this product's
  * design, and it parses, walks and verifies an evidence record end to end. What it accepts here
- * is the DER {@link ErsRecord} produces, over the data object {@link EvidenceRecordService}
- * covers: the checkpoint hash's BYTES.
+ * is the DER {@link ErsRecord} produces, over the data object hash {@link EvidenceRecordService}
+ * covers: the anchor target's MERKLE ROOT, as bytes.
  *
  * <h2>What this does NOT say</h2>
  *
@@ -184,7 +184,7 @@ class AStandardReaderAcceptsOurEvidenceRecordTest {
      * ours.
      */
     @Test
-    @DisplayName("that reader agrees the record covers the checkpoint hash we anchored")
+    @DisplayName("that reader agrees the record covers the Merkle root we anchored")
     void aForeignReaderAgreesItCoversOurDataObject() throws Exception {
         ERSEvidenceRecord read = new ERSEvidenceRecord(ourRecord(),
                 new JcaDigestCalculatorProviderBuilder().build());
@@ -226,7 +226,7 @@ class AStandardReaderAcceptsOurEvidenceRecordTest {
                 new JcaDigestCalculatorProviderBuilder().build());
         assertDoesNotThrow(() -> read.validatePresent(false, ours, new Date()));
 
-        org.junit.jupiter.api.Assertions.assertFalse(ErsVerifier.verify(der, other).linksHold(),
+        assertFalse(ErsVerifier.verify(der, other).linksHold(),
                 "our verifier accepts a data object the record is not about");
         assertThrows(Exception.class, () -> read.validatePresent(false, other, new Date()));
     }
@@ -277,8 +277,8 @@ class AStandardReaderAcceptsOurEvidenceRecordTest {
      * had on both sides).
      */
     @Test
-    @DisplayName("the service builds the record over the checkpoint hash's bytes, not over its text")
-    void theDataObjectIsTheCheckpointHashBytes() throws Exception {
+    @DisplayName("the service builds the record over the Merkle root's bytes, not over its text")
+    void theDataObjectIsTheMerkleRootsBytes() throws Exception {
         String source = java.nio.file.Files.readString(java.nio.file.Path.of(
                         "src/main/java/jp/aegif/nemaki/evidence/validity/EvidenceRecordService.java"),
                         java.nio.charset.StandardCharsets.UTF_8)
@@ -296,24 +296,27 @@ class AStandardReaderAcceptsOurEvidenceRecordTest {
     }
 
     /**
-     * The data object is the checkpoint hash's BYTES — decoded, not hashed again. The same
+     * The data object hash is the Merkle root's BYTES — decoded, not hashed again. The same
      * misreading that went wrong for RFC 3161 imprints would go wrong here, and this is the
      * side a fixture cannot paper over: the foreign reader decides.
      */
     @Test
     @DisplayName("a record built over the hash of the hex text is refused by the foreign reader")
     void theDoubleHashedDataObjectIsRefused() throws Exception {
-        String checkpointHash = "3fdba35f04dc8c462986c992bcf875546257113072a909c162f7e470e581e278";
-        byte[] doubled = MessageDigest.getInstance("SHA-256").digest(checkpointHash.getBytes());
+        byte[] doubled = MessageDigest.getInstance("SHA-256")
+                .digest(MERKLE_ROOT.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        // The two readings must not coincide, or what follows would hold under either.
+        assertFalse(java.util.Arrays.equals(doubled, dataObjectHash()),
+                "hashing the hex TEXT produced the same bytes as decoding it, so this fixture "
+                        + "cannot tell the correct reading from the withdrawn one");
         byte[] der = ErsRecord.first(doubled, tokenOver(ErsRecord.imprintForFirst(doubled))).der();
 
         ERSEvidenceRecord read = new ERSEvidenceRecord(der,
                 new JcaDigestCalculatorProviderBuilder().build());
-        // It covers what it was built over — and that is NOT the checkpoint's bytes.
+        // It covers what it was built over — and that is NOT the root's bytes.
         assertThrows(Exception.class,
                 () -> read.validatePresent(false, dataObjectHash(), new Date()),
-                "a record built over the hash of the hex TEXT was read as covering the "
-                        + "checkpoint's bytes, so the two readings cannot be told apart");
-        assertArrayEquals(doubled, doubled, "fixture check");
+                "a record built over the hash of the hex TEXT was read as covering the root's "
+                        + "bytes, so the two readings cannot be told apart");
     }
 }

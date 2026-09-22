@@ -53,10 +53,11 @@ import static org.mockito.Mockito.when;
  *
  * <h2>Nothing new is timestamped, so nothing new is claimed</h2>
  *
- * <p>The checkpoint hash IS the SHA-256 of the checkpoint's canonical bytes, and the RFC 3161
- * anchor over that checkpoint is a token whose imprint is exactly that value. So the record is
- * an assembly, not a new attestation — and every reason it cannot be assembled is a statement
- * about what this deployment has anchored, never about the records the checkpoint covers.
+ * <p>The RFC 3161 anchor over a checkpoint is a token whose imprint is exactly that
+ * checkpoint's {@code merkleRoot}, as bytes — NOT its {@code checkpointHash}, which is a
+ * different value no token here covers (R70). So the record is an assembly, not a new
+ * attestation — and every reason it cannot be assembled is a statement about what this
+ * deployment has anchored, never about the records the checkpoint covers.
  */
 class EvidenceRecordServiceTest {
 

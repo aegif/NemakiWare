@@ -81,7 +81,10 @@ class TheExitCodeIsTheInterfaceTest {
                 + "</mets:fileSec></mets:mets>");
         entries.put(ROOT + "representations/rep1/data/minutes.txt", payload);
         entries.put(ROOT + "metadata/preservation/premis.xml",
-                "<premis:premis><premis:object><premis:objectCharacteristics><premis:fixity>"
+                // The namespace IS declared, as PremisWriter declares it: the reader parses
+                // rather than string-matches, so an unbound prefix would not be PREMIS at all.
+                "<premis:premis xmlns:premis=\"http://www.loc.gov/premis/v3\">"
+                        + "<premis:object><premis:objectCharacteristics><premis:fixity>"
                         + "<premis:messageDigestAlgorithm>SHA-256</premis:messageDigestAlgorithm>"
                         + "<premis:messageDigest>" + digest + "</premis:messageDigest>"
                         + "</premis:fixity></premis:objectCharacteristics></premis:object>"

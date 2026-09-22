@@ -109,14 +109,42 @@ class WhichProfilesCanPassIsMeasuredTest {
         return names;
     }
 
-    /** The check names a verifier class can emit as PASSED. */
+    /**
+     * The check names a verifier class can emit as PASSED.
+     *
+     * <p>Two forms, because a check can pass without the literal appearing beside
+     * {@code passed(}: {@code TokenSignature.verify(name, ...)} is one classification shared by
+     * P2 and P3, and it returns PASSED under the caller's own name. Reading only the first form
+     * listed {@code token signature} as a check with no PASSED branch — the profile's limits
+     * would then have named a limit that does not exist, which is the mirror of hiding one.
+     *
+     * <p>The delegation is not assumed. {@link #theSharedClassifierReallyPasses} reads the
+     * classifier and fails if its PASSED branch is gone, so the mapping below stops being true
+     * loudly rather than quietly.
+     */
     private static SortedSet<String> canPass(String className) throws IOException {
         SortedSet<String> names = new TreeSet<>();
-        Matcher passed = Pattern.compile("passed\\(\"([^\"]+)\"").matcher(source(className));
+        String source = source(className);
+        Matcher passed = Pattern.compile("passed\\(\"([^\"]+)\"").matcher(source);
         while (passed.find()) {
             names.add(passed.group(1));
         }
+        Matcher delegated =
+                Pattern.compile("TokenSignature\\.verify\\(\"([^\"]+)\"").matcher(source);
+        while (delegated.find()) {
+            names.add(delegated.group(1));
+        }
         return names;
+    }
+
+    /** The shared classifier has a PASSED branch, so the delegation above means what it says. */
+    @org.junit.jupiter.api.Test
+    @DisplayName("the shared signature classifier can still report PASSED")
+    void theSharedClassifierReallyPasses() throws IOException {
+        assertTrue(source("TokenSignature").contains("Outcome.Check.passed(name)"),
+                "TokenSignature no longer returns PASSED under the caller's name, so every "
+                        + "check that delegates to it is being counted as reachable on the "
+                        + "strength of a call that cannot pass");
     }
 
     /** Required check names that no class in the composition can ever report as PASSED. */

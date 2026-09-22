@@ -88,10 +88,20 @@ class ErsFormatTest {
         assertTrue(limits.contains("checkpoint") && limits.contains("not a document"),
                 "the disclaimer does not say the record is about a checkpoint rather than a "
                         + "document, which is the assumption the name invites: " + limits);
+        // Both withdrawn readings are forbidden by name, because a lock that only forbade the
+        // first let the second ship (R70): "the checkpoint hash" was replaced by "the
+        // checkpoint's canonical bytes", and NO TOKEN IN THIS SYSTEM COVERS EITHER. What a
+        // token covers is what was anchored, and that is the merkleRoot.
         assertFalse(limits.contains("DATA OBJECT is a checkpoint hash"),
-                "the disclaimer calls the checkpoint's HASH the data object; the data object is "
-                        + "the checkpoint's canonical bytes and h = H(d) is its hash (p2-3 §8): "
-                        + limits);
+                "the disclaimer calls the checkpoint's HASH the data object: " + limits);
+        assertFalse(limits.contains("canonical serialisation of a checkpoint"),
+                "the disclaimer calls the checkpoint's canonical bytes the data object. No "
+                        + "token covers that value either — the anchor is over the merkleRoot "
+                        + "(p2-3 §8, R70): " + limits);
+        assertTrue(limits.contains("MERKLE ROOT"),
+                "the disclaimer no longer names what the record's data object hash actually is, "
+                        + "so a receiver following it compares against something no token in "
+                        + "this system covers: " + limits);
         assertTrue(limits.contains("not a claim of conformance"), limits);
         assertTrue(limits.contains("signature and certificate are not verified"), limits);
         assertFalse(limits.contains("does NOT generate"),
