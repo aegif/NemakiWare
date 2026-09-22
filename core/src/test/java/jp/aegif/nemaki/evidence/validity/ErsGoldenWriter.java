@@ -86,8 +86,22 @@ public final class ErsGoldenWriter {
      * built NOW rather than against another copy of themselves.
      */
     public static byte[] recordOver(byte[] dataObjectHash) throws Exception {
+        return recordOver(dataObjectHash, "SHA256withRSA");
+    }
+
+    /**
+     * The same record, with the timestamp authority signing its CMS under {@code signatureAlgorithm}.
+     *
+     * <p>The message imprint stays SHA-256 — that is the tree's algorithm and RFC 4998's §4.2
+     * step 5 requires it to be. What changes is the algorithm the AUTHORITY signs with, which is
+     * the authority's choice and says nothing about how this record hashes anything. A verifier
+     * that walked the whole DER for digest OIDs found the SHA-384 one inside the CMS and
+     * reported a conformant record as uncheckable.
+     */
+    public static byte[] recordOver(byte[] dataObjectHash, String signatureAlgorithm)
+            throws Exception {
         return ErsRecord.first(dataObjectHash,
-                tokenOver(ErsRecord.imprintForFirst(dataObjectHash))).der();
+                tokenOver(ErsRecord.imprintForFirst(dataObjectHash), signatureAlgorithm)).der();
     }
 
     public static void main(String[] args) throws Exception {
@@ -98,11 +112,17 @@ public final class ErsGoldenWriter {
         Files.write(dir.resolve("product-ers.der"), der);
         Files.writeString(dir.resolve("product-ers-root.txt"), MERKLE_ROOT + "\n",
                 StandardCharsets.UTF_8);
-        System.out.println("wrote " + der.length + " bytes over " + MERKLE_ROOT + " to " + dir);
+        // The same record from an authority that signs under SHA-384. Conformant, and the
+        // shape a verifier scanning the whole DER for digest OIDs wrongly refuses.
+        byte[] sha384 = recordOver(h, "SHA384withRSA");
+        Files.write(dir.resolve("product-ers-sha384-cms.der"), sha384);
+        System.out.println("wrote " + der.length + " and " + sha384.length + " bytes over "
+                + MERKLE_ROOT + " to " + dir);
     }
 
     /** A token over {@code imprint}, requested the way {@code Rfc3161AnchorTarget} requests one. */
-    private static byte[] tokenOver(byte[] imprint) throws Exception {
+    private static byte[] tokenOver(byte[] imprint, String signatureAlgorithm)
+            throws Exception {
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
         kpg.initialize(2048);
         KeyPair keyPair = kpg.generateKeyPair();
@@ -117,13 +137,13 @@ public final class ErsGoldenWriter {
                 new org.bouncycastle.asn1.x509.ExtendedKeyUsage(
                         org.bouncycastle.asn1.x509.KeyPurposeId.id_kp_timeStamping));
         org.bouncycastle.operator.ContentSigner signer =
-                new org.bouncycastle.operator.jcajce.JcaContentSignerBuilder("SHA256withRSA")
+                new org.bouncycastle.operator.jcajce.JcaContentSignerBuilder(signatureAlgorithm)
                         .build(keyPair.getPrivate());
         X509Certificate certificate = new org.bouncycastle.cert.jcajce.JcaX509CertificateConverter()
                 .getCertificate(certBuilder.build(signer));
         TimeStampTokenGenerator tokenGenerator = new TimeStampTokenGenerator(
                 new org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoGeneratorBuilder()
-                        .build("SHA256withRSA", keyPair.getPrivate(), certificate),
+                        .build(signatureAlgorithm, keyPair.getPrivate(), certificate),
                 new org.bouncycastle.operator.bc.BcDigestCalculatorProvider()
                         .get(new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
                                 new ASN1ObjectIdentifier(SHA256_OID))),

@@ -461,7 +461,9 @@ class TheAnchorIsReadNotAssumedTest {
         proof.put("steps", List.<Map<String, Object>>of());
 
         Map<String, byte[]> entries = new LinkedHashMap<>();
-        entries.put(ROOT + "METS.xml", bytes("<mets:mets><mets:fileSec><mets:file><mets:FLocat "
+        entries.put(ROOT + "METS.xml", bytes("<mets:mets "
+                + "xmlns:mets=\"http://www.loc.gov/METS/\" "
+                + "xmlns:xlink=\"http://www.w3.org/1999/xlink\"><mets:fileSec><mets:file><mets:FLocat "
                 + "xlink:href=\"representations/rep1/data/minutes.txt\"/></mets:file>"
                 + "</mets:fileSec></mets:mets>"));
         entries.put(ROOT + "representations/rep1/data/minutes.txt", bytes(payload));

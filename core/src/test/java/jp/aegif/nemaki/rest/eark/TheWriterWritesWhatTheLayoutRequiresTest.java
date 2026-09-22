@@ -128,12 +128,26 @@ class TheWriterWritesWhatTheLayoutRequiresTest {
                 new jp.aegif.nemaki.evidence.EvidenceBundle.AnchorPart(
                         jp.aegif.nemaki.evidence.EvidenceBundle.AnchorPart.State.NOT_CONFIGURED,
                         null, "no calendar is configured on this node"));
+        // A prior pair, so the four files under prior/ are in the section this test measures.
+        // §4.2 defines them and neither end had a fixture that carried any (subagent, sixth
+        // review, P3).
+        jp.aegif.nemaki.evidence.RecordContentStatementV1 priorStatement =
+                new jp.aegif.nemaki.evidence.RecordContentStatementV1("bedroom", "doc-1", "doc-1",
+                        "att-0", "c".repeat(64), 7L,
+                        jp.aegif.nemaki.evidence.RecordContentStatementV1.CommitmentKind.CAPTURED,
+                        null, "2026-09-19T00:00:00Z");
+        jp.aegif.nemaki.evidence.EvidenceLedgerEntry priorEntry =
+                jp.aegif.nemaki.evidence.EvidenceLedgerEntry.of("record-content", 1L,
+                        jp.aegif.nemaki.evidence.EvidenceLedgerEntry.SubjectKind
+                                .RECORD_CONTENT_STATE,
+                        "doc-1", priorStatement.digest(), "2026-09-19T00:00:00Z", null);
         return new jp.aegif.nemaki.evidence.EvidenceBundle("bedroom", "doc-1", "doc-1", statement,
                 entry,
                 new jp.aegif.nemaki.evidence.EvidenceBundle.InclusionProof(
                         jp.aegif.nemaki.evidence.MerkleTree.hashLeaf(entry.entryHash()),
                         List.of(), null),
-                covering, List.of(covering), covering, anchors, "2026-09-20T01:00:00Z");
+                covering, List.of(covering), covering, anchors, "2026-09-20T01:00:00Z",
+                new jp.aegif.nemaki.evidence.EvidenceBundle.Prior(priorStatement, priorEntry));
     }
 
     private static String hex(byte[] bytes) throws Exception {
@@ -156,6 +170,24 @@ class TheWriterWritesWhatTheLayoutRequiresTest {
             files.put(m.group(1), m.group(2));
         }
         return files;
+    }
+
+    @Test
+    @DisplayName("the four files under prior/ are in the section, and the manifest covers them")
+    void thePriorPairIsShippedAsFourFiles(@TempDir Path tmp) throws Exception {
+        Map<String, byte[]> section = section(tmp);
+
+        for (String name : List.of("prior/record-content-statement.json",
+                "prior/record-content-statement.c14n", "prior/ledger-entry.json",
+                "prior/ledger-entry.c14n")) {
+            assertTrue(section.containsKey(name),
+                    name + " is not in the section. §4.2 defines the prior as FOUR files — two "
+                            + "for one pair — and shipping some of them means the others can "
+                            + "say anything: " + section.keySet());
+            assertTrue(manifestFiles(section.get("bundle-manifest.json")).containsKey(name),
+                    "the manifest does not name " + name + ", so the verifier reports it as an "
+                            + "unreferenced addition and refuses the package");
+        }
     }
 
     @Test

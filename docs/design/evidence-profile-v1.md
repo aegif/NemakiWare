@@ -69,14 +69,25 @@ verifier は **既定で network を使わない**。network を使う check は
 `docs/evidence-profile/v1/` が一緒に動く。**v1 の package を読めなくする変更は、
 v1 を壊さずに v2 を足すことでしか行わない。**
 
-**凍結と「誤りの訂正」の境目**（2026-09-22）。判定は 1 つの問いで行う —
-**これまでに出荷した、契約に適合する package の読み方が変わるか。** 変わらないなら訂正であり、
-変わるなら v2 が要る。この版で 2 件、訂正として直した。
+**凍結と「誤りの訂正」の境目**（2026-09-22）。判定は **2 つ**の問いで行う —
+
+1. **これまでに出荷した、契約に適合する package の読み方が変わるか。**
+2. **第三者が標準どおりに書いた package の読み方が変わるか。**
+
+どちらも「変わらない」なら訂正であり、どちらかが「変わる」なら v2 が要る。
+
+> 問い 2 は後から足した（2026-09-22、6 巡目）。1 だけだと、**自分が一度も書いたことのない形を
+> 狭める変更を構造的に検出できない**。実例: §14 の `ERS_PARSE` に `digestAlgorithm [0]` 必須を
+> 書いたとき、出荷物は 0 なので問い 1 は「変わらない」と答えたが、**BouncyCastle が作る記録は
+> 全部拒否される**ようになっていた。
+
+この版で 3 件、訂正として直した。
 
 | 訂正 | なぜ contract の変更ではないか |
 |---|---|
 | §14 の ERS data object（`SHA-256(c14n)` → `merkleRoot` の bytes） | どの token もその値を覆わないので、規定どおりの verifier は本物を必ず拒否した。かつ**この版は ERS を 1 本も出荷していない** |
 | §9 に `V1_LAYOUT` を必須 check として追加 | §4.2 と §5.2 が**既に**「legacy と併存 → `FAILED`」「manifest に無いファイル → `FAILED`」と規定していたのに、それを出す check が §9 に無かった。**仕様が自分と矛盾していた**。適合する package の判定は動かない（動くのは、既に規定違反だった package だけ） |
+| §14 の `ERS_PARSE` から `digestAlgorithm [0]` 必須を外し、縮約を「2 つ以上のときだけ hash」に | **書いた規定のほうが RFC より狭かった**。問い 2 に「変わる」と答える変更だったので、そのまま出せば v2 が要った。**間違った狭め方を戻すので、適合記録の判定は緩む方向にしか動かない** |
 
 後者は必須 check の集合を動かすので、**表の左列に触れた唯一の例**である。
 これを許す条件は上の 1 文だけで、「実装が楽だから」「見落としていたから」は理由にならない
@@ -407,7 +418,7 @@ current == merkleRoot なら PASS
 |---|---|
 | `ZIP_SAFE` | 全エントリ名が相対で、`..` 成分を含まず、絶対 path でなく、**重複しない** |
 | `ZIP_LIMITS` | 展開後の合計 size とエントリ数が verifier の上限内 |
-| `ONE_EVIDENCE_SECTION` | §4.2 の各文書名が package 内で 1 回しか現れない |
+| `ONE_EVIDENCE_SECTION` | §4.2 の各文書名が package 内で 1 回しか現れない（**payload は数えない** — 内容が別 package の evidence フォルダの写しであっても、それは content であって section ではない） |
 | `V1_LAYOUT` | **v1 section が在るなら** §4.2 のとおりに在る（下記） |
 | `METS_CLOSURE` | METS が名指す全 file が package に在り、**逆に** `representations/*/data/` 配下の全 file が METS に名指されている |
 | `PAYLOAD_FIXITY` | 各 payload と PREMIS の fixity が**一対一**で一致する |
@@ -582,17 +593,37 @@ sidecar 自身の `info()` も `hashlib.sha256(_digest_bytes(hex_digest)).digest
 **`ERS_PARSE` は構造を見る。** version・`digestAlgorithms`・
 `archiveTimeStampSequence`（**最後の要素**。`cryptoInfos [0]` と `encryptionInfo [1]` が
 間に入るので前から数えない）・各 chain が 1 本以上の ArchiveTimeStamp を持つこと・
-各 ArchiveTimeStamp が `digestAlgorithm [0]` と RFC 3161 token として parse できる
-`timeStamp` を持つこと。**「version 1 を名乗る DER」だけでは足りない**
-（2026-09-22 まではそれだけで、期待する digest が DER のどこかに 32 バイトで
-落ちていれば 3 つとも PASS した。残件 R72）。
+各 ArchiveTimeStamp が **RFC 3161 token として parse できる `timeStamp`** を持つこと。
+**「version 1 を名乗る DER」だけでは足りない**（2026-09-22 まではそれだけで、期待する
+digest が DER のどこかに 32 バイトで落ちていれば 3 つとも PASS した。残件 R72）。
+
+**`digestAlgorithm [0]` は必須ではない。** RFC 4998 §4.2:「If the optional field
+digestAlgorithm is not present, the digest algorithm of the timestamp MUST be used」。
+無ければ **token の message imprint の算法を使う**。
+
+> **2026-09-22 の訂正。** この行は当初「各 ArchiveTimeStamp が `digestAlgorithm [0]` と …
+> `timeStamp` を持つこと」と書いていた。**BouncyCastle の生成器はデータオブジェクトが 1 つのとき
+> この欄を出さない**ので、規定どおりに実装した verifier は標準ツールが作った記録を必ず拒否する。
+> 本製品自身の reader（`ErsRecord.parse`）は既に fallback を実装しており、**同じ形式の 2 つの
+> reader が同じ bytes に逆の答えを出していた**。出荷した package の読み方は変わらない（ERS は
+> 1 本も出荷していない）が、**第三者が標準どおりに書いた記録の読み方は変わる** — §1.1 の判定に
+> この観点を足した。
 
 **`ERS_DATA_OBJECT` の 2 形**（RFC 4998 §4.3）:
 
 | 最初の ArchiveTimeStamp | 判定 |
 |---|---|
 | reducedHashtree **無し**（§4.2 が明示的に許す。**本製品が書くのはこちら**） | token の `messageImprint` が `merkleRoot` の bytes と一致すれば PASS |
-| reducedHashtree **有り** | 第 1 list が `merkleRoot` を含み、かつ §4.3 step 3 の縮約結果が token の `messageImprint` と一致すれば PASS |
+| reducedHashtree **有り** | 第 1 list が `merkleRoot` を含み、かつ §4.3 の縮約結果が token の `messageImprint` と一致すれば PASS |
+
+**縮約は「要素が 2 つ以上のときだけ hash」する。** RFC 4998 §4.2:「For each data group
+containing **more than one document**, its respective document hashes are binary sorted in
+ascending order, concatenated, and hashed」。**要素 1 つのリストの node hash はその値そのもの。**
+BouncyCastle の `ERSUtil.computeNodeHash` も `values.length > 1` のときだけ hash する（bytecode で確認）。
+
+> **2026-09-22 の訂正。** 本製品の verifier 2 つと生成側の 1 か所が、要素 1 つでも hash していた。
+> **標準ツールが作った reduced tree を必ず拒否し**、§5.3 の更新では `H(h')` を覆う token を
+> TSA に頼むよう指示していた（どの標準 reader も期待しない値）。3 か所を揃えた。
 
 **「DER のどこかに root の 32 バイトが在る」を PASS にしてはならない。**
 本製品の記録では root は token の `TSTInfo` の中にあり、hash list は空である —
@@ -632,7 +663,7 @@ check の結果は **4 値**。「調べて正しい」「調べて誤り」「�
 | `PASSED` | 調べて正しい |
 | `FAILED` | 調べて誤り |
 | `NOT_PRESENT` | package がその check に要るものを持っていない |
-| `UNAVAILABLE` | 調べられなかった。**理由は reason code で述べる** — `RESOURCE_LIMIT`（上限到達）、`NO_BLOCK_HEADER_SOURCE / REVOCATION_NOT_CAPTURED`、`UNKNOWN_ALGORITHM`、`LEGACY_PACKAGE_LAYOUT`、`TRANSITION_PRIOR_NOT_IN_PACKAGE` など（全 20 値は verifier の登録簿 `Outcome.Check.REASON_CODES` と result schema の enum） |
+| `UNAVAILABLE` | 調べられなかった。**理由は reason code で述べる** — `RESOURCE_LIMIT`（上限到達）、`NO_BLOCK_HEADER_SOURCE / REVOCATION_NOT_CAPTURED`、`UNKNOWN_ALGORITHM`、`LEGACY_PACKAGE_LAYOUT`、`TRANSITION_PRIOR_NOT_IN_PACKAGE` など（全 21 値は verifier の登録簿 `Outcome.Check.REASON_CODES` と result schema の enum） |
 
 合成:
 

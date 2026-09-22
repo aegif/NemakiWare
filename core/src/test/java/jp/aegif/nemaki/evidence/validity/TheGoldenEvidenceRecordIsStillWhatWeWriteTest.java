@@ -59,6 +59,25 @@ class TheGoldenEvidenceRecordIsStillWhatWeWriteTest {
         return Files.readAllBytes(GOLDEN);
     }
 
+    /** Which implicit tags the first Archive Timestamp actually carries, in order. */
+    private static java.util.List<Integer> taggedFields(byte[] der) throws Exception {
+        org.bouncycastle.asn1.ASN1Sequence record = org.bouncycastle.asn1.ASN1Sequence
+                .getInstance(org.bouncycastle.asn1.ASN1Primitive.fromByteArray(der));
+        org.bouncycastle.asn1.ASN1Sequence sequence = org.bouncycastle.asn1.ASN1Sequence
+                .getInstance(record.getObjectAt(record.size() - 1));
+        org.bouncycastle.asn1.ASN1Sequence chain =
+                org.bouncycastle.asn1.ASN1Sequence.getInstance(sequence.getObjectAt(0));
+        org.bouncycastle.asn1.ASN1Sequence ats =
+                org.bouncycastle.asn1.ASN1Sequence.getInstance(chain.getObjectAt(0));
+        java.util.List<Integer> tags = new java.util.ArrayList<>();
+        for (int i = 0; i < ats.size(); i++) {
+            if (ats.getObjectAt(i) instanceof org.bouncycastle.asn1.ASN1TaggedObject tagged) {
+                tags.add(tagged.getTagNo());
+            }
+        }
+        return tags;
+    }
+
     private static String goldenRoot() throws Exception {
         return Files.readString(ROOT, StandardCharsets.UTF_8).trim();
     }
@@ -126,6 +145,15 @@ class TheGoldenEvidenceRecordIsStillWhatWeWriteTest {
                         + "reduced hash tree");
         assertEquals(golden.chains().get(0).get(0).digestAlgorithmOid(),
                 fresh.chains().get(0).get(0).digestAlgorithmOid());
+
+        // The DER's own shape, not the parsed view. ErsRecord.parse NORMALISES an absent
+        // digestAlgorithm [0] to the token's algorithm, so a writer that stopped emitting the
+        // field would leave both ends of this seam green while the checked-in bytes and the
+        // fresh ones had different structures (subagent, sixth review, P3).
+        assertEquals(taggedFields(goldenDer()), taggedFields(ErsGoldenWriter.recordOver(h)),
+                "the Archive Timestamp's tagged fields changed shape between the checked-in "
+                        + "record and one built now, and the parsed comparison above cannot "
+                        + "see it");
 
         // And the rule the whole correction turns on: the first token's imprint IS the data
         // object hash, unchanged. Not hashed again (R70, and the imprint double-hash before it).

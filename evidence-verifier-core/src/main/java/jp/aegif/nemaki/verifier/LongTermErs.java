@@ -140,8 +140,14 @@ public final class LongTermErs {
             // The version FIRST, and before the shape: the rest of the structure is defined by
             // the version, so a record of a later version whose layout this reader does not know
             // must be reported as unread rather than as malformed.
-            int version = record.size() == 0 ? -1
-                    : ASN1Integer.getInstance(record.getObjectAt(0)).intValueExact();
+            if (record.size() == 0) {
+                // An empty SEQUENCE states no version, so "a version this reader does not know"
+                // would be a claim about a document that claims nothing (subagent, sixth
+                // review, P3).
+                throw new NotAnEvidenceRecord("the file is an empty SEQUENCE, which states "
+                        + "neither a version nor a timestamp");
+            }
+            int version = ASN1Integer.getInstance(record.getObjectAt(0)).intValueExact();
             if (version != VERSION) {
                 // UNSUPPORTED, not failed: a version this reader does not know has not been
                 // checked, and nothing about it is a finding.
@@ -267,17 +273,23 @@ public final class LongTermErs {
                         + "ContentInfo; this one is " + notAContentInfo);
             }
         }
-        if (algorithm == null) {
-            throw new NotAnEvidenceRecord("an ArchiveTimeStamp carries no digestAlgorithm, so "
-                    + "which function built its tree is unstated");
-        }
         if (token == null) {
             throw new NotAnEvidenceRecord("an ArchiveTimeStamp carries no timestamp token, so "
-                    + "there is nothing in it that fixes a time");
+                    + "there is nothing in it that fixes a time. RFC 4998 makes every other "
+                    + "field optional and this one mandatory");
         }
         // Parsed here, so a "record" whose token is not one is a parse finding rather than a
         // silent absence three checks later.
-        tokenOf(token);
+        TimeStampToken parsed = tokenOf(token);
+        if (algorithm == null) {
+            // §4.2: "If the optional field digestAlgorithm is not present, the digest algorithm
+            // of the timestamp MUST be used." Requiring the field refused every record
+            // BouncyCastle's own generator produces for a single data object — and this
+            // product's OWN reader (ErsRecord.parse) already implements the fallback, so two
+            // readers of one format were answering the same bytes differently (subagent, sixth
+            // review, P1).
+            algorithm = parsed.getTimeStampInfo().getMessageImprintAlgOID().getId();
+        }
         return new ArchiveTimeStamp(algorithm, tree, token, ats);
     }
 
@@ -392,13 +404,31 @@ public final class LongTermErs {
      * {@code ErsVerifier} had to be corrected on.
      */
     private static byte[] walk(ArchiveTimeStamp ats) {
-        byte[] current = digest(ats.digestOid(), sortedConcat(ats.tree().get(0)));
+        byte[] current = nodeHash(ats.digestOid(), ats.tree().get(0));
         for (int level = 1; level < ats.tree().size(); level++) {
             List<byte[]> withParent = new ArrayList<>(ats.tree().get(level));
             withParent.add(current);
-            current = digest(ats.digestOid(), sortedConcat(withParent));
+            current = nodeHash(ats.digestOid(), withParent);
         }
         return current;
+    }
+
+    /**
+     * A hash list's node hash — §4.2.
+     *
+     * <p>"For each data group containing MORE THAN ONE document, its respective document hashes
+     * are binary sorted in ascending order, concatenated, and hashed." A list of one is
+     * therefore its own node hash, and hashing it anyway produces a root no conformant record
+     * carries. BouncyCastle's {@code ERSUtil.computeNodeHash} returns {@code values[0]} for a
+     * one-element list; this hashed unconditionally, so a record built by any standard tool
+     * reduced to the wrong value and was reported as "the tree and the timestamp are not about
+     * the same thing" (subagent, sixth review, P1 — measured against BouncyCastle's bytecode).
+     */
+    private static byte[] nodeHash(String digestOid, List<byte[]> values) {
+        if (values.size() == 1) {
+            return values.get(0);
+        }
+        return digest(digestOid, sortedConcat(values));
     }
 
     /**
@@ -502,6 +532,18 @@ public final class LongTermErs {
                     "chain " + c + " does not commit to the chains before it: its first hash "
                             + "list holds no " + Canonical.hex(expected) + ", which §5.3 "
                             + "computes as H(sorted(h, ha))");
+        }
+        // And the TOKEN has to cover that tree. Checking membership alone left the newest
+        // chain's time claim tied to nothing: a tree naming the right value beside a timestamp
+        // about anything at all passed, and the whole profile composed to VERIFIED (subagent,
+        // sixth review, P2).
+        byte[] root = walk(first);
+        byte[] imprint = tokenOf(first.tokenDer()).getTimeStampInfo().getMessageImprintDigest();
+        if (!Arrays.equals(root, imprint)) {
+            return Outcome.Check.failed("ers chain",
+                    "chain " + c + "'s first hash tree reduces to " + Canonical.hex(root)
+                            + " and its timestamp covers " + Canonical.hex(imprint) + ", so the "
+                            + "timestamp that starts this chain is not about the chain");
         }
         return null;
     }

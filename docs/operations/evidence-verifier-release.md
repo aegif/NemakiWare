@@ -23,7 +23,7 @@ profile spec、vectors。
 |---|---|
 | **SBOM** | `cyclonedx-maven-plugin` が**このマシンのローカルリポジトリに無い**ため、オフラインでは配線できない。ネットワークのある環境で `org.cyclonedx:cyclonedx-maven-plugin` を追加して `makeAggregateBom` を回す |
 | **detached signature** | **鍵は持っていない。** 署名はリリース担当者が自分の鍵で行う作業で、自動化してはならない（鍵を CI に置くことと同義になる） |
-| ~~**result schema**~~ | **書いた（2026-09-22）**: `docs/evidence-profile/v1/verifier-result.schema.json`。閉じた schema、`reasonCode` は登録簿 `Outcome.Check.REASON_CODES`（20 値）と両方向で一致、`limits` 必須。**verifier は schema を読まない** — 受け取る側が自分の validator で検証する。`SHA-256SUMS` に載せる（下記） |
+| ~~**result schema**~~ | **書いた（2026-09-22）**: `docs/evidence-profile/v1/verifier-result.schema.json`。閉じた schema、`reasonCode` は登録簿 `Outcome.Check.REASON_CODES`（21 値）と両方向で一致、`limits` 必須。**verifier は schema を読まない** — 受け取る側が自分の validator で検証する。`SHA-256SUMS` に載せる（下記） |
 
 ---
 

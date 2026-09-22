@@ -216,15 +216,20 @@ public final class ErsRecord {
         byte[] ha = digest(algorithmOid, encodeSequence(chains));
         byte[] hPrime = digest(algorithmOid,
                 sortedConcat(List.of(dataObjectHashUnderNewAlgorithm, ha)));
-        return new HashTreeRenewalInputs(hPrime, digest(algorithmOid, hPrime), ha);
+        // The new Archive Timestamp's first list holds h' ALONE, and a one-element list is its
+        // own node hash (§4.2, "more than one document"). So the token covers h' itself. This
+        // returned H(h'), which no conformant verifier expects — and this repository's two
+        // verifiers agreed with it because they hashed a one-element list too (subagent, sixth
+        // review, P1).
+        return new HashTreeRenewalInputs(hPrime, nodeHash(algorithmOid, List.of(hPrime)), ha);
     }
 
     /**
      * What a §5.3 renewal needs.
      *
      * @param hPrime the value that goes in the new Archive Timestamp's first hash list
-     * @param imprint what the new token must cover — {@code H(h')}, because §4.3 step 3 hashes
-     *        the list even when it holds one member
+     * @param imprint what the new token must cover — {@code h'} itself, because §4.2 hashes a
+     *        list only when it holds MORE THAN ONE value
      * @param previousSequenceHash {@code ha}, kept so a caller can show its working
      */
     public record HashTreeRenewalInputs(byte[] hPrime, byte[] imprint,
@@ -465,6 +470,28 @@ public final class ErsRecord {
     }
 
     // ---- shared hashing, so the encoder and the verifier cannot drift ----
+
+    /**
+     * A hash list's node hash — §4.2.
+     *
+     * <p>"For each data group containing <b>more than one document</b>, its respective document
+     * hashes are binary sorted in ascending order, concatenated, and hashed." A list of ONE is
+     * therefore its own node hash. BouncyCastle's {@code ERSUtil.computeNodeHash} returns
+     * {@code values[0]} for such a list; this repository hashed unconditionally, in both
+     * readers, so any record a standard tool built with a reduced tree reduced to a value no
+     * token covers (subagent, sixth review, P1 — measured against BouncyCastle's bytecode).
+     *
+     * <p>The correction also withdraws a reason: §8 of the design document rejected a one-node
+     * tree holding the root because it "would need a NEW token over H(H(root))". It would not —
+     * a one-node tree reduces to the root, which the existing token already covers. The chosen
+     * form (no tree at all) is still simpler and still conformant; only the argument was wrong.
+     */
+    static byte[] nodeHash(String digestAlgorithmOid, List<byte[]> values) {
+        if (values.size() == 1) {
+            return values.get(0).clone();
+        }
+        return digest(digestAlgorithmOid, sortedConcat(values));
+    }
 
     /** RFC 4998 §4.2/§4.3: binary ascending sort, then concatenate. No prefixes, no lengths. */
     static byte[] sortedConcat(List<byte[]> values) {

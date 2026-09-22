@@ -98,7 +98,10 @@ public final class PackageIntegrity {
             String wanted = RecordLedger.DIR + name;
             List<String> matches = new ArrayList<>();
             for (String path : entries.keySet()) {
-                if (("/" + path).endsWith(wanted)) {
+                // Payload is not a second section, whatever it is called (see
+                // sectionRelativeName). Counting per NAME fixed one shape of this and left
+                // another: a payload copy of profile.json still matched.
+                if (!isPayload(path) && ("/" + path).endsWith(wanted)) {
                     matches.add(path);
                 }
             }
@@ -365,9 +368,18 @@ public final class PackageIntegrity {
         return twice;
     }
 
-    /** {@code null} when the entry is not a file inside the section. */
+    /**
+     * {@code null} when the entry is not a file inside the section.
+     *
+     * <p>A PAYLOAD file is never one, whatever it is called. A package whose content happens to
+     * be a copy of another package's evidence folder carries entries under a representation's
+     * own data directory, and reading those as a second section
+     * made every name a duplicate and the whole check FAILED — the same over-refusal
+     * {@code oneEvidenceSection} was corrected for two reviews earlier (subagent, sixth review,
+     * P2). The evidence section lives under {@code metadata/}; content does not.
+     */
     private static String sectionRelativeName(String path) {
-        if (path.endsWith("/")) {
+        if (path.endsWith("/") || isPayload(path)) {
             return null;
         }
         int at = ("/" + path).indexOf(RecordLedger.DIR);
@@ -378,12 +390,26 @@ public final class PackageIntegrity {
         return relative.isEmpty() ? null : relative;
     }
 
+    /** Content, not metadata: a file under a representation's own data directory. */
+    private static boolean isPayload(String path) {
+        String slashed = "/" + path;
+        return slashed.contains(PAYLOAD_PREFIX_MARKER) && slashed.contains(PAYLOAD_DATA_MARKER);
+    }
+
+    /**
+     * The document as a map, or {@code null} when it is not one.
+     *
+     * <p>Every RuntimeException, not only {@code NotCanonicalisable}: {@code Json.parse} raises
+     * {@code NumberFormatException} for a broken {@code \\uXXXX} escape, and a package could
+     * therefore turn a check into exit 5 — the verifier failing rather than answering (subagent,
+     * sixth review, P3).
+     */
     @SuppressWarnings("unchecked")
     private static Map<String, Object> parseObject(byte[] json) {
         try {
             Object value = Json.parse(new String(json, StandardCharsets.UTF_8));
             return value instanceof Map ? (Map<String, Object>) value : null;
-        } catch (Json.NotCanonicalisable malformed) {
+        } catch (RuntimeException malformed) {
             return null;
         }
     }
@@ -487,7 +513,15 @@ public final class PackageIntegrity {
         List<String> named = new ArrayList<>();
         for (String metsPath : metsPaths) {
             String mets = new String(entries.get(metsPath), StandardCharsets.UTF_8);
-            named.addAll(hrefsIn(mets));
+            List<String> hrefs = hrefsIn(mets);
+            if (hrefs == null) {
+                // The package HAS a METS and this verifier could not read it. Saying the METS
+                // names nothing would turn that into a fact about the package.
+                return Outcome.Check.unavailable("mets closure", "METS_NOT_PARSED",
+                        "the package presents " + metsPath + " as a METS and this verifier "
+                                + "could not read it as XML, so what it names is unknown");
+            }
+            named.addAll(hrefs);
         }
         if (named.isEmpty()) {
             return Outcome.Check.absent("mets closure",
@@ -535,20 +569,65 @@ public final class PackageIntegrity {
         return value;
     }
 
+    /**
+     * The local references a METS makes — read as XML.
+     *
+     * <p>This matched the literal {@code xlink:href="…"}, which is wrong in both directions for
+     * the reason {@code Premis} gives: a PREFIX IS NOT PART OF AN XML NAME, so a METS binding
+     * the XLink namespace to another prefix produced no references at all and the closure check
+     * silently became {@code NOT_PRESENT}; and the same literal inside a COMMENT was counted as
+     * a reference, so a package was reported as missing a file it never named (subagent, sixth
+     * review, P2).
+     *
+     * @return {@code null} when the document could not be read as XML — which is not the same
+     *         as a METS that names nothing
+     */
     static List<String> hrefsIn(String xml) {
+        org.w3c.dom.Document document;
+        try {
+            javax.xml.parsers.DocumentBuilderFactory factory =
+                    javax.xml.parsers.DocumentBuilderFactory.newInstance();
+            factory.setNamespaceAware(true);
+            factory.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            factory.setXIncludeAware(false);
+            factory.setExpandEntityReferences(false);
+            document = factory.newDocumentBuilder().parse(new org.xml.sax.InputSource(
+                    new java.io.StringReader(xml)));
+        } catch (Exception notXml) {
+            return null;
+        }
         List<String> hrefs = new ArrayList<>();
-        java.util.regex.Matcher matcher =
-                java.util.regex.Pattern.compile("xlink:href=\"([^\"]+)\"").matcher(xml);
-        while (matcher.find()) {
-            String href = matcher.group(1);
-            // A METS can point outside the package. Those are not files it is closing over and
-            // reporting them as missing would turn a legitimate external reference into a
-            // failure.
-            if (!href.startsWith("http://") && !href.startsWith("https://")) {
-                hrefs.add(href);
+        collectHrefs(document.getDocumentElement(), hrefs);
+        return hrefs;
+    }
+
+    /** The XLink namespace, which is where a METS puts {@code href}. */
+    private static final String XLINK = "http://www.w3.org/1999/xlink";
+
+    private static void collectHrefs(org.w3c.dom.Element element, List<String> hrefs) {
+        if (element == null) {
+            return;
+        }
+        String href = element.getAttributeNS(XLINK, "href");
+        if (href == null || href.isEmpty()) {
+            // A METS written without a namespace declaration still says href.
+            href = element.getAttribute("xlink:href");
+        }
+        // A METS can point outside the package. Those are not files it is closing over and
+        // reporting them as missing would turn a legitimate external reference into a failure.
+        if (href != null && !href.isEmpty()
+                && !href.startsWith("http://") && !href.startsWith("https://")) {
+            hrefs.add(href);
+        }
+        org.w3c.dom.NodeList children = element.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            if (children.item(i) instanceof org.w3c.dom.Element child) {
+                collectHrefs(child, hrefs);
             }
         }
-        return hrefs;
     }
 
     private static Map<String, byte[]> payloadsIn(Map<String, byte[]> entries) {
@@ -573,23 +652,4 @@ public final class PackageIntegrity {
         return paths;
     }
 
-    private static int occurrences(String text, String needle) {
-        int count = 0;
-        for (int at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + 1)) {
-            count++;
-        }
-        return count;
-    }
-
-    private static String between(String text, String open, String close) {
-        int start = text.indexOf(open);
-        if (start < 0) {
-            return null;
-        }
-        int end = text.indexOf(close, start + open.length());
-        if (end < 0) {
-            return null;
-        }
-        return text.substring(start + open.length(), end);
-    }
 }

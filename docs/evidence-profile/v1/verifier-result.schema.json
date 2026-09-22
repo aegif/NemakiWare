@@ -57,6 +57,7 @@
               "CERTIFICATE_UNREADABLE",
               "DUPLICATE_ENTRY",
               "LEGACY_PACKAGE_LAYOUT",
+              "METS_NOT_PARSED",
               "NOT_A_ZIP",
               "NO_BLOCK_HEADER_SOURCE",
               "OTS_NOT_PARSED",

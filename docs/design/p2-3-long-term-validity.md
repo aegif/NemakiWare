@@ -267,9 +267,19 @@ anchor された値 1 つだけである。`Rfc3161AnchorTarget` が anchor す�
 「An Archive Timestamp may consist ... only of a timestamp with no hash value lists」。§4.3 は
 「root hash value must correspond to hashedMessage」に縮退し、その root は `h` そのもの。
 
-この形は**適合し、かつ既存アンカーをそのまま使える**。代案 —— `H(root)` を 1 ノードの
-木に入れる —— は `H(H(root))` を覆う**新しい token** が要る。§4.3 step 3 は
-要素が 1 つでもリストを hash するからである (単一要素の例外は RFC に無い。本文で確認)。
+この形は**適合し、かつ既存アンカーをそのまま使える**。
+
+> **2026-09-22 の訂正（2 度目）。** ここは当初「代案 —— `H(root)` を 1 ノードの木に入れる —— は
+> `H(H(root))` を覆う**新しい token** が要る。§4.3 step 3 は要素が 1 つでもリストを hash する
+> からである（単一要素の例外は RFC に無い。本文で確認）」と書いていた。**これは誤り。**
+> RFC 4998 §4.2 は「For each data group containing **more than one document**, its respective
+> document hashes are binary sorted in ascending order, concatenated, and hashed」と規定しており、
+> **要素 1 つのリストの node hash はその値そのもの**である。BouncyCastle の
+> `ERSUtil.computeNodeHash` も `values.length > 1` のときだけ hash する（bytecode で確認）。
+> したがって `root` を 1 ノードの木に入れた記録は、**いま在る token でそのまま検証できる**。
+> **採る形（木を持たない）は変えない** — こちらのほうが単純で、同じく適合する。変えたのは理由付けだけ。
+> この誤りは verifier 2 つ（`ErsVerifier` と `LongTermErs`）にも入っていて、
+> **標準ツールが作った reduced tree を必ず拒否していた**。両方を `nodeHash` に揃えた。
 
 **この形が捨てているもの**（自明ではないので書く）: `h` の元である data object `d` —
 Merkle 木が縮約する連結 —— は**どの package にも入っていない**。受け取る側は §4.3 step 1 を

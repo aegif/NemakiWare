@@ -195,6 +195,56 @@ class AStandardReaderAcceptsOurEvidenceRecordTest {
                         + "it covers is not what it covers");
     }
 
+    /**
+     * A one-element hash list is its OWN node hash, and a foreign reader agrees.
+     *
+     * <p>RFC 4998 §4.2 hashes a data group's hashes only "for each data group containing MORE
+     * THAN ONE document". Both of this repository's verifiers hashed a one-element list anyway,
+     * and {@code inputsForHashTreeRenewal} told a caller to obtain a token over {@code H(h')} to
+     * match — so the three agreed with each other and with nothing else (subagent, sixth review,
+     * P1). The §5.3 path had no foreign-reader test at all.
+     *
+     * <p>What makes this a measurement rather than another agreement among our own code:
+     * BouncyCastle accepts the renewed record when asked for {@code h'}. A reader that hashed
+     * the one-element list would be looking for {@code H(h')} and would not.
+     *
+     * <h2>What BouncyCastle does NOT do</h2>
+     *
+     * <p>Its {@code validatePresent} is a membership check against the NEWEST Archive Timestamp:
+     * it does not derive {@code h' = H(sorted(H(d), ha))} from the data object, so asking it for
+     * {@code H(d)} on a renewed record answers "object hash not found" whatever the record says.
+     * Measured, and stated here so nobody reads that refusal as a defect in the record.
+     */
+    @Test
+    @DisplayName("a one-element hash list is its own node hash — confirmed by the foreign reader")
+    void aForeignReaderAgreesAboutTheOneElementNodeHash() throws Exception {
+        byte[] h = dataObjectHash();
+        ErsRecord first = ErsRecord.first(h, tokenOver(ErsRecord.imprintForFirst(h)));
+        ErsRecord.HashTreeRenewalInputs inputs = first.inputsForHashTreeRenewal(h, SHA256_OID);
+        assertArrayEquals(inputs.hPrime(), inputs.imprint(),
+                "the token a §5.3 renewal needs is no longer h' itself. A one-element first "
+                        + "list is its own node hash, so anything else asks a TSA for a "
+                        + "timestamp over a value the tree does not reduce to");
+
+        ErsRecord renewed = first.withHashTreeRenewal(inputs.hPrime(),
+                tokenOver(inputs.imprint()), SHA256_OID);
+
+        ERSEvidenceRecord read = new ERSEvidenceRecord(renewed.der(),
+                new JcaDigestCalculatorProviderBuilder().build());
+        assertDoesNotThrow(() -> read.validatePresent(false, inputs.hPrime(), new Date()),
+                "a standard reader does not agree that the renewal's one-element list reduces "
+                        + "to h'. If it expected H(h') instead, every §5.3 renewal this product "
+                        + "builds would carry a token over the wrong value");
+
+        // And ours agrees with it, given H(d) under the new chain's algorithm — which §5.3
+        // needs and cannot derive from the old hash.
+        ErsVerifier.Report report = ErsVerifier.verify(renewed.der(), h,
+                java.util.Map.of(SHA256_OID, h));
+        assertTrue(report.linksHold(),
+                "the foreign reader accepts the renewal and ours does not, which is the "
+                        + "disagreement this test exists to prevent: " + report.asMap());
+    }
+
     @Test
     @DisplayName("that reader refuses a data object the record does not cover — the control")
     void aForeignReaderRefusesSomethingElse() throws Exception {

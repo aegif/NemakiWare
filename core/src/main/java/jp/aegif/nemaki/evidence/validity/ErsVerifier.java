@@ -308,8 +308,7 @@ public final class ErsVerifier {
             throw new IllegalStateException("the first hash list does not contain " + what
                     + ", so this Archive Timestamp is about something else");
         }
-        byte[] current = ErsRecord.digest(ats.digestAlgorithmOid(),
-                ErsRecord.sortedConcat(tree.get(0)));
+        byte[] current = ErsRecord.nodeHash(ats.digestAlgorithmOid(), tree.get(0));
         for (int level = 1; level < tree.size(); level++) {
             // The computed value BECOMES a member of the next list; it is not expected to be
             // stored there. §4.3 step 3: "This hash value h' MUST become a member of the next
@@ -322,8 +321,7 @@ public final class ErsVerifier {
             // was writing — encoder and verifier agreeing with each other again.
             List<byte[]> withParent = new ArrayList<>(tree.get(level));
             withParent.add(current);
-            current = ErsRecord.digest(ats.digestAlgorithmOid(),
-                    ErsRecord.sortedConcat(withParent));
+            current = ErsRecord.nodeHash(ats.digestAlgorithmOid(), withParent);
         }
         return current;
     }

@@ -227,6 +227,53 @@ class SipVerifierTest {
     }
 
     @Test
+    @DisplayName("two payloads and one recorded digest is ambiguous here too")
+    void twoPayloadsAndOneDigestIsAmbiguousHereToo(@TempDir Path tmp) throws Exception {
+        // The independent verifier answers AMBIGUOUS_PAYLOAD; this endpoint took whichever
+        // payload matched and called the package verified, so a second, uncommitted file rode
+        // along inside it (subagent, sixth review, P2).
+        String payload = "the minutes";
+        Map<String, String> proof = realProofFor(2);
+        Path sip = zip(tmp, "two-payloads.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/representations/rep2/data/extra.txt", "bytes nobody committed to",
+                "sip/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", proof.get("json")));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "payload digest"),
+                "a package carrying two payloads and one recorded digest was reported as "
+                        + "verified on the strength of whichever one matched: " + result.asMap());
+    }
+
+    @Test
+    @DisplayName("PREMIS 2.x is read here as well — its digest is not invisible")
+    void premisV2IsStillRead(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> proof = realProofFor(2);
+        Path sip = zip(tmp, "premis-v2.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                "<premis:premis xmlns:premis=\"info:lc/xmlns/premis-v2\">"
+                        + "<premis:object><premis:objectCharacteristics><premis:fixity>"
+                        + "<premis:messageDigestAlgorithm>SHA-256"
+                        + "</premis:messageDigestAlgorithm><premis:messageDigest>"
+                        + SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))
+                        + "</premis:messageDigest></premis:fixity>"
+                        + "</premis:objectCharacteristics></premis:object></premis:premis>",
+                "sip/metadata/other/nemaki-evidence.json", proof.get("json")));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.PASSED, outcomeOf(result, "payload digest"),
+                "a PREMIS 2.x document's digest was invisible to the XML reader, so a package "
+                        + "the string matching could read became INDETERMINATE: "
+                        + result.asMap());
+    }
+
+    @Test
     @DisplayName("a payload edited after packaging FAILS the digest check")
     void anEditedPayloadFails(@TempDir Path tmp) throws Exception {
         // The whole point of the digest check. If this passes, the tool always agrees with the

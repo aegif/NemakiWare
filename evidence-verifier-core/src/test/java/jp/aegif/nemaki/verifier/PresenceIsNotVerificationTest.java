@@ -215,32 +215,51 @@ class PresenceIsNotVerificationTest {
     }
 
     /**
-     * A record whose digest is carried by a hash tree the token does not cover.
+     * The conformant alternative: a ONE-NODE tree holding the root, under the same token.
      *
-     * <p>The second half of R72: the scan found {@code h} anywhere, so a first hash list saying
-     * the right thing beside a timestamp about something else passed. §4.3 step 3 reduces the
-     * tree and requires the result to be what the token covers.
+     * <p>RFC 4998 §4.2 hashes a data group's document hashes only "for each data group
+     * containing MORE THAN ONE document", so a list of one is its own node hash — which
+     * BouncyCastle's {@code ERSUtil.computeNodeHash} implements by returning {@code values[0]}.
+     * This verifier hashed unconditionally, so it refused every record any standard tool
+     * builds with a reduced tree (subagent, sixth review, P1). The design document also
+     * rejected this shape for a reason that is not true: it said a one-node tree would need a
+     * NEW token over {@code H(H(root))}. It does not.
      */
     @Test
-    @DisplayName("a hash list holding the root beside a timestamp about something else FAILS")
-    void aTreeTheTokenDoesNotCoverFails() throws Exception {
-        // The golden's real ArchiveTimeStamp, given a reduced hash tree holding the root. The
-        // token covers the root DIRECTLY, so §4.3's reduction — SHA-256 of the sorted
-        // concatenation of a one-element list — cannot equal it.
-        ASN1Sequence sequence = GoldenErs.timestampSequence();
-        ASN1Sequence chain = ASN1Sequence.getInstance(sequence.getObjectAt(0));
-        ASN1Sequence ats = ASN1Sequence.getInstance(chain.getObjectAt(0));
-        ASN1EncodableVector rebuilt = new ASN1EncodableVector();
-        for (int i = 0; i < ats.size(); i++) {
-            rebuilt.add(ats.getObjectAt(i));
-            if (i == 0) {
-                rebuilt.add(new org.bouncycastle.asn1.DERTaggedObject(false, 2,
-                        new DERSequence(new DERSequence(new DEROctetString(
-                                java.util.HexFormat.of().parseHex(GoldenErs.root()))))));
-            }
+    @DisplayName("a one-node tree holding the root verifies under the token we already had")
+    void aOneNodeTreeOverTheRootPasses() throws Exception {
+        byte[] der = withTree(new DERSequence(new DERSequence(new DEROctetString(
+                java.util.HexFormat.of().parseHex(GoldenErs.root())))));
+
+        Map<String, byte[]> entries = new LinkedHashMap<>();
+        entries.put(DIR + "anchor-target-checkpoint.json",
+                GoldenErs.anchorTarget(GoldenErs.root()));
+        entries.put(DIR + "anchors/ers.der", der);
+
+        List<Outcome.Check> checks = LongTermErs.check(entries);
+        for (String name : LongTermErs.REQUIRED) {
+            assertEquals(Outcome.PASSED, named(checks, name).outcome(),
+                    name + " refused a record whose one-node tree reduces to the value its own "
+                            + "token covers. Hashing a one-element list produces a root no "
+                            + "conformant record carries: " + checks);
         }
-        byte[] der = GoldenErs.withElement(2, new DERSequence(
-                new DERSequence(new DERSequence(rebuilt))));
+    }
+
+    /**
+     * A record whose digest is carried by a hash tree the token does not cover.
+     *
+     * <p>TWO elements in the first list, so §4.2's "more than one document" rule applies and the
+     * reduction really is a hash — of something the token is not about. A one-element list
+     * would reduce to the value itself and legitimately pass (above).
+     */
+    @Test
+    @DisplayName("a hash list the token does not cover FAILS")
+    void aTreeTheTokenDoesNotCoverFails() throws Exception {
+        byte[] other = new byte[32];
+        java.util.Arrays.fill(other, (byte) 0x5a);
+        byte[] der = withTree(new DERSequence(new DERSequence(new org.bouncycastle.asn1.ASN1Encodable[] {
+                new DEROctetString(java.util.HexFormat.of().parseHex(GoldenErs.root())),
+                new DEROctetString(other) })));
 
         Map<String, byte[]> entries = new LinkedHashMap<>();
         entries.put(DIR + "anchor-target-checkpoint.json",
@@ -254,6 +273,111 @@ class PresenceIsNotVerificationTest {
         assertEquals(Outcome.FAILED, named(checks, "ers data object").outcome(),
                 "a hash list holding the right value beside a timestamp that does not cover "
                         + "its reduction was accepted: " + checks);
+    }
+
+    /**
+     * {@code digestAlgorithm [0]} is OPTIONAL — RFC 4998 §4.2.
+     *
+     * <p>"If the optional field digestAlgorithm is not present, the digest algorithm of the
+     * timestamp MUST be used." BouncyCastle's own generator omits it for a single data object,
+     * and this product's own reader ({@code ErsRecord.parse}) already implements the fallback —
+     * so requiring it made two readers of one format answer the same bytes differently, and
+     * every record a standard tool builds came back FAILED (subagent, sixth review, P1).
+     */
+    @Test
+    @DisplayName("an Archive Timestamp with no digestAlgorithm falls back to the token's")
+    void anAbsentDigestAlgorithmIsReadFromTheToken() throws Exception {
+        ASN1Sequence sequence = GoldenErs.timestampSequence();
+        ASN1Sequence chain = ASN1Sequence.getInstance(sequence.getObjectAt(0));
+        ASN1Sequence ats = ASN1Sequence.getInstance(chain.getObjectAt(0));
+        ASN1EncodableVector withoutTag = new ASN1EncodableVector();
+        for (int i = 0; i < ats.size(); i++) {
+            if (!(ats.getObjectAt(i) instanceof org.bouncycastle.asn1.ASN1TaggedObject)) {
+                withoutTag.add(ats.getObjectAt(i));
+            }
+        }
+        assertEquals(ats.size() - 1, withoutTag.size(),
+                "this fixture removed no tagged field, so it is the same record as the golden "
+                        + "and measures nothing");
+        byte[] der = GoldenErs.withElement(2,
+                new DERSequence(new DERSequence(new DERSequence(withoutTag))));
+
+        Map<String, byte[]> entries = new LinkedHashMap<>();
+        entries.put(DIR + "anchor-target-checkpoint.json",
+                GoldenErs.anchorTarget(GoldenErs.root()));
+        entries.put(DIR + "anchors/ers.der", der);
+
+        List<Outcome.Check> checks = LongTermErs.check(entries);
+        for (String name : LongTermErs.REQUIRED) {
+            assertEquals(Outcome.PASSED, named(checks, name).outcome(),
+                    name + " refused a record whose digestAlgorithm is absent. RFC 4998 makes "
+                            + "that field optional and BouncyCastle's generator omits it: "
+                            + checks);
+        }
+    }
+
+    /**
+     * A new chain's first timestamp has to cover its OWN tree.
+     *
+     * <p>§5.3 membership alone left the newest chain's time claim tied to nothing: a tree naming
+     * the right value beside a timestamp about anything at all passed, and the whole profile
+     * composed to VERIFIED (subagent, sixth review, P2).
+     */
+    @Test
+    @DisplayName("a second chain whose timestamp is about something else FAILS")
+    void aSecondChainMustCoverItsOwnTree() throws Exception {
+        ASN1Sequence sequence = GoldenErs.timestampSequence();
+        ASN1Sequence chain = ASN1Sequence.getInstance(sequence.getObjectAt(0));
+        ASN1Sequence ats = ASN1Sequence.getInstance(chain.getObjectAt(0));
+
+        // ha over chain 0 alone, and h' = H(sorted(root, ha)) — what §5.3 puts in the new
+        // chain's first list. The token, though, is the golden's, which covers the root.
+        byte[] previous = new DERSequence(new org.bouncycastle.asn1.ASN1Encodable[] {
+                sequence.getObjectAt(0) }).getEncoded("DER");
+        byte[] ha = java.security.MessageDigest.getInstance("SHA-256").digest(previous);
+        byte[] root = java.util.HexFormat.of().parseHex(GoldenErs.root());
+        byte[] hPrime = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(LongTermErs.sortedConcat(List.of(root, ha)));
+
+        ASN1EncodableVector renewal = new ASN1EncodableVector();
+        for (int i = 0; i < ats.size(); i++) {
+            renewal.add(ats.getObjectAt(i));
+            if (i == 0) {
+                renewal.add(new org.bouncycastle.asn1.DERTaggedObject(false, 2,
+                        new DERSequence(new DERSequence(new DEROctetString(hPrime)))));
+            }
+        }
+        byte[] der = GoldenErs.withElement(2, new DERSequence(
+                new org.bouncycastle.asn1.ASN1Encodable[] {
+                        sequence.getObjectAt(0), new DERSequence(new DERSequence(renewal)) }));
+
+        Map<String, byte[]> entries = new LinkedHashMap<>();
+        entries.put(DIR + "anchor-target-checkpoint.json",
+                GoldenErs.anchorTarget(GoldenErs.root()));
+        entries.put(DIR + "anchors/ers.der", der);
+
+        List<Outcome.Check> checks = LongTermErs.check(entries);
+        assertEquals(Outcome.PASSED, named(checks, "ers parse").outcome(),
+                "this fixture stopped parsing: " + checks);
+        assertEquals(Outcome.FAILED, named(checks, "ers chain").outcome(),
+                "a chain whose first hash list commits to the chains before it, beside a "
+                        + "timestamp that is about something else, was accepted. Membership "
+                        + "alone ties the newest time claim to nothing: " + checks);
+    }
+
+    /** The golden record's Archive Timestamp, given {@code tree} as its reducedHashtree. */
+    private static byte[] withTree(DERSequence tree) throws Exception {
+        ASN1Sequence sequence = GoldenErs.timestampSequence();
+        ASN1Sequence chain = ASN1Sequence.getInstance(sequence.getObjectAt(0));
+        ASN1Sequence ats = ASN1Sequence.getInstance(chain.getObjectAt(0));
+        ASN1EncodableVector rebuilt = new ASN1EncodableVector();
+        for (int i = 0; i < ats.size(); i++) {
+            rebuilt.add(ats.getObjectAt(i));
+            if (i == 0) {
+                rebuilt.add(new org.bouncycastle.asn1.DERTaggedObject(false, 2, tree));
+            }
+        }
+        return GoldenErs.withElement(2, new DERSequence(new DERSequence(new DERSequence(rebuilt))));
     }
 
     /**

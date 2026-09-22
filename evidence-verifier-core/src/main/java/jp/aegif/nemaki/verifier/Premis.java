@@ -59,7 +59,16 @@ final class Premis {
         }
     }
 
-    private static final String NAMESPACE = "http://www.loc.gov/premis/v3";
+    /**
+     * The PREMIS namespaces this reader recognises.
+     *
+     * <p>v2 as well as v3: a document in {@code info:lc/xmlns/premis-v2} records its digest in
+     * elements of the same local names, and reading only v3 turned every such package into
+     * {@code NOT_PRESENT} — which the string matching it replaced did NOT do (subagent, sixth
+     * review, P3). Fail-closed is still a refusal.
+     */
+    private static final java.util.Set<String> NAMESPACES = java.util.Set.of(
+            "http://www.loc.gov/premis/v3", "info:lc/xmlns/premis-v2");
 
     private Premis() {
     }
@@ -108,7 +117,7 @@ final class Premis {
         String name = element.getLocalName() == null ? element.getNodeName()
                 : element.getLocalName();
         String namespace = element.getNamespaceURI();
-        if (localName.equals(name) && (namespace == null || NAMESPACE.equals(namespace))) {
+        if (localName.equals(name) && (namespace == null || NAMESPACES.contains(namespace))) {
             found.add(element.getTextContent());
         }
         NodeList children = element.getChildNodes();

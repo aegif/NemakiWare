@@ -71,7 +71,12 @@ class PackageIntegrityIsCheckedNotAssumedTest {
     }
 
     private static String mets(String... hrefs) {
-        StringBuilder xml = new StringBuilder("<mets:mets><mets:fileSec>");
+        // The namespaces ARE declared, as commons-ip2 declares them. The reader parses rather
+        // than string-matches (a prefix is not part of an XML name), so a fixture that left
+        // xlink unbound would measure the parse failure instead of the check.
+        StringBuilder xml = new StringBuilder(
+                "<mets:mets xmlns:mets=\"http://www.loc.gov/METS/\" "
+                        + "xmlns:xlink=\"http://www.w3.org/1999/xlink\"><mets:fileSec>");
         for (String href : hrefs) {
             xml.append("<mets:file><mets:FLocat xlink:href=\"").append(href)
                     .append("\"/></mets:file>");
@@ -242,6 +247,113 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                         PackageIntegrity.check(PackageReader.open(sip).entries()),
                         "payload fixity").outcome(),
                 "a package was refused because a COMMENT contained the text of a digest element");
+    }
+
+    /**
+     * A METS is read as XML too, in both directions.
+     *
+     * <p>The reference scan matched the literal {@code xlink:href="…"}. A METS binding XLink to
+     * another prefix produced no references and the closure check silently became
+     * {@code NOT_PRESENT}; the same literal inside a COMMENT was counted as a reference and a
+     * package was reported as missing a file it never named (subagent, sixth review, P2).
+     */
+    @Test
+    @DisplayName("a METS naming its references under another prefix is still read")
+    void aMetsUnderAnotherPrefixIsStillRead(@TempDir Path tmp) throws Exception {
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage("the minutes"));
+        entries.put(ROOT + "METS.xml", "<m:mets xmlns:m=\"http://www.loc.gov/METS/\" "
+                + "xmlns:xl=\"http://www.w3.org/1999/xlink\"><m:fileSec><m:file>"
+                + "<m:FLocat xl:href=\"representations/rep1/data/minutes.txt\"/>"
+                + "</m:file></m:fileSec></m:mets>");
+
+        Path sip = zip(tmp, "other-prefix.zip", entries);
+
+        assertEquals(Outcome.PASSED, checkNamed(
+                        PackageIntegrity.check(PackageReader.open(sip).entries()),
+                        "mets closure").outcome(),
+                "a METS using its own prefixes was read as naming nothing, so the payload it "
+                        + "DOES name went unchecked in both directions");
+    }
+
+    @Test
+    @DisplayName("a reference inside a comment is not a reference")
+    void aCommentedReferenceIsNotAReference(@TempDir Path tmp) throws Exception {
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage("the minutes"));
+        entries.put(ROOT + "METS.xml", mets("representations/rep1/data/minutes.txt")
+                .replace("</mets:fileSec>",
+                        "<!-- <mets:file><mets:FLocat xlink:href=\"gone.txt\"/></mets:file> -->"
+                                + "</mets:fileSec>"));
+
+        Path sip = zip(tmp, "commented-mets.zip", entries);
+
+        assertEquals(Outcome.PASSED, checkNamed(
+                        PackageIntegrity.check(PackageReader.open(sip).entries()),
+                        "mets closure").outcome(),
+                "a package was reported as missing a file that only a COMMENT names");
+    }
+
+    @Test
+    @DisplayName("a METS this verifier cannot read is UNAVAILABLE, not a METS that names nothing")
+    void anUnreadableMetsIsNotAMetsThatNamesNothing(@TempDir Path tmp) throws Exception {
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage("the minutes"));
+        entries.put(ROOT + "METS.xml", "<mets:mets><not-closed>");
+
+        Path sip = zip(tmp, "broken-mets.zip", entries);
+        Outcome.Check closure = checkNamed(
+                PackageIntegrity.check(PackageReader.open(sip).entries()), "mets closure");
+
+        assertEquals(Outcome.UNAVAILABLE, closure.outcome(), closure.detail());
+        assertEquals("METS_NOT_PARSED", closure.reasonCode());
+    }
+
+    /**
+     * Payload is not a second evidence section, whatever it is called.
+     *
+     * <p>A package whose CONTENT is a copy of another package's evidence folder was read as
+     * carrying two sections: every name duplicated, {@code v1 layout} FAILED, P0 FAILED. The
+     * same over-refusal was corrected in {@code oneEvidenceSection} two reviews earlier and
+     * reintroduced by the new check (subagent, sixth review, P2).
+     */
+    @Test
+    @DisplayName("a payload copy of an evidence folder is content, not a second section")
+    void aPayloadCopyOfASectionIsNotASection(@TempDir Path tmp) throws Exception {
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage("the minutes"));
+        entries.put(ROOT + "representations/rep1/data/metadata/other/nemaki-evidence/profile.json",
+                "{\"profileVersion\":\"1\",\"declaredProfiles\":[]}");
+        entries.put(ROOT + "representations/rep1/data/metadata/other/nemaki-evidence/"
+                + "bundle-manifest.json", "{\"bundleId\":\"other\",\"files\":[]}");
+        entries.put(ROOT + "METS.xml", mets("representations/rep1/data/minutes.txt",
+                "representations/rep1/data/metadata/other/nemaki-evidence/profile.json",
+                "representations/rep1/data/metadata/other/nemaki-evidence/bundle-manifest.json"));
+
+        Path sip = zip(tmp, "payload-copy.zip", entries);
+        java.util.List<Outcome.Check> checks =
+                PackageIntegrity.check(PackageReader.open(sip).entries());
+
+        assertEquals(Outcome.PASSED, checkNamed(checks, "v1 layout").outcome(),
+                "a package whose CONTENT contains an evidence folder was refused: "
+                        + checkNamed(checks, "v1 layout").detail());
+        assertEquals(Outcome.PASSED, checkNamed(checks, "one evidence section").outcome(),
+                "the same copy was counted as a second section by the older check too: "
+                        + checkNamed(checks, "one evidence section").detail());
+    }
+
+    @Test
+    @DisplayName("a profile.json that is not JSON is a finding, not a crash")
+    void aMalformedProfileIsAFindingNotACrash(@TempDir Path tmp) throws Exception {
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage("the minutes"));
+        // A broken unicode escape: Json.parse raises NumberFormatException, not
+        // NotCanonicalisable, so this used to leave the verifier itself failing (exit 5).
+        entries.put(ROOT + "metadata/other/nemaki-evidence/profile.json",
+                "{\"profileVersion\":\"" + (char) 92 + "uZZZZ\"}");
+
+        Path sip = zip(tmp, "broken-profile.zip", entries);
+        Outcome.Check layout = org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> checkNamed(PackageIntegrity.check(PackageReader.open(sip).entries()),
+                        "v1 layout"),
+                "a package turned the verifier into a crash rather than an answer");
+
+        assertEquals(Outcome.FAILED, layout.outcome(), layout.detail());
     }
 
     @Test

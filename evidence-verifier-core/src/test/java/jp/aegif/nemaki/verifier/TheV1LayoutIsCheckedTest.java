@@ -127,6 +127,13 @@ class TheV1LayoutIsCheckedTest {
         section.put("covering-checkpoint.json", bytes("{\"toSequence\":10}"));
         section.put("covering-checkpoint.c14n", bytes("canonical checkpoint"));
         section.put("anchors/rfc3161.der", bytes("not really DER"));
+        // The four files §4.2 defines for a prior. Neither end had a fixture carrying any
+        // (subagent, sixth review, P3), so the layout check's treatment of prior/ — a
+        // subdirectory inside the section — was never measured.
+        section.put("prior/record-content-statement.json", bytes("{\"objectId\":\"doc-1\"}"));
+        section.put("prior/record-content-statement.c14n", bytes("canonical prior statement"));
+        section.put("prior/ledger-entry.json", bytes("{\"sequence\":0}"));
+        section.put("prior/ledger-entry.c14n", bytes("canonical prior entry"));
         return section;
     }
 

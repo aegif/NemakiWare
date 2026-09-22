@@ -76,7 +76,9 @@ class TheExitCodeIsTheInterfaceTest {
         // fixture built by the code under test would agree with it by construction.
         String digest = sha256Hex(payload);
         Map<String, String> entries = new LinkedHashMap<>();
-        entries.put(ROOT + "METS.xml", "<mets:mets><mets:fileSec><mets:file><mets:FLocat "
+        entries.put(ROOT + "METS.xml", "<mets:mets "
+                + "xmlns:mets=\"http://www.loc.gov/METS/\" "
+                + "xmlns:xlink=\"http://www.w3.org/1999/xlink\"><mets:fileSec><mets:file><mets:FLocat "
                 + "xlink:href=\"representations/rep1/data/minutes.txt\"/></mets:file>"
                 + "</mets:fileSec></mets:mets>");
         entries.put(ROOT + "representations/rep1/data/minutes.txt", payload);

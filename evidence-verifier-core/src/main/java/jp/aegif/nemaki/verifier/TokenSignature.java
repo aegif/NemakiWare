@@ -101,6 +101,12 @@ final class TokenSignature {
                     || cause instanceof org.bouncycastle.operator.OperatorCreationException) {
                 return true;
             }
+            if (cause instanceof java.security.cert.CertificateException) {
+                // The signer certificate could not be converted, so no signature was computed.
+                // This landed in "does not verify against its own signer certificate", which
+                // states a comparison nobody made (subagent, sixth review, P3).
+                return true;
+            }
             if (cause instanceof GeneralSecurityException
                     && cause.getMessage() != null
                     && cause.getMessage().contains("no such algorithm")) {

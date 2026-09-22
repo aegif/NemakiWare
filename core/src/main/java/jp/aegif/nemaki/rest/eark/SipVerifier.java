@@ -292,6 +292,18 @@ public final class SipVerifier {
             return new Check("payload digest", Outcome.NOT_PRESENT,
                     "the package carries no payload file under a representation");
         }
+        if (payloads.size() > 1) {
+            // ONE recorded digest cannot describe two payloads, and taking whichever of them
+            // matches would let a second, uncommitted file ride along inside a package this
+            // endpoint calls verified. The independent verifier answers AMBIGUOUS_PAYLOAD for
+            // exactly this, and an operator reaches THIS endpoint far more often (subagent,
+            // sixth review, P2 — the PREMIS reading was aligned and this was not).
+            return new Check("payload digest", Outcome.UNAVAILABLE,
+                    "the package carries " + payloads.size() + " payload files and PREMIS "
+                            + "records one digest, so the one-to-one relationship it requires "
+                            + "does not hold. Checked: "
+                            + payloads.stream().map(Map.Entry::getKey).toList());
+        }
         for (Map.Entry<String, byte[]> payload : payloads) {
             String computed = sha256Hex(payload.getValue());
             if (computed.equalsIgnoreCase(recorded.trim())) {
@@ -540,8 +552,15 @@ public final class SipVerifier {
         return end < 0 ? null : text.substring(start + open.length(), end);
     }
 
-    /** The PREMIS namespace, so a prefix bound to something else is not read as PREMIS. */
-    private static final String PREMIS_NAMESPACE = "http://www.loc.gov/premis/v3";
+    /**
+     * The PREMIS namespaces, so a prefix bound to something else is not read as PREMIS.
+     *
+     * <p>v2 as well as v3 — the twin of {@code Premis.NAMESPACES} in the independent verifier.
+     * Reading only v3 turned a PREMIS 2.x document into "no digest recorded", which the string
+     * matching this replaced did not do.
+     */
+    private static final java.util.Set<String> PREMIS_NAMESPACES = java.util.Set.of(
+            "http://www.loc.gov/premis/v3", "info:lc/xmlns/premis-v2");
 
     /**
      * The text of every PREMIS element with this local name, in document order.
@@ -565,7 +584,8 @@ public final class SipVerifier {
         String name = element.getLocalName() == null ? element.getNodeName()
                 : element.getLocalName();
         String namespace = element.getNamespaceURI();
-        if (localName.equals(name) && (namespace == null || PREMIS_NAMESPACE.equals(namespace))) {
+        if (localName.equals(name)
+                && (namespace == null || PREMIS_NAMESPACES.contains(namespace))) {
             found.add(element.getTextContent());
         }
         org.w3c.dom.NodeList children = element.getChildNodes();
