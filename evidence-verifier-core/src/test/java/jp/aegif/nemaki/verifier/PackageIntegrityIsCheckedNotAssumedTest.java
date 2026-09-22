@@ -1725,11 +1725,20 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         folderBase.put(ROOT + "METS.xml", metsWithBase("metadata/preservation/",
                 "../../representations/rep1/data/minutes.txt", "?download"));
 
+        // The same folder base WITH A QUERY. "Is this a directory?" was asked of the whole
+        // base string, which ends in the query when there is one, so this read as a FILE base
+        // and the directory was reported as a file the package does not carry (Codex,
+        // twentieth review, P2).
+        Map<String, String> folderBaseWithQuery = new LinkedHashMap<>(goodPackage(payload));
+        folderBaseWithQuery.put(ROOT + "METS.xml", metsWithBase("metadata/preservation/?rev=1",
+                "../../representations/rep1/data/minutes.txt", "?download"));
+
         Map<String, Map<String, String>> shapes = new LinkedHashMap<>();
         shapes.put("no-base", noBase);
         shapes.put("file-base", fileBase);
         shapes.put("empty-href", emptyHref);
         shapes.put("folder-base", folderBase);
+        shapes.put("folder-base-with-query", folderBaseWithQuery);
         for (Map.Entry<String, Map<String, String>> shape : shapes.entrySet()) {
             Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
                     zip(tmp, shape.getKey() + ".zip", shape.getValue())).entries()),
@@ -1830,11 +1839,13 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         // A declined locator this verifier ALSO REFUSED to follow. resolve() answers null for
         // "the package does not carry it" and for "following it would invent a separator", and
         // reading the second as the first let the finding be ASSERTED over a locator that had
-        // been declined twice over (subagent, nineteenth review, P2).
+        // been declined twice over (subagent, nineteenth review, P2). Refusing to FOLLOW it is
+        // a safety rule; it does not stop this check from DECODING it to ask which payload it
+        // could have been about, and asking only ever narrows the answer.
         Map<String, String> refused = new LinkedHashMap<>(goodPackage(payload));
         refused.put(smuggled, "content nobody committed to");
         refused.put(ROOT + "METS.xml", metsWithLocType("URN",
-                "representations/rep1%2f../data/smuggled.bin",
+                "representations/rep1/data%2fsmuggled.bin",
                 "representations/rep1/data/minutes.txt"));
         Outcome.Check couldNotTell = checkNamed(PackageIntegrity.check(PackageReader.open(
                 zip(tmp, "refused-declined.zip", refused)).entries()), "mets closure");
@@ -1842,6 +1853,21 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                 "a locator this verifier refused to follow was read as 'it does not name the "
                         + "payload', and the smuggled-content finding was asserted over it: "
                         + couldNotTell.detail());
+
+        // AND THE OTHER DIRECTION, which is what makes the arm above narrow rather than a
+        // blanket excuse: a refused locator whose decoded form lands SOMEWHERE ELSE cannot be
+        // the payload's missing name, so the finding stands (Codex, twentieth review, P1).
+        Map<String, String> elsewhere = new LinkedHashMap<>(goodPackage(payload));
+        elsewhere.put(smuggled, "content nobody committed to");
+        elsewhere.put(ROOT + "METS.xml", metsWithLocType("URN",
+                "representations/rep1%2f../metadata/catalogue.xml",
+                "representations/rep1/data/minutes.txt"));
+        Outcome.Check stands = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "refused-elsewhere.zip", elsewhere)).entries()), "mets closure");
+        assertEquals(Outcome.FAILED, stands.outcome(),
+                "a refused locator that decodes to a path OUTSIDE the payload tree still "
+                        + "covered for the smuggled file: " + stands.detail());
+        assertTrue(stands.detail().contains("smuggled.bin"), stands.detail());
 
         // TWO unnamed payloads, and the declined locator resolves to ONE of them. The finding
         // for the OTHER is established and must be reported: answering "could not tell" about
@@ -1867,6 +1893,39 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                 "a payload a declined locator names was accused along with the smuggled one: "
                         + both.detail());
         assertTrue(both.detail().contains("may be named by"), both.detail());
+        // And not twice. The subtraction was added to the sibling arm only, so this one
+        // announced the same locator again as a "further" one (subagent, twentieth review).
+        assertFalse(both.detail().contains("further locator"),
+                "the one declined locator was described twice — once as possibly naming a "
+                        + "payload and once as a further locator: " + both.detail());
+
+        // A refused locator is about the payloads ITS OWN METS could have named. Two
+        // representations: rep1 carries an unreadable locator, rep2 carries the smuggled file.
+        // Adding every unnamed payload in the zip let rep1's unreadable string stand in front
+        // of rep2's finding — one representation covering for another (subagent, twentieth
+        // review, P1). The fixtures above carry one representation, so they cannot tell the
+        // scoped rule from the unscoped one.
+        Map<String, String> sideways = new LinkedHashMap<>(goodPackage(payload));
+        sideways.put(ROOT + "METS.xml", mets("representations/rep1/METS.xml",
+                "representations/rep2/METS.xml"));
+        // UNDECODABLE as well as refused, which is the one case where nothing can be ruled
+        // out by decoding — so the scope is all that stands between rep1's unreadable locator
+        // and rep2's smuggled file. The two faults must be in DIFFERENT SEGMENTS: the refusal
+        // is decided per segment and only sees a segment that DOES decode, so "data%2f%FF.bin"
+        // in one segment is not refused at all and the control aimed at this arm did not fire
+        // (measured — the example was wrong, not the arm).
+        sideways.put(ROOT + "representations/rep1/METS.xml",
+                metsWithLocType("URN", "data%2fx/%FF.bin", "data/minutes.txt"));
+        sideways.put(ROOT + "representations/rep1/data/minutes.txt", payload);
+        sideways.put(ROOT + "representations/rep2/METS.xml", mets("data/notes.txt"));
+        sideways.put(ROOT + "representations/rep2/data/notes.txt", "the notes");
+        sideways.put(ROOT + "representations/rep2/data/smuggled.bin", "nobody committed to this");
+        Outcome.Check acrossPackages = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "sideways-refusal.zip", sideways)).entries()), "mets closure");
+        assertEquals(Outcome.FAILED, acrossPackages.outcome(),
+                "an unreadable locator in ONE representation made another representation's "
+                        + "smuggled payload 'could not tell': " + acrossPackages.detail());
+        assertTrue(acrossPackages.detail().contains("smuggled.bin"), acrossPackages.detail());
 
         // AND THE ARM IS REACHABLE. A non-URL locator that DOES resolve to the unnamed payload
         // is the case the ambiguity answer exists for; without this the narrowing could be
@@ -1927,6 +1986,21 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                 "a reference to a file the package does NOT carry was satisfied by the base "
                         + "itself, because the base's query was merged as part of its path: "
                         + passed.detail());
+
+        // AND THE QUERY OF A BASE THAT HAS NO PATH. An authority ends at the first "/", "?"
+        // or "#", so looking for the slash alone put the query INSIDE the authority — and a
+        // file: authority that is not this machine drops every reference under it, so the
+        // payload read as unnamed. against()'s query strip cannot reach it, because by then
+        // the query is part of the authority (subagent, twentieth review, P3).
+        Map<String, String> authorityQuery = new LinkedHashMap<>(goodPackage(payload));
+        authorityQuery.put(ROOT + "METS.xml", metsWithBase("file://localhost?v=1",
+                "representations/rep1/data/minutes.txt"));
+        Outcome.Check underAuthority = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "authority-query-base.zip", authorityQuery)).entries()), "mets closure");
+        assertEquals(Outcome.PASSED, underAuthority.outcome(),
+                "a base whose authority is followed by a query read as a file: URI on another "
+                        + "machine, so the payload's only name was dropped: "
+                        + underAuthority.detail());
 
         // OVER-REFUSAL: the sibling the reference really names is there, and the base is not.
         Map<String, String> sibling = new LinkedHashMap<>(goodPackage(payload));

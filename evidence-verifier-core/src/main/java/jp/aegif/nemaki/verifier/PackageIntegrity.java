@@ -736,10 +736,38 @@ public final class PackageIntegrity {
                         // ASSERT the smuggled-content finding over a locator it had twice
                         // declined to read (subagent, nineteenth review, P2). The forward
                         // direction draws this distinction; this one did not.
-                        mayName.add(wrote.getKey() + " -> " + href + " (refused)");
-                        // A reference this verifier would not read could name ANY of them.
-                        // Narrowing it to one payload would be a claim about what it says.
-                        couldBeNamed.addAll(unnamed);
+                        // DECODED, for the purpose of EXCLUDING. Refusing to FOLLOW a
+                        // reference whose escapes would invent a separator is a safety rule;
+                        // it does not stop this check from asking which payload the reference
+                        // could have been about, and asking makes the answer narrower, never
+                        // wider. Treating every unnamed payload as possibly-named let one
+                        // legitimate unreadable locator hide a smuggled file beside it —
+                        // across representations (subagent) and within one (Codex), both
+                        // twentieth review, P1.
+                        List<String> spellings =
+                                spellingsIgnoringRefusal(referenceOf(href));
+                        if (spellings.isEmpty()) {
+                            // Not decodable at all, so nothing can be ruled out — but only
+                            // among the payloads THIS METS could have named.
+                            boolean relevant = false;
+                            for (String payload : unnamed) {
+                                if (belongsToTheSamePackage(payload, wrote.getKey(),
+                                        metsPaths)) {
+                                    couldBeNamed.add(payload);
+                                    relevant = true;
+                                }
+                            }
+                            if (relevant) {
+                                mayName.add(wrote.getKey() + " -> " + href + " (refused)");
+                            }
+                            continue;
+                        }
+                        String would = resolveSpellings(entries, wrote.getKey(),
+                                packageRootOf(wrote.getKey(), metsPaths), metsPaths, spellings);
+                        if (would != null && unnamed.contains(would)) {
+                            mayName.add(wrote.getKey() + " -> " + href + " (refused)");
+                            couldBeNamed.add(would);
+                        }
                     }
                 }
             }
@@ -774,12 +802,16 @@ public final class PackageIntegrity {
                                     + " payload(s) may be named by " + mayName.size()
                                     + " locator(s) this verifier does not follow: " + mayName
                                     + ".")
+                            // MINUS the ones just named, for the same reason the sibling arm
+                            // subtracts them. The subtraction was added to ONE of the two arms
+                            // that name mayName, so this one announced the same locator again
+                            // as a "further" one (subagent, twentieth review, P2).
                             // §9 says every answer states what was not evaluated, and R87(g)
                             // claimed every arm had it. THIS arm did not — the one that
                             // accuses the package (subagent, nineteenth review, P2). The
                             // narrowing made it the default destination for declined
                             // locators, so the omission covers more ground than it did.
-                            + notEvaluated(external, declinedLocal));
+                            + notEvaluated(external, declinedLocal - mayName.size()));
         }
         return external == 0 ? Outcome.Check.passed("mets closure")
                 : Outcome.Check.passed("mets closure",
@@ -880,9 +912,21 @@ public final class PackageIntegrity {
             // a belt: nothing outside this package is resolved against it.
             return null;
         }
+        return resolveSpellings(entries, metsPath, ipRoot, metsPaths, spellingsOf(reference));
+    }
+
+    /**
+     * The entry one of these spellings names, most-meant first — the ONE lookup loop.
+     *
+     * <p>Extracted so the question "what WOULD this reference have named?" runs the same code
+     * as "what does it name". A second loop written beside this one is how the two halves of
+     * this check came to disagree about the same reference twice before.
+     */
+    private static String resolveSpellings(Map<String, byte[]> entries, String metsPath,
+            String ipRoot, List<String> metsPaths, List<String> spellings) {
         int slash = metsPath.lastIndexOf('/');
         String directory = slash < 0 ? "" : metsPath.substring(0, slash + 1);
-        for (String spelling : spellingsOf(reference)) {
+        for (String spelling : spellings) {
             // An ABSOLUTE reference has ONE base: the IP root. This arm was written, then
             // removed on the strength of a control that did not fire — and the control did not
             // fire because its fixture had no COLLISION: nothing sat at the METS-relative
@@ -953,6 +997,22 @@ public final class PackageIntegrity {
      * {@code URLEncoder}, so its packages need it, but a file genuinely named {@code a+b.txt}
      * and referenced without escapes is read literally by the first spelling.
      */
+    private static List<String> spellingsIgnoringRefusal(String reference) {
+        List<String> spellings = new ArrayList<>();
+        if (reference == null) {
+            return spellings;
+        }
+        String decoded = decodedPerSegment(reference, false);
+        if (decoded != null) {
+            spellings.add(decoded);
+        }
+        String formDecoded = decodedPerSegment(reference, true);
+        if (formDecoded != null && !spellings.contains(formDecoded)) {
+            spellings.add(formDecoded);
+        }
+        return spellings;
+    }
+
     private static List<String> spellingsOf(String reference) {
         List<String> spellings = new ArrayList<>();
         if (wouldInventSeparator(reference)) {
@@ -1452,7 +1512,10 @@ public final class PackageIntegrity {
             // known; returning it here would need the path threaded through the whole walk.
             return href;
         }
-        return base.endsWith("/") ? null : base;
+        // Asked of the base's PATH. The whole base string ends in the query when there is
+        // one, so "metadata/?rev=1" read as a FILE base and the directory was then reported as
+        // a file the package does not carry (Codex, twentieth review, P2).
+        return withoutFragmentOrQuery(base).endsWith("/") ? null : base;
     }
 
     /**
@@ -1523,8 +1586,20 @@ public final class PackageIntegrity {
         if (!rest.startsWith("//")) {
             return "";
         }
-        int end = rest.indexOf('/', 2);
-        return end < 0 ? rest : rest.substring(0, end);
+        // An authority ends at the first "/", "?" OR "#" (RFC 3986 §3.2). Looking for the
+        // slash alone swallowed the query of a base that has no path — "file://localhost?v=1"
+        // became the authority "//localhost?v=1", which is not this machine, so every
+        // reference under it was dropped and the payload read as unnamed. The query strip in
+        // against() could not help: by then the query was inside the authority (subagent,
+        // twentieth review, P3).
+        int end = rest.length();
+        for (int at = 2; at < rest.length(); at++) {
+            if (rest.charAt(at) == '/' || rest.charAt(at) == '?' || rest.charAt(at) == '#') {
+                end = at;
+                break;
+            }
+        }
+        return rest.substring(0, end);
     }
 
     /** The {@code C:} a Windows path opens with, or "". */

@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -16,6 +17,7 @@ import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -158,6 +160,89 @@ class ReleaseReadinessIsMeasuredTest {
         assertEquals(declared.size(), Integer.parseInt(stated.group(1)),
                 "the readiness document says " + stated.group(1) + " controls and the runner "
                         + "declares " + declared.size());
+    }
+
+    /**
+     * The canon's "N gaps in this range" is counted from the runner, not asserted.
+     *
+     * <p>Neither this number nor the verifier's test count was read by anything — the one
+     * measured number in reach of a lock was the control total (Codex, twentieth review, P3).
+     * A retired or resurrected control moves the gap count, and a stale figure then reads as a
+     * measurement: the canon already carried a wrong one for two rounds (it said 13 while RB3
+     * had been put back).
+     */
+    @Test
+    @DisplayName("the canon's gap count is the runner's")
+    void theCanonsGapCountIsTheRunners() throws IOException {
+        String runner = read(RUNNER);
+        String canon = read(CANON);
+
+        SortedSet<String> declared = new TreeSet<>();
+        Matcher ids = Pattern.compile("(?m)^\\s+id=[\"']([A-Z0-9]+)[\"'],").matcher(runner);
+        while (ids.find()) {
+            declared.add(ids.group(1));
+        }
+        Matcher boundary = Pattern.compile("境界 LM3").matcher(canon);
+        assertTrue(boundary.find(), "the canon no longer names the sweep boundary");
+
+        // The three-letter sequence the ids run through, from the boundary to the newest.
+        List<String> sequence = new ArrayList<>();
+        for (char first = 'A'; first <= 'Z'; first++) {
+            for (char second = 'A'; second <= 'Z'; second++) {
+                sequence.add("" + first + second + "3");
+            }
+        }
+        String newest = declared.stream().filter(sequence::contains)
+                .max((a, b) -> sequence.indexOf(a) - sequence.indexOf(b)).orElseThrow();
+        int from = sequence.indexOf("LN3");
+        int to = sequence.indexOf(newest);
+        assertTrue(from >= 0 && to > from, "the sweep boundary is not in the id sequence");
+        int gaps = 0;
+        for (String id : sequence.subList(from, to + 1)) {
+            if (!declared.contains(id)) {
+                gaps++;
+            }
+        }
+
+        Matcher stated = Pattern.compile("この範囲には欠番が (\\d+) ある").matcher(canon);
+        assertTrue(stated.find(), "the canon no longer states a gap count");
+        assertEquals(gaps, Integer.parseInt(stated.group(1)),
+                "the canon says " + stated.group(1) + " gaps between LN3 and " + newest
+                        + " and the runner leaves " + gaps + ". A retired or resurrected "
+                        + "control moves this, and a stale figure reads as a measurement");
+    }
+
+    /**
+     * The readiness document's verifier test count is what those modules declare.
+     *
+     * <p>Counted from the sources rather than from a run, because this module cannot run the
+     * verifier's suite — which is exactly why the number drifted unchecked.
+     */
+    @Test
+    @DisplayName("the readiness document's verifier test count is what the verifier declares")
+    void theReadinessVerifierCountIsTheVerifiers() throws IOException {
+        int tests = 0;
+        for (String root : List.of("../evidence-verifier-core/src/test/java")) {
+            try (Stream<Path> walk = Files.walk(Path.of(root))) {
+                for (Path file : walk.filter(p -> p.toString().endsWith(".java")).toList()) {
+                    for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                        String trimmed = line.trim();
+                        if (trimmed.equals("@Test") || trimmed.startsWith("@ParameterizedTest")) {
+                            tests++;
+                        }
+                        assertFalse(trimmed.startsWith("@Disabled"),
+                                "a disabled test makes this count wrong: " + file);
+                    }
+                }
+            }
+        }
+        assertTrue(tests > 100, "only " + tests + " tests were found, so this counted nothing");
+
+        Matcher stated = Pattern.compile("verifier-core (\\d+) / cli").matcher(read(READINESS));
+        assertTrue(stated.find(), "the readiness document does not state a verifier-core count");
+        assertEquals(tests, Integer.parseInt(stated.group(1)),
+                "the readiness document says verifier-core runs " + stated.group(1)
+                        + " tests and its sources declare " + tests);
     }
 
     @Test
