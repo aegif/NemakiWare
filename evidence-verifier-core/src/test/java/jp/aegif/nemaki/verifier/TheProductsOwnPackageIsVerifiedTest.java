@@ -107,13 +107,6 @@ class TheProductsOwnPackageIsVerifiedTest {
     }
 
     /**
-     * The encoded-name package really does carry an encoded reference.
-     *
-     * <p>Stated before the answer above is trusted: if a later commons-ip2 stopped encoding,
-     * the test above would pass for a reason that has nothing to do with the decoding it is
-     * there to measure, and the seam would be silently open again.
-     */
-    /**
      * The v1 golden really carries a section, or the arm it was added for is still vacuous.
      */
     @Test
@@ -131,6 +124,13 @@ class TheProductsOwnPackageIsVerifiedTest {
                         + entries.keySet());
     }
 
+    /**
+     * The encoded-name package really does carry an encoded reference.
+     *
+     * <p>Stated before the answer above is trusted: if a later commons-ip2 stopped encoding,
+     * the test above would pass for a reason that has nothing to do with the decoding it is
+     * there to measure, and the seam would be silently open again.
+     */
     @Test
     @DisplayName("the encoded-name golden really is encoded, or it measures nothing")
     void theEncodedGoldenIsActuallyEncoded() throws Exception {

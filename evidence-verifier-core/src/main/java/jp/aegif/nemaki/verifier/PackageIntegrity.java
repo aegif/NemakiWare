@@ -649,9 +649,8 @@ public final class PackageIntegrity {
         }
         if (named.isEmpty() && payloadsIn(entries).isEmpty()) {
             return Outcome.Check.absent("mets closure",
-                    "the METS names no files, so there is nothing to close over"
-                            + (external == 0 ? "" : ". " + external + " locator(s) name "
-                                    + "something OUTSIDE the package and were NOT evaluated"));
+                    "the METS names no files, so there is nothing to close over."
+                            + notEvaluated(external));
         }
         // NOT an early return when the package HAS payload. Leaving here the moment no local
         // reference was collected skipped the reverse direction, so a payload whose ONLY name
@@ -677,7 +676,7 @@ public final class PackageIntegrity {
         if (!missing.isEmpty()) {
             return Outcome.Check.failed("mets closure",
                     "the METS names " + missing.size() + " file(s) the package does not carry: "
-                            + missing);
+                            + missing + notEvaluated(external));
         }
 
         List<String> unnamed = new ArrayList<>();
@@ -690,14 +689,25 @@ public final class PackageIntegrity {
             return Outcome.Check.failed("mets closure",
                     "the package carries payload the METS does not name: " + unnamed
                             + ". Content nobody committed to travels inside a package that "
-                            + "would otherwise verify");
+                            + "would otherwise verify" + notEvaluated(external));
         }
         return external == 0 ? Outcome.Check.passed("mets closure")
                 : Outcome.Check.passed("mets closure",
-                        "every file the METS names is present and every payload is named. "
-                                + external + " locator(s) name something OUTSIDE the package "
-                                + "(a URN, a DOI, a file: URI on another host, a URL) and were "
-                                + "NOT evaluated here");
+                        "every file the METS names is present and every payload is named."
+                                + notEvaluated(external));
+    }
+
+    /**
+     * What to add to any answer when locators were declined.
+     *
+     * <p>It used to be on the PASSED arm only, and the arm where it matters most was the one
+     * that said "the METS names no files" about a METS that named four (subagent, fifteenth
+     * review, P2). "Did not ask" must not read as "asked, and there was nothing".
+     */
+    private static String notEvaluated(int external) {
+        return external == 0 ? "" : " " + external + " locator(s) name something OUTSIDE the "
+                + "package (a URN, a DOI, a handle, a file: URI on another host, an http URL) "
+                + "and were NOT evaluated here.";
     }
 
     /**
@@ -1052,7 +1062,7 @@ public final class PackageIntegrity {
         // "//host/path" is a NETWORK-PATH reference (RFC 3986 §4.2): it has an authority
         // and names something on that host, so it is not a path in this package. Reading
         // it as one made an absolute package path out of it (Codex, fourteenth review, P2).
-        if (href.startsWith("//")) {
+        if (namesAnotherHost(href)) {
             return false;
         }
         java.util.regex.Matcher scheme =
@@ -1079,15 +1089,11 @@ public final class PackageIntegrity {
      * @return {@code null} when the document could not be read as XML — which is not the same
      *         as a METS that names nothing
      */
-    /**
-     * How many locators the METS {@link #hrefsIn} last read named OUTSIDE the package.
-     *
-     * <p>A thread-local rather than a second return value, so the one caller that wants the
-     * count gets it without changing what every other caller of {@code hrefsIn} receives.
-     */
-    private static final ThreadLocal<Integer> LAST_EXTERNAL = ThreadLocal.withInitial(() -> 0);
 
     static List<String> hrefsIn(String xml) {
+        // Cleared at the ENTRY, so a caller that gets null back — or a second caller — never
+        // reads the count the previous METS left behind (subagent, fifteenth review, P3).
+        LAST_EXTERNAL.set(0);
         org.w3c.dom.Document document;
         try {
             javax.xml.parsers.DocumentBuilderFactory factory =
@@ -1124,6 +1130,14 @@ public final class PackageIntegrity {
 
     /** The XLink namespace, which is where a METS puts {@code href}. */
     private static final String XLINK = "http://www.w3.org/1999/xlink";
+
+    /**
+     * How many locators the METS {@link #hrefsIn} last read named OUTSIDE the package.
+     *
+     * <p>A thread-local rather than a second return value, so the one caller that wants the
+     * count gets it without changing what every other caller of {@code hrefsIn} receives.
+     */
+    private static final ThreadLocal<Integer> LAST_EXTERNAL = ThreadLocal.withInitial(() -> 0);
 
     private static void collectHrefs(org.w3c.dom.Element element, List<String> hrefs) {
         collectHrefs(element, "", hrefs);
@@ -1178,7 +1192,12 @@ public final class PackageIntegrity {
             // "/" to a relative base and nothing to an absolute one produced
             // "/representations/rep1/datap.bin" for a base ending in a segment (subagent,
             // thirteenth review, P2).
-            base = merge(declared.startsWith("/") || hasScheme(declared) ? "" : base, declared);
+            // The href rule, applied to the base stack as well: an ABSOLUTE declared base under
+            // an outer base that HAS AN AUTHORITY still belongs to that authority. Dropping the
+            // outer base for every absolute one left this arm producing a package path from an
+            // external URL (subagent, fifteenth review, P2).
+            base = merge(hasScheme(declared)
+                    || (declared.startsWith("/") && !hasAuthority(base)) ? "" : base, declared);
         }
         // The XLink namespace, never the prefix. A fallback on the literal "xlink:href" was
         // added on the reasoning that a METS without a namespace declaration still says href —
@@ -1273,6 +1292,22 @@ public final class PackageIntegrity {
         return (slash < 0 ? "" : base.substring(0, slash + 1)) + reference;
     }
 
+    /** The UNC prefix, as a constant so a control can name this rule without escaping it. */
+    private static final String UNC_PREFIX = "\\\\";
+
+    /**
+     * Does this reference carry an AUTHORITY — {@code //host/path} or {@code \\host\share}?
+     *
+     * <p>A network-path reference (RFC 3986 §4.2) names something on that host, so it is not a
+     * path in this package; reading it as one made an absolute package path out of it (Codex,
+     * fourteenth review, P2). Both spellings, because this runs BEFORE {@code resolve}
+     * normalises backslashes, and knowing only the forward one left a UNC path read as local
+     * (subagent, fifteenth review, P3).
+     */
+    private static boolean namesAnotherHost(String href) {
+        return href.startsWith("//") || href.startsWith(UNC_PREFIX);
+    }
+
     /** Does this base carry an authority — {@code scheme://host…} or {@code //host…}? */
     private static boolean hasAuthority(String base) {
         return base.startsWith("//") || base.matches("^[A-Za-z][A-Za-z0-9+.-]*://.*");
@@ -1295,10 +1330,21 @@ public final class PackageIntegrity {
      */
     private static boolean isLocalLocType(org.w3c.dom.Element element) {
         String locType = element.getAttribute("LOCTYPE");
-        if (locType == null || locType.isEmpty() || locType.equalsIgnoreCase("URL")) {
+        if (locType == null || locType.isEmpty()) {
             return true;
         }
-        if (locType.equalsIgnoreCase("OTHER")) {  // NOPMD — the one exception §9 names
+        // NORMALISED, like OTHERLOCTYPE beside it. Comparing the raw attribute meant a METS
+        // that wrapped the line — XML normalises the newline to a space, giving "URL " — was
+        // read as declaring something external, and its payload became content nobody
+        // committed to (subagent, fifteenth review, P2).
+        String kind = normalised(locType);
+        if (kind.equals("URL") || A_PATH.contains(kind)) {
+            // A path-word in LOCTYPE means what it means in OTHERLOCTYPE. Accepting "FILE"
+            // there and refusing it here made the SAME WORD answer opposite ways depending on
+            // which attribute carried it (subagent, fifteenth review, P2).
+            return true;
+        }
+        if (kind.equals("OTHER")) {  // NOPMD — the one exception §9 names
             // OTHER means "whatever OTHERLOCTYPE says", and the javadoc said so while the code
             // read nothing: every OTHER locator was dropped, so a METS naming its own payload
             // that way was accused of carrying content nobody committed to (subagent,

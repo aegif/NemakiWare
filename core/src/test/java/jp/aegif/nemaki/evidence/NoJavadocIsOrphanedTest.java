@@ -112,7 +112,17 @@ class NoJavadocIsOrphanedTest {
             // sixteen orphans that predate this branch, so covering them turns this lock red
             // for work no one has agreed to do. That is a real reason and it is recorded as
             // an untreated item, which is different from claiming the derivation was done.
-            "src/main/java/jp/aegif/nemaki/rest/importexport");
+            "src/main/java/jp/aegif/nemaki/rest/importexport",
+            // SIXTH miss, and the first in ANOTHER MODULE: the batch put an orphan in
+            // evidence-verifier-core (a new ThreadLocal field took hrefsIn's javadoc, @return
+            // and all) and this lock was green because its roots never leave core/. The two
+            // verifier modules are small and have no pre-existing orphans, so they go in
+            // WHOLE — main and test — rather than package by package. A seventh widening of
+            // core's own roots is not the answer; a scope that follows the module is.
+            "../evidence-verifier-core/src/main/java",
+            "../evidence-verifier-core/src/test/java",
+            "../evidence-verifier-cli/src/main/java",
+            "../evidence-verifier-cli/src/test/java");
 
     /**
      * Whole files excluded from the scan. EMPTY, and it has to stay that way.

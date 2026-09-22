@@ -1495,6 +1495,122 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                         + "inside the package: " + closure.detail());
     }
 
+    /**
+     * {@code LOCTYPE} is read the same way {@code OTHERLOCTYPE} is, and a path-word means a path.
+     *
+     * <p>Two inconsistencies, both measured (subagent, fifteenth review, P2): the raw attribute
+     * was compared, so a METS that wrapped the line — XML normalises the newline to a space,
+     * giving {@code "URL "} — declared something external and its payload became content nobody
+     * committed to; and the SAME WORD answered opposite ways depending on which attribute
+     * carried it ({@code OTHERLOCTYPE="FILE"} local, {@code LOCTYPE="FILE"} external).
+     */
+    @Test
+    @DisplayName("LOCTYPE is normalised, and a path-word means a path wherever it is written")
+    void aLocTypeIsNormalisedAndAPathWordMeansAPath(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        for (String locType : List.of("URL ", " URL", "URL\n", "FILE", "SYSTEM")) {
+            Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+            entries.put(ROOT + "METS.xml", metsWithOtherLocType(locType,
+                    "representations/rep1/data/minutes.txt", ""));
+            Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
+                    zip(tmp, "loctype-" + locType.hashCode() + ".zip", entries)).entries()),
+                    "mets closure");
+            assertEquals(Outcome.PASSED, closure.outcome(),
+                    "LOCTYPE=\"" + locType + "\" dropped the payload's only name: "
+                            + closure.detail());
+        }
+    }
+
+    /**
+     * An absolute {@code xml:base} under an outer base with an authority keeps that authority.
+     *
+     * <p>The href side got this rule and the base stack did not, so a nested
+     * {@code xml:base="/catalogue/"} under {@code https://example.invalid/archive/} produced a
+     * package path — and either claimed an unrelated local file or reported an external
+     * reference as missing (subagent, fifteenth review, P2).
+     */
+    @Test
+    @DisplayName("an absolute xml:base under an authority keeps it")
+    void anAbsoluteXmlBaseUnderAnAuthorityKeepsIt(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "METS.xml", mets("representations/rep1/data/minutes.txt",
+                "representations/rep1/METS.xml"));
+        entries.put(ROOT + "representations/rep1/METS.xml",
+                mets("data/minutes.txt").replace("<mets:fileSec>",
+                        "<mets:fileSec xml:base=\"https://example.invalid/archive/\">"
+                                + "<mets:fileGrp xml:base=\"/catalogue/\">"
+                                + "<mets:file><mets:FLocat xlink:href=\"entry-7.xml\"/>"
+                                + "</mets:file></mets:fileGrp>"));
+        // NO local sip/catalogue/entry-7.xml. With the base dropped, the reference becomes the
+        // package path "/catalogue/entry-7.xml" and is reported as missing; with the base kept
+        // it is an external URL and is not this check's business. The two answers differ only
+        // when the package does NOT carry that path — with the file present, both arms answer
+        // PASSED and the example measures nothing (measured).
+
+        Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "nested-absolute-base.zip", entries)).entries()), "mets closure");
+
+        assertEquals(Outcome.PASSED, closure.outcome(),
+                "a reference under an external xml:base was looked for inside the package: "
+                        + closure.detail());
+    }
+
+    /**
+     * The locators that were NOT evaluated are stated on every answer, not only on PASSED.
+     *
+     * <p>The arm where it matters most was the silent one: a METS naming four external
+     * identifiers and nothing else answered "the METS names no files, so there is nothing to
+     * close over" — "did not ask" reported as "asked, and there was nothing" (subagent,
+     * fifteenth review, P2).
+     */
+    @Test
+    @DisplayName("locators that were not evaluated are stated on the silent arms too")
+    void notEvaluatedIsStatedOnEveryArm(@TempDir Path tmp) throws Exception {
+        Map<String, String> onlyExternal = new LinkedHashMap<>();
+        onlyExternal.put(ROOT + "METS.xml", mets("urn:uuid:1b671a64-40d5-491e-99b0-da01ff1f3341",
+                "doi:10.1000/182", "https://example.invalid/catalogue", "hdl:20.500.12345/abc"));
+        Outcome.Check silent = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "only-external-locators.zip", onlyExternal)).entries()), "mets closure");
+        assertTrue(silent.detail() != null && silent.detail().contains("4 locator(s)"),
+                "a METS naming four external identifiers answered 'names no files' without "
+                        + "saying that four were declined: " + silent.detail());
+
+        String payload = "the minutes";
+        Map<String, String> missing = new LinkedHashMap<>(goodPackage(payload));
+        missing.put(ROOT + "METS.xml", mets("representations/rep1/data/minutes.txt",
+                "metadata/nowhere.xml", "urn:uuid:1b671a64-40d5-491e-99b0-da01ff1f3341"));
+        Outcome.Check failed = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "missing-and-external.zip", missing)).entries()), "mets closure");
+        assertEquals(Outcome.FAILED, failed.outcome(), failed.detail());
+        assertTrue(failed.detail().contains("1 locator(s)"),
+                "a finding was reported without saying that a locator was declined: "
+                        + failed.detail());
+    }
+
+    /**
+     * {@code \\host\share} names another machine too.
+     *
+     * <p>{@code isPackageLocal} runs BEFORE {@code resolve} turns {@code \\} into {@code /},
+     * and recognising only the forward spelling left a UNC path read as a path inside the
+     * package (subagent, fifteenth review, P3).
+     */
+    @Test
+    @DisplayName("a UNC path names another machine, not this package")
+    void aUncPathIsNotInsideThePackage(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "METS.xml", mets("representations/rep1/data/minutes.txt",
+                "\\\\archive.example.org\\catalogue\\entry-7.xml"));
+
+        Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "unc.zip", entries)).entries()), "mets closure");
+
+        assertEquals(Outcome.PASSED, closure.outcome(),
+                "a UNC path naming another machine was reported as a file the package does not "
+                        + "carry: " + closure.detail());
+    }
+
     @Test
     @DisplayName("a METS with an internal DOCTYPE is still read")
     void aMetsWithAnInternalDoctypeIsStillRead(@TempDir Path tmp) throws Exception {
