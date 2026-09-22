@@ -53,8 +53,22 @@ import static org.mockito.Mockito.mock;
  */
 class TheAbandonedRowSaysWhichAbsenceTest {
 
-    /** The reason {@code recordRestored} hands to the recorder for {@code absence}. */
+    /** How many times {@code recordRestored} closes the row for {@code absence}. */
+    private static int abandonCallsFor(ContentAbsence absence) throws Exception {
+        return recordedFor(absence).size();
+    }
+
+    /** The one reason {@code recordRestored} hands to the recorder for {@code absence}. */
     private static String reasonFor(ContentAbsence absence) throws Exception {
+        List<String> recorded = recordedFor(absence);
+        assertEquals(1, recorded.size(),
+                "the row was not abandoned exactly once, so this lock is reading nothing: "
+                        + recorded);
+        return recorded.get(0);
+    }
+
+    /** Every reason handed to {@code abandon} for {@code absence} — possibly none. */
+    private static List<String> recordedFor(ContentAbsence absence) throws Exception {
         List<String> recorded = new ArrayList<>();
         RecordContentStateRecorder recorder = mock(RecordContentStateRecorder.class);
         doAnswer(call -> {
@@ -75,11 +89,7 @@ class TheAbandonedRowSaysWhichAbsenceTest {
         recordRestored.invoke(delegate, "bedroom", archive,
                 mock(RecordContentStateRecorder.Pending.class),
                 RestoredBytes.nothingBecause(absence));
-
-        assertEquals(1, recorded.size(),
-                "the row was not abandoned exactly once, so this lock is reading nothing: "
-                        + recorded);
-        return recorded.get(0);
+        return recorded;
     }
 
     @Test
@@ -96,16 +106,21 @@ class TheAbandonedRowSaysWhichAbsenceTest {
                         + "cannot tell this from a version that never had content: " + cold);
     }
 
+    /**
+     * "We could not look" leaves the row OPEN — it does not close it with a better sentence.
+     *
+     * <p>{@code abandon} closes a row because the write VERIFIABLY did not happen.
+     * {@code NOT_DETERMINED} means the archive row could not be read, which is not that.
+     * Closing it took an unresolved gap off the list of unresolved gaps, and the first fix only
+     * changed the sentence — the state transition was still "unknown to settled" (Codex, ninth
+     * review, P1). The lock that asked for exactly one {@code abandon} here was pinning that.
+     */
     @Test
-    @DisplayName("'we could not look' is not recorded as 'there was nothing'")
-    void anUndeterminedAbsenceIsNotRecordedAsNothing() throws Exception {
-        String unknown = reasonFor(ContentAbsence.NOT_DETERMINED);
-
-        assertFalse(unknown.contains("carried no binary content"),
-                "a restore that could not read the archive row at all recorded that the "
-                        + "archive had no content — the could-not-ask/answered-no collapse this "
-                        + "branch exists to remove: " + unknown);
-        assertTrue(unknown.contains("NOT stated"), unknown);
+    @DisplayName("'we could not look' leaves the row open, it does not close it")
+    void anUndeterminedAbsenceLeavesTheRowOpen() throws Exception {
+        assertEquals(0, abandonCallsFor(ContentAbsence.NOT_DETERMINED),
+                "a restore that could not read the archive row at all closed the journal row "
+                        + "as abandoned, so an unresolved gap stopped being listable");
     }
 
     @Test

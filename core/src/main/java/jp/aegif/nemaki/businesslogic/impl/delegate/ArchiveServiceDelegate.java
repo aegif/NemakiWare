@@ -119,6 +119,19 @@ public class ArchiveServiceDelegate {
 					+ "was recorded. The journal row stays open.", versionId);
 			return;
 		}
+		if (!restored.wroteBytes()
+				&& restored.absence() == jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes
+						.ContentAbsence.NOT_DETERMINED) {
+			// The row stays OPEN. `abandon` closes a row because the write VERIFIABLY did not
+			// happen; NOT_DETERMINED is "the archive row could not be read", which is not that.
+			// Closing it took an unresolved gap off the list of unresolved gaps — "we could not
+			// look" recorded as "there was nothing", one state transition further in than the
+			// sentence (Codex, ninth review, P1).
+			log.warn("E1 (W11): the restore of {} did not report WHY nothing was written back, "
+					+ "so the journal row stays open rather than being closed as abandoned.",
+					versionId);
+			return;
+		}
 		if (!restored.wroteBytes()) {
 			// THE REASON, not one sentence for three situations. This wrote "the archive
 			// carried no binary content" for a cold MOVE — where the archive DID carry
@@ -130,10 +143,8 @@ public class ArchiveServiceDelegate {
 				case MOVED_TO_COLD -> "the archived content was MOVED to cold storage, so the "
 						+ "restore brought back metadata only. The bytes are not lost: they are "
 						+ "in cold storage, and this product has no path that reads them back";
-				case ARCHIVE_HAD_NO_CONTENT -> "the archived version carried no content of its "
-						+ "own; nothing was written back";
-				default -> "the restore did not report why nothing was written back, so why "
-						+ "this version has no content is NOT stated here";
+				default -> "the archived version carried no content of its own; nothing was "
+						+ "written back";
 			});
 			return;
 		}

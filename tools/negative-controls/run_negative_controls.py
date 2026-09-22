@@ -9839,8 +9839,8 @@ CONTROLS = [
         id='GY3',
         what="the readiness document stops saying the control added since the fifth sweep is unswept, so a finished sweep of 938 reads as a measurement of today's tree",
         file='docs/design/v3.4-release-readiness.md',
-        find='**その 123 本は通し未実施**',
-        replace='**その 123 本も通し済み**',
+        find='**その 125 本は通し未実施**',
+        replace='**その 125 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10797,7 +10797,7 @@ CONTROLS = [
         what='a second statement of the unswept count drifts from the locked one, so the document contradicts itself about how many controls have never been run together',
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **5 回目以後に足した control は 123 本**（境界 LM3 — 5 回目時点の最大 ID。',
+        find='  **5 回目以後に足した control は 125 本**（境界 LM3 — 5 回目時点の最大 ID。',
         replace='  **5 回目以後に足した control は 0 本**（境界 LM3 — 5 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10808,7 +10808,7 @@ CONTROLS = [
         file='docs/design/fail-closed-reads.md',
         # Re-pointed: the boundary id moves below LM3, so ids above it exist while the sweep
         # record says nothing was added — the cross-check (declared − swept ≠ ids above) fires.
-        find='**5 回目以後に足した control は 123 本**（境界 LM3）: ',
+        find='**5 回目以後に足した control は 125 本**（境界 LM3）: ',
         replace='**5 回目以後に足した control は 5 本**（境界 LA3）: ',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10864,8 +10864,8 @@ CONTROLS = [
         id='LN3',
         what="the canon stops saying the control added since the fifth sweep is unswept — the canon-side twin of GY3 — and, being itself the first control after the sweep, the one that forces the ledger back from 0 to 1",
         file='docs/design/fail-closed-reads.md',
-        find='**その 123 本は通し未実施**',
-        replace='**その 123 本も通し済み**',
+        find='**その 125 本は通し未実施**',
+        replace='**その 125 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10873,8 +10873,8 @@ CONTROLS = [
         id='LO3',
         what="the readiness document's §4 stops saying the added controls are unswept while §1.4 still does — the second exit, which a once-per-file check let through (GY3 did not fire)",
         file='docs/design/v3.4-release-readiness.md',
-        find='5 回目以後に足した control は **123 本**（通し未実施）。',
-        replace='5 回目以後に足した control は **123 本**（通し済み）。',
+        find='5 回目以後に足した control は **125 本**（通し未実施）。',
+        replace='5 回目以後に足した control は **125 本**（通し済み）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11689,7 +11689,7 @@ CONTROLS = [
         id='LB3',
         what='the PLAN\'s copy of the never-swept count drifts, so whoever scopes the overdue full sweep from the plan runs half the set',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='5 回目以後に足した control は **123 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='5 回目以後に足した control は **125 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='5 回目以後に足した control は **0 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -11952,10 +11952,12 @@ CONTROLS = [
         # unsupported curve turned out to arrive that way.
         # Re-pointed 2026-09-22 (8 巡目): RuntimeOperatorException left the list when
         # cannotSetUp started asking up front.
-        find='            if (cause instanceof NoSuchAlgorithmException\n                    || cause instanceof NoSuchProviderException\n                    || cause instanceof org.bouncycastle.operator.OperatorCreationException) {\n                return true;\n            }',
-        replace='            if (false) {\n                return true;\n            }',
+        # Re-pointed 2026-09-22 (9 巡目): the cause-chain walk is gone. The same claim is now
+        # the FIRST of the three questions put to the JCA — is this algorithm implemented here?
+        find='            return Outcome.Check.unavailable(name, "UNKNOWN_ALGORITHM",',
+        replace='            if (true) { return failure(name, what, cannotAsk); }\n            return Outcome.Check.unavailable(name, "UNKNOWN_ALGORITHM",',
         test='OneTokenGetsOneAnswerTest',
-        expect_fail=['aProviderFailureIsNotAFinding'],
+        expect_fail=['anUnimplementedAlgorithmIsUnknownAlgorithm'],
     ),
     dict(
         id='ON3',
@@ -11974,10 +11976,14 @@ CONTROLS = [
         id='OO3',
         what="the product's own /verify reads PREMIS differently from the independent verifier again, so an adversarial document answers PASSED at the endpoint an operator actually reaches",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        # Re-pointed 2026-09-22 (9 巡目): the old lock's fixture put both digests inside ONE
+        # object, which the new 'contradicts itself' arm answers FIRST — sabotaging this arm
+        # left it green. The lock is now the two-object fixture with ONE algorithm element,
+        # where no sibling arm can answer.
         find='        if (digests.size() > 1) {',
         replace='        if (false) {',
         test='SipVerifierTest',
-        expect_fail=['aSecondDigestUnderAnotherPrefixIsAmbiguousHereToo'],
+        expect_fail=['twoObjectsWithOneDigestEachAreAmbiguousHereToo'],
     ),
     dict(
         id='OP3',
@@ -12199,10 +12205,14 @@ CONTROLS = [
         what='a key the token\'s own certificate carries that will not initialise is reported as an algorithm this build cannot compute, so two different kinds of "nothing was compared" carry one reason code',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/TokenSignature.java',
-        find='            if (cause instanceof java.security.InvalidKeyException) {\n                return true;\n            }',
-        replace='            if (false) {\n                return true;\n            }',
+        # Re-pointed 2026-09-22 (9 巡目): the rule this measured was WITHDRAWN — an
+        # InvalidKeyException from initVerify is now a FINDING, because no build could compute
+        # a signature the token's own certificate contradicts. The sabotage restores the
+        # withdrawn answer.
+        find='            return Outcome.Check.failed(name,\n                    what + " names " + sigAlg + " and carries a "',
+        replace='            return Outcome.Check.unavailable(name, "SIGNATURE_NOT_COMPUTED",\n                    what + " names " + sigAlg + " and carries a "',
         test='OneTokenGetsOneAnswerTest',
-        expect_fail=['aProviderFailureIsNotAFinding'],
+        expect_fail=['anAlgorithmThatDoesNotGoWithItsOwnKeyIsAFinding'],
     ),
     dict(
         id='PR3',
@@ -12340,21 +12350,12 @@ CONTROLS = [
         test='TheV1LayoutIsCheckedTest',
         expect_fail=['aNestedCompletePackageCannotBeToldApart'],
     ),
-    dict(
-        id='PZ3',
-        what="a token naming a signature algorithm its own certificate's key cannot be used with is excused as something this build could not compute, so a contradiction the package states about itself answers 'not checked'",
-        module='evidence-verifier-core',
-        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/TokenSignature.java',
-        # Re-pointed 2026-09-22 (9 巡目): the call became familyMatchesQuietly when the
-        # probe stopped concluding anything from its own failures.
-        find='        if (!familyMatchesQuietly(encryption, key.getAlgorithm())) {',
-        replace='            if (false) {',
-        test='OneTokenGetsOneAnswerTest',
-        # Without the family check, cannotSetUp reaches initVerify and answers
-        # SIGNATURE_NOT_COMPUTED for both fixtures (measured).
-        expect_fail=['anAlgorithmThatDoesNotGoWithItsOwnKeyIsAFinding',
-                     'aSubstitutedCertificateIsAFinding'],
-    ),
+    # PZ3 was retired 2026-09-22 (9 巡目). It sabotaged `familyMatchesQuietly`, a helper the
+    # rewrite deleted: the classification no longer compares algorithm FAMILIES at all, it
+    # asks the JCA whether the key initialises. A review had also measured that the helper
+    # did nothing for the case PZ3 names — the fixture was caught one arm earlier, by
+    # BouncyCastle's certID check — so the control was reading a sibling. PQ3 now measures
+    # that claim at the single point where it is decided.
     # QA3 was retired on the reasoning that "no fixture here can produce a missing provider".
     # That was WRONG and measured so: BouncyCastle is on the test classpath, and
     # Security.addProvider -> generate a brainpoolP256r1 token -> removeProvider builds exactly
@@ -12382,8 +12383,11 @@ CONTROLS = [
         what='a signature whose encoding is not a signature at all is excused as something this build could not compute, so an edited token exits 3 instead of 2',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/TokenSignature.java',
-        find='            if (cause instanceof java.security.cert.CertificateException) {',
-        replace='            if (cause instanceof java.security.SignatureException\n                    || cause instanceof java.security.cert.CertificateException) {',
+        # Re-pointed 2026-09-22 (9 巡目): the cause-chain list is gone. The claim now lives in
+        # the THIRD question — a probe that cannot compute a signature with this key excuses the
+        # token. Making the probe fail for every key restores the withdrawn answer.
+        find='                probe.update(new byte[] { 0 });\n                probe.verify(dummy);',
+        replace='                probe.update(new byte[] { 0 });\n                probe.verify(new byte[] { 0 });',
         test='OneTokenGetsOneAnswerTest',
         expect_fail=['aMalformedSignatureIsAFinding'],
     ),
@@ -12395,8 +12399,10 @@ CONTROLS = [
         replace='			recorder.abandon(pending, "the archive carried no binary content"); if (true) { return; }\n			recorder.abandon(pending, switch (restored.absence()) {',
         test='TheAbandonedRowSaysWhichAbsenceTest',
         # One sentence for three situations reddens all three locks (measured).
+        # NOT_DETERMINED was dropped from this list 2026-09-22 (9 巡目): that case now returns
+        # BEFORE the switch — the row stays open — so this sabotage cannot reach it. QN3 is the
+        # control for it.
         expect_fail=['aColdMoveIsNotRecordedAsHavingNoContent',
-                     'anUndeterminedAbsenceIsNotRecordedAsNothing',
                      'aVersionWithNoContentIsRecordedAsThat'],
     ),
     dict(
@@ -12415,8 +12421,11 @@ CONTROLS = [
         what="the signature probe's OWN failure is reported as 'this build cannot compute it', so a token the probe could not even read answers SIGNATURE_NOT_COMPUTED without the algorithm being looked at",
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/TokenSignature.java',
-        find='        } catch (Exception couldNotInspect) {\n            return null;\n        }',
-        replace='        } catch (Exception couldNotInspect) {\n            return String.valueOf(couldNotInspect.getMessage());\n        }',
+        # Re-pointed when the classification was rewritten to ask the JCA three questions
+        # instead of reading exception types: the old `cannotSetUp` helper (and its `return
+        # null`) no longer exists, and a stale anchor here blocks EVERY control in this tree.
+        find='            return failure(name, what, cannotAsk);\n        }\n\n        java.security.Signature probe;',
+        replace='            return Outcome.Check.unavailable(name, "SIGNATURE_NOT_COMPUTED",\n                    what + " could not be inspected (" + couldNotInspect.getMessage() + ")");\n        }\n\n        java.security.Signature probe;',
         test='OneTokenGetsOneAnswerTest',
         expect_fail=['aProbeThatCannotRunConcludesNothing'],
     ),
@@ -12425,8 +12434,11 @@ CONTROLS = [
         what="a VALID token on a curve this build cannot compute is reported as a signature that does not verify, so an eIDAS authority's brainpool token exits 2 as if it had been tampered with",
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/TokenSignature.java',
-        find='            if (cannotComputeAnySignature(token, signer)) {',
-        replace='            if (false) {',
+        # Re-pointed with the rewrite: the third question (can this build compute a signature
+        # with this key at all?) is now the dummy-signature probe, and skipping it drops a
+        # brainpool token through to the finding arm — the regression this control exists for.
+        find='        if (dummy != null) {',
+        replace='        if (false) {',
         test='OneTokenGetsOneAnswerTest',
         expect_fail=['aCurveThisBuildCannotComputeIsNotAFinding'],
     ),
@@ -12463,6 +12475,43 @@ CONTROLS = [
         test='SipVerifierTest',
         expect_fail=['aPayloadCopyOfThePremisIsNotASecondOne'],
     ),
+
+    dict(
+        id='QL3',
+        what="the product's own /verify does not call a PREMIS that contradicts itself a finding, so the CLI answers FAILED and the endpoint an operator actually reaches answers UNAVAILABLE about the same zip",
+        file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
+        find='        if (mostInOneObject > 1) {',
+        replace='        if (false) {',
+        test='SipVerifierTest',
+        expect_fail=['aSecondDigestUnderAnotherPrefixIsAFindingHereToo'],
+    ),
+    dict(
+        id='QM3',
+        what='a METS reference resolves into the PAYLOAD, so a package carrying the named file only as a copy inside its content answers "closure complete" while payload fixity answers "no PREMIS"',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        # The FALLBACK arm, which is what decides here: the exact arm looks for the href under
+        # the METS's own directory and the fixture's package does not carry it there.
+        find='                .anyMatch(path -> !isPayload(path) && path.endsWith(wanted));',
+        replace='                .anyMatch(path -> path.endsWith(wanted));',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aPayloadCopyDoesNotCloseTheMets'],
+    ),
+    dict(
+        id='QN3',
+        what='a restore that could not READ the archive row closes the journal row as abandoned, so "we could not look" is settled as "the write verifiably did not happen" and an unresolved gap stops being listable',
+        file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/delegate/ArchiveServiceDelegate.java',
+        find='\t\tif (!restored.wroteBytes()\n\t\t\t\t&& restored.absence()',
+        replace='\t\tif (false\n\t\t\t\t&& restored.absence()',
+        test='TheAbandonedRowSaysWhichAbsenceTest',
+        expect_fail=['anUndeterminedAbsenceLeavesTheRowOpen'],
+    ),
+    # NO CONTROL for TheSipLayoutIsWhereCommonsIpPutsItTest#everyMetsReferenceResolvesBesideItsOwnMets
+    # (2026-09-22, 9 巡目). It observes what commons-ip2 writes — the hrefs are the LIBRARY's,
+    # not ours — so there is no branch of this product to sabotage into producing a bad one.
+    # Not left as reasoning: GK3, IK3 and IL3, the three controls that already move files around
+    # in EarkSipExporter for this same test class, were RUN against it and all three left it
+    # green. So it is neither controlled nor collateral, and both halves of that are measured.
 ]
 
 

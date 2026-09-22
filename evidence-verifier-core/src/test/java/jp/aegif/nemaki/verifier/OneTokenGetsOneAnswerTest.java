@@ -64,8 +64,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>So the answer is compared here, for every token that can be built, rather than being
  * corrected once more on whichever side was noticed. The classification itself lives in
- * {@code TokenSignature} and is measured below on the one case no fixture can produce: an
- * algorithm this JVM has no provider for.
+ * {@code TokenSignature} and is measured below on a REAL token for each of its three
+ * questions — including the algorithm no provider implements, which was called unproducible
+ * and is produced here by renaming one OID.
  */
 class OneTokenGetsOneAnswerTest {
 
@@ -191,9 +192,11 @@ class OneTokenGetsOneAnswerTest {
      * fact about the package. Measured here rather than reasoned about, because the answer
      * decides whether a substitution exits 2 or 3.
      *
-     * <p>What remains for {@code SIGNATURE_NOT_COMPUTED} is the narrower case the seventh
-     * review named: the certID matches and no installed provider will initialise with the key.
-     * No fixture can produce that, so the rule is measured on its own below.
+     * <p>What remains for {@code SIGNATURE_NOT_COMPUTED} is narrower: the certID matches, the
+     * key initialises, and this build still cannot compute a signature with it — a brainpool
+     * curve. {@code aCurveThisBuildCannotComputeIsNotAFinding} builds one. "No fixture can
+     * produce that" was written here twice and was wrong both times; it is what left the
+     * regression of the ninth review without a control.
      */
     @Test
     @DisplayName("a substituted signer certificate is a FINDING, caught by the certID hash")
@@ -223,48 +226,85 @@ class OneTokenGetsOneAnswerTest {
     }
 
     /**
-     * The pre-flight does not PRE-EMPT a finding BouncyCastle would make.
+     * A token naming an algorithm its OWN certificate's key cannot be used with is a finding.
      *
-     * <p>What this actually measures, stated after it was measured rather than before: the
-     * certificate handed in here is a fresh EC one, so its certID hash does not match and
-     * BouncyCastle refuses the token on that — a finding about the package. If
-     * {@code cannotSetUp} answered first (it would, because {@code initVerify} refuses an EC
-     * key for an RSA signature), that finding would be replaced by "this build could not
-     * compute it". {@code familyMatches} exists to step out of the way in exactly that case.
+     * <p>No build could compute that signature, so it is not a limit of this one: the package
+     * contradicts itself, and the second of the three questions ({@code initVerify}) is where
+     * that is decided.
      *
-     * <p>The javadoc here used to claim the certID check passes and the family mismatch is what
-     * fires. A review measured both: the certID check fires, and a token that really does name
-     * an algorithm incompatible with its own key answers the same before and after the family
-     * check was added (subagent, ninth review, P1). The claim is now the measured one.
+     * <p><b>The fixture used to be the wrong one.</b> It handed a FRESH EC certificate to an RSA
+     * token, so the certID hash did not match and BouncyCastle refused on THAT — the same
+     * sibling arm {@code aSubstitutedCertificateIsAFinding} measures. A review measured both
+     * ends and found the answer identical before and after the rule this lock was said to
+     * protect (subagent, ninth review, P1), and a control aimed at that rule then stayed green.
+     *
+     * <p>So the token here is EC-signed by its OWN certificate — certID intact, first check
+     * passes — with only the SignerInfo's {@code digestEncryptionAlgorithm} rewritten to
+     * {@code rsaEncryption}. The detail is asserted, not just the outcome: FAILED alone is what
+     * the certID arm says too.
      */
     @Test
-    @DisplayName("the pre-flight does not pre-empt the finding BouncyCastle would make")
+    @DisplayName("an algorithm its own certificate's key cannot be used with is a finding")
     void anAlgorithmThatDoesNotGoWithItsOwnKeyIsAFinding() throws Exception {
         java.security.KeyPairGenerator ec = java.security.KeyPairGenerator.getInstance("EC");
-        ec.initialize(256);
-        java.security.KeyPair other = ec.generateKeyPair();
+        ec.initialize(new java.security.spec.ECGenParameterSpec("secp256r1"));
+        java.security.KeyPair ecKeys = ec.generateKeyPair();
         org.bouncycastle.asn1.x500.X500Name subject =
-                new org.bouncycastle.asn1.x500.X500Name("CN=One Answer TSA");
+                new org.bouncycastle.asn1.x500.X500Name("CN=EC Answer TSA");
         JcaX509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(subject,
                 BigInteger.ONE, new Date(System.currentTimeMillis() - 86_400_000L),
-                new Date(System.currentTimeMillis() + 86_400_000L), subject, other.getPublic());
+                new Date(System.currentTimeMillis() + 86_400_000L), subject, ecKeys.getPublic());
+        builder.addExtension(org.bouncycastle.asn1.x509.Extension.extendedKeyUsage, true,
+                new org.bouncycastle.asn1.x509.ExtendedKeyUsage(
+                        org.bouncycastle.asn1.x509.KeyPurposeId.id_kp_timeStamping));
         X509Certificate ecCertificate = new JcaX509CertificateConverter().getCertificate(
                 builder.build(new JcaContentSignerBuilder("SHA256withECDSA")
-                        .build(other.getPrivate())));
+                        .build(ecKeys.getPrivate())));
 
-        // The token is RSA-signed; the certificate handed to the check carries an EC key, and
-        // its certID hash does not match either. BouncyCastle refuses on the certID — and
-        // cannotSetUp must not answer first with "could not compute", which is what
-        // familyMatches prevents.
+        TimeStampRequestGenerator requests = new TimeStampRequestGenerator();
+        requests.setCertReq(true);
+        TimeStampRequest request = requests.generate(new ASN1ObjectIdentifier(SHA256),
+                HexFormat.of().parseHex(ROOT));
+        TimeStampTokenGenerator generator = new TimeStampTokenGenerator(
+                new org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoGeneratorBuilder()
+                        .build("SHA256withECDSA", ecKeys.getPrivate(), ecCertificate),
+                new JcaDigestCalculatorProviderBuilder().build().get(
+                        new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
+                                new ASN1ObjectIdentifier(SHA256))),
+                new ASN1ObjectIdentifier("1.2.3.4.3"));
+        generator.addCertificates(
+                new org.bouncycastle.cert.jcajce.JcaCertStore(List.of(ecCertificate)));
+        byte[] der = generator.generate(request, BigInteger.ONE, new Date()).getEncoded();
+
+        org.bouncycastle.asn1.cms.ContentInfo parsed = org.bouncycastle.asn1.cms.ContentInfo
+                .getInstance(org.bouncycastle.asn1.ASN1Primitive.fromByteArray(der));
+        org.bouncycastle.asn1.cms.SignedData signed =
+                org.bouncycastle.asn1.cms.SignedData.getInstance(parsed.getContent());
+        org.bouncycastle.asn1.cms.SignerInfo info = org.bouncycastle.asn1.cms.SignerInfo
+                .getInstance(signed.getSignerInfos().getObjectAt(0));
+        // ONLY the encryption algorithm. The certificate, the certID attribute and the signature
+        // octets are the ones the generator wrote.
+        org.bouncycastle.asn1.cms.SignerInfo renamed = new org.bouncycastle.asn1.cms.SignerInfo(
+                info.getSID(), info.getDigestAlgorithm(), info.getAuthenticatedAttributes(),
+                new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
+                        new ASN1ObjectIdentifier("1.2.840.113549.1.1.1")),
+                info.getEncryptedDigest(), info.getUnauthenticatedAttributes());
+        byte[] rebuilt = new org.bouncycastle.asn1.cms.ContentInfo(parsed.getContentType(),
+                new org.bouncycastle.asn1.cms.SignedData(signed.getDigestAlgorithms(),
+                        signed.getEncapContentInfo(), signed.getCertificates(), signed.getCRLs(),
+                        new org.bouncycastle.asn1.DERSet(renamed))).getEncoded("DER");
+
         org.bouncycastle.tsp.TimeStampToken token = new org.bouncycastle.tsp.TimeStampToken(
-                new org.bouncycastle.cms.CMSSignedData(tokenOver(ROOT, true)));
+                new org.bouncycastle.cms.CMSSignedData(rebuilt));
         Outcome.Check answer = TokenSignature.verify("token signature", "the token", token,
                 new X509CertificateHolder(ecCertificate.getEncoded()));
 
         assertEquals(Outcome.FAILED, answer.outcome(),
-                "a finding BouncyCastle makes about this package was replaced by 'this build "
-                        + "could not compute it': " + answer);
-        assertTrue(answer.detail().contains("does not verify"), answer.detail());
+                "a token naming an algorithm its own certificate's key cannot be used with was "
+                        + "excused as something this build could not compute: " + answer);
+        assertTrue(answer.detail().contains("cannot be used with it"),
+                "the answer came from some OTHER arm, so this lock is reading a sibling again: "
+                        + answer.detail());
     }
 
     /**
@@ -408,7 +448,7 @@ class OneTokenGetsOneAnswerTest {
     /**
      * When the PROBE cannot run, nothing is concluded from that.
      *
-     * <p>{@code cannotSetUp} exists to tell two kinds of "nothing was compared" apart. Reading
+     * <p>{@code classify} exists to tell two kinds of "nothing was compared" apart. Reading
      * the SignerInfo, converting the certificate and naming the algorithm are its own work, and
      * a failure there is not evidence that the signature cannot be computed — it is evidence
      * that this probe could not run. Returning a reason for it would make every such token
@@ -456,69 +496,58 @@ class OneTokenGetsOneAnswerTest {
     }
 
     /**
-     * The one case no fixture here can produce: a signature algorithm with no provider.
+     * The three questions, on a REAL token each time — no crafted exception chains.
      *
-     * <p>Every algorithm this test could sign with is one this JVM implements, so the token
-     * cannot be built. What CAN be measured is the rule — and the rule is the part that was
-     * wrong: BouncyCastle wraps the provider failure several layers down inside a plain
-     * {@code TSPException}, which the old code caught as "the signature does not verify". The
-     * exception TYPE does not separate the two; the cause does.
+     * <p>Four rounds found a defect in this classification, and every one was in a rule that
+     * read an exception type or a message: a crafted chain could be made to satisfy any of
+     * them. So the rules are gone, the JCA is asked directly, and every case below is a token
+     * this test builds:
+     *
+     * <ul>
+     *   <li>a valid token on a curve this build cannot compute → {@code SIGNATURE_NOT_COMPUTED}
+     *       ({@code aCurveThisBuildCannotComputeIsNotAFinding});</li>
+     *   <li>a signature of the wrong length → a finding
+     *       ({@code aMalformedSignatureIsAFinding});</li>
+     *   <li>a certificate the token does not name → a finding
+     *       ({@code aSubstitutedCertificateIsAFinding}).</li>
+     * </ul>
+     *
+     * <p>The last one is here: an algorithm no provider implements. This used to assert only
+     * that {@code Signature.getInstance} refuses a made-up name — a statement about the JVM,
+     * with the product not called at all, so the control aimed at the branch stayed green
+     * (measured, 2026-09-22). It is a real token now: the SignerInfo names an OID nothing
+     * implements, and everything else — certificate, certID, signature octets — is what the
+     * generator wrote, so no earlier arm can answer instead.
      */
     @Test
-    @DisplayName("a provider failure several wrappers down is 'not checked', not 'does not verify'")
-    void aProviderFailureIsNotAFinding() {
-        // The message deliberately does NOT contain "no such algorithm": the classifier has a
-        // second, message-based arm for providers that raise a bare GeneralSecurityException,
-        // and a fixture matching both would stay green with the TYPE arm removed — satisfied by
-        // a branch it is not about (measured: control OM3 did not fire).
-        TSPException providerMissing = new TSPException("unable to process signature",
-                new CMSException("can't create digest calculator",
-                        new OperatorCreationException("exception on setup",
-                                new NoSuchAlgorithmException("1.2.3.4 MessageDigest not "
-                                        + "available"))));
+    @DisplayName("an algorithm no provider implements is UNKNOWN_ALGORITHM, as the spec says")
+    void anUnimplementedAlgorithmIsUnknownAlgorithm() throws Exception {
+        String madeUp = "1.2.3.4.5.6.7.8.9";
+        org.bouncycastle.asn1.cms.ContentInfo parsed = org.bouncycastle.asn1.cms.ContentInfo
+                .getInstance(org.bouncycastle.asn1.ASN1Primitive.fromByteArray(
+                        tokenOver(ROOT, true)));
+        org.bouncycastle.asn1.cms.SignedData signed =
+                org.bouncycastle.asn1.cms.SignedData.getInstance(parsed.getContent());
+        org.bouncycastle.asn1.cms.SignerInfo info = org.bouncycastle.asn1.cms.SignerInfo
+                .getInstance(signed.getSignerInfos().getObjectAt(0));
+        org.bouncycastle.asn1.cms.SignerInfo renamed = new org.bouncycastle.asn1.cms.SignerInfo(
+                info.getSID(), info.getDigestAlgorithm(), info.getAuthenticatedAttributes(),
+                new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
+                        new ASN1ObjectIdentifier(madeUp)),
+                info.getEncryptedDigest(), info.getUnauthenticatedAttributes());
+        byte[] rebuilt = new org.bouncycastle.asn1.cms.ContentInfo(parsed.getContentType(),
+                new org.bouncycastle.asn1.cms.SignedData(signed.getDigestAlgorithms(),
+                        signed.getEncapContentInfo(), signed.getCertificates(), signed.getCRLs(),
+                        new org.bouncycastle.asn1.DERSet(renamed))).getEncoded("DER");
 
-        assertTrue(TokenSignature.uncheckable(providerMissing),
-                "a signature this build has no provider for was classified as a bad signature, "
-                        + "which names a defect nobody found. The failure arrives as a plain "
-                        + "TSPException, so catching that type as a finding is what produced "
-                        + "exit 2 for an unchecked signature");
+        org.bouncycastle.tsp.TimeStampToken token = new org.bouncycastle.tsp.TimeStampToken(
+                new org.bouncycastle.cms.CMSSignedData(rebuilt));
+        Outcome.Check answer = TokenSignature.verify("token signature", "the token", token,
+                new X509CertificateHolder(certificate.getEncoded()));
 
-        // And the other direction, which matters just as much: a real validation failure must
-        // NOT be excused as something this build could not compute.
-        assertFalse(TokenSignature.uncheckable(
-                        new TSPValidationException("certificate hash does not match certID hash")),
-                "a token that genuinely does not verify was excused as uncheckable, so "
-                        + "tampering would be reported as 'we could not tell'");
-        assertFalse(TokenSignature.uncheckable(new TSPException("unable to process signature",
-                        new CMSException("message-digest attribute value does not match "
-                                + "calculated value"))),
-                "a CMS signature that does not match was excused as uncheckable. Only a MISSING "
-                        + "provider is a limit of this build; a mismatch is a finding");
-
-        // A key that will not initialise is its OWN answer. Two reviews pushed this in
-        // opposite directions — one called UNAVAILABLE "a mismatch excused", the other called
-        // FAILED "a comparison nobody made" — and the resolution is that neither
-        // UNKNOWN_ALGORITHM nor "does not verify" is true. Nothing was compared, and the reason
-        // code says which kind of nothing.
-        TSPException keyUnusable = new TSPException("unable to process signature",
-                new CMSException("can't create digest calculator",
-                        new OperatorCreationException("exception on setup",
-                                new java.security.InvalidKeyException(
-                                        "EC key given for RSA signature"))));
-        assertTrue(TokenSignature.keyNotUsable(keyUnusable),
-                "a key the token's own certificate carries that will not initialise was not "
-                        + "recognised, so this case falls into one of the two answers that are "
-                        + "both wrong for it");
-        assertFalse(TokenSignature.keyNotUsable(providerMissing),
-                "a MISSING provider was classified as an unusable key, so the two kinds of "
-                        + "'nothing was compared' can no longer be told apart");
-
-        // The second arm, on its own fixture: a provider that reports the absence as a bare
-        // GeneralSecurityException rather than as one of the three types above.
-        assertTrue(TokenSignature.uncheckable(new TSPException("unable to process signature",
-                        new java.security.GeneralSecurityException(
-                                "no such algorithm: 1.2.840.113549.1.1.10"))),
-                "a provider reporting a missing algorithm as a plain GeneralSecurityException "
-                        + "was classified as a bad signature");
+        assertEquals(Outcome.UNAVAILABLE, answer.outcome(),
+                "a signature algorithm no provider in this build implements was reported as a "
+                        + "finding about the token. Nothing was compared: " + answer);
+        assertEquals("UNKNOWN_ALGORITHM", answer.reasonCode(), answer + "");
     }
 }

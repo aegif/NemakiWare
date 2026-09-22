@@ -523,10 +523,12 @@ public final class PackageIntegrity {
                             + "verifier could not read it as XML: " + fixity.unreadable());
         }
         if (fixity.mostDigestsInOneObject() > 1) {
-            // §9's own sentence, on its own terms: ONE premis:object describing one file with
-            // TWO digests is PREMIS contradicting itself, and seeing that needs no
-            // object-to-file linkage. Withdrawing the count rule took this with it; it comes
-            // back separately (subagent, ninth review, P2).
+            // §9 on its own terms: ONE premis:object describing one file with TWO digests is
+            // PREMIS contradicting itself, and seeing that needs no object-to-file linkage.
+            // Withdrawing the count rule took this with it; it comes back separately (subagent,
+            // ninth review, P2). The twin in core's SipVerifier.payloadDigestCheck answers the
+            // same — it did NOT for one batch, and the CLI and the product's own /verify gave
+            // opposite answers about the same zip.
             return Outcome.Check.failed("payload fixity",
                     "one premis:object records " + fixity.mostDigestsInOneObject()
                             + " message digests for the file it describes, so the PREMIS "
@@ -633,7 +635,7 @@ public final class PackageIntegrity {
 
         List<String> missing = new ArrayList<>();
         for (String href : named) {
-            if (!resolves(entries, href)) {
+            if (!resolves(entries, metsPaths, href)) {
                 missing.add(href);
             }
         }
@@ -659,9 +661,33 @@ public final class PackageIntegrity {
         return Outcome.Check.passed("mets closure");
     }
 
-    private static boolean resolves(Map<String, byte[]> entries, String href) {
+    /**
+     * Does the package carry the file this METS names?
+     *
+     * <p>A METS href is relative to the METS's OWN directory, so that is tried first and exactly.
+     * The loose suffix match stays as a fallback for producers that write the path from some
+     * other base — but it no longer resolves into the PAYLOAD. The two halves of this check were
+     * asymmetric: the METS was searched for with payload excluded while its references were
+     * resolved with payload included, so a METS naming {@code metadata/preservation/premis.xml}
+     * that the package carried only as a copy INSIDE a payload answered "closure complete" while
+     * {@code payload fixity} answered "the package carries no PREMIS" — two checks of one profile
+     * reading one name in opposite directions (subagent, ninth review, P3).
+     *
+     * <p>Payload the METS names in the ordinary way still resolves: it is at
+     * {@code <mets dir>/representations/…/data/…}, which the exact arm finds.
+     */
+    private static boolean resolves(Map<String, byte[]> entries, List<String> metsPaths,
+            String href) {
         String wanted = trimLeading(href);
-        return entries.keySet().stream().anyMatch(path -> path.endsWith(wanted));
+        for (String metsPath : metsPaths) {
+            int slash = metsPath.lastIndexOf('/');
+            String directory = slash < 0 ? "" : metsPath.substring(0, slash + 1);
+            if (entries.containsKey(directory + wanted)) {
+                return true;
+            }
+        }
+        return entries.keySet().stream()
+                .anyMatch(path -> !isPayload(path) && path.endsWith(wanted));
     }
 
     private static String trimLeading(String href) {

@@ -449,6 +449,51 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                         + everyday.detail());
     }
 
+    /**
+     * The METS is SEARCHED for with payload excluded; its references are RESOLVED the same way.
+     *
+     * <p>They were not. {@code metsClosure} found the METS through {@code pathsEndingWith} (no
+     * payload) and then resolved every href with a bare {@code endsWith} over every entry
+     * (payload included), so a METS naming {@code metadata/preservation/premis.xml} that the
+     * package carried ONLY as a copy inside a payload answered "closure complete" — while
+     * {@code payload fixity}, looking for the same name, answered "the package carries no
+     * PREMIS". Two checks of one profile reading one name in opposite directions (subagent,
+     * ninth review, P3).
+     *
+     * <p>Both halves are asserted here, so the lock is about the DISAGREEMENT and not about
+     * either answer on its own.
+     */
+    @Test
+    @DisplayName("a METS reference is not satisfied by a copy inside the payload")
+    void aPayloadCopyDoesNotCloseTheMets(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        String inPayload = "representations/rep1/data/inner/metadata/preservation/premis.xml";
+        // The package's OWN PREMIS is gone; only a copy inside the payload is left. The METS
+        // names that copy as well, so the "payload the METS does not name" arm cannot answer
+        // this lock instead.
+        entries.remove(ROOT + "metadata/preservation/premis.xml");
+        entries.put(ROOT + inPayload, premis(sha256(payload), "SHA-256"));
+        entries.put(ROOT + "METS.xml", mets("representations/rep1/data/minutes.txt", inPayload,
+                "metadata/preservation/premis.xml"));
+
+        Path sip = zip(tmp, "payload-copy-closes-mets.zip", entries);
+        List<Outcome.Check> checks = PackageIntegrity.check(PackageReader.open(sip).entries());
+
+        Outcome.Check closure = checkNamed(checks, "mets closure");
+        assertEquals(Outcome.FAILED, closure.outcome(),
+                "the METS names a file the package does not carry, and a copy of it INSIDE the "
+                        + "payload was accepted as that file: " + closure.detail());
+        assertTrue(closure.detail().contains("metadata/preservation/premis.xml"),
+                closure.detail());
+
+        Outcome.Check fixity = checkNamed(checks, "payload fixity");
+        assertTrue(fixity.detail().contains("carries no PREMIS"),
+                "the other half of the disagreement changed shape, so this lock no longer "
+                        + "measures the two checks reading one name the same way: "
+                        + fixity.detail());
+    }
+
     @Test
     @DisplayName("a METS with an internal DOCTYPE is still read")
     void aMetsWithAnInternalDoctypeIsStillRead(@TempDir Path tmp) throws Exception {

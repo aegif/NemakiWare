@@ -172,8 +172,8 @@ class SipVerifierTest {
      * they share the expected answers.
      */
     @Test
-    @DisplayName("a second digest under another prefix is ambiguous here too")
-    void aSecondDigestUnderAnotherPrefixIsAmbiguousHereToo(@TempDir Path tmp) throws Exception {
+    @DisplayName("a second digest in the same object is a finding here too")
+    void aSecondDigestUnderAnotherPrefixIsAFindingHereToo(@TempDir Path tmp) throws Exception {
         String payload = "the minutes";
         String matching = SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8));
         String other = SipVerifier.sha256Hex("something else".getBytes(StandardCharsets.UTF_8));
@@ -195,10 +195,60 @@ class SipVerifierTest {
 
         SipVerifier.Result result = SipVerifier.verify(sip);
 
-        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "payload digest"),
+        assertEquals(SipVerifier.Outcome.FAILED, outcomeOf(result, "payload digest"),
                 "a PREMIS with a matching digest and a contradicting one under a different "
-                        + "prefix was read as carrying one. The CLI answers the same way: "
+                        + "prefix, BOTH INSIDE ONE OBJECT, was not reported as the document "
+                        + "contradicting itself. The CLI answers FAILED for this same zip: "
                         + result.asMap());
+        assertTrue(detailOf(result, "payload digest").contains("contradicts itself"),
+                detailOf(result, "payload digest"));
+
+    }
+
+    /**
+     * The control that keeps the arm above NARROW, and the lock on the arm below it.
+     *
+     * <p>TWO objects with ONE digest each is what an ordinary CSIP package looks like — its
+     * PREMIS describes the METS as well as the payload — and that must stay {@code UNAVAILABLE}.
+     * The twin on the CLI side is
+     * {@code PackageIntegrityIsCheckedNotAssumedTest#equalCountsAreUnavailableNotFailed}.
+     *
+     * <p><b>ONE algorithm element between the two objects</b>, deliberately. With two, the
+     * "two algorithms for one digest" arm answers {@code UNAVAILABLE} as well, and a sabotage of
+     * the digest-count arm would leave this green — the sibling-arm shape that has made nine
+     * controls on this branch fail to fire.
+     */
+    @Test
+    @DisplayName("two objects with one digest each is ambiguous here too, not a finding")
+    void twoObjectsWithOneDigestEachAreAmbiguousHereToo(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        String matching = SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8));
+        String other = SipVerifier.sha256Hex("something else".getBytes(StandardCharsets.UTF_8));
+        Map<String, String> proof = realProofFor(2);
+        Path ordinary = zip(tmp, "ordinary-csip.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                "<premis:premis xmlns:premis=\"http://www.loc.gov/premis/v3\">"
+                        + "<premis:object><premis:objectCharacteristics><premis:fixity>"
+                        + "<premis:messageDigestAlgorithm>SHA-256"
+                        + "</premis:messageDigestAlgorithm>"
+                        + "<premis:messageDigest>" + matching + "</premis:messageDigest>"
+                        + "</premis:fixity></premis:objectCharacteristics></premis:object>"
+                        + "<premis:object><premis:objectCharacteristics><premis:fixity>"
+                        + "<premis:messageDigest>" + other + "</premis:messageDigest>"
+                        + "</premis:fixity></premis:objectCharacteristics></premis:object>"
+                        + "</premis:premis>",
+                "sip/metadata/other/nemaki-evidence.json", proof.get("json")));
+
+        SipVerifier.Result everyday = SipVerifier.verify(ordinary);
+
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(everyday, "payload digest"),
+                "a package whose PREMIS describes a second file as well as the payload — which "
+                        + "CSIP and Archivematica both write — did not answer 'cannot pair "
+                        + "them'. Either it was reported as a finding, or the first digest was "
+                        + "taken as the payload's: " + everyday.asMap());
+        assertTrue(detailOf(everyday, "payload digest").contains("object-to-file linkage"),
+                detailOf(everyday, "payload digest"));
     }
 
     @Test

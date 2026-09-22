@@ -121,10 +121,11 @@ final class Premis {
     /**
      * The largest number of {@code messageDigest} elements inside one {@code premis:object}.
      *
-     * <p>§9's "PREMIS が 1 つの payload に 2 つ fixity を持つ … は FAILED" is about ONE object
-     * describing one file twice, and that is visible without reading which file it describes.
-     * A withdrawal of the count rule took this with it; it comes back on its own terms
-     * (subagent, ninth review, P2).
+     * <p>§9 asks for this by name: one object describing one file twice is visible without
+     * reading WHICH file it describes. A withdrawal of the count rule took this with it; it
+     * comes back on its own terms (subagent, ninth review, P2). The sentence it used to quote
+     * verbatim is no longer in the spec — the correction rewrote it — so it is paraphrased
+     * here, and §9 is the canon.
      */
     private static int mostDigestsInOneObject(Element root) {
         int most = 0;

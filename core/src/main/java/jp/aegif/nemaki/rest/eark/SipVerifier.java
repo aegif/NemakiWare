@@ -227,6 +227,7 @@ public final class SipVerifier {
         // answered PASSED here (subagent, fifth review, P2).
         List<String> digests;
         List<String> algorithms;
+        int mostInOneObject;
         try {
             javax.xml.parsers.DocumentBuilderFactory factory =
                     javax.xml.parsers.DocumentBuilderFactory.newInstance();
@@ -252,11 +253,25 @@ public final class SipVerifier {
                     new org.xml.sax.InputSource(new java.io.StringReader(premis)));
             digests = premisTexts(document.getDocumentElement(), "messageDigest");
             algorithms = premisTexts(document.getDocumentElement(), "messageDigestAlgorithm");
+            mostInOneObject = mostDigestsInOneObject(document.getDocumentElement());
         } catch (Exception notXml) {
             return new Check("payload digest", Outcome.UNAVAILABLE,
                     "the package presents a PREMIS document this verifier could not read as "
                             + "XML (" + notXml.getMessage() + "), so nothing about the bytes is "
                             + "established either way.");
+        }
+        if (mostInOneObject > 1) {
+            // §9's own sentence on its own terms, and the twin of the same arm in
+            // PackageIntegrity.payloadFixity. ONE premis:object recording TWO digests for the
+            // file it describes is PREMIS contradicting ITSELF, which needs no object-to-file
+            // linkage to see. Withdrawing the count rule below took this with it on the CLI
+            // side; it came back there and NOT here, so for one batch the CLI answered FAILED
+            // and this endpoint answered UNAVAILABLE about the same file — the exact divergence
+            // the twin rule exists to forbid.
+            return new Check("payload digest", Outcome.FAILED,
+                    "one premis:object records " + mostInOneObject + " message digests for the "
+                            + "file it describes, so the PREMIS contradicts itself about that "
+                            + "file.");
         }
         if (digests.size() > 1) {
             // NOT a count comparison — the twin of PackageIntegrity.payloadFixity. CSIP and
@@ -620,6 +635,47 @@ public final class SipVerifier {
                 collectPremis(child, localName, found);
             }
         }
+    }
+
+    /**
+     * The largest number of {@code messageDigest} elements inside one {@code premis:object}.
+     *
+     * <p>The twin of {@code Premis.mostDigestsInOneObject}. Two digests in ONE object is the
+     * document contradicting itself about one file; two digests spread over two objects is what
+     * an ordinary CSIP package looks like, and telling those apart is the whole reason this is
+     * grouped rather than counted flat.
+     */
+    private static int mostDigestsInOneObject(org.w3c.dom.Element root) {
+        int most = 0;
+        for (org.w3c.dom.Element object : premisElements(root, "object")) {
+            List<String> inside = new ArrayList<>();
+            collectPremis(object, "messageDigest", inside);
+            most = Math.max(most, inside.size());
+        }
+        return most;
+    }
+
+    /** Every descendant element with this local name, in a PREMIS namespace. */
+    private static List<org.w3c.dom.Element> premisElements(org.w3c.dom.Element element,
+            String localName) {
+        List<org.w3c.dom.Element> found = new ArrayList<>();
+        if (element == null) {
+            return found;
+        }
+        String name = element.getLocalName() == null ? element.getNodeName()
+                : element.getLocalName();
+        String namespace = element.getNamespaceURI();
+        if (localName.equals(name)
+                && (namespace == null || PREMIS_NAMESPACES.contains(namespace))) {
+            found.add(element);
+        }
+        org.w3c.dom.NodeList children = element.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            if (children.item(i) instanceof org.w3c.dom.Element child) {
+                found.addAll(premisElements(child, localName));
+            }
+        }
+        return found;
     }
 
     /**

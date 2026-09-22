@@ -188,6 +188,82 @@ class TheSipLayoutIsWhereCommonsIpPutsItTest {
                         + ROOT + "metadata/other/ers.der");
     }
 
+    /**
+     * Every METS reference resolves under the METS's OWN directory.
+     *
+     * <p>This is the assumption the independent verifier's {@code mets closure} now rests on:
+     * it resolves an {@code xlink:href} against the directory of the METS that wrote it, and
+     * falls back to a loose suffix match only outside the payload. Before that it matched any
+     * entry whose path ENDED with the href, which let a copy inside the payload stand in for a
+     * file the package did not carry — while {@code payload fixity}, searching for the same
+     * name with the payload excluded, answered "no PREMIS". Two checks, one name, opposite
+     * answers (subagent, ninth review, P3).
+     *
+     * <p>The verifier cannot measure this: it may not depend on {@code core}, so "the product's
+     * own packages resolve exactly" was a claim on the other side of a module boundary. It is
+     * measured HERE, against what commons-ip2 actually wrote — the same reason the rest of this
+     * class exists. If a library upgrade starts writing {@code ../} hrefs, this goes red before
+     * an external verifier refuses a package we shipped.
+     */
+    @Test
+    @DisplayName("every METS href resolves under its own METS's directory, exactly")
+    void everyMetsReferenceResolvesBesideItsOwnMets(@TempDir Path tmp) throws Exception {
+        java.util.Map<String, byte[]> entries = new java.util.LinkedHashMap<>();
+        try (ZipInputStream in = new ZipInputStream(
+                Files.newInputStream(EarkSipExporterTest.buildOne(tmp)))) {
+            ZipEntry entry;
+            while ((entry = in.getNextEntry()) != null) {
+                entries.put(entry.getName(), in.readAllBytes());
+            }
+        }
+
+        List<String> metsPaths = entries.keySet().stream()
+                .filter(name -> name.endsWith("METS.xml")).toList();
+        assertFalse(metsPaths.isEmpty(), "the package carries no METS: " + entries.keySet());
+
+        List<String> unresolved = new ArrayList<>();
+        int references = 0;
+        for (String metsPath : metsPaths) {
+            String directory = metsPath.substring(0, metsPath.lastIndexOf('/') + 1);
+            org.w3c.dom.Document document = metsDocument(entries.get(metsPath));
+            org.w3c.dom.NodeList all = document.getElementsByTagName("*");
+            for (int i = 0; i < all.getLength(); i++) {
+                org.w3c.dom.Element element = (org.w3c.dom.Element) all.item(i);
+                String href = element.getAttributeNS(
+                        "http://www.w3.org/1999/xlink", "href");
+                if (href == null || href.isBlank() || href.contains(":")) {
+                    // Absent, or not a local reference (a URL, a URN, a schema location).
+                    continue;
+                }
+                references++;
+                String wanted = href.replace('\\', '/');
+                while (wanted.startsWith("./") || wanted.startsWith("/")) {
+                    wanted = wanted.startsWith("./") ? wanted.substring(2) : wanted.substring(1);
+                }
+                if (!entries.containsKey(directory + wanted)) {
+                    unresolved.add(metsPath + " -> " + href);
+                }
+            }
+        }
+
+        assertTrue(references > 0,
+                "no local xlink:href was found in any METS, so this lock measured nothing. "
+                        + "commons-ip2 changed how it writes references: " + metsPaths);
+        assertEquals(List.of(), unresolved,
+                "a METS this product wrote names a file that is not where the METS is. The "
+                        + "independent verifier resolves references that way, so these are the "
+                        + "references it would report as missing from a package we shipped. "
+                        + "Entries: " + entries.keySet());
+    }
+
+    private static org.w3c.dom.Document metsDocument(byte[] xml) throws Exception {
+        javax.xml.parsers.DocumentBuilderFactory factory =
+                javax.xml.parsers.DocumentBuilderFactory.newInstance();
+        factory.setNamespaceAware(true);
+        factory.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true);
+        return factory.newDocumentBuilder().parse(new java.io.ByteArrayInputStream(xml));
+    }
+
     @Test
     @DisplayName("the contract's nemaki-evidence/ DIRECTORY does not exist yet — recorded, not assumed")
     void theContractDirectoryIsNotThereYet(@TempDir Path tmp) throws Exception {
