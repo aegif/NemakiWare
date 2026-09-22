@@ -12110,8 +12110,9 @@ CONTROLS = [
         what="the METS is scanned as text again, so a document binding XLink to another prefix names nothing and the closure check silently disappears",
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='        String href = element.getAttributeNS(XLINK, "href");',
-        replace='        String href = element.getAttribute("xlink:href");',
+        # Re-pointed 2026-09-23 (18 巡目): the attribute is asked for by name now.
+        find='        if (element.hasAttributeNS(XLINK, "href")) {\n            String href = normalisedSlashes(element.getAttributeNS(XLINK, "href"));',
+        replace='        if (element.hasAttribute("xlink:href")) {\n            String href = normalisedSlashes(element.getAttribute("xlink:href"));',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['aMetsUnderAnotherPrefixIsStillRead'],
     ),
@@ -12993,8 +12994,9 @@ CONTROLS = [
         what='xml:base is concatenated instead of merged (RFC 3986 §5.2.2 replaces the last segment), so every reference under a base ending in a segment is looked for in the wrong place',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='        int slash = base.lastIndexOf(\'/\');\n        return (slash < 0 ? "" : base.substring(0, slash + 1)) + reference;',
-        replace='        return base.endsWith("/") ? base + reference : base + "/" + reference;',
+        # Re-pointed 2026-09-23 (18 巡目): merging lives in against() now.
+        find='        String merged = slash < 0 ? (authority.isEmpty() ? "" : "/") + reference\n                : path.substring(0, slash + 1) + reference;',
+        replace='        String merged = path.endsWith("/") ? path + reference : path + "/" + reference;',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['anXmlBaseIsMergedAndJudgedOnTheResult'],
     ),
@@ -13003,10 +13005,13 @@ CONTROLS = [
         what='locality is judged on the bare href and the base applied after, so an xml:base with a scheme produces a URL that is looked for as a package path',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='            if (isPackageLocal(merged)) {\n                hrefs.add(merged);\n            }',
-        replace='            if (isPackageLocal(href)) {\n                hrefs.add(merged);\n            }',
+        # Re-pointed 2026-09-23 (18 巡目): the guard also admits a reference that names no file.
+        find='            if (merged != null && isPackageLocal(merged)) {',
+        replace='            if (merged != null && isPackageLocal(href)) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['anXmlBaseIsMergedAndJudgedOnTheResult'],
+        expect_fail=['anXmlBaseIsMergedAndJudgedOnTheResult',
+                     'anAbsoluteXmlBaseUnderAnAuthorityKeepsIt',
+                     'anAuthorityMeansSomewhereElse'],
     ),
     dict(
         id='SD3',
@@ -13055,19 +13060,25 @@ CONTROLS = [
         what='an absolute href under a base with an authority skips the merge, so it is looked for inside the package instead of on that host',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        # Re-pointed 2026-09-23 (17 巡目) with the resolve/collect rewrite.
-        find='                    || (href.startsWith("/") && !hasAuthority(base) && !hasScheme(base))',
-        replace='                    || href.startsWith("/")',
+        # Re-pointed 2026-09-23 (18 巡目): the three guesses at the base's shape became one
+        # arm in against(). THIS control drops the authority; TH3 and TI3 drop the other two
+        # parts separately, because dropping all three at once is satisfied by any one of them
+        # (Codex, eighteenth review, P3 — SH3 and SS3 fired on the hasAuthority sibling).
+        find='            return scheme + authority + drive + reference;',
+        replace='            return reference;',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['anAuthorityMeansSomewhereElse'],
+        expect_fail=['anAuthorityMeansSomewhereElse',
+                     'anAbsoluteReferenceUnderASchemeOnlyBaseIsNotThisPackage',
+                     'anAbsoluteXmlBaseUnderAnAuthorityKeepsIt'],
     ),
     dict(
         id='SI3',
         what="an authority-only base merges by its last slash, so the first segment of the reference is read as a host and the payload's only name is dropped",
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='        if (hasAuthority(base) && base.indexOf(\'/\', base.indexOf("//") + 2) < 0) {',
-        replace='        if (false) {',
+        # Re-pointed 2026-09-23 (18 巡目): §5.2.3 is the slash<0 arm of against() now.
+        find='        String merged = slash < 0 ? (authority.isEmpty() ? "" : "/") + reference',
+        replace='        String merged = slash < 0 ? "" + reference',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['anAuthorityMeansSomewhereElse'],
     ),
@@ -13165,9 +13176,10 @@ CONTROLS = [
         what='an absolute xml:base drops the outer base even when that base has an authority, so a reference on another host becomes a package path',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        # Re-pointed 2026-09-23 (17 巡目) with the resolve/collect rewrite.
-        find='            base = merge(hasScheme(declared)\n                    || (declared.startsWith("/") && !hasAuthority(base) && !hasScheme(base))\n                    ? "" : base, declared);',
-        replace='            base = merge(declared.startsWith("/") || hasScheme(declared) ? "" : base, declared);',
+        # Re-pointed 2026-09-23 (18 巡目): the base stack calls against() now, so the
+        # sabotage is the CALL SITE dropping the outer base rather than a guess inside it.
+        find='            base = against(base, declared);',
+        replace='            base = against("", declared);',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['anAbsoluteXmlBaseUnderAnAuthorityKeepsIt'],
     ),
@@ -13176,10 +13188,12 @@ CONTROLS = [
         what='the count of locators that were NOT evaluated is stated only on the PASSED arm, so "did not ask" reads as "asked, and there was nothing" on the arms where it matters most',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='    private static String notEvaluated(int external) {',
-        replace='    private static String notEvaluated(int external) {\n        if (true) { return ""; }',
+        # Re-pointed 2026-09-23 (18 巡目): the declined-but-local count is said separately.
+        find='    private static String notEvaluated(int external, int declinedLocal) {',
+        replace='    private static String notEvaluated(int external, int declinedLocal) {\n        if (true) { return ""; }',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['notEvaluatedIsStatedOnEveryArm', 'skippedLocatorsAreCountedInTheAnswer'],
+        expect_fail=['notEvaluatedIsStatedOnEveryArm', 'skippedLocatorsAreCountedInTheAnswer',
+                     'aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload'],
     ),
     # SU3 was retired 2026-09-23 (16 巡目). It sabotaged a UNC arm in namesAnotherHost,
     # and after backslashes were normalised where references are READ that arm never sees
@@ -13227,11 +13241,13 @@ CONTROLS = [
         what='"the payload is not named" is reported as a FINDING even when locators were declined, so a check that admits it did not look also says content nobody committed to is inside',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        # Re-pointed 2026-09-23 (17 巡目) with the resolve/collect rewrite.
-        find='            if (ambiguous > 0) {',
+        # Re-pointed 2026-09-23 (18 巡目): the arm is taken when a declined locator RESOLVES
+        # to one of the unnamed payloads.
+        find='            if (!mayName.isEmpty()) {',
         replace='            if (false) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aPayloadNamedOnlyByAnExternalLocatorIsNotEstablished'],
+        expect_fail=['aPayloadNamedOnlyByAnExternalLocatorIsNotEstablished',
+                     'aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload'],
     ),
     dict(
         id='SZ3',
@@ -13265,10 +13281,10 @@ CONTROLS = [
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
         # The COUNT is what the lock reads, so that is what the sabotage removes (changing the
         # surrounding words left it green — measured).
-        # Re-pointed 2026-09-23 (17 巡目) with the resolve/collect rewrite.
+        # Re-pointed 2026-09-23 (18 巡目) with the rewrite of the ambiguity answer.
         # The lock reads the count in this sentence.
-        find='                                + ambiguous + " locator(s) this METS declares as non-URL are "',
-        replace='                                + "some locator(s) this METS declares as non-URL are "',
+        find='                                + mayName.size() + " locator(s) this METS declares as non-URL "',
+        replace='                                + "some locator(s) this METS declares as non-URL "',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['aPayloadNamedOnlyByAnExternalLocatorIsNotEstablished'],
     ),
@@ -13278,8 +13294,8 @@ CONTROLS = [
         what='a path-less reference names the base only when an xml:base was declared, so "?download" in a METS without one resolves to the package root',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        # Re-pointed 2026-09-23 (17 巡目): the path-less reference is answered in resolve now,
-        find='            return entries.containsKey(metsPath) ? metsPath : null;',
+        # Re-pointed 2026-09-23 (18 巡目): the unreachable null side of the guard is gone.
+        find='            return metsPath;',
         replace='            return null;',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['anEmptyPathReferenceNamesTheBase'],
@@ -13311,12 +13327,88 @@ CONTROLS = [
         expect_fail=['everyJavadocBlockReachesADeclaration'],
     ),
     dict(
+        id='TH3',
+        what="an absolute reference under a base that has a SCHEME and no authority loses the scheme, so a reference into another namespace becomes a path in this package",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        # One arm, three parts, three controls. SH3 drops all of it — which any one of the
+        # three would satisfy — so the scheme and the drive are measured on their own (Codex,
+        # eighteenth review, P3).
+        find='            return scheme + authority + drive + reference;',
+        replace='            return authority + drive + reference;',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['anAbsoluteReferenceUnderASchemeOnlyBaseIsNotThisPackage',
+                     'aReferenceWithItsOwnAuthorityReplacesTheBases'],
+    ),
+    dict(
+        id='TI3',
+        what="an absolute reference under a Windows DRIVE base loses the drive, so a file on that drive is looked for inside the package",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='            return scheme + authority + drive + reference;',
+        replace='            return scheme + authority + reference;',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['anAbsoluteReferenceUnderASchemeOnlyBaseIsNotThisPackage'],
+    ),
+    dict(
+        id='TJ3',
+        what="a locator dropped by its LOCTYPE is discarded instead of kept, so a payload named only by one is reported as content nobody committed to",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='                (isLocalLocType(element) ? hrefs : declined).add(merged);',
+        replace='                (isLocalLocType(element) ? hrefs : new ArrayList<String>()).add(merged);',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aPayloadNamedOnlyByAnExternalLocatorIsNotEstablished',
+                     'aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload'],
+    ),
+    dict(
+        id='TK3',
+        what="every declined locator makes the payload ambiguous again, whether or not it resolves to one — the shape that let one harmless mdRef turn the smuggled-content finding into exit 3",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='                    if (entry != null && unnamed.contains(entry)) {',
+        replace='                    if (true) {',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload'],
+    ),
+    dict(
+        id='TL3',
+        what="a path-less reference is answered as the METS even when an xml:base is in force, so the payload that base names is reported as unnamed and a base naming an absent file PASSES",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        return base.endsWith("/") ? null : base;',
+        replace='        return href;',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['anEmptyPathReferenceNamesTheBase'],
+    ),
+    dict(
+        id='TM3',
+        what='a literal xlink:href="" is read as an absent attribute, so a payload whose only name is the same-document reference is reported as unnamed',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        if (element.hasAttributeNS(XLINK, "href")) {\n            String href = normalisedSlashes(element.getAttributeNS(XLINK, "href"));',
+        replace='        if (!element.getAttributeNS(XLINK, "href").isEmpty()) {\n            String href = normalisedSlashes(element.getAttributeNS(XLINK, "href"));',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['anEmptyPathReferenceNamesTheBase'],
+    ),
+    dict(
+        id='TN3',
+        what="a locator declined for its LOCTYPE is also counted as naming something OUTSIDE the package, so one locator is reported twice and described wrongly once",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        return all.size() - local.size() - declined.size();',
+        replace='        return all.size() - local.size();',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload'],
+    ),
+    dict(
         id='TG3',
         what='backslashes stop being normalised where references are read, so the UNC spelling of an authority is read as a path inside the package',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='        href = href == null ? null : normalisedSlashes(href);',
-        replace='        href = href;',
+        # Re-pointed 2026-09-23 (18 巡目): the attribute is read inside the guard now.
+        find='            String href = normalisedSlashes(element.getAttributeNS(XLINK, "href"));',
+        replace='            String href = element.getAttributeNS(XLINK, "href");',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['aUncPathIsNotInsideThePackage'],
     ),

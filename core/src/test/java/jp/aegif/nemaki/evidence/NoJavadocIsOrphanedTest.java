@@ -336,10 +336,11 @@ class NoJavadocIsOrphanedTest {
     @DisplayName("no javadoc block is followed straight by another, reaching no declaration")
     void everyJavadocBlockReachesADeclaration() throws IOException {
         // The ROOTS themselves, counted. The file threshold cannot see a root LINE being
-        // deleted: 607 files are read today and the two verifier roots are 32 of them, so
-        // losing exactly the roots added after the sixth miss would leave 575 and stay green
-        // (subagent, seventeenth review, P3). A missing DIRECTORY is caught by the fail()
-        // below; a missing ENTRY is caught here.
+        // deleted: 607 files are read today and the FOUR verifier roots are 32 of them — the
+        // two evidence-verifier-core ones are 30 — so losing exactly the roots added after the
+        // sixth miss would leave 575 and stay green. The first version of this note said "the
+        // two verifier roots are 32", which is neither pair (subagent, eighteenth review, P3).
+        // A missing DIRECTORY is caught by the fail() below; a missing ENTRY is caught here.
         assertEquals(17, ROOTS.size(),
                 "the list of source roots changed. Widen it deliberately and update this "
                         + "number; a root that quietly disappears takes its files with it: "

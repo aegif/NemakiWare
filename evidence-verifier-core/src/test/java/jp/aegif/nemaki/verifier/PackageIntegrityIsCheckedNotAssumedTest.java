@@ -1678,31 +1678,49 @@ class PackageIntegrityIsCheckedNotAssumedTest {
     }
 
     /**
-     * An empty-path reference names the METS DOCUMENT — whatever the base is.
+     * An empty-path reference names the BASE IN EFFECT — which is the METS only when there is
+     * no {@code xml:base}.
      *
-     * <p>{@code ?download} and {@code #page=2} have no path of their own. Answering them at
-     * collection time made the answer depend on the base: with no {@code xml:base} they
-     * resolved to the package root, and with a base ending in a slash they named a DIRECTORY
-     * (Codex, seventeenth review, P1; subagent, seventeenth review, P2 — the first fix reached
-     * one of the three shapes). {@code resolve} answers them once, against the METS itself,
-     * with nothing left to depend on.
+     * <p>{@code ""}, {@code ?download} and {@code #page=2} have no path of their own, so they
+     * name the base URI (RFC 3986 §4.4, §5.2.2). Three rules have now been tried for them: a
+     * merge that produced the base's DIRECTORY (Codex, sixteenth review, P1); a per-shape
+     * answer that depended on whether the base ended in a slash (subagent, seventeenth review,
+     * P2); and "always the METS, with nothing to depend on", which was wrong in BOTH directions
+     * and is what this replaces (both reviewers, eighteenth review, P2).
+     *
+     * <p><b>The previous version of this lock measured none of it.</b> Each of its three
+     * fixtures named the payload by a SECOND locator, so the path-less reference could resolve
+     * to the METS, to the payload, or to any other entry and all three answered PASSED
+     * (Codex, eighteenth review, P3). The shapes below are chosen so the destination is the
+     * only thing that decides: where the reference is the payload's ONLY name, resolving it
+     * anywhere else leaves the payload unnamed, and where the base names a file the package
+     * does not carry, resolving it to the METS turns a reference to something ABSENT into a
+     * PASS.
      */
     @Test
-    @DisplayName("an empty-path reference names the METS, whatever the base is")
+    @DisplayName("an empty-path reference names the base in effect, not always the METS")
     void anEmptyPathReferenceNamesTheBase(@TempDir Path tmp) throws Exception {
         String payload = "the minutes";
-        // Three shapes, one answer. The payload is named separately in each, so what is being
-        // measured is that the path-less reference RESOLVES — to the METS — rather than being
-        // reported as a file the package does not carry.
+        // NO BASE: the document itself. The payload is named separately, so what this shape
+        // measures is that a path-less reference is not reported as a missing file.
         Map<String, String> noBase = new LinkedHashMap<>(goodPackage(payload));
         noBase.put(ROOT + "METS.xml", mets("representations/rep1/data/minutes.txt", "?download"));
 
+        // A BASE THAT NAMES THE PAYLOAD, and the path-less reference is its ONLY name. PASSED
+        // only if the reference resolved to the base; answering "the METS" leaves the payload
+        // unnamed and this FAILS.
         Map<String, String> fileBase = new LinkedHashMap<>(goodPackage(payload));
-        // Under this base the payload is a SIBLING (§5.2.2 replaces the last segment), so the
-        // reference to it is the bare name — spelling it in full would double the path.
-        fileBase.put(ROOT + "METS.xml", metsWithBase("representations/rep1/data/minutes.txt",
-                "minutes.txt", "#page=2"));
+        fileBase.put(ROOT + "METS.xml",
+                metsWithBase("representations/rep1/data/minutes.txt", "?download"));
 
+        // The same with the LITERAL empty href, which getAttributeNS cannot tell from an
+        // absent one. It was dropped before the attribute was asked for by name.
+        Map<String, String> emptyHref = new LinkedHashMap<>(goodPackage(payload));
+        emptyHref.put(ROOT + "METS.xml",
+                metsWithBase("representations/rep1/data/minutes.txt", ""));
+
+        // A BASE ENDING IN A SLASH names a directory, and a directory is not a file this
+        // package must carry. The payload is named separately here.
         Map<String, String> folderBase = new LinkedHashMap<>(goodPackage(payload));
         folderBase.put(ROOT + "METS.xml", metsWithBase("metadata/preservation/",
                 "../../representations/rep1/data/minutes.txt", "?download"));
@@ -1710,6 +1728,7 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         Map<String, Map<String, String>> shapes = new LinkedHashMap<>();
         shapes.put("no-base", noBase);
         shapes.put("file-base", fileBase);
+        shapes.put("empty-href", emptyHref);
         shapes.put("folder-base", folderBase);
         for (Map.Entry<String, Map<String, String>> shape : shapes.entrySet()) {
             Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
@@ -1717,8 +1736,147 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                     "mets closure");
             assertEquals(Outcome.PASSED, closure.outcome(),
                     shape.getKey() + ": a reference with no path of its own was not resolved "
-                            + "against the METS: " + closure.detail());
+                            + "against the base in effect: " + closure.detail());
         }
+
+        // AND THE OTHER DIRECTION. A base naming a file the package does NOT carry must not be
+        // answered as "the METS, which is here". This is the fail-open half: a reference to
+        // something absent reported as satisfied.
+        Map<String, String> absentBase = new LinkedHashMap<>(goodPackage(payload));
+        absentBase.put(ROOT + "METS.xml", metsWithBase("representations/rep1/data/absent.txt",
+                "?download").replace("<mets:fileSec>", "<mets:fileSec><mets:file><mets:FLocat "
+                        + "xml:base=\"\" xlink:href=\"representations/rep1/data/minutes.txt\"/>"
+                        + "</mets:file>"));
+        Outcome.Check absent = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "absent-base.zip", absentBase)).entries()), "mets closure");
+        assertEquals(Outcome.FAILED, absent.outcome(),
+                "a path-less reference under a base naming a file the package does NOT carry "
+                        + "was answered as the METS, so a reference to something absent "
+                        + "PASSED: " + absent.detail());
+    }
+
+    /**
+     * A declined locator makes the payload ambiguous only if it WOULD HAVE NAMED IT.
+     *
+     * <p>"No reference names this payload" is unsafe to assert while a locator that could be
+     * the name was declined — but only then. The first narrowing counted locators that merely
+     * LOOKED like package paths, read from the raw {@code xlink:href}: it knew nothing of the
+     * {@code xml:base} in force and nothing of fragments, so a {@code LOCTYPE="URN"} locator
+     * spelled {@code #page=2} — which resolves to the METS — and one under an external base
+     * both counted. One such line in a METS was again enough to turn the ONE check that
+     * catches smuggled content from a finding (exit 2) into "could not tell" (exit 3), which
+     * is the defect the narrowing existed to remove (both reviewers, eighteenth review, P1).
+     *
+     * <p>The question is now asked of {@code resolve} — the same function that answers for the
+     * locators this verifier does follow.
+     */
+    @Test
+    @DisplayName("a declined locator makes the payload ambiguous only if it would name it")
+    void aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload(@TempDir Path tmp)
+            throws Exception {
+        String payload = "the minutes";
+        String smuggled = ROOT + "representations/rep1/data/smuggled.bin";
+
+        // A non-URL locator with NO PATH: it names the METS, so it cannot be the payload's
+        // missing name.
+        Map<String, String> pathLess = new LinkedHashMap<>(goodPackage(payload));
+        pathLess.put(smuggled, "content nobody committed to");
+        pathLess.put(ROOT + "METS.xml", metsWithLocType("URN", "#page=2",
+                "representations/rep1/data/minutes.txt"));
+
+        // A non-URL locator under an EXTERNAL base: it names something on that host.
+        Map<String, String> externalBase = new LinkedHashMap<>(goodPackage(payload));
+        externalBase.put(smuggled, "content nobody committed to");
+        externalBase.put(ROOT + "METS.xml", metsWithLocType("URN", "catalogue.xml",
+                "representations/rep1/data/minutes.txt")
+                .replace("<mets:mdRef ", "<mets:mdRef xml:base=\"https://example.org/\" "));
+
+        for (Map.Entry<String, Map<String, String>> shape : Map.of(
+                "path-less", pathLess, "external-base", externalBase).entrySet()) {
+            Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
+                    zip(tmp, shape.getKey() + "-declined.zip", shape.getValue())).entries()),
+                    "mets closure");
+            assertEquals(Outcome.FAILED, closure.outcome(),
+                    shape.getKey() + ": a locator that cannot name a package entry downgraded "
+                            + "the smuggled-content finding to 'could not tell': "
+                            + closure.detail());
+            assertTrue(closure.detail().contains("smuggled.bin"), closure.detail());
+        }
+
+        // AND THE ARM IS REACHABLE. A non-URL locator that DOES resolve to the unnamed payload
+        // is the case the ambiguity answer exists for; without this the narrowing could be
+        // "never ambiguous" and both assertions above would still pass.
+        Map<String, String> wouldName = new LinkedHashMap<>(goodPackage(payload));
+        wouldName.put(smuggled, "content nobody committed to");
+        wouldName.put(ROOT + "METS.xml", metsWithLocType("URN",
+                "representations/rep1/data/smuggled.bin",
+                "representations/rep1/data/minutes.txt"));
+        Outcome.Check ambiguous = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "would-name-declined.zip", wouldName)).entries()), "mets closure");
+        assertEquals(Outcome.UNAVAILABLE, ambiguous.outcome(),
+                "a payload whose only name is a locator this verifier declined to follow was "
+                        + "reported as content nobody committed to: " + ambiguous.detail());
+        assertEquals("AMBIGUOUS_PAYLOAD", ambiguous.reasonCode(), ambiguous.detail());
+        // And it is described as WHAT IT IS. One number drove both sentences, so a locator
+        // written as a package path but declared non-URL was also announced as naming
+        // "something OUTSIDE the package" — the same locator, counted twice and described
+        // wrongly once (subagent, eighteenth review, P3).
+        assertTrue(ambiguous.detail().contains("written as package-relative paths but declared "
+                        + "as non-URL"), ambiguous.detail());
+        assertFalse(ambiguous.detail().contains("OUTSIDE"),
+                "the declined package-path locator was also counted as naming something outside "
+                        + "the package: " + ambiguous.detail());
+    }
+
+    /**
+     * A base with a SCHEME and no authority keeps its scheme — it is not a package path.
+     *
+     * <p>Resolution merged by "replace everything after the last slash", which is correct only
+     * for a relative-path reference. Under {@code xml:base="urn:uuid:9f8e"} there is no slash
+     * to find, so an absolute {@code /representations/…} came back as a bare package path and
+     * this package's own payload satisfied a reference into ANOTHER NAMESPACE — PASSED, with
+     * no detail. The same merge appended to {@code file:/archive/} instead of replacing its
+     * path, so a package that carries the file was reported as missing it (both reviewers,
+     * eighteenth review, P1).
+     *
+     * <p>Both directions are here, because a rule that refuses everything would satisfy the
+     * first assertion alone.
+     */
+    @Test
+    @DisplayName("an absolute reference under a scheme-only base belongs to that base")
+    void anAbsoluteReferenceUnderASchemeOnlyBaseIsNotThisPackage(@TempDir Path tmp)
+            throws Exception {
+        String payload = "the minutes";
+        String absolute = "/representations/rep1/data/minutes.txt";
+
+        Map<String, String> urn = new LinkedHashMap<>(goodPackage(payload));
+        urn.put(ROOT + "METS.xml", metsWithBase("urn:uuid:9f8e", absolute));
+        Outcome.Check elsewhere = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "urn-base.zip", urn)).entries()), "mets closure");
+        assertNotEquals(Outcome.PASSED, elsewhere.outcome(),
+                "a reference under a urn: base was satisfied by this package's own payload: "
+                        + elsewhere.detail());
+
+        // A DRIVE is a path root, not a scheme, and it is kept for the same reason: "/x" under
+        // "C:/archive/" is on that drive.
+        Map<String, String> drive = new LinkedHashMap<>(goodPackage(payload));
+        drive.put(ROOT + "METS.xml", metsWithBase("C:/archive/", absolute));
+        Outcome.Check onTheDrive = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "drive-base.zip", drive)).entries()), "mets closure");
+        assertNotEquals(Outcome.PASSED, onTheDrive.outcome(),
+                "a reference under a base on another DRIVE was satisfied by this package's own "
+                        + "payload: " + onTheDrive.detail());
+
+        // AND NOT OVER-REFUSED. "file:/archive/" is a legal file URI with no authority; an
+        // absolute reference under it REPLACES the path, so it names this package's payload.
+        Map<String, String> file = new LinkedHashMap<>(goodPackage(payload));
+        file.put(ROOT + "METS.xml", metsWithBase("file:/archive/", absolute));
+        Outcome.Check local = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "file-base.zip", file)).entries()), "mets closure");
+        assertEquals(Outcome.PASSED, local.outcome(),
+                "an absolute reference under a file: base was merged into the base's path "
+                        + "instead of replacing it, so a package that carries the file was "
+                        + "reported as missing it: " + local.detail());
     }
 
     /**
