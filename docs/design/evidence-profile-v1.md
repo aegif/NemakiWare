@@ -419,6 +419,7 @@ current == merkleRoot なら PASS
 | `ZIP_SAFE` | 全エントリ名が相対で、`..` 成分を含まず、絶対 path でなく、**重複しない** |
 | `ZIP_LIMITS` | 展開後の合計 size とエントリ数が verifier の上限内 |
 | `ONE_EVIDENCE_SECTION` | §4.2 の各文書名が package 内で 1 回しか現れない（**payload は数えない** — 内容が別 package の evidence フォルダの写しであっても、それは content であって section ではない） |
+| — | `V1_LAYOUT` は併せて **section を持つ root が 2 つ以上なら `FAILED`**。完全な 2 重 section は重複で落ちるが、**片方に `profile.json` と manifest、もう片方に文書**という分割は重複を作らないため |
 | `V1_LAYOUT` | **v1 section が在るなら** §4.2 のとおりに在る（下記） |
 | `METS_CLOSURE` | METS が名指す全 file が package に在り、**逆に** `representations/*/data/` 配下の全 file が METS に名指されている |
 | `PAYLOAD_FIXITY` | 各 payload と PREMIS の fixity が**一対一**で一致する |
@@ -600,6 +601,24 @@ digest が DER のどこかに 32 バイトで落ちていれば 3 つとも PAS
 **`digestAlgorithm [0]` は必須ではない。** RFC 4998 §4.2:「If the optional field
 digestAlgorithm is not present, the digest algorithm of the timestamp MUST be used」。
 無ければ **token の message imprint の算法を使う**。
+
+**ArchiveTimeStamp に `[0]` `[1]` `[2]` 以外の tagged field が在れば `FAILED`。**
+RFC 4998 はこの 3 つしか定義していない。知らない field を**黙って飛ばしてはならない**
+——「見なかった」を「調べた」として報告する形で、同じ bytes を BouncyCastle は
+`Unexpected elements in sequence` で拒否する（bytecode で確認）。`[0]` と `[2]` の**重複**も
+`FAILED`（どちらが正かを記録が決めていない）。`[1]` は SET でなければ `FAILED`。
+
+**`ERS_CHAIN` の §5.2 は 2 形ある。** RFC 4998 §5.2 は「The new Archive Timestamp **MAY not**
+contain a reducedHashtree field, if the timestamp only simply covers the previous timestamp」
+——**禁止ではない**。
+
+| renewal の形 | 判定 |
+|---|---|
+| reducedHashtree **無し** | token の `messageImprint` が `H(前段の timeStamp field の DER)` と一致すれば PASS |
+| reducedHashtree **有り** | 第 1 list が `H(前段の timeStamp field の DER)` を含み、かつ縮約結果が `messageImprint` と一致すれば PASS |
+
+> **2026-09-22 の訂正。** imprint だけを比べていたので、**木を持つ正当な renewal を拒否し、
+> かつ任意の木を付けた renewal を通していた**（両方向同時）。
 
 > **2026-09-22 の訂正。** この行は当初「各 ArchiveTimeStamp が `digestAlgorithm [0]` と …
 > `timeStamp` を持つこと」と書いていた。**BouncyCastle の生成器はデータオブジェクトが 1 つのとき
