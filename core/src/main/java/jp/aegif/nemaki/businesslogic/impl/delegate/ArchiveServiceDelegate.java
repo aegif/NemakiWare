@@ -160,6 +160,12 @@ public class ArchiveServiceDelegate {
 						+ "in cold storage, and this product has no path that reads them back";
 				case ARCHIVE_HAD_NO_CONTENT -> "the archived version carried no content of its "
 						+ "own; nothing was written back";
+				// UNREACHABLE TODAY, and named rather than left to a `default`: the branch above
+				// returns for both of these whenever nothing was written, and that is the only
+				// way here. Kept so a NEW ContentAbsence value fails to compile instead of
+				// inheriting a sentence about a situation nobody checked it against — and
+				// written as a true sentence in case the branch above ever narrows (subagent,
+				// eleventh review, P3).
 				case NONE, NOT_DETERMINED -> "why nothing was written back is NOT stated by the "
 						+ "restore, so this row records only that nothing was";
 			});

@@ -20,6 +20,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -259,6 +260,74 @@ class TheSipLayoutIsWhereCommonsIpPutsItTest {
                         + "independent verifier resolves references that way, so these are the "
                         + "references it would report as missing from a package we shipped. "
                         + "Entries: " + entries.keySet());
+    }
+
+    /**
+     * commons-ip2 ENCODES the href and writes the zip entry RAW.
+     *
+     * <p>So for any payload whose name carries a space or a non-ASCII character, the METS says
+     * {@code %E5%A5%91%E7%B4%84%E6%9B%B8.pdf} (or {@code My+Report.pdf} — it encodes with
+     * {@code URLEncoder}, which writes a {@code +} for a space) and the zip entry says the name
+     * itself. A resolver that does not decode reports every such package as naming a file it
+     * does not carry, and <b>this product's own packages are in that class</b> — for a Japanese
+     * repository, most of them (subagent, eleventh review, P1, measured).
+     *
+     * <p>{@code everyMetsReferenceResolvesBesideItsOwnMets} could not see it: its fixture is
+     * named {@code minutes.txt}, and {@code encodeHref("minutes.txt")} is {@code minutes.txt} —
+     * an example that answers the same either way. This one asserts the asymmetry EXISTS before
+     * asserting that decoding closes it, so it fails rather than passing vacuously if a later
+     * commons-ip2 stops encoding.
+     */
+    @Test
+    @DisplayName("a non-ASCII payload name is encoded in the METS and raw in the zip")
+    void aNonAsciiPayloadNameIsEncodedInTheMetsOnly(@TempDir Path tmp) throws Exception {
+        String name = "契約書 v2.txt";
+        java.util.Map<String, byte[]> entries = new java.util.LinkedHashMap<>();
+        try (ZipInputStream in = new ZipInputStream(
+                Files.newInputStream(EarkSipExporterTest.buildOneNamed(tmp, name)))) {
+            ZipEntry entry;
+            while ((entry = in.getNextEntry()) != null) {
+                entries.put(entry.getName(), in.readAllBytes());
+            }
+        }
+
+        String payload = entries.keySet().stream()
+                .filter(n -> n.contains("/data/") && !n.endsWith("/"))
+                .findFirst().orElseThrow(() -> new AssertionError(
+                        "the package carries no payload: " + entries.keySet()));
+        assertTrue(payload.endsWith(name),
+                "the zip entry is not the raw name, so this fixture no longer measures the "
+                        + "asymmetry it was written for: " + payload);
+
+        List<String> hrefs = new ArrayList<>();
+        for (String metsPath : entries.keySet()) {
+            if (!metsPath.endsWith("METS.xml")) {
+                continue;
+            }
+            String directory = metsPath.substring(0, metsPath.lastIndexOf('/') + 1);
+            org.w3c.dom.Document document = metsDocument(entries.get(metsPath));
+            org.w3c.dom.NodeList all = document.getElementsByTagName("*");
+            for (int i = 0; i < all.getLength(); i++) {
+                String href = ((org.w3c.dom.Element) all.item(i))
+                        .getAttributeNS("http://www.w3.org/1999/xlink", "href");
+                if (href != null && !href.isBlank() && href.contains("data/")) {
+                    hrefs.add(directory + href);
+                }
+            }
+        }
+        assertFalse(hrefs.isEmpty(), "no METS names the payload: " + entries.keySet());
+
+        // The asymmetry is REAL, and decoding is what closes it. Both halves are asserted, so
+        // the lock cannot pass by the library having changed under it.
+        assertFalse(hrefs.contains(payload),
+                "commons-ip2 no longer encodes the href, so the decoding the verifier does is "
+                        + "no longer load-bearing and this lock measures nothing: " + hrefs);
+        for (String href : hrefs) {
+            String decoded = java.net.URLDecoder.decode(href, StandardCharsets.UTF_8);
+            assertTrue(entries.containsKey(decoded),
+                    "a METS reference does not name a package entry even after decoding, so no "
+                            + "verifier can resolve it: " + href + " -> " + decoded);
+        }
     }
 
     private static org.w3c.dom.Document metsDocument(byte[] xml) throws Exception {

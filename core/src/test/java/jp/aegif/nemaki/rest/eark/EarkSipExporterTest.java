@@ -84,16 +84,22 @@ class EarkSipExporterTest {
     }
 
     private static EarkSipExporter exporterOver(AuthenticityReport report, byte[] bytes) {
+        return exporterOver(report, bytes, "minutes.txt");
+    }
+
+    /** The same, with the document's NAME chosen — a payload name decides the METS href. */
+    private static EarkSipExporter exporterOver(AuthenticityReport report, byte[] bytes,
+            String name) {
         ContentService contentService = mock(ContentService.class);
         Document document = new Document();
         document.setId(OBJECT);
-        document.setName("minutes.txt");
+        document.setName(name);
         document.setType("cmis:document");
         document.setAttachmentNodeId("att-1");
         when(contentService.getContent(REPO, OBJECT)).thenReturn(document);
 
         AttachmentNode attachment = mock(AttachmentNode.class);
-        when(attachment.getName()).thenReturn("minutes.txt");
+        when(attachment.getName()).thenReturn(name);
         when(attachment.getInputStream()).thenReturn(new ByteArrayInputStream(bytes));
         when(contentService.getAttachment(REPO, "att-1")).thenReturn(attachment);
 
@@ -125,8 +131,19 @@ class EarkSipExporterTest {
     }
 
     static Path buildOne(Path tmp) throws Exception {
+        return buildOneNamed(tmp, "minutes.txt");
+    }
+
+    /**
+     * One package whose payload carries {@code name}.
+     *
+     * <p>Package-private for the layout test: commons-ip2 percent-encodes the METS href and
+     * writes the zip entry raw, so a name with a space or a non-ASCII character is the only
+     * fixture that tells a decoding resolver from a non-decoding one.
+     */
+    static Path buildOneNamed(Path tmp, String name) throws Exception {
         return exporterOver(reportWith(Map.of("nemaki:sourceSystem", "acme"), 0),
-                "the minutes".getBytes(StandardCharsets.UTF_8))
+                "the minutes".getBytes(StandardCharsets.UTF_8), name)
                 .export(REPO, OBJECT, EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp)
                 .sip();
     }

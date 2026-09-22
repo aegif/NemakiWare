@@ -171,19 +171,28 @@ final class TokenSignature {
             // kind initialise with this same signature algorithm? If it does, the refusal is
             // about THIS key. If even a fresh one is refused, the algorithm and the key kind do
             // not go together at all, and no build could compute it.
-            if (Boolean.FALSE.equals(anOrdinaryKeyOfTheSameKindInitialises(sigAlg,
-                    key.getAlgorithm()))) {
+            Boolean ordinaryWorks = anOrdinaryKeyOfTheSameKindInitialises(sigAlg,
+                    key.getAlgorithm());
+            if (Boolean.FALSE.equals(ordinaryWorks)) {
                 return Outcome.Check.failed(name,
                         what + " names " + sigAlg + " and carries a "
                                 + key.getAlgorithm() + " key, which cannot be used with it ("
                                 + said(keyDoesNotGoWithIt) + ")");
             }
+            // The detail says WHICH of the two it is. Writing "an ordinary key of that kind does
+            // initialise" unconditionally stated the answer to a question that had not been put
+            // when the probe could not make one (Codex, eleventh review, P1).
             return Outcome.Check.unavailable(name, "SIGNATURE_NOT_COMPUTED",
                     "no provider in this build would initialise " + what + "'s "
                             + key.getAlgorithm() + " key for " + sigAlg + " ("
-                            + said(keyDoesNotGoWithIt) + "), and an ordinary key of that kind "
-                            + "does initialise — so this is about THIS key and the signature has "
-                            + "NOT been compared");
+                            + said(keyDoesNotGoWithIt) + "), and "
+                            + (Boolean.TRUE.equals(ordinaryWorks)
+                                    ? "an ordinary key of that kind DOES initialise — so this is "
+                                            + "about THIS key"
+                                    : "this build could not put the same question to an ordinary "
+                                            + "key of that kind, so which of the two it is has "
+                                            + "NOT been established")
+                            + ". The signature has NOT been compared");
         }
         byte[] dummy = wellFormedDummySignature(key);
         // A key family this method has no dummy shape for (Ed25519, SM2, ...) SKIPS the third
@@ -233,19 +242,40 @@ final class TokenSignature {
      */
     private static Boolean anOrdinaryKeyOfTheSameKindInitialises(String sigAlg,
             String keyAlgorithm) {
-        java.security.KeyPair ordinary;
+        java.security.PublicKey ordinary;
         try {
-            ordinary = java.security.KeyPairGenerator.getInstance(keyAlgorithm).generateKeyPair();
+            // Cached: generating an RSA pair costs ~800 ms on this machine, and a package with
+            // several rungs asks the same question about the same kind of key each time.
+            ordinary = ORDINARY_KEYS.computeIfAbsent(keyAlgorithm, kind -> {
+                try {
+                    return java.security.KeyPairGenerator.getInstance(kind)
+                            .generateKeyPair().getPublic();
+                } catch (Exception cannotMakeOne) {
+                    return null;
+                }
+            });
         } catch (Exception cannotAskAtAll) {
             return null;
         }
+        if (ordinary == null) {
+            return null;
+        }
         try {
-            java.security.Signature.getInstance(sigAlg).initVerify(ordinary.getPublic());
+            java.security.Signature.getInstance(sigAlg).initVerify(ordinary);
             return Boolean.TRUE;
-        } catch (Exception refusedThatToo) {
+        } catch (java.security.InvalidKeyException refusedThatToo) {
+            // A statement ABOUT THE PAIR: this algorithm cannot be used with a key of this kind.
             return Boolean.FALSE;
+        } catch (Exception couldNotAsk) {
+            // A ProviderException, a transient failure — "could not ask", which is not evidence
+            // that the package contradicts itself (Codex, eleventh review, P1).
+            return null;
         }
     }
+
+    /** One ordinary public key per key algorithm, so the question is asked at most once. */
+    private static final java.util.Map<String, java.security.PublicKey> ORDINARY_KEYS =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     /** A signature of the right SHAPE for {@code key}'s family, or null when unknown. */
     private static byte[] wellFormedDummySignature(java.security.PublicKey key) {

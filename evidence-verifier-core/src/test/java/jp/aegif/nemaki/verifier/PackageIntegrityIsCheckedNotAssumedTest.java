@@ -573,12 +573,11 @@ class PackageIntegrityIsCheckedNotAssumedTest {
     /**
      * An href written from ANOTHER base still resolves — even when it names payload.
      *
-     * <p>Resolving relative to the METS's own directory is right, and the loose suffix match
-     * stays for producers that write the path from the zip root. Excluding payload from that
-     * fallback outright turned "this package carries the file under a slightly different base"
-     * into "the METS names a file the package does not carry", exit 2 (subagent, tenth review,
-     * P2). The exclusion is narrower: a METS naming METADATA must not be satisfied by a copy
-     * inside content, which {@code aPayloadCopyDoesNotCloseTheMets} locks.
+     * <p>Resolving relative to the METS's own directory is right, and the ROOT METS may also
+     * write the path from the zip root — for it the two differ only by the wrapping folder's
+     * name. The loose suffix match that used to serve this is GONE (it resolved one METS's
+     * reference in another's neighbourhood, Codex, tenth review, P1); what stands in for it is
+     * a named base, not "any entry ending with this".
      */
     @Test
     @DisplayName("an href written from the zip root still resolves, payload included")
@@ -654,6 +653,124 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         assertEquals(Outcome.PASSED, closure.outcome(),
                 "a METS naming its payload one directory up was told the package does not carry "
                         + "a file the package is carrying: " + closure.detail());
+    }
+
+    /**
+     * An href the producer PERCENT-ENCODED names the file the zip stores RAW.
+     *
+     * <p>commons-ip2 encodes the href with {@code URLEncoder} and writes the zip entry name
+     * unencoded, so every payload whose name carries a space or a non-ASCII character was named
+     * one way and stored another — and this verifier refused <b>every such package this product
+     * writes</b>, which for a Japanese repository is the ordinary case (subagent, eleventh
+     * review, P1, measured against the real library). Both spellings are tried: RFC 3986's
+     * {@code %XX} and {@code URLEncoder}'s {@code +} for a space.
+     */
+    @Test
+    @DisplayName("an encoded href names the file the zip stores under its raw name")
+    void anEncodedHrefResolves(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>();
+        entries.put(ROOT + "METS.xml", mets("representations/rep1/METS.xml"));
+        entries.put(ROOT + "representations/rep1/METS.xml",
+                mets("data/%E5%A5%91%E7%B4%84%E6%9B%B8.txt", "data/My+Report.pdf"));
+        entries.put(ROOT + "representations/rep1/data/契約書.txt", payload);
+        entries.put(ROOT + "representations/rep1/data/My Report.pdf", "a report");
+        entries.put(ROOT + "metadata/preservation/premis.xml", premis(sha256(payload), "SHA-256"));
+
+        Path sip = zip(tmp, "encoded-href.zip", entries);
+        Outcome.Check closure = checkNamed(
+                PackageIntegrity.check(PackageReader.open(sip).entries()), "mets closure");
+
+        assertEquals(Outcome.PASSED, closure.outcome(),
+                "a METS naming its payload in the encoded form the producer writes was told the "
+                        + "package does not carry files it is carrying: " + closure.detail());
+    }
+
+    /**
+     * A locator that is not a path inside the package is not a MISSING file.
+     *
+     * <p>METS has {@code LOCTYPE} precisely to say that a locator is a URN, a DOI or a handle.
+     * Skipping only {@code http}/{@code https} reported a legal {@code mets:mdRef LOCTYPE="URN"}
+     * as a file the package does not carry (subagent, eleventh review, P2). The {@code file:}
+     * forms are the exception — commons-ip2 writes and reads them for a local path.
+     */
+    @Test
+    @DisplayName("a urn: locator is not a file the package is missing; file: is a local path")
+    void aNonLocalLocatorIsNotAMissingFile(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "METS.xml", mets("representations/rep1/data/minutes.txt",
+                "urn:uuid:1b671a64-40d5-491e-99b0-da01ff1f3341",
+                "doi:10.1000/182",
+                "file://./metadata/preservation/premis.xml"));
+
+        Path sip = zip(tmp, "urn.zip", entries);
+        Outcome.Check closure = checkNamed(
+                PackageIntegrity.check(PackageReader.open(sip).entries()), "mets closure");
+
+        assertEquals(Outcome.PASSED, closure.outcome(),
+                "a locator METS provides a LOCTYPE for — or the file: form commons-ip2 itself "
+                        + "accepts — was reported as a file the package does not carry: "
+                        + closure.detail());
+    }
+
+    /**
+     * A reference that leaves its own package is not closure.
+     *
+     * <p>RFC 3986 §5.2.4 DISCARDS an excess {@code ..}, which is right for a base with an
+     * authority. With a zip as the base it turns "points outside this package" into "names a
+     * file inside it": a METS naming {@code ../aip-2/secret.txt} reported its own package as
+     * closed over a file belonging to another one, and one climbing above the zip root landed
+     * on whatever sat at the top (subagent, eleventh review, P2).
+     */
+    @Test
+    @DisplayName("a reference into a sibling package, or out of the zip, does not close")
+    void aReferenceOutOfThePackageIsRefused(@TempDir Path tmp) throws Exception {
+        Map<String, String> sibling = new LinkedHashMap<>();
+        sibling.put("aip-1/METS.xml", mets("../aip-2/secret.txt"));
+        sibling.put("aip-2/METS.xml", mets("secret.txt"));
+        sibling.put("aip-2/secret.txt", "another package's file");
+        Outcome.Check across = checkNamed(PackageIntegrity.check(
+                PackageReader.open(zip(tmp, "siblings.zip", sibling)).entries()), "mets closure");
+        assertEquals(Outcome.FAILED, across.outcome(),
+                "a package was reported as closed over a file belonging to a DIFFERENT package "
+                        + "in the same zip: " + across.detail());
+
+        Map<String, String> climbing = new LinkedHashMap<>();
+        climbing.put("aip-1/METS.xml", mets("../../../../x.txt"));
+        climbing.put("x.txt", "at the top of the zip");
+        Outcome.Check out = checkNamed(PackageIntegrity.check(
+                PackageReader.open(zip(tmp, "climbing.zip", climbing)).entries()), "mets closure");
+        assertEquals(Outcome.FAILED, out.outcome(),
+                "a reference that climbs above the zip root was silently clamped onto a file "
+                        + "inside it: " + out.detail());
+    }
+
+    /**
+     * A fragment identifies something INSIDE a file, and an absolute reference has a base.
+     *
+     * <p>Both are parts of URI-reference resolution the string concatenation did not do (Codex,
+     * eleventh review, P1): {@code data/minutes.txt#page=2} was looked for as a file name with
+     * a {@code #} in it, and {@code /metadata/preservation/premis.xml} had its leading slash
+     * stripped and was then resolved relative to the METS rather than to the package root.
+     */
+    @Test
+    @DisplayName("a fragment is not part of the file name, and /… is resolved from the IP root")
+    void aFragmentAndAnAbsoluteReferenceAreResolved(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "METS.xml", mets("representations/rep1/METS.xml"));
+        entries.put(ROOT + "representations/rep1/METS.xml",
+                mets("data/minutes.txt#page=2", "/metadata/preservation/premis.xml"));
+
+        Path sip = zip(tmp, "fragment.zip", entries);
+        Outcome.Check closure = checkNamed(
+                PackageIntegrity.check(PackageReader.open(sip).entries()), "mets closure");
+
+        assertEquals(Outcome.PASSED, closure.outcome(),
+                "a fragment was read as part of the file name, or an absolute reference was "
+                        + "resolved against the METS instead of the package root: "
+                        + closure.detail());
     }
 
     @Test
