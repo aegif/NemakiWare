@@ -356,6 +356,31 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         assertEquals(Outcome.FAILED, layout.outcome(), layout.detail());
     }
 
+    /**
+     * An internal DOCTYPE is not a reason to refuse a PREMIS.
+     *
+     * <p>Refusing DTDs outright kept external entities out and also turned a legitimate
+     * third-party document into {@code PREMIS_NOT_PARSED} — the profile does not make a DTD
+     * non-conformant (Codex, sixth review, P2). External entity resolution stays off.
+     */
+    @Test
+    @DisplayName("a PREMIS with an internal DOCTYPE is still read")
+    void aPremisWithAnInternalDoctypeIsStillRead(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "metadata/preservation/premis.xml",
+                "<?xml version=\"1.0\"?><!DOCTYPE premis:premis [ ]>"
+                        + premis(sha256(payload), "SHA-256"));
+
+        Path sip = zip(tmp, "doctype.zip", entries);
+
+        assertEquals(Outcome.PASSED, checkNamed(
+                        PackageIntegrity.check(PackageReader.open(sip).entries()),
+                        "payload fixity").outcome(),
+                "a PREMIS carrying an internal DOCTYPE was refused, so a legitimate package "
+                        + "from another organisation cannot reach P0");
+    }
+
     @Test
     @DisplayName("a digest with no algorithm stated is NOT_PRESENT — SHA-256 was an assumption")
     void aDigestWithNoAlgorithmIsNotPresent(@TempDir Path tmp) throws Exception {

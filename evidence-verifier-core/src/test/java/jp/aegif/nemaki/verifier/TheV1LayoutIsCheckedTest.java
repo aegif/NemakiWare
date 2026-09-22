@@ -334,6 +334,34 @@ class TheV1LayoutIsCheckedTest {
     }
 
     /**
+     * Two sections under different roots are two sections, even when neither is complete.
+     *
+     * <p>The relative-name map folded both roots together, so a package could put its
+     * {@code profile.json} and manifest under one root and the documents under another and
+     * satisfy the duplicate check and the manifest closure at once. A COMPLETE second section
+     * was caught by duplication; a SPLIT one was not (Codex, sixth review, P1).
+     */
+    @Test
+    @DisplayName("a section split across two roots is FAILED")
+    void aSectionSplitAcrossTwoRootsFails() {
+        Map<String, byte[]> section = wholeSection();
+        Map<String, byte[]> entries = v1Package(section);
+        // Move one document to another root. No name is duplicated, and the manifest still
+        // names every relative path — which is exactly why this used to pass.
+        byte[] moved = entries.remove(SECTION + "ledger-entry.json");
+        assertTrue(moved != null, "this fixture moved nothing, so it measures nothing");
+        entries.put("other-root/metadata/other/nemaki-evidence/ledger-entry.json", moved);
+
+        Outcome.Check layout = layoutOf(entries);
+
+        assertEquals(Outcome.FAILED, layout.outcome(),
+                "a package whose evidence is split across two roots was read as one section, "
+                        + "so the zip's order decides which of them every check above P0 reads: "
+                        + layout.detail());
+        assertTrue(layout.detail().contains("different roots"), layout.detail());
+    }
+
+    /**
      * The check is REQUIRED, and a P0 run that skipped it would compose to VERIFIED.
      *
      * <p>Named here rather than left to the profile list: a check that runs and is reported but

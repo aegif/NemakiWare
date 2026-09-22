@@ -79,13 +79,18 @@ final class Premis {
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
             factory.setNamespaceAware(true);
             factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-            // No DTDs and no entity resolution at all: a package is untrusted input, and the
-            // one thing a verifier must never do is fetch something a package names.
-            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            // No EXTERNAL entity resolution: a package is untrusted input, and the one thing a
+            // verifier must never do is fetch something a package names. An internal DOCTYPE is
+            // allowed, because the profile does not forbid one and refusing it turned a
+            // legitimate third-party PREMIS into PREMIS_NOT_PARSED (Codex, sixth review, P2).
+            // Secure processing above caps entity expansion, so an internal subset cannot be
+            // used to exhaust this process either.
             factory.setFeature(
                     "http://xml.org/sax/features/external-general-entities", false);
             factory.setFeature(
                     "http://xml.org/sax/features/external-parameter-entities", false);
+            factory.setFeature(
+                    "http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
             factory.setXIncludeAware(false);
             factory.setExpandEntityReferences(false);
             document = factory.newDocumentBuilder().parse(new ByteArrayInputStream(xml));

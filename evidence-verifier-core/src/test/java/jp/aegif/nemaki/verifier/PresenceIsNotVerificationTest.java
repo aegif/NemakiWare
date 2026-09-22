@@ -365,6 +365,104 @@ class PresenceIsNotVerificationTest {
                         + "alone ties the newest time claim to nothing: " + checks);
     }
 
+    /**
+     * A §5.2 renewal MAY carry a reduced hash tree, and then the tree decides.
+     *
+     * <p>"The new Archive Timestamp MAY not contain a reducedHashtree field, if the timestamp
+     * only simply covers the previous timestamp" — may not, not must not. Comparing the
+     * imprint directly in both cases was wrong in both directions at once: a renewal of the
+     * legitimate tree-bearing shape was refused, and a renewal carrying ANY tree beside a token
+     * over the previous one passed (Codex, sixth review, P1).
+     *
+     * <p>The renewal's token here covers EXACTLY {@code H(previous timeStamp DER)}, so the
+     * imprint comparison is satisfied and only the tree can decide. A fixture whose imprint was
+     * also wrong would be refused by that other arm and would measure nothing — which is how
+     * the first version of this lock stayed green under the sabotage (measured).
+     */
+    @Test
+    @DisplayName("a renewal carrying a tree the token does not cover FAILS")
+    void aRenewalWhoseTreeTheTokenDoesNotCoverFails() throws Exception {
+        ASN1Sequence chain = ASN1Sequence.getInstance(GoldenErs.timestampSequence()
+                .getObjectAt(0));
+        ASN1Sequence ats = ASN1Sequence.getInstance(chain.getObjectAt(0));
+        byte[] previousTokenDer = null;
+        for (int i = 0; i < ats.size(); i++) {
+            if (!(ats.getObjectAt(i) instanceof org.bouncycastle.asn1.ASN1TaggedObject)) {
+                previousTokenDer = ASN1Sequence.getInstance(ats.getObjectAt(i))
+                        .getEncoded("DER");
+            }
+        }
+        assertTrue(previousTokenDer != null, "the golden's own timestamp token was not found");
+        byte[] renewalImprint = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(previousTokenDer);
+
+        // A tree about something the renewal does not renew, beside a token that DOES cover
+        // what §5.2 requires.
+        byte[] unrelated = new byte[32];
+        java.util.Arrays.fill(unrelated, (byte) 0x33);
+        ASN1EncodableVector renewal = new ASN1EncodableVector();
+        renewal.add(new org.bouncycastle.asn1.DERTaggedObject(false, 0,
+                new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
+                        new org.bouncycastle.asn1.ASN1ObjectIdentifier(
+                                "2.16.840.1.101.3.4.2.1"))));
+        // The list DOES hold what §5.2 requires, beside one more value — so membership holds
+        // and only the REDUCTION can decide. Two elements, because a list of one reduces to
+        // itself (§4.2) and would legitimately match.
+        renewal.add(new org.bouncycastle.asn1.DERTaggedObject(false, 2,
+                new DERSequence(new DERSequence(new org.bouncycastle.asn1.ASN1Encodable[] {
+                        new DEROctetString(renewalImprint), new DEROctetString(unrelated) }))));
+        renewal.add(ASN1Sequence.getInstance(org.bouncycastle.asn1.ASN1Primitive.fromByteArray(
+                TestAuthority.tokenOver(renewalImprint))));
+        byte[] der = GoldenErs.withElement(2, new DERSequence(new DERSequence(
+                new org.bouncycastle.asn1.ASN1Encodable[] {
+                        ats, new DERSequence(renewal) })));
+
+        Map<String, byte[]> entries = new LinkedHashMap<>();
+        entries.put(DIR + "anchor-target-checkpoint.json",
+                GoldenErs.anchorTarget(GoldenErs.root()));
+        entries.put(DIR + "anchors/ers.der", der);
+
+        List<Outcome.Check> checks = LongTermErs.check(entries);
+        assertEquals(Outcome.PASSED, named(checks, "ers parse").outcome(),
+                "this fixture stopped parsing: " + checks);
+        assertEquals(Outcome.FAILED, named(checks, "ers chain").outcome(),
+                "a renewal carrying a hash tree about something else was accepted because only "
+                        + "its token's imprint was compared — and that imprint is right: "
+                        + checks);
+        assertTrue(named(checks, "ers chain").detail().contains("reduces to"),
+                "the finding came from the imprint comparison, not from the tree, so the tree "
+                        + "branch is still unmeasured: " + named(checks, "ers chain").detail());
+    }
+
+    @Test
+    @DisplayName("an Archive Timestamp carrying a field RFC 4998 does not define is a finding")
+    void anUnknownTaggedFieldIsAFinding() throws Exception {
+        ASN1Sequence sequence = GoldenErs.timestampSequence();
+        ASN1Sequence ats = ASN1Sequence.getInstance(
+                ASN1Sequence.getInstance(sequence.getObjectAt(0)).getObjectAt(0));
+        ASN1EncodableVector withExtra = new ASN1EncodableVector();
+        for (int i = 0; i < ats.size(); i++) {
+            withExtra.add(ats.getObjectAt(i));
+            if (i == 0) {
+                withExtra.add(new org.bouncycastle.asn1.DERTaggedObject(false, 3,
+                        new DEROctetString(new byte[] { 1, 2, 3 })));
+            }
+        }
+        byte[] der = GoldenErs.withElement(2,
+                new DERSequence(new DERSequence(new DERSequence(withExtra))));
+
+        Map<String, byte[]> entries = new LinkedHashMap<>();
+        entries.put(DIR + "anchor-target-checkpoint.json",
+                GoldenErs.anchorTarget(GoldenErs.root()));
+        entries.put(DIR + "anchors/ers.der", der);
+
+        assertEquals(Outcome.FAILED,
+                named(LongTermErs.check(entries), "ers parse").outcome(),
+                "a record carrying a field this reader does not understand passed every check. "
+                        + "BouncyCastle's ASN.1 reader refuses it, so the two disagree about "
+                        + "the same bytes");
+    }
+
     /** The golden record's Archive Timestamp, given {@code tree} as its reducedHashtree. */
     private static byte[] withTree(DERSequence tree) throws Exception {
         ASN1Sequence sequence = GoldenErs.timestampSequence();

@@ -232,11 +232,13 @@ public final class SipVerifier {
                     javax.xml.parsers.DocumentBuilderFactory.newInstance();
             factory.setNamespaceAware(true);
             factory.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true);
-            // No DTD, no entity resolution: a package is untrusted input and this runs inside
-            // the product.
-            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            // No EXTERNAL entity resolution: a package is untrusted input and this runs inside
+            // the product. An internal DOCTYPE is allowed — the twin of Premis.read, and for
+            // the same reason: the profile does not forbid one.
             factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
             factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            factory.setFeature(
+                    "http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
             factory.setXIncludeAware(false);
             factory.setExpandEntityReferences(false);
             org.w3c.dom.Document document = factory.newDocumentBuilder().parse(

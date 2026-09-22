@@ -244,10 +244,38 @@ public final class LongTermErs {
         for (int i = 0; i < ats.size(); i++) {
             Object element = ats.getObjectAt(i);
             if (element instanceof ASN1TaggedObject tagged) {
+                // RFC 4998 defines [0], [1] and [2] here and nothing else. Skipping whatever
+                // else turned up meant a record could carry a field this reader does not
+                // understand and still pass every check — "we did not look" reported as "we
+                // checked" (Codex, sixth review, P2).
+                if (tagged.getTagNo() > 2) {
+                    throw new NotAnEvidenceRecord("an ArchiveTimeStamp carries a ["
+                            + tagged.getTagNo() + "] field, and RFC 4998 defines [0], [1] and "
+                            + "[2] only. This reader does not know what it says");
+                }
+                if (tagged.getTagNo() == 1) {
+                    try {
+                        org.bouncycastle.asn1.ASN1Set.getInstance(tagged, false);
+                    } catch (RuntimeException notASet) {
+                        throw new NotAnEvidenceRecord("an ArchiveTimeStamp's attributes [1] is "
+                                + "not a SET: " + notASet.getMessage());
+                    }
+                    continue;
+                }
                 if (tagged.getTagNo() == 0) {
+                    if (algorithm != null) {
+                        throw new NotAnEvidenceRecord("an ArchiveTimeStamp states its "
+                                + "digestAlgorithm twice, so which one built its tree is not "
+                                + "decided by the record");
+                    }
                     algorithm = AlgorithmIdentifier.getInstance(tagged, false)
                             .getAlgorithm().getId();
                 } else if (tagged.getTagNo() == 2) {
+                    if (!tree.isEmpty()) {
+                        throw new NotAnEvidenceRecord("an ArchiveTimeStamp carries two reduced "
+                                + "hash trees, so which one it commits to is not decided by the "
+                                + "record");
+                    }
                     ASN1Sequence lists = ASN1Sequence.getInstance(tagged, false);
                     for (int level = 0; level < lists.size(); level++) {
                         ASN1Sequence partial = asSequence(lists.getObjectAt(level),
@@ -478,7 +506,32 @@ public final class LongTermErs {
                     byte[] expected = digest(current.digestOid(), previous.tokenDer());
                     byte[] imprint = tokenOf(current.tokenDer()).getTimeStampInfo()
                             .getMessageImprintDigest();
-                    if (!Arrays.equals(expected, imprint)) {
+                    // §5.2 allows a renewal WITH a reduced hash tree: "The new Archive
+                    // Timestamp MAY not contain a reducedHashtree field, if the timestamp only
+                    // simply covers the previous timestamp" — may not, not must not. When there
+                    // is a tree, the previous token's hash goes in the first list and the
+                    // token covers the tree's reduction. Comparing the imprint directly in both
+                    // cases refused every renewal of the first shape and accepted any tree at
+                    // all in the second (Codex, sixth review, P1 — both directions at once).
+                    if (!current.tree().isEmpty()) {
+                        if (current.tree().get(0).stream()
+                                .noneMatch(value -> Arrays.equals(value, expected))) {
+                            return Outcome.Check.failed("ers chain",
+                                    "the renewal at chain " + c + " position " + i + " carries a "
+                                            + "hash tree whose first list does not hold "
+                                            + Canonical.hex(expected) + ", the digest of the "
+                                            + "timestamp it renews, so it renews nothing");
+                        }
+                        byte[] renewalRoot = walk(current);
+                        if (!Arrays.equals(renewalRoot, imprint)) {
+                            return Outcome.Check.failed("ers chain",
+                                    "the renewal at chain " + c + " position " + i + " reduces "
+                                            + "to " + Canonical.hex(renewalRoot) + " and its "
+                                            + "token covers " + Canonical.hex(imprint) + ", so "
+                                            + "the tree and the timestamp are not about the "
+                                            + "same thing");
+                        }
+                    } else if (!Arrays.equals(expected, imprint)) {
                         return Outcome.Check.failed("ers chain",
                                 "the timestamp at chain " + c + " position " + i + " covers "
                                         + Canonical.hex(imprint) + " and §5.2 requires it to "

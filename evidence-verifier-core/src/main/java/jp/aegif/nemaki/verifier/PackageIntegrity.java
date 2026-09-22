@@ -205,6 +205,18 @@ public final class PackageIntegrity {
                     + "which one is the evidence, and whichever it chose would be its own choice "
                     + "rather than the package's statement");
         }
+        java.util.SortedSet<String> roots = sectionRoots(entries);
+        if (roots.size() > 1) {
+            // Two sections under DIFFERENT roots were folded into one relative-name map, so a
+            // package could split its evidence across them — profile and manifest under one,
+            // the documents under the other — and satisfy both the duplicate check and the
+            // manifest closure. A complete second section was caught; a split one was not
+            // (Codex, sixth review, P1).
+            failures.add("the package carries evidence sections under " + roots.size()
+                    + " different roots (" + roots + "). Every check above this one takes the "
+                    + "first path that matches, so the zip's order would decide which section "
+                    + "is verified — and a section split across both would be verified as one");
+        }
         java.util.SortedSet<String> duplicated = duplicatesIn(entries);
         if (!duplicated.isEmpty()) {
             failures.add("the section names the same file more than once: " + duplicated
@@ -366,6 +378,18 @@ public final class PackageIntegrity {
             }
         }
         return twice;
+    }
+
+    /** The distinct archival roots that carry evidence-section files. */
+    private static java.util.SortedSet<String> sectionRoots(Map<String, byte[]> entries) {
+        java.util.SortedSet<String> roots = new java.util.TreeSet<>();
+        for (String path : entries.keySet()) {
+            if (sectionRelativeName(path) == null) {
+                continue;
+            }
+            roots.add(("/" + path).substring(0, ("/" + path).indexOf(RecordLedger.DIR)));
+        }
+        return roots;
     }
 
     /**

@@ -220,6 +220,20 @@ class OneTokenGetsOneAnswerTest {
                 "a CMS signature that does not match was excused as uncheckable. Only a MISSING "
                         + "provider is a limit of this build; a mismatch is a finding");
 
+        // The one that got through: BouncyCastle wraps InvalidKeyException in
+        // OperatorCreationException too. A token signed with RSA whose embedded certificate
+        // carries an EC key of the same issuer and serial fails to initialise — and that is a
+        // fact about the token, not about this build (Codex, sixth review, P1). No
+        // NoSuchAlgorithmException anywhere in this chain, so it discriminates.
+        assertFalse(TokenSignature.uncheckable(new TSPException("unable to process signature",
+                        new CMSException("can't create digest calculator",
+                                new OperatorCreationException("exception on setup",
+                                        new java.security.InvalidKeyException(
+                                                "EC key given for RSA signature"))))),
+                "a key that does not go with the signature was excused as an algorithm this "
+                        + "build cannot compute, so a substituted certificate answers "
+                        + "'could not check' instead of naming the mismatch");
+
         // The second arm, on its own fixture: a provider that reports the absence as a bare
         // GeneralSecurityException rather than as one of the three types above.
         assertTrue(TokenSignature.uncheckable(new TSPException("unable to process signature",

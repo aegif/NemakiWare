@@ -95,6 +95,19 @@ final class TokenSignature {
      * one of them as a bad signature.
      */
     static boolean uncheckable(Throwable thrown) {
+        // A FINDING first. BouncyCastle wraps InvalidKeyException in OperatorCreationException
+        // too, so treating that wrapper as "no provider" excused a token whose embedded
+        // certificate carries a key the signature was not made with — a real mismatch reported
+        // as "could not check" (Codex, sixth review, P1).
+        for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
+            if (cause instanceof java.security.InvalidKeyException
+                    || cause instanceof java.security.SignatureException) {
+                return false;
+            }
+            if (cause.getCause() == cause) {
+                break;
+            }
+        }
         for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
             if (cause instanceof NoSuchAlgorithmException
                     || cause instanceof NoSuchProviderException
