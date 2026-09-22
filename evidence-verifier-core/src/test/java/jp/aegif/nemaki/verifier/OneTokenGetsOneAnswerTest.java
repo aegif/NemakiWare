@@ -222,6 +222,99 @@ class OneTokenGetsOneAnswerTest {
     }
 
     /**
+     * A token naming an algorithm its OWN key cannot be used with is a finding.
+     *
+     * <p>The certificate and its certID hash are untouched, so BouncyCastle's first check
+     * passes; what is wrong is inside the token — the SignerInfo names an RSA signature over a
+     * certificate carrying an EC key. Reporting "this build could not compute it" would excuse
+     * a contradiction the package states about itself (Codex, eighth review, P1).
+     */
+    @Test
+    @DisplayName("a token whose algorithm does not go with its own key is a FINDING")
+    void anAlgorithmThatDoesNotGoWithItsOwnKeyIsAFinding() throws Exception {
+        java.security.KeyPairGenerator ec = java.security.KeyPairGenerator.getInstance("EC");
+        ec.initialize(256);
+        java.security.KeyPair other = ec.generateKeyPair();
+        org.bouncycastle.asn1.x500.X500Name subject =
+                new org.bouncycastle.asn1.x500.X500Name("CN=One Answer TSA");
+        JcaX509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(subject,
+                BigInteger.ONE, new Date(System.currentTimeMillis() - 86_400_000L),
+                new Date(System.currentTimeMillis() + 86_400_000L), subject, other.getPublic());
+        X509Certificate ecCertificate = new JcaX509CertificateConverter().getCertificate(
+                builder.build(new JcaContentSignerBuilder("SHA256withECDSA")
+                        .build(other.getPrivate())));
+
+        // The token is RSA-signed; the certificate handed to the check carries an EC key. The
+        // ALGORITHM FAMILY disagrees with the key, which cannotSetUp deliberately does not
+        // excuse.
+        org.bouncycastle.tsp.TimeStampToken token = new org.bouncycastle.tsp.TimeStampToken(
+                new org.bouncycastle.cms.CMSSignedData(tokenOver(ROOT, true)));
+        Outcome.Check answer = TokenSignature.verify("token signature", "the token", token,
+                new X509CertificateHolder(ecCertificate.getEncoded()));
+
+        assertEquals(Outcome.FAILED, answer.outcome(),
+                "a token naming a signature algorithm its own certificate's key cannot be used "
+                        + "with was excused as something this build could not compute: "
+                        + answer);
+    }
+
+    /**
+     * A signature whose ENCODING is wrong is a finding, not "not checked".
+     *
+     * <p>The existing broken-signature fixtures flip one bit, which leaves a syntactically
+     * valid signature that simply does not verify — BouncyCastle raises
+     * {@code TSPValidationException} and both the old and the new classification answer FAILED.
+     * A signature of the WRONG LENGTH is different: {@code Signature.verify} raises
+     * {@code SignatureException}, which a previous round excused as "this build could not
+     * compute it" (subagent, eighth review, P1, measured). Whether this build can compute the
+     * signature is now asked BEFORE the attempt, so anything that fails after it is about the
+     * token.
+     */
+    @Test
+    @DisplayName("a signature of the wrong length is a FINDING, not 'not checked'")
+    void aMalformedSignatureIsAFinding() throws Exception {
+        byte[] der = tokenOver(ROOT, true);
+        org.bouncycastle.asn1.ASN1Sequence contentInfo = org.bouncycastle.asn1.ASN1Sequence
+                .getInstance(org.bouncycastle.asn1.ASN1Primitive.fromByteArray(der));
+        org.bouncycastle.asn1.cms.ContentInfo parsed =
+                org.bouncycastle.asn1.cms.ContentInfo.getInstance(contentInfo);
+        org.bouncycastle.asn1.cms.SignedData signed =
+                org.bouncycastle.asn1.cms.SignedData.getInstance(parsed.getContent());
+        org.bouncycastle.asn1.cms.SignerInfo info = org.bouncycastle.asn1.cms.SignerInfo
+                .getInstance(signed.getSignerInfos().getObjectAt(0));
+        // An RSA signature is 256 bytes here; 64 is not a length any RSA signature has.
+        byte[] tooShort = new byte[64];
+        java.util.Arrays.fill(tooShort, (byte) 0x7f);
+        org.bouncycastle.asn1.cms.SignerInfo mangled = new org.bouncycastle.asn1.cms.SignerInfo(
+                info.getSID(), info.getDigestAlgorithm(), info.getAuthenticatedAttributes(),
+                info.getDigestEncryptionAlgorithm(),
+                new org.bouncycastle.asn1.DEROctetString(tooShort),
+                info.getUnauthenticatedAttributes());
+        org.bouncycastle.asn1.cms.SignedData rebuiltData =
+                new org.bouncycastle.asn1.cms.SignedData(signed.getDigestAlgorithms(),
+                        signed.getEncapContentInfo(), signed.getCertificates(),
+                        signed.getCRLs(), new org.bouncycastle.asn1.DERSet(mangled));
+        byte[] rebuilt = new org.bouncycastle.asn1.cms.ContentInfo(
+                parsed.getContentType(), rebuiltData).getEncoded("DER");
+
+        org.bouncycastle.tsp.TimeStampToken token = new org.bouncycastle.tsp.TimeStampToken(
+                new org.bouncycastle.cms.CMSSignedData(rebuilt));
+        X509CertificateHolder signer = null;
+        for (Object held : token.getCertificates().getMatches(token.getSID())) {
+            signer = (X509CertificateHolder) held;
+            break;
+        }
+        assertTrue(signer != null, "the rebuilt token lost its signer certificate");
+
+        Outcome.Check answer = TokenSignature.verify("token signature", "the token", token,
+                signer);
+
+        assertEquals(Outcome.FAILED, answer.outcome(),
+                "a signature whose encoding is not a signature at all was excused as something "
+                        + "this build could not compute: " + answer);
+    }
+
+    /**
      * The one case no fixture here can produce: a signature algorithm with no provider.
      *
      * <p>Every algorithm this test could sign with is one this JVM implements, so the token

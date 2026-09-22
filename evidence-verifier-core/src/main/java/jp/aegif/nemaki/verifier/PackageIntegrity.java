@@ -112,6 +112,19 @@ public final class PackageIntegrity {
         if (ambiguous.isEmpty()) {
             return Outcome.Check.passed("one evidence section");
         }
+        // A package that CONTAINS another complete package duplicates every relative name by
+        // construction. v1Layout answers that UNAVAILABLE (MULTIPLE_PACKAGES) — but this check
+        // runs FIRST and composed to FAILED regardless, so the correction never reached a
+        // verdict and a legitimate CSIP AIP was still refused. The lock called v1Layout
+        // directly and did not go through this sibling branch (Codex, eighth review, P1).
+        if (nestedPackages(entries)) {
+            return Outcome.Check.unavailable("one evidence section", "MULTIPLE_PACKAGES",
+                    "the package carries more than one COMPLETE evidence section, each under "
+                            + "its own root, so these names are repeated because one package "
+                            + "contains another — not because one section contradicts itself. "
+                            + "Which of them this verifier was asked about is not stated: "
+                            + ambiguous);
+        }
         return Outcome.Check.failed("one evidence section",
                 "the package names the same evidence document more than once: " + ambiguous
                         + ". Every check above this one takes the first path that matches, so "
@@ -219,7 +232,7 @@ public final class PackageIntegrity {
             long complete = roots.stream().filter(root ->
                     hasFile(entries, root, "profile.json")
                             && hasFile(entries, root, "bundle-manifest.json")).count();
-            if (complete == roots.size()) {
+            if (nestedPackages(entries)) {
                 return Outcome.Check.unavailable("v1 layout", "MULTIPLE_PACKAGES",
                         "the package carries " + roots.size() + " complete evidence sections, "
                                 + "each under its own root (" + roots + "). Nothing states "
@@ -403,6 +416,20 @@ public final class PackageIntegrity {
         return entries.keySet().stream().anyMatch(path -> ("/" + path).equals(wanted));
     }
 
+    /**
+     * Whether every root carrying section files carries a COMPLETE section.
+     *
+     * <p>Complete means both files §4.2 makes mandatory. A root holding one loose
+     * {@code profile.json} beside another root's documents is a SPLIT wearing a profile, and
+     * treating it as a package would let a split escape into "cannot tell".
+     */
+    static boolean nestedPackages(Map<String, byte[]> entries) {
+        java.util.SortedSet<String> roots = sectionRoots(entries);
+        return roots.size() > 1 && roots.stream().allMatch(root ->
+                hasFile(entries, root, "profile.json")
+                        && hasFile(entries, root, "bundle-manifest.json"));
+    }
+
     /** The distinct archival roots that carry evidence-section files. */
     private static java.util.SortedSet<String> sectionRoots(Map<String, byte[]> entries) {
         java.util.SortedSet<String> roots = new java.util.TreeSet<>();
@@ -495,26 +522,25 @@ public final class PackageIntegrity {
                     "the package presents " + premisPaths.get(0) + " as PREMIS and this "
                             + "verifier could not read it as XML: " + fixity.unreadable());
         }
-        int payloadCount = payloadsIn(entries).size();
         if (fixity.digests().size() > 1) {
-            if (fixity.digests().size() != payloadCount) {
-                // §9: "PREMIS が 1 つの payload に 2 つ fixity を持つ … 場合は FAILED（一対一が
-                // 崩れている）". The counts cannot be paired at all, and that is something this
-                // verifier READ, not something it failed to read. Reporting it as "could not
-                // tell" diluted a finding the specification already named (Codex, seventh
-                // review, P1).
-                return Outcome.Check.failed("payload fixity",
-                        "the PREMIS records " + fixity.digests().size() + " message digests and "
-                                + "the package carries " + payloadCount + " payload(s), so the "
-                                + "one-to-one relationship §9 requires does not hold");
-            }
-            // Equal counts COULD be a legitimate package: CSIP allows several representations,
-            // each with its own fixity. This verifier does not read the PREMIS object-to-file
-            // linkage, so which digest belongs to which payload is genuinely unknown here.
+            // UNAVAILABLE, and NOT a count comparison.
+            //
+            // A review read §9's "PREMIS が 1 つの payload に 2 つ fixity を持つ … は FAILED"
+            // as a rule about NUMBERS and this check was changed to compare the digest count
+            // with the payload count. Another review then measured what that does to ordinary
+            // packages: CSIP and Archivematica write one premis:object per FILE — the METS and
+            // the submission documentation included — so a perfectly good package with one
+            // payload routinely records two or three digests, and the comparison called it
+            // "the one-to-one relationship does not hold". exit 2, "checked and wrong", for a
+            // package with nothing wrong with it (subagent, eighth review, P1, measured).
+            //
+            // §9's sentence is about the LINKAGE — which digest describes which file — and
+            // this verifier does not read the PREMIS object-to-file linkage at all. Not
+            // reading it is exactly why it cannot say the relationship is broken.
             return Outcome.Check.unavailable("payload fixity", "AMBIGUOUS_PREMIS",
-                    "the PREMIS records " + fixity.digests().size() + " message digests for "
-                            + payloadCount + " payload(s), and this verifier does not read the "
-                            + "object-to-file linkage that would pair them");
+                    "the PREMIS records " + fixity.digests().size() + " message digests and "
+                            + "this verifier does not read the object-to-file linkage that "
+                            + "says which of them describes the payload");
         }
         String recorded = fixity.digests().isEmpty() ? null : fixity.digests().get(0);
         if (recorded == null || recorded.isBlank()) {
@@ -547,12 +573,13 @@ public final class PackageIntegrity {
                     "the package carries no payload under representations/*/data/");
         }
         if (payloads.size() > 1) {
-            // Read, and found broken — §9 names this FAILED. One digest cannot describe two
-            // payloads under any pairing (Codex, seventh review, P1).
-            return Outcome.Check.failed("payload fixity",
+            // Same reasoning in the other direction: without the linkage this verifier cannot
+            // say WHICH payload the one recorded digest describes, so it cannot say the
+            // relationship is broken either.
+            return Outcome.Check.unavailable("payload fixity", "AMBIGUOUS_PAYLOAD",
                     "the package carries " + payloads.size() + " payloads and PREMIS records "
-                            + "one digest, so the one-to-one relationship §9 requires does not "
-                            + "hold and one of them is content nobody committed to");
+                            + "one digest, and this verifier does not read the object-to-file "
+                            + "linkage that says which payload it describes");
         }
         Map.Entry<String, byte[]> payload = payloads.entrySet().iterator().next();
         String actual = Canonical.hex(Canonical.sha256(payload.getValue()));
@@ -665,10 +692,12 @@ public final class PackageIntegrity {
                     "http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
             factory.setXIncludeAware(false);
             // INTERNAL entities are expanded. External resolution is off above, and secure
-            // processing caps expansion (measured: a billion-laughs document expands to
-            // nothing in 19 ms). Leaving expansion off while allowing a DOCTYPE made a digest
-            // written as an internal entity read as "PREMIS records no message digest" —
-            // "read and absent" for something that was not read (subagent, seventh review, P3).
+            // processing REFUSES a document whose expansion runs away — measured on a
+            // billion-laughs document: rejected as JAXP00010001 in about 74 ms, answered as
+            // "could not read", never as "read and empty". Leaving expansion off while allowing
+            // a DOCTYPE made a digest written as an internal entity read as "records no message
+            // digest" — "read and absent" for something that was not read (subagent, seventh
+            // and eighth reviews, P3).
             factory.setExpandEntityReferences(true);
             document = factory.newDocumentBuilder().parse(new org.xml.sax.InputSource(
                     new java.io.StringReader(xml)));
@@ -721,10 +750,18 @@ public final class PackageIntegrity {
         return payloads;
     }
 
+    /**
+     * Metadata files whose path ends with {@code suffix} — PAYLOAD excluded.
+     *
+     * <p>A CSIP AIP that keeps the original SIP as CONTENT carries that SIP's METS and PREMIS
+     * under a representation's own data directory. Counting them made the AIP "2 PREMIS documents"
+     * and {@code payload fixity} UNAVAILABLE: the nested-package over-refusal, surviving in the
+     * one lookup that was not moved (subagent, eighth review, P3).
+     */
     private static List<String> pathsEndingWith(Map<String, byte[]> entries, String suffix) {
         List<String> paths = new ArrayList<>();
         for (String key : entries.keySet()) {
-            if (key.endsWith(suffix)) {
+            if (!isPayload(key) && key.endsWith(suffix)) {
                 paths.add(key);
             }
         }

@@ -9839,8 +9839,8 @@ CONTROLS = [
         id='GY3',
         what="the readiness document stops saying the control added since the fifth sweep is unswept, so a finished sweep of 938 reads as a measurement of today's tree",
         file='docs/design/v3.4-release-readiness.md',
-        find='**その 113 本は通し未実施**',
-        replace='**その 113 本も通し済み**',
+        find='**その 116 本は通し未実施**',
+        replace='**その 116 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10797,7 +10797,7 @@ CONTROLS = [
         what='a second statement of the unswept count drifts from the locked one, so the document contradicts itself about how many controls have never been run together',
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **5 回目以後に足した control は 113 本**（境界 LM3 — 5 回目時点の最大 ID。',
+        find='  **5 回目以後に足した control は 116 本**（境界 LM3 — 5 回目時点の最大 ID。',
         replace='  **5 回目以後に足した control は 0 本**（境界 LM3 — 5 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10808,7 +10808,7 @@ CONTROLS = [
         file='docs/design/fail-closed-reads.md',
         # Re-pointed: the boundary id moves below LM3, so ids above it exist while the sweep
         # record says nothing was added — the cross-check (declared − swept ≠ ids above) fires.
-        find='**5 回目以後に足した control は 113 本**（境界 LM3）: ',
+        find='**5 回目以後に足した control は 116 本**（境界 LM3）: ',
         replace='**5 回目以後に足した control は 5 本**（境界 LA3）: ',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10864,8 +10864,8 @@ CONTROLS = [
         id='LN3',
         what="the canon stops saying the control added since the fifth sweep is unswept — the canon-side twin of GY3 — and, being itself the first control after the sweep, the one that forces the ledger back from 0 to 1",
         file='docs/design/fail-closed-reads.md',
-        find='**その 113 本は通し未実施**',
-        replace='**その 113 本も通し済み**',
+        find='**その 116 本は通し未実施**',
+        replace='**その 116 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10873,8 +10873,8 @@ CONTROLS = [
         id='LO3',
         what="the readiness document's §4 stops saying the added controls are unswept while §1.4 still does — the second exit, which a once-per-file check let through (GY3 did not fire)",
         file='docs/design/v3.4-release-readiness.md',
-        find='5 回目以後に足した control は **113 本**（通し未実施）。',
-        replace='5 回目以後に足した control は **113 本**（通し済み）。',
+        find='5 回目以後に足した control は **116 本**（通し未実施）。',
+        replace='5 回目以後に足した control は **116 本**（通し済み）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11689,7 +11689,7 @@ CONTROLS = [
         id='LB3',
         what='the PLAN\'s copy of the never-swept count drifts, so whoever scopes the overdue full sweep from the plan runs half the set',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='5 回目以後に足した control は **113 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='5 回目以後に足した control は **116 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='5 回目以後に足した control は **0 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -11950,7 +11950,9 @@ CONTROLS = [
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/TokenSignature.java',
         # Re-pointed 2026-09-22 (7 巡目): RuntimeOperatorException joined the list when an
         # unsupported curve turned out to arrive that way.
-        find='            if (cause instanceof NoSuchAlgorithmException\n                    || cause instanceof NoSuchProviderException\n                    || cause instanceof org.bouncycastle.operator.OperatorCreationException\n                    || cause instanceof org.bouncycastle.operator.RuntimeOperatorException) {\n                return true;\n            }',
+        # Re-pointed 2026-09-22 (8 巡目): RuntimeOperatorException left the list when
+        # cannotSetUp started asking up front.
+        find='            if (cause instanceof NoSuchAlgorithmException\n                    || cause instanceof NoSuchProviderException\n                    || cause instanceof org.bouncycastle.operator.OperatorCreationException) {\n                return true;\n            }',
         replace='            if (false) {\n                return true;\n            }',
         test='OneTokenGetsOneAnswerTest',
         expect_fail=['aProviderFailureIsNotAFinding'],
@@ -12136,22 +12138,20 @@ CONTROLS = [
         what='a known one-to-one violation is diluted into "could not tell", so a package carrying a payload nobody committed to exits 3 instead of 2',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='            if (fixity.digests().size() != payloadCount) {',
-        replace='            if (false) {',
+        # Re-pointed 2026-09-22 (8 巡目): the count rule was withdrawn after measurement —
+        # ordinary CSIP packages record a digest for the METS too. What is protected now is
+        # the UNAVAILABLE answer itself.
+        find='            return Outcome.Check.unavailable("payload fixity", "AMBIGUOUS_PREMIS",\n                    "the PREMIS records " + fixity.digests().size() + " message digests and "',
+        replace='            return Outcome.Check.failed("payload fixity",\n                    "the PREMIS records " + fixity.digests().size() + " message digests and "',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['twoFixitiesInOnePremisAreAmbiguous',
-                     'aSecondDigestUnderAnotherPrefixIsFound'],
+                     'aSecondDigestUnderAnotherPrefixIsFound',
+                     'equalCountsAreUnavailableNotFailed'],
     ),
-    dict(
-        id='PL3',
-        what="a package that may well be conformant (N digests for N payloads) is reported as breaking the one-to-one relationship, which names a defect nobody found",
-        module='evidence-verifier-core',
-        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='            return Outcome.Check.unavailable("payload fixity", "AMBIGUOUS_PREMIS",\n                    "the PREMIS records " + fixity.digests().size() + " message digests for "',
-        replace='            return Outcome.Check.failed("payload fixity",\n                    "the PREMIS records " + fixity.digests().size() + " message digests for "',
-        test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['equalCountsAreUnavailableNotFailed'],
-    ),
+    # PL3 retired 2026-09-22 (8 巡目). It measured the "equal counts are UNAVAILABLE" arm,
+    # which existed only while the count comparison did. The comparison was withdrawn after
+    # measurement (ordinary CSIP packages record a digest for the METS as well), so there is
+    # one arm again and PK3 measures it.
     dict(
         id='PM3',
         what='the METS reader refuses an internal DOCTYPE again, so a legitimate third-party METS cannot reach P0 while a PREMIS carrying one can',
@@ -12206,8 +12206,10 @@ CONTROLS = [
         id='PR3',
         what="the product's own /verify dilutes a known one-to-one violation into 'could not tell', so an operator sees exit-3-shaped doubt where the CLI reports a finding",
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='            return new Check("payload digest", Outcome.FAILED,\n                    "the package carries " + payloads.size() + " payload files and PREMIS "',
-        replace='            return new Check("payload digest", Outcome.UNAVAILABLE,\n                    "the package carries " + payloads.size() + " payload files and PREMIS "',
+        # Re-pointed 2026-09-22 (8 巡目): the count rule was withdrawn, so the answer to protect
+        # is the refusal to pick whichever payload happens to match.
+        find='            return new Check("payload digest", Outcome.UNAVAILABLE,\n                    "the package carries " + payloads.size() + " payload files and PREMIS "',
+        replace='            return new Check("payload digest", Outcome.PASSED,\n                    "the package carries " + payloads.size() + " payload files and PREMIS "',
         test='SipVerifierTest',
         expect_fail=['twoPayloadsAndOneDigestIsAmbiguousHereToo'],
     ),
@@ -12290,8 +12292,10 @@ CONTROLS = [
         what='a package that contains another complete package is reported as broken, so a CSIP AIP carrying its original SIP cannot reach P0',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='            if (complete == roots.size()) {',
-        replace='            if (false) {',
+        # Re-pointed 2026-09-22 (8 巡目): the predicate moved into nestedPackages so the
+        # sibling check could use it too.
+        find='            if (nestedPackages(entries)) {\n                return Outcome.Check.unavailable("v1 layout", "MULTIPLE_PACKAGES",',
+        replace='            if (false) {\n                return Outcome.Check.unavailable("v1 layout", "MULTIPLE_PACKAGES",',
         test='TheV1LayoutIsCheckedTest',
         expect_fail=['aNestedCompletePackageCannotBeToldApart'],
     ),
@@ -12321,6 +12325,87 @@ CONTROLS = [
         replace='\t\tif (false) {\n\t\t\treturn true;\n\t\t}',
         test='ARestoreThatEndsWithoutBytesSaysSoTest',
         expect_fail=['aColdMoveIsToldApartFromNoContent'],
+    ),
+
+    # ---- Eighth review (Codex, 2026-09-22) ----
+    dict(
+        id='PY3',
+        what='the nested-package answer never reaches a verdict: one evidence section runs first and fails on the same repeated names, so a legitimate CSIP AIP is still refused',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        if (nestedPackages(entries)) {\n            return Outcome.Check.unavailable("one evidence section", "MULTIPLE_PACKAGES",',
+        replace='        if (false) {\n            return Outcome.Check.unavailable("one evidence section", "MULTIPLE_PACKAGES",',
+        test='TheV1LayoutIsCheckedTest',
+        expect_fail=['aNestedCompletePackageCannotBeToldApart'],
+    ),
+    dict(
+        id='PZ3',
+        what="a token naming a signature algorithm its own certificate's key cannot be used with is excused as something this build could not compute, so a contradiction the package states about itself answers 'not checked'",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/TokenSignature.java',
+        find='            if (!familyMatches(encryption, key.getAlgorithm())) {',
+        replace='            if (false) {',
+        test='OneTokenGetsOneAnswerTest',
+        # Without the family check, cannotSetUp reaches initVerify and answers
+        # SIGNATURE_NOT_COMPUTED for both fixtures (measured).
+        expect_fail=['anAlgorithmThatDoesNotGoWithItsOwnKeyIsAFinding',
+                     'aSubstitutedCertificateIsAFinding'],
+    ),
+    # There is NO control for "asking up front instead of inferring from an exception". The
+    # difference is observable only when this build CANNOT compute a signature — a brainpool
+    # curve, a provider that is not installed — and no fixture here can produce one: every
+    # algorithm this test can sign with is one the JVM implements. Removing the pre-flight
+    # leaves every producible case answering the same way, so a control would measure nothing
+    # (measured: the lock stayed green). PZ3 measures the half that IS producible — a token
+    # whose algorithm does not go with its own key.
+    # QB3 retired 2026-09-22 (8 巡目), for the same reason as PL3: it measured the product
+    # endpoint's count comparison, which was withdrawn. PR3 measures the answer that remains.
+    dict(
+        id='QC3',
+        what='two more lookups keep scanning without excluding payload, so a substituted token placed in the payload and first in the zip is read by P2 while P3 reads the real one',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/AnchoredCheckpoint.java',
+        # The CALL SITE, not Section: a control on the helper cannot see a caller that does not
+        # delegate, which is exactly how these two were missed.
+        # bytesOf, which is the one the lock exercises: hasFile only decides whether the rung's
+        # file is there, and the fixture's real section carries one (measured — sabotaging
+        # hasFile alone left the lock green).
+        find='    private static byte[] bytesOf(Map<String, byte[]> entries, String relative) {\n        byte[] found = Section.fileIn(entries, relative);\n        return found == null ? new byte[0] : found;\n    }',
+        replace='    private static byte[] bytesOf(Map<String, byte[]> entries, String relative) {\n        String wanted = RecordLedger.DIR + relative;\n        for (Map.Entry<String, byte[]> entry : entries.entrySet()) {\n            if (("/" + entry.getKey()).endsWith(wanted)) {\n                return entry.getValue();\n            }\n        }\n        return new byte[0];\n    }',
+        test='TheAnchorIsReadNotAssumedTest',
+        expect_fail=['aPayloadCopyIsNotReadByTheAnchorChecks'],
+    ),
+    dict(
+        id='QD3',
+        what='a signature whose encoding is not a signature at all is excused as something this build could not compute, so an edited token exits 3 instead of 2',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/TokenSignature.java',
+        find='            if (cause instanceof java.security.cert.CertificateException) {',
+        replace='            if (cause instanceof java.security.SignatureException\n                    || cause instanceof java.security.cert.CertificateException) {',
+        test='OneTokenGetsOneAnswerTest',
+        expect_fail=['aMalformedSignatureIsAFinding'],
+    ),
+    dict(
+        id='QE3',
+        what='the abandoned journal row says "the archive carried no binary content" for a cold MOVE, putting a falsehood in the content-write journal',
+        file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/delegate/ArchiveServiceDelegate.java',
+        find='			recorder.abandon(pending, switch (restored.absence()) {',
+        replace='			recorder.abandon(pending, "the archive carried no binary content"); if (true) { return; }\n			recorder.abandon(pending, switch (restored.absence()) {',
+        test='TheAbandonedRowSaysWhichAbsenceTest',
+        # One sentence for three situations reddens all three locks (measured).
+        expect_fail=['aColdMoveIsNotRecordedAsHavingNoContent',
+                     'anUndeterminedAbsenceIsNotRecordedAsNothing',
+                     'aVersionWithNoContentIsRecordedAsThat'],
+    ),
+    dict(
+        id='QF3',
+        what="the PREMIS and METS lookups count a nested package's own copies, so a CSIP AIP that keeps the original SIP as content cannot reach P0",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='            if (!isPayload(key) && key.endsWith(suffix)) {',
+        replace='            if (key.endsWith(suffix)) {',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aNestedPackagesOwnMetadataIsNotCounted'],
     ),
 
 ]

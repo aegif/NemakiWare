@@ -197,8 +197,8 @@ class SipVerifierTest {
 
         assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "payload digest"),
                 "a PREMIS with a matching digest and a contradicting one under a different "
-                        + "prefix was read as carrying one. The CLI answers UNAVAILABLE for the "
-                        + "same file: " + result.asMap());
+                        + "prefix was read as carrying one. The CLI answers the same way: "
+                        + result.asMap());
     }
 
     @Test
@@ -243,10 +243,12 @@ class SipVerifierTest {
 
         SipVerifier.Result result = SipVerifier.verify(sip);
 
-        // FAILED, as §9 names it and as the independent verifier now answers. One digest
-        // cannot describe two payloads under any pairing (Codex, seventh review, P1 — this
-        // lock pinned the diluted answer).
-        assertEquals(SipVerifier.Outcome.FAILED, outcomeOf(result, "payload digest"),
+        // UNAVAILABLE, as the independent verifier answers: without the PREMIS
+        // object-to-file linkage neither can say WHICH payload the one digest describes. A
+        // seventh-round review read §9 as a count rule and this was changed to FAILED; an
+        // eighth measured that ordinary CSIP packages fall foul of a count rule, so both ends
+        // went back.
+        assertEquals(SipVerifier.Outcome.UNAVAILABLE, outcomeOf(result, "payload digest"),
                 "a package carrying two payloads and one recorded digest was reported as "
                         + "verified on the strength of whichever one matched: " + result.asMap());
     }

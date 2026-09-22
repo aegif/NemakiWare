@@ -473,12 +473,18 @@ current == merkleRoot なら PASS
 - **重複エントリ名は `FAILED`**。片方だけ検査して PASS と言う形を封じる。
 - **上限到達は crash でも FAIL でもなく `UNAVAILABLE` + reason `RESOURCE_LIMIT`**
   （→ `INDETERMINATE`）。「大きすぎて調べられなかった」は「調べて問題が無かった」ではない。
-- **一対一が崩れているなら `FAILED`。** 数が合わない組（digest 2 個に payload 1 つ、
-  payload 2 つに digest 1 個）は**どう組んでも一対一にならない**ので、読んだ上での finding である。
-  **数が合う組（digest N 個に payload N 個）は `UNAVAILABLE`（`AMBIGUOUS_PREMIS`）** —
-  CSIP は複数 representation を許すので適合しうるが、この verifier は PREMIS の
-  object → file の結び付きを読まないので、**どれがどれかを言えない**。
-  「言えない」を「壊れている」と呼ぶのは、見つけていない欠陥を報告する形。
+- **一対一は `FAILED` の規定だが、それは「どの digest がどの file を describe しているか」
+  についての規定である。** この verifier は **PREMIS の object → file の結び付きを読まない**ので、
+  一対一が崩れていることを**言えない**。したがって digest が 2 つ以上、あるいは payload が
+  2 つ以上のときは **`UNAVAILABLE`（`AMBIGUOUS_PREMIS` / `AMBIGUOUS_PAYLOAD`）**。
+
+  > **2026-09-22 の訂正（2 度目）。** 一度これを**数の比較**として実装した（digest 数 ≠ payload 数 →
+  > `FAILED`）。**CSIP と Archivematica は file 1 つにつき `premis:object` 1 つを書く** —
+  > METS も submission documentation も含めて — ので、payload 1 つの普通の package が
+  > 日常的に digest を 2 つ 3 つ記録する。数の規則はそれを「一対一が崩れている」と呼んで
+  > **exit 2** を返した。実測で否定して取り下げた。
+  > **結び付きを読まないなら、その digest が payload のものかどうかも言えない** —
+  > 片方の腕で「言えない」と述べ、もう片方で同じ数から断定するのは自己矛盾である。
 
 ---
 

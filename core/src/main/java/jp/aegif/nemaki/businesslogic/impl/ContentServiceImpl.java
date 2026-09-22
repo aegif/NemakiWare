@@ -2647,19 +2647,14 @@ public class ContentServiceImpl implements ContentService {
 			// ended. Read only here, on the path that is already refusing.
 			String reason = contentDaoService.contentAbsenceReason(repositoryId,
 					sourceAttachmentId);
+			// ONE place decides what each reason means. This copy had two arms where the
+			// other has three, so one row was told "nothing to wait for" by one refusal and
+			// "retry shortly" by the other (subagent, eighth review, P2).
 			throw new CmisStorageException("the attachment '" + sourceAttachmentId
 					+ "' this document names is not in '" + repositoryId + "', so its content "
-					+ "could not be copied. This is NOT a finding that the document has no "
-					+ "content. "
-					+ (jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.ContentAbsence
-							.MOVED_TO_COLD.name().equals(reason)
-							? "The row records that its content was MOVED to cold storage and "
-									+ "the restore brought back its metadata only, so WAITING "
-									+ "WILL NOT CHANGE THIS."
-							: "If a restore from the archive is in progress for this document, "
-									+ "retry shortly — but a restore of a version whose content "
-									+ "was moved to cold storage finishes WITHOUT bytes, and "
-									+ "that one does not resolve by waiting."));
+					+ "could not be copied. "
+					+ jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate
+							.whyNoBodyAndWhetherWaitingHelps(reason));
 		}
 		return copied;
 	}

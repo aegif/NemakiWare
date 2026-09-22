@@ -398,6 +398,39 @@ class TheAnchorIsReadNotAssumedTest {
     }
 
     /**
+     * P2's own lookups exclude payload too.
+     *
+     * <p>Five copies of the section lookup were folded into {@code Section} and TWO were
+     * missed — {@code bytesOf} and {@code hasFile}, both here. With them still scanning, a
+     * substituted token placed in the PAYLOAD and first in the zip was read by P2 while P3
+     * read the real one: the same name, two answers, and the composed P2 verdict came back
+     * VERIFIED (subagent, eighth review, P1, measured).
+     *
+     * <p>The lock that guarded the fold called {@code Section.fileIn} directly, so a caller
+     * that did not delegate was invisible to it.
+     */
+    @Test
+    @DisplayName("a payload copy of a token is not read by the anchor checks")
+    void aPayloadCopyIsNotReadByTheAnchorChecks() throws Exception {
+        Map<String, Object> cp = checkpoint(1, 10, ROOT_A, null);
+        // The real section's token is about SOMETHING ELSE, so P2 must fail...
+        Map<String, byte[]> entries = anchoredChain(cp, tokenOver(authority(), ROOT_Z, SHA256));
+        // ...unless it reads this one, which is about the right root and comes first.
+        Map<String, byte[]> reordered = new LinkedHashMap<>();
+        reordered.put(ROOT + "representations/rep1/data/metadata/other/nemaki-evidence/"
+                + "anchors/rfc3161.der", tokenOver(authority(), ROOT_A, SHA256));
+        reordered.putAll(entries);
+
+        Outcome.Check anchor = named(AnchoredCheckpoint.check(reordered, null),
+                "anchor commits root");
+
+        assertEquals(Outcome.FAILED, anchor.outcome(),
+                "P2 read a token out of the PAYLOAD and called the anchor good. P0 answers "
+                        + "'one evidence section' for such a package, so nothing else reports "
+                        + "it: " + anchor.detail());
+    }
+
+    /**
      * P2 and P3 read the same file, named the same way. A rung claiming another kind, at
      * another path, is not the RFC 3161 anchor — P3 would find no token at all (Codex, P2).
      */

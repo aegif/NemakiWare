@@ -241,10 +241,12 @@ public final class SipVerifier {
                     "http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
             factory.setXIncludeAware(false);
             // INTERNAL entities are expanded. External resolution is off above, and secure
-            // processing caps expansion (measured: a billion-laughs document expands to
-            // nothing in 19 ms). Leaving expansion off while allowing a DOCTYPE made a digest
-            // written as an internal entity read as "PREMIS records no message digest" —
-            // "read and absent" for something that was not read (subagent, seventh review, P3).
+            // processing REFUSES a document whose expansion runs away — measured on a
+            // billion-laughs document: rejected as JAXP00010001 in about 74 ms, answered as
+            // "could not read", never as "read and empty". Leaving expansion off while allowing
+            // a DOCTYPE made a digest written as an internal entity read as "records no message
+            // digest" — "read and absent" for something that was not read (subagent, seventh
+            // and eighth reviews, P3).
             factory.setExpandEntityReferences(true);
             org.w3c.dom.Document document = factory.newDocumentBuilder().parse(
                     new org.xml.sax.InputSource(new java.io.StringReader(premis)));
@@ -257,10 +259,15 @@ public final class SipVerifier {
                             + "established either way.");
         }
         if (digests.size() > 1) {
+            // NOT a count comparison — the twin of PackageIntegrity.payloadFixity. CSIP and
+            // Archivematica write one premis:object per FILE, so an ordinary package records a
+            // digest for the METS as well and a count rule refuses it (subagent, eighth
+            // review, P1, measured). §9's sentence is about the LINKAGE, which this verifier
+            // does not read.
             return new Check("payload digest", Outcome.UNAVAILABLE,
                     "the PREMIS records " + digests.size() + " message digests and this "
-                            + "verifier cannot tell which one describes the payload. Taking the "
-                            + "first would check the bytes against whichever was written first.");
+                            + "verifier does not read the object-to-file linkage that says "
+                            + "which of them describes the payload.");
         }
         String recorded = digests.isEmpty() ? null : digests.get(0);
         if (recorded == null || recorded.isBlank()) {
@@ -300,17 +307,15 @@ public final class SipVerifier {
                     "the package carries no payload file under a representation");
         }
         if (payloads.size() > 1) {
-            // ONE recorded digest cannot describe two payloads, and taking whichever of them
-            // matches would let a second, uncommitted file ride along inside a package this
-            // endpoint calls verified. The independent verifier answers AMBIGUOUS_PAYLOAD for
-            // exactly this, and an operator reaches THIS endpoint far more often (subagent,
-            // sixth review, P2 — the PREMIS reading was aligned and this was not).
-            // FAILED, as §9 names it: one digest cannot describe two payloads under any
-            // pairing, and this verifier READ that (Codex, seventh review, P1).
-            return new Check("payload digest", Outcome.FAILED,
+            // Taking whichever of them matches would let a second, uncommitted file ride along
+            // inside a package this endpoint calls verified. UNAVAILABLE, not FAILED: without
+            // the PREMIS object-to-file linkage this verifier cannot say WHICH payload the one
+            // recorded digest describes, so it cannot say the relationship is broken either.
+            // The twin in PackageIntegrity answers the same way.
+            return new Check("payload digest", Outcome.UNAVAILABLE,
                     "the package carries " + payloads.size() + " payload files and PREMIS "
-                            + "records one digest, so the one-to-one relationship §9 requires "
-                            + "does not hold and one of them is content nobody committed to. "
+                            + "records one digest, and this verifier does not read the "
+                            + "object-to-file linkage that says which payload it describes. "
                             + "Checked: " + payloads.stream().map(Map.Entry::getKey).toList());
         }
         for (Map.Entry<String, byte[]> payload : payloads) {

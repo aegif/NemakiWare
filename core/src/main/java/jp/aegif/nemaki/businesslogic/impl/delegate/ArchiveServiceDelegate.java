@@ -96,10 +96,15 @@ public class ArchiveServiceDelegate {
 	 * fourth commitment kind — with the digest the DAO took as the bytes were written back.
 	 *
 	 * <p>Three outcomes, three different records: bytes vouched for → RESTORED statement; bytes
-	 * written but not vouched for → the row stays OPEN (a gap that is listable); no binary in
-	 * the archive → the row is closed as abandoned, because nothing was written and an open row
+	 * written but not vouched for → the row stays OPEN (a gap that is listable); no binary
+	 * written back → the row is closed as abandoned, because nothing was written and an open row
 	 * would report a gap that is not one. A DAO that cannot report (null) leaves the row open:
 	 * "not known" is not "nothing".
+	 *
+	 * <p>The abandoned row carries WHY. {@code wroteBytes()} is false for three different
+	 * situations — the archive had no content, the content was moved to cold storage, and the
+	 * archive row could not be read — and the sentence is persisted, so one sentence for all
+	 * three puts a falsehood in the journal for two of them.
 	 */
 	private void recordRestored(String repositoryId, Archive archive,
 			jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pending,
@@ -115,7 +120,21 @@ public class ArchiveServiceDelegate {
 			return;
 		}
 		if (!restored.wroteBytes()) {
-			recorder.abandon(pending, "the archive carried no binary content; nothing was written back");
+			// THE REASON, not one sentence for three situations. This wrote "the archive
+			// carried no binary content" for a cold MOVE — where the archive DID carry
+			// content, and it is in cold storage — and for an archive row this node could not
+			// read at all. The sentence is PERSISTED by journal.abandon, so the false one stays
+			// in the content-write journal (subagent, eighth review, P2). R57 gave the answer a
+			// reason; this is the only product reader of it.
+			recorder.abandon(pending, switch (restored.absence()) {
+				case MOVED_TO_COLD -> "the archived content was MOVED to cold storage, so the "
+						+ "restore brought back metadata only. The bytes are not lost: they are "
+						+ "in cold storage, and this product has no path that reads them back";
+				case ARCHIVE_HAD_NO_CONTENT -> "the archived version carried no content of its "
+						+ "own; nothing was written back";
+				default -> "the restore did not report why nothing was written back, so why "
+						+ "this version has no content is NOT stated here";
+			});
 			return;
 		}
 		if (restored.contentDigest() == null) {

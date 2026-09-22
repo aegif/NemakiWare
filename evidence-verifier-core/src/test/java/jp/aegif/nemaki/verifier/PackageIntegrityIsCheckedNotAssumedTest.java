@@ -31,6 +31,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -179,14 +180,16 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         Path sip = zip(tmp, "two-fixities.zip", entries);
         Outcome.Check fixity = checkNamed(
                 PackageIntegrity.check(PackageReader.open(sip).entries()), "payload fixity");
-        // FAILED, as §9 names it. Two digests and one payload cannot be paired under any
-        // reading, and that is something this verifier READ. Reporting it as "could not tell"
-        // diluted a finding the specification already named — and this lock pinned the diluted
-        // answer (Codex, seventh review, P1).
-        assertEquals(Outcome.FAILED, fixity.outcome(),
-                "a PREMIS with two message digests for one payload was not reported as breaking "
-                        + "the one-to-one relationship §9 requires: " + fixity.detail());
-        assertTrue(fixity.detail().contains("one-to-one"), fixity.detail());
+        // UNAVAILABLE, and this lock has now been written BOTH ways. A seventh-round review
+        // read §9 as a rule about counts and it was changed to FAILED; an eighth measured what
+        // that does to ordinary CSIP packages, whose PREMIS describes the METS as well — one
+        // payload, two digests, refused with "the one-to-one relationship does not hold".
+        // §9's sentence is about the LINKAGE, and this verifier does not read it.
+        assertEquals(Outcome.UNAVAILABLE, fixity.outcome(),
+                "a PREMIS with two message digests was answered as though this verifier could "
+                        + "tell which described the payload: " + fixity.detail());
+        assertEquals("AMBIGUOUS_PREMIS", fixity.reasonCode());
+        assertTrue(fixity.detail().contains("linkage"), fixity.detail());
     }
 
     /**
@@ -219,9 +222,10 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         Outcome.Check fixity = checkNamed(
                 PackageIntegrity.check(PackageReader.open(sip).entries()), "payload fixity");
 
-        assertEquals(Outcome.FAILED, fixity.outcome(),
+        assertEquals(Outcome.UNAVAILABLE, fixity.outcome(),
                 "a PREMIS carrying a matching digest and a contradicting one under a different "
                         + "prefix was read as carrying one: " + fixity.detail());
+        assertEquals("AMBIGUOUS_PREMIS", fixity.reasonCode());
         assertTrue(fixity.detail().contains("2 message digests"), fixity.detail());
     }
 
@@ -424,6 +428,25 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                         + "relationship. This verifier cannot pair them; that is not a finding "
                         + "about the package: " + fixity.detail());
         assertEquals("AMBIGUOUS_PREMIS", fixity.reasonCode());
+
+        // The shape an ORDINARY CSIP package has: one payload, and a PREMIS that also
+        // describes the METS. A count rule called this a one-to-one violation (measured).
+        Map<String, String> ordinary = new LinkedHashMap<>(goodPackage("the minutes"));
+        ordinary.put(ROOT + "metadata/preservation/premis.xml",
+                premis(sha256("the minutes"), "SHA-256").replace("</premis:object>",
+                        "</premis:object><premis:object><premis:objectCharacteristics>"
+                                + "<premis:fixity><premis:messageDigestAlgorithm>SHA-256"
+                                + "</premis:messageDigestAlgorithm><premis:messageDigest>"
+                                + sha256("<mets:mets/>") + "</premis:messageDigest>"
+                                + "</premis:fixity></premis:objectCharacteristics>"
+                                + "</premis:object>"));
+        Outcome.Check everyday = checkNamed(PackageIntegrity.check(
+                PackageReader.open(zip(tmp, "ordinary.zip", ordinary)).entries()),
+                "payload fixity");
+        assertEquals(Outcome.UNAVAILABLE, everyday.outcome(),
+                "a package whose PREMIS describes the METS as well as the payload — which CSIP "
+                        + "and Archivematica both write — was reported as a finding: "
+                        + everyday.detail());
     }
 
     @Test
@@ -440,6 +463,42 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                         "mets closure").outcome(),
                 "a METS carrying an internal DOCTYPE was refused while a PREMIS carrying one "
                         + "was accepted — the same over-refusal, corrected on one side only");
+    }
+
+    /**
+     * A nested package's own METS and PREMIS are content, not a second copy.
+     *
+     * <p>A CSIP AIP that keeps the original SIP as CONTENT carries that SIP's metadata under a
+     * representation's data directory. Counting those made the AIP "2 PREMIS documents" and
+     * {@code payload fixity} UNAVAILABLE — the nested-package over-refusal surviving in the one
+     * lookup that was not moved (subagent, eighth review, P3).
+     */
+    @Test
+    @DisplayName("a nested package's own metadata is content, not a second PREMIS")
+    void aNestedPackagesOwnMetadataIsNotCounted(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
+        entries.put(ROOT + "representations/rep2/data/inner/metadata/preservation/premis.xml",
+                premis(sha256("something the inner package holds"), "SHA-256"));
+        entries.put(ROOT + "representations/rep2/data/inner/METS.xml", mets("inner/data/x.txt"));
+        entries.put(ROOT + "METS.xml", mets("representations/rep1/data/minutes.txt",
+                "representations/rep2/data/inner/metadata/preservation/premis.xml",
+                "representations/rep2/data/inner/METS.xml"));
+
+        Path sip = zip(tmp, "nested-metadata.zip", entries);
+        Outcome.Check fixity = checkNamed(
+                PackageIntegrity.check(PackageReader.open(sip).entries()), "payload fixity");
+
+        // The claim is about COUNTING PREMIS documents, so that is what is asserted. The
+        // package does carry several payloads, which this verifier separately cannot pair —
+        // asserting PASSED here would measure that instead.
+        assertFalse(fixity.detail().contains("PREMIS documents"),
+                "an AIP keeping the original SIP as content was read as carrying two PREMIS "
+                        + "documents, so its own fixity went unchecked over metadata that is "
+                        + "content: " + fixity.detail());
+        assertEquals("AMBIGUOUS_PAYLOAD", fixity.reasonCode(),
+                "the check stopped at the PREMIS count rather than reaching the payloads: "
+                        + fixity);
     }
 
     /**

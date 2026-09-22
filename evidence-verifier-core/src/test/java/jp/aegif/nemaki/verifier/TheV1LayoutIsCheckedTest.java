@@ -389,6 +389,20 @@ class TheV1LayoutIsCheckedTest {
                 "a package carrying a complete second package was reported as broken: "
                         + layout.detail());
         assertEquals("MULTIPLE_PACKAGES", layout.reasonCode());
+
+        // THE COMPOSED ANSWER, not this check alone. `one evidence section` runs first and
+        // failed on the same repeated names, so the correction never reached a verdict and a
+        // legitimate AIP was still refused — a lock that called v1Layout directly could not
+        // see it (Codex, eighth review, P1).
+        List<Outcome.Check> checks = PackageIntegrity.check(entries);
+        List<Outcome.Check> required = new ArrayList<>();
+        for (String name : PackageIntegrity.REQUIRED) {
+            required.add(checks.stream().filter(c -> c.name().equals(name)).findFirst()
+                    .orElse(Outcome.Check.absent(name, "this check did not run")));
+        }
+        assertEquals(Outcome.Verdict.INDETERMINATE, Outcome.combine(checks, required),
+                "P0 over a package containing another complete package still composes to "
+                        + "FAILED, so the answer a caller gets is unchanged: " + checks);
     }
 
     /**

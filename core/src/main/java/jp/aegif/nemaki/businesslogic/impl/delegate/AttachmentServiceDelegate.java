@@ -261,9 +261,23 @@ public class AttachmentServiceDelegate {
 	 *        stated", so the message then says both possibilities rather than choosing one
 	 */
 	static String bodyMissing(String repositoryId, String attachmentId, String reason) {
-		String head = "the attachment '" + attachmentId + "' in '" + repositoryId + "' has a row "
-				+ "but no content body, so there is nothing to copy. This is NOT a finding that "
-				+ "the document has no content. ";
+		return "the attachment '" + attachmentId + "' in '" + repositoryId + "' has a row "
+				+ "but no content body, so there is nothing to copy. "
+				+ whyNoBodyAndWhetherWaitingHelps(reason);
+	}
+
+	/**
+	 * What a body-less row means, and whether waiting helps — ONE place.
+	 *
+	 * <p>{@code ContentServiceImpl.copyAttachmentOrRefuse} refuses on the same fact and had its
+	 * own copy of this with two arms where this had three, so one row was told "nothing to wait
+	 * for" by one refusal and "retry shortly" by the other (subagent, eighth review, P2).
+	 *
+	 * @param reason what the row records, or null when it records nothing — which is "not
+	 *        stated", so the message then says both possibilities rather than choosing one
+	 */
+	public static String whyNoBodyAndWhetherWaitingHelps(String reason) {
+		String head = "This is NOT a finding that the document has no content. ";
 		if (jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.ContentAbsence.MOVED_TO_COLD
 				.name().equals(reason)) {
 			return head + "The row records that its content was MOVED to cold storage and the "

@@ -93,10 +93,12 @@ final class Premis {
                     "http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
             factory.setXIncludeAware(false);
             // INTERNAL entities are expanded. External resolution is off above, and secure
-            // processing caps expansion (measured: a billion-laughs document expands to
-            // nothing in 19 ms). Leaving expansion off while allowing a DOCTYPE made a digest
-            // written as an internal entity read as "PREMIS records no message digest" —
-            // "read and absent" for something that was not read (subagent, seventh review, P3).
+            // processing REFUSES a document whose expansion runs away — measured on a
+            // billion-laughs document: rejected as JAXP00010001 in about 74 ms, answered as
+            // "could not read", never as "read and empty". Leaving expansion off while allowing
+            // a DOCTYPE made a digest written as an internal entity read as "records no message
+            // digest" — "read and absent" for something that was not read (subagent, seventh
+            // and eighth reviews, P3).
             factory.setExpandEntityReferences(true);
             document = factory.newDocumentBuilder().parse(new ByteArrayInputStream(xml));
         } catch (Exception notXml) {

@@ -365,14 +365,10 @@ public final class AnchoredCheckpoint {
     /** SHA-256, the one imprint algorithm this version computes (id-sha256). */
     static final String SHA256_OID = "2.16.840.1.101.3.4.2.1";
 
+    /** Delegated to {@link Section}, which is the ONE place that excludes payload. */
     private static byte[] bytesOf(Map<String, byte[]> entries, String relative) {
-        String wanted = RecordLedger.DIR + relative;
-        for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
-            if (("/" + entry.getKey()).endsWith(wanted)) {
-                return entry.getValue();
-            }
-        }
-        return new byte[0];
+        byte[] found = Section.fileIn(entries, relative);
+        return found == null ? new byte[0] : found;
     }
 
     static Outcome.Check rollback(List<Map<String, Object>> links, String expected) {
@@ -416,9 +412,16 @@ public final class AnchoredCheckpoint {
         return out;
     }
 
+    /**
+     * Delegated to {@link Section} too.
+     *
+     * <p>Five copies were folded into Section and TWO were missed — this one and
+     * {@code bytesOf}. With them still scanning, a substituted token placed in the PAYLOAD and
+     * first in the zip was read by P2 while P3 read the real one: the same name, two answers,
+     * and the composed P2 verdict came back VERIFIED (subagent, eighth review, P1, measured).
+     */
     private static boolean hasFile(Map<String, byte[]> entries, String relative) {
-        String wanted = RecordLedger.DIR + relative;
-        return entries.keySet().stream().anyMatch(path -> ("/" + path).endsWith(wanted));
+        return Section.fileIn(entries, relative) != null;
     }
 
     /** Delegated to {@link Section}: one lookup, payload excluded, every parse failure caught. */

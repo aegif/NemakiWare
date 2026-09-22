@@ -64,6 +64,21 @@ final class TokenSignature {
                     what + " carries no signer certificate, so its signature cannot be verified "
                             + "from the package alone");
         }
+        // ASKED FIRST, not inferred from an exception four wrappers deep: can this build set
+        // up the verification at all? Everything after this is then a fact about the TOKEN.
+        //
+        // Reading it the other way round was wrong in both directions. An InvalidKeyException
+        // was excused as "no provider" even when the token named a signature algorithm its own
+        // certificate's key cannot use — a self-contradiction the package states. And a
+        // SignatureException from a mangled ECDSA (r,s) encoding was excused too, so an edited
+        // signature answered UNAVAILABLE instead of FAILED (Codex, eighth review, P1 and P2).
+        String setup = cannotSetUp(token, signer);
+        if (setup != null) {
+            return Outcome.Check.unavailable(name, "SIGNATURE_NOT_COMPUTED",
+                    "the signature on " + what + " could not be set up by this build (" + setup
+                            + "). It has NOT been compared — that is neither a finding that it "
+                            + "is wrong nor a statement that it is right");
+        }
         try {
             token.validate(new JcaSimpleSignerInfoVerifierBuilder().build(signer));
             return Outcome.Check.passed(name);
@@ -110,6 +125,81 @@ final class TokenSignature {
      * one of them as a bad signature.
      */
     /**
+     * Whether this build can even begin the verification — asked directly.
+     *
+     * <p>Returns why not, or null when it can. Two things are checked, and both are about THIS
+     * BUILD rather than about the token:
+     *
+     * <ul>
+     *   <li>the JCA knows the signature algorithm the SignerInfo names, and</li>
+     *   <li>it will initialise with the key the token's own certificate carries.</li>
+     * </ul>
+     *
+     * <p>A token that names an algorithm incompatible with its own key fails the second — and
+     * that is a fact about the token, not a limit of this build. So the key's ALGORITHM FAMILY
+     * is compared first: a mismatch there is left to the verification below, which reports it
+     * as a finding.
+     */
+    private static String cannotSetUp(TimeStampToken token, X509CertificateHolder signer) {
+        try {
+            org.bouncycastle.cms.SignerInformation info =
+                    token.toCMSSignedData().getSignerInfos().getSigners().iterator().next();
+            java.security.PublicKey key = new org.bouncycastle.cert.jcajce
+                    .JcaX509CertificateConverter().getCertificate(signer).getPublicKey();
+            String encryption = info.getEncryptionAlgOID();
+            if (!familyMatches(encryption, key.getAlgorithm())) {
+                // The token names a signature algorithm its own certificate's key cannot be
+                // used with. Read, and contradictory — the verification below says so.
+                return null;
+            }
+            java.security.Signature probe;
+            // The name CMS ITSELF derives from the SignerInfo. Reconstructing it by hand
+            // produced "SHA256with<the full signature OID>" and refused every ordinary token
+            // (measured).
+            String sigAlg = new org.bouncycastle.cms.DefaultCMSSignatureAlgorithmNameGenerator()
+                    .getSignatureName(
+                            new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
+                                    new org.bouncycastle.asn1.ASN1ObjectIdentifier(
+                                            info.getDigestAlgOID())),
+                            new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
+                                    new org.bouncycastle.asn1.ASN1ObjectIdentifier(encryption)));
+            try {
+                probe = java.security.Signature.getInstance(sigAlg);
+            } catch (java.security.NoSuchAlgorithmException unknown) {
+                return "no provider implements " + sigAlg;
+            }
+            probe.initVerify(key);
+            return null;
+        } catch (java.security.InvalidKeyException | RuntimeException cannot) {
+            // initVerify refused a key whose FAMILY matched, so no installed provider accepts
+            // this key implementation or its parameters — a brainpool curve, for instance.
+            return String.valueOf(cannot.getMessage());
+        } catch (Exception other) {
+            return String.valueOf(other.getMessage());
+        }
+    }
+
+    /** Whether a signature algorithm OID belongs to the same key family as {@code keyAlgorithm}. */
+    private static boolean familyMatches(String encryptionOid, String keyAlgorithm) {
+        String family = new org.bouncycastle.operator.DefaultAlgorithmNameFinder()
+                .getAlgorithmName(new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
+                        new org.bouncycastle.asn1.ASN1ObjectIdentifier(encryptionOid), null))
+                .toUpperCase(java.util.Locale.ROOT);
+        String key = keyAlgorithm == null ? "" : keyAlgorithm.toUpperCase(java.util.Locale.ROOT);
+        if (family.contains("RSA")) {
+            return key.contains("RSA");
+        }
+        if (family.contains("ECDSA") || family.equals("EC")) {
+            return key.contains("EC");
+        }
+        if (family.contains("DSA")) {
+            return key.contains("DSA");
+        }
+        // Unknown family: let the verification decide rather than guessing here.
+        return true;
+    }
+
+    /**
      * Whether no signature was computed because the KEY could not be used.
      *
      * <p>Distinct from {@link #uncheckable}: there the algorithm is unknown to this build; here
@@ -133,20 +223,14 @@ final class TokenSignature {
         for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
             if (cause instanceof NoSuchAlgorithmException
                     || cause instanceof NoSuchProviderException
-                    || cause instanceof org.bouncycastle.operator.OperatorCreationException
-                    || cause instanceof org.bouncycastle.operator.RuntimeOperatorException) {
+                    || cause instanceof org.bouncycastle.operator.OperatorCreationException) {
                 return true;
             }
-            if (cause instanceof java.security.SignatureException) {
-                // A curve or parameter set no installed provider implements arrives here — a
-                // brainpool ECDSA token, which eIDAS authorities really issue and which the
-                // JDK dropped from SunEC in 16, raises "Curve not supported" (measured by the
-                // subagent's seventh review). Nothing was computed. A signature that WAS
-                // computed and did not match arrives as TSPValidationException or CMSException
-                // and is caught before this method is reached, so nothing is excused here that
-                // was actually compared.
-                return true;
-            }
+            // A SignatureException is NO LONGER excused here. Whether this build can compute
+            // the signature at all is asked UP FRONT by cannotSetUp, so anything that fails
+            // after that is a fact about the token — including a mangled ECDSA (r,s) encoding,
+            // which reaches verify() and would otherwise have answered "not checked" for a
+            // signature that was read and is malformed (Codex, eighth review, P2).
             if (cause instanceof java.security.cert.CertificateException) {
                 // The signer certificate could not be converted, so no signature was computed.
                 // This landed in "does not verify against its own signer certificate", which
