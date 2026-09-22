@@ -432,7 +432,7 @@ current == merkleRoot なら PASS
 | `ZIP_SAFE` | 全エントリ名が相対で、`..` 成分を含まず、絶対 path でなく、**重複しない** |
 | `ZIP_LIMITS` | 展開後の合計 size とエントリ数が verifier の上限内 |
 | `ONE_EVIDENCE_SECTION` | §4.2 の各文書名が package 内で 1 回しか現れない（**payload は数えない** — 内容が別 package の evidence フォルダの写しであっても、それは content であって section ではない） |
-| — | `V1_LAYOUT` は併せて **section を持つ root が 2 つ以上なら `FAILED`**。完全な 2 重 section は重複で落ちるが、**片方に `profile.json` と manifest、もう片方に文書**という分割は重複を作らないため |
+| — | `V1_LAYOUT` は併せて **section を持つ root が 2 つ以上のとき**を見る（下表の最後の 2 行）|
 | `V1_LAYOUT` | **v1 section が在るなら** §4.2 のとおりに在る（下記） |
 | `METS_CLOSURE` | METS が名指す全 file が package に在り、**逆に** `representations/*/data/` 配下の全 file が METS に名指されている |
 | `PAYLOAD_FIXITY` | 各 payload と PREMIS の fixity が**一対一**で一致する |
@@ -453,6 +453,17 @@ current == merkleRoot なら PASS
 | section のファイルが manifest に無い（`bundle-manifest.json` 自身を除く） | `FAILED`（§5.2 の未参照の追加物） |
 | digest が合わない | `FAILED` |
 | section 内で同じ相対名が 2 回現れる | `FAILED` |
+| section を持つ root が 2 つ以上で、**そのすべてが `profile.json` と `bundle-manifest.json` の両方を持つ** | `UNAVAILABLE` + `MULTIPLE_PACKAGES` — **package が package を内包している**（CSIP の AIP が元 SIP を `submission/` に入れる形）。§4.2 は**どちらを訊かれたか**を定めていないので、言えない |
+| section を持つ root が 2 つ以上で、**どれかが片方を欠く** | `FAILED` — **分割された 1 つの section**。片方に `profile.json` と manifest、もう片方に文書を置くと重複を作らず、manifest も閉じるので、これだけが捕まえる |
+
+**順序が効く。** 入れ子の判定は**重複より先**に行う。内包された package は相対名を必ず重複させる
+ので、先に重複を見ると CSIP の AIP が壊れた package として報告される。
+どちらも `UNAVAILABLE` 以下（通ることはない）なので、先後で守りは緩まない。
+
+**payload は数えない。** `representations/<id>/data/` 配下は content であって section ではない
+（§4.1 の `ONE_EVIDENCE_SECTION` と同じ理由）。**同じ除外が lookup 側にも要る** —
+数える側だけ緩めると、payload に置いた差し替えを zip の順で先に出すことで
+「section は 1 つ」と答えながら上位の check がその差し替えを読む。
 
 **`bundle-manifest.json` は自分を列挙しない。** 完成前に自分を hash することになるため。
 この 1 ファイルだけが「manifest に無いファイル」の対象外。
