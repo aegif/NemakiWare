@@ -141,41 +141,56 @@ final class TokenSignature {
      * as a finding.
      */
     private static String cannotSetUp(TimeStampToken token, X509CertificateHolder signer) {
+        // INSPECTION first, and its failure concludes NOTHING.
+        //
+        // Reading the SignerInfo, converting the certificate and naming the algorithm are this
+        // method's own work. If any of it fails, the right answer is "this probe could not
+        // run" — and the right thing to do is let the real verification below decide, because
+        // that failure is not evidence that the signature cannot be computed. Returning a
+        // message here would have made EVERY such token answer SIGNATURE_NOT_COMPUTED without
+        // the algorithm ever being looked at: a blanket excuse wearing a specific reason.
+        org.bouncycastle.cms.SignerInformation info;
+        java.security.PublicKey key;
+        String sigAlg;
+        String encryption;
         try {
-            org.bouncycastle.cms.SignerInformation info =
-                    token.toCMSSignedData().getSignerInfos().getSigners().iterator().next();
-            java.security.PublicKey key = new org.bouncycastle.cert.jcajce
-                    .JcaX509CertificateConverter().getCertificate(signer).getPublicKey();
-            String encryption = info.getEncryptionAlgOID();
-            if (!familyMatches(encryption, key.getAlgorithm())) {
-                // The token names a signature algorithm its own certificate's key cannot be
-                // used with. Read, and contradictory — the verification below says so.
-                return null;
-            }
-            java.security.Signature probe;
-            // The name CMS ITSELF derives from the SignerInfo. Reconstructing it by hand
-            // produced "SHA256with<the full signature OID>" and refused every ordinary token
-            // (measured).
-            String sigAlg = new org.bouncycastle.cms.DefaultCMSSignatureAlgorithmNameGenerator()
+            info = token.toCMSSignedData().getSignerInfos().getSigners().iterator().next();
+            key = new org.bouncycastle.cert.jcajce.JcaX509CertificateConverter()
+                    .getCertificate(signer).getPublicKey();
+            encryption = info.getEncryptionAlgOID();
+            sigAlg = new org.bouncycastle.cms.DefaultCMSSignatureAlgorithmNameGenerator()
                     .getSignatureName(
                             new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
                                     new org.bouncycastle.asn1.ASN1ObjectIdentifier(
                                             info.getDigestAlgOID())),
                             new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
                                     new org.bouncycastle.asn1.ASN1ObjectIdentifier(encryption)));
-            try {
-                probe = java.security.Signature.getInstance(sigAlg);
-            } catch (java.security.NoSuchAlgorithmException unknown) {
-                return "no provider implements " + sigAlg;
-            }
-            probe.initVerify(key);
+        } catch (Exception couldNotInspect) {
             return null;
+        }
+        if (!familyMatchesQuietly(encryption, key.getAlgorithm())) {
+            // The token names a signature algorithm its own certificate's key cannot be used
+            // with. Read, and contradictory — the verification below says so.
+            return null;
+        }
+        // From here on, a failure IS about this build: the algorithm is one the JCA does not
+        // implement, or no installed provider will initialise with this key.
+        try {
+            java.security.Signature.getInstance(sigAlg).initVerify(key);
+            return null;
+        } catch (java.security.NoSuchAlgorithmException unknown) {
+            return "no provider implements " + sigAlg;
         } catch (java.security.InvalidKeyException | RuntimeException cannot) {
-            // initVerify refused a key whose FAMILY matched, so no installed provider accepts
-            // this key implementation or its parameters — a brainpool curve, for instance.
             return String.valueOf(cannot.getMessage());
-        } catch (Exception other) {
-            return String.valueOf(other.getMessage());
+        }
+    }
+
+    /** {@link #familyMatches}, answering "cannot tell" as a match so the verification decides. */
+    private static boolean familyMatchesQuietly(String encryptionOid, String keyAlgorithm) {
+        try {
+            return familyMatches(encryptionOid, keyAlgorithm);
+        } catch (RuntimeException cannotName) {
+            return true;
         }
     }
 

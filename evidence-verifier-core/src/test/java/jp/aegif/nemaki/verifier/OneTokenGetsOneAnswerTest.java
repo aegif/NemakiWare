@@ -47,6 +47,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -312,6 +313,56 @@ class OneTokenGetsOneAnswerTest {
         assertEquals(Outcome.FAILED, answer.outcome(),
                 "a signature whose encoding is not a signature at all was excused as something "
                         + "this build could not compute: " + answer);
+    }
+
+    /**
+     * When the PROBE cannot run, nothing is concluded from that.
+     *
+     * <p>{@code cannotSetUp} exists to tell two kinds of "nothing was compared" apart. Reading
+     * the SignerInfo, converting the certificate and naming the algorithm are its own work, and
+     * a failure there is not evidence that the signature cannot be computed — it is evidence
+     * that this probe could not run. Returning a reason for it would make every such token
+     * answer {@code SIGNATURE_NOT_COMPUTED} without the algorithm ever being looked at: a
+     * blanket excuse wearing a specific reason, which is the shape three reviews in a row have
+     * found in this method.
+     *
+     * <p>Measured with a certificate the converter refuses: the answer has to come from the
+     * real verification, not from the probe.
+     */
+    @Test
+    @DisplayName("a probe that cannot run does not become 'this build cannot compute it'")
+    void aProbeThatCannotRunConcludesNothing() throws Exception {
+        org.bouncycastle.tsp.TimeStampToken token = new org.bouncycastle.tsp.TimeStampToken(
+                new org.bouncycastle.cms.CMSSignedData(tokenOver(ROOT, true)));
+        // A holder whose bytes are not a certificate the converter can build. Everything the
+        // probe wants to read is unreachable; the token itself is fine.
+        X509CertificateHolder unreadable = new X509CertificateHolder(brokenCertificate());
+        // The fixture has to actually defeat the probe, or this measures nothing.
+        assertThrows(Exception.class, () -> new org.bouncycastle.cert.jcajce
+                        .JcaX509CertificateConverter().getCertificate(unreadable),
+                "the converter accepted this certificate, so the probe runs and this lock is "
+                        + "measuring the ordinary path");
+
+        Outcome.Check answer = TokenSignature.verify("token signature", "the token", token,
+                unreadable);
+
+        assertFalse("SIGNATURE_NOT_COMPUTED".equals(answer.reasonCode()),
+                "a probe that could not read the token at all answered as though it had "
+                        + "established that this build cannot compute the signature: " + answer);
+    }
+
+    /** A structurally valid certificate the JCA converter will not accept. */
+    private static org.bouncycastle.asn1.x509.Certificate brokenCertificate() throws Exception {
+        // The real signer certificate, with its signature algorithm replaced by an OID no
+        // provider knows — enough to make the converter refuse while the DER stays well formed.
+        org.bouncycastle.asn1.x509.Certificate real =
+                new X509CertificateHolder(certificate.getEncoded()).toASN1Structure();
+        return org.bouncycastle.asn1.x509.Certificate.getInstance(new org.bouncycastle.asn1
+                .DERSequence(new org.bouncycastle.asn1.ASN1Encodable[] {
+                        real.getTBSCertificate(),
+                        new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
+                                new ASN1ObjectIdentifier("1.2.3.4.5.6.7.8.9")),
+                        real.getSignature() }));
     }
 
     /**
