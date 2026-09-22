@@ -335,6 +335,15 @@ class NoJavadocIsOrphanedTest {
     @Test
     @DisplayName("no javadoc block is followed straight by another, reaching no declaration")
     void everyJavadocBlockReachesADeclaration() throws IOException {
+        // The ROOTS themselves, counted. The file threshold cannot see a root LINE being
+        // deleted: 607 files are read today and the two verifier roots are 32 of them, so
+        // losing exactly the roots added after the sixth miss would leave 575 and stay green
+        // (subagent, seventeenth review, P3). A missing DIRECTORY is caught by the fail()
+        // below; a missing ENTRY is caught here.
+        assertEquals(17, ROOTS.size(),
+                "the list of source roots changed. Widen it deliberately and update this "
+                        + "number; a root that quietly disappears takes its files with it: "
+                        + ROOTS);
         List<String> orphans = new ArrayList<>();
         int filesRead = 0;
         for (String root : ROOTS) {
@@ -380,7 +389,7 @@ class NoJavadocIsOrphanedTest {
         }
         // The fixture check: a moved package would empty the walk and this would pass by
         // reading nothing.
-        assertTrue(filesRead >= 200,
+        assertTrue(filesRead >= 500,
                 "only " + filesRead + " files were read, so this test is no longer looking at "
                         + "the packages it covers");
         if (!orphans.isEmpty()) {

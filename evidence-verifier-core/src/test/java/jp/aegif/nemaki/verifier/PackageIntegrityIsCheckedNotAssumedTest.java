@@ -1166,14 +1166,16 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                 "metadata/preservation/premis.xml"));
         Outcome.Check elsewhere = checkNamed(PackageIntegrity.check(PackageReader.open(
                 zip(tmp, "foreign-file-uri.zip", foreign)).entries()), "mets closure");
-        // NOT PASSED: stripping the authority would let the foreign URI claim the local entry
-        // and close over it. NOT FAILED either — a locator that was declined may be the one
-        // that names the payload, so "the METS does not name it" is not established.
-        assertEquals(Outcome.UNAVAILABLE, elsewhere.outcome(),
-                "a file: URI on ANOTHER MACHINE claimed an entry in this package, so closure "
-                        + "was reported over a file the METS does not name locally: "
-                        + elsewhere.detail());
-        assertEquals("AMBIGUOUS_PAYLOAD", elsewhere.reasonCode(), elsewhere.detail());
+        // FAILED, and the earlier expectation of UNAVAILABLE here was CODIFYING A DEFECT: a
+        // file: URI on another machine provably cannot name an entry in this package, so
+        // nothing about it makes "the payload is unnamed" unsafe to assert. Counting every
+        // declined locator as making the answer ambiguous let one harmless mdRef downgrade the
+        // one check that catches smuggled content (subagent, seventeenth review, P1, measured
+        // — this lock was the single red when the narrowing was tried).
+        assertEquals(Outcome.FAILED, elsewhere.outcome(),
+                "a payload named only by a file: URI on ANOTHER MACHINE was not reported as "
+                        + "content nobody committed to: " + elsewhere.detail());
+        assertTrue(elsewhere.detail().contains("does not name"), elsewhere.detail());
 
         Map<String, String> collision = new LinkedHashMap<>(goodPackage(payload));
         collision.put(ROOT + "METS.xml", mets("representations/rep1/METS.xml"));
@@ -1486,7 +1488,8 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         // The COUNT on this arm too. The lock written for "every arm states it" measured the
         // absent and missing-reference arms only, so deleting it from THIS one left both it and
         // the control green (Codex, sixteenth review, P3).
-        assertTrue(closure.detail().contains("1 locator(s)"), closure.detail());
+        assertTrue(closure.detail().contains("1 locator(s) this METS declares as non-URL"),
+                closure.detail());
     }
 
     /**
@@ -1675,43 +1678,47 @@ class PackageIntegrityIsCheckedNotAssumedTest {
     }
 
     /**
-     * An empty-path reference names the BASE DOCUMENT, not a sibling.
+     * An empty-path reference names the METS DOCUMENT — whatever the base is.
      *
-     * <p>{@code ?download} and {@code #page=2} have no path of their own, and RFC 3986 §5.2.2
-     * makes them the base itself. Merging them as paths produced the base's DIRECTORY once the
-     * query was dropped, so the METS was told it names a folder (Codex, sixteenth review, P1).
+     * <p>{@code ?download} and {@code #page=2} have no path of their own. Answering them at
+     * collection time made the answer depend on the base: with no {@code xml:base} they
+     * resolved to the package root, and with a base ending in a slash they named a DIRECTORY
+     * (Codex, seventeenth review, P1; subagent, seventeenth review, P2 — the first fix reached
+     * one of the three shapes). {@code resolve} answers them once, against the METS itself,
+     * with nothing left to depend on.
      */
     @Test
-    @DisplayName("an empty-path reference names the base document")
+    @DisplayName("an empty-path reference names the METS, whatever the base is")
     void anEmptyPathReferenceNamesTheBase(@TempDir Path tmp) throws Exception {
         String payload = "the minutes";
-        Map<String, String> entries = new LinkedHashMap<>(goodPackage(payload));
-        entries.put(ROOT + "METS.xml",
-                metsWithBase("representations/rep1/data/minutes.txt", "?download"));
-
-        Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
-                zip(tmp, "empty-path-reference.zip", entries)).entries()), "mets closure");
-
-        assertEquals(Outcome.PASSED, closure.outcome(),
-                "a reference with no path of its own was resolved as a sibling of the base "
-                        + "rather than as the base: " + closure.detail());
-
-        // With NO xml:base at all it names the METS ITSELF (the document base, §5.1.3), and
-        // with an xml:base that is itself path-less the outer base stands. Requiring an
-        // explicit file-path base left both resolving to the package root (Codex, seventeenth
-        // review, P2).
+        // Three shapes, one answer. The payload is named separately in each, so what is being
+        // measured is that the path-less reference RESOLVES — to the METS — rather than being
+        // reported as a file the package does not carry.
         Map<String, String> noBase = new LinkedHashMap<>(goodPackage(payload));
         noBase.put(ROOT + "METS.xml", mets("representations/rep1/data/minutes.txt", "?download"));
-        assertEquals(Outcome.PASSED, checkNamed(PackageIntegrity.check(PackageReader.open(
-                zip(tmp, "no-base-empty-path.zip", noBase)).entries()), "mets closure").outcome(),
-                "a path-less reference in a METS with no xml:base did not name the METS itself");
 
-        Map<String, String> nested = new LinkedHashMap<>(goodPackage(payload));
-        nested.put(ROOT + "METS.xml", metsWithBase("representations/rep1/data/minutes.txt",
-                "?download").replace("<mets:fileSec", "<mets:fileSec xml:base=\"?download\""));
-        assertEquals(Outcome.PASSED, checkNamed(PackageIntegrity.check(PackageReader.open(
-                zip(tmp, "path-less-base.zip", nested)).entries()), "mets closure").outcome(),
-                "an xml:base with no path of its own was merged as a path");
+        Map<String, String> fileBase = new LinkedHashMap<>(goodPackage(payload));
+        // Under this base the payload is a SIBLING (§5.2.2 replaces the last segment), so the
+        // reference to it is the bare name — spelling it in full would double the path.
+        fileBase.put(ROOT + "METS.xml", metsWithBase("representations/rep1/data/minutes.txt",
+                "minutes.txt", "#page=2"));
+
+        Map<String, String> folderBase = new LinkedHashMap<>(goodPackage(payload));
+        folderBase.put(ROOT + "METS.xml", metsWithBase("metadata/preservation/",
+                "../../representations/rep1/data/minutes.txt", "?download"));
+
+        Map<String, Map<String, String>> shapes = new LinkedHashMap<>();
+        shapes.put("no-base", noBase);
+        shapes.put("file-base", fileBase);
+        shapes.put("folder-base", folderBase);
+        for (Map.Entry<String, Map<String, String>> shape : shapes.entrySet()) {
+            Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
+                    zip(tmp, shape.getKey() + ".zip", shape.getValue())).entries()),
+                    "mets closure");
+            assertEquals(Outcome.PASSED, closure.outcome(),
+                    shape.getKey() + ": a reference with no path of its own was not resolved "
+                            + "against the METS: " + closure.detail());
+        }
     }
 
     /**

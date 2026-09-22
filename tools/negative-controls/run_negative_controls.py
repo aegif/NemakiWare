@@ -9839,8 +9839,8 @@ CONTROLS = [
         id='GY3',
         what="the readiness document stops saying the control added since the fifth sweep is unswept, so a finished sweep of 938 reads as a measurement of today's tree",
         file='docs/design/v3.4-release-readiness.md',
-        find='**その 189 本は通し未実施**',
-        replace='**その 189 本も通し済み**',
+        find='**その 190 本は通し未実施**',
+        replace='**その 190 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10797,7 +10797,7 @@ CONTROLS = [
         what='a second statement of the unswept count drifts from the locked one, so the document contradicts itself about how many controls have never been run together',
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **5 回目以後に足した control は 189 本**（境界 LM3 — 5 回目時点の最大 ID。',
+        find='  **5 回目以後に足した control は 190 本**（境界 LM3 — 5 回目時点の最大 ID。',
         replace='  **5 回目以後に足した control は 0 本**（境界 LM3 — 5 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10808,7 +10808,7 @@ CONTROLS = [
         file='docs/design/fail-closed-reads.md',
         # Re-pointed: the boundary id moves below LM3, so ids above it exist while the sweep
         # record says nothing was added — the cross-check (declared − swept ≠ ids above) fires.
-        find='**5 回目以後に足した control は 189 本**（境界 LM3）: ',
+        find='**5 回目以後に足した control は 190 本**（境界 LM3）: ',
         replace='**5 回目以後に足した control は 5 本**（境界 LA3）: ',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10864,8 +10864,8 @@ CONTROLS = [
         id='LN3',
         what="the canon stops saying the control added since the fifth sweep is unswept — the canon-side twin of GY3 — and, being itself the first control after the sweep, the one that forces the ledger back from 0 to 1",
         file='docs/design/fail-closed-reads.md',
-        find='**その 189 本は通し未実施**',
-        replace='**その 189 本も通し済み**',
+        find='**その 190 本は通し未実施**',
+        replace='**その 190 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10873,8 +10873,8 @@ CONTROLS = [
         id='LO3',
         what="the readiness document's §4 stops saying the added controls are unswept while §1.4 still does — the second exit, which a once-per-file check let through (GY3 did not fire)",
         file='docs/design/v3.4-release-readiness.md',
-        find='5 回目以後に足した control は **189 本**（通し未実施）。',
-        replace='5 回目以後に足した control は **189 本**（通し済み）。',
+        find='5 回目以後に足した control は **190 本**（通し未実施）。',
+        replace='5 回目以後に足した control は **190 本**（通し済み）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11689,7 +11689,7 @@ CONTROLS = [
         id='LB3',
         what='the PLAN\'s copy of the never-swept count drifts, so whoever scopes the overdue full sweep from the plan runs half the set',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='5 回目以後に足した control は **189 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='5 回目以後に足した control は **190 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='5 回目以後に足した control は **0 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -12704,10 +12704,12 @@ CONTROLS = [
         what='a fragment is read as part of the file name, so a METS naming a page inside a file is reported as naming a file the package does not carry',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='        String reference = localPathOfFileUri(withoutFragmentOrQuery(href.replace(',
-        replace='        String reference = localPathOfFileUri((href.replace(',
+        # Re-pointed 2026-09-23 (17 巡目) with the resolve/collect rewrite.
+        find='        return localPathOfFileUri(withoutFragmentOrQuery(normalisedSlashes(href)));',
+        replace='        return localPathOfFileUri(normalisedSlashes(href));',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aFragmentAndAnAbsoluteReferenceAreResolved'],
+        expect_fail=['aFragmentAndAnAbsoluteReferenceAreResolved',
+                     'anEmptyPathReferenceNamesTheBase'],
     ),
     dict(
         id='RF3',
@@ -13053,7 +13055,8 @@ CONTROLS = [
         what='an absolute href under a base with an authority skips the merge, so it is looked for inside the package instead of on that host',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='                    || (href.startsWith("/") && !hasAuthority(base))',
+        # Re-pointed 2026-09-23 (17 巡目) with the resolve/collect rewrite.
+        find='                    || (href.startsWith("/") && !hasAuthority(base) && !hasScheme(base))',
         replace='                    || href.startsWith("/")',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['anAuthorityMeansSomewhereElse'],
@@ -13162,7 +13165,8 @@ CONTROLS = [
         what='an absolute xml:base drops the outer base even when that base has an authority, so a reference on another host becomes a package path',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='            base = merge(hasScheme(declared)\n                    || (declared.startsWith("/") && !hasAuthority(base)) ? "" : base, declared);',
+        # Re-pointed 2026-09-23 (17 巡目) with the resolve/collect rewrite.
+        find='            base = merge(hasScheme(declared)\n                    || (declared.startsWith("/") && !hasAuthority(base) && !hasScheme(base))\n                    ? "" : base, declared);',
         replace='            base = merge(declared.startsWith("/") || hasScheme(declared) ? "" : base, declared);',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['anAbsoluteXmlBaseUnderAnAuthorityKeepsIt'],
@@ -13213,7 +13217,7 @@ CONTROLS = [
         what='backslash and forward-slash spellings of an authority are treated differently, so an xml:base of \\\\host\\share\\ is dropped and the package\'s own payload satisfies a reference to another machine',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='        declared = declared == null ? null : declared.replace(\'\\\\\', \'/\');',
+        find='        declared = declared == null ? null : normalisedSlashes(declared);',
         replace='        declared = declared;',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['aUncXmlBaseIsAnAuthorityToo'],
@@ -13223,11 +13227,11 @@ CONTROLS = [
         what='"the payload is not named" is reported as a FINDING even when locators were declined, so a check that admits it did not look also says content nobody committed to is inside',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='            if (external > 0) {',
+        # Re-pointed 2026-09-23 (17 巡目) with the resolve/collect rewrite.
+        find='            if (ambiguous > 0) {',
         replace='            if (false) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aPayloadNamedOnlyByAnExternalLocatorIsNotEstablished',
-                     'aForeignFileUriIsNotLocalAndAnEmptyAuthorityIsAbsolute'],
+        expect_fail=['aPayloadNamedOnlyByAnExternalLocatorIsNotEstablished'],
     ),
     dict(
         id='SZ3',
@@ -13248,8 +13252,9 @@ CONTROLS = [
         what='a reference with no path of its own ("?download") is merged as a sibling of the base, so the METS is told it names the base\'s DIRECTORY',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='        boolean namesTheBase = href != null && !href.isEmpty()',
-        replace='        boolean namesTheBase = false && href != null && !href.isEmpty()',
+        # Re-pointed 2026-09-23 (17 巡目) with the resolve/collect rewrite.
+        find='        if (reference != null && reference.isEmpty()) {',
+        replace='        if (false) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['anEmptyPathReferenceNamesTheBase'],
     ),
@@ -13260,8 +13265,10 @@ CONTROLS = [
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
         # The COUNT is what the lock reads, so that is what the sabotage removes (changing the
         # surrounding words left it green — measured).
-        find='                                + external + " locator(s) name something OUTSIDE the package "',
-        replace='                                + "some locator(s) name something OUTSIDE the package "',
+        # Re-pointed 2026-09-23 (17 巡目) with the resolve/collect rewrite.
+        # The lock reads the count in this sentence.
+        find='                                + ambiguous + " locator(s) this METS declares as non-URL are "',
+        replace='                                + "some locator(s) this METS declares as non-URL are "',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['aPayloadNamedOnlyByAnExternalLocatorIsNotEstablished'],
     ),
@@ -13271,21 +13278,16 @@ CONTROLS = [
         what='a path-less reference names the base only when an xml:base was declared, so "?download" in a METS without one resolves to the package root',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='            String target = base.isEmpty() ? documentBase : withoutFragmentOrQuery(base);',
-        replace='            String target = base.isEmpty() ? "" : withoutFragmentOrQuery(base);',
+        # Re-pointed 2026-09-23 (17 巡目): the path-less reference is answered in resolve now,
+        find='            return entries.containsKey(metsPath) ? metsPath : null;',
+        replace='            return null;',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['anEmptyPathReferenceNamesTheBase'],
     ),
-    dict(
-        id='TD3',
-        what='an xml:base with no path of its own is merged as a path, so every reference under it goes looking in a directory',
-        module='evidence-verifier-core',
-        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='        if (declared != null && !declared.isEmpty()\n                && !withoutFragmentOrQuery(declared).isEmpty()) {',
-        replace='        if (declared != null && !declared.isEmpty()) {',
-        test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['anEmptyPathReferenceNamesTheBase'],
-    ),
+    # TD3 was retired 2026-09-23 (17 巡目). It sabotaged the path-less xml:base guard at
+    # collection time, and that arm is GONE: the rewrite answers a path-less reference in
+    # resolve, against the METS itself, so no base decision is left for it to break.
+    # TC3 measures the remaining rule.
     dict(
         id='TE3',
         what='the refused/missing classification reads the reference differently from resolve, so a file:-prefixed encoded traversal is reported as a file the package does not carry',
@@ -13295,6 +13297,28 @@ CONTROLS = [
         replace='                } else if (spellingsOf(withoutFragmentOrQuery(href)).isEmpty()) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['aRefusedReferenceIsRefusedTheSameWayHoweverSpelled'],
+    ),
+
+    dict(
+        id='TF3',
+        what='a source root disappears from the orphan-javadoc lock, and the file threshold does not notice because the remaining roots read enough files',
+        file='core/src/test/java/jp/aegif/nemaki/evidence/NoJavadocIsOrphanedTest.java',
+        # The sabotage must REMOVE an entry. Replacing one with a duplicate of another kept
+        # the size at 17 and the directory real, so nothing noticed (measured).
+        find='            "../evidence-verifier-core/src/main/java",\n            "../evidence-verifier-core/src/test/java",',
+        replace='            "../evidence-verifier-core/src/main/java",',
+        test='NoJavadocIsOrphanedTest',
+        expect_fail=['everyJavadocBlockReachesADeclaration'],
+    ),
+    dict(
+        id='TG3',
+        what='backslashes stop being normalised where references are read, so the UNC spelling of an authority is read as a path inside the package',
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        href = href == null ? null : normalisedSlashes(href);',
+        replace='        href = href;',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aUncPathIsNotInsideThePackage'],
     ),
 ]
 
