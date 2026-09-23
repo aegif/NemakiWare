@@ -409,7 +409,7 @@ Webhook 非対応。アクセストークンは短命なので継続運用では
 **C. プロファイル**
 - `schedulerParams`：`query`（任意。Notion search のキーワード。未指定なら共有された
   全ページが対象）、任意 `limit`（1 回の実行で取り込むページ数。古い順に取り、残りは
-  次回に回って実行結果は `PARTIAL`。失敗したページは数に入らないが、1 回の実行で試みるのは `limit` の 4 倍まで）、任意 `notionSearchMaxRequests`（1 回の listing で
+  次回に回って実行結果は `PARTIAL`。失敗したページは数に入らないが、1 回の実行で試みるのは `limit` の 4 倍まで。checkpoint の分以降でその数以上のページが失敗し続けると、後ろのページは失敗が直るか `limit` を上げるまで試されない）、任意 `notionSearchMaxRequests`（1 回の listing で
   `/search` を呼ぶ回数の上限。sort を拒否されたときの読み直しも数える。1〜1,000,000、
   既定 50 = 5,000 行。checkpoint より新しい行がこれを超えると**何も取り込まず** `PARTIAL`
   で止まるので、初回取込が大きい workspace では上げる。Notion 自身は 1 query 10,000 件で
