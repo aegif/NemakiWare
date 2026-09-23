@@ -515,13 +515,26 @@ class ReleaseReadinessIsMeasuredTest {
             String className = notionClass;
             if (cls != null) {
                 qualified.add(cls + "#" + method);
+                List<Path> found;
                 try (Stream<Path> walk = Files.walk(Path.of("src/test/java"))) {
-                    Path found = walk.filter(p -> p.getFileName().toString().equals(cls + ".java")).findFirst()
-                            .orElseThrow(() -> new AssertionError("the R59 row names a test class that does not exist: " + cls));
-                    // src/test/java/jp/aegif/.../Cls.java -> jp.aegif....Cls
-                    String relative = Path.of("src/test/java").relativize(found).toString();
-                    className = relative.substring(0, relative.length() - ".java".length()).replace('/', '.');
+                    found = walk.filter(p -> p.getFileName().toString().equals(cls + ".java")).toList();
                 }
+                // Exactly one: a simple name that two packages declare would otherwise be
+                // resolved by walk order (review, P3). Fail closed instead.
+                assertEquals(1, found.size(), "the R59 row names a test class that " + (found.isEmpty()
+                        ? "does not exist: " : "exists in more than one package: ") + cls + " " + found);
+                // src/test/java/jp/aegif/.../Cls.java -> jp.aegif....Cls, built from the path's
+                // segments rather than its string, so the platform separator does not matter
+                // (review, P2: '/' alone left every Windows run ClassNotFound).
+                Path relative = Path.of("src/test/java").relativize(found.get(0));
+                StringBuilder fqcn = new StringBuilder();
+                for (int seg = 0; seg < relative.getNameCount(); seg++) {
+                    String part = relative.getName(seg).toString();
+                    if (seg == relative.getNameCount() - 1) part = part.substring(0, part.length() - ".java".length());
+                    if (fqcn.length() > 0) fqcn.append('.');
+                    fqcn.append(part);
+                }
+                className = fqcn.toString();
             } else {
                 r59Listed++;
             }
@@ -537,12 +550,14 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     /**
-     * The names of the test methods a test class declares, read by REFLECTION — {@code @Test},
-     * {@code @ParameterizedTest} and {@code @RepeatedTest} — not by scanning source lines. A
-     * six-line window, then a walk up through "annotation-looking" lines, each let a sibling's
-     * {@code @Test} stand for a helper's, or refused a genuine lock whose javadoc did not look
-     * the part (reviews, fortieth and forty-first rounds). A disabled test fails the count, as
-     * in {@link #theReadinessVerifierCountIsTheVerifiers}.
+     * The names of the test methods a test class runs, read by REFLECTION — {@code @Test},
+     * {@code @ParameterizedTest}, {@code @RepeatedTest}, {@code @TestFactory} and
+     * {@code @TestTemplate}, on the class and up its superclass chain — not by scanning source
+     * lines. A six-line window, then a walk up through "annotation-looking" lines, each let a
+     * sibling's {@code @Test} stand for a helper's, or refused a genuine lock whose javadoc did
+     * not look the part (reviews, fortieth and forty-first rounds). A disabled test fails the
+     * count, as in {@link #theReadinessVerifierCountIsTheVerifiers}; so does a {@code @Nested}
+     * inner class, whose tests JUnit runs under another class and this count would not see.
      */
     private static java.util.Set<String> testMethodsOf(String className) {
         Class<?> type;
@@ -551,18 +566,26 @@ class ReleaseReadinessIsMeasuredTest {
         } catch (ClassNotFoundException missing) {
             throw new AssertionError("the R59 row names a test class that is not on the class path: " + className);
         }
-        java.util.Set<String> names = new TreeSet<>();
-        for (java.lang.reflect.Method m : type.getDeclaredMethods()) {
-            boolean test = m.isAnnotationPresent(Test.class)
-                    || m.isAnnotationPresent(org.junit.jupiter.params.ParameterizedTest.class)
-                    || m.isAnnotationPresent(org.junit.jupiter.api.RepeatedTest.class);
-            if (!test) continue;
-            assertFalse(m.isAnnotationPresent(org.junit.jupiter.api.Disabled.class),
-                    "a disabled test makes this count wrong: " + className + "#" + m.getName());
-            names.add(m.getName());
-        }
         assertFalse(type.isAnnotationPresent(org.junit.jupiter.api.Disabled.class),
                 "a disabled test class makes this count wrong: " + className);
+        for (Class<?> inner : type.getDeclaredClasses()) {
+            assertFalse(inner.isAnnotationPresent(org.junit.jupiter.api.Nested.class),
+                    "a @Nested class runs tests this count does not see: " + inner.getName());
+        }
+        java.util.Set<String> names = new TreeSet<>();
+        for (Class<?> level = type; level != null && level != Object.class; level = level.getSuperclass()) {
+            for (java.lang.reflect.Method m : level.getDeclaredMethods()) {
+                boolean test = m.isAnnotationPresent(Test.class)
+                        || m.isAnnotationPresent(org.junit.jupiter.params.ParameterizedTest.class)
+                        || m.isAnnotationPresent(org.junit.jupiter.api.RepeatedTest.class)
+                        || m.isAnnotationPresent(org.junit.jupiter.api.TestFactory.class)
+                        || m.isAnnotationPresent(org.junit.jupiter.api.TestTemplate.class);
+                if (!test) continue;
+                assertFalse(m.isAnnotationPresent(org.junit.jupiter.api.Disabled.class),
+                        "a disabled test makes this count wrong: " + level.getName() + "#" + m.getName());
+                names.add(m.getName());
+            }
+        }
         return names;
     }
 
