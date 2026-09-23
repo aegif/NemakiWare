@@ -371,15 +371,23 @@ class ReleaseReadinessIsMeasuredTest {
         // ONLY one in the section — an unanchored find() would take a figure from anywhere in
         // the gate's prose, so a wrong heading could be left standing beside a right sentence
         // (Codex, thirtieth review, P2).
+        // The INTRODUCTION — the heading and the paragraph before the table — not the whole
+        // section. An unanchored search would take the figure from anywhere in the gate's
+        // prose, including a struck-through sentence or a historical note further down, and
+        // leave a wrong heading standing beside it (Codex, thirty-first review, P2).
+        String intro = gate.split("(?m)^\\| ", 2)[0];
+        assertFalse(intro.contains("~~"), "the RC gate's introduction carries a withdrawn "
+                + "sentence, so the count this compares may be one that was taken back: "
+                + intro);
         Matcher says = Pattern.compile("(?m)^### RC 条件 11[^\n]*?(\\d+) 件を分類した")
-                .matcher(gate);
+                .matcher(intro);
         assertTrue(says.find(), "the RC gate's heading no longer says how many it classified");
         assertEquals(classified, Integer.parseInt(says.group(1)),
                 "the RC gate's heading says it classified " + says.group(1) + " residuals and "
                         + "its table carries " + classified);
         assertFalse(says.find(), "the section carries more than one RC condition 11 heading");
-        Matcher under = Pattern.compile("(?s)書ける状態にまだない\\*{0,2}。開いている (\\d+) 件を")
-                .matcher(gate);
+        Matcher under = Pattern.compile("書ける状態にまだない\\*{0,2}。開いている (\\d+) 件を")
+                .matcher(intro);
         assertTrue(under.find(), "the RC gate's prose no longer says how many are open");
         assertEquals(classified, Integer.parseInt(under.group(1)),
                 "the RC gate's prose says " + under.group(1) + " open residuals and its table "
@@ -494,18 +502,18 @@ class ReleaseReadinessIsMeasuredTest {
         // one clause earlier, so the span started there and swept in figures the breakdown
         // does not state (subagent, twenty-eighth review, P2, measured).
         //
-        // To the CLOSING BRACKET, with a class that crosses newlines — this document hard
-        // wraps its prose (the RC gate's own sentence is wrapped mid-clause), so a reflow of
-        // this line would cut an end-of-line match short and turn a correct document red.
-        // Stopping at the first bracket instead means a NESTED bracket inside the summary
-        // would do the same; between the two, the wrap is the one this document actually
-        // does (subagent, thirtieth review, P2 — the end-of-line form was this verifier's
-        // own answer to a nesting case that has never appeared).
+        // To the bracket that CLOSES THE SENTENCE — "）。" — with a class that crosses
+        // newlines. Three anchors have now been tried and each traded one correct document
+        // for another: to the line end (breaks on the reflow this document really does),
+        // to the first bracket (breaks on a nested one, which a reviewer wrote out as a
+        // plausible edit), and now to the sentence end, which survives both because the
+        // inner bracket is followed by "・" and the outer one by "。" (subagent, thirtieth
+        // review, P2; Codex, thirty-first, P2).
         //
         // Exactly ONE, so a second summary added elsewhere cannot be compared in its place.
-        // NOTE: neither refinement is measured by a control — UN3 fires on any of these
-        // anchors, because the span always contains the same three labels.
-        Matcher inline = Pattern.compile("（うち[^）]*）").matcher(readiness);
+        // NOTE: none of these refinements is measured by a control — UN3 fires on any anchor,
+        // because the span always contains the same three labels.
+        Matcher inline = Pattern.compile("（うち[\\s\\S]*?）。").matcher(readiness);
         assertTrue(inline.find(), "the readiness document's summary line no longer repeats the "
                 + "breakdown, so this check has nothing to compare");
         String summary = inline.group();
