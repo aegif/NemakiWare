@@ -580,19 +580,32 @@ class ReleaseReadinessIsMeasuredTest {
         } catch (ClassNotFoundException missing) {
             throw new AssertionError("the R59 row names a test class that is not on the class path: " + className);
         }
-        // The same tag exclusion surefire runs under (core/pom.xml <surefire.excludedGroups>),
-        // so a tagged lock that the suite skips is not counted as run (review, P3).
-        Matcher excluded = Pattern.compile("<surefire\\.excludedGroups>([^<]*)</")
-                .matcher(readPomForExcludedGroups());
-        assertTrue(excluded.find(), "core/pom.xml no longer declares the excluded groups, so this "
-                + "count cannot mirror what the suite skips");
-        String[] excludedGroups = java.util.Arrays.stream(excluded.group(1).split(","))
+        // The same tag filters surefire runs under, so a tagged lock that the suite skips is not
+        // counted as run (review, P3). The EFFECTIVE values: surefire forwards -D user
+        // properties into the forked JVM, so an override on the command line is read before the
+        // pom's default (review, forty-seventh round, P3); the include side (-Dgroups) likewise.
+        String excludedSetting = System.getProperty("surefire.excludedGroups");
+        if (excludedSetting == null) {
+            Matcher excluded = Pattern.compile("<surefire\\.excludedGroups>([^<]*)</")
+                    .matcher(readPomForExcludedGroups());
+            assertTrue(excluded.find(), "core/pom.xml no longer declares the excluded groups, so this "
+                    + "count cannot mirror what the suite skips");
+            excludedSetting = excluded.group(1);
+        }
+        String[] excludedGroups = java.util.Arrays.stream(excludedSetting.split(","))
                 .map(String::trim).filter(group -> !group.isEmpty()).toArray(String[]::new);
-        org.junit.platform.launcher.LauncherDiscoveryRequest request =
+        String[] includedGroups = java.util.Arrays.stream(System.getProperty("groups", "").split(","))
+                .map(String::trim).filter(group -> !group.isEmpty()).toArray(String[]::new);
+        org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder builder =
                 org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder.request()
-                        .selectors(org.junit.platform.engine.discovery.DiscoverySelectors.selectClass(type))
-                        .filters(org.junit.platform.launcher.TagFilter.excludeTags(excludedGroups))
-                        .build();
+                        .selectors(org.junit.platform.engine.discovery.DiscoverySelectors.selectClass(type));
+        if (excludedGroups.length > 0) {
+            builder.filters(org.junit.platform.launcher.TagFilter.excludeTags(excludedGroups));
+        }
+        if (includedGroups.length > 0) {
+            builder.filters(org.junit.platform.launcher.TagFilter.includeTags(includedGroups));
+        }
+        org.junit.platform.launcher.LauncherDiscoveryRequest request = builder.build();
         org.junit.platform.launcher.TestPlan plan =
                 org.junit.platform.launcher.core.LauncherFactory.create().discover(request);
         java.util.Set<String> names = new TreeSet<>();
@@ -606,19 +619,21 @@ class ReleaseReadinessIsMeasuredTest {
                         (org.junit.platform.engine.support.descriptor.MethodSource) id.getSource().get();
                 // Only identifiers whose parent is a class (or the engine): a parameterized
                 // test's invocations, if any were discovered, sit under their own template.
-                boolean parentIsAClass = plan.getParent(id)
+                java.util.Optional<org.junit.platform.launcher.TestIdentifier> parent = plan.getParent(id);
+                java.util.Optional<Class<?>> discoveredIn = parent
                         .flatMap(org.junit.platform.launcher.TestIdentifier::getSource)
-                        .map(s -> s instanceof org.junit.platform.engine.support.descriptor.ClassSource)
-                        .orElse(false);
-                if (!parentIsAClass) continue;
+                        .filter(s -> s instanceof org.junit.platform.engine.support.descriptor.ClassSource)
+                        .map(s -> ((org.junit.platform.engine.support.descriptor.ClassSource) s).getJavaClass());
+                if (discoveredIn.isEmpty()) continue;
                 java.lang.reflect.Method method = source.getJavaMethod();
                 // Disabled is looked up the way Jupiter looks it up — meta-annotations included —
-                // on the method and on every class enclosing it, since a @Disabled @Nested class
-                // is discovered but never run (review, P3).
+                // on the method and on the class it was DISCOVERED in and every class enclosing
+                // that one (not the declaring class: an inherited test runs under the subclass,
+                // and a @Disabled @Nested subclass is discovered but never run — reviews, P3).
                 assertFalse(org.junit.platform.commons.support.AnnotationSupport
                                 .isAnnotated(method, org.junit.jupiter.api.Disabled.class),
                         "a disabled test makes this count wrong: " + source.getClassName() + "#" + method.getName());
-                for (Class<?> enclosing = method.getDeclaringClass(); enclosing != null; enclosing = enclosing.getEnclosingClass()) {
+                for (Class<?> enclosing = discoveredIn.get(); enclosing != null; enclosing = enclosing.getEnclosingClass()) {
                     assertFalse(org.junit.platform.commons.support.AnnotationSupport
                                     .isAnnotated(enclosing, org.junit.jupiter.api.Disabled.class),
                             "a disabled class makes this count wrong: " + enclosing.getName() + " (holds " + method.getName() + ")");
