@@ -24,23 +24,38 @@ poll で恒久的に除外**されていました（残件 R59）。
   `last_edited_time` は分に切り下げられるため、同じ分のどこまで済んだかを id で持ちます）。
   旧形式はそのまま読め、その分のページを一度だけ取り直します
 - checkpoint が名指すのは**閉じた分**（分の終わりから `notionIndexLagMinutes`、既定
-  10 分を過ぎた分）だけです。それより新しいページは次回も取り直します（同じ分の中で
-  再編集されたページと、検索索引に遅れて載ったページを落とさないため）。取り直しの多くは
-  import service の dedupe で skip になりますが、ブロックと添付の再読込は起きます
+  10 分を過ぎた分）だけです。それより新しいページは次回も読み直します（検索索引に遅れて
+  載ったページを落とさないため）。既定の dedupe `skip_if_same_version` では読み直した
+  ページの import は skip になります（ブロックと添付の再読込は起きます）。**同じ分の中で
+  取込後に再編集されたページは、既定の dedupe では取り込まれません** — source id が在れば
+  version を比べずに skip する policy だからで、更新を取り込むには `create_new_version`
+  等の policy が要ります（これは Notion に限らず、この policy の従来からの意味です）
+- 取込に失敗したページは死信キューに記録され、checkpoint と同じ分のものは次回の実行で
+  もう一度取り込みを試みます。それより古い分で失敗したページは、これまでどおり checkpoint が
+  越えます（死信キューの行が記録です）。死信キューの応答文「次の poll が取り直す」は、
+  「checkpoint より上にある間だけ」に改めました
+- `last_edited_time` を持たない行が返ったら、その listing は読めなかったものとして
+  実行がエラーになります（黙って飛ばしません）。Notion の 1 query 10,000 件の上限に
+  ちょうど達して `request_status` の無い応答は、切れたものとして扱います
 - 検索の要求上限（`notionSearchMaxRequests`、既定 50 要求 = 5,000 行）または Notion 自身の
   `request_status: incomplete` で listing が切れたときは、**何も取り込まず checkpoint を
   止め、`PARTIAL` で理由を報告**します。checkpoint より新しい行が 5,000 を超える
   workspace（初回取込など）は、上限を上げるまでこの状態です
 - 2 つのパラメータはプロファイルの `schedulerParams` に置きます（[設定ガイド](docs/CONNECTOR-SETUP-GUIDE.md)
-  §3-8）。数として読めない値は既定に置き換えず、実行がエラーになります
+  §3-8）。数として読めない値・範囲外の値（要求上限 1〜1,000,000、猶予 0〜43,200 分）は
+  既定に置き換えず、実行がエラーになります。sort を拒否されたときの読み直しも要求上限に
+  数えます
 
 ### 主張しないこと
 
 - 実機の Notion に対しては測っていません（sort の受理、拒否時の status、`request_status`
   の形、検索索引の遅延の長さ）。索引の遅延が猶予（既定 10 分）を超えたページは、その分を
   checkpoint が過ぎていれば次に編集されるまで見えません
-- 他のコネクタ（Slack / Salesforce / Mattermost / Teams / Chatwork / M365 メール / Gmail）の
-  checkpoint は同じ形のまま未測定です（残件 R107）
+- 他のコネクタ（Slack / Salesforce / Mattermost / Teams / Chatwork / M365 メール / Gmail /
+  Box / Dropbox）の checkpoint は同じ形のまま未測定です（残件 R107）
+- `request_status` の欄名が実機の応答と違っていた場合、Notion 側の打ち切りは見えず、
+  `has_more` だけで完了と読みます（この点は変更前と同じです）。既定の要求上限（5,000 行）は
+  Notion の上限（10,000 件）より小さいので、既定ではこちらの上限が先に当たります
 
 ## コネクタ定義と取込プロファイルの保存 ID を確定的にし、旧 ID の行は起動時に移行します
 
