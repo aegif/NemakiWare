@@ -13649,7 +13649,7 @@ CONTROLS = [
     # cannot fire is not evidence. Same reason as UI3.
     dict(
         id='UL3',
-        what="the plan document's added-since-sweep count stops being read, so a count updated in two documents and left behind in the third stays green",
+        what="the SECOND reader of the plan document's added-since-sweep count stops reading it (EverySupportedCouchDbIsMeasuredTest has read it all along — this control measures the redundant check, not a gap)",
         module='core',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
         find='5 回目以後に足した control は **221 本**（通し未実施）',
@@ -13659,7 +13659,7 @@ CONTROLS = [
     ),
     dict(
         id='UM3',
-        what="the canon's control total stops being compared with the runner, so the two documents can state different totals with every lock green",
+        what="the SECOND reader of the canon's control total stops comparing it with the runner (EverySupportedCouchDbIsMeasuredTest has compared it all along — this control measures the redundant check, not a gap)",
         module='core',
         file='docs/design/fail-closed-reads.md',
         find='- コントロール **1159**（2026-09-23 時点）',

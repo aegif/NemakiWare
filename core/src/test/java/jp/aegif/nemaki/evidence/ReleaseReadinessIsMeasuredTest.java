@@ -213,6 +213,7 @@ class ReleaseReadinessIsMeasuredTest {
                 + "is checking nothing");
 
         int declared = 0;
+        int possiblyExcluded = 0;
         try (Stream<Path> walk = Files.walk(Path.of("src/test/java"))) {
             for (Path file : walk.filter(p -> p.toString().endsWith(".java")).toList()) {
                 String name = file.getFileName().toString().replace(".java", "");
@@ -222,57 +223,51 @@ class ReleaseReadinessIsMeasuredTest {
                     continue;
                 }
                 List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
-                // The GROUPS surefire excludes as well as the names: core/pom.xml sets
-                // excludedGroups to the atlas integration tag, so such a class does not run,
-                // and counting its tests put invocations into a LOWER bound the real suite can
-                // never reach (Codex, twenty-third review, P2).
-                //
-                // COMMENTS STRIPPED, and the excluded group READ FROM THE POM rather than
-                // written here. Three shapes of this test have now been wrong: a contains()
-                // over each raw line matched the COMMENT that explains the rule, so this file
-                // excluded ITSELF (subagent, twenty-fourth review, P1); anchoring to the start
-                // of a line then missed a wrapped annotation and one preceded by another on
-                // the same line, counting tests the suite never runs (both reviewers,
-                // twenty-fifth review, P2); and stripping comments alone STILL matched,
-                // because the group name was a string literal in this very method (measured).
-                // Taking the name from the build is what makes the rule describe the suite
-                // instead of resembling it. Neither direction is caught by the bound below —
-                // it has hundreds of invocations of slack — so this is measured by reading,
-                // and said so rather than claimed as a control.
-                String source = String.join("\n", lines)
-                        .replaceAll("(?s)/\\*.*?\\*/", " ")
-                        .replaceAll("(?m)//.*$", " ");
-                // The ANNOTATION, matched as syntax. Asking whether the file mentions the two
-                // strings anywhere left half the self-match in place — the literal "@Tag" is
-                // code in this very method, so only the group name coming from the pom kept
-                // this file out of its own skip list, and a comment reworded to contain the
-                // group name would have put it back (subagent, twenty-sixth review, P2). It
-                // also read a group name appearing in an unrelated message as a tag.
-                if (excludedGroups.stream().anyMatch(group -> source.matches(
-                        "(?s).*@Tag\\s*\\(\\s*(?:value\\s*=\\s*)?\""
-                                + Pattern.quote(group) + "\"\\s*\\).*"))) {
-                    continue;
-                }
+                int here = 0;
                 for (String line : lines) {
                     String trimmed = line.trim();
                     if (trimmed.equals("@Test") || trimmed.startsWith("@ParameterizedTest")) {
-                        declared++;
+                        here++;
                     }
+                }
+                declared += here;
+                // NOT an emulation of what surefire skips — an UPPER BOUND on it. Four shapes
+                // of "does this class carry the excluded group?" have now been wrong, in both
+                // directions: a contains() over each line matched the COMMENT explaining the
+                // rule and excluded this file from its own count (subagent, twenty-fourth
+                // review, P1); a start-of-line anchor missed a wrapped annotation (both
+                // reviewers, twenty-fifth); comment-stripping alone still matched a string
+                // literal in this method (measured); and the syntactic form still misreads a
+                // METHOD-level tag as excluding the whole class, and misses a qualified or
+                // concatenated one (Codex, twenty-seventh review, P2).
+                //
+                // The bound does not need the answer. It needs to know the MOST the exclusions
+                // could remove, so subtracting every test in a file that so much as mentions
+                // an excluded group is both correct for a lower bound and impossible to get
+                // wrong in the dangerous direction. Emulating JUnit's semantics here was
+                // solving a problem this test does not have.
+                if (excludedGroups.stream().anyMatch(String.join("\n", lines)::contains)) {
+                    possiblyExcluded += here;
                 }
             }
         }
-        assertTrue(declared > 5000, "only " + declared + " tests were found, so the exclusions "
-                + "this mirrors have stopped matching the suite's own");
+        assertTrue(declared > 5000, "only " + declared + " tests were found, so the name "
+                + "exclusions this mirrors have stopped matching the suite's own");
+        assertTrue(possiblyExcluded < declared / 2, possiblyExcluded + " of " + declared
+                + " tests sit in a file mentioning an excluded group, which leaves this bound "
+                + "with nothing to say");
 
         Matcher stated = Pattern.compile("\\*\\*([0-9],[0-9]{3}) 本 green\\*\\*（2026")
                 .matcher(read(READINESS));
         assertTrue(stated.find(), "the readiness document no longer states a dated unit total");
         int recorded = Integer.parseInt(stated.group(1).replace(",", ""));
-        assertTrue(recorded >= declared,
-                "the readiness document records " + recorded + " unit tests and the sources "
-                        + "declare " + declared + " test annotations under the same exclusions. "
-                        + "A recorded run can exceed the annotation count (parameterised tests) "
-                        + "but never fall below it");
+        int floor = declared - possiblyExcluded;
+        assertTrue(recorded >= floor,
+                "the readiness document records " + recorded + " unit tests; the sources "
+                        + "declare " + declared + " test annotations, of which at most "
+                        + possiblyExcluded + " can be removed by the excluded groups, so a real "
+                        + "run cannot be below " + floor + ". A recorded run can EXCEED the "
+                        + "annotation count (parameterised tests) but never fall below this");
     }
 
     /**
@@ -446,8 +441,7 @@ class ReleaseReadinessIsMeasuredTest {
         // The SUMMARY LINE above the breakdown repeats the same three figures, and nothing
         // read it — so §0 could say one thing while the breakdown two lines below said
         // another (subagent, twenty-sixth review, P2).
-        Matcher inline = Pattern.compile("うち意図した設計 (\\d+)・3\\.4\\.0 に入れない (\\d+)"
-                + "・実際に開いている (\\d+)").matcher(readiness);
+        Matcher inline = Pattern.compile("うち[^）]*実際に開いている \\d+").matcher(readiness);
         assertTrue(inline.find(), "the readiness document's summary line no longer repeats the "
                 + "breakdown, so this check has nothing to compare");
 
@@ -458,10 +452,17 @@ class ReleaseReadinessIsMeasuredTest {
         int found = 0;
         while (groups.find()) {
             found++;
-            assertEquals(inline.group(found), groups.group(2),
-                    "the readiness document's summary line says " + inline.group(found)
-                            + " for group " + found + " and the breakdown below says "
-                            + groups.group(2) + ". One of the two is stale");
+            // BY LABEL, not by position: reordering the breakdown's bullets would
+            // otherwise compare different groups and report a correct edit as stale
+            // (subagent, twenty-seventh review, P3).
+            Matcher labelled = Pattern.compile(Pattern.quote(groups.group(1).trim())
+                    + " (\\d+)").matcher(inline.group());
+            assertTrue(labelled.find(), "the readiness document's summary line does not name "
+                    + "the group 「" + groups.group(1).trim() + "」 the breakdown lists");
+            assertEquals(labelled.group(1), groups.group(2),
+                    "the readiness document's summary line says " + labelled.group(1)
+                            + " for 「" + groups.group(1).trim() + "」 and the breakdown below "
+                            + "says " + groups.group(2) + ". One of the two is stale");
             String name = groups.group(1);
             SortedSet<String> members = idsIn(groups.group(3), open);
             assertEquals(members.size(), Integer.parseInt(groups.group(2)),
