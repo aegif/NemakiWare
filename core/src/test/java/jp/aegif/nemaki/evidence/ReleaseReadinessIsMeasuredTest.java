@@ -161,10 +161,13 @@ class ReleaseReadinessIsMeasuredTest {
                 "the readiness document says " + stated.group(1) + " controls and the runner "
                         + "declares " + declared.size());
 
-        // EVERY exit, not the first one. The §0 figure was checked and the table row beside it
-        // was not, so half of a count update left the document stating two different totals
-        // with every lock green (Codex, twenty-first review, P3). A four-digit "N 本" in this
-        // document is a control count; the unit totals are written with a comma.
+        // EVERY exit in THIS reader, not the first one. What this does NOT mean: that the
+        // table row was unguarded. EverySupportedCouchDbIsMeasuredTest's totalForms has read
+        // it since 3538ac296 (2026-09-21, when the form stopped requiring the number to be
+        // bold), so a stale table row was already red over there — this is a second reader,
+        // not a closed gap, and saying otherwise was the third repeat of the same over-claim
+        // (both reviewers, twenty-ninth review, P2). A four-digit "N 本" in this document is
+        // a control count; the unit totals are written with a comma.
         Matcher everywhere = Pattern.compile("(?<![0-9,])([0-9]{4}) 本").matcher(readiness);
         int exits = 0;
         while (everywhere.find()) {
@@ -343,6 +346,27 @@ class ReleaseReadinessIsMeasuredTest {
                 "open residuals the RC gate's classification does not mention: " + missing
                         + ". The gate concludes from that table, so a residual missing from it "
                         + "is one the conclusion did not account for");
+
+        // The gate's own HEADING and the sentence under it repeat the count the table carries,
+        // and nothing read them — so the gate could announce "12 classified" over a table of
+        // ten (Codex, twenty-ninth review, P2). Counted from the table's rows, which is where
+        // the classification actually is.
+        int classified = 0;
+        for (String line : gate.split("\n")) {
+            if (line.startsWith("| R")) {
+                classified += line.split("\\|", 3)[1].split("/").length;
+            }
+        }
+        Matcher says = Pattern.compile("(\\d+) 件を分類した").matcher(gate);
+        assertTrue(says.find(), "the RC gate's heading no longer says how many it classified");
+        assertEquals(classified, Integer.parseInt(says.group(1)),
+                "the RC gate says it classified " + says.group(1) + " residuals and its table "
+                        + "carries " + classified);
+        Matcher under = Pattern.compile("開いている (\\d+) 件を").matcher(gate);
+        assertTrue(under.find(), "the RC gate's prose no longer says how many are open");
+        assertEquals(classified, Integer.parseInt(under.group(1)),
+                "the RC gate's prose says " + under.group(1) + " open residuals and its table "
+                        + "carries " + classified);
     }
 
     /**
@@ -447,12 +471,22 @@ class ReleaseReadinessIsMeasuredTest {
         // The SUMMARY LINE above the breakdown repeats the same three figures, and nothing
         // read it — so §0 could say one thing while the breakdown two lines below said
         // another (subagent, twenty-sixth review, P2).
-        // Anchored on the BRACKET, not on 「うち」 — that word also opens "残件表 99 行のうち"
+        // Anchored on the BRACKET, not on 「うち」 — that word also opens "残件表 100 行のうち"
         // one clause earlier, so the span started there and swept in figures the breakdown
         // does not state (subagent, twenty-eighth review, P2, measured).
-        Matcher inline = Pattern.compile("（うち[^）]*）").matcher(readiness);
+        //
+        // To the end of the LINE rather than the first closing bracket, so a nested bracket
+        // inside the summary does not cut it short; and exactly ONE, so a second summary
+        // added earlier in the document cannot be compared in its place. Both were reachable
+        // (Codex and subagent, twenty-ninth review, P2/P3). NOTE: this refinement is measured
+        // by reading, not by a control — UN3 fires on the old anchor too, because the widened
+        // span happened to contain the same three labels.
+        Matcher inline = Pattern.compile("(?m)（うち.*$").matcher(readiness);
         assertTrue(inline.find(), "the readiness document's summary line no longer repeats the "
                 + "breakdown, so this check has nothing to compare");
+        String summary = inline.group();
+        assertFalse(inline.find(), "the readiness document states more than one 「（うち…）」 "
+                + "summary, so which one this compares is a guess: " + summary);
 
         // Each group states a count and then names its members. Both are read: the count beside
         // a list is precisely the figure that went stale in §5's ledger twice.
@@ -465,7 +499,7 @@ class ReleaseReadinessIsMeasuredTest {
             // otherwise compare different groups and report a correct edit as stale
             // (subagent, twenty-seventh review, P3).
             Matcher labelled = Pattern.compile(Pattern.quote(groups.group(1).trim())
-                    + " (\\d+)").matcher(inline.group());
+                    + " (\\d+)").matcher(summary);
             assertTrue(labelled.find(), "the readiness document's summary line does not name "
                     + "the group 「" + groups.group(1).trim() + "」 the breakdown lists");
             assertEquals(labelled.group(1), groups.group(2),
