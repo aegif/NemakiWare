@@ -1087,6 +1087,39 @@ class NotionPartialReadsAreNotCompleteTest {
     }
 
     /**
+     * The attempts of one run are bounded by four times its budget.
+     *
+     * <p>Five failing pages ahead of a good one, budget one: the run stops after four attempts
+     * — the good page is not reached this time, the reason says so and names the dead-letter
+     * queue, and the checkpoint holds. Unbounded, a run in which every import failed would
+     * attempt every candidate and could outlast the scheduler's fetch timeout (review, P2).
+     */
+    @Test
+    @DisplayName("the attempts of one run are bounded by four times the limit")
+    void theAttemptsOfOneRunAreBoundedByFourTimesTheLimit() {
+        search = (exchange, n) -> json(exchange, 200, pageOf(false,
+                "p-good@2026-01-06T00:00:00.000Z", "p-bad5@2026-01-05T00:00:00.000Z",
+                "p-bad4@2026-01-04T00:00:00.000Z", "p-bad3@2026-01-03T00:00:00.000Z",
+                "p-bad2@2026-01-02T00:00:00.000Z", "p-bad1@2026-01-01T00:00:00.000Z"));
+        blocks = (exchange, n) -> {
+            if (exchange.getRequestURI().getPath().contains("/p-bad")) {
+                json(exchange, 500, "{\"message\":\"boom\"}");
+            } else {
+                json(exchange, 200, "{\"results\":[],\"has_more\":false}");
+            }
+        };
+
+        FetchResult result = runWithLimit(1);
+
+        assertEquals(4, dlqReasons.size(), "more or fewer than four attempts were made: " + dlqReasons);
+        assertTrue(importedIds.isEmpty(), "the attempt bound did not hold: " + importedIds);
+        assertEquals(1, result.incompleteReads().size(), result.incompleteReads().toString());
+        assertTrue(result.incompleteReads().get(0).contains("dead-letter"),
+                result.incompleteReads().get(0));
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /**
      * A checkpoint written before R59 names a minute and no ids. Nothing at that minute is
      * known to be done, so the minute is imported once more, and the ids are recorded.
      */

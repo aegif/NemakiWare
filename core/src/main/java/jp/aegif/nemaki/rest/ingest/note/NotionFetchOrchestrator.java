@@ -54,6 +54,17 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
     static final int DEFAULT_INDEX_LAG_MINUTES = 10;
 
     /**
+     * How many pages one run may ATTEMPT, as a multiple of its budget of settled pages. The
+     * budget counts settled pages so that pages failing on every poll cannot starve the ones
+     * behind them; without a second bound, a run in which every import fails would attempt
+     * every candidate (up to the request cap — 5,000 rows by default) and could outlast the
+     * scheduler's fetch timeout, which discards the run's counts (review, P2). With this
+     * bound, starving the pages behind takes more than {@code limit × 4} pages failing at or
+     * above the checkpoint minute — every one of them with a dead-letter row saying so.
+     */
+    static final int ATTEMPTS_PER_BUDGET = 4;
+
+    /**
      * What the stored checkpoint says: the newest edit minute this profile has imported from,
      * and the pages imported AT that minute.
      *
@@ -240,10 +251,18 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
             // A failure costs its attempt and its dead-letter row (one row per item, updated in
             // place), and the pages behind it still get their turn; once a newer minute settles,
             // the checkpoint passes the failing page and it is not offered again.
+            // Attempts are bounded too (ATTEMPTS_PER_BUDGET × limit): unbounded, a run in which
+            // every import failed would attempt every candidate and could outlast the fetch
+            // timeout, which discards the run's counts.
             List<NotionPageSummary> settled = new ArrayList<>();
             int attempted = 0;
+            boolean attemptsExhausted = false;
             for (NotionPageSummary page : candidatesThisRun) {
                 if (settled.size() >= limit) {
+                    break;
+                }
+                if (attempted >= limit * ATTEMPTS_PER_BUDGET) {
+                    attemptsExhausted = true;
                     break;
                 }
                 attempted++;
@@ -390,9 +409,16 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
             }
             int leftForTheNextPoll = candidatesThisRun.size() - attempted;
             if (leftForTheNextPoll > 0) {
-                incompleteReads.add("Notion page listing: the run's limit of " + limit
-                        + " page(s) was reached with " + leftForTheNextPoll
-                        + " newer page(s) left for the next poll");
+                incompleteReads.add(attemptsExhausted
+                        ? "Notion page listing: " + attempted + " page(s) were attempted ("
+                                + ATTEMPTS_PER_BUDGET + " × the limit of " + limit + ") with only "
+                                + settled.size() + " settled, leaving " + leftForTheNextPoll
+                                + " newer page(s) untried — the failures are in the dead-letter queue; "
+                                + "the pages behind them are reached only once they settle or the "
+                                + "checkpoint passes them, or with a higher limit"
+                        : "Notion page listing: the run's limit of " + limit
+                                + " page(s) was reached with " + leftForTheNextPoll
+                                + " newer page(s) left for the next poll");
             }
             // HOW FAR the checkpoint may move (R59).
             //
