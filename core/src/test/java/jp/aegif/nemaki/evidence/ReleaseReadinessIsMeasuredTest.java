@@ -479,6 +479,54 @@ class ReleaseReadinessIsMeasuredTest {
                         + " tests and its sources declare " + tests);
     }
 
+    /**
+     * The R59 row names its locks and counts them; both must be the test sources' (review,
+     * thirty-sixth round, P3 — the count "R59 の N 本" was read by no lock, so adding, dropping
+     * or renaming a lock left the canon green and wrong).
+     */
+    @Test
+    @DisplayName("the locks the R59 row names exist, and its two counts are the sources'")
+    void theR59RowsLocksExistAndItsCountsAreTheSources() throws IOException {
+        String canon = read(CANON);
+        Matcher row = Pattern.compile("(?m)^\\| R59 \\|.*$").matcher(canon);
+        assertTrue(row.find(), "the canon has no R59 row");
+        Matcher counts = Pattern.compile("錠 (\\d+) 本中 R59 の (\\d+) 本（(.*?)）、control").matcher(row.group());
+        assertTrue(counts.find(), "the R59 row no longer states its lock counts in the expected shape");
+        int totalStated = Integer.parseInt(counts.group(1));
+        int r59Stated = Integer.parseInt(counts.group(2));
+        String listed = counts.group(3);
+
+        Path notion = Path.of("src/test/java/jp/aegif/nemaki/rest/ingest/note/NotionPartialReadsAreNotCompleteTest.java");
+        String notionSource = read(notion);
+        int totalTests = 0;
+        for (String line : notionSource.split("\n")) {
+            if (line.trim().equals("@Test")) totalTests++;
+        }
+        assertEquals(totalTests, totalStated, "the R59 row says NotionPartialReadsAreNotCompleteTest has "
+                + totalStated + " locks and the source declares " + totalTests);
+
+        int r59Listed = 0;
+        Matcher name = Pattern.compile("`(?:([A-Za-z]+)#)?([a-z][A-Za-z0-9]+)`").matcher(listed);
+        while (name.find()) {
+            String cls = name.group(1);
+            String method = name.group(2);
+            String source = notionSource;
+            if (cls != null) {
+                try (Stream<Path> walk = Files.walk(Path.of("src/test/java"))) {
+                    Path found = walk.filter(p -> p.getFileName().toString().equals(cls + ".java")).findFirst()
+                            .orElseThrow(() -> new AssertionError("the R59 row names a test class that does not exist: " + cls));
+                    source = read(found);
+                }
+            } else {
+                r59Listed++;
+            }
+            assertTrue(source.contains("void " + method + "("),
+                    "the R59 row names a lock that does not exist: " + (cls == null ? "" : cls + "#") + method);
+        }
+        assertEquals(r59Listed, r59Stated, "the R59 row says it has " + r59Stated
+                + " locks in NotionPartialReadsAreNotCompleteTest and lists " + r59Listed);
+    }
+
     @Test
     @DisplayName("every open residual is in exactly one of the readiness document's three groups")
     void everyOpenResidualIsInExactlyOneGroup() throws IOException {
