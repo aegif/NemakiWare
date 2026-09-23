@@ -1925,8 +1925,13 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         // readable LEADING segment already excludes a payload it cannot reach (so the
         // unreadable one has to come first, or the scope arm is never what decides). Both
         // were found by a control that did not fire — the example, not the arm.
+        // The component count MATCHES here (three components from the package root:
+        // representations / rep2 / data / smuggled.bin is four, and "%FF/rep2%2fdata/
+        // smuggled.bin" under the package root is four too), so the count cannot be what
+        // excludes it — the SCOPE is. Without that, the control aimed at the scope stopped
+        // firing as soon as the count was added (measured).
         sideways.put(ROOT + "representations/rep1/METS.xml",
-                metsWithLocType("URN", "%FF/data%2fx.bin", "data/minutes.txt"));
+                metsWithLocType("URN", "%FF/rep2%2fdata/smuggled.bin", "data/minutes.txt"));
         sideways.put(ROOT + "representations/rep1/data/minutes.txt", payload);
         sideways.put(ROOT + "representations/rep2/METS.xml", mets("data/notes.txt"));
         sideways.put(ROOT + "representations/rep2/data/notes.txt", "the notes");
@@ -1959,7 +1964,6 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         // returning false for a payload the reference really could name (subagent,
         // twenty-second review, P2).
         Map<String, String> withinPrefix = new LinkedHashMap<>(goodPackage(payload));
-        withinPrefix.put(ROOT + "metadata/x/evil.bin", "content nobody committed to");
         withinPrefix.put(ROOT + "representations/rep1/data/evil.bin",
                 "content nobody committed to");
         withinPrefix.put(ROOT + "METS.xml", metsWithLocType("URN", "representations%2frep1/"
@@ -1971,21 +1975,46 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                         + "as ruling it out, so a finding was asserted over a reference that "
                         + "may be its name: " + reaches.detail());
 
-        // AND THE LIMIT, stated rather than assumed. A prefix that climbs above its base or
-        // collapses to the zip root constrains nothing, and the answer must stay "could not
-        // tell" — an unreadable segment may hide a %2F, so what follows it can be any number
-        // of path components. A review read this as a missed narrowing (subagent,
-        // twenty-second review, P1); it is not one, and narrowing it WOULD be unsound.
+        // The prefix and the count are two halves of one question, and this shape is what
+        // tells them apart: the payload has exactly the right NUMBER of components left, and
+        // sits somewhere else. Without it, dropping the prefix test changed no answer —
+        // the count excluded the same payloads on its own (measured, the control did not
+        // fire).
+        Map<String, String> elsewhereSameShape = new LinkedHashMap<>(goodPackage(payload));
+        elsewhereSameShape.put(ROOT + "representations/rep2/data/evil.bin",
+                "content nobody committed to");
+        elsewhereSameShape.put(ROOT + "METS.xml", metsWithLocType("URN", "representations%2f"
+                + "rep1/data%2f%FF.bin", "representations/rep1/data/minutes.txt"));
+        Outcome.Check wrongPlace = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "prefix-misses.zip", elsewhereSameShape)).entries()), "mets closure");
+        assertEquals(Outcome.FAILED, wrongPlace.outcome(),
+                "a locator whose readable prefix names rep1 covered for a payload in rep2 that "
+                        + "merely has the same number of components left: "
+                        + wrongPlace.detail());
+        assertTrue(wrongPlace.detail().contains("evil.bin"), wrongPlace.detail());
+
+        // A prefix that collapses to the zip root still constrains, because HOW MANY
+        // components the reference has is known from the raw spelling even when what they say
+        // is not: "%2e%2e/%FF.bin" names ONE component at the zip root, and a payload five
+        // deep is not it.
+        //
+        // This assertion was written the other way one round ago — UNAVAILABLE, on the
+        // reasoning that an unreadable segment might hide a %2F. It cannot hide one: a
+        // separator comes from a %2F TRIPLET, which is visible in the raw text whether or not
+        // the bytes decode. A reviewer raised the narrowing, this verifier withdrew it without
+        // measuring the premise, and the next round showed the withdrawal was the error
+        // (subagent, twenty-second review, P1; Codex, twenty-third, P1). The lock that was
+        // added to "state the limit" was codifying a defect.
         Map<String, String> climbs = new LinkedHashMap<>(goodPackage(payload));
         climbs.put(smuggled, "content nobody committed to");
         climbs.put(ROOT + "METS.xml", metsWithLocType("URN", "%2e%2e/%FF.bin",
                 "representations/rep1/data/minutes.txt"));
         Outcome.Check aboveTheRoot = checkNamed(PackageIntegrity.check(PackageReader.open(
                 zip(tmp, "prefix-climbs.zip", climbs)).entries()), "mets closure");
-        assertEquals(Outcome.UNAVAILABLE, aboveTheRoot.outcome(),
-                "a reference whose readable part leaves the package and whose remainder cannot "
-                        + "be read was treated as ruling payloads out: "
-                        + aboveTheRoot.detail());
+        assertEquals(Outcome.FAILED, aboveTheRoot.outcome(),
+                "a reference that can only name ONE component at the zip root covered for a "
+                        + "payload five directories down: " + aboveTheRoot.detail());
+        assertTrue(aboveTheRoot.detail().contains("smuggled.bin"), aboveTheRoot.detail());
 
         // AND THE ARM IS REACHABLE. A non-URL locator that DOES resolve to the unnamed payload
         // is the case the ambiguity answer exists for; without this the narrowing could be

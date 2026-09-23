@@ -9839,8 +9839,8 @@ CONTROLS = [
         id='GY3',
         what="the readiness document stops saying the control added since the fifth sweep is unswept, so a finished sweep of 938 reads as a measurement of today's tree",
         file='docs/design/v3.4-release-readiness.md',
-        find='**その 216 本は通し未実施**',
-        replace='**その 216 本も通し済み**',
+        find='**その 217 本は通し未実施**',
+        replace='**その 217 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10797,7 +10797,7 @@ CONTROLS = [
         what='a second statement of the unswept count drifts from the locked one, so the document contradicts itself about how many controls have never been run together',
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **5 回目以後に足した control は 216 本**（境界 LM3 — 5 回目時点の最大 ID。',
+        find='  **5 回目以後に足した control は 217 本**（境界 LM3 — 5 回目時点の最大 ID。',
         replace='  **5 回目以後に足した control は 0 本**（境界 LM3 — 5 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10808,7 +10808,7 @@ CONTROLS = [
         file='docs/design/fail-closed-reads.md',
         # Re-pointed: the boundary id moves below LM3, so ids above it exist while the sweep
         # record says nothing was added — the cross-check (declared − swept ≠ ids above) fires.
-        find='**5 回目以後に足した control は 216 本**（境界 LM3）: ',
+        find='**5 回目以後に足した control は 217 本**（境界 LM3）: ',
         replace='**5 回目以後に足した control は 5 本**（境界 LA3）: ',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10864,8 +10864,8 @@ CONTROLS = [
         id='LN3',
         what="the canon stops saying the control added since the fifth sweep is unswept — the canon-side twin of GY3 — and, being itself the first control after the sweep, the one that forces the ledger back from 0 to 1",
         file='docs/design/fail-closed-reads.md',
-        find='**その 216 本は通し未実施**',
-        replace='**その 216 本も通し済み**',
+        find='**その 217 本は通し未実施**',
+        replace='**その 217 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10873,8 +10873,8 @@ CONTROLS = [
         id='LO3',
         what="the readiness document's §4 stops saying the added controls are unswept while §1.4 still does — the second exit, which a once-per-file check let through (GY3 did not fire)",
         file='docs/design/v3.4-release-readiness.md',
-        find='5 回目以後に足した control は **216 本**（通し未実施）。',
-        replace='5 回目以後に足した control は **216 本**（通し済み）。',
+        find='5 回目以後に足した control は **217 本**（通し未実施）。',
+        replace='5 回目以後に足した control は **217 本**（通し済み）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11689,7 +11689,7 @@ CONTROLS = [
         id='LB3',
         what='the PLAN\'s copy of the never-swept count drifts, so whoever scopes the overdue full sweep from the plan runs half the set',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='5 回目以後に足した control は **216 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='5 回目以後に足した control は **217 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='5 回目以後に足した control は **0 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -12804,8 +12804,10 @@ CONTROLS = [
         what="a broken percent escape is decoded into something else (%3Z becomes '/'), so a malformed reference lands on a path that happens to exist",
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='                if (high < 0 || low < 0) {',
-        replace='                if (high * 16 + low < 0) {',
+        # Re-pointed 2026-09-23 (23 巡目): componentsIn carries the same guard, so the
+        # anchor takes the line that follows it in percentDecoded.
+        find='                if (high < 0 || low < 0) {\n                    return null;\n                }',
+        replace='                if (high * 16 + low < 0) {\n                    return null;\n                }',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['anEncodedSeparatorDoesNotWalkOutOfThePackage'],
     ),
@@ -13565,7 +13567,7 @@ CONTROLS = [
         what="only the first control-count exit in the readiness document is compared with the runner, so half of a count update leaves the document stating two different totals",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='| 通し negative-control | **938/938 発火・exit 0（8 時間 52 分、2026-09-21〜22）** | 1154 本 |',
+        find='| 通し negative-control | **938/938 発火・exit 0（8 時間 52 分、2026-09-21〜22）** | 1155 本 |',
         replace='| 通し negative-control | **938/938 発火・exit 0（8 時間 52 分、2026-09-21〜22）** | 1139 本 |',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
@@ -13585,19 +13587,21 @@ CONTROLS = [
         what="the readable-prefix narrowing is made UNSOUND — a payload the prefix really does reach is ruled out, so a reference that may be its name stops making the answer ambiguous",
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='                if (candidate == null || payload.startsWith(candidate)) {',
-        replace='                if (candidate == null) {',
+        # Re-pointed 2026-09-23 (23 巡目): the prefix test is its own statement now.
+        find='                if (candidate == null || !payload.startsWith(candidate)) {\n                    continue;\n                }',
+        replace='                if (candidate == null) {\n                    continue;\n                }',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload'],
     ),
     dict(
         id='UF3',
-        what="a prefix that climbs above its base is read as ruling payloads out, which an unreadable remainder cannot justify — it may hide a %2F and any number of components",
+        what="the component count stops being compared, so a reference that can only name ONE component at the zip root covers for a payload five directories down",
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        # The same line opens resolveSpellings's loop, so the anchor carries the one below it.
-        find='                String candidate = withoutDotSegments(base + relative);\n                if (candidate == null || payload.startsWith(candidate)) {',
-        replace='                String candidate = withoutDotSegments(base + relative);\n                if (candidate == null || candidate.isEmpty()) { continue; }\n                if (candidate == null || payload.startsWith(candidate)) {',
+        # Re-pointed 2026-09-23 (23 巡目): the oracle this fixed was wrong, so the sabotage
+        # now drops the count comparison instead of the (mistaken) limit it protected.
+        find='                if (!rest.isEmpty() && rest.split("/", -1).length == remaining) {',
+        replace='                if (!rest.isEmpty()) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload'],
     ),
@@ -13611,6 +13615,22 @@ CONTROLS = [
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessUnitTotalIsAtLeastTheSources'],
     ),
+    dict(
+        id='UH3',
+        what="a %2F triplet stops counting as a separator, so a reference whose components are hidden behind an escape is measured with the wrong shape",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='                if (high * 16 + low == \'/\') {\n                    components++;\n                }',
+        replace='                if (false) {\n                    components++;\n                }',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload'],
+    ),
+        # UI3 was retired 2026-09-23 (23 巡目). It sabotaged the @Tag("atlas-integration") skip
+    # in the unit LOWER bound, which cannot change an answer: the bound only fails when the
+    # recorded figure falls BELOW the annotation count, and 23 more annotations do not reach
+    # it. The exclusion is still the faithful thing to mirror — Codex raised it as a lock that
+    # would reject a correct measurement once the two numbers converge — but it is not
+    # measurable today, and a control that cannot fire is not evidence.
     dict(
         id='TM3',
         what='a literal xlink:href="" is read as an absent attribute, so a payload whose only name is the same-document reference is reported as unnamed',

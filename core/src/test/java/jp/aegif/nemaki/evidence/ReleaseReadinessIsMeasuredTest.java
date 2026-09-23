@@ -199,7 +199,16 @@ class ReleaseReadinessIsMeasuredTest {
                         || name.equals("AtlasManualDataLoader")) {
                     continue;
                 }
-                for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
+                // The GROUPS surefire excludes as well as the names. core/pom.xml sets
+                // excludedGroups=atlas-integration, so a @Tag("atlas-integration") class does
+                // not run — counting its tests put 23 invocations into a LOWER bound the real
+                // suite can never reach, and the lock would then reject a correct record
+                // (Codex, twenty-third review, P2).
+                if (lines.stream().anyMatch(l -> l.contains("@Tag(\"atlas-integration\")"))) {
+                    continue;
+                }
+                for (String line : lines) {
                     String trimmed = line.trim();
                     if (trimmed.equals("@Test") || trimmed.startsWith("@ParameterizedTest")) {
                         declared++;

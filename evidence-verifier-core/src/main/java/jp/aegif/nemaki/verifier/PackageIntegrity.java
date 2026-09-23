@@ -1042,11 +1042,24 @@ public final class PackageIntegrity {
         if (reference == null) {
             return true;
         }
+        // HOW MANY COMPONENTS it has is known even when what they SAY is not. A separator can
+        // only come from a "%2F" triplet or a literal "/", and both are visible in the raw
+        // spelling — decoding fails on the BYTES, and failing to name a character does not
+        // hide one. The first version of this reasoned the other way ("an unreadable segment
+        // may be hiding a %2F") and answered "could not tell" for a reference that can only
+        // name a single component at the zip root (Codex, twenty-third review, P1, against
+        // this verifier's own withdrawal of the same finding one round earlier).
+        int components = componentsIn(reference);
+        if (components < 0) {
+            return true;
+        }
         int slash = metsPath.lastIndexOf('/');
         String directory = slash < 0 ? "" : metsPath.substring(0, slash + 1);
         for (boolean plusIsSpace : new boolean[] { false, true }) {
             String prefix = readableLeadingPart(reference, plusIsSpace);
-            if (prefix.isEmpty()) {
+            int known = prefix.isEmpty() ? 0 : prefix.split("/", -1).length - 1;
+            int remaining = components - known;
+            if (remaining <= 0) {
                 return true;
             }
             List<String> bases = prefix.startsWith("/") ? List.of(ipRoot)
@@ -1054,12 +1067,50 @@ public final class PackageIntegrity {
             String relative = prefix.startsWith("/") ? prefix.substring(1) : prefix;
             for (String base : bases) {
                 String candidate = withoutDotSegments(base + relative);
-                if (candidate == null || payload.startsWith(candidate)) {
+                if (candidate == null || !payload.startsWith(candidate)) {
+                    continue;
+                }
+                String rest = payload.substring(candidate.length());
+                if (!rest.isEmpty() && rest.split("/", -1).length == remaining) {
                     return true;
                 }
             }
         }
         return false;
+    }
+
+    /**
+     * How many path components this reference has, or -1 when an escape is malformed.
+     *
+     * <p>Counted from the RAW spelling, which is why it survives a decode this verifier cannot
+     * complete: a separator is either a literal {@code /} — and those are the split points —
+     * or a {@code %2F} triplet, and a triplet is visible whether or not the bytes around it
+     * form valid UTF-8. An overlong encoding of {@code /} does not survive the strict decoder,
+     * so it cannot arrive by that door either.
+     */
+    private static int componentsIn(String reference) {
+        int components = 0;
+        for (String segment : reference.split("/", -1)) {
+            components++;
+            for (int at = 0; at < segment.length(); at++) {
+                if (segment.charAt(at) != '%') {
+                    continue;
+                }
+                if (at + 2 >= segment.length()) {
+                    return -1;
+                }
+                int high = Character.digit(segment.charAt(at + 1), 16);
+                int low = Character.digit(segment.charAt(at + 2), 16);
+                if (high < 0 || low < 0) {
+                    return -1;
+                }
+                if (high * 16 + low == '/') {
+                    components++;
+                }
+                at += 2;
+            }
+        }
+        return components;
     }
 
     /** The leading segments that decode, with their separator — a prefix of what this means. */
