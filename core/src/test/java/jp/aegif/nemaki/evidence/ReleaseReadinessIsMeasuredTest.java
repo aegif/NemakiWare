@@ -549,6 +549,14 @@ class ReleaseReadinessIsMeasuredTest {
                 "the R59 row no longer names its DLQ-side lock: " + qualified);
     }
 
+    private static String readPomForExcludedGroups() {
+        try {
+            return Files.readString(Path.of("pom.xml"), StandardCharsets.UTF_8);
+        } catch (IOException unreadable) {
+            throw new AssertionError("core/pom.xml could not be read: " + unreadable.getMessage());
+        }
+    }
+
     /**
      * The names of the test methods a test class RUNS, as JUnit itself discovers them: the
      * Platform launcher is asked to discover the class, and every identifier backed by a
@@ -558,9 +566,12 @@ class ReleaseReadinessIsMeasuredTest {
      * each left a form JUnit would run and this count would not, or the reverse; four review
      * rounds found one apiece. Discovery is the rule, so nothing is re-derived here.
      *
-     * <p>Two refusals remain the lock's own: a {@code @Disabled} method or class (discovered
-     * but not run) fails the count, and two runnable methods of one name are refused, because
-     * the R59 row names locks by method name and could not tell them apart.
+     * <p>The request carries the tag exclusion surefire runs under, so what is counted is what
+     * the suite runs, not what the engine could run. Two refusals remain the lock's own: a
+     * {@code @Disabled} method or enclosing class (discovered but not run; looked up the way
+     * Jupiter looks it up, meta-annotations included) fails the count, and two runnable methods
+     * of one name are refused, because the R59 row names locks by method name and could not
+     * tell them apart.
      */
     private static java.util.Set<String> testMethodsOf(String className) {
         Class<?> type;
@@ -569,11 +580,18 @@ class ReleaseReadinessIsMeasuredTest {
         } catch (ClassNotFoundException missing) {
             throw new AssertionError("the R59 row names a test class that is not on the class path: " + className);
         }
-        assertFalse(type.isAnnotationPresent(org.junit.jupiter.api.Disabled.class),
-                "a disabled test class makes this count wrong: " + className);
+        // The same tag exclusion surefire runs under (core/pom.xml <surefire.excludedGroups>),
+        // so a tagged lock that the suite skips is not counted as run (review, P3).
+        Matcher excluded = Pattern.compile("<surefire\\.excludedGroups>([^<]*)</")
+                .matcher(readPomForExcludedGroups());
+        assertTrue(excluded.find(), "core/pom.xml no longer declares the excluded groups, so this "
+                + "count cannot mirror what the suite skips");
+        String[] excludedGroups = java.util.Arrays.stream(excluded.group(1).split(","))
+                .map(String::trim).filter(group -> !group.isEmpty()).toArray(String[]::new);
         org.junit.platform.launcher.LauncherDiscoveryRequest request =
                 org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder.request()
                         .selectors(org.junit.platform.engine.discovery.DiscoverySelectors.selectClass(type))
+                        .filters(org.junit.platform.launcher.TagFilter.excludeTags(excludedGroups))
                         .build();
         org.junit.platform.launcher.TestPlan plan =
                 org.junit.platform.launcher.core.LauncherFactory.create().discover(request);
@@ -594,8 +612,17 @@ class ReleaseReadinessIsMeasuredTest {
                         .orElse(false);
                 if (!parentIsAClass) continue;
                 java.lang.reflect.Method method = source.getJavaMethod();
-                assertFalse(method.isAnnotationPresent(org.junit.jupiter.api.Disabled.class),
+                // Disabled is looked up the way Jupiter looks it up — meta-annotations included —
+                // on the method and on every class enclosing it, since a @Disabled @Nested class
+                // is discovered but never run (review, P3).
+                assertFalse(org.junit.platform.commons.support.AnnotationSupport
+                                .isAnnotated(method, org.junit.jupiter.api.Disabled.class),
                         "a disabled test makes this count wrong: " + source.getClassName() + "#" + method.getName());
+                for (Class<?> enclosing = method.getDeclaringClass(); enclosing != null; enclosing = enclosing.getEnclosingClass()) {
+                    assertFalse(org.junit.platform.commons.support.AnnotationSupport
+                                    .isAnnotated(enclosing, org.junit.jupiter.api.Disabled.class),
+                            "a disabled class makes this count wrong: " + enclosing.getName() + " (holds " + method.getName() + ")");
+                }
                 assertTrue(names.add(method.getName()),
                         "two test methods share a name the R59 row could not tell apart: "
                                 + source.getClassName() + "#" + method.getName());
