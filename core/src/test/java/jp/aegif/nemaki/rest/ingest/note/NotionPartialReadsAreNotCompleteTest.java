@@ -1089,16 +1089,18 @@ class NotionPartialReadsAreNotCompleteTest {
     /**
      * The attempts of one run are bounded by four times its budget.
      *
-     * <p>Five failing pages ahead of a good one, budget one: the run stops after four attempts
-     * — the good page is not reached this time, the reason says so and names the dead-letter
-     * queue, and the checkpoint holds. Unbounded, a run in which every import failed would
-     * attempt every candidate and could outlast the scheduler's fetch timeout (review, P2).
+     * <p>Exactly four failing pages ahead of a good one, budget one: the run stops after four
+     * attempts — the good page is not reached this time, the reason says so and names the
+     * dead-letter queue, and the checkpoint holds. Four is the boundary the documents state
+     * ("four times the limit OR MORE"); a fixture of five did not pin it (review, P2).
+     * Unbounded, a run in which every import failed would attempt every candidate and could
+     * outlast the scheduler's fetch timeout.
      */
     @Test
     @DisplayName("the attempts of one run are bounded by four times the limit")
     void theAttemptsOfOneRunAreBoundedByFourTimesTheLimit() {
         search = (exchange, n) -> json(exchange, 200, pageOf(false,
-                "p-good@2026-01-06T00:00:00.000Z", "p-bad5@2026-01-05T00:00:00.000Z",
+                "p-good@2026-01-05T00:00:00.000Z",
                 "p-bad4@2026-01-04T00:00:00.000Z", "p-bad3@2026-01-03T00:00:00.000Z",
                 "p-bad2@2026-01-02T00:00:00.000Z", "p-bad1@2026-01-01T00:00:00.000Z"));
         blocks = (exchange, n) -> {

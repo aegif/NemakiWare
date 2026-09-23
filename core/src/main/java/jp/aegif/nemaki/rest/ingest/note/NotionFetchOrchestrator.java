@@ -59,7 +59,7 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
      * behind them; without a second bound, a run in which every import fails would attempt
      * every candidate (up to the request cap — 5,000 rows by default) and could outlast the
      * scheduler's fetch timeout, which discards the run's counts (review, P2). With this
-     * bound, starving the pages behind takes more than {@code limit × 4} pages failing at or
+     * bound, starving the pages behind takes {@code limit × 4} pages or more failing at or
      * above the checkpoint minute — every one of them with a dead-letter row saying so.
      */
     static final int ATTEMPTS_PER_BUDGET = 4;
