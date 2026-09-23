@@ -82,6 +82,7 @@ public class DropboxConnectorAdapter {
      */
     public FileListing listAllFiles(String folderPath, int maxRequests) throws Exception {
         List<DropboxFile> allFiles = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
         String body = MAPPER.writeValueAsString(java.util.Map.of(
                 "path", folderPath != null ? folderPath : "",
                 "recursive", false,
@@ -97,6 +98,8 @@ public class DropboxConnectorAdapter {
             }
             for (JsonNode entry : entries) {
                 if (!"file".equals(entry.path(".tag").asText())) continue;
+                // An item this listing already holds is not listed twice.
+                if (!seen.add(entry.path("id").asText())) continue;
                 allFiles.add(new DropboxFile(
                         entry.path("id").asText(),
                         entry.path("name").asText(),

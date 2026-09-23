@@ -45,6 +45,52 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
      */
     static final int ATTEMPTS_PER_BUDGET = 4;
 
+    /**
+     * Scheduler parameter: how many minutes BEFORE the listing started the checkpoint may
+     * reach. A folder listing is not a snapshot: a file added or moved in while the pages are
+     * being read, at a name position the marker or cursor has already passed, is not in this
+     * listing. Capping the checkpoint at (listing start − this allowance) keeps every file
+     * modified around the listing above the checkpoint, so the next listing offers it. What
+     * the cap cannot reach is a file moved in with a modification time older than the cap —
+     * a limit of any modification-time watermark, and one this connector always had.
+     */
+    static final String PARAM_CHECKPOINT_LAG_MINUTES = "boxCheckpointLagMinutes";
+    static final int DEFAULT_CHECKPOINT_LAG_MINUTES = 5;
+    static final int MAX_CHECKPOINT_LAG_MINUTES = 30 * 24 * 60;
+
+    /** The clock the cap is taken from; tests fix it. */
+    java.time.Clock clock = java.time.Clock.systemUTC();
+
+    /**
+     * A source timestamp as an ISO-8601 UTC instant string, so that every comparison in this
+     * orchestrator — against the checkpoint, the cap and each other — is one of strings that
+     * sort in time order. Box writes RFC 3339 with an offset, and two offsets do not sort
+     * as strings. Unreadable → null, which never covers and never advances (fail closed).
+     */
+    static String utcInstant(String sourceTimestamp) {
+        if (sourceTimestamp == null || sourceTimestamp.isBlank()) return null;
+        try {
+            return utcInstant(java.time.OffsetDateTime.parse(sourceTimestamp).toInstant());
+        } catch (java.time.format.DateTimeParseException unreadable) {
+            logger.warn("Box timestamp '{}' is not RFC 3339; the file will be offered on every poll and never named by the checkpoint", sourceTimestamp);
+            return null;
+        }
+    }
+
+    /**
+     * Fixed-width UTC form ({@code uuuu-MM-ddTHH:mm:ss.SSSSSSSSSZ}), so that the strings compare
+     * in time order whatever fraction of a second the source wrote. {@code Instant.toString()}
+     * drops a zero fraction, and "…:00Z" then sorts AFTER "…:00.5Z" ('Z' > '.'): a file half a
+     * second newer than the checkpoint was read as older and skipped.
+     */
+    static final java.time.format.DateTimeFormatter CANONICAL_INSTANT = java.time.format.DateTimeFormatter
+            .ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSSSSSSSS'Z'").withZone(java.time.ZoneOffset.UTC);
+
+    static String utcInstant(java.time.Instant instant) {
+        return CANONICAL_INSTANT.format(instant);
+    }
+
+
     private static int intParam(Map<String, String> params, String name, int fallback, int minimum, int maximum) {
         String raw = params == null ? null : params.get(name);
         if (raw == null || raw.isBlank()) return fallback;
@@ -80,8 +126,10 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
         if (token == null) return new FetchResult(0, 0, List.of("No token for Box connector"));
 
         int maxRequests;
+        int lagMinutes;
         try {
             maxRequests = intParam(params, PARAM_MAX_LIST_REQUESTS, BoxConnectorAdapter.DEFAULT_MAX_LIST_REQUESTS, 1, MAX_LIST_REQUESTS);
+            lagMinutes = intParam(params, PARAM_CHECKPOINT_LAG_MINUTES, DEFAULT_CHECKPOINT_LAG_MINUTES, 0, MAX_CHECKPOINT_LAG_MINUTES);
         } catch (IllegalArgumentException badParameter) {
             // Not a connector failure and not the default either: guessing the default would
             // silently ignore what the operator wrote. Reported, and nothing is read.
@@ -94,17 +142,22 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
         try {
             var box = adapterFactory.apply(token);
             String stored = checkpointManager.loadSimpleCheckpoint(profile.getProfileId(), "box." + folderId);
-            jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint checkpoint =
+            jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint parsed =
                     jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.parse(stored);
+            // Checkpoints written before this batch carried the source's own timestamp string
+            // (Box writes RFC 3339 with an offset); every comparison below is on UTC instants.
+            jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint checkpoint = parsed.at() == null ? parsed
+                    : new jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint(utcInstant(parsed.at()), parsed.idsAt());
             // The WHOLE folder (R107). A listing stopped at the per-run limit was the first N
             // names — Box does not list by modification time — so every file after them
             // was never listed on any poll, and the checkpoint raised from the files that were
             // seen excluded any of them modified earlier for ever.
+            java.time.Instant listingStartedAt = clock.instant();
             BoxConnectorAdapter.FileListing listing = box.listAllFiles(folderId, maxRequests);
             fetched = listing.files().size();
             List<BoxConnectorAdapter.BoxFile> candidates = new ArrayList<>();
             for (var file : listing.files()) {
-                if (checkpoint.covers(file.modifiedAt(), file.id())) {
+                if (checkpoint.covers(utcInstant(file.modifiedAt()), file.id())) {
                     skipped++;
                     continue;
                 }
@@ -112,7 +165,7 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
             }
             // Oldest first, so that what a budget leaves for the next poll is always NEWER than
             // what it took and the checkpoint can move without passing it.
-            candidates.sort(java.util.Comparator.comparing((BoxConnectorAdapter.BoxFile f) -> f.modifiedAt(),
+            candidates.sort(java.util.Comparator.comparing((BoxConnectorAdapter.BoxFile f) -> utcInstant(f.modifiedAt()),
                             java.util.Comparator.nullsLast(java.util.Comparator.<String>naturalOrder()))
                     .thenComparing(f -> f.id(), java.util.Comparator.nullsLast(java.util.Comparator.<String>naturalOrder())));
 
@@ -169,7 +222,17 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
 
                 InputStream content = null;
                 try {
-                    content = box.downloadFile(file.id());
+                    try {
+                        content = box.downloadFile(file.id());
+                    } catch (Exception downloadFailed) {
+                        // The source item was never read: the download is where this arm's
+                        // failures come from, and a never-read row is replayable by re-fetching.
+                        FetchSupport.addError(errors, "Box file " + file.id() + ": " + downloadFailed.getMessage());
+                        if (!fetchSupport.saveSourceNeverReadToDlq(req, "Box file " + file.id() + ": " + downloadFailed.getMessage())) {
+                            unrecordedFailures++;
+                        }
+                        continue;
+                    }
                     req.setContentStream(content);
 
                     ExternalIngestResult result = canonicalImportService.execute(callContext, req);
@@ -178,7 +241,7 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
                         // isSuccess()==true (no errors), so it would be
                         // miscounted as imported otherwise.
                         if (result.skipped()) skipped++; else imported++;
-                        settled.add(new jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.Mark(file.modifiedAt(), file.id()));
+                        settled.add(new jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.Mark(utcInstant(file.modifiedAt()), file.id()));
                     } else {
                         FetchSupport.addError(errors, "Box " + file.id() + ": " + String.join(", ", result.errors()));
                         // The import ran and answered that it did not import. Recorded, or the
@@ -190,14 +253,14 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
                         }
                     }
                 } catch (Exception e) {
-                    // Download/processing failed before execute()'s own DLQ net.
-                    // DLQ the item so the checkpoint advancing past it (when a
-                    // newer file in this batch succeeds) does not silently lose it.
+                    // The download succeeded and the import threw: the source item WAS read,
+                    // so the row records a miss, not a never-read item — a never-read row
+                    // replayed as "nothing to import" would have been taken for a resolution
+                    // (review, P1). execute()'s own net may have written this row already
+                    // (same id, updated in place); its answer here is what decides whether the
+                    // failure is recorded.
                     FetchSupport.addError(errors, "Box file " + file.id() + ": " + e.getMessage());
-                    // saveSourceNeverReadToDlq answers whether the row was WRITTEN; saveToDlq
-                    // swallowed that, and a failure whose record did not land would have been
-                    // passed by the checkpoint as if it were recorded (review, P1).
-                    if (!fetchSupport.saveSourceNeverReadToDlq(req, "Box file " + file.id() + ": " + e.getMessage())) {
+                    if (!fetchSupport.saveSourceReadToDlq(req, "Box file " + file.id() + ": " + e.getMessage())) {
                         unrecordedFailures++;
                     }
                 } finally {
@@ -229,8 +292,21 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
                 FetchSupport.addError(errors, unrecordedFailures + " Box failure(s) could not be dead-lettered; "
                         + "the checkpoint holds so that they are offered again");
             }
-            String next = unrecordedFailures > 0 ? null : checkpoint.after(settled).encode();
-            if (next != null && !next.equals(stored)) {
+            // The cap: nothing modified within `lagMinutes` of the listing's start is named,
+            // so a file added or moved in while the pages were being read — at a position the
+            // marker had passed — is still above the checkpoint next time (review, P1). Marks
+            // above the cap are simply not handed to the checkpoint: those files are offered
+            // again next poll and the import service's dedupe answers for them.
+            String cap = utcInstant(listingStartedAt.minus(lagMinutes, java.time.temporal.ChronoUnit.MINUTES));
+            List<jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.Mark> nameable = new ArrayList<>();
+            for (var mark : settled) {
+                if (mark.at() != null && mark.at().compareTo(cap) <= 0) nameable.add(mark);
+            }
+            // Saved only when the POSITION moved: a legacy checkpoint read in the source's own
+            // timestamp form encodes differently after normalisation without having moved.
+            String before = checkpoint.encode();
+            String next = unrecordedFailures > 0 ? null : checkpoint.after(nameable).encode();
+            if (next != null && !next.equals(before)) {
                 checkpointManager.saveSimpleCheckpoint(profile.getProfileId(), "box." + folderId, next);
             }
         } catch (jp.aegif.nemaki.rest.controller.IntegrationSettingsService

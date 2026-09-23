@@ -86,6 +86,7 @@ public class BoxConnectorAdapter {
      */
     public FileListing listAllFiles(String folderId, int maxRequests) throws Exception {
         List<BoxFile> allFiles = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
         String marker = null;
         for (int request = 0; request < maxRequests; request++) {
             String url = apiBase + "/folders/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(folderId)
@@ -99,7 +100,12 @@ public class BoxConnectorAdapter {
                 throw new RuntimeException("Box answered the folder listing without an entries array on request "
                         + (request + 1) + ", so how many items the folder holds is unknown");
             }
+            int newOnThisPage = 0;
             for (JsonNode entry : entries) {
+                // An item this listing already holds is not listed twice: a page that repeats
+                // part of the previous one still makes progress by what it adds.
+                if (!seen.add(entry.path("id").asText())) continue;
+                newOnThisPage++;
                 if (!"file".equals(entry.path("type").asText())) continue;
                 allFiles.add(new BoxFile(
                         entry.path("id").asText(),
@@ -114,9 +120,13 @@ public class BoxConnectorAdapter {
             if (nextMarker.isEmpty()) {
                 return new FileListing(allFiles, true, null);
             }
-            if (nextMarker.equals(marker)) {
-                return new FileListing(allFiles, false, "Box returned the same marker twice (" + marker
-                        + "), so the listing cannot move forward");
+            // A marker that moves but returns nothing this listing has not already seen is not
+            // progress: read as one, an API that repeats a page would spend the cap on repeats
+            // and — offering a marker at the end — be reported as cut, or worse, run out of
+            // cap on the last repeat and be reported whole (review, P1).
+            if (nextMarker.equals(marker) || newOnThisPage == 0) {
+                return new FileListing(allFiles, false, "Box offered marker " + nextMarker
+                        + " after a page that added nothing this listing had not seen, so the listing cannot move forward");
             }
             marker = nextMarker;
         }

@@ -83,6 +83,7 @@ class FileShareFoldersAreReadWholeTest {
     private static volatile List<String> failingDownloads = List.of();
 
     private static final AtomicInteger BOX_LIST_CALLS = new AtomicInteger();
+    private static volatile String lastBoxListQuery = "";
     private static final AtomicInteger DROPBOX_LIST_CALLS = new AtomicInteger();
 
     @BeforeAll
@@ -90,7 +91,10 @@ class FileShareFoldersAreReadWholeTest {
         previousAllowLocalhost = System.getProperty("nemaki.ingest.allowLocalhost");
         System.setProperty("nemaki.ingest.allowLocalhost", "true");
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.createContext("/2.0/folders", exchange -> boxItems.respond(exchange, BOX_LIST_CALLS.incrementAndGet()));
+        server.createContext("/2.0/folders", exchange -> {
+            lastBoxListQuery = String.valueOf(exchange.getRequestURI().getQuery());
+            boxItems.respond(exchange, BOX_LIST_CALLS.incrementAndGet());
+        });
         server.createContext("/2.0/files", exchange -> {
             // /2.0/files/{id}/content
             String[] parts = exchange.getRequestURI().getPath().split("/");
@@ -135,6 +139,7 @@ class FileShareFoldersAreReadWholeTest {
         failingDownloads = List.of();
         dlqWritable = true;
         failingImports = List.of();
+        throwingImports = List.of();
         boxItems = (exchange, n) -> json(exchange, 200, boxPage(null, "f-1@2026-01-01T00:00:00-00:00"));
         dropboxList = (exchange, n) -> json(exchange, 200, dropboxPage(false, null, "d-1@2026-01-01T00:00:00Z"));
     }
@@ -202,6 +207,10 @@ class FileShareFoldersAreReadWholeTest {
     private CanonicalImportService importService;
     private final List<String> importedIds = new ArrayList<>();
     private final List<String> dlqReasons = new ArrayList<>();
+    /** The reasons handed to saveSourceReadToDlq — the item WAS read — as opposed to never-read. */
+    private final List<String> dlqReadReasons = new ArrayList<>();
+    /** Ids whose import THROWS (as opposed to answering an error). */
+    private List<String> throwingImports = List.of();
     /** What the dead-letter store answers when asked to record a failure. */
     private boolean dlqWritable = true;
     /** Ids whose import answers an error result (not an exception). */
@@ -213,6 +222,7 @@ class FileShareFoldersAreReadWholeTest {
         importService = mock(CanonicalImportService.class);
         importedIds.clear();
         dlqReasons.clear();
+        dlqReadReasons.clear();
         lenient().when(fetchSupport.resolvePasswordOrRefuse(any())).thenReturn("secret-token");
         lenient().doNothing().when(fetchSupport).throttle(anyLong());
         lenient().doAnswer(call -> {
@@ -221,6 +231,7 @@ class FileShareFoldersAreReadWholeTest {
         }).when(fetchSupport).saveSourceNeverReadToDlq(any(), anyString());
         lenient().doAnswer(call -> {
             dlqReasons.add(call.getArgument(1));
+            dlqReadReasons.add(call.getArgument(1));
             return dlqWritable;
         }).when(fetchSupport).saveSourceReadToDlq(any(), anyString());
         lenient().when(checkpointManager.loadSimpleCheckpoint(anyString(), anyString())).thenReturn(null);
@@ -228,6 +239,9 @@ class FileShareFoldersAreReadWholeTest {
             ExternalIngestRequest req = call.getArgument(1);
             if (failingImports.contains(req.getSourceObjectId())) {
                 return ExternalIngestResult.error("r", "refused by the import service");
+            }
+            if (throwingImports.contains(req.getSourceObjectId())) {
+                throw new RuntimeException("the import service threw after reading the content");
             }
             importedIds.add(req.getSourceObjectId());
             return new ExternalIngestResult("r", "obj-1", "1.0", false, false, false, null, null,
@@ -315,12 +329,14 @@ class FileShareFoldersAreReadWholeTest {
         FetchResult result = box().execute(null, profile(), connector("box"), Map.of(), 2);
 
         assertEquals(2, BOX_LIST_CALLS.get(), "the folder was not read past its first page");
+        assertTrue(lastBoxListQuery.contains("usemarker=true"), "Box requires usemarker=true for marker paging: " + lastBoxListQuery);
+        assertTrue(lastBoxListQuery.contains("marker=m-2"), "the second request did not carry the marker: " + lastBoxListQuery);
         assertEquals(1001, result.fetched(), result.toString());
         assertEquals(List.of("f-0999", "f-1000"), importedIds, "the budget did not take the oldest files");
         assertFalse(result.sawEverything(), "999 files were left for the next poll: " + result);
         assertTrue(result.incompleteReads().get(0).contains("left for the next poll"), result.incompleteReads().get(0));
         assertFalse(result.hasErrors(), result.errors().toString());
-        verify(checkpointManager).saveSimpleCheckpoint("p-share", "box.0", "2026-01-02T00:00:00-00:00|f-1000");
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "box.0", "2026-01-02T00:00:00.000000000Z|f-1000");
     }
 
     /** The next poll, with that checkpoint, takes the rest and moves on. */
@@ -331,14 +347,14 @@ class FileShareFoldersAreReadWholeTest {
                 "f-b@2026-01-02T00:00:00-00:00", "f-c@2026-01-04T00:00:00-00:00",
                 "f-d@2026-01-01T00:00:00-00:00", "f-e@2026-01-03T00:00:00-00:00"));
         BoxFetchOrchestrator orchestrator = box();
-        checkpointIs("2026-01-02T00:00:00-00:00|f-b");
+        checkpointIs("2026-01-02T00:00:00-00:00|f-b"); // the source's own form, normalised on read
 
         FetchResult result = orchestrator.execute(null, profile(), connector("box"), Map.of(), 10);
 
         assertEquals(List.of("f-e", "f-c", "f-a"), importedIds);
         assertEquals(2, result.skipped(), "f-d (older) and f-b (named) should be skipped: " + result);
         assertTrue(result.sawEverything(), result.incompleteReads().toString());
-        verify(checkpointManager).saveSimpleCheckpoint("p-share", "box.0", "2026-01-05T00:00:00-00:00|f-a");
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "box.0", "2026-01-05T00:00:00.000000000Z|f-a");
     }
 
     /**
@@ -389,7 +405,7 @@ class FileShareFoldersAreReadWholeTest {
         assertTrue(dlqReasons.get(0).contains("f-bad"), dlqReasons.get(0));
         assertEquals(List.of("f-ok", "f-new"), importedIds);
         assertTrue(result.hasErrors(), result.toString());
-        verify(checkpointManager).saveSimpleCheckpoint("p-share", "box.0", "2026-01-02T00:00:00-00:00|f-new");
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "box.0", "2026-01-02T00:00:00.000000000Z|f-new");
     }
 
     /** A cap parameter that is not a number is reported, not replaced by the default. */
@@ -423,7 +439,7 @@ class FileShareFoldersAreReadWholeTest {
         assertTrue(dlqReasons.get(0).contains("f-bad"), dlqReasons.get(0));
         assertEquals(List.of("f-good"), importedIds);
         assertTrue(result.hasErrors(), result.toString());
-        verify(checkpointManager).saveSimpleCheckpoint("p-share", "box.0", "2026-01-02T00:00:00-00:00|f-good");
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "box.0", "2026-01-02T00:00:00.000000000Z|f-good");
     }
 
     /**
@@ -466,6 +482,107 @@ class FileShareFoldersAreReadWholeTest {
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }
 
+    /**
+     * A marker that moves but returns a page this listing has already seen is not progress.
+     *
+     * <p>Read as progress, an API that repeats a page (or cycles A→B→A→B, which "the same
+     * marker twice" does not catch) would spend the cap on repeats and be reported cut — or
+     * run out of cap on the last repeat and be reported whole with files never reached.
+     * Refused as a cut, nothing is imported and the checkpoint holds.
+     */
+    @Test
+    @DisplayName("Box: a marker that moves but returns nothing new is a cut, not progress")
+    void boxAMarkerThatMovesButAddsNothingIsACut() {
+        boxItems = (exchange, n) -> json(exchange, 200, boxPage("m-" + (n + 1),
+                "f-a@2026-01-05T00:00:00-00:00", "f-b@2026-01-02T00:00:00-00:00"));
+        FetchResult result = box().execute(null, profile(), connector("box"),
+                Map.of(BoxFetchOrchestrator.PARAM_MAX_LIST_REQUESTS, "10"), 10);
+
+        assertEquals(2, BOX_LIST_CALLS.get(), "the repeated page was not recognised on the second request");
+        assertFalse(result.sawEverything(), result.toString());
+        assertTrue(result.incompleteReads().get(0).contains("nothing this listing had not seen"), result.incompleteReads().get(0));
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /**
+     * A file modified within the lag allowance of the listing's start is imported but not
+     * named by the checkpoint.
+     *
+     * <p>A folder listing is not a snapshot: a file added or moved in while the pages are
+     * being read, at a position the marker has passed, is not in this listing. Keeping every
+     * file modified around the listing above the checkpoint means the next listing offers it.
+     */
+    @Test
+    @DisplayName("Box: a file modified within the lag allowance of the listing start is imported but not named")
+    void boxAFileModifiedAroundTheListingIsNotNamed() {
+        boxItems = (exchange, n) -> json(exchange, 200, boxPage(null,
+                "f-old@2026-09-24T09:00:00-00:00", "f-fresh@2026-09-24T09:58:00-00:00"));
+        BoxFetchOrchestrator orchestrator = box();
+        orchestrator.clock = java.time.Clock.fixed(java.time.Instant.parse("2026-09-24T10:00:00Z"), java.time.ZoneOffset.UTC);
+
+        FetchResult result = orchestrator.execute(null, profile(), connector("box"), Map.of(), 10);
+
+        assertEquals(List.of("f-old", "f-fresh"), importedIds, "both files should be imported");
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        // 09:58 is inside the default 5-minute allowance before 10:00; 09:00 is not.
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "box.0", "2026-09-24T09:00:00.000000000Z|f-old");
+    }
+
+    /**
+     * An import that THROWS after the content was read is recorded as a read item, not a
+     * never-read one — a never-read row replayed as "nothing to import" would be taken for a
+     * resolution.
+     */
+    @Test
+    @DisplayName("Box: an import that throws after reading the content is recorded as read, not never-read")
+    void boxAnImportThatThrowsIsRecordedAsRead() {
+        throwingImports = List.of("f-bad");
+        boxItems = (exchange, n) -> json(exchange, 200, boxPage(null, "f-bad@2026-01-01T00:00:00-00:00",
+                "f-good@2026-01-02T00:00:00-00:00"));
+        FetchResult result = box().execute(null, profile(), connector("box"), Map.of(), 10);
+
+        assertEquals(1, dlqReadReasons.size(), "the thrown import was not recorded as a READ item: " + dlqReasons);
+        assertTrue(dlqReadReasons.get(0).contains("f-bad"), dlqReadReasons.get(0));
+        assertEquals(List.of("f-good"), importedIds);
+        assertTrue(result.hasErrors(), result.toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "box.0", "2026-01-02T00:00:00.000000000Z|f-good");
+    }
+
+    /** A page that repeats part of the previous one lists each item once and still counts as progress. */
+    @Test
+    @DisplayName("Box: an item repeated on a later page is listed once, and the page still counts as progress")
+    void boxARepeatedItemIsListedOnce() {
+        boxItems = (exchange, n) -> json(exchange, 200, n == 1
+                ? boxPage("m-2", "f-a@2026-01-03T00:00:00-00:00", "f-b@2026-01-01T00:00:00-00:00")
+                : boxPage(null, "f-b@2026-01-01T00:00:00-00:00", "f-c@2026-01-02T00:00:00-00:00"));
+        FetchResult result = box().execute(null, profile(), connector("box"), Map.of(), 10);
+
+        assertEquals(2, BOX_LIST_CALLS.get());
+        assertEquals(3, result.fetched(), "the repeated item was listed twice: " + result);
+        assertEquals(List.of("f-b", "f-c", "f-a"), importedIds);
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "box.0", "2026-01-03T00:00:00.000000000Z|f-a");
+    }
+
+    /**
+     * A fraction of a second orders by time, not by string: {@code Instant.toString()} drops a
+     * zero fraction, and "…:00Z" sorts AFTER "…:00.5Z" ('Z' > '.'), so a file half a second
+     * newer than the checkpoint was read as older and skipped (fail-open).
+     */
+    @Test
+    @DisplayName("Box: a file half a second newer than the checkpoint is newer, whatever the strings look like")
+    void boxAFractionOfASecondOrdersByTimeNotByString() {
+        boxItems = (exchange, n) -> json(exchange, 200, boxPage(null, "f-x@2026-01-02T00:00:00.500-00:00"));
+        BoxFetchOrchestrator orchestrator = box();
+        checkpointIs("2026-01-02T00:00:00Z|f-b");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector("box"), Map.of(), 10);
+
+        assertEquals(List.of("f-x"), importedIds, "a file newer by half a second was read as older: " + result);
+        assertEquals(0, result.skipped(), result.toString());
+    }
+
     // ── Dropbox ───────────────────────────────────────────────────
 
     @Test
@@ -485,7 +602,7 @@ class FileShareFoldersAreReadWholeTest {
         assertEquals(5, result.fetched(), result.toString());
         assertEquals(List.of("d-d", "d-b"), importedIds, "the budget did not take the oldest files");
         assertFalse(result.sawEverything(), result.toString());
-        verify(checkpointManager).saveSimpleCheckpoint("p-share", "dropbox", "2026-01-02T00:00:00Z|d-b");
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "dropbox", "2026-01-02T00:00:00.000000000Z|d-b");
     }
 
     @Test
@@ -502,7 +619,7 @@ class FileShareFoldersAreReadWholeTest {
         assertEquals(List.of("d-e", "d-c", "d-a"), importedIds);
         assertEquals(2, result.skipped(), result.toString());
         assertTrue(result.sawEverything(), result.incompleteReads().toString());
-        verify(checkpointManager).saveSimpleCheckpoint("p-share", "dropbox", "2026-01-05T00:00:00Z|d-a");
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "dropbox", "2026-01-05T00:00:00.000000000Z|d-a");
     }
 
     @Test
@@ -518,6 +635,93 @@ class FileShareFoldersAreReadWholeTest {
         assertTrue(result.incompleteReads().get(0).contains("dropboxListMaxRequests"), result.incompleteReads().get(0));
         assertTrue(importedIds.isEmpty(), importedIds.toString());
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("Dropbox: an import that answers an error is dead-lettered and not named by the checkpoint")
+    void dropboxAnImportThatAnswersAnErrorIsDeadLettered() {
+        failingImports = List.of("d-bad");
+        dropboxList = (exchange, n) -> json(exchange, 200, dropboxPage(false, null, "d-bad@2026-01-01T00:00:00Z",
+                "d-good@2026-01-02T00:00:00Z"));
+        FetchResult result = dropbox().execute(null, profile(), connector("dropbox"), Map.of(), 10);
+
+        assertEquals(1, dlqReasons.size(), "the refused import was not dead-lettered: " + dlqReasons);
+        assertTrue(dlqReasons.get(0).contains("d-bad"), dlqReasons.get(0));
+        assertEquals(List.of("d-good"), importedIds);
+        assertTrue(result.hasErrors(), result.toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "dropbox", "2026-01-02T00:00:00.000000000Z|d-good");
+    }
+
+    @Test
+    @DisplayName("Dropbox: a failure that could not be dead-lettered holds the checkpoint and is reported")
+    void dropboxAnUnrecordedFailureHoldsTheCheckpoint() {
+        dlqWritable = false;
+        failingDownloads = List.of("d-bad");
+        dropboxList = (exchange, n) -> json(exchange, 200, dropboxPage(false, null, "d-bad@2026-01-01T00:00:00Z",
+                "d-good@2026-01-02T00:00:00Z"));
+        FetchResult result = dropbox().execute(null, profile(), connector("dropbox"), Map.of(), 10);
+
+        assertEquals(List.of("d-good"), importedIds);
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("could not be dead-lettered")), result.errors().toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("Dropbox: a file modified within the lag allowance of the listing start is imported but not named")
+    void dropboxAFileModifiedAroundTheListingIsNotNamed() {
+        dropboxList = (exchange, n) -> json(exchange, 200, dropboxPage(false, null,
+                "d-old@2026-09-24T09:00:00Z", "d-fresh@2026-09-24T09:58:00Z"));
+        DropboxFetchOrchestrator orchestrator = dropbox();
+        orchestrator.clock = java.time.Clock.fixed(java.time.Instant.parse("2026-09-24T10:00:00Z"), java.time.ZoneOffset.UTC);
+
+        FetchResult result = orchestrator.execute(null, profile(), connector("dropbox"), Map.of(), 10);
+
+        assertEquals(List.of("d-old", "d-fresh"), importedIds);
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "dropbox", "2026-09-24T09:00:00.000000000Z|d-old");
+    }
+
+    @Test
+    @DisplayName("Dropbox: an import that throws after reading the content is recorded as read, not never-read")
+    void dropboxAnImportThatThrowsIsRecordedAsRead() {
+        throwingImports = List.of("d-bad");
+        dropboxList = (exchange, n) -> json(exchange, 200, dropboxPage(false, null, "d-bad@2026-01-01T00:00:00Z",
+                "d-good@2026-01-02T00:00:00Z"));
+        FetchResult result = dropbox().execute(null, profile(), connector("dropbox"), Map.of(), 10);
+
+        assertEquals(1, dlqReadReasons.size(), "the thrown import was not recorded as a READ item: " + dlqReasons);
+        assertTrue(dlqReadReasons.get(0).contains("d-bad"), dlqReadReasons.get(0));
+        assertEquals(List.of("d-good"), importedIds);
+        assertTrue(result.hasErrors(), result.toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "dropbox", "2026-01-02T00:00:00.000000000Z|d-good");
+    }
+
+    @Test
+    @DisplayName("Dropbox: an item repeated on a later page is listed once")
+    void dropboxARepeatedItemIsListedOnce() {
+        dropboxList = (exchange, n) -> json(exchange, 200, n == 1
+                ? dropboxPage(true, "c-2", "d-a@2026-01-03T00:00:00Z", "d-b@2026-01-01T00:00:00Z")
+                : dropboxPage(false, null, "d-b@2026-01-01T00:00:00Z", "d-c@2026-01-02T00:00:00Z"));
+        FetchResult result = dropbox().execute(null, profile(), connector("dropbox"), Map.of(), 10);
+
+        assertEquals(2, DROPBOX_LIST_CALLS.get());
+        assertEquals(3, result.fetched(), "the repeated item was listed twice: " + result);
+        assertEquals(List.of("d-b", "d-c", "d-a"), importedIds);
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "dropbox", "2026-01-03T00:00:00.000000000Z|d-a");
+    }
+
+    @Test
+    @DisplayName("Dropbox: a file half a second newer than the checkpoint is newer, whatever the strings look like")
+    void dropboxAFractionOfASecondOrdersByTimeNotByString() {
+        dropboxList = (exchange, n) -> json(exchange, 200, dropboxPage(false, null, "d-x@2026-01-02T00:00:00.500Z"));
+        DropboxFetchOrchestrator orchestrator = dropbox();
+        checkpointIs("2026-01-02T00:00:00Z|d-b");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector("dropbox"), Map.of(), 10);
+
+        assertEquals(List.of("d-x"), importedIds, "a file newer by half a second was read as older: " + result);
+        assertEquals(0, result.skipped(), result.toString());
     }
 
     /** A page without {@code has_more} is refused — read as false it was the end of the folder. */
