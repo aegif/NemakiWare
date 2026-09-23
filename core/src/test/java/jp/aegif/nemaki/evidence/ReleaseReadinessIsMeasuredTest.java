@@ -550,16 +550,17 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     /**
-     * The names of the test methods a test class runs, read by REFLECTION — {@code @Test},
-     * {@code @ParameterizedTest}, {@code @RepeatedTest}, {@code @TestFactory} and
-     * {@code @TestTemplate}, on the class and up its superclass chain — not by scanning source
-     * lines. A six-line window, then a walk up through "annotation-looking" lines, each let a
-     * sibling's {@code @Test} stand for a helper's, or refused a genuine lock whose javadoc did
-     * not look the part (reviews, fortieth and forty-first rounds). Interfaces are walked too
-     * (a default test is run). A disabled test fails the count, as in
-     * {@link #theReadinessVerifierCountIsTheVerifiers}; so does a private one (not run), a
-     * {@code @Nested} inner class (run under another class), and two tests of one name (the row
-     * names locks by method name).
+     * The names of the test methods a test class RUNS, as JUnit itself discovers them: the
+     * Platform launcher is asked to discover the class, and every identifier backed by a
+     * method — a test, or the container a {@code @ParameterizedTest} / {@code @TestTemplate}
+     * expands into — is one lock. Reading source lines, then re-deriving Jupiter's rules by
+     * reflection (private methods, inherited and default methods, overrides, nested classes),
+     * each left a form JUnit would run and this count would not, or the reverse; four review
+     * rounds found one apiece. Discovery is the rule, so nothing is re-derived here.
+     *
+     * <p>Two refusals remain the lock's own: a {@code @Disabled} method or class (discovered
+     * but not run) fails the count, and two runnable methods of one name are refused, because
+     * the R59 row names locks by method name and could not tell them apart.
      */
     private static java.util.Set<String> testMethodsOf(String className) {
         Class<?> type;
@@ -570,47 +571,38 @@ class ReleaseReadinessIsMeasuredTest {
         }
         assertFalse(type.isAnnotationPresent(org.junit.jupiter.api.Disabled.class),
                 "a disabled test class makes this count wrong: " + className);
-        for (Class<?> inner : type.getDeclaredClasses()) {
-            assertFalse(inner.isAnnotationPresent(org.junit.jupiter.api.Nested.class),
-                    "a @Nested class runs tests this count does not see: " + inner.getName());
-        }
+        org.junit.platform.launcher.LauncherDiscoveryRequest request =
+                org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder.request()
+                        .selectors(org.junit.platform.engine.discovery.DiscoverySelectors.selectClass(type))
+                        .build();
+        org.junit.platform.launcher.TestPlan plan =
+                org.junit.platform.launcher.core.LauncherFactory.create().discover(request);
         java.util.Set<String> names = new TreeSet<>();
-        java.util.List<Class<?>> levels = new java.util.ArrayList<>();
-        for (Class<?> level = type; level != null && level != Object.class; level = level.getSuperclass()) {
-            levels.add(level);
-            collectInterfaces(level, levels);
-        }
-        for (Class<?> level : levels) {
-            for (java.lang.reflect.Method m : level.getDeclaredMethods()) {
-                boolean test = m.isAnnotationPresent(Test.class)
-                        || m.isAnnotationPresent(org.junit.jupiter.params.ParameterizedTest.class)
-                        || m.isAnnotationPresent(org.junit.jupiter.api.RepeatedTest.class)
-                        || m.isAnnotationPresent(org.junit.jupiter.api.TestFactory.class)
-                        || m.isAnnotationPresent(org.junit.jupiter.api.TestTemplate.class);
-                if (!test) continue;
-                // Jupiter does not run a private test method; counting it would keep the row's
-                // number right for a lock that no longer runs (review, P3).
-                assertFalse(java.lang.reflect.Modifier.isPrivate(m.getModifiers()),
-                        "a private test method is not run and must not be counted: " + level.getName() + "#" + m.getName());
-                assertFalse(m.isAnnotationPresent(org.junit.jupiter.api.Disabled.class),
-                        "a disabled test makes this count wrong: " + level.getName() + "#" + m.getName());
-                // The row names locks by method name alone, so two runnable tests of one name
-                // (overloads) could not be told apart by it — refused rather than collapsed.
-                assertTrue(names.add(m.getName()),
-                        "two test methods share a name the R59 row could not tell apart: " + level.getName() + "#" + m.getName());
+        for (org.junit.platform.launcher.TestIdentifier root : plan.getRoots()) {
+            for (org.junit.platform.launcher.TestIdentifier id : plan.getDescendants(root)) {
+                if (id.getSource().isEmpty()
+                        || !(id.getSource().get() instanceof org.junit.platform.engine.support.descriptor.MethodSource)) {
+                    continue;
+                }
+                org.junit.platform.engine.support.descriptor.MethodSource source =
+                        (org.junit.platform.engine.support.descriptor.MethodSource) id.getSource().get();
+                // Only identifiers whose parent is a class (or the engine): a parameterized
+                // test's invocations, if any were discovered, sit under their own template.
+                boolean parentIsAClass = plan.getParent(id)
+                        .flatMap(org.junit.platform.launcher.TestIdentifier::getSource)
+                        .map(s -> s instanceof org.junit.platform.engine.support.descriptor.ClassSource)
+                        .orElse(false);
+                if (!parentIsAClass) continue;
+                java.lang.reflect.Method method = source.getJavaMethod();
+                assertFalse(method.isAnnotationPresent(org.junit.jupiter.api.Disabled.class),
+                        "a disabled test makes this count wrong: " + source.getClassName() + "#" + method.getName());
+                assertTrue(names.add(method.getName()),
+                        "two test methods share a name the R59 row could not tell apart: "
+                                + source.getClassName() + "#" + method.getName());
             }
         }
+        assertFalse(names.isEmpty(), "JUnit discovered no test in " + className + ", so this counted nothing");
         return names;
-    }
-
-    /** The interfaces a class implements, transitively — a default {@code @Test} there is run too. */
-    private static void collectInterfaces(Class<?> type, java.util.List<Class<?>> into) {
-        for (Class<?> iface : type.getInterfaces()) {
-            if (!into.contains(iface)) {
-                into.add(iface);
-                collectInterfaces(iface, into);
-            }
-        }
     }
 
     @Test
