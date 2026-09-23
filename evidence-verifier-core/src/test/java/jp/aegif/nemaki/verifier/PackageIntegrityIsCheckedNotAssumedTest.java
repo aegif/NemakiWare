@@ -1925,11 +1925,11 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         // readable LEADING segment already excludes a payload it cannot reach (so the
         // unreadable one has to come first, or the scope arm is never what decides). Both
         // were found by a control that did not fire — the example, not the arm.
-        // The component count MATCHES here (three components from the package root:
-        // representations / rep2 / data / smuggled.bin is four, and "%FF/rep2%2fdata/
-        // smuggled.bin" under the package root is four too), so the count cannot be what
-        // excludes it — the SCOPE is. Without that, the control aimed at the scope stopped
-        // firing as soon as the count was added (measured).
+        // The component count MATCHES here — "%FF/rep2%2fdata/smuggled.bin" is four
+        // components (the %2f adds one), and so is representations/rep2/data/smuggled.bin
+        // under the package root — so the count cannot be what excludes it; the SCOPE is.
+        // Without that, the control aimed at the scope stopped firing as soon as the count
+        // was added (measured).
         sideways.put(ROOT + "representations/rep1/METS.xml",
                 metsWithLocType("URN", "%FF/rep2%2fdata/smuggled.bin", "data/minutes.txt"));
         sideways.put(ROOT + "representations/rep1/data/minutes.txt", payload);
@@ -2015,6 +2015,23 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                 "a reference that can only name ONE component at the zip root covered for a "
                         + "payload five directories down: " + aboveTheRoot.detail());
         assertTrue(aboveTheRoot.detail().contains("smuggled.bin"), aboveTheRoot.detail());
+
+        // A MALFORMED escape does not make the shape unknown either. "%2e%2e/%3Z.bin" is
+        // unreadable and refused, and it still names exactly one component at the zip root:
+        // giving up on the count for it sent the answer back to "could name anything" (Codex,
+        // twenty-fourth review, P1). A TRAILING "%" would not do — the scan needs two more
+        // characters to look at, so it never reaches the guard this measures (the control did
+        // not fire on that spelling).
+        Map<String, String> malformed = new LinkedHashMap<>(goodPackage(payload));
+        malformed.put(smuggled, "content nobody committed to");
+        malformed.put(ROOT + "METS.xml", metsWithLocType("URN", "%2e%2e/%3Z.bin",
+                "representations/rep1/data/minutes.txt"));
+        Outcome.Check brokenEscape = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "prefix-malformed.zip", malformed)).entries()), "mets closure");
+        assertEquals(Outcome.FAILED, brokenEscape.outcome(),
+                "a malformed escape made the reference's SHAPE unknown, so a locator naming "
+                        + "one component at the zip root covered for a payload five "
+                        + "directories down: " + brokenEscape.detail());
 
         // AND THE ARM IS REACHABLE. A non-URL locator that DOES resolve to the unnamed payload
         // is the case the ambiguity answer exists for; without this the narrowing could be

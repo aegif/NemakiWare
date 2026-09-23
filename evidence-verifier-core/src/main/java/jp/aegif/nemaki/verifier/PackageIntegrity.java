@@ -1050,9 +1050,6 @@ public final class PackageIntegrity {
         // name a single component at the zip root (Codex, twenty-third review, P1, against
         // this verifier's own withdrawal of the same finding one round earlier).
         int components = componentsIn(reference);
-        if (components < 0) {
-            return true;
-        }
         int slash = metsPath.lastIndexOf('/');
         String directory = slash < 0 ? "" : metsPath.substring(0, slash + 1);
         for (boolean plusIsSpace : new boolean[] { false, true }) {
@@ -1087,22 +1084,27 @@ public final class PackageIntegrity {
      * or a {@code %2F} triplet, and a triplet is visible whether or not the bytes around it
      * form valid UTF-8. An overlong encoding of {@code /} does not survive the strict decoder,
      * so it cannot arrive by that door either.
+     *
+     * <p>A MALFORMED escape does not stop the count. {@code %3Z} and a trailing {@code %} make
+     * the reference's CONTENT unreadable, not its shape: neither is a {@code %2F}, so neither
+     * adds a component. Returning "unknown" for them sent a reference that can only name one
+     * component at the zip root back to "could name anything", which is the over-refusal this
+     * counting exists to remove (Codex, twenty-fourth review, P1).
      */
     private static int componentsIn(String reference) {
         int components = 0;
         for (String segment : reference.split("/", -1)) {
             components++;
-            for (int at = 0; at < segment.length(); at++) {
+            for (int at = 0; at + 2 < segment.length(); at++) {
                 if (segment.charAt(at) != '%') {
                     continue;
-                }
-                if (at + 2 >= segment.length()) {
-                    return -1;
                 }
                 int high = Character.digit(segment.charAt(at + 1), 16);
                 int low = Character.digit(segment.charAt(at + 2), 16);
                 if (high < 0 || low < 0) {
-                    return -1;
+                    // Not a triplet at all, so not a separator. The '%' is read as itself and
+                    // the scan carries on from the next character.
+                    continue;
                 }
                 if (high * 16 + low == '/') {
                     components++;

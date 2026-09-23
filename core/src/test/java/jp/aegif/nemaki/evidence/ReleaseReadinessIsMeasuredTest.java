@@ -182,8 +182,9 @@ class ReleaseReadinessIsMeasuredTest {
      *
      * <p>A LOWER BOUND, and the document says so beside the figure. An exact lock is not
      * available: {@code @ParameterizedTest} runs one annotation many times, so a source scan
-     * counts 7,225 where the suite runs 7,365, and replicating the invocation count would mean
-     * running the suite from inside it. What this catches is the gross drift — a figure left
+     * counts fewer than the suite runs, and replicating the invocation count would mean
+     * running the suite from inside it. The figures are deliberately NOT written here: two
+     * that were are what both reviewers found stale the next round. What this catches is the gross drift — a figure left
      * behind while hundreds of tests were added — not the off-by-one that a stale edit leaves
      * (Codex, twenty-second review, P3, and the limit is recorded rather than papered over).
      */
@@ -200,12 +201,19 @@ class ReleaseReadinessIsMeasuredTest {
                     continue;
                 }
                 List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
-                // The GROUPS surefire excludes as well as the names. core/pom.xml sets
-                // excludedGroups=atlas-integration, so a @Tag("atlas-integration") class does
-                // not run — counting its tests put 23 invocations into a LOWER bound the real
-                // suite can never reach, and the lock would then reject a correct record
-                // (Codex, twenty-third review, P2).
-                if (lines.stream().anyMatch(l -> l.contains("@Tag(\"atlas-integration\")"))) {
+                // The GROUPS surefire excludes as well as the names: core/pom.xml sets
+                // excludedGroups to the atlas integration tag, so such a class does not run,
+                // and counting its tests put invocations into a LOWER bound the real suite can
+                // never reach (Codex, twenty-third review, P2).
+                //
+                // ANCHORED to the start of the line, like every other test for an annotation
+                // here. A contains() over the whole line matched the COMMENT that explained
+                // this rule, so this file excluded ITSELF and quietly dropped its own tests
+                // from the count — the exact "does not crash, counts the wrong number" failure
+                // its own javadoc warns about (subagent, twenty-fourth review, P1).
+                if (lines.stream().map(String::trim)
+                        .anyMatch(l -> l.startsWith("@Tag(") && l.contains("atlas-integr"
+                                + "ation"))) {
                     continue;
                 }
                 for (String line : lines) {
