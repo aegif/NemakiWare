@@ -983,6 +983,110 @@ class NotionPartialReadsAreNotCompleteTest {
     }
 
     /**
+     * Pages that fail on every poll do not starve the pages behind them.
+     *
+     * <p>Two failing pages at the head of the list and a budget of two: counting ATTEMPTS
+     * would spend the whole budget on them, settle nothing, move no checkpoint, and never try
+     * the good page behind them — on this poll or any later one (review, P1). The budget
+     * counts settled pages, so the good page is reached, settles, and the checkpoint passes
+     * the failing ones.
+     */
+    @Test
+    @DisplayName("pages that fail on every poll do not starve the pages behind them")
+    void aPageThatFailsOnEveryPollDoesNotStarveThePagesBehindIt() {
+        search = (exchange, n) -> json(exchange, 200, pageOf(false,
+                "p-good@2026-01-03T00:00:00.000Z", "p-bad2@2026-01-02T00:00:00.000Z",
+                "p-bad1@2026-01-02T00:00:00.000Z"));
+        blocks = (exchange, n) -> {
+            if (exchange.getRequestURI().getPath().contains("/p-bad")) {
+                json(exchange, 500, "{\"message\":\"boom\"}");
+            } else {
+                json(exchange, 200, "{\"results\":[],\"has_more\":false}");
+            }
+        };
+
+        FetchResult result = runWithLimit(2);
+
+        assertEquals(2, dlqReasons.size(), dlqReasons.toString());
+        assertEquals(List.of("p-good"), importedIds, "the page behind the failing ones was never tried");
+        assertTrue(result.sawEverything(), "nothing was left for the next poll: " + result.incompleteReads());
+        verify(checkpointManager).saveSimpleCheckpoint("p-notion", "notion",
+                "2026-01-03T00:00:00.000Z|p-good");
+    }
+
+    /**
+     * The other side of the failed-page contract: a page that failed at an OLDER minute than
+     * the one a settled page moved the checkpoint to is passed — its dead-letter row is the
+     * record — and the next poll does not offer it again. (The same-minute side is the lock
+     * above; a review noted the contract had only one side measured.)
+     */
+    @Test
+    @DisplayName("a page that failed at an older minute is passed by the checkpoint and not offered again")
+    void aPageThatFailedAtAnOlderMinuteIsPassedByTheCheckpoint() {
+        search = (exchange, n) -> json(exchange, 200, pageOf(false,
+                "p-good@2026-01-02T00:00:00.000Z", "p-bad@2026-01-01T00:00:00.000Z"));
+        blocks = (exchange, n) -> {
+            if (exchange.getRequestURI().getPath().contains("/p-bad/")) {
+                json(exchange, 500, "{\"message\":\"boom\"}");
+            } else {
+                json(exchange, 200, "{\"results\":[],\"has_more\":false}");
+            }
+        };
+        runWithLimit(10);
+
+        assertEquals(1, dlqReasons.size(), dlqReasons.toString());
+        assertEquals(List.of("p-good"), importedIds);
+        verify(checkpointManager).saveSimpleCheckpoint("p-notion", "notion",
+                "2026-01-02T00:00:00.000Z|p-good");
+
+        // The next poll, with the sort REFUSED so the listing is read to its end and the failed
+        // page reaches the orchestrator: the checkpoint must cover it. (Ordered, the adapter
+        // stops before it, and this lock would be satisfied by that stop instead of by
+        // `covers` — a control that removed the `covers` arm did not fire it.)
+        search = (exchange, n) -> {
+            if (bodyOf(exchange).contains("\"sort\"")) {
+                json(exchange, 400, "{\"object\":\"error\",\"status\":400,"
+                        + "\"code\":\"validation_error\",\"message\":\"sort is not valid\"}");
+                return;
+            }
+            json(exchange, 200, pageOf(false,
+                    "p-bad@2026-01-01T00:00:00.000Z", "p-good@2026-01-02T00:00:00.000Z"));
+        };
+        NotionFetchOrchestrator next = orchestrator();
+        checkpointIs("2026-01-02T00:00:00.000Z|p-good");
+        FetchResult result = next.execute(null, profile(), connector(), Map.of(), 10);
+
+        assertTrue(dlqReasons.isEmpty(), "the passed page was attempted again: " + dlqReasons);
+        assertTrue(importedIds.isEmpty(), "a page the checkpoint passed was offered again: " + importedIds);
+        assertEquals(2, result.skipped(), "both rows should be covered by the checkpoint: " + result);
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /**
+     * The two parameter bounds are not each other's: 43,201 is past the lag bound and inside
+     * the request bound. A single out-of-both-bounds value could not tell the constants apart
+     * at the call site (review, P2).
+     */
+    @Test
+    @DisplayName("the request-cap bound and the index-lag bound are not confused with each other")
+    void theTwoParameterBoundsAreNotConfused() {
+        FetchResult requests = orchestrator().execute(null, profile(), connector(),
+                Map.of(NotionFetchOrchestrator.PARAM_MAX_SEARCH_REQUESTS, "43201"), 10);
+        assertFalse(requests.hasErrors(), "43,201 requests is inside its bound: " + requests.errors());
+        assertEquals(1, SEARCH_CALLS.get(), "Notion was not asked under an in-range request cap");
+
+        FetchResult lag = orchestrator().execute(null, profile(), connector(),
+                Map.of(NotionFetchOrchestrator.PARAM_INDEX_LAG_MINUTES, "43201"), 10);
+        assertTrue(lag.hasErrors(), "43,201 minutes is past the lag bound: " + lag);
+        assertTrue(lag.errors().get(0).contains("notionIndexLagMinutes"), lag.errors().get(0));
+
+        FetchResult tooMany = orchestrator().execute(null, profile(), connector(),
+                Map.of(NotionFetchOrchestrator.PARAM_MAX_SEARCH_REQUESTS, "1000001"), 10);
+        assertTrue(tooMany.hasErrors(), "1,000,001 requests is past its bound: " + tooMany);
+    }
+
+    /**
      * A checkpoint written before R59 names a minute and no ids. Nothing at that minute is
      * known to be done, so the minute is imported once more, and the ids are recorded.
      */

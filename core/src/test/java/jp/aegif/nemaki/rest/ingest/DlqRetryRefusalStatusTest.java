@@ -32,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -139,6 +140,27 @@ class DlqRetryRefusalStatusTest {
         assertTrue(String.valueOf(((Map<?, ?>) res.getBody()).get("message"))
                         .contains("the entry is kept"),
                 "the answer does not say the entry survived: " + res.getBody());
+    }
+
+    @Test
+    @DisplayName("the stripped-binary note does not promise that the next poll re-fetches the item")
+    void theStrippedBinaryNoteDoesNotPromiseARefetch() throws Exception {
+        // A scheduled poll offers an item again only while it is still above the connector's
+        // checkpoint; the checkpoint moves past a failed item, with its dead-letter row as the
+        // record. The note used to say "the next connector poll re-fetches them" (a review
+        // found the sentence stronger than every orchestrator's behaviour).
+        CanonicalImportService importService = mock(CanonicalImportService.class);
+        when(importService.execute(any(), any())).thenReturn(new ExternalIngestResult("r", "obj-1",
+                "1.0", false, false, false, null, null, java.util.List.of(), java.util.List.of()));
+        ResponseEntity<?> res = retryWith(row -> row.setRequestBinaryStrippedCount(1),
+                importService, null);
+
+        Map<?, ?> body = (Map<?, ?>) res.getBody();
+        assertEquals(1, body.get("strippedBinaryCount"), "the stripped count was not answered: " + body);
+        String note = String.valueOf(body.get("strippedBinaryNote"));
+        assertTrue(note.contains("above the connector's checkpoint"), note);
+        assertFalse(note.contains("the next connector poll re-fetches"),
+                "the note promises a re-fetch the checkpoint does not make: " + note);
     }
 
     @Test

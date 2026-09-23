@@ -59,11 +59,13 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
      *
      * <p>Notion rounds {@code last_edited_time} DOWN to the minute, so a minute is a GROUP of
      * pages, and a per-run budget can stop inside one. Naming only the minute would either
-     * exclude the rest of the group for ever (what R59 was) or re-import the whole group on
+     * exclude the rest of the group for ever (what R59 was) or read the whole group again on
      * every poll; naming the ids as well lets the next poll skip what was done and take the
      * rest. Stored as {@code <minute>} or {@code <minute>|<id>,<id>,…}; the first form is what
      * every checkpoint written before R59 looks like, and it reads as "no id at that minute is
-     * known to be done", so such a minute is imported again once.
+     * known to be done", so such a minute is read again once — imported only where the
+     * profile's dedupe policy imports a source id it already holds (the default,
+     * {@code skip_if_same_version}, skips it without comparing versions).
      */
     record Checkpoint(String editedAt, java.util.Set<String> idsAtThatMinute) {
 
@@ -197,7 +199,7 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
             }
             candidates.sort(OLDEST_FIRST);
 
-            List<NotionPageSummary> thisRun;
+            List<NotionPageSummary> candidatesThisRun;
             if (!listing.complete()) {
                 // NOT an error — nothing failed, and putting it in `errors` would have the
                 // scheduler count a healthy large workspace towards the connector's circuit
@@ -220,24 +222,31 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
                         + (listing.ordered()
                                 ? "the pages this poll was not shown are older than the ones it was"
                                 : "the listing came back unordered, so which pages were left out cannot be told"));
-                thisRun = List.of();
-            } else if (candidates.size() > limit) {
-                // The per-run budget. Oldest first, so what is left is newer than everything
-                // taken and the checkpoint can move without passing it.
-                thisRun = candidates.subList(0, limit);
-                incompleteReads.add("Notion page listing: the run's limit of " + limit
-                        + " page(s) was reached with " + (candidates.size() - limit)
-                        + " newer page(s) left for the next poll");
+                candidatesThisRun = List.of();
             } else {
-                thisRun = candidates;
+                candidatesThisRun = candidates;
             }
             long throttleMs = FetchSupport.calculateThrottleDelayMs(connector);
 
             // The pages whose import SETTLED — succeeded without an attachment failure, or was
             // skipped by the import service. A page that failed is dead-lettered inside the
             // loop, does not hold the checkpoint back, and is not named by it either.
+            //
+            // The per-run budget counts SETTLED pages, not attempts. Oldest first, so what is
+            // left is newer than everything taken and the checkpoint can move without passing
+            // it. Counting attempts let pages that fail on every poll — offered again because
+            // the checkpoint does not name them — fill the budget from the head of the list, so
+            // nothing behind them was ever tried and the checkpoint never moved (review, P1).
+            // A failure costs its attempt and its dead-letter row (one row per item, updated in
+            // place), and the pages behind it still get their turn; once a newer minute settles,
+            // the checkpoint passes the failing page and it is not offered again.
             List<NotionPageSummary> settled = new ArrayList<>();
-            for (NotionPageSummary page : thisRun) {
+            int attempted = 0;
+            for (NotionPageSummary page : candidatesThisRun) {
+                if (settled.size() >= limit) {
+                    break;
+                }
+                attempted++;
                 fetchSupport.throttle(throttleMs);
                 // Declared OUTSIDE the try so the catch can dead-letter the page. Everything
                 // that throws before executeNoteImport — fetchPageAsHtml, extractFiles —
@@ -379,16 +388,24 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
                     }
                 }
             }
+            int leftForTheNextPoll = candidatesThisRun.size() - attempted;
+            if (leftForTheNextPoll > 0) {
+                incompleteReads.add("Notion page listing: the run's limit of " + limit
+                        + " page(s) was reached with " + leftForTheNextPoll
+                        + " newer page(s) left for the next poll");
+            }
             // HOW FAR the checkpoint may move (R59).
             //
             // To the newest CLOSED minute a settled page was edited in — closed meaning the
             // minute ended and the index-lag allowance has passed, so no edit Notion will ever
             // stamp with that minute is still on its way to the search index. Pages in minutes
-            // not yet closed are re-listed and imported again next poll; that is the price of a
-            // timestamp rounded to the minute and an index that is not immediate. At the chosen
-            // minute, the ids of every page processed there are recorded, so a budget that
+            // not yet closed are re-listed and read again next poll — a page that reached the
+            // index late is imported then; one this profile already holds is skipped by the
+            // default dedupe policy (which compares source ids, not versions) — that is the
+            // price of a timestamp rounded to the minute and an index that is not immediate. At
+            // the chosen minute, the ids of the SETTLED pages are recorded, so a budget that
             // stopped inside the group leaves the rest for the next poll rather than either
-            // excluding it (R59) or importing the group again.
+            // excluding it (R59) or reading the group again.
             //
             // Processing was oldest first, so nothing left for the next poll is older than the
             // chosen minute, and a listing that was cut short imported nothing (above).
