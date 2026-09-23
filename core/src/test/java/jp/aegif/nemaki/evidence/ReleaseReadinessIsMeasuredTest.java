@@ -241,11 +241,17 @@ class ReleaseReadinessIsMeasuredTest {
                 // METHOD-level tag as excluding the whole class, and misses a qualified or
                 // concatenated one (Codex, twenty-seventh review, P2).
                 //
-                // The bound does not need the answer. It needs to know the MOST the exclusions
-                // could remove, so subtracting every test in a file that so much as mentions
-                // an excluded group is both correct for a lower bound and impossible to get
-                // wrong in the dangerous direction. Emulating JUnit's semantics here was
-                // solving a problem this test does not have.
+                // The bound does not need the answer. It needs to know the MOST the
+                // exclusions could remove, so it subtracts every test in a file that so much
+                // as MENTIONS an excluded group.
+                //
+                // That is safe WHILE the tag is written as a literal in the class it tags,
+                // which is how all five of them are written today. A constant from another
+                // file (@Tag(AtlasTags.INTEGRATION)) would not be mentioned here, the
+                // subtraction would be too small, and the floor too high — so the failure
+                // this could produce is a refusal of a correct record, never acceptance of a
+                // stale one. Saying it was "impossible to get wrong" was a claim without that
+                // condition attached (subagent, twenty-eighth review, P2).
                 if (excludedGroups.stream().anyMatch(String.join("\n", lines)::contains)) {
                     possiblyExcluded += here;
                 }
@@ -441,7 +447,10 @@ class ReleaseReadinessIsMeasuredTest {
         // The SUMMARY LINE above the breakdown repeats the same three figures, and nothing
         // read it — so §0 could say one thing while the breakdown two lines below said
         // another (subagent, twenty-sixth review, P2).
-        Matcher inline = Pattern.compile("うち[^）]*実際に開いている \\d+").matcher(readiness);
+        // Anchored on the BRACKET, not on 「うち」 — that word also opens "残件表 99 行のうち"
+        // one clause earlier, so the span started there and swept in figures the breakdown
+        // does not state (subagent, twenty-eighth review, P2, measured).
+        Matcher inline = Pattern.compile("（うち[^）]*）").matcher(readiness);
         assertTrue(inline.find(), "the readiness document's summary line no longer repeats the "
                 + "breakdown, so this check has nothing to compare");
 

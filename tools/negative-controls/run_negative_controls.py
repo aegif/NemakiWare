@@ -13564,7 +13564,7 @@ CONTROLS = [
     ),
     dict(
         id='UC3',
-        what="only the first control-count exit in the readiness document is compared with the runner, so half of a count update leaves the document stating two different totals",
+        what="the SECOND reader of the readiness document's table row stops comparing it with the runner (EverySupportedCouchDbIsMeasuredTest's totalForms has read it since 2026-09-20 — this control measures the redundant check, not a gap)",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
         find='| 通し negative-control | **938/938 発火・exit 0（8 時間 52 分、2026-09-21〜22）** | 1159 本 |',
