@@ -475,9 +475,11 @@ Webhook 非対応。
   新しいファイルに届かない。任意 `boxCheckpointLagMinutes`（listing 開始のこの分前までしか
   checkpoint を進めない猶予。既定 5、上限 43,200。listing 中に追加・移動されたファイルを次回に
   回すため。**増やすと**、猶予が checkpoint に追いつくまで checkpoint は進まず、その差の分の
-  ファイルが毎回候補になる — dedupe で skip、`limit` を消費）。id の無い項目・読めない checkpoint が
-  1 つでもあると実行はエラーで止まる。更新時刻が無い・読めないファイルは死信キューに記録して
-  報告し（再送は id で取り直す）、他のファイルは進む。
+  ファイルが毎回候補になる — dedupe で skip、`limit` を消費）。id の無い項目（folder を含む
+  全項目）・読めない checkpoint が 1 つでもあると実行はエラーで止まる。更新時刻が無い・読めないファイルは毎回候補になり（置ける
+  ファイルの予算の後に別枠で `limit` 件まで）、取り込んでも checkpoint に名指されず、実行結果は
+  `PARTIAL` で理由に id が付く（エラーではない。dedupe は download の後なので、その数だけ毎回転送が
+  起きる）。download に失敗したファイルの死信キュー行は、再送時に Box から取り直す（再送時点の bytes）。
 
 Webhook 非対応。
 
@@ -503,8 +505,9 @@ Webhook 非対応。
   `limit` を上げるまで試されない）、任意 `dropboxListMaxRequests`（`list_folder` + `continue` の回数の
   上限。1 回 2,000 件、既定 50 = 100,000 件。超えると何も取り込まず `PARTIAL`）、任意
   `dropboxCheckpointLagMinutes`（既定 5、上限 43,200。Box と同じ猶予 — 増やしたときの一時停止も同じ）。
-  id の無い項目・読めない checkpoint が 1 つでもあると実行はエラーで止まる。更新時刻が読めない
-  ファイルは死信キューに記録して報告し、他は進む。**フォルダは毎回全部列挙する**。
+  id の無い file（folder は列挙に使わない）・読めない checkpoint が 1 つでもあると実行はエラーで
+  止まる。更新時刻が読めないファイルは毎回候補になり（別枠で `limit` 件まで）、名指されず、`PARTIAL` で報告（Box と同じ）。
+  死信キュー行の再送は記録したパスで Dropbox から取り直す。**フォルダは毎回全部列挙する**。
   checkpoint は `<server_modified を UTC に正規化>|<id>,…`。記録できなかった失敗が 1 つでもあると checkpoint は
   進まない — 死信キューが書けない間はずっと進まず（意図した停止）、失敗するファイルが `limit` の
   4 倍以上あるとその実行は新しいファイルに届かない。
