@@ -351,22 +351,41 @@ class ReleaseReadinessIsMeasuredTest {
         // and nothing read them — so the gate could announce "12 classified" over a table of
         // ten (Codex, twenty-ninth review, P2). Counted from the table's rows, which is where
         // the classification actually is.
+        // The IDS in the first cell, not the fragments between slashes. A row reading
+        // "R55 / note" counted two, "R61・R62・R63" — a separator this document already uses
+        // elsewhere — would count one, and either way the heading could then be edited to
+        // agree with a wrong number (both reviewers, thirtieth review, P2/P3).
         int classified = 0;
         for (String line : gate.split("\n")) {
-            if (line.startsWith("| R")) {
-                classified += line.split("\\|", 3)[1].split("/").length;
+            if (!line.startsWith("| R")) {
+                continue;
+            }
+            Matcher id = Pattern.compile("\\bR\\d+\\b").matcher(line.split("\\|", 3)[1]);
+            while (id.find()) {
+                classified++;
             }
         }
-        Matcher says = Pattern.compile("(\\d+) 件を分類した").matcher(gate);
+        assertTrue(classified > 0, "the RC gate's table carries no residual ids: " + gate);
+
+        // ANCHORED to the heading and to the sentence under it, and each required to be the
+        // ONLY one in the section — an unanchored find() would take a figure from anywhere in
+        // the gate's prose, so a wrong heading could be left standing beside a right sentence
+        // (Codex, thirtieth review, P2).
+        Matcher says = Pattern.compile("(?m)^### RC 条件 11[^\n]*?(\\d+) 件を分類した")
+                .matcher(gate);
         assertTrue(says.find(), "the RC gate's heading no longer says how many it classified");
         assertEquals(classified, Integer.parseInt(says.group(1)),
-                "the RC gate says it classified " + says.group(1) + " residuals and its table "
-                        + "carries " + classified);
-        Matcher under = Pattern.compile("開いている (\\d+) 件を").matcher(gate);
+                "the RC gate's heading says it classified " + says.group(1) + " residuals and "
+                        + "its table carries " + classified);
+        assertFalse(says.find(), "the section carries more than one RC condition 11 heading");
+        Matcher under = Pattern.compile("(?s)書ける状態にまだない\\*{0,2}。開いている (\\d+) 件を")
+                .matcher(gate);
         assertTrue(under.find(), "the RC gate's prose no longer says how many are open");
         assertEquals(classified, Integer.parseInt(under.group(1)),
                 "the RC gate's prose says " + under.group(1) + " open residuals and its table "
                         + "carries " + classified);
+        assertFalse(under.find(), "the RC gate states its open count in more than one sentence, "
+                + "so which one this compares is a guess");
     }
 
     /**
@@ -475,13 +494,18 @@ class ReleaseReadinessIsMeasuredTest {
         // one clause earlier, so the span started there and swept in figures the breakdown
         // does not state (subagent, twenty-eighth review, P2, measured).
         //
-        // To the end of the LINE rather than the first closing bracket, so a nested bracket
-        // inside the summary does not cut it short; and exactly ONE, so a second summary
-        // added earlier in the document cannot be compared in its place. Both were reachable
-        // (Codex and subagent, twenty-ninth review, P2/P3). NOTE: this refinement is measured
-        // by reading, not by a control — UN3 fires on the old anchor too, because the widened
-        // span happened to contain the same three labels.
-        Matcher inline = Pattern.compile("(?m)（うち.*$").matcher(readiness);
+        // To the CLOSING BRACKET, with a class that crosses newlines — this document hard
+        // wraps its prose (the RC gate's own sentence is wrapped mid-clause), so a reflow of
+        // this line would cut an end-of-line match short and turn a correct document red.
+        // Stopping at the first bracket instead means a NESTED bracket inside the summary
+        // would do the same; between the two, the wrap is the one this document actually
+        // does (subagent, thirtieth review, P2 — the end-of-line form was this verifier's
+        // own answer to a nesting case that has never appeared).
+        //
+        // Exactly ONE, so a second summary added elsewhere cannot be compared in its place.
+        // NOTE: neither refinement is measured by a control — UN3 fires on any of these
+        // anchors, because the span always contains the same three labels.
+        Matcher inline = Pattern.compile("（うち[^）]*）").matcher(readiness);
         assertTrue(inline.find(), "the readiness document's summary line no longer repeats the "
                 + "breakdown, so this check has nothing to compare");
         String summary = inline.group();
