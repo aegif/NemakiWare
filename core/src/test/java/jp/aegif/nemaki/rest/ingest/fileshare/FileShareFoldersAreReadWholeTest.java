@@ -1,0 +1,459 @@
+/**
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ */
+package jp.aegif.nemaki.rest.ingest.fileshare;
+
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import jp.aegif.nemaki.rest.ingest.CanonicalImportService;
+import jp.aegif.nemaki.rest.ingest.CheckpointManager;
+import jp.aegif.nemaki.rest.ingest.ConnectorDefinition;
+import jp.aegif.nemaki.rest.ingest.ExternalIngestRequest;
+import jp.aegif.nemaki.rest.ingest.ExternalIngestResult;
+import jp.aegif.nemaki.rest.ingest.FetchResult;
+import jp.aegif.nemaki.rest.ingest.FetchSupport;
+import jp.aegif.nemaki.rest.ingest.ImportProfileDefinition;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+
+/**
+ * The Box and Dropbox connectors read the WHOLE folder before deciding what to import (R107).
+ *
+ * <p>They used to ask the API for the first {@code limit} items. Neither API lists a folder by
+ * modification time, so those were the first {@code limit} names: every file after them was
+ * never listed on any poll, and the checkpoint the poll raised from the files it did see
+ * excluded any of them modified earlier for ever. What is measured here is the REAL adapter
+ * pointed at a local stub of each API — the adapter's own paging, its refusals and the
+ * orchestrator's budget and checkpoint — not a mock's idea of them (the shape
+ * {@code NotionPartialReadsAreNotCompleteTest} established).
+ */
+class FileShareFoldersAreReadWholeTest {
+
+    private static HttpServer server;
+    private static String base;
+    private static String previousAllowLocalhost;
+
+    @FunctionalInterface
+    interface Responder {
+        void respond(HttpExchange exchange, int callNumber) throws IOException;
+    }
+
+    /** What Box's {@code /folders/{id}/items} answers; set per test. */
+    private static volatile Responder boxItems;
+    /** What Dropbox's {@code /files/list_folder} and {@code /continue} answer; set per test. */
+    private static volatile Responder dropboxList;
+    /** Ids whose download answers 500. */
+    private static volatile List<String> failingDownloads = List.of();
+
+    private static final AtomicInteger BOX_LIST_CALLS = new AtomicInteger();
+    private static final AtomicInteger DROPBOX_LIST_CALLS = new AtomicInteger();
+
+    @BeforeAll
+    static void startStub() throws Exception {
+        previousAllowLocalhost = System.getProperty("nemaki.ingest.allowLocalhost");
+        System.setProperty("nemaki.ingest.allowLocalhost", "true");
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/2.0/folders", exchange -> boxItems.respond(exchange, BOX_LIST_CALLS.incrementAndGet()));
+        server.createContext("/2.0/files", exchange -> {
+            // /2.0/files/{id}/content
+            String[] parts = exchange.getRequestURI().getPath().split("/");
+            String id = parts[parts.length - 2];
+            if (failingDownloads.contains(id)) {
+                json(exchange, 500, "{\"message\":\"boom\"}");
+            } else {
+                bytes(exchange, ("content of " + id).getBytes(StandardCharsets.UTF_8));
+            }
+        });
+        server.createContext("/2/files/list_folder", exchange -> dropboxList.respond(exchange, DROPBOX_LIST_CALLS.incrementAndGet()));
+        server.createContext("/2/files/download", exchange -> {
+            String arg = exchange.getRequestHeaders().getFirst("Dropbox-API-Arg");
+            boolean failing = false;
+            for (String id : failingDownloads) {
+                if (arg != null && arg.contains(id)) failing = true;
+            }
+            if (failing) {
+                json(exchange, 500, "{\"error_summary\":\"boom\"}");
+            } else {
+                bytes(exchange, "dropbox content".getBytes(StandardCharsets.UTF_8));
+            }
+        });
+        server.start();
+        base = "http://127.0.0.1:" + server.getAddress().getPort();
+    }
+
+    @AfterAll
+    static void stopStub() {
+        if (server != null) server.stop(0);
+        if (previousAllowLocalhost == null) {
+            System.clearProperty("nemaki.ingest.allowLocalhost");
+        } else {
+            System.setProperty("nemaki.ingest.allowLocalhost", previousAllowLocalhost);
+        }
+    }
+
+    @BeforeEach
+    void reset() {
+        BOX_LIST_CALLS.set(0);
+        DROPBOX_LIST_CALLS.set(0);
+        failingDownloads = List.of();
+        boxItems = (exchange, n) -> json(exchange, 200, boxPage(1, "f-1@2026-01-01T00:00:00-00:00"));
+        dropboxList = (exchange, n) -> json(exchange, 200, dropboxPage(false, null, "d-1@2026-01-01T00:00:00Z"));
+    }
+
+    // ── the stubs ─────────────────────────────────────────────────
+
+    private static void json(HttpExchange exchange, int status, String body) throws IOException {
+        byte[] out = body.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().add("Content-Type", "application/json");
+        exchange.getResponseHeaders().add("Retry-After", "0");
+        exchange.sendResponseHeaders(status, out.length);
+        exchange.getResponseBody().write(out);
+        exchange.close();
+    }
+
+    private static void bytes(HttpExchange exchange, byte[] out) throws IOException {
+        exchange.getResponseHeaders().add("Content-Type", "application/octet-stream");
+        exchange.sendResponseHeaders(200, out.length);
+        exchange.getResponseBody().write(out);
+        exchange.close();
+    }
+
+    /** Box entries as {@code id@modified_at}; {@code total_count} is the folder's true size. */
+    private static String boxPage(int totalCount, String... idAtTime) {
+        StringBuilder entries = new StringBuilder();
+        for (String spec : idAtTime) {
+            String id = spec.substring(0, spec.indexOf('@'));
+            String at = spec.substring(spec.indexOf('@') + 1);
+            if (entries.length() > 0) entries.append(',');
+            entries.append("{\"type\":\"file\",\"id\":\"").append(id).append("\",\"name\":\"").append(id)
+                    .append(".txt\",\"size\":3,\"modified_at\":\"").append(at)
+                    .append("\",\"parent\":{\"id\":\"0\"}}");
+        }
+        return "{\"total_count\":" + totalCount + ",\"entries\":[" + entries + "],\"offset\":0,\"limit\":1000}";
+    }
+
+    /** Dropbox entries as {@code id@server_modified}. */
+    private static String dropboxPage(boolean hasMore, String cursor, String... idAtTime) {
+        StringBuilder entries = new StringBuilder();
+        for (String spec : idAtTime) {
+            String id = spec.substring(0, spec.indexOf('@'));
+            String at = spec.substring(spec.indexOf('@') + 1);
+            if (entries.length() > 0) entries.append(',');
+            entries.append("{\".tag\":\"file\",\"id\":\"").append(id).append("\",\"name\":\"").append(id)
+                    .append(".txt\",\"path_display\":\"/").append(id).append(".txt\",\"size\":3,\"server_modified\":\"")
+                    .append(at).append("\"}");
+        }
+        return "{\"entries\":[" + entries + "],\"has_more\":" + hasMore
+                + (cursor == null ? "" : ",\"cursor\":\"" + cursor + "\"") + "}";
+    }
+
+    private static int offsetOf(HttpExchange exchange) {
+        String query = exchange.getRequestURI().getQuery();
+        for (String part : query.split("&")) {
+            if (part.startsWith("offset=")) return Integer.parseInt(part.substring("offset=".length()));
+        }
+        return 0;
+    }
+
+    // ── the orchestrators under test ──────────────────────────────
+
+    private FetchSupport fetchSupport;
+    private CheckpointManager checkpointManager;
+    private CanonicalImportService importService;
+    private final List<String> importedIds = new ArrayList<>();
+    private final List<String> dlqReasons = new ArrayList<>();
+
+    private void wire(Object orchestrator) {
+        fetchSupport = mock(FetchSupport.class);
+        checkpointManager = mock(CheckpointManager.class);
+        importService = mock(CanonicalImportService.class);
+        importedIds.clear();
+        dlqReasons.clear();
+        lenient().when(fetchSupport.resolvePasswordOrRefuse(any())).thenReturn("secret-token");
+        lenient().doNothing().when(fetchSupport).throttle(anyLong());
+        lenient().doAnswer(call -> {
+            dlqReasons.add(call.getArgument(1));
+            return null;
+        }).when(fetchSupport).saveToDlq(any(), anyString(), any());
+        lenient().when(checkpointManager.loadSimpleCheckpoint(anyString(), anyString())).thenReturn(null);
+        lenient().when(importService.execute(any(), any())).thenAnswer(call -> {
+            ExternalIngestRequest req = call.getArgument(1);
+            importedIds.add(req.getSourceObjectId());
+            return new ExternalIngestResult("r", "obj-1", "1.0", false, false, false, null, null,
+                    List.of(), List.of());
+        });
+        if (orchestrator instanceof BoxFetchOrchestrator box) {
+            box.setFetchSupport(fetchSupport);
+            box.setCheckpointManager(checkpointManager);
+            box.setCanonicalImportService(importService);
+            box.adapterFactory = token -> new BoxConnectorAdapter(token, base + "/2.0",
+                    jp.aegif.nemaki.rest.ingest.AdapterHttpClient.shared());
+        } else {
+            DropboxFetchOrchestrator dropbox = (DropboxFetchOrchestrator) orchestrator;
+            dropbox.setFetchSupport(fetchSupport);
+            dropbox.setCheckpointManager(checkpointManager);
+            dropbox.setCanonicalImportService(importService);
+            dropbox.adapterFactory = token -> new DropboxConnectorAdapter(token, base + "/2", base + "/2",
+                    jp.aegif.nemaki.rest.ingest.AdapterHttpClient.shared());
+        }
+    }
+
+    private BoxFetchOrchestrator box() {
+        BoxFetchOrchestrator orchestrator = new BoxFetchOrchestrator();
+        wire(orchestrator);
+        return orchestrator;
+    }
+
+    private DropboxFetchOrchestrator dropbox() {
+        DropboxFetchOrchestrator orchestrator = new DropboxFetchOrchestrator();
+        wire(orchestrator);
+        return orchestrator;
+    }
+
+    private void checkpointIs(String stored) {
+        lenient().when(checkpointManager.loadSimpleCheckpoint(anyString(), anyString())).thenReturn(stored);
+    }
+
+    private static ImportProfileDefinition profile() {
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p-share");
+        profile.setRepositoryId("bedroom");
+        return profile;
+    }
+
+    private static ConnectorDefinition connector(String system) {
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c-" + system);
+        connector.setSourceSystem(system);
+        return connector;
+    }
+
+    // ── Box ───────────────────────────────────────────────────────
+
+    /**
+     * A folder larger than one Box page (1,000 items) AND than the run's budget is listed
+     * WHOLE, and the budget takes the oldest.
+     *
+     * <p>1,001 files across two pages, in name order (which is not time order), budget two: all
+     * 1,001 are listed, the two oldest — the last of page one and the only file of page two —
+     * are imported, the rest are reported as left for the next poll, and the checkpoint names
+     * what was taken. The old code listed the first two names and would never have listed the
+     * other 999.
+     */
+    @Test
+    @DisplayName("Box: a folder larger than a page and than the budget is listed whole and the oldest files are taken first")
+    void boxListsTheWholeFolderAndTakesTheOldestFirst() {
+        boxItems = (exchange, n) -> {
+            int offset = offsetOf(exchange);
+            StringBuilder page = new StringBuilder("{\"total_count\":1001,\"entries\":[");
+            if (offset == 0) {
+                for (int i = 0; i < 1000; i++) {
+                    if (i > 0) page.append(',');
+                    // f-0999 is the oldest file in the folder; everything else on this page is newer
+                    String at = i == 999 ? "2026-01-01T00:00:00-00:00" : "2026-02-01T00:00:00-00:00";
+                    page.append("{\"type\":\"file\",\"id\":\"f-").append(String.format("%04d", i))
+                            .append("\",\"name\":\"f.txt\",\"size\":3,\"modified_at\":\"").append(at)
+                            .append("\",\"parent\":{\"id\":\"0\"}}");
+                }
+            } else {
+                page.append("{\"type\":\"file\",\"id\":\"f-1000\",\"name\":\"f.txt\",\"size\":3,"
+                        + "\"modified_at\":\"2026-01-02T00:00:00-00:00\",\"parent\":{\"id\":\"0\"}}");
+            }
+            json(exchange, 200, page.append("],\"offset\":").append(offset).append(",\"limit\":1000}").toString());
+        };
+        FetchResult result = box().execute(null, profile(), connector("box"), Map.of(), 2);
+
+        assertEquals(2, BOX_LIST_CALLS.get(), "the folder was not read past its first page");
+        assertEquals(1001, result.fetched(), result.toString());
+        assertEquals(List.of("f-0999", "f-1000"), importedIds, "the budget did not take the oldest files");
+        assertFalse(result.sawEverything(), "999 files were left for the next poll: " + result);
+        assertTrue(result.incompleteReads().get(0).contains("left for the next poll"), result.incompleteReads().get(0));
+        assertFalse(result.hasErrors(), result.errors().toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "box.0", "2026-01-02T00:00:00-00:00|f-1000");
+    }
+
+    /** The next poll, with that checkpoint, takes the rest and moves on. */
+    @Test
+    @DisplayName("Box: the next poll skips what the checkpoint names and takes the rest")
+    void boxTheNextPollTakesTheRest() {
+        boxItems = (exchange, n) -> json(exchange, 200, boxPage(5, "f-a@2026-01-05T00:00:00-00:00",
+                "f-b@2026-01-02T00:00:00-00:00", "f-c@2026-01-04T00:00:00-00:00",
+                "f-d@2026-01-01T00:00:00-00:00", "f-e@2026-01-03T00:00:00-00:00"));
+        BoxFetchOrchestrator orchestrator = box();
+        checkpointIs("2026-01-02T00:00:00-00:00|f-b");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector("box"), Map.of(), 10);
+
+        assertEquals(List.of("f-e", "f-c", "f-a"), importedIds);
+        assertEquals(2, result.skipped(), "f-d (older) and f-b (named) should be skipped: " + result);
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "box.0", "2026-01-05T00:00:00-00:00|f-a");
+    }
+
+    /**
+     * A listing cut at the request cap imports nothing and holds the checkpoint.
+     *
+     * <p>The files a cut listing did not reach are not any particular subset of the folder, so
+     * a checkpoint raised over the ones it did reach would exclude the unseen ones from every
+     * later poll. The reason names the parameter to raise.
+     */
+    @Test
+    @DisplayName("Box: a listing cut at the request cap imports nothing, holds the checkpoint and names the cap")
+    void boxAListingCutAtTheCapImportsNothing() {
+        boxItems = (exchange, n) -> json(exchange, 200, boxPage(5000,
+                "f-a@2026-01-05T00:00:00-00:00", "f-b@2026-01-02T00:00:00-00:00"));
+        FetchResult result = box().execute(null, profile(), connector("box"),
+                Map.of(BoxFetchOrchestrator.PARAM_MAX_LIST_REQUESTS, "1"), 10);
+
+        assertEquals(1, BOX_LIST_CALLS.get());
+        assertFalse(result.sawEverything(), result.toString());
+        assertTrue(result.incompleteReads().get(0).contains("boxListMaxRequests"), result.incompleteReads().get(0));
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        assertFalse(result.hasErrors(), result.errors().toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /** A Box answer without {@code total_count} is refused, not read as a small folder. */
+    @Test
+    @DisplayName("Box: a listing without total_count is refused, not read as the whole folder")
+    void boxAListingWithoutTotalCountIsRefused() {
+        boxItems = (exchange, n) -> json(exchange, 200, "{\"entries\":[{\"type\":\"file\",\"id\":\"f-a\",\"name\":\"a\","
+                + "\"size\":1,\"modified_at\":\"2026-01-05T00:00:00-00:00\",\"parent\":{\"id\":\"0\"}}]}");
+        FetchResult result = box().execute(null, profile(), connector("box"), Map.of(), 10);
+
+        assertTrue(result.hasErrors(), "a malformed listing was read as a folder: " + result);
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /** A file that fails is dead-lettered, not named by the checkpoint, and does not block the ones behind it. */
+    @Test
+    @DisplayName("Box: a file that fails is dead-lettered, not named, and the files behind it are still taken")
+    void boxAFailingFileDoesNotBlockTheRest() {
+        failingDownloads = List.of("f-bad");
+        boxItems = (exchange, n) -> json(exchange, 200, boxPage(3, "f-bad@2026-01-01T00:00:00-00:00",
+                "f-ok@2026-01-01T00:00:00-00:00", "f-new@2026-01-02T00:00:00-00:00"));
+        FetchResult result = box().execute(null, profile(), connector("box"), Map.of(), 2);
+
+        assertEquals(1, dlqReasons.size(), dlqReasons.toString());
+        assertTrue(dlqReasons.get(0).contains("f-bad"), dlqReasons.get(0));
+        assertEquals(List.of("f-ok", "f-new"), importedIds);
+        assertTrue(result.hasErrors(), result.toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "box.0", "2026-01-02T00:00:00-00:00|f-new");
+    }
+
+    /** A cap parameter that is not a number is reported, not replaced by the default. */
+    @Test
+    @DisplayName("Box: a request-cap parameter that is not a number is reported and nothing is read")
+    void boxABadCapParameterIsReported() {
+        FetchResult result = box().execute(null, profile(), connector("box"),
+                Map.of(BoxFetchOrchestrator.PARAM_MAX_LIST_REQUESTS, "fifty"), 10);
+
+        assertTrue(result.hasErrors(), result.toString());
+        assertTrue(result.errors().get(0).contains("boxListMaxRequests"), result.errors().get(0));
+        assertEquals(0, BOX_LIST_CALLS.get());
+    }
+
+    // ── Dropbox ───────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("Dropbox: a folder larger than the budget is listed whole across cursors and the oldest files are taken first")
+    void dropboxListsTheWholeFolderAndTakesTheOldestFirst() {
+        dropboxList = (exchange, n) -> {
+            if (exchange.getRequestURI().getPath().endsWith("/continue")) {
+                json(exchange, 200, dropboxPage(false, null, "d-d@2026-01-01T00:00:00Z", "d-e@2026-01-03T00:00:00Z"));
+            } else {
+                json(exchange, 200, dropboxPage(true, "c-2", "d-a@2026-01-05T00:00:00Z",
+                        "d-b@2026-01-02T00:00:00Z", "d-c@2026-01-04T00:00:00Z"));
+            }
+        };
+        FetchResult result = dropbox().execute(null, profile(), connector("dropbox"), Map.of(), 2);
+
+        assertEquals(2, DROPBOX_LIST_CALLS.get(), "the cursor was not followed");
+        assertEquals(5, result.fetched(), result.toString());
+        assertEquals(List.of("d-d", "d-b"), importedIds, "the budget did not take the oldest files");
+        assertFalse(result.sawEverything(), result.toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "dropbox", "2026-01-02T00:00:00Z|d-b");
+    }
+
+    @Test
+    @DisplayName("Dropbox: the next poll skips what the checkpoint names and takes the rest")
+    void dropboxTheNextPollTakesTheRest() {
+        dropboxList = (exchange, n) -> json(exchange, 200, dropboxPage(false, null, "d-a@2026-01-05T00:00:00Z",
+                "d-b@2026-01-02T00:00:00Z", "d-c@2026-01-04T00:00:00Z", "d-d@2026-01-01T00:00:00Z",
+                "d-e@2026-01-03T00:00:00Z"));
+        DropboxFetchOrchestrator orchestrator = dropbox();
+        checkpointIs("2026-01-02T00:00:00Z|d-b");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector("dropbox"), Map.of(), 10);
+
+        assertEquals(List.of("d-e", "d-c", "d-a"), importedIds);
+        assertEquals(2, result.skipped(), result.toString());
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "dropbox", "2026-01-05T00:00:00Z|d-a");
+    }
+
+    @Test
+    @DisplayName("Dropbox: a listing cut at the request cap imports nothing, holds the checkpoint and names the cap")
+    void dropboxAListingCutAtTheCapImportsNothing() {
+        dropboxList = (exchange, n) -> json(exchange, 200, dropboxPage(true, "c-" + n,
+                "d-" + n + "@2026-01-0" + n + "T00:00:00Z"));
+        FetchResult result = dropbox().execute(null, profile(), connector("dropbox"),
+                Map.of(DropboxFetchOrchestrator.PARAM_MAX_LIST_REQUESTS, "2"), 10);
+
+        assertEquals(2, DROPBOX_LIST_CALLS.get(), "the cap did not bound the listing");
+        assertFalse(result.sawEverything(), result.toString());
+        assertTrue(result.incompleteReads().get(0).contains("dropboxListMaxRequests"), result.incompleteReads().get(0));
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /** {@code has_more} with no cursor is a cut, not the end of the folder. */
+    @Test
+    @DisplayName("Dropbox: has_more without a cursor is a cut, not the end of the folder")
+    void dropboxHasMoreWithoutACursorIsACut() {
+        dropboxList = (exchange, n) -> json(exchange, 200, dropboxPage(true, null, "d-a@2026-01-05T00:00:00Z"));
+        FetchResult result = dropbox().execute(null, profile(), connector("dropbox"), Map.of(), 10);
+
+        assertFalse(result.sawEverything(), result.toString());
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+}

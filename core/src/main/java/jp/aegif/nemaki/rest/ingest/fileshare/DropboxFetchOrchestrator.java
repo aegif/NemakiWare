@@ -22,6 +22,38 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
     public void setCheckpointManager(CheckpointManager checkpointManager) { this.checkpointManager = checkpointManager; }
     public void setCanonicalImportService(CanonicalImportService canonicalImportService) { this.canonicalImportService = canonicalImportService; }
 
+    /**
+     * How this orchestrator obtains its adapter (R107). It used to be {@code new DropboxConnectorAdapter(token)}
+     * inline, which made every arm below reachable only by talking to Dropbox; tests point the
+     * REAL adapter at a local stub of the API through this factory (the shape
+     * {@code NotionFetchOrchestrator} and {@code ImapIdleMonitor} use).
+     */
+    java.util.function.Function<String, DropboxConnectorAdapter> adapterFactory = DropboxConnectorAdapter::new;
+
+    /** Scheduler parameter: how many listing requests one poll may make. */
+    static final String PARAM_MAX_LIST_REQUESTS = "dropboxListMaxRequests";
+    static final int MAX_LIST_REQUESTS = 1_000_000;
+    /**
+     * How many files one run may ATTEMPT, as a multiple of its budget of settled files: the
+     * budget counts settled files so that files failing on every poll cannot starve the ones
+     * behind them, and the attempts are bounded so that a run in which every import fails
+     * cannot outlast the scheduler's fetch timeout (the rule R59 settled on for Notion).
+     */
+    static final int ATTEMPTS_PER_BUDGET = 4;
+
+    private static int intParam(Map<String, String> params, String name, int fallback, int minimum, int maximum) {
+        String raw = params == null ? null : params.get(name);
+        if (raw == null || raw.isBlank()) return fallback;
+        try {
+            int value = Integer.parseInt(raw.trim());
+            if (value >= minimum && value <= maximum) return value;
+        } catch (NumberFormatException notANumber) {
+            // fall through
+        }
+        throw new IllegalArgumentException("Dropbox connector parameter " + name
+                + " must be an integer between " + minimum + " and " + maximum + ", not '" + raw + "'");
+    }
+
     @Override
     public String sourceSystem() { return "dropbox"; }
 
@@ -43,21 +75,77 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
         String token = fetchSupport.resolvePasswordOrRefuse(connector);
         if (token == null) return new FetchResult(0, 0, List.of("No token for Dropbox connector"));
 
+        int maxRequests;
+        try {
+            maxRequests = intParam(params, PARAM_MAX_LIST_REQUESTS, DropboxConnectorAdapter.DEFAULT_MAX_LIST_REQUESTS, 1, MAX_LIST_REQUESTS);
+        } catch (IllegalArgumentException badParameter) {
+            // Not a connector failure and not the default either: guessing the default would
+            // silently ignore what the operator wrote. Reported, and nothing is read.
+            return new FetchResult(0, 0, List.of(badParameter.getMessage()));
+        }
+
         List<String> errors = new ArrayList<>();
+        List<String> incompleteReads = new ArrayList<>();
         int fetched = 0, imported = 0, skipped = 0;
         try {
-            var dropbox = new DropboxConnectorAdapter(token);
-            String lastModified = checkpointManager.loadSimpleCheckpoint(profile.getProfileId(), "dropbox");
-            var files = dropbox.listFiles(folderPath, limit);
-            fetched = files.size();
+            var dropbox = adapterFactory.apply(token);
+            String stored = checkpointManager.loadSimpleCheckpoint(profile.getProfileId(), "dropbox");
+            jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint checkpoint =
+                    jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.parse(stored);
+            // The WHOLE folder (R107). A listing stopped at the per-run limit was the first N
+            // names — Dropbox does not list by modification time — so every file after them
+            // was never listed on any poll, and the checkpoint raised from the files that were
+            // seen excluded any of them modified earlier for ever.
+            DropboxConnectorAdapter.FileListing listing = dropbox.listAllFiles(folderPath, maxRequests);
+            fetched = listing.files().size();
+            List<DropboxConnectorAdapter.DropboxFile> candidates = new ArrayList<>();
+            for (var file : listing.files()) {
+                if (checkpoint.covers(file.serverModified(), file.id())) {
+                    skipped++;
+                    continue;
+                }
+                candidates.add(file);
+            }
+            // Oldest first, so that what a budget leaves for the next poll is always NEWER than
+            // what it took and the checkpoint can move without passing it.
+            candidates.sort(java.util.Comparator.comparing((DropboxConnectorAdapter.DropboxFile f) -> f.serverModified(),
+                            java.util.Comparator.nullsLast(java.util.Comparator.<String>naturalOrder()))
+                    .thenComparing(f -> f.id(), java.util.Comparator.nullsLast(java.util.Comparator.<String>naturalOrder())));
+
+            List<DropboxConnectorAdapter.DropboxFile> candidatesThisRun;
+            if (!listing.complete()) {
+                // NOT an error — nothing failed, and putting it in `errors` would have the
+                // scheduler count a large folder towards the connector's circuit breaker on
+                // every poll. Recorded so the job says PARTIAL rather than COMPLETED — and
+                // nothing is imported: the files this poll was not shown are not any
+                // particular subset of the folder, so a checkpoint raised over what it was
+                // shown would exclude the unseen ones from every later poll (R107).
+                incompleteReads.add("Dropbox folder listing: " + listing.truncatedBecause()
+                        + " — nothing was imported and the checkpoint holds, because which files "
+                        + "were left out cannot be told");
+                candidatesThisRun = List.of();
+            } else {
+                candidatesThisRun = candidates;
+            }
             long throttleMs = FetchSupport.calculateThrottleDelayMs(connector);
-            String highWaterModified = lastModified;
 
-            for (var file : files) {
+            // The files whose import SETTLED — succeeded, or was skipped by the import service.
+            // A file that failed is dead-lettered inside the loop, does not hold the checkpoint
+            // back, and is not named by it either. The budget counts settled files; attempts
+            // are bounded at ATTEMPTS_PER_BUDGET × limit.
+            List<jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.Mark> settled = new ArrayList<>();
+            int attempted = 0;
+            boolean attemptsExhausted = false;
+            for (var file : candidatesThisRun) {
+                if (settled.size() >= limit) {
+                    break;
+                }
+                if (attempted >= limit * ATTEMPTS_PER_BUDGET) {
+                    attemptsExhausted = true;
+                    break;
+                }
+                attempted++;
                 fetchSupport.throttle(throttleMs);
-                if (lastModified != null && file.serverModified() != null
-                        && file.serverModified().compareTo(lastModified) <= 0) { skipped++; continue; }
-
                 // Build the request before the download so it is in scope for the
                 // catch and can be DLQ-ed if the download fails before execute().
                 ExternalIngestRequest req = new ExternalIngestRequest();
@@ -85,10 +173,7 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
                         // isSuccess()==true (no errors), so it would be
                         // miscounted as imported otherwise.
                         if (result.skipped()) skipped++; else imported++;
-                        if (file.serverModified() != null
-                                && (highWaterModified == null || file.serverModified().compareTo(highWaterModified) > 0)) {
-                            highWaterModified = file.serverModified();
-                        }
+                        settled.add(new jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.Mark(file.serverModified(), file.id()));
                     } else {
                         FetchSupport.addError(errors, "Dropbox " + file.id() + ": " + String.join(", ", result.errors()));
                     }
@@ -101,8 +186,26 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
                     if (content != null) try { content.close(); } catch (Exception ignored) {}
                 }
             }
-            if (highWaterModified != null && !highWaterModified.equals(lastModified)) {
-                checkpointManager.saveSimpleCheckpoint(profile.getProfileId(), "dropbox", highWaterModified);
+            int leftForTheNextPoll = candidatesThisRun.size() - attempted;
+            if (leftForTheNextPoll > 0) {
+                incompleteReads.add(attemptsExhausted
+                        ? "Dropbox folder listing: " + attempted + " file(s) were attempted ("
+                                + ATTEMPTS_PER_BUDGET + " × the limit of " + limit + ") with only "
+                                + settled.size() + " settled, leaving " + leftForTheNextPoll
+                                + " newer file(s) untried — the failures are in the dead-letter queue; "
+                                + "the files behind them are reached only once they settle or the "
+                                + "checkpoint passes them, or with a higher limit"
+                        : "Dropbox folder listing: the run's limit of " + limit
+                                + " file(s) was reached with " + leftForTheNextPoll
+                                + " newer file(s) left for the next poll");
+            }
+            // HOW FAR the checkpoint may move: to the newest timestamp a settled file carried,
+            // naming every settled id at that timestamp, so a budget that stopped inside a
+            // group of files sharing a timestamp leaves the rest for the next poll rather than
+            // excluding them (R59 / R107).
+            String next = checkpoint.after(settled).encode();
+            if (next != null && !next.equals(stored)) {
+                checkpointManager.saveSimpleCheckpoint(profile.getProfileId(), "dropbox", next);
             }
         } catch (jp.aegif.nemaki.rest.controller.IntegrationSettingsService
                 .SettingUnreadableException couldNotAsk) {
@@ -117,6 +220,6 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
         } catch (Exception e) {
             FetchSupport.addError(errors, "Dropbox connection failed: " + e.getMessage());
         }
-        return new FetchResult(fetched, imported, skipped, errors);
+        return new FetchResult(fetched, imported, skipped, errors, List.copyOf(incompleteReads));
     }
 }

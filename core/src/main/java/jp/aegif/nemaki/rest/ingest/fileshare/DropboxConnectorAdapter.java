@@ -26,17 +26,31 @@ public class DropboxConnectorAdapter {
     private static final Logger logger = LoggerFactory.getLogger(DropboxConnectorAdapter.class);
     private static final String DROPBOX_API = "https://api.dropboxapi.com/2";
     private static final String DROPBOX_CONTENT = "https://content.dropboxapi.com/2";
+    /** Dropbox's largest page of folder entries. */
+    static final int PAGE_SIZE = 2000;
+    /** How many {@code list_folder} (+ {@code /continue}) requests one listing may make unless the caller says otherwise. */
+    public static final int DEFAULT_MAX_LIST_REQUESTS = 50;
     private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
 
     private final String accessToken;
     private final HttpClient httpClient;
+
+    private final String apiBase;
+    private final String contentBase;
 
     public DropboxConnectorAdapter(String accessToken) {
         this(accessToken, jp.aegif.nemaki.rest.ingest.AdapterHttpClient.shared());
     }
 
     public DropboxConnectorAdapter(String accessToken, HttpClient httpClient) {
+        this(accessToken, DROPBOX_API, DROPBOX_CONTENT, httpClient);
+    }
+
+    /** Tests point the real adapter at a local stub of the Dropbox API through the two bases. */
+    public DropboxConnectorAdapter(String accessToken, String apiBase, String contentBase, HttpClient httpClient) {
         this.accessToken = accessToken;
+        this.apiBase = apiBase;
+        this.contentBase = contentBase;
         this.httpClient = httpClient;
     }
 
@@ -44,28 +58,43 @@ public class DropboxConnectorAdapter {
                               long size, String serverModified) {}
 
     /**
-     * List files in a folder.
+     * A folder listing, and whether it is the WHOLE folder.
      *
-     * @param folderPath Dropbox folder path ("" for root, "/Documents", etc.)
-     * @param limit      max items to return
-     * @return list of files (excludes sub-folders)
+     * @param files every file the listing reached, in the order Dropbox returned them (which
+     *     is NOT by modification time)
+     * @param complete true when Dropbox said there is no more
+     * @param truncatedBecause why it stopped early; null when {@code complete}
      */
-    public List<DropboxFile> listFiles(String folderPath, int limit) throws Exception {
-        int pageSize = Math.min(limit, 2000); // Dropbox max: 2000
+    public record FileListing(List<DropboxFile> files, boolean complete, String truncatedBecause) {}
+
+    /**
+     * List EVERY file in a folder (sub-folders excluded), following {@code has_more} /
+     * {@code cursor}, up to {@code maxRequests} requests.
+     *
+     * <p>This replaced a listing stopped at the caller's per-run limit (R107). Dropbox does not
+     * return entries by modification time, so a listing cut at N entries left every file after
+     * them unlisted on every poll, and the checkpoint the caller raised from the files it did
+     * see excluded any of them modified earlier for ever. The whole folder is read; the
+     * caller's budget is the caller's.
+     *
+     * <p>A response without an {@code entries} array is refused, not read as an empty folder;
+     * {@code has_more} with no cursor is a cut, not an end.
+     */
+    public FileListing listAllFiles(String folderPath, int maxRequests) throws Exception {
+        List<DropboxFile> allFiles = new ArrayList<>();
         String body = MAPPER.writeValueAsString(java.util.Map.of(
                 "path", folderPath != null ? folderPath : "",
                 "recursive", false,
-                "limit", pageSize
+                "limit", PAGE_SIZE
         ));
-
-        HttpResponse<String> response = post(DROPBOX_API + "/files/list_folder", body);
+        HttpResponse<String> response = post(apiBase + "/files/list_folder", body);
         JsonNode root = MAPPER.readTree(response.body());
-
-        List<DropboxFile> allFiles = new ArrayList<>();
-        for (int page = 0; page < 50; page++) { // Hard cap
+        for (int request = 1; request <= maxRequests; request++) {
             JsonNode entries = root.get("entries");
-            if (entries == null || !entries.isArray()) break;
-
+            if (entries == null || !entries.isArray()) {
+                throw new RuntimeException("Dropbox answered the folder listing without an entries array on request "
+                        + request + ", so how many entries the folder holds is unknown");
+            }
             for (JsonNode entry : entries) {
                 if (!"file".equals(entry.path(".tag").asText())) continue;
                 allFiles.add(new DropboxFile(
@@ -75,20 +104,23 @@ public class DropboxConnectorAdapter {
                         entry.path("size").asLong(0),
                         entry.path("server_modified").asText(null)
                 ));
-                if (allFiles.size() >= limit) break;
             }
-            if (allFiles.size() >= limit) break;
-
-            // Dropbox uses has_more + cursor for pagination
-            if (!root.path("has_more").asBoolean(false)) break;
+            if (!root.path("has_more").asBoolean(false)) {
+                return new FileListing(allFiles, true, null);
+            }
             String cursor = root.path("cursor").asText(null);
-            if (cursor == null || cursor.isEmpty()) break;
-
+            if (cursor == null || cursor.isEmpty()) {
+                return new FileListing(allFiles, false, "Dropbox said there is more and gave no cursor to read it with, after "
+                        + allFiles.size() + " file(s)");
+            }
+            if (request == maxRequests) break;
             String continueBody = MAPPER.writeValueAsString(java.util.Map.of("cursor", cursor));
-            response = post(DROPBOX_API + "/files/list_folder/continue", continueBody);
+            response = post(apiBase + "/files/list_folder/continue", continueBody);
             root = MAPPER.readTree(response.body());
         }
-        return allFiles;
+        return new FileListing(allFiles, false, "the cap of " + maxRequests + " listing request(s) was reached with "
+                + allFiles.size() + " file(s) read and more entries still in the folder (raise the profile's "
+                + "dropboxListMaxRequests parameter)");
     }
 
     /**
@@ -103,7 +135,7 @@ public class DropboxConnectorAdapter {
                 )
         ));
 
-        HttpResponse<String> response = post(DROPBOX_API + "/files/search_v2", body);
+        HttpResponse<String> response = post(apiBase + "/files/search_v2", body);
         JsonNode root = MAPPER.readTree(response.body());
         JsonNode matches = root.get("matches");
         if (matches == null || !matches.isArray()) return List.of();
@@ -132,7 +164,7 @@ public class DropboxConnectorAdapter {
     public InputStream downloadFile(String filePath) throws Exception {
         String apiArg = MAPPER.writeValueAsString(java.util.Map.of("path", filePath));
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(DROPBOX_CONTENT + "/files/download"))
+                .uri(URI.create(contentBase + "/files/download"))
                 .header("Authorization", "Bearer " + accessToken)
                 .header("Dropbox-API-Arg", apiArg)
                 .timeout(Duration.ofSeconds(60))
@@ -147,7 +179,7 @@ public class DropboxConnectorAdapter {
      */
     public DropboxFile getFileInfo(String filePath) throws Exception {
         String body = MAPPER.writeValueAsString(java.util.Map.of("path", filePath));
-        HttpResponse<String> response = post(DROPBOX_API + "/files/get_metadata", body);
+        HttpResponse<String> response = post(apiBase + "/files/get_metadata", body);
         JsonNode entry = MAPPER.readTree(response.body());
         return new DropboxFile(
                 entry.path("id").asText(),

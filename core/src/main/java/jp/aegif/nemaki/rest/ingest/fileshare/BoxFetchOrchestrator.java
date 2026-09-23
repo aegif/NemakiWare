@@ -26,6 +26,38 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
     public void setCheckpointManager(CheckpointManager checkpointManager) { this.checkpointManager = checkpointManager; }
     public void setCanonicalImportService(CanonicalImportService canonicalImportService) { this.canonicalImportService = canonicalImportService; }
 
+    /**
+     * How this orchestrator obtains its adapter (R107). It used to be {@code new BoxConnectorAdapter(token)}
+     * inline, which made every arm below reachable only by talking to Box; tests point the
+     * REAL adapter at a local stub of the API through this factory (the shape
+     * {@code NotionFetchOrchestrator} and {@code ImapIdleMonitor} use).
+     */
+    java.util.function.Function<String, BoxConnectorAdapter> adapterFactory = BoxConnectorAdapter::new;
+
+    /** Scheduler parameter: how many listing requests one poll may make. */
+    static final String PARAM_MAX_LIST_REQUESTS = "boxListMaxRequests";
+    static final int MAX_LIST_REQUESTS = 1_000_000;
+    /**
+     * How many files one run may ATTEMPT, as a multiple of its budget of settled files: the
+     * budget counts settled files so that files failing on every poll cannot starve the ones
+     * behind them, and the attempts are bounded so that a run in which every import fails
+     * cannot outlast the scheduler's fetch timeout (the rule R59 settled on for Notion).
+     */
+    static final int ATTEMPTS_PER_BUDGET = 4;
+
+    private static int intParam(Map<String, String> params, String name, int fallback, int minimum, int maximum) {
+        String raw = params == null ? null : params.get(name);
+        if (raw == null || raw.isBlank()) return fallback;
+        try {
+            int value = Integer.parseInt(raw.trim());
+            if (value >= minimum && value <= maximum) return value;
+        } catch (NumberFormatException notANumber) {
+            // fall through
+        }
+        throw new IllegalArgumentException("Box connector parameter " + name
+                + " must be an integer between " + minimum + " and " + maximum + ", not '" + raw + "'");
+    }
+
     @Override
     public String sourceSystem() { return "box"; }
 
@@ -47,22 +79,77 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
         String token = fetchSupport.resolvePasswordOrRefuse(connector);
         if (token == null) return new FetchResult(0, 0, List.of("No token for Box connector"));
 
+        int maxRequests;
+        try {
+            maxRequests = intParam(params, PARAM_MAX_LIST_REQUESTS, BoxConnectorAdapter.DEFAULT_MAX_LIST_REQUESTS, 1, MAX_LIST_REQUESTS);
+        } catch (IllegalArgumentException badParameter) {
+            // Not a connector failure and not the default either: guessing the default would
+            // silently ignore what the operator wrote. Reported, and nothing is read.
+            return new FetchResult(0, 0, List.of(badParameter.getMessage()));
+        }
+
         List<String> errors = new ArrayList<>();
+        List<String> incompleteReads = new ArrayList<>();
         int fetched = 0, imported = 0, skipped = 0;
         try {
-            var box = new BoxConnectorAdapter(token);
-            String lastModified = checkpointManager.loadSimpleCheckpoint(profile.getProfileId(), "box." + folderId);
-            var files = box.listFiles(folderId, limit);
-            fetched = files.size();
+            var box = adapterFactory.apply(token);
+            String stored = checkpointManager.loadSimpleCheckpoint(profile.getProfileId(), "box." + folderId);
+            jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint checkpoint =
+                    jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.parse(stored);
+            // The WHOLE folder (R107). A listing stopped at the per-run limit was the first N
+            // names — Box does not list by modification time — so every file after them
+            // was never listed on any poll, and the checkpoint raised from the files that were
+            // seen excluded any of them modified earlier for ever.
+            BoxConnectorAdapter.FileListing listing = box.listAllFiles(folderId, maxRequests);
+            fetched = listing.files().size();
+            List<BoxConnectorAdapter.BoxFile> candidates = new ArrayList<>();
+            for (var file : listing.files()) {
+                if (checkpoint.covers(file.modifiedAt(), file.id())) {
+                    skipped++;
+                    continue;
+                }
+                candidates.add(file);
+            }
+            // Oldest first, so that what a budget leaves for the next poll is always NEWER than
+            // what it took and the checkpoint can move without passing it.
+            candidates.sort(java.util.Comparator.comparing((BoxConnectorAdapter.BoxFile f) -> f.modifiedAt(),
+                            java.util.Comparator.nullsLast(java.util.Comparator.<String>naturalOrder()))
+                    .thenComparing(f -> f.id(), java.util.Comparator.nullsLast(java.util.Comparator.<String>naturalOrder())));
+
+            List<BoxConnectorAdapter.BoxFile> candidatesThisRun;
+            if (!listing.complete()) {
+                // NOT an error — nothing failed, and putting it in `errors` would have the
+                // scheduler count a large folder towards the connector's circuit breaker on
+                // every poll. Recorded so the job says PARTIAL rather than COMPLETED — and
+                // nothing is imported: the files this poll was not shown are not any
+                // particular subset of the folder, so a checkpoint raised over what it was
+                // shown would exclude the unseen ones from every later poll (R107).
+                incompleteReads.add("Box folder listing: " + listing.truncatedBecause()
+                        + " — nothing was imported and the checkpoint holds, because which files "
+                        + "were left out cannot be told");
+                candidatesThisRun = List.of();
+            } else {
+                candidatesThisRun = candidates;
+            }
             long throttleMs = FetchSupport.calculateThrottleDelayMs(connector);
-            String highWaterModified = lastModified;
 
-            for (var file : files) {
+            // The files whose import SETTLED — succeeded, or was skipped by the import service.
+            // A file that failed is dead-lettered inside the loop, does not hold the checkpoint
+            // back, and is not named by it either. The budget counts settled files; attempts
+            // are bounded at ATTEMPTS_PER_BUDGET × limit.
+            List<jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.Mark> settled = new ArrayList<>();
+            int attempted = 0;
+            boolean attemptsExhausted = false;
+            for (var file : candidatesThisRun) {
+                if (settled.size() >= limit) {
+                    break;
+                }
+                if (attempted >= limit * ATTEMPTS_PER_BUDGET) {
+                    attemptsExhausted = true;
+                    break;
+                }
+                attempted++;
                 fetchSupport.throttle(throttleMs);
-                // Skip files not modified since checkpoint
-                if (lastModified != null && file.modifiedAt() != null
-                        && file.modifiedAt().compareTo(lastModified) <= 0) { skipped++; continue; }
-
                 // Build the request before the download so it is in scope for the
                 // catch and can be DLQ-ed if the download fails before execute().
                 ExternalIngestRequest req = new ExternalIngestRequest();
@@ -90,10 +177,7 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
                         // isSuccess()==true (no errors), so it would be
                         // miscounted as imported otherwise.
                         if (result.skipped()) skipped++; else imported++;
-                        if (file.modifiedAt() != null
-                                && (highWaterModified == null || file.modifiedAt().compareTo(highWaterModified) > 0)) {
-                            highWaterModified = file.modifiedAt();
-                        }
+                        settled.add(new jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.Mark(file.modifiedAt(), file.id()));
                     } else {
                         FetchSupport.addError(errors, "Box " + file.id() + ": " + String.join(", ", result.errors()));
                     }
@@ -107,8 +191,26 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
                     if (content != null) try { content.close(); } catch (Exception ignored) {}
                 }
             }
-            if (highWaterModified != null && !highWaterModified.equals(lastModified)) {
-                checkpointManager.saveSimpleCheckpoint(profile.getProfileId(), "box." + folderId, highWaterModified);
+            int leftForTheNextPoll = candidatesThisRun.size() - attempted;
+            if (leftForTheNextPoll > 0) {
+                incompleteReads.add(attemptsExhausted
+                        ? "Box folder listing: " + attempted + " file(s) were attempted ("
+                                + ATTEMPTS_PER_BUDGET + " × the limit of " + limit + ") with only "
+                                + settled.size() + " settled, leaving " + leftForTheNextPoll
+                                + " newer file(s) untried — the failures are in the dead-letter queue; "
+                                + "the files behind them are reached only once they settle or the "
+                                + "checkpoint passes them, or with a higher limit"
+                        : "Box folder listing: the run's limit of " + limit
+                                + " file(s) was reached with " + leftForTheNextPoll
+                                + " newer file(s) left for the next poll");
+            }
+            // HOW FAR the checkpoint may move: to the newest timestamp a settled file carried,
+            // naming every settled id at that timestamp, so a budget that stopped inside a
+            // group of files sharing a timestamp leaves the rest for the next poll rather than
+            // excluding them (R59 / R107).
+            String next = checkpoint.after(settled).encode();
+            if (next != null && !next.equals(stored)) {
+                checkpointManager.saveSimpleCheckpoint(profile.getProfileId(), "box." + folderId, next);
             }
         } catch (jp.aegif.nemaki.rest.controller.IntegrationSettingsService
                 .SettingUnreadableException couldNotAsk) {
@@ -123,6 +225,6 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
         } catch (Exception e) {
             FetchSupport.addError(errors, "Box connection failed: " + e.getMessage());
         }
-        return new FetchResult(fetched, imported, skipped, errors);
+        return new FetchResult(fetched, imported, skipped, errors, List.copyOf(incompleteReads));
     }
 }
