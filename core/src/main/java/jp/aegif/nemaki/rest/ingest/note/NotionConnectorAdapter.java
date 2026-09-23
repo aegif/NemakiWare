@@ -75,84 +75,93 @@ public class NotionConnectorAdapter {
     /**
      * A page listing, and whether it is the WHOLE listing.
      *
-     * @param pages what was read
+     * @param pages what was read, in the order Notion returned it — newest first when
+     *     {@code ordered}
      * @param complete true when nothing this method saw says there is more. NOT the same as
      *     "Notion answered that there is nothing after these": a response that OMITS
      *     {@code has_more} is read as false, i.e. as an end (R61 — recorded, not fixed,
      *     because the plan stops this area after its second P1)
      * @param truncatedBecause why it stopped early; null when {@code complete}
+     * @param ordered true when the rows came back DESCENDING by {@code last_edited_time} — the
+     *     order this adapter asks for, and the one that lets it stop reading at the caller's
+     *     checkpoint. False when Notion rejected the sort and the rows were read in whatever
+     *     order Notion chose: such a listing is whole only if Notion ended it, and a cut-short
+     *     one says nothing about which pages were left out (R59)
      */
     public record PageListing(List<NotionPageSummary> pages, boolean complete,
-            String truncatedBecause) {
+            String truncatedBecause, boolean ordered) {
 
-        static PageListing whole(List<NotionPageSummary> pages) {
-            return new PageListing(pages, true, null);
+        static PageListing whole(List<NotionPageSummary> pages, boolean ordered) {
+            return new PageListing(pages, true, null, ordered);
         }
 
-        static PageListing cutShort(List<NotionPageSummary> pages, String because) {
-            return new PageListing(pages, false, because);
+        static PageListing cutShort(List<NotionPageSummary> pages, boolean ordered,
+                String because) {
+            return new PageListing(pages, false, because, ordered);
         }
     }
 
+    /** How many {@code /search} requests one listing may make unless the caller says otherwise. */
+    public static final int DEFAULT_MAX_SEARCH_REQUESTS = 50;
+
     /**
-     * Search for pages in the workspace with {@code start_cursor} pagination.
+     * List the pages edited at or after {@code since}, newest first.
      *
-     * <p>Notion API supports max {@code page_size} of 100.  This method
-     * follows {@code next_cursor} across pages until {@code limit} results
-     * are collected or no more pages remain.
+     * <p>The search is asked for rows DESCENDING by {@code last_edited_time} — the one timestamp
+     * sort Notion's {@code /search} documents — and read until the first row edited BEFORE
+     * {@code since}. Every row after that one is older still, so the listing is whole without
+     * reading them. Rows edited AT {@code since} are kept: Notion rounds an edit time DOWN to the
+     * minute, so the minute a checkpoint names is a group of pages of which the caller may have
+     * imported only some, and it tells them apart by id.
      *
-     * <p>It returns whether the listing is whole. Stopping at the caller's {@code limit} or at
-     * the page cap is legitimate and common — what is not legitimate is handing back the same
-     * shape for "these are all the pages" and "these are the first N of more", because the
-     * caller advances a last-edited-time checkpoint from what it was given.
+     * <p>This replaced a listing read in Notion's unspecified order and stopped at the caller's
+     * limit (R59). Cut short, that listing was an arbitrary sample, and the caller raised its
+     * last-edited checkpoint to the newest row it had seen — every page it had NOT been shown
+     * with an older edit time was then filtered out by every later poll, permanently. Asking for
+     * ASCENDING order and a limit was tried first and was worse: the limit then returned the
+     * oldest pages of the whole workspace on every poll, so nothing past the first batch was
+     * ever imported. The listing therefore takes no limit at all; the caller's per-run budget
+     * is the caller's, applied to what this method returns.
      *
-     * <p>{@code complete} is true where nothing this method saw says there is more. Two ways of
-     * getting that wrong were fixed: an empty {@code results} page may still carry
-     * {@code has_more}, and a {@code limit} above 100 lands in the middle of a page, so rows
-     * this method has already read can be dropped while Notion's own {@code has_more} for that
-     * page is false.
+     * <p>If Notion answers 400 to the sort — the parameter is documented, but this was not
+     * verified against a live workspace before it shipped (R106) — the page is asked for again
+     * WITHOUT it and the listing is marked unordered. It is then read to Notion's end or to the
+     * request cap, because without an order there is no row at which "the rest is older" can
+     * be said. The connector does not stop; a cut-short unordered listing is what holds the
+     * caller's checkpoint.
+     *
+     * <p>{@code complete} is true where nothing this method saw says there is more. Notion's own
+     * {@code request_status} is read as well as {@code has_more}: a result set Notion reports as
+     * {@code incomplete} ({@code query_result_limit_reached}) is a cut whatever {@code has_more}
+     * says, unless the checkpoint was reached inside it — Notion cuts the TAIL of the ordered
+     * set, and the tail is older than the checkpoint.
      *
      * <p><b>One is left open and recorded (R61).</b> A response that omits {@code has_more}
-     * altogether is read as {@code false} — as an end — while the line above it refuses a
+     * altogether is read as {@code false} — as an end — while the line below it refuses a
      * response that omits {@code results}. The two are equally broken answers and only one is
-     * refused. This javadoc used to say {@code complete} means "Notion has ANSWERED that there
-     * is nothing after what came back", which that asymmetry makes false; the sentence is
-     * corrected here rather than the code, because the plan stops this area after its second
-     * P1 and the fix belongs with whoever opens it.
+     * refused; the sentence is corrected here rather than the code, because the plan stops this
+     * area after its second P1 and the fix belongs with whoever opens it.
+     *
+     * @param since a {@code last_edited_time} as Notion writes it (the caller's checkpoint
+     *     minute), or null to read every page
+     * @param maxRequests how many {@code /search} requests to make before giving up and
+     *     reporting the listing cut short
      */
-    public PageListing searchPages(String query, int limit) throws Exception {
-        int pageSize = Math.min(limit, 100); // Notion max page_size: 100
+    public PageListing searchPages(String query, String since, int maxRequests) throws Exception {
         List<NotionPageSummary> allPages = new ArrayList<>();
         String cursor = null;
-        // Set where nothing said there is more — which includes a response that OMITS has_more
-        // (R61), so this is NOT "Notion answered". The javadoc above was corrected for exactly
-        // that and this line — the strongest statement of the three, and the one right beside
-        // the flag — was left saying ANSWERED (subagent review, P2).
-        //
-        // It tells an END apart from the 50-page CAP: the cap falls out of the loop with the
-        // flag unset. (Not "every other way out is a return or a throw" — the cap is neither.)
-        boolean nothingMore = false;
+        boolean sorted = true;
 
-        for (int page = 0; page < 50; page++) { // Hard cap on pages
-            var bodyNode = MAPPER.createObjectNode();
-            if (query != null && !query.isBlank()) {
-                bodyNode.put("query", query);
+        for (int request = 0; request < maxRequests; request++) {
+            HttpResponse<String> response = search(query, cursor, sorted);
+            if (response.statusCode() == 400 && sorted) {
+                logger.warn("Notion search refused the last_edited_time sort (400); reading the "
+                        + "listing unordered — it is whole only if Notion ends it, and cut short "
+                        + "it holds the checkpoint: {}",
+                        jp.aegif.nemaki.rest.ingest.AdapterHttpClient.truncateBody(response.body()));
+                sorted = false;
+                response = search(query, cursor, sorted);
             }
-            bodyNode.putObject("filter").put("value", "page").put("property", "object");
-            bodyNode.put("page_size", pageSize);
-            if (cursor != null) bodyNode.put("start_cursor", cursor);
-            String body = MAPPER.writeValueAsString(bodyNode);
-
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(apiBase + "/search"))
-                    .header("Authorization", "Bearer " + token)
-                    .header("Notion-Version", NOTION_VERSION)
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(body))
-                    .timeout(Duration.ofSeconds(30))
-                    .build();
-
-            HttpResponse<String> response = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRetry(httpClient, request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() != 200) {
                 throw new RuntimeException("Notion API error " + response.statusCode() + ": " + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.truncateBody(response.body()));
             }
@@ -163,64 +172,45 @@ public class NotionConnectorAdapter {
             // It used to end the loop the same way a genuine last page does.
             if (results == null || !results.isArray()) {
                 throw new NotionReadIncompleteException("Notion search answered without a results "
-                        + "array on page " + (page + 1) + ", so how many pages exist is unknown");
+                        + "array on request " + (request + 1) + ", so how many pages exist is unknown");
             }
             // Notion pagination: has_more + next_cursor. Read BEFORE the empty-page arm, because
             // an empty page that says there is more is not the end of anything — treating it as
             // one reported the rest of the workspace as nothing (both reviews, P1).
             boolean hasMore = root.path("has_more").asBoolean(false);
             String nextCursor = root.path("next_cursor").asText(null);
+            // Notion's OWN statement that the result set was cut. Documented beside has_more as
+            // {"type": "complete" | "incomplete", "incomplete_reason": "query_result_limit_reached"}
+            // — an earlier draft read fields named status / reason, which Notion never writes,
+            // so it could never have fired.
+            JsonNode requestStatus = root.path("request_status");
+            boolean notionSaysIncomplete = "incomplete".equalsIgnoreCase(
+                    requestStatus.path("type").asText(""));
 
-            if (results.isEmpty()) {
-                if (!hasMore) {
-                    // Notion said there is no more — or omitted has_more, which is read
-                    // the same way and is not the same thing (R61).
-                    nothingMore = true;
-                    break;
-                }
-                if (nextCursor == null || nextCursor.isEmpty()) {
-                    throw new NotionReadIncompleteException("Notion search answered an empty page "
-                            + "that says there are more, and gave no cursor to read them with, "
-                            + "after " + allPages.size() + " page(s)");
-                }
-                cursor = nextCursor;
-                continue;
-            }
-
-            // The limit is checked BEFORE adding, so `read` counts what was kept and the rest of
-            // this page is known to have been left behind.
-            int read = 0;
             for (JsonNode pageNode : results) {
-                if (allPages.size() >= limit) {
-                    break;
+                String lastEdited = pageNode.hasNonNull("last_edited_time")
+                        ? pageNode.get("last_edited_time").asText() : null;
+                if (sorted && since != null && lastEdited != null && lastEdited.compareTo(since) < 0) {
+                    // The checkpoint: this row and every row after it were edited before it.
+                    return logged(query, since, PageListing.whole(allPages, true));
                 }
                 String id = pageNode.path("id").asText();
                 String url = pageNode.path("url").asText();
-                String lastEdited = pageNode.path("last_edited_time").asText();
                 String title = extractTitle(pageNode);
                 String parentId = extractParentId(pageNode);
                 allPages.add(new NotionPageSummary(id, title, url, parentId, lastEdited));
-                read++;
             }
-            int leftOnThePage = results.size() - read;
 
-            if (allPages.size() >= limit) {
-                // `hasMore` alone is not enough. With limit > 100 the page size is 100, so the
-                // limit falls in the MIDDLE of a page: Notion can answer has_more=false for a
-                // page whose last rows this method just dropped. Reporting that as the whole
-                // listing raised the caller's checkpoint over rows it had read and thrown away
-                // (subagent review, P1).
-                if (hasMore || leftOnThePage > 0) {
-                    return logged(query, limit, PageListing.cutShort(allPages, "the caller's limit of " + limit
-                            + " was reached" + (leftOnThePage > 0
-                                    ? " part-way through a page, leaving " + leftOnThePage
-                                            + " already-read page(s) out"
-                                    : " and Notion says there are more pages")));
-                }
-                return logged(query, limit, PageListing.whole(allPages));
+            if (notionSaysIncomplete) {
+                return logged(query, since, PageListing.cutShort(allPages, sorted,
+                        "Notion reported the search result set as incomplete ("
+                                + requestStatus.path("incomplete_reason").asText("no reason given")
+                                + ")"));
             }
             if (!hasMore) {
-                return logged(query, limit, PageListing.whole(allPages));
+                // Notion said there is no more — or omitted has_more, which is read the same
+                // way and is not the same thing (R61).
+                return logged(query, since, PageListing.whole(allPages, sorted));
             }
             if (nextCursor == null || nextCursor.isEmpty()) {
                 // has_more with nowhere to go. Ending here quietly reported the rest of the
@@ -231,31 +221,50 @@ public class NotionConnectorAdapter {
             }
             cursor = nextCursor;
         }
-
-        if (nothingMore) {
-            return logged(query, limit, PageListing.whole(allPages));
-        }
-        // The 50-page cap: Notion offered another cursor and this method stopped asking. Counting
+        // The request cap: Notion offered another cursor and this method stopped asking. Counting
         // that as a whole listing is what let the caller raise its checkpoint over pages it had
         // never been shown.
-        return logged(query, limit, PageListing.cutShort(allPages,
-                "the 50-page pagination cap was reached with " + allPages.size()
-                        + " page(s) read and more still offered"));
+        return logged(query, since, PageListing.cutShort(allPages, sorted,
+                "the cap of " + maxRequests + " search request(s) was reached with " + allPages.size()
+                        + " page(s) read and more still offered (raise the profile's "
+                        + "notionSearchMaxRequests parameter, or narrow the query)"));
+    }
+
+    private HttpResponse<String> search(String query, String cursor, boolean sorted)
+            throws Exception {
+        var bodyNode = MAPPER.createObjectNode();
+        if (query != null && !query.isBlank()) {
+            bodyNode.put("query", query);
+        }
+        bodyNode.putObject("filter").put("value", "page").put("property", "object");
+        if (sorted) {
+            bodyNode.putObject("sort").put("direction", "descending")
+                    .put("timestamp", "last_edited_time");
+        }
+        bodyNode.put("page_size", 100); // Notion max page_size: 100
+        if (cursor != null) bodyNode.put("start_cursor", cursor);
+        String body = MAPPER.writeValueAsString(bodyNode);
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(apiBase + "/search"))
+                .header("Authorization", "Bearer " + token)
+                .header("Notion-Version", NOTION_VERSION)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .timeout(Duration.ofSeconds(30))
+                .build();
+        return jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRetry(httpClient, request,
+                HttpResponse.BodyHandlers.ofString());
     }
 
     /**
-     * One logging point for every way {@link #searchPages} RETURNS. The four refusals throw and
-     * are recorded by the caller as errors; "every way it ends" covered those too, which it does
-     * not (subagent review, P3).
-     *
-     * <p>The line used to run on every call. Restructuring the exits left it reachable from two
-     * of the five returns, so the ordinary case stopped logging and the truncation cases — the
-     * ones worth investigating — logged nothing either. (Earlier drafts said "six": that was the
-     * count in a commit message, and it is neither the returns nor the exits nor the throws.)
+     * One logging point for every way {@link #searchPages} RETURNS. The refusals throw and are
+     * recorded by the caller as errors; "every way it ends" covered those too, which it does not
+     * (subagent review, P3).
      */
-    private PageListing logged(String query, int limit, PageListing listing) {
-        logger.info("Notion searchPages: query='{}', fetched={}, limit={}, complete={}{}",
-                query, listing.pages().size(), limit, listing.complete(),
+    private PageListing logged(String query, String since, PageListing listing) {
+        logger.info("Notion searchPages: query='{}', since={}, fetched={}, complete={}, ordered={}{}",
+                query, since, listing.pages().size(), listing.complete(), listing.ordered(),
                 listing.complete() ? "" : " (" + listing.truncatedBecause() + ")");
         return listing;
     }

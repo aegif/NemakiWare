@@ -195,6 +195,8 @@ class NotionPartialReadsAreNotCompleteTest {
     private CheckpointManager checkpointManager;
     private CanonicalImportService importService;
     private final List<String> dlqReasons = new ArrayList<>();
+    /** Source object ids handed to the import service, in the order they were handed over. */
+    private final List<String> importedIds = new ArrayList<>();
 
     private NotionFetchOrchestrator orchestrator() {
         fetchSupport = mock(FetchSupport.class);
@@ -210,9 +212,13 @@ class NotionPartialReadsAreNotCompleteTest {
         }).when(fetchSupport).saveSourceNeverReadToDlq(any(), anyString());
         lenient().when(checkpointManager.loadSimpleCheckpoint(anyString(), anyString()))
                 .thenReturn(null);
-        lenient().when(importService.executeNoteImport(any(), any())).thenReturn(
-                new ExternalIngestResult("r", "obj-1", "1.0", false, false, false, null, null,
-                        List.of(), List.of()));
+        importedIds.clear();
+        lenient().when(importService.executeNoteImport(any(), any())).thenAnswer(call -> {
+            ExternalIngestRequest req = call.getArgument(1);
+            importedIds.add(req.getSourceObjectId());
+            return new ExternalIngestResult("r", "obj-1", "1.0", false, false, false, null, null,
+                    List.of(), List.of());
+        });
 
         NotionFetchOrchestrator orchestrator = new NotionFetchOrchestrator();
         orchestrator.setFetchSupport(fetchSupport);
@@ -317,25 +323,26 @@ class NotionPartialReadsAreNotCompleteTest {
     // ── the partial listing ────────────────────────────────────────
 
     @Test
-    @DisplayName("a page listing cut short at the limit is not a complete run")
+    @DisplayName("a run whose budget leaves pages for the next poll is not a complete run")
     void aTruncatedListingIsNotComplete() {
-        // Notion has more pages and this poll stopped at the caller's limit. Nothing failed —
-        // and that is exactly why it used to be indistinguishable from having seen everything.
-        search = (exchange, n) -> json(exchange, 200,
-                onePage("page-1", "2026-01-01T00:00:00.000Z", true, "cursor-2"));
+        // Two pages newer than the checkpoint and a budget of one. Nothing failed — and that
+        // is exactly why it used to be indistinguishable from having seen everything.
+        search = (exchange, n) -> json(exchange, 200, pageOf(false,
+                "p-2@2026-01-02T00:00:00.000Z", "p-1@2026-01-01T00:00:00.000Z"));
 
         FetchResult result = orchestrator().execute(null, profile(), connector(), Map.of(), 1);
 
         assertFalse(result.sawEverything(),
-                "the run says it saw the whole workspace, and Notion said there was more: "
+                "the run says it saw the whole workspace, and a page was left for the next poll: "
                         + result);
         assertEquals(1, result.incompleteReads().size(), result.incompleteReads().toString());
         assertTrue(result.incompleteReads().get(0).contains("limit"),
                 result.incompleteReads().get(0));
         assertFalse(result.hasErrors(),
-                "a listing that stopped at the caller's limit is not a FAILURE — reporting it as "
-                        + "one makes the scheduler count a healthy workspace towards the "
-                        + "connector's circuit breaker: " + result.errors());
+                "a run that stopped at its budget is not a FAILURE — reporting it as one makes "
+                        + "the scheduler count a healthy workspace towards the connector's "
+                        + "circuit breaker: " + result.errors());
+        assertEquals(List.of("p-1"), importedIds, "the budget did not take the OLDEST page first");
     }
 
     @Test
@@ -389,22 +396,23 @@ class NotionPartialReadsAreNotCompleteTest {
     }
 
     @Test
-    @DisplayName("a limit that falls mid-page does not call the listing whole")
+    @DisplayName("a budget that stops inside a page leaves the rest for the next poll, and the checkpoint names only what was taken")
     void aLimitInsideAPageIsStillTruncation() {
-        // The subagent's P1. With limit > 100 the page size is 100, so the limit lands in the
-        // middle of a page: rows this adapter had already READ were dropped while Notion's
-        // has_more for that page was false — and the listing called itself whole.
-        //
-        // Reproduced in miniature: one page of three rows, limit 2. has_more is false, one row
-        // is left behind, and complete must still be false.
+        // Once the subagent's P1 about a limit landing mid-page: rows the adapter had READ were
+        // dropped while Notion's has_more was false, and the listing called itself whole. The
+        // adapter no longer takes a limit (R59); the run's budget is applied to the whole
+        // listing, oldest first, and what it leaves is reported.
         search = (exchange, n) -> json(exchange, 200, threePages(false));
 
         FetchResult result = orchestrator().execute(null, profile(), connector(), Map.of(), 2);
 
         assertFalse(result.sawEverything(),
-                "a row this run read and dropped was reported as nothing left to read: " + result);
-        assertTrue(result.incompleteReads().get(0).contains("already-read"),
+                "a row this run listed and did not import was reported as nothing left: " + result);
+        assertTrue(result.incompleteReads().get(0).contains("left for the next poll"),
                 result.incompleteReads().get(0));
+        assertEquals(List.of("p-1", "p-2"), importedIds);
+        verify(checkpointManager).saveSimpleCheckpoint("p-notion", "notion",
+                "2026-01-02T00:00:00.000Z|p-2");
     }
 
     @Test
@@ -420,6 +428,8 @@ class NotionPartialReadsAreNotCompleteTest {
         assertTrue(result.sawEverything(),
                 "a listing that ended exactly at the limit, with Notion saying there is no more, "
                         + "was reported as cut short: " + result.incompleteReads());
+        verify(checkpointManager).saveSimpleCheckpoint("p-notion", "notion",
+                "2026-01-03T00:00:00.000Z|p-3");
     }
 
     @Test
@@ -475,6 +485,375 @@ class NotionPartialReadsAreNotCompleteTest {
         assertFalse(result.hasErrors(), result.errors().toString());
         assertEquals(1, result.imported(), result.toString());
         verify(checkpointManager).saveSimpleCheckpoint("p-notion", "notion",
-                "2026-01-01T00:00:00.000Z");
+                "2026-01-01T00:00:00.000Z|page-1");
     }
+
+    // ── R59: the listing is read newest first down to the checkpoint minute; the budget takes
+    //    the oldest first; the checkpoint names a CLOSED minute and the pages done at it ─────
+
+    private static final java.util.concurrent.atomic.AtomicReference<String> LAST_SEARCH_BODY =
+            new java.util.concurrent.atomic.AtomicReference<>("");
+
+    private static String bodyOf(HttpExchange exchange) throws IOException {
+        return new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+    }
+
+    /** Rows as {@code id@last_edited_time}, in the order given. */
+    private static String rowsJson(String... idAtTime) {
+        StringBuilder rows = new StringBuilder();
+        for (String spec : idAtTime) {
+            String id = spec.substring(0, spec.indexOf('@'));
+            String at = spec.substring(spec.indexOf('@') + 1);
+            if (rows.length() > 0) {
+                rows.append(',');
+            }
+            rows.append("{\"id\":\"").append(id).append("\",\"url\":\"https://notion.so/")
+                    .append(id).append("\",\"last_edited_time\":\"").append(at).append("\",")
+                    .append("\"properties\":{\"title\":{\"type\":\"title\","
+                            + "\"title\":[{\"plain_text\":\"T\"}]}},")
+                    .append("\"parent\":{\"workspace\":true}}");
+        }
+        return rows.toString();
+    }
+
+    private static String pageOf(boolean hasMore, String... idAtTime) {
+        return "{\"results\":[" + rowsJson(idAtTime) + "],\"has_more\":" + hasMore
+                + (hasMore ? ",\"next_cursor\":\"next\"" : "") + "}";
+    }
+
+    /** A page that says there is more, with the cursor to read it. */
+    private static String pageWithCursor(String cursor, String... idAtTime) {
+        return "{\"results\":[" + rowsJson(idAtTime) + "],\"has_more\":true,"
+                + "\"next_cursor\":\"" + cursor + "\"}";
+    }
+
+    private FetchResult runWithLimit(int limit) {
+        return orchestrator().execute(null, profile(), connector(), Map.of(), limit);
+    }
+
+    private void checkpointIs(String stored) {
+        lenient().when(checkpointManager.loadSimpleCheckpoint(anyString(), anyString()))
+                .thenReturn(stored);
+    }
+
+    /**
+     * The search asks Notion for rows DESCENDING by {@code last_edited_time}.
+     *
+     * <p>Without an order, a listing cut short was an arbitrary sample and the checkpoint
+     * raised from it silently excluded every page not shown whose edit time was older (R59).
+     * Newest first is what lets the adapter stop at the checkpoint instead of taking a limit;
+     * ascending with a limit returned the OLDEST pages of the workspace on every poll.
+     */
+    @Test
+    @DisplayName("the search asks for rows newest first")
+    void theSearchAsksForLastEditedOrder() {
+        search = (exchange, n) -> {
+            LAST_SEARCH_BODY.set(bodyOf(exchange));
+            json(exchange, 200, onePage("page-1", "2026-01-01T00:00:00.000Z", false, null));
+        };
+        run();
+        String body = LAST_SEARCH_BODY.get();
+        assertTrue(body.contains("\"sort\""), "the search carries no sort: " + body);
+        assertTrue(body.contains("\"timestamp\":\"last_edited_time\""), body);
+        assertTrue(body.contains("\"direction\":\"descending\""), body);
+    }
+
+    /**
+     * The listing stops at the first row edited before the checkpoint minute, and is whole.
+     *
+     * <p>Notion offers a cursor after the page; it is not followed, because every row after
+     * the one at {@code 01-01} is older still. The row AT the checkpoint minute that the
+     * checkpoint names is skipped; the one it does not name is imported.
+     */
+    @Test
+    @DisplayName("the listing stops at the checkpoint minute and is whole without reading further")
+    void theListingStopsAtTheCheckpointMinute() {
+        search = (exchange, n) -> json(exchange, 200, pageWithCursor("c2",
+                "p-4@2026-01-03T00:00:00.000Z", "p-3@2026-01-02T00:00:00.000Z",
+                "p-2@2026-01-02T00:00:00.000Z", "p-1@2026-01-01T00:00:00.000Z"));
+        NotionFetchOrchestrator orchestrator = orchestrator();
+        checkpointIs("2026-01-02T00:00:00.000Z|p-2");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), Map.of(), 10);
+
+        assertEquals(1, SEARCH_CALLS.get(), "the cursor past the checkpoint was followed");
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        assertEquals(List.of("p-3", "p-4"), importedIds);
+        assertEquals(1, result.skipped(), "the page the checkpoint names was not skipped: " + result);
+        verify(checkpointManager).saveSimpleCheckpoint("p-notion", "notion",
+                "2026-01-03T00:00:00.000Z|p-4");
+    }
+
+    /**
+     * A budget that stops inside a minute's group names the pages it took, and the next poll
+     * takes the rest and ADDS them to the same minute.
+     */
+    @Test
+    @DisplayName("a budget that stops inside a minute names what it took; the next poll adds the rest")
+    void aBudgetInsideAMinuteGroupIsResumedByTheNextPoll() {
+        search = (exchange, n) -> json(exchange, 200, pageOf(false,
+                "p-4@2026-01-02T00:00:00.000Z", "p-3@2026-01-02T00:00:00.000Z",
+                "p-2@2026-01-02T00:00:00.000Z", "p-1@2026-01-01T00:00:00.000Z"));
+        FetchResult first = runWithLimit(2);
+
+        assertEquals(List.of("p-1", "p-2"), importedIds);
+        assertEquals(1, first.incompleteReads().size(), first.incompleteReads().toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-notion", "notion",
+                "2026-01-02T00:00:00.000Z|p-2");
+
+        NotionFetchOrchestrator second = orchestrator();
+        checkpointIs("2026-01-02T00:00:00.000Z|p-2");
+        search = (exchange, n) -> json(exchange, 200, pageOf(false,
+                "p-4@2026-01-02T00:00:00.000Z", "p-3@2026-01-02T00:00:00.000Z",
+                "p-2@2026-01-02T00:00:00.000Z", "p-1@2026-01-01T00:00:00.000Z"));
+        FetchResult result = second.execute(null, profile(), connector(), Map.of(), 10);
+
+        assertEquals(List.of("p-3", "p-4"), importedIds, "the rest of the minute was not taken");
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-notion", "notion",
+                "2026-01-02T00:00:00.000Z|p-2,p-3,p-4");
+    }
+
+    /**
+     * A minute that has not closed is not named by the checkpoint.
+     *
+     * <p>Notion rounds an edit time DOWN to the minute and its search index is not immediate.
+     * A page edited later in the same minute keeps the same {@code last_edited_time}; if the
+     * checkpoint named that minute and the page, the later edit would never be seen. So the
+     * page is imported, and the checkpoint waits for the minute to close.
+     */
+    @Test
+    @DisplayName("a minute that has not closed is imported but not named by the checkpoint")
+    void anOpenMinuteIsNotNamedByTheCheckpoint() {
+        search = (exchange, n) -> json(exchange, 200, pageOf(false,
+                "p-1@2026-09-23T12:00:00.000Z"));
+        NotionFetchOrchestrator orchestrator = orchestrator();
+        orchestrator.clock = java.time.Clock.fixed(java.time.Instant.parse("2026-09-23T12:05:00Z"),
+                java.time.ZoneOffset.UTC);
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), Map.of(), 10);
+
+        assertEquals(List.of("p-1"), importedIds, "the page in the open minute was not imported");
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /** The other direction: once the minute and the index-lag allowance have passed, it is named. */
+    @Test
+    @DisplayName("a minute that closed within the lag allowance is named by the checkpoint")
+    void aClosedMinuteIsNamedByTheCheckpoint() {
+        search = (exchange, n) -> json(exchange, 200, pageOf(false,
+                "p-1@2026-09-23T12:00:00.000Z"));
+        NotionFetchOrchestrator orchestrator = orchestrator();
+        orchestrator.clock = java.time.Clock.fixed(java.time.Instant.parse("2026-09-23T12:11:00Z"),
+                java.time.ZoneOffset.UTC);
+
+        orchestrator.execute(null, profile(), connector(), Map.of(), 10);
+
+        verify(checkpointManager).saveSimpleCheckpoint("p-notion", "notion",
+                "2026-09-23T12:00:00.000Z|p-1");
+    }
+
+    /**
+     * When Notion refuses the sort, the listing is read unordered; whole, it is imported in
+     * edit order all the same — the connector does not stop.
+     *
+     * <p>This is the answer to why R59 sat open: an API parameter that could not be verified
+     * against a live workspace might stop the connector if refused. Refused, it is retried
+     * without, and a listing Notion ENDED is whole whatever order it came in.
+     */
+    @Test
+    @DisplayName("a refused sort is retried without it, and a whole unordered listing is imported oldest first")
+    void aRefusedSortIsRetriedWithoutIt() {
+        search = (exchange, n) -> {
+            String body = bodyOf(exchange);
+            if (body.contains("\"sort\"")) {
+                json(exchange, 400, "{\"object\":\"error\",\"status\":400,"
+                        + "\"code\":\"validation_error\",\"message\":\"sort is not valid\"}");
+                return;
+            }
+            json(exchange, 200, pageOf(false,
+                    "p-2@2026-01-02T00:00:00.000Z", "p-3@2026-01-03T00:00:00.000Z",
+                    "p-1@2026-01-01T00:00:00.000Z"));
+        };
+        FetchResult result = runWithLimit(10);
+
+        assertEquals(2, SEARCH_CALLS.get(), "the refused sort was not retried without it");
+        assertTrue(result.errors().isEmpty(), "the refused sort stopped the connector: "
+                + result.errors());
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        assertEquals(List.of("p-1", "p-2", "p-3"), importedIds, "not imported oldest first");
+        verify(checkpointManager).saveSimpleCheckpoint("p-notion", "notion",
+                "2026-01-03T00:00:00.000Z|p-3");
+    }
+
+    /**
+     * An UNORDERED listing is read to Notion's end, not to the checkpoint: without an order, a
+     * row older than the checkpoint says nothing about the rows after it.
+     */
+    @Test
+    @DisplayName("an unordered listing is read to its end, not to the checkpoint")
+    void anUnorderedListingIsReadToItsEndNotToTheCheckpoint() {
+        search = (exchange, n) -> {
+            if (bodyOf(exchange).contains("\"sort\"")) {
+                json(exchange, 400, "{\"object\":\"error\",\"status\":400,"
+                        + "\"code\":\"validation_error\",\"message\":\"sort is not valid\"}");
+                return;
+            }
+            json(exchange, 200, pageOf(false,
+                    "p-3@2026-01-03T00:00:00.000Z", "p-1@2026-01-01T00:00:00.000Z",
+                    "p-4@2026-01-04T00:00:00.000Z"));
+        };
+        NotionFetchOrchestrator orchestrator = orchestrator();
+        checkpointIs("2026-01-02T00:00:00.000Z");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), Map.of(), 10);
+
+        assertEquals(List.of("p-3", "p-4"), importedIds,
+                "the row after the one older than the checkpoint was not read");
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-notion", "notion",
+                "2026-01-04T00:00:00.000Z|p-4");
+    }
+
+    /**
+     * An unordered listing that was cut short shows nothing about which pages were left out,
+     * so nothing is imported and the checkpoint holds.
+     */
+    @Test
+    @DisplayName("an unordered listing cut short imports nothing and holds the checkpoint")
+    void anUnorderedListingCutShortHoldsTheCheckpoint() {
+        search = (exchange, n) -> {
+            if (bodyOf(exchange).contains("\"sort\"")) {
+                json(exchange, 400, "{\"object\":\"error\",\"status\":400,"
+                        + "\"code\":\"validation_error\",\"message\":\"sort is not valid\"}");
+                return;
+            }
+            json(exchange, 200, pageWithCursor("c" + n, "p-" + n + "@2026-01-0" + n + "T00:00:00.000Z"));
+        };
+        FetchResult result = orchestrator().execute(null, profile(), connector(),
+                Map.of(NotionFetchOrchestrator.PARAM_MAX_SEARCH_REQUESTS, "3"), 10);
+
+        assertFalse(result.sawEverything(), result.toString());
+        assertTrue(result.incompleteReads().get(0).contains("cap of 3"),
+                result.incompleteReads().get(0));
+        assertTrue(importedIds.isEmpty(), "pages were imported from a listing whose gaps are unknown: "
+                + importedIds);
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /**
+     * An ORDERED listing cut short at the request cap imports nothing and holds too.
+     *
+     * <p>The rows it was not shown are older than the ones it was. A checkpoint raised over
+     * them would exclude them from every later poll — R59 itself. The reason names the
+     * parameter to raise.
+     */
+    @Test
+    @DisplayName("a listing cut short at the request cap imports nothing, holds the checkpoint and names the cap")
+    void aListingCutShortAtTheCapHoldsTheCheckpoint() {
+        search = (exchange, n) -> json(exchange, 200,
+                pageWithCursor("c" + n, "p-" + n + "@2026-01-0" + (9 - n) + "T00:00:00.000Z"));
+        FetchResult result = orchestrator().execute(null, profile(), connector(),
+                Map.of(NotionFetchOrchestrator.PARAM_MAX_SEARCH_REQUESTS, "2"), 10);
+
+        assertEquals(2, SEARCH_CALLS.get(), "the cap parameter was not what bounded the listing");
+        assertFalse(result.sawEverything(), result.toString());
+        assertTrue(result.incompleteReads().get(0).contains("notionSearchMaxRequests"),
+                result.incompleteReads().get(0));
+        assertFalse(result.hasErrors(), result.errors().toString());
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /** A cap parameter that is not a number is reported, not replaced by the default. */
+    @Test
+    @DisplayName("a request-cap parameter that is not a number is reported and nothing is read")
+    void aBadCapParameterIsReportedNotGuessed() {
+        FetchResult result = orchestrator().execute(null, profile(), connector(),
+                Map.of(NotionFetchOrchestrator.PARAM_MAX_SEARCH_REQUESTS, "fifty"), 10);
+
+        assertTrue(result.hasErrors(), result.toString());
+        assertTrue(result.errors().get(0).contains("notionSearchMaxRequests"), result.errors().get(0));
+        assertEquals(0, SEARCH_CALLS.get(), "Notion was asked despite the unreadable parameter");
+    }
+
+    /**
+     * Notion's own {@code request_status} — documented as {@code type: incomplete} with
+     * {@code incomplete_reason} — is a cut, whatever {@code has_more} says. (An earlier lock
+     * used field names Notion never writes, and the reader agreed with it.)
+     */
+    @Test
+    @DisplayName("a result set Notion itself reports as incomplete is not a whole listing")
+    void aSearchNotionReportsIncompleteIsCutShort() {
+        search = (exchange, n) -> json(exchange, 200, "{\"results\":["
+                + rowsJson("p-1@2026-01-01T00:00:00.000Z") + "],\"has_more\":false,"
+                + "\"request_status\":{\"type\":\"incomplete\","
+                + "\"incomplete_reason\":\"query_result_limit_reached\"}}");
+        FetchResult result = runWithLimit(10);
+
+        assertEquals(1, result.incompleteReads().size(), result.incompleteReads().toString());
+        assertTrue(result.incompleteReads().get(0).contains("query_result_limit_reached"),
+                result.incompleteReads().get(0));
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /** The over-refusal side: {@code type: complete} is not a cut. */
+    @Test
+    @DisplayName("a request_status of complete is not a cut")
+    void aRequestStatusOfCompleteIsNotACut() {
+        search = (exchange, n) -> json(exchange, 200, "{\"results\":["
+                + rowsJson("p-1@2026-01-01T00:00:00.000Z") + "],\"has_more\":false,"
+                + "\"request_status\":{\"type\":\"complete\"}}");
+        FetchResult result = runWithLimit(10);
+
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        assertEquals(List.of("p-1"), importedIds);
+    }
+
+    /**
+     * A checkpoint reached INSIDE a result set Notion calls incomplete still makes the listing
+     * whole: Notion cuts the tail of the ordered set, and the tail is older than the checkpoint.
+     */
+    @Test
+    @DisplayName("the checkpoint reached inside an incomplete result set still makes the listing whole")
+    void theCheckpointInsideAnIncompleteResultSetIsStillWhole() {
+        search = (exchange, n) -> json(exchange, 200, "{\"results\":["
+                + rowsJson("p-3@2026-01-03T00:00:00.000Z", "p-1@2026-01-01T00:00:00.000Z")
+                + "],\"has_more\":false,"
+                + "\"request_status\":{\"type\":\"incomplete\","
+                + "\"incomplete_reason\":\"query_result_limit_reached\"}}");
+        NotionFetchOrchestrator orchestrator = orchestrator();
+        checkpointIs("2026-01-02T00:00:00.000Z");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), Map.of(), 10);
+
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        assertEquals(List.of("p-3"), importedIds);
+        verify(checkpointManager).saveSimpleCheckpoint("p-notion", "notion",
+                "2026-01-03T00:00:00.000Z|p-3");
+    }
+
+    /**
+     * A checkpoint written before R59 names a minute and no ids. Nothing at that minute is
+     * known to be done, so the minute is imported once more, and the ids are recorded.
+     */
+    @Test
+    @DisplayName("a checkpoint written before R59 imports its minute once more and then names the ids")
+    void aLegacyCheckpointImportsItsMinuteOnceMore() {
+        search = (exchange, n) -> json(exchange, 200, pageOf(false,
+                "p-3@2026-01-02T00:00:00.000Z", "p-2@2026-01-02T00:00:00.000Z",
+                "p-1@2026-01-01T00:00:00.000Z"));
+        NotionFetchOrchestrator orchestrator = orchestrator();
+        checkpointIs("2026-01-02T00:00:00.000Z");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), Map.of(), 10);
+
+        assertEquals(List.of("p-2", "p-3"), importedIds);
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-notion", "notion",
+                "2026-01-02T00:00:00.000Z|p-2,p-3");
+    }
+
 }

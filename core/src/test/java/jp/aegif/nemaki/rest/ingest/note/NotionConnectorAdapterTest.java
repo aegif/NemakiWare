@@ -49,7 +49,7 @@ class NotionConnectorAdapterTest {
     void shouldSendAuthAndVersionHeaders() throws Exception {
         wireMock.stubFor(post(urlPathEqualTo("/search"))
                 .willReturn(aResponse().withBody("{\"results\":[]}")));
-        adapter.searchPages(null, 10);
+        adapter.searchPages(null, null, 10);
         wireMock.verify(postRequestedFor(urlPathEqualTo("/search"))
                 .withHeader("Authorization", equalTo("Bearer test-token"))
                 .withHeader("Notion-Version", equalTo("2022-06-28")));
@@ -62,7 +62,7 @@ class NotionConnectorAdapterTest {
         wireMock.stubFor(post(urlPathEqualTo("/search"))
                 .willReturn(aResponse().withBody("{\"results\":[]}")));
         // Query with special characters should be JSON-safe
-        adapter.searchPages("test\"injection", 10);
+        adapter.searchPages("test\"injection", null, 10);
         // Should not throw; Jackson ObjectMapper handles escaping
     }
 
@@ -133,7 +133,7 @@ class NotionConnectorAdapterTest {
     void shouldThrowOn401() {
         wireMock.stubFor(post(urlPathEqualTo("/search"))
                 .willReturn(aResponse().withStatus(401)));
-        assertThrows(RuntimeException.class, () -> adapter.searchPages("test", 10));
+        assertThrows(RuntimeException.class, () -> adapter.searchPages("test", null, 10));
     }
 
     @Test
