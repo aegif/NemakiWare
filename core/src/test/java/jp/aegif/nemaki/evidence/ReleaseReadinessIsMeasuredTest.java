@@ -555,9 +555,11 @@ class ReleaseReadinessIsMeasuredTest {
      * {@code @TestTemplate}, on the class and up its superclass chain — not by scanning source
      * lines. A six-line window, then a walk up through "annotation-looking" lines, each let a
      * sibling's {@code @Test} stand for a helper's, or refused a genuine lock whose javadoc did
-     * not look the part (reviews, fortieth and forty-first rounds). A disabled test fails the
-     * count, as in {@link #theReadinessVerifierCountIsTheVerifiers}; so does a {@code @Nested}
-     * inner class, whose tests JUnit runs under another class and this count would not see.
+     * not look the part (reviews, fortieth and forty-first rounds). Interfaces are walked too
+     * (a default test is run). A disabled test fails the count, as in
+     * {@link #theReadinessVerifierCountIsTheVerifiers}; so does a private one (not run), a
+     * {@code @Nested} inner class (run under another class), and two tests of one name (the row
+     * names locks by method name).
      */
     private static java.util.Set<String> testMethodsOf(String className) {
         Class<?> type;
@@ -573,7 +575,12 @@ class ReleaseReadinessIsMeasuredTest {
                     "a @Nested class runs tests this count does not see: " + inner.getName());
         }
         java.util.Set<String> names = new TreeSet<>();
+        java.util.List<Class<?>> levels = new java.util.ArrayList<>();
         for (Class<?> level = type; level != null && level != Object.class; level = level.getSuperclass()) {
+            levels.add(level);
+            collectInterfaces(level, levels);
+        }
+        for (Class<?> level : levels) {
             for (java.lang.reflect.Method m : level.getDeclaredMethods()) {
                 boolean test = m.isAnnotationPresent(Test.class)
                         || m.isAnnotationPresent(org.junit.jupiter.params.ParameterizedTest.class)
@@ -581,12 +588,29 @@ class ReleaseReadinessIsMeasuredTest {
                         || m.isAnnotationPresent(org.junit.jupiter.api.TestFactory.class)
                         || m.isAnnotationPresent(org.junit.jupiter.api.TestTemplate.class);
                 if (!test) continue;
+                // Jupiter does not run a private test method; counting it would keep the row's
+                // number right for a lock that no longer runs (review, P3).
+                assertFalse(java.lang.reflect.Modifier.isPrivate(m.getModifiers()),
+                        "a private test method is not run and must not be counted: " + level.getName() + "#" + m.getName());
                 assertFalse(m.isAnnotationPresent(org.junit.jupiter.api.Disabled.class),
                         "a disabled test makes this count wrong: " + level.getName() + "#" + m.getName());
-                names.add(m.getName());
+                // The row names locks by method name alone, so two runnable tests of one name
+                // (overloads) could not be told apart by it — refused rather than collapsed.
+                assertTrue(names.add(m.getName()),
+                        "two test methods share a name the R59 row could not tell apart: " + level.getName() + "#" + m.getName());
             }
         }
         return names;
+    }
+
+    /** The interfaces a class implements, transitively — a default {@code @Test} there is run too. */
+    private static void collectInterfaces(Class<?> type, java.util.List<Class<?>> into) {
+        for (Class<?> iface : type.getInterfaces()) {
+            if (!into.contains(iface)) {
+                into.add(iface);
+                collectInterfaces(iface, into);
+            }
+        }
     }
 
     @Test
