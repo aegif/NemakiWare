@@ -17,6 +17,8 @@
 package jp.aegif.nemaki.rest.ingest;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jp.aegif.nemaki.rest.ingest.fileshare.BoxConnectorAdapter;
+import jp.aegif.nemaki.rest.ingest.fileshare.FileShareRefetch;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 
 import org.apache.chemistry.opencmis.commons.server.CallContext;
@@ -105,12 +107,31 @@ class DlqRetryRefusalStatusTest {
         ConnectorDefinition connector = new ConnectorDefinition();
         connector.setConnectorId("c1");
         connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        // A Box connector whose bytes can be fetched again: a FILE_SHARE row without its bytes
+        // is no longer replayed through the plain import (that made an empty document — see
+        // DeadLetteredFileShareItemsAreFetchedAgainTest); the bytes come back from the source
+        // first, and the rest of the replay — what these locks measure — is unchanged.
+        connector.setSourceSystem("box");
+        connector.setCredentialRef("key");
         when(connectorService.get("c1")).thenReturn(connector);
         when(connectorService.countIndexFree("c1")).thenReturn(1);
+        FetchSupport fetchSupport = mock(FetchSupport.class);
+        when(fetchSupport.resolvePasswordOrRefuse(any())).thenReturn("tok");
+        FileShareRefetch refetch = new FileShareRefetch();
+        Field boxFactory = FileShareRefetch.class.getDeclaredField("boxFactory");
+        boxFactory.setAccessible(true);
+        boxFactory.set(refetch, (java.util.function.Function<String, BoxConnectorAdapter>) token ->
+                new BoxConnectorAdapter(token) {
+                    @Override public java.io.InputStream downloadFile(String fileId) {
+                        return new java.io.ByteArrayInputStream("fetched again".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    }
+                });
 
         wire(controller, "ingestJobService", jobService);
         wire(controller, "canonicalImportService", importService);
         wire(controller, "connectorDefinitionService", connectorService);
+        wire(controller, "fetchSupport", fetchSupport);
+        wire(controller, "refetch", refetch);
         wire(controller, "httpRequest", adminRequest());
 
         return controller.retryDlqEntry("dlq-1");

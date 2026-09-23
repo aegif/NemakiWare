@@ -35,6 +35,13 @@ public class IngestDlqController {
     @Autowired
     private HttpServletRequest httpRequest;
 
+    @Autowired
+    private FetchSupport fetchSupport;
+
+    /** Fetches a dead-lettered FILE_SHARE item's bytes again from its source; tests swap it. */
+    jp.aegif.nemaki.rest.ingest.fileshare.FileShareRefetch refetch =
+            new jp.aegif.nemaki.rest.ingest.fileshare.FileShareRefetch();
+
     // ── Job History ────────────────────────────────────────────────
 
     // A row the mapper refuses is dropped from the listing. Returning the list bare made a
@@ -326,6 +333,44 @@ public class IngestDlqController {
                     return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId
                             + " is recorded as carrying content, but no stored payload came"
                             + " back; the entry is kept and nothing was imported");
+                }
+            }
+
+            // A FILE_SHARE row without its bytes cannot be replayed through the plain import:
+            // execute() would create a content-less document, report success, and the row —
+            // the only record of the item — would be deleted (review, P1). The bytes are
+            // fetched again from the source for the systems this can fetch by the row's own
+            // identifiers (Box by file id, Dropbox by path); the others are refused, row kept.
+            if (request.getContentStream() == null && request.getConnectorId() != null) {
+                ConnectorDefinition connector = connectorDefinitionService.get(request.getConnectorId());
+                if (connector != null && connector.getSourceArchetype() == SourceArchetype.FILE_SHARE) {
+                    if (!refetch.canRefetch(connector)) {
+                        return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId + " carries no bytes, and "
+                                + connector.getSourceSystem() + " items are not fetched again here, so replaying it"
+                                + " would import an empty document; the entry is kept and nothing was imported");
+                    }
+                    String token;
+                    try {
+                        token = fetchSupport.resolvePasswordOrRefuse(connector);
+                    } catch (jp.aegif.nemaki.rest.controller.IntegrationSettingsService
+                            .SettingUnreadableException couldNotAsk) {
+                        return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, "DLQ entry " + dlqId + " carries no"
+                                + " bytes and the credential to fetch them again could not be read: "
+                                + couldNotAsk.getMessage() + "; the entry is kept and nothing was imported");
+                    }
+                    if (token == null) {
+                        return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId + " carries no bytes, and"
+                                + " connector " + connector.getConnectorId() + " has no credential to fetch them"
+                                + " again with; the entry is kept and nothing was imported");
+                    }
+                    try {
+                        request.setContentStream(refetch.refetch(connector, token, request));
+                    } catch (Exception couldNotFetch) {
+                        return errorResponse(HttpStatus.BAD_GATEWAY, "DLQ entry " + dlqId + " carries no bytes, and"
+                                + " they could not be fetched again from " + connector.getSourceSystem() + ": "
+                                + couldNotFetch.getMessage() + "; the entry is kept and nothing was imported");
+                    }
+                    response.put("refetchedFromSource", connector.getSourceSystem());
                 }
             }
 

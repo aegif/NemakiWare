@@ -75,6 +75,59 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
                 + " must be an integer between " + minimum + " and " + maximum + ", not '" + raw + "'");
     }
 
+    private enum Outcome { IMPORTED, SKIPPED, FAILED_RECORDED, FAILED_UNRECORDED }
+
+    /**
+     * One file: the download, the import, and — on a failure — its dead-letter row. The
+     * download is where a never-read failure comes from; a failure after it is a read one.
+     * RECORDED means the row was written; UNRECORDED that it was not, and the caller holds the
+     * checkpoint for it.
+     */
+    private Outcome attempt(CallContext callContext, ImportProfileDefinition profile, ConnectorDefinition connector,
+                            BoxConnectorAdapter box, BoxConnectorAdapter.BoxFile file, List<String> errors) {
+        // Built before the download so it is in scope for the catch and can be
+        // dead-lettered if the download fails before execute().
+        ExternalIngestRequest req = requestFor(profile, connector, file);
+        InputStream content = null;
+        try {
+            try {
+                content = box.downloadFile(file.id());
+            } catch (Exception downloadFailed) {
+                // The source item was never read: the download is where this arm's failures
+                // come from. A never-read row is replayed by fetching the bytes again — the
+                // DLQ controller does that for this connector; it does not import the row's
+                // metadata as an empty document.
+                FetchSupport.addError(errors, "Box file " + file.id() + ": " + downloadFailed.getMessage());
+                return fetchSupport.saveSourceNeverReadToDlq(req, "Box file " + file.id() + ": " + downloadFailed.getMessage())
+                        ? Outcome.FAILED_RECORDED : Outcome.FAILED_UNRECORDED;
+            }
+            req.setContentStream(content);
+
+            ExternalIngestResult result = canonicalImportService.execute(callContext, req);
+            // skipped() first: a skipped result also reports isSuccess()==true (no errors).
+            if (result.skipped()) return Outcome.SKIPPED;
+            if (result.isSuccess()) return Outcome.IMPORTED;
+            FetchSupport.addError(errors, "Box " + file.id() + ": " + String.join(", ", result.errors()));
+            // The import ran and answered that it did not import. Recorded, or the checkpoint —
+            // moved by a newer file that settles — would pass this one with nothing saying so
+            // (review, P1). The row is the same one execute()'s own net writes for this
+            // request, updated in place.
+            return fetchSupport.saveSourceReadToDlq(req, "Box " + file.id() + ": " + String.join(", ", result.errors()))
+                    ? Outcome.FAILED_RECORDED : Outcome.FAILED_UNRECORDED;
+        } catch (Exception e) {
+            // The download succeeded and the import threw: the source item WAS read, so the
+            // row records a miss, not a never-read item — a never-read row replayed as
+            // "nothing to import" would have been taken for a resolution (review, P1).
+            // execute()'s own net may have written this row already (same id, updated in
+            // place); its answer here is what decides whether the failure is recorded.
+            FetchSupport.addError(errors, "Box file " + file.id() + ": " + e.getMessage());
+            return fetchSupport.saveSourceReadToDlq(req, "Box file " + file.id() + ": " + e.getMessage())
+                    ? Outcome.FAILED_RECORDED : Outcome.FAILED_UNRECORDED;
+        } finally {
+            if (content != null) try { content.close(); } catch (Exception ignored) {}
+        }
+    }
+
     /** The import request for one listed file — also the dead-letter key when it fails. */
     private static ExternalIngestRequest requestFor(ImportProfileDefinition profile, ConnectorDefinition connector,
                                                     BoxConnectorAdapter.BoxFile file) {
@@ -158,8 +211,17 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
             // marker had passed — is still above the checkpoint next time (review, P1). Marks
             // above the cap are simply not handed to the checkpoint: those files are offered
             // again next poll and the import service's dedupe answers for them.
-            String cap = jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.canonical(
-                    listingStartedAt.minus(lagMinutes, java.time.temporal.ChronoUnit.MINUTES));
+            String cap;
+            try {
+                cap = jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.canonical(
+                        listingStartedAt.minus(lagMinutes, java.time.temporal.ChronoUnit.MINUTES));
+            } catch (IllegalStateException clock) {
+                // The host's clock, not the connector: said so rather than "connection failed"
+                // (review, P3). The scheduler still counts it towards the connector's breaker —
+                // a host whose clock is outside the four-digit years should not be polling.
+                FetchSupport.addError(errors, "Box: " + clock.getMessage() + "; nothing was read");
+                return new FetchResult(0, 0, 0, errors);
+            }
             // A checkpoint ABOVE this run's cap — written before this batch, or before the
             // allowance was raised — covers nothing above the cap: a file modified within the
             // allowance of an earlier listing may still have been missing from it, and the
@@ -172,25 +234,23 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
             BoxConnectorAdapter.FileListing listing = box.listAllFiles(folderId, maxRequests);
             fetched = listing.files().size();
             // Every file's modification time in the canonical form. A file whose time is
-            // missing or cannot be read cannot be placed against the checkpoint: it can neither
-            // be skipped nor named, and offered as a candidate on every poll it would take the
-            // budget from the files behind it (review, P2). It is not a malformed page either —
-            // Box's schema does not make the field required (review, P2) — so the listing is
-            // not refused: the file is dead-lettered as never read (replay imports it by id),
-            // reported, and left out of this poll; its siblings proceed.
+            // missing or cannot be read cannot be placed against the checkpoint — it can
+            // neither be skipped nor named. It is not a malformed page (Box's schema does not
+            // make the field required — review, P2), and a dead-letter row for it was worse
+            // than nothing: a never-read row replayed through the plain import created an
+            // EMPTY document and deleted the row (review, P1). Such a file is imported on
+            // every poll — the import service's dedupe answers after the first — never named,
+            // and handled AFTER the files that can be placed, with its own bound, so that it
+            // never takes their budget (review, P2). The run says so and is PARTIAL, not failed:
+            // an error on every poll would open the connector's breaker for every profile.
             int unrecordedFailures = 0;
             Map<String, String> modifiedAt = new java.util.HashMap<>();
             List<BoxConnectorAdapter.BoxFile> placeable = new ArrayList<>();
+            List<BoxConnectorAdapter.BoxFile> unplaceable = new ArrayList<>();
             for (var file : listing.files()) {
                 String at = jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.canonical(file.modifiedAt());
                 if (at == null) {
-                    String why = "Box file " + file.id() + " has no modification time this connector can read ('"
-                            + file.modifiedAt() + "'), so it cannot be placed against the checkpoint; it is dead-lettered "
-                            + "for replay by id and not imported by the poll";
-                    FetchSupport.addError(errors, why);
-                    if (!fetchSupport.saveSourceNeverReadToDlq(requestFor(profile, connector, file), why)) {
-                        unrecordedFailures++;
-                    }
+                    unplaceable.add(file);
                     continue;
                 }
                 modifiedAt.put(file.id(), at);
@@ -243,56 +303,41 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
                 }
                 attempted++;
                 fetchSupport.throttle(throttleMs);
-                // Built before the download so it is in scope for the catch and can be
-                // dead-lettered if the download fails before execute().
-                ExternalIngestRequest req = requestFor(profile, connector, file);
-
-                InputStream content = null;
-                try {
-                    try {
-                        content = box.downloadFile(file.id());
-                    } catch (Exception downloadFailed) {
-                        // The source item was never read: the download is where this arm's
-                        // failures come from, and a never-read row is replayable by re-fetching.
-                        FetchSupport.addError(errors, "Box file " + file.id() + ": " + downloadFailed.getMessage());
-                        if (!fetchSupport.saveSourceNeverReadToDlq(req, "Box file " + file.id() + ": " + downloadFailed.getMessage())) {
-                            unrecordedFailures++;
-                        }
-                        continue;
-                    }
-                    req.setContentStream(content);
-
-                    ExternalIngestResult result = canonicalImportService.execute(callContext, req);
-                    if (result.isSuccess() || result.skipped()) {
-                        // skipped() first: a skipped result also reports
-                        // isSuccess()==true (no errors), so it would be
-                        // miscounted as imported otherwise.
-                        if (result.skipped()) skipped++; else imported++;
+                switch (attempt(callContext, profile, connector, box, file, errors)) {
+                    case IMPORTED -> {
+                        imported++;
                         settled.add(new jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.Mark(modifiedAt.get(file.id()), file.id()));
-                    } else {
-                        FetchSupport.addError(errors, "Box " + file.id() + ": " + String.join(", ", result.errors()));
-                        // The import ran and answered that it did not import. Recorded, or the
-                        // checkpoint — moved by a newer file that settles — would pass this one
-                        // with nothing saying so (review, P1). The row is the same one execute()'s
-                        // own net writes for this request, updated in place.
-                        if (!fetchSupport.saveSourceReadToDlq(req, "Box " + file.id() + ": " + String.join(", ", result.errors()))) {
-                            unrecordedFailures++;
-                        }
                     }
-                } catch (Exception e) {
-                    // The download succeeded and the import threw: the source item WAS read,
-                    // so the row records a miss, not a never-read item — a never-read row
-                    // replayed as "nothing to import" would have been taken for a resolution
-                    // (review, P1). execute()'s own net may have written this row already
-                    // (same id, updated in place); its answer here is what decides whether the
-                    // failure is recorded.
-                    FetchSupport.addError(errors, "Box file " + file.id() + ": " + e.getMessage());
-                    if (!fetchSupport.saveSourceReadToDlq(req, "Box file " + file.id() + ": " + e.getMessage())) {
-                        unrecordedFailures++;
+                    case SKIPPED -> {
+                        skipped++;
+                        settled.add(new jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.Mark(modifiedAt.get(file.id()), file.id()));
                     }
-                } finally {
-                    if (content != null) try { content.close(); } catch (Exception ignored) {}
+                    case FAILED_RECORDED -> { }
+                    case FAILED_UNRECORDED -> unrecordedFailures++;
                 }
+            }
+            // The files that cannot be placed (see above): after the placeable ones, with
+            // their own bound, never named. Not when the listing was cut — then nothing is.
+            int unplaceableImported = 0, unplaceableAttempted = 0;
+            for (var file : listing.complete() ? unplaceable : List.<BoxConnectorAdapter.BoxFile>of()) {
+                if (unplaceableImported >= limit || unplaceableAttempted >= limit * ATTEMPTS_PER_BUDGET) {
+                    break;
+                }
+                unplaceableAttempted++;
+                fetchSupport.throttle(throttleMs);
+                switch (attempt(callContext, profile, connector, box, file, errors)) {
+                    case IMPORTED -> { imported++; unplaceableImported++; }
+                    case SKIPPED -> skipped++;
+                    case FAILED_RECORDED -> { }
+                    case FAILED_UNRECORDED -> unrecordedFailures++;
+                }
+            }
+            if (!unplaceable.isEmpty()) {
+                incompleteReads.add("Box folder listing: " + unplaceable.size() + " file(s) have no modification time "
+                        + "this connector can read (" + unplaceable.stream().limit(5).map(BoxConnectorAdapter.BoxFile::id)
+                                .collect(java.util.stream.Collectors.joining(", "))
+                        + (unplaceable.size() > 5 ? ", …" : "") + ") — they are imported on every poll, the import "
+                        + "service's dedupe answering after the first, and never named by the checkpoint");
             }
             int leftForTheNextPoll = candidatesThisRun.size() - attempted;
             if (leftForTheNextPoll > 0) {
