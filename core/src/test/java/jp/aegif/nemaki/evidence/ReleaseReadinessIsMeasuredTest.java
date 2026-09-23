@@ -506,12 +506,14 @@ class ReleaseReadinessIsMeasuredTest {
                 + totalStated + " locks and the source declares " + totalTests);
 
         int r59Listed = 0;
+        java.util.Set<String> qualified = new java.util.TreeSet<>();
         Matcher name = Pattern.compile("`(?:([A-Za-z]+)#)?([a-z][A-Za-z0-9]+)`").matcher(listed);
         while (name.find()) {
             String cls = name.group(1);
             String method = name.group(2);
             String source = notionSource;
             if (cls != null) {
+                qualified.add(cls + "#" + method);
                 try (Stream<Path> walk = Files.walk(Path.of("src/test/java"))) {
                     Path found = walk.filter(p -> p.getFileName().toString().equals(cls + ".java")).findFirst()
                             .orElseThrow(() -> new AssertionError("the R59 row names a test class that does not exist: " + cls));
@@ -525,6 +527,10 @@ class ReleaseReadinessIsMeasuredTest {
         }
         assertEquals(r59Listed, r59Stated, "the R59 row says it has " + r59Stated
                 + " locks in NotionPartialReadsAreNotCompleteTest and lists " + r59Listed);
+        // The one R59 lock outside that class is pinned by name: dropping it from the row left
+        // both counts right and every listed name real (review, thirty-seventh round, P3).
+        assertTrue(qualified.contains("DlqRetryRefusalStatusTest#theStrippedBinaryNoteDoesNotPromiseARefetch"),
+                "the R59 row no longer names its DLQ-side lock: " + qualified);
     }
 
     @Test
