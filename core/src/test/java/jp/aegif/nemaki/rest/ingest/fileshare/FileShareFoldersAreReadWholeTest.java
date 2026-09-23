@@ -849,7 +849,9 @@ class FileShareFoldersAreReadWholeTest {
         String note = result.incompleteReads().stream().filter(n -> n.contains("left untried")).findFirst().orElse("");
         assertTrue(note.contains("4 of them were left untried") && note.contains("1 imported, 0 failed"), note);
         assertFalse(note.contains("dead-letter") || note.contains("failures settle"), "the note blames failures that did not happen: " + note);
-        assertTrue(note.contains("reached on a later poll"), note);
+        // The arm's own explanation, not just the absence of the others' (review, P3): the bound was
+        // reached by imports, so the imported ones are skipped next poll and the rest are reached.
+        assertTrue(note.contains("reached on a later poll") && note.contains("the imported ones being skipped then"), note);
     }
 
     /** Failures that could not be dead-lettered: the note says so, says the checkpoint holds, and does not point at a queue that has nothing. */
@@ -1277,7 +1279,9 @@ class FileShareFoldersAreReadWholeTest {
         String note = result.incompleteReads().stream().filter(n -> n.contains("left untried")).findFirst().orElse("");
         assertTrue(note.contains("4 of them were left untried") && note.contains("1 imported, 0 failed"), note);
         assertFalse(note.contains("dead-letter") || note.contains("failures settle"), "the note blames failures that did not happen: " + note);
-        assertTrue(note.contains("reached on a later poll"), note);
+        // The arm's own explanation, not just the absence of the others' (review, P3): the bound was
+        // reached by imports, so the imported ones are skipped next poll and the rest are reached.
+        assertTrue(note.contains("reached on a later poll") && note.contains("the imported ones being skipped then"), note);
     }
 
     @Test
