@@ -41,8 +41,8 @@ NemakiWare の取り込みは **コネクタ定義** と **インポートプロ
 | Microsoft 365 メール | `m365_mail` | `MESSAGE_CONTEXT` | 任意（既定 Graph） | Graph アクセストークン | `folderId`（既定 inbox）, 任意 `userId` | あり |
 | Notion | `notion` | `COMPOUND_NOTE` | 任意（既定 API） | Integration Token | `query`（任意）, `notionSearchMaxRequests`（既定 50）, `notionIndexLagMinutes`（既定 10） | なし |
 | Salesforce | `salesforce` | `BUSINESS_RECORD` | **必須**（インスタンス URL） | OAuth2 アクセストークン | `soql`（任意・既定テンプレあり） | なし |
-| Box | `box` | `FILE_SHARE` | 不要 | OAuth2 アクセストークン | `folderId`（既定 0） | なし |
-| Dropbox | `dropbox` | `FILE_SHARE` | 不要 | OAuth2 アクセストークン | `folderPath`（既定 空=ルート） | なし |
+| Box | `box` | `FILE_SHARE` | 不要 | OAuth2 アクセストークン | `folderId`（既定 0）, `boxListMaxRequests`（既定 50） | なし |
+| Dropbox | `dropbox` | `FILE_SHARE` | 不要 | OAuth2 アクセストークン | `folderPath`（既定 空=ルート）, `dropboxListMaxRequests`（既定 50） | なし |
 
 > `tenantId` は IMAP のみ「メールアドレス（ログインユーザ名）」として **必須**。
 > 他サービスでは任意です。
@@ -463,7 +463,12 @@ Webhook 非対応。
 - endpoint 不要（API は `https://api.box.com/2.0` 固定）。
 
 **C. プロファイル**
-- `schedulerParams`：`folderId`（既定 `0`=ルート）、任意 `limit`。
+- `schedulerParams`：`folderId`（既定 `0` = ルート）、任意 `limit`（1 回の実行で取り込む
+  ファイル数。古い順に取り、残りは次回に回って実行結果は `PARTIAL`。失敗したファイルは
+  数に入らないが、試みるのは `limit` の 4 倍まで）、任意 `boxListMaxRequests`（1 回の listing で
+  `/folders/{id}/items` を呼ぶ回数の上限。1 回 1,000 件、既定 50 = 50,000 件。フォルダがそれを
+  超えると**何も取り込まず** `PARTIAL` で止まるので上げる）。**フォルダは毎回全部列挙する**
+  （Box はフォルダを更新時刻順に返さないため）。checkpoint は `<modified_at>|<id>,…`。
 
 Webhook 非対応。
 
@@ -483,7 +488,10 @@ Webhook 非対応。
 - endpoint 不要（API は `https://api.dropboxapi.com/2` / content 固定）。
 
 **C. プロファイル**
-- `schedulerParams`：`folderPath`（既定 空文字＝ルート。例 `/Documents`）、任意 `limit`。
+- `schedulerParams`：`folderPath`（既定 空文字＝ルート。例 `/Documents`）、任意 `limit`（Box と
+  同じ意味）、任意 `dropboxListMaxRequests`（`list_folder` + `continue` の回数の上限。1 回 2,000 件、
+  既定 50 = 100,000 件。超えると何も取り込まず `PARTIAL`）。**フォルダは毎回全部列挙する**。
+  checkpoint は `<server_modified>|<id>,…`。
 
 Webhook 非対応。
 
