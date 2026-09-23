@@ -549,9 +549,15 @@ class ReleaseReadinessIsMeasuredTest {
         String[] lines = source.split("\n");
         for (int i = 0; i < lines.length; i++) {
             if (lines[i].contains("void " + method + "(")) {
-                for (int back = 1; back <= 6 && i - back >= 0; back++) {
+                // Walk up through THIS declaration's annotations and comments only. A window of
+                // six lines reached over a sibling's closing brace to the sibling's @Test, so a
+                // non-test override four lines below a test passed (review, forty-first round).
+                for (int back = 1; i - back >= 0; back++) {
                     String above = lines[i - back].trim();
                     if (above.equals("@Test") || above.startsWith("@ParameterizedTest")) return true;
+                    boolean partOfThisDeclaration = above.isEmpty() || above.startsWith("@")
+                            || above.startsWith("*") || above.startsWith("/*") || above.startsWith("//");
+                    if (!partOfThisDeclaration) return false;
                 }
                 return false;
             }
