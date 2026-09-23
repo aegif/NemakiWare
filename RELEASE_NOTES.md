@@ -51,8 +51,8 @@ poll で恒久的に除外**されていました（残件 R59）。
 - 実機の Notion に対しては測っていません（sort の受理、拒否時の status、`request_status`
   の形、検索索引の遅延の長さ）。索引の遅延が猶予（既定 10 分）を超えたページは、その分を
   checkpoint が過ぎていれば次に編集されるまで見えません
-- 他のコネクタ（Slack / Salesforce / Mattermost / Teams / Chatwork / M365 メール / Gmail /
-  Box / Dropbox）の checkpoint は同じ形のまま未測定です（残件 R107）
+- 他のコネクタ（Slack / Salesforce / Mattermost / Teams / Chatwork / M365 メール / Gmail）の
+  checkpoint は同じ形のまま未測定です（残件 R107。Box / Dropbox は下の節で直しました）
 - `request_status` の欄名が実機の応答と違っていた場合、Notion 側の打ち切りは見えず、
   10,000 件未満なら `has_more` だけで完了と読みます（この点は変更前と同じです）。
   10,000 件ちょうどで `request_status` が無い応答だけは、切れたものとして扱います。既定の
@@ -72,18 +72,25 @@ Box も Dropbox もフォルダを更新時刻順には返さないので、そ�
 **51 件目以降のファイルは更新の有無に関わらず一度も列挙されず**、取り込まれませんでした
 （残件 R107）。
 
-- フォルダは毎回全部列挙します（Box は 1,000 件ずつ `total_count` まで、Dropbox は
-  `has_more` / `cursor` を末尾まで）。列挙の回数には上限があり（`boxListMaxRequests` /
+- フォルダは毎回全部列挙します（Box は 1,000 件ずつ marker で末尾まで — offset ではなく、
+  列挙中に削除があっても飛ばさないため。Dropbox は `has_more` / `cursor` を末尾まで）。列挙の回数には上限があり（`boxListMaxRequests` /
   `dropboxListMaxRequests`、既定 50 = Box 50,000 件 / Dropbox 100,000 件）、超えたフォルダは
   **何も取り込まず** `PARTIAL` で止まります（上限を上げてください）
 - 1 回の実行で取り込むのは checkpoint より新しいファイルを**古い順に `limit` 件**で、残りは
   次回に回り、実行結果は `PARTIAL` になります。失敗したファイルは数に入らず（死信キュー）、
-  試みるのは `limit` の 4 倍までです
+  試みるのは `limit` の 4 倍までです — checkpoint 以降で `limit` の 4 倍以上のファイルが失敗し
+  続けると、その後ろは失敗が直るか `limit` を上げるまで試されません（理由が死信キューを
+  指します）。更新時刻を持たないファイルは毎回候補になり、取り込んでも checkpoint を
+  進めません
+- 失敗は必ず死信キューに記録します（import がエラーを答えた場合も、download で例外が
+  出た場合も）。記録が書けなかった失敗が 1 つでもあると、その実行は checkpoint を進めず
+  エラーで理由を言います（記録の無い失敗を checkpoint が越えるのは、黙った損失だからです）
 - checkpoint の保存形が `<更新時刻>` から **`<更新時刻>|<id>,<id>`** になりました（同じ秒に
   更新されたファイルの途中で予算が切れても、次回が続きを取れるように）。旧形式はそのまま
   読め、その時刻のファイルを一度だけ取り直します
-- Box の応答に `entries` / `total_count` が無い、Dropbox の `has_more` に `cursor` が無い
-  ときは、フォルダが小さいとは読まず、実行がエラー（Box）/ `PARTIAL`（Dropbox）になります
+- Box の応答に `entries` が無い、Dropbox の応答に `entries` や `has_more` が無いときは、
+  フォルダが小さい・終わったとは読まず、実行がエラーになります。Dropbox の `has_more` に
+  `cursor` が無いときは `PARTIAL` です
 
 ### 主張しないこと
 

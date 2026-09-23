@@ -465,10 +465,12 @@ Webhook 非対応。
 **C. プロファイル**
 - `schedulerParams`：`folderId`（既定 `0` = ルート）、任意 `limit`（1 回の実行で取り込む
   ファイル数。古い順に取り、残りは次回に回って実行結果は `PARTIAL`。失敗したファイルは
-  数に入らないが、試みるのは `limit` の 4 倍まで）、任意 `boxListMaxRequests`（1 回の listing で
+  数に入らないが、試みるのは `limit` の 4 倍まで — その数以上が失敗し続けると後ろは失敗が直るか
+  `limit` を上げるまで試されない）、任意 `boxListMaxRequests`（1 回の listing で
   `/folders/{id}/items` を呼ぶ回数の上限。1 回 1,000 件、既定 50 = 50,000 件。フォルダがそれを
   超えると**何も取り込まず** `PARTIAL` で止まるので上げる）。**フォルダは毎回全部列挙する**
-  （Box はフォルダを更新時刻順に返さないため）。checkpoint は `<modified_at>|<id>,…`。
+  （Box はフォルダを更新時刻順に返さないため。marker 方式）。checkpoint は `<modified_at>|<id>,…`。
+  記録できなかった失敗が 1 つでもあると checkpoint は進まない。
 
 Webhook 非対応。
 
