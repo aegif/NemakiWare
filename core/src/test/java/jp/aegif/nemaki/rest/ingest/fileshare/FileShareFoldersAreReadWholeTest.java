@@ -829,6 +829,26 @@ class FileShareFoldersAreReadWholeTest {
                 "the run claimed every unplaceable file was offered: " + result.incompleteReads());
     }
 
+    /** The bound is reached by imports too; the note must say why, not blame failures that did not happen (review, P2). */
+    @Test
+    @DisplayName("Box: untried unplaceable files are not blamed on failures that did not happen")
+    void boxUntriedUnplaceableFilesAreNotBlamedOnFailuresThatDidNotHappen() {
+        StringBuilder entries = new StringBuilder();
+        for (int i = 1; i <= 5; i++) {
+            if (i > 1) entries.append(',');
+            entries.append("{\"type\":\"file\",\"id\":\"f-").append(i).append("\",\"name\":\"f.txt\",\"size\":1,\"parent\":{\"id\":\"0\"}}");
+        }
+        boxItems = (exchange, n) -> json(exchange, 200, "{\"entries\":[" + entries + "],\"limit\":1000}");
+
+        FetchResult result = box().execute(null, profile(), connector("box"), Map.of(), 1);
+
+        assertEquals(List.of("f-1"), importedIds, result.toString());
+        assertTrue(dlqReasons.isEmpty(), dlqReasons.toString());
+        String note = result.incompleteReads().stream().filter(n -> n.contains("left untried")).findFirst().orElse("");
+        assertTrue(note.contains("4 of them were left untried") && note.contains("1 imported, 0 failed"), note);
+        assertFalse(note.contains("dead-letter"), "the note blames failures that did not happen: " + note);
+    }
+
     // ── Dropbox ───────────────────────────────────────────────────
 
     @Test
@@ -1211,6 +1231,26 @@ class FileShareFoldersAreReadWholeTest {
         assertEquals(4, dlqReasons.size(), dlqReasons.toString());
         assertTrue(result.incompleteReads().stream().anyMatch(n -> n.contains("1 of them were left untried")),
                 "the run claimed every unplaceable file was offered: " + result.incompleteReads());
+    }
+
+    @Test
+    @DisplayName("Dropbox: untried unplaceable files are not blamed on failures that did not happen")
+    void dropboxUntriedUnplaceableFilesAreNotBlamedOnFailuresThatDidNotHappen() {
+        StringBuilder entries = new StringBuilder();
+        for (int i = 1; i <= 5; i++) {
+            if (i > 1) entries.append(',');
+            entries.append("{\".tag\":\"file\",\"id\":\"d-").append(i).append("\",\"name\":\"f.txt\",\"path_display\":\"/f")
+                    .append(i).append(".txt\",\"size\":1,\"server_modified\":\"yesterday\"}");
+        }
+        dropboxList = (exchange, n) -> json(exchange, 200, "{\"entries\":[" + entries + "],\"has_more\":false}");
+
+        FetchResult result = dropbox().execute(null, profile(), connector("dropbox"), Map.of(), 1);
+
+        assertEquals(List.of("d-1"), importedIds, result.toString());
+        assertTrue(dlqReasons.isEmpty(), dlqReasons.toString());
+        String note = result.incompleteReads().stream().filter(n -> n.contains("left untried")).findFirst().orElse("");
+        assertTrue(note.contains("4 of them were left untried") && note.contains("1 imported, 0 failed"), note);
+        assertFalse(note.contains("dead-letter"), "the note blames failures that did not happen: " + note);
     }
 
     /** A page without {@code has_more} is refused — read as false it was the end of the folder. */

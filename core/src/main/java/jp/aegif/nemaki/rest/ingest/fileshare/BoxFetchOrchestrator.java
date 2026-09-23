@@ -325,6 +325,7 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
             // failing leave the ones behind them untried — said so below, not claimed away
             // (review, P2).
             int unplaceableImported = 0, unplaceableTried = 0, unplaceableUntried = 0;
+            int unplaceableFailed = 0, unplaceableUnrecorded = 0;
             for (var file : listing.complete() ? unplaceable : List.<BoxConnectorAdapter.BoxFile>of()) {
                 if (unplaceableImported >= limit || unplaceableTried >= limit * ATTEMPTS_PER_BUDGET) {
                     unplaceableUntried++;
@@ -334,8 +335,8 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
                 switch (attempt(callContext, profile, connector, box, file, errors)) {
                     case IMPORTED -> { imported++; unplaceableImported++; unplaceableTried++; }
                     case SKIPPED -> skipped++;
-                    case FAILED_RECORDED -> unplaceableTried++;
-                    case FAILED_UNRECORDED -> { unplaceableTried++; unrecordedFailures++; }
+                    case FAILED_RECORDED -> { unplaceableTried++; unplaceableFailed++; }
+                    case FAILED_UNRECORDED -> { unplaceableTried++; unplaceableFailed++; unplaceableUnrecorded++; unrecordedFailures++; }
                 }
             }
             // Not on a cut listing: nothing was offered then, and the cut's own note says so
@@ -348,9 +349,19 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
                         + "imported and " + ATTEMPTS_PER_BUDGET + " × the limit tried at a time, the import service's dedupe "
                         + "answering for the ones already imported) and never named by the checkpoint"
                         + (unplaceableUntried > 0
+                                // WHY the bound was reached, not a stock reason: it is reached by imports as
+                                // well as by failures, and a failure may not have been dead-lettered
+                                // (review, P2).
                                 ? "; " + unplaceableUntried + " of them were left untried this run because the "
-                                        + "bound was reached — the failures are in the dead-letter queue, and the "
-                                        + "files behind them are reached only once they settle or with a higher limit"
+                                        + "bound was reached (" + unplaceableImported + " imported, " + unplaceableFailed
+                                        + " failed" + (unplaceableFailed > 0
+                                                ? unplaceableUnrecorded > 0
+                                                        ? " — " + unplaceableUnrecorded + " of the failures could not be "
+                                                                + "dead-lettered, so the checkpoint holds"
+                                                        : " — the failures are in the dead-letter queue"
+                                                : "")
+                                        + "); the files behind them are reached on a later poll, once the failures "
+                                        + "settle, or with a higher limit"
                                 : ""));
             }
             int leftForTheNextPoll = candidatesThisRun.size() - attempted;
