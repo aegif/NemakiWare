@@ -41,8 +41,8 @@ NemakiWare の取り込みは **コネクタ定義** と **インポートプロ
 | Microsoft 365 メール | `m365_mail` | `MESSAGE_CONTEXT` | 任意（既定 Graph） | Graph アクセストークン | `folderId`（既定 inbox）, 任意 `userId` | あり |
 | Notion | `notion` | `COMPOUND_NOTE` | 任意（既定 API） | Integration Token | `query`（任意）, `notionSearchMaxRequests`（既定 50）, `notionIndexLagMinutes`（既定 10） | なし |
 | Salesforce | `salesforce` | `BUSINESS_RECORD` | **必須**（インスタンス URL） | OAuth2 アクセストークン | `soql`（任意・既定テンプレあり） | なし |
-| Box | `box` | `FILE_SHARE` | 不要 | OAuth2 アクセストークン | `folderId`（既定 0）, `boxListMaxRequests`（既定 50） | なし |
-| Dropbox | `dropbox` | `FILE_SHARE` | 不要 | OAuth2 アクセストークン | `folderPath`（既定 空=ルート）, `dropboxListMaxRequests`（既定 50） | なし |
+| Box | `box` | `FILE_SHARE` | 不要 | OAuth2 アクセストークン | `folderId`（既定 0）, `boxListMaxRequests`（既定 50）, `boxCheckpointLagMinutes`（既定 5） | なし |
+| Dropbox | `dropbox` | `FILE_SHARE` | 不要 | OAuth2 アクセストークン | `folderPath`（既定 空=ルート）, `dropboxListMaxRequests`（既定 50）, `dropboxCheckpointLagMinutes`（既定 5） | なし |
 
 > `tenantId` は IMAP のみ「メールアドレス（ログインユーザ名）」として **必須**。
 > 他サービスでは任意です。
@@ -469,8 +469,12 @@ Webhook 非対応。
   `limit` を上げるまで試されない）、任意 `boxListMaxRequests`（1 回の listing で
   `/folders/{id}/items` を呼ぶ回数の上限。1 回 1,000 件、既定 50 = 50,000 件。フォルダがそれを
   超えると**何も取り込まず** `PARTIAL` で止まるので上げる）。**フォルダは毎回全部列挙する**
-  （Box はフォルダを更新時刻順に返さないため。marker 方式）。checkpoint は `<modified_at>|<id>,…`。
-  記録できなかった失敗が 1 つでもあると checkpoint は進まない。
+  （Box はフォルダを更新時刻順に返さないため。marker 方式）。checkpoint は `<modified_at を UTC に
+  正規化>|<id>,…`。記録できなかった失敗が 1 つでもあると checkpoint は進まない — 死信キューが
+  書けない間はずっと進まず（意図した停止）、失敗するファイルが `limit` の 4 倍以上あるとその実行は
+  新しいファイルに届かない。任意 `boxCheckpointLagMinutes`（listing 開始のこの分前までしか
+  checkpoint を進めない猶予。既定 5、上限 43,200。listing 中に追加・移動されたファイルを次回に
+  回すため）。
 
 Webhook 非対応。
 
@@ -490,10 +494,15 @@ Webhook 非対応。
 - endpoint 不要（API は `https://api.dropboxapi.com/2` / content 固定）。
 
 **C. プロファイル**
-- `schedulerParams`：`folderPath`（既定 空文字＝ルート。例 `/Documents`）、任意 `limit`（Box と
-  同じ意味）、任意 `dropboxListMaxRequests`（`list_folder` + `continue` の回数の上限。1 回 2,000 件、
-  既定 50 = 100,000 件。超えると何も取り込まず `PARTIAL`）。**フォルダは毎回全部列挙する**。
-  checkpoint は `<server_modified>|<id>,…`。
+- `schedulerParams`：`folderPath`（既定 空文字＝ルート。例 `/Documents`）、任意 `limit`（1 回の実行で
+  取り込むファイル数。古い順に取り、残りは次回に回って実行結果は `PARTIAL`。失敗したファイルは
+  数に入らないが、試みるのは `limit` の 4 倍まで — その数以上が失敗し続けると後ろは失敗が直るか
+  `limit` を上げるまで試されない）、任意 `dropboxListMaxRequests`（`list_folder` + `continue` の回数の
+  上限。1 回 2,000 件、既定 50 = 100,000 件。超えると何も取り込まず `PARTIAL`）、任意
+  `dropboxCheckpointLagMinutes`（既定 5、上限 43,200。Box と同じ猶予）。**フォルダは毎回全部列挙する**。
+  checkpoint は `<server_modified を UTC に正規化>|<id>,…`。記録できなかった失敗が 1 つでもあると checkpoint は
+  進まない — 死信キューが書けない間はずっと進まず（意図した停止）、失敗するファイルが `limit` の
+  4 倍以上あるとその実行は新しいファイルに届かない。
 
 Webhook 非対応。
 
