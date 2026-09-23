@@ -39,7 +39,7 @@ NemakiWare の取り込みは **コネクタ定義** と **インポートプロ
 | IMAP メール | `imap` | `MESSAGE_CONTEXT` | **必須**（`host:port`） | メールパスワード（または OAuth2） | `mailbox`（既定 INBOX） | なし |
 | Gmail | `gmail_mail` | `MESSAGE_CONTEXT` | 不要 | OAuth2 アクセストークン | `query`（既定 in:inbox is:unread） | なし |
 | Microsoft 365 メール | `m365_mail` | `MESSAGE_CONTEXT` | 任意（既定 Graph） | Graph アクセストークン | `folderId`（既定 inbox）, 任意 `userId` | あり |
-| Notion | `notion` | `COMPOUND_NOTE` | 任意（既定 API） | Integration Token | `query`（任意） | なし |
+| Notion | `notion` | `COMPOUND_NOTE` | 任意（既定 API） | Integration Token | `query`（任意）, `notionSearchMaxRequests`（既定 50）, `notionIndexLagMinutes`（既定 10） | なし |
 | Salesforce | `salesforce` | `BUSINESS_RECORD` | **必須**（インスタンス URL） | OAuth2 アクセストークン | `soql`（任意・既定テンプレあり） | なし |
 | Box | `box` | `FILE_SHARE` | 不要 | OAuth2 アクセストークン | `folderId`（既定 0） | なし |
 | Dropbox | `dropbox` | `FILE_SHARE` | 不要 | OAuth2 アクセストークン | `folderPath`（既定 空=ルート） | なし |
@@ -408,7 +408,15 @@ Webhook 非対応。アクセストークンは短命なので継続運用では
 
 **C. プロファイル**
 - `schedulerParams`：`query`（任意。Notion search のキーワード。未指定なら共有された
-  全ページが対象）、任意 `limit`。
+  全ページが対象）、任意 `limit`（1 回の実行で取り込むページ数。古い順に取り、残りは
+  次回に回って実行結果は `PARTIAL`）、任意 `notionSearchMaxRequests`（1 回の listing で
+  `/search` を呼ぶ回数の上限。既定 50 = 5,000 行。checkpoint より新しい行がこれを超えると
+  **何も取り込まず** `PARTIAL` で止まるので、初回取込が大きい workspace では上げる）、
+  任意 `notionIndexLagMinutes`（編集の分が終わってから checkpoint がその分を名指すまでの
+  猶予。既定 10。Notion の `last_edited_time` は分に切り下げられ、検索索引は即時ではない
+  ため。猶予内のページは次回も取り直す）。
+- checkpoint（`ingest.checkpoint.<profileId>.notion`）は `<分>|<id>,<id>` の形。旧形式
+  `<分>` はそのまま読め、その分のページを一度だけ取り直す。
 
 Webhook 非対応。
 

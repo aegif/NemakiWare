@@ -9,6 +9,39 @@ only repository gotchas.
 
 # 未リリース (3.4.0 に向けた作業)
 
+## Notion コネクタが、見せられなかったページを checkpoint で越えなくなりました (**挙動変更**)
+
+Notion の `/search` は時刻での絞り込みを持たず、返る順も指定しなければ未規定です。
+これまでは 1 回の実行で最大 `limit` 件（既定 50）を読み、読めた中で最新の
+`last_edited_time` を checkpoint にしていました。1 回の poll の間に `limit` を超える数の
+ページが編集されると、**読まなかったページのうち編集時刻がそれより古いものは、以後の
+poll で恒久的に除外**されていました（残件 R59）。
+
+- 検索は `last_edited_time` の**降順**で読み、checkpoint の分まで読んだら止まります。
+  1 回の実行で取り込むのは**古い順に `limit` 件**で、残りは次回に回り、実行結果は
+  `PARTIAL`（`incompleteReads` に件数）になります
+- checkpoint の保存形が `<分>` から **`<分>|<id>,<id>`** になりました（Notion の
+  `last_edited_time` は分に切り下げられるため、同じ分のどこまで済んだかを id で持ちます）。
+  旧形式はそのまま読め、その分のページを一度だけ取り直します
+- checkpoint が名指すのは**閉じた分**（分の終わりから `notionIndexLagMinutes`、既定
+  10 分を過ぎた分）だけです。それより新しいページは次回も取り直します（同じ分の中で
+  再編集されたページと、検索索引に遅れて載ったページを落とさないため）。取り直しの多くは
+  import service の dedupe で skip になりますが、ブロックと添付の再読込は起きます
+- 検索の要求上限（`notionSearchMaxRequests`、既定 50 要求 = 5,000 行）または Notion 自身の
+  `request_status: incomplete` で listing が切れたときは、**何も取り込まず checkpoint を
+  止め、`PARTIAL` で理由を報告**します。checkpoint より新しい行が 5,000 を超える
+  workspace（初回取込など）は、上限を上げるまでこの状態です
+- 2 つのパラメータはプロファイルの `schedulerParams` に置きます（[設定ガイド](docs/CONNECTOR-SETUP-GUIDE.md)
+  §3-8）。数として読めない値は既定に置き換えず、実行がエラーになります
+
+### 主張しないこと
+
+- 実機の Notion に対しては測っていません（sort の受理、拒否時の status、`request_status`
+  の形、検索索引の遅延の長さ）。索引の遅延が猶予（既定 10 分）を超えたページは、その分を
+  checkpoint が過ぎていれば次に編集されるまで見えません
+- 他のコネクタ（Slack / Salesforce / Mattermost / Teams / Chatwork / M365 メール / Gmail）の
+  checkpoint は同じ形のまま未測定です（残件 R107）
+
 ## コネクタ定義と取込プロファイルの保存 ID を確定的にし、旧 ID の行は起動時に移行します
 
 外部取込のコネクタ定義は `connector_definition:<connectorId>`、取込プロファイルは
