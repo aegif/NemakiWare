@@ -55,8 +55,16 @@ public record WatermarkCheckpoint(String at, Set<String> idsAt) {
         }
     }
 
-    /** An instant in the canonical form (the caller's clock is within the four-digit years). */
+    /**
+     * An instant in the canonical form. Outside the four-digit years the form is not fixed
+     * width, so such an instant — a caller's clock, in practice — is refused rather than
+     * written in a form that does not sort (review, P2).
+     */
     public static String canonical(java.time.Instant instant) {
+        if (instant.isBefore(FIRST_FOUR_DIGIT_YEAR) || instant.isAfter(LAST_FOUR_DIGIT_YEAR)) {
+            throw new IllegalStateException("the clock reads " + instant
+                    + ", outside the four-digit years the canonical timestamp form is fixed-width for");
+        }
         return CANONICAL.format(instant);
     }
 

@@ -464,16 +464,17 @@ class FileShareFoldersAreReadWholeTest {
     }
 
     /**
-     * A file whose modification time cannot be read is a malformed page, refused whole: Box
-     * writes modified_at for every file, and a file that cannot be placed against the
-     * checkpoint can neither be skipped nor named — offered on every poll it would take the
-     * budget from the files behind it (review, P2). Read as "the oldest" it would be skipped.
+     * A file whose modification time is missing or cannot be read cannot be placed against the
+     * checkpoint: it is dead-lettered as never read (replay imports it by id), reported, and
+     * left out of the poll — its siblings proceed. Not a refusal of the listing: Box's schema
+     * does not make modified_at required (review, P2). Not "the oldest" either: that would
+     * skip it without a word.
      */
     @Test
-    @DisplayName("Box: a file whose modified_at cannot be read refuses the listing — not read as oldest, not offered for ever")
-    void boxAFileWithoutAReadableTimestampIsRefused() {
+    @DisplayName("Box: a file without a modified_at is dead-lettered and reported, not placed; its siblings proceed")
+    void boxAFileWithoutAReadableTimestampIsDeadLetteredNotPlaced() {
         boxItems = (exchange, n) -> json(exchange, 200, "{\"entries\":[{\"type\":\"file\",\"id\":\"f-x\","
-                + "\"name\":\"x.txt\",\"size\":1,\"modified_at\":\"yesterday\",\"parent\":{\"id\":\"0\"}},"
+                + "\"name\":\"x.txt\",\"size\":1,\"parent\":{\"id\":\"0\"}},"
                 + "{\"type\":\"file\",\"id\":\"f-ok\",\"name\":\"ok.txt\",\"size\":1,"
                 + "\"modified_at\":\"2026-01-03T00:00:00-00:00\",\"parent\":{\"id\":\"0\"}}],\"limit\":1000}");
         BoxFetchOrchestrator orchestrator = box();
@@ -481,9 +482,11 @@ class FileShareFoldersAreReadWholeTest {
 
         FetchResult result = orchestrator.execute(null, profile(), connector("box"), Map.of(), 10);
 
-        assertTrue(result.errors().stream().anyMatch(e -> e.contains("f-x") && e.contains("cannot read")), result.errors().toString());
-        assertTrue(importedIds.isEmpty(), "the listing was used although one of its files cannot be placed: " + importedIds);
-        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("f-x") && e.contains("cannot be placed")), result.errors().toString());
+        assertEquals(1, dlqReasons.size(), "the file that cannot be placed was not dead-lettered: " + dlqReasons);
+        assertTrue(dlqReasons.get(0).contains("f-x") && dlqReadReasons.isEmpty(), "expected a never-read row: " + dlqReasons);
+        assertEquals(List.of("f-ok"), importedIds, "the siblings of a file that cannot be placed must proceed");
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "box.0", "2026-01-03T00:00:00.000000000Z|f-ok");
     }
 
     /**
@@ -513,19 +516,37 @@ class FileShareFoldersAreReadWholeTest {
 
     /**
      * Beyond four digits the year is not fixed width ("+10000" sorts before "9999"), so such a
-     * timestamp is unreadable rather than mis-ordered (review, P1): the listing is refused.
+     * timestamp is unreadable rather than mis-ordered (review, P1): the file is not placed —
+     * dead-lettered and reported, never skipped as "older".
      */
     @Test
-    @DisplayName("Box: a five-digit year is not ordered by string — the listing is refused")
-    void boxAYearBeyondFourDigitsIsRefused() {
+    @DisplayName("Box: a five-digit year is not ordered by string — the file is dead-lettered, not placed")
+    void boxAYearBeyondFourDigitsIsNotPlaced() {
         boxItems = (exchange, n) -> json(exchange, 200, boxPage(null, "f-y@+10000-01-01T00:00:00-00:00"));
         BoxFetchOrchestrator orchestrator = box();
         checkpointIs("2026-01-02T00:00:00Z|f-b");
 
         FetchResult result = orchestrator.execute(null, profile(), connector("box"), Map.of(), 10);
 
-        assertTrue(result.errors().stream().anyMatch(e -> e.contains("f-y") && e.contains("cannot read")), result.errors().toString());
-        assertTrue(importedIds.isEmpty(), "a five-digit year was ordered as older and skipped, or imported: " + importedIds);
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("f-y") && e.contains("cannot be placed")), result.errors().toString());
+        assertEquals(1, dlqReasons.size(), "a five-digit year was ordered as older and skipped without a word: " + dlqReasons);
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /** The cap is taken from the clock; a clock outside the four-digit years cannot make a fixed-width cap (review, P2). */
+    @Test
+    @DisplayName("Box: a clock outside the four-digit years is an error, not a cap that does not sort")
+    void boxAClockOutsideFourDigitYearsIsAnError() {
+        boxItems = (exchange, n) -> json(exchange, 200, boxPage(null, "f-a@2026-01-05T00:00:00-00:00"));
+        BoxFetchOrchestrator orchestrator = box();
+        orchestrator.clock = java.time.Clock.fixed(java.time.Instant.parse("+10000-06-01T00:00:00Z"), java.time.ZoneOffset.UTC); // minus the allowance still beyond 9999
+        checkpointIs("2026-01-02T00:00:00Z|f-b");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector("box"), Map.of(), 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("four-digit")), result.errors().toString());
+        assertTrue(importedIds.isEmpty(), "with a cap that does not sort, every file became a candidate: " + importedIds);
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }
 
@@ -858,8 +879,8 @@ class FileShareFoldersAreReadWholeTest {
     }
 
     @Test
-    @DisplayName("Dropbox: a file whose server_modified cannot be read refuses the listing")
-    void dropboxAFileWithoutAReadableTimestampIsRefused() {
+    @DisplayName("Dropbox: a file whose server_modified cannot be read is dead-lettered and reported, not placed; its siblings proceed")
+    void dropboxAFileWithoutAReadableTimestampIsDeadLetteredNotPlaced() {
         dropboxList = (exchange, n) -> json(exchange, 200, "{\"entries\":[{\".tag\":\"file\",\"id\":\"d-x\",\"name\":\"x.txt\","
                 + "\"path_display\":\"/x.txt\",\"size\":1,\"server_modified\":\"yesterday\"},"
                 + "{\".tag\":\"file\",\"id\":\"d-ok\",\"name\":\"ok.txt\",\"path_display\":\"/ok.txt\",\"size\":1,"
@@ -869,9 +890,11 @@ class FileShareFoldersAreReadWholeTest {
 
         FetchResult result = orchestrator.execute(null, profile(), connector("dropbox"), Map.of(), 10);
 
-        assertTrue(result.errors().stream().anyMatch(e -> e.contains("d-x") && e.contains("cannot read")), result.errors().toString());
-        assertTrue(importedIds.isEmpty(), importedIds.toString());
-        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("d-x") && e.contains("cannot be placed")), result.errors().toString());
+        assertEquals(1, dlqReasons.size(), "the file that cannot be placed was not dead-lettered: " + dlqReasons);
+        assertTrue(dlqReasons.get(0).contains("d-x") && dlqReadReasons.isEmpty(), "expected a never-read row: " + dlqReasons);
+        assertEquals(List.of("d-ok"), importedIds);
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "dropbox", "2026-01-03T00:00:00.000000000Z|d-ok");
     }
 
     @Test
@@ -891,15 +914,31 @@ class FileShareFoldersAreReadWholeTest {
     }
 
     @Test
-    @DisplayName("Dropbox: a five-digit year is not ordered by string — the listing is refused")
-    void dropboxAYearBeyondFourDigitsIsRefused() {
+    @DisplayName("Dropbox: a five-digit year is not ordered by string — the file is dead-lettered, not placed")
+    void dropboxAYearBeyondFourDigitsIsNotPlaced() {
         dropboxList = (exchange, n) -> json(exchange, 200, dropboxPage(false, null, "d-y@+10000-01-01T00:00:00Z"));
         DropboxFetchOrchestrator orchestrator = dropbox();
         checkpointIs("2026-01-02T00:00:00Z|d-b");
 
         FetchResult result = orchestrator.execute(null, profile(), connector("dropbox"), Map.of(), 10);
 
-        assertTrue(result.errors().stream().anyMatch(e -> e.contains("d-y") && e.contains("cannot read")), result.errors().toString());
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("d-y") && e.contains("cannot be placed")), result.errors().toString());
+        assertEquals(1, dlqReasons.size(), dlqReasons.toString());
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("Dropbox: a clock outside the four-digit years is an error, not a cap that does not sort")
+    void dropboxAClockOutsideFourDigitYearsIsAnError() {
+        dropboxList = (exchange, n) -> json(exchange, 200, dropboxPage(false, null, "d-a@2026-01-05T00:00:00Z"));
+        DropboxFetchOrchestrator orchestrator = dropbox();
+        orchestrator.clock = java.time.Clock.fixed(java.time.Instant.parse("+10000-06-01T00:00:00Z"), java.time.ZoneOffset.UTC); // minus the allowance still beyond 9999
+        checkpointIs("2026-01-02T00:00:00Z|d-b");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector("dropbox"), Map.of(), 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("four-digit")), result.errors().toString());
         assertTrue(importedIds.isEmpty(), importedIds.toString());
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }

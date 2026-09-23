@@ -72,6 +72,25 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
                 + " must be an integer between " + minimum + " and " + maximum + ", not '" + raw + "'");
     }
 
+    /** The import request for one listed file — also the dead-letter key when it fails. */
+    private static ExternalIngestRequest requestFor(ImportProfileDefinition profile, ConnectorDefinition connector,
+                                                    DropboxConnectorAdapter.DropboxFile file) {
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setProfileId(profile.getProfileId());
+        req.setConnectorId(connector.getConnectorId());
+        req.setRepositoryId(profile.getRepositoryId());
+        req.setSourceObjectId(file.id());
+        req.setSourceObjectType("file");
+        req.setFileName(file.name());
+        req.setMimeType(FetchSupport.guessMimeType(file.name()));
+        req.setExecutionMode("scheduled");
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("dropboxPath", file.pathDisplay());
+        metadata.put("dropboxFileId", file.id());
+        req.setMetadata(metadata);
+        return req;
+    }
+
     @Override
     public String sourceSystem() { return "dropbox"; }
 
@@ -149,24 +168,33 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
                             : checkpoint;
             DropboxConnectorAdapter.FileListing listing = dropbox.listAllFiles(folderPath, maxRequests);
             fetched = listing.files().size();
-            // Every file's modification time in the canonical form, the listing refused if one
-            // cannot be read: Dropbox writes it for every file, so one that cannot be read is a
-            // malformed page — and a file that cannot be placed against the checkpoint can
-            // neither be skipped nor named, so offered on every poll it would take the budget
-            // from the files behind it (review, P2).
+            // Every file's modification time in the canonical form. A file whose time is
+            // missing or cannot be read cannot be placed against the checkpoint: it can neither
+            // be skipped nor named, and offered as a candidate on every poll it would take the
+            // budget from the files behind it (review, P2). It is not a malformed page either —
+            // Dropbox's schema does not make the field required (review, P2) — so the listing is
+            // not refused: the file is dead-lettered as never read (replay imports it by id),
+            // reported, and left out of this poll; its siblings proceed.
+            int unrecordedFailures = 0;
             Map<String, String> modifiedAt = new java.util.HashMap<>();
+            List<DropboxConnectorAdapter.DropboxFile> placeable = new ArrayList<>();
             for (var file : listing.files()) {
                 String at = jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.canonical(file.serverModified());
                 if (at == null) {
-                    FetchSupport.addError(errors, "Dropbox listed file " + file.id()
-                            + " with a modification time this connector cannot read ('" + file.serverModified()
-                            + "'); nothing was imported and the checkpoint holds");
-                    return new FetchResult(fetched, 0, 0, errors);
+                    String why = "Dropbox file " + file.id() + " has no modification time this connector can read ('"
+                            + file.serverModified() + "'), so it cannot be placed against the checkpoint; it is dead-lettered "
+                            + "for replay by id and not imported by the poll";
+                    FetchSupport.addError(errors, why);
+                    if (!fetchSupport.saveSourceNeverReadToDlq(requestFor(profile, connector, file), why)) {
+                        unrecordedFailures++;
+                    }
+                    continue;
                 }
                 modifiedAt.put(file.id(), at);
+                placeable.add(file);
             }
             List<DropboxConnectorAdapter.DropboxFile> candidates = new ArrayList<>();
-            for (var file : listing.files()) {
+            for (var file : placeable) {
                 if (effective.covers(modifiedAt.get(file.id()), file.id())) {
                     skipped++;
                     continue;
@@ -202,7 +230,6 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
             List<jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.Mark> settled = new ArrayList<>();
             int attempted = 0;
             boolean attemptsExhausted = false;
-            int unrecordedFailures = 0;
             for (var file : candidatesThisRun) {
                 if (settled.size() >= limit) {
                     break;
@@ -213,21 +240,9 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
                 }
                 attempted++;
                 fetchSupport.throttle(throttleMs);
-                // Build the request before the download so it is in scope for the
-                // catch and can be DLQ-ed if the download fails before execute().
-                ExternalIngestRequest req = new ExternalIngestRequest();
-                req.setProfileId(profile.getProfileId());
-                req.setConnectorId(connector.getConnectorId());
-                req.setRepositoryId(profile.getRepositoryId());
-                req.setSourceObjectId(file.id());
-                req.setSourceObjectType("file");
-                req.setFileName(file.name());
-                req.setMimeType(FetchSupport.guessMimeType(file.name()));
-                req.setExecutionMode("scheduled");
-                Map<String, Object> metadata = new LinkedHashMap<>();
-                metadata.put("dropboxPath", file.pathDisplay());
-                metadata.put("dropboxFileId", file.id());
-                req.setMetadata(metadata);
+                // Built before the download so it is in scope for the catch and can be
+                // dead-lettered if the download fails before execute().
+                ExternalIngestRequest req = requestFor(profile, connector, file);
 
                 InputStream content = null;
                 try {
