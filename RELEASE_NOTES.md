@@ -81,9 +81,10 @@ Box も Dropbox もフォルダを更新時刻順には返さないので、そ�
   試みるのは `limit` の 4 倍までです — checkpoint 以降で `limit` の 4 倍以上のファイルが失敗し
   続けると、その後ろは失敗が直るか `limit` を上げるまで試されません（理由が死信キューを
   指します）。更新時刻が無い・読めないファイル（年が 4 桁でないものを含む）は checkpoint に
-  対して置けないので、**毎回の実行で候補になり**（置けるファイルの予算の後に、別枠で `limit` 件
-  まで）、取り込んでも checkpoint に名指されません（2 回目以降は dedupe で skip — ただし dedupe は
-  download の後なので、そのファイルの数だけ毎回転送が起きます）。実行結果は
+  対して置けないので、**毎回の実行で候補になり**（置けるファイルの予算の後に、別枠で 1 回の実行に
+  `limit` 件まで取り込み — dedupe の skip は数に入らず、全部を毎回見ます）、取り込んでも checkpoint に
+  名指されません（2 回目以降は dedupe で skip — ただし dedupe は download の後なので、そのファイルの
+  数だけ毎回転送が起きます）。実行結果は
   `PARTIAL` になり理由にファイル id が付きます — エラーにはしません（毎回エラーだと connector の
   circuit breaker が開き、同じ connector を使う他の profile まで止まるため）。黙って「最古」と
   読んで skip はせず、死信キューにも入れません（bytes の無い行の再送は下記のとおり空文書を作り
@@ -105,9 +106,11 @@ Box も Dropbox もフォルダを更新時刻順には返さないので、そ�
   書いた行を orchestrator がもう一度書くので、`failureCount` が 1 回の失敗で 2 回増えることが
   あります（残件 R110）
 - **死信キューの再送（`POST /api/v1/ingest/dlq/{id}/retry`）は、bytes を持たない FILE_SHARE の行を
-  元から取り直してから取り込みます**（Box はファイル id、Dropbox は記録したパスで。取り直すのは
-  再送時点の bytes で、失敗した時点のものではありません）。取り直せなかった行（元が 404 / 5xx を
-  返す等）は再送せず行を残します。**Google Drive / OneDrive の同じ形の
+  元から取り直してから取り込みます**（Box も Dropbox もファイル id で — パスは「今そこにある物」を
+  指すので使いません。poll の download も Dropbox は id で行います。取り直すのは再送時点の bytes で、
+  失敗した時点のものではありません）。保存済み payload が捨てられた・書き込みが確定していない・
+  無くなっている行も、Box / Dropbox なら取り直します。取り直せなかった行（元が 404 / 5xx を返す等）
+  は再送せず行を残します。**Google Drive / OneDrive の同じ形の
   行は再送を拒否して行を残します**（以前はこれらの行を bytes 無しで取り込み、空の文書を作って
   「成功」と報告し、行を消していました。取り直しの実装は残件 R111）
 - checkpoint は listing を始めた時刻の `boxCheckpointLagMinutes` / `dropboxCheckpointLagMinutes`
