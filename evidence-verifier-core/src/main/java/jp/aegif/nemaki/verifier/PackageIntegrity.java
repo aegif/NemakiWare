@@ -747,12 +747,19 @@ public final class PackageIntegrity {
                         List<String> spellings =
                                 spellingsIgnoringRefusal(referenceOf(href));
                         if (spellings.isEmpty()) {
-                            // Not decodable at all, so nothing can be ruled out — but only
-                            // among the payloads THIS METS could have named.
+                            // Not decodable END TO END — but the segments BEFORE the one that
+                            // cannot be read still are, and they say where the reference
+                            // starts. "metadata%2fx/%FF.bin" can only ever name something
+                            // under metadata, so a smuggled file under representations/ is
+                            // not in question. Treating the whole reference as unreadable put
+                            // the root METS's one bad locator in front of EVERY payload
+                            // beneath it (Codex, twenty-first review, P1).
                             boolean relevant = false;
                             for (String payload : unnamed) {
-                                if (belongsToTheSamePackage(payload, wrote.getKey(),
-                                        metsPaths)) {
+                                if (belongsToTheSamePackage(payload, wrote.getKey(), metsPaths)
+                                        && couldStillName(payload, wrote.getKey(),
+                                                packageRootOf(wrote.getKey(), metsPaths),
+                                                referenceOf(href))) {
                                     couldBeNamed.add(payload);
                                     relevant = true;
                                 }
@@ -997,22 +1004,6 @@ public final class PackageIntegrity {
      * {@code URLEncoder}, so its packages need it, but a file genuinely named {@code a+b.txt}
      * and referenced without escapes is read literally by the first spelling.
      */
-    private static List<String> spellingsIgnoringRefusal(String reference) {
-        List<String> spellings = new ArrayList<>();
-        if (reference == null) {
-            return spellings;
-        }
-        String decoded = decodedPerSegment(reference, false);
-        if (decoded != null) {
-            spellings.add(decoded);
-        }
-        String formDecoded = decodedPerSegment(reference, true);
-        if (formDecoded != null && !spellings.contains(formDecoded)) {
-            spellings.add(formDecoded);
-        }
-        return spellings;
-    }
-
     private static List<String> spellingsOf(String reference) {
         List<String> spellings = new ArrayList<>();
         if (wouldInventSeparator(reference)) {
@@ -1031,6 +1022,71 @@ public final class PackageIntegrity {
             // The escaping is not well formed, so there is nothing to decode it INTO. Read it
             // as written rather than answering "names nothing".
             spellings.add(reference);
+        }
+        return spellings;
+    }
+
+    /**
+     * Could a reference this verifier could not read end to end still name this payload?
+     *
+     * <p>Only the segments up to the first unreadable one are known, and they are a PREFIX of
+     * whatever the reference means. A payload the prefix cannot reach is not in question — so
+     * the finding about it stands. Both decodings are tried; the LITERAL spelling is not,
+     * because a reference refused for safety is never read literally (that is what let a
+     * {@code %2e%2e} reach an entry named literally).
+     *
+     * <p>Answering "yes" is the safe direction, and it is what an empty prefix gets.
+     */
+    private static boolean couldStillName(String payload, String metsPath, String ipRoot,
+            String reference) {
+        if (reference == null) {
+            return true;
+        }
+        int slash = metsPath.lastIndexOf('/');
+        String directory = slash < 0 ? "" : metsPath.substring(0, slash + 1);
+        for (boolean plusIsSpace : new boolean[] { false, true }) {
+            String prefix = readableLeadingPart(reference, plusIsSpace);
+            if (prefix.isEmpty()) {
+                return true;
+            }
+            List<String> bases = prefix.startsWith("/") ? List.of(ipRoot)
+                    : List.of(directory, ipRoot, "");
+            String relative = prefix.startsWith("/") ? prefix.substring(1) : prefix;
+            for (String base : bases) {
+                String candidate = withoutDotSegments(base + relative);
+                if (candidate == null || payload.startsWith(candidate)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** The leading segments that decode, with their separator — a prefix of what this means. */
+    private static String readableLeadingPart(String reference, boolean plusIsSpace) {
+        StringBuilder out = new StringBuilder();
+        for (String segment : reference.split("/", -1)) {
+            String decoded = percentDecoded(segment, plusIsSpace);
+            if (decoded == null) {
+                return out.toString();
+            }
+            out.append(decoded).append('/');
+        }
+        return out.toString();
+    }
+
+    private static List<String> spellingsIgnoringRefusal(String reference) {
+        List<String> spellings = new ArrayList<>();
+        if (reference == null) {
+            return spellings;
+        }
+        String decoded = decodedPerSegment(reference, false);
+        if (decoded != null) {
+            spellings.add(decoded);
+        }
+        String formDecoded = decodedPerSegment(reference, true);
+        if (formDecoded != null && !spellings.contains(formDecoded)) {
+            spellings.add(formDecoded);
         }
         return spellings;
     }
@@ -1171,12 +1227,19 @@ public final class PackageIntegrity {
         if (!rest.startsWith("//")) {
             return rest;
         }
-        int slash = rest.indexOf('/', 2);
-        String authority = slash < 0 ? rest.substring(2) : rest.substring(2, slash);
+        // The SAME terminator rule authorityOf uses. This carried its own copy that knew
+        // only the slash, so the two disagreed about "file://localhost?v=1". That IS reachable,
+        // and the first note here said it was not: referenceOf strips the query before calling
+        // this, but isPackageLocal does NOT — so a path-less reference under that base was read
+        // as another machine's file, dropped, and then announced as naming something OUTSIDE
+        // the package (subagent, twenty-first review, P3, on the duplicate; Codex, same round,
+        // P3, with the caller that reaches it).
+        String authority = authorityOf(href).length() < 2 ? ""
+                : authorityOf(href).substring(2);
         if (!authority.isEmpty() && !authority.equals(".") && !authority.equalsIgnoreCase("localhost")) {
             return null;
         }
-        String path = slash < 0 ? "" : rest.substring(slash);
+        String path = rest.substring(2 + authority.length());
         return authority.equals(".") && path.startsWith("/") ? path.substring(1) : path;
     }
 
@@ -1225,8 +1288,19 @@ public final class PackageIntegrity {
      */
     private static String withoutDotSegments(String path) {
         java.util.Deque<String> out = new java.util.ArrayDeque<>();
-        for (String segment : path.split("/", -1)) {
+        String[] segments = path.split("/", -1);
+        for (int at = 0; at < segments.length; at++) {
+            String segment = segments[at];
+            // A TRAILING "." or ".." leaves a trailing slash (RFC 3986 §5.2.4, steps 2C/2D
+            // replace them with "/"), because what they name is a DIRECTORY. Dropping it made
+            // "metadata/preservation/.." come back as "metadata", which no rule can tell from
+            // a file name — and the base-is-a-directory question then answered "file"
+            // (subagent, twenty-first review, P2/P3).
+            boolean last = at == segments.length - 1;
             if (segment.equals(".")) {
+                if (last) {
+                    out.addLast("");
+                }
                 continue;
             }
             if (segment.equals("..")) {
@@ -1234,6 +1308,9 @@ public final class PackageIntegrity {
                     return null;
                 }
                 out.pollLast();
+                if (last) {
+                    out.addLast("");
+                }
                 continue;
             }
             out.addLast(segment);
@@ -1512,10 +1589,18 @@ public final class PackageIntegrity {
             // known; returning it here would need the path threaded through the whole walk.
             return href;
         }
-        // Asked of the base's PATH. The whole base string ends in the query when there is
-        // one, so "metadata/?rev=1" read as a FILE base and the directory was then reported as
-        // a file the package does not carry (Codex, twentieth review, P2).
-        return withoutFragmentOrQuery(base).endsWith("/") ? null : base;
+        // Asked of the base's PATH, with dot segments resolved — taken apart exactly as
+        // against() takes it apart, so the two cannot disagree about what the path is. The
+        // whole base string ends in the query when there is one, so "metadata/?rev=1" read as
+        // a FILE base (Codex, twentieth review, P2); and "metadata/preservation/.." names a
+        // directory that the raw spelling cannot show (subagent, twenty-first review, P2).
+        String scheme = schemeOf(base);
+        String authority = authorityOf(base);
+        String drive = driveOf(base.substring(scheme.length() + authority.length()));
+        String path = withoutFragmentOrQuery(
+                base.substring(scheme.length() + authority.length() + drive.length()));
+        String flattened = withoutDotSegments(path);
+        return (flattened == null ? path : flattened).endsWith("/") ? null : base;
     }
 
     /**

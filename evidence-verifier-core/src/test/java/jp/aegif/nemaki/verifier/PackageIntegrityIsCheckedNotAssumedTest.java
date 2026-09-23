@@ -1733,12 +1733,21 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         folderBaseWithQuery.put(ROOT + "METS.xml", metsWithBase("metadata/preservation/?rev=1",
                 "../../representations/rep1/data/minutes.txt", "?download"));
 
+        // A base that ends in a DOT SEGMENT names a directory too, and the raw spelling
+        // cannot show it: "metadata/preservation/.." has no trailing slash until the dot
+        // segments are resolved, so it read as a FILE base and the package was accused of not
+        // carrying a file it was never asked for (subagent, twenty-first review, P2).
+        Map<String, String> dotSegmentBase = new LinkedHashMap<>(goodPackage(payload));
+        dotSegmentBase.put(ROOT + "METS.xml", metsWithBase("metadata/preservation/..",
+                "/representations/rep1/data/minutes.txt", "?download"));
+
         Map<String, Map<String, String>> shapes = new LinkedHashMap<>();
         shapes.put("no-base", noBase);
         shapes.put("file-base", fileBase);
         shapes.put("empty-href", emptyHref);
         shapes.put("folder-base", folderBase);
         shapes.put("folder-base-with-query", folderBaseWithQuery);
+        shapes.put("dot-segment-base", dotSegmentBase);
         for (Map.Entry<String, Map<String, String>> shape : shapes.entrySet()) {
             Outcome.Check closure = checkNamed(PackageIntegrity.check(PackageReader.open(
                     zip(tmp, shape.getKey() + ".zip", shape.getValue())).entries()),
@@ -1908,14 +1917,16 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         Map<String, String> sideways = new LinkedHashMap<>(goodPackage(payload));
         sideways.put(ROOT + "METS.xml", mets("representations/rep1/METS.xml",
                 "representations/rep2/METS.xml"));
-        // UNDECODABLE as well as refused, which is the one case where nothing can be ruled
-        // out by decoding — so the scope is all that stands between rep1's unreadable locator
-        // and rep2's smuggled file. The two faults must be in DIFFERENT SEGMENTS: the refusal
-        // is decided per segment and only sees a segment that DOES decode, so "data%2f%FF.bin"
-        // in one segment is not refused at all and the control aimed at this arm did not fire
-        // (measured — the example was wrong, not the arm).
+        // UNDECODABLE as well as refused, and undecodable FROM THE FIRST SEGMENT — so there
+        // is no readable prefix to rule anything out with, and the scope is all that stands
+        // between rep1's unreadable locator and rep2's smuggled file. Two things had to be
+        // measured to get this fixture right: the refusal is decided per segment and only
+        // sees a segment that DOES decode (so both faults cannot sit in one segment), and a
+        // readable LEADING segment already excludes a payload it cannot reach (so the
+        // unreadable one has to come first, or the scope arm is never what decides). Both
+        // were found by a control that did not fire — the example, not the arm.
         sideways.put(ROOT + "representations/rep1/METS.xml",
-                metsWithLocType("URN", "data%2fx/%FF.bin", "data/minutes.txt"));
+                metsWithLocType("URN", "%FF/data%2fx.bin", "data/minutes.txt"));
         sideways.put(ROOT + "representations/rep1/data/minutes.txt", payload);
         sideways.put(ROOT + "representations/rep2/METS.xml", mets("data/notes.txt"));
         sideways.put(ROOT + "representations/rep2/data/notes.txt", "the notes");
@@ -1926,6 +1937,22 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                 "an unreadable locator in ONE representation made another representation's "
                         + "smuggled payload 'could not tell': " + acrossPackages.detail());
         assertTrue(acrossPackages.detail().contains("smuggled.bin"), acrossPackages.detail());
+
+        // AND THE SAME METS. The root METS owns every representation, so the scope alone rules
+        // nothing out there — what does is the part of the reference that IS readable:
+        // "metadata%2fx/%FF.bin" can only name something under metadata, whatever the
+        // unreadable segment turns out to be (Codex, twenty-first review, P1).
+        Map<String, String> readablePrefix = new LinkedHashMap<>(goodPackage(payload));
+        readablePrefix.put(smuggled, "content nobody committed to");
+        readablePrefix.put(ROOT + "METS.xml", metsWithLocType("URN", "metadata%2fx/%FF.bin",
+                "representations/rep1/data/minutes.txt"));
+        Outcome.Check underMetadata = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "readable-prefix.zip", readablePrefix)).entries()), "mets closure");
+        assertEquals(Outcome.FAILED, underMetadata.outcome(),
+                "an unreadable locator that can only name something under metadata/ still "
+                        + "covered for a payload under representations/: "
+                        + underMetadata.detail());
+        assertTrue(underMetadata.detail().contains("smuggled.bin"), underMetadata.detail());
 
         // AND THE ARM IS REACHABLE. A non-URL locator that DOES resolve to the unnamed payload
         // is the case the ambiguity answer exists for; without this the narrowing could be
@@ -2001,6 +2028,21 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                 "a base whose authority is followed by a query read as a file: URI on another "
                         + "machine, so the payload's only name was dropped: "
                         + underAuthority.detail());
+
+        // The SAME base with a PATH-LESS reference, which reaches the authority rule by the
+        // other door: referenceInEffect hands the base straight to isPackageLocal, which does
+        // not strip the query first (Codex, twenty-first review, P3).
+        Map<String, String> pathLessUnderAuthority = new LinkedHashMap<>(goodPackage(payload));
+        pathLessUnderAuthority.put(ROOT + "METS.xml",
+                metsWithBase("file://localhost?v=1", "/representations/rep1/data/minutes.txt",
+                        "?download"));
+        Outcome.Check pathLess = checkNamed(PackageIntegrity.check(PackageReader.open(zip(tmp,
+                "authority-query-path-less.zip", pathLessUnderAuthority)).entries()),
+                "mets closure");
+        assertEquals(Outcome.PASSED, pathLess.outcome(), pathLess.detail());
+        assertFalse(String.valueOf(pathLess.detail()).contains("OUTSIDE"),
+                "a path-less reference under a LOCAL file: base with a query was announced as "
+                        + "naming something outside the package: " + pathLess.detail());
 
         // OVER-REFUSAL: the sibling the reference really names is there, and the base is not.
         Map<String, String> sibling = new LinkedHashMap<>(goodPackage(payload));

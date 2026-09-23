@@ -160,6 +160,90 @@ class ReleaseReadinessIsMeasuredTest {
         assertEquals(declared.size(), Integer.parseInt(stated.group(1)),
                 "the readiness document says " + stated.group(1) + " controls and the runner "
                         + "declares " + declared.size());
+
+        // EVERY exit, not the first one. The §0 figure was checked and the table row beside it
+        // was not, so half of a count update left the document stating two different totals
+        // with every lock green (Codex, twenty-first review, P3). A four-digit "N 本" in this
+        // document is a control count; the unit totals are written with a comma.
+        Matcher everywhere = Pattern.compile("(?<![0-9,])([0-9]{4}) 本").matcher(readiness);
+        int exits = 0;
+        while (everywhere.find()) {
+            exits++;
+            assertEquals(declared.size(), Integer.parseInt(everywhere.group(1)),
+                    "the readiness document states " + everywhere.group(1) + " controls "
+                            + "somewhere and the runner declares " + declared.size());
+        }
+        assertTrue(exits >= 2, "only " + exits + " control-count exits were found, so this "
+                + "checked one place and called it every place");
+    }
+
+    /**
+     * Every open residual is classified where the release gate reads the classification.
+     *
+     * <p>The gate's conclusion — "one P1 remains, and it is R59" — is drawn from a table that
+     * listed ten residuals while §0 counted twelve, because two newly opened ones were never
+     * added. Leaving a residual out of the classification makes the gate's answer stronger
+     * than the evidence for it (Codex, twenty-first review, P2).
+     */
+    @Test
+    @DisplayName("every open residual is classified in the RC gate's own table")
+    void everyOpenResidualIsClassifiedForTheGate() throws IOException {
+        String canon = read(CANON);
+        String gate = slice(read(READINESS), "### RC 条件 11", "## ",
+                "the readiness document's RC condition 11 section");
+
+        // The group the gate is ABOUT: the readiness document's own "actually open" list.
+        // Comparing against every unstruck canon row pulled in the two groups this document
+        // separates out — intended design, and not-in-3.4.0 — which the gate does not classify
+        // and should not.
+        String breakdown = slice(read(READINESS), "開いている残件の内訳", "- **進捗は計画",
+                "the readiness document's breakdown of the open residuals");
+        // Taken as "unstruck, minus the two groups this document sets aside" — those two name
+        // their members one by one, while the open group uses a RANGE (R58〜R63), so reading
+        // the open group directly would silently skip the four ids inside the range.
+        StringBuilder setAside = new StringBuilder();
+        Matcher groups = Pattern.compile("\\*\\*(意図した設計|3\\.4\\.0 に入れない) \\d+\\*\\* — ([^\\n]+)")
+                .matcher(breakdown);
+        int found = 0;
+        while (groups.find()) {
+            found++;
+            setAside.append(groups.group(2)).append('\n');
+        }
+        assertEquals(2, found, "the readiness document no longer sets aside two groups: "
+                + breakdown);
+
+        SortedSet<String> missing = new TreeSet<>();
+        for (String id : residualRows(canon)) {
+            if (isClosed(canon, id)
+                    || setAside.toString().matches("(?s).*\\b" + id + "\\b.*")) {
+                continue;
+            }
+            // A ROW, not a mention. The prose under the table names residuals too, so a
+            // residual dropped from the classification stayed "covered" by the sentence that
+            // explains why it was added (measured — the control did not fire).
+            boolean classified = false;
+            for (String line : gate.split("\n")) {
+                if (!line.startsWith("| ")) {
+                    continue;
+                }
+                // The FIRST CELL. Rows group residuals that share a classification
+                // ("R55 / R58 / R60"), so the subject of a row is everything before the
+                // second pipe — and only that. Reading the whole line let the reason column
+                // stand in for a classification, and reading the whole section let the prose
+                // under the table do it (both measured, control did not fire).
+                String subject = line.split("\\|", 3)[1];
+                if (subject.matches("(?s).*\\b" + id + "\\b.*")) {
+                    classified = true;
+                }
+            }
+            if (!classified) {
+                missing.add(id);
+            }
+        }
+        assertEquals(new TreeSet<String>(), missing,
+                "open residuals the RC gate's classification does not mention: " + missing
+                        + ". The gate concludes from that table, so a residual missing from it "
+                        + "is one the conclusion did not account for");
     }
 
     /**

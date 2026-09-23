@@ -9839,8 +9839,8 @@ CONTROLS = [
         id='GY3',
         what="the readiness document stops saying the control added since the fifth sweep is unswept, so a finished sweep of 938 reads as a measurement of today's tree",
         file='docs/design/v3.4-release-readiness.md',
-        find='**その 207 本は通し未実施**',
-        replace='**その 207 本も通し済み**',
+        find='**その 213 本は通し未実施**',
+        replace='**その 213 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10797,7 +10797,7 @@ CONTROLS = [
         what='a second statement of the unswept count drifts from the locked one, so the document contradicts itself about how many controls have never been run together',
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **5 回目以後に足した control は 207 本**（境界 LM3 — 5 回目時点の最大 ID。',
+        find='  **5 回目以後に足した control は 213 本**（境界 LM3 — 5 回目時点の最大 ID。',
         replace='  **5 回目以後に足した control は 0 本**（境界 LM3 — 5 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10808,7 +10808,7 @@ CONTROLS = [
         file='docs/design/fail-closed-reads.md',
         # Re-pointed: the boundary id moves below LM3, so ids above it exist while the sweep
         # record says nothing was added — the cross-check (declared − swept ≠ ids above) fires.
-        find='**5 回目以後に足した control は 207 本**（境界 LM3）: ',
+        find='**5 回目以後に足した control は 213 本**（境界 LM3）: ',
         replace='**5 回目以後に足した control は 5 本**（境界 LA3）: ',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10864,8 +10864,8 @@ CONTROLS = [
         id='LN3',
         what="the canon stops saying the control added since the fifth sweep is unswept — the canon-side twin of GY3 — and, being itself the first control after the sweep, the one that forces the ledger back from 0 to 1",
         file='docs/design/fail-closed-reads.md',
-        find='**その 207 本は通し未実施**',
-        replace='**その 207 本も通し済み**',
+        find='**その 213 本は通し未実施**',
+        replace='**その 213 本も通し済み**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10873,8 +10873,8 @@ CONTROLS = [
         id='LO3',
         what="the readiness document's §4 stops saying the added controls are unswept while §1.4 still does — the second exit, which a once-per-file check let through (GY3 did not fire)",
         file='docs/design/v3.4-release-readiness.md',
-        find='5 回目以後に足した control は **207 本**（通し未実施）。',
-        replace='5 回目以後に足した control は **207 本**（通し済み）。',
+        find='5 回目以後に足した control は **213 本**（通し未実施）。',
+        replace='5 回目以後に足した control は **213 本**（通し済み）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11689,7 +11689,7 @@ CONTROLS = [
         id='LB3',
         what='the PLAN\'s copy of the never-swept count drifts, so whoever scopes the overdue full sweep from the plan runs half the set',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='5 回目以後に足した control は **207 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='5 回目以後に足した control は **213 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='5 回目以後に足した control は **0 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -12578,10 +12578,11 @@ CONTROLS = [
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
         # Re-pointed 2026-09-22 (11 巡目): the arm gained the refusal RD3 measures, so the
         # anchor names the removal itself.
-        find='                out.pollLast();\n                continue;',
-        replace='                out.addLast(segment);\n                continue;',
+        # Re-pointed 2026-09-23 (21 巡目): the arm gained the trailing-slash branch.
+        find='                out.pollLast();\n                if (last) {',
+        replace='                out.addLast(segment);\n                if (last) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['anUpwardHrefIsResolved'],
+        expect_fail=['anUpwardHrefIsResolved', 'anEmptyPathReferenceNamesTheBase'],
     ),
     dict(
         id='QU3',
@@ -12841,8 +12842,10 @@ CONTROLS = [
         what='only the root METS may write a path from the zip root, so a representation METS that names its own payload with the wrapping folder in the path is refused',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='                    : List.of(directory, ipRoot, "");',
-        replace='                    : directory.equals(ipRoot) ? List.of(directory, ipRoot, "")\n                            : List.of(directory, ipRoot);',
+        # Re-pointed 2026-09-23 (21 巡目): couldStillName carries the same list, so the
+        # anchor takes the line above it — the lookup loop's own.
+        find='            List<String> bases = spelling.startsWith("/") ? List.of(ipRoot)\n                    : List.of(directory, ipRoot, "");',
+        replace='            List<String> bases = spelling.startsWith("/") ? List.of(ipRoot)\n                    : directory.equals(ipRoot) ? List.of(directory, ipRoot, "")\n                            : List.of(directory, ipRoot);',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['aReferenceFromTheZipRootResolvesFromAnyMets'],
     ),
@@ -12877,8 +12880,9 @@ CONTROLS = [
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
         # ONLY the IP root, so the zip-root base RO3 measures is not removed with it.
-        find='                    : List.of(directory, ipRoot, "");',
-        replace='                    : List.of(directory, "");',
+        # Re-pointed 2026-09-23 (21 巡目) for the same reason as RO3.
+        find='            List<String> bases = spelling.startsWith("/") ? List.of(ipRoot)\n                    : List.of(directory, ipRoot, "");',
+        replace='            List<String> bases = spelling.startsWith("/") ? List.of(ipRoot)\n                    : List.of(directory, "");',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         # Both fixtures carry a reference that needs the IP root, measured.
         expect_fail=['aSubMetsMayWritePackageRootRelativePaths',
@@ -12974,8 +12978,9 @@ CONTROLS = [
         what='file:///x loses its leading slash, so an absolute reference resolves beside the METS that wrote it and claims a different file',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='        String path = slash < 0 ? "" : rest.substring(slash);',
-        replace='        String path = slash < 0 ? "" : rest.substring(slash + 1);',
+        # Re-pointed 2026-09-23 (21 巡目): the path starts after the authority.
+        find='        String path = rest.substring(2 + authority.length());',
+        replace='        String path = rest.substring(3 + authority.length());',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['aForeignFileUriIsNotLocalAndAnEmptyAuthorityIsAbsolute'],
     ),
@@ -13381,8 +13386,8 @@ CONTROLS = [
         what="a path-less reference is answered as the METS even when an xml:base is in force, so the payload that base names is reported as unnamed and a base naming an absent file PASSES",
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        # Re-pointed 2026-09-23 (20 巡目): the directory test reads the base's path now.
-        find='        return withoutFragmentOrQuery(base).endsWith("/") ? null : base;',
+        # Re-pointed 2026-09-23 (21 巡目): the directory test resolves dot segments now.
+        find='        return (flattened == null ? path : flattened).endsWith("/") ? null : base;',
         replace='        return href;',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['anEmptyPathReferenceNamesTheBase'],
@@ -13428,9 +13433,13 @@ CONTROLS = [
         what="the base's query is merged as part of its path, so a reference beside a base with a query resolves to the base itself and a file the package does not carry passes",
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        # Re-pointed 2026-09-23 (21 巡目): referenceInEffect takes the base apart the same
+        # way now, so the anchor carries the line that follows it in against().
         find="""        String path = withoutFragmentOrQuery(
-                base.substring(scheme.length() + authority.length() + drive.length()));""",
-        replace="""        String path = base.substring(scheme.length() + authority.length() + drive.length());""",
+                base.substring(scheme.length() + authority.length() + drive.length()));
+        int slash = path.lastIndexOf('/');""",
+        replace="""        String path = base.substring(scheme.length() + authority.length() + drive.length());
+        int slash = path.lastIndexOf('/');""",
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['aBaseIsMergedOnItsPathNotItsQuery'],
     ),
@@ -13453,8 +13462,9 @@ CONTROLS = [
         what="an undecodable refused locator is taken to be about every unnamed payload in the ZIP, so one representation's unreadable reference covers for another representation's smuggled file",
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='                                if (belongsToTheSamePackage(payload, wrote.getKey(),\n                                        metsPaths)) {',
-        replace='                                if (true) {',
+        # Re-pointed 2026-09-23 (21 巡目): the readable-prefix test joined it.
+        find='                                if (belongsToTheSamePackage(payload, wrote.getKey(), metsPaths)',
+        replace='                                if (true',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload'],
     ),
@@ -13463,8 +13473,10 @@ CONTROLS = [
         what="'does this base name a directory' is asked of the whole base string, so a base with a query reads as a FILE base and the directory is reported as a file the package does not carry",
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        find='        return withoutFragmentOrQuery(base).endsWith("/") ? null : base;',
-        replace='        return base.endsWith("/") ? null : base;',
+        # Re-pointed 2026-09-23 (21 巡目): the query strip is one of two steps now, so the
+        # sabotage puts the raw base back in place of the resolved path.
+        find='        String path = withoutFragmentOrQuery(\n                base.substring(scheme.length() + authority.length() + drive.length()));\n        String flattened = withoutDotSegments(path);',
+        replace='        String path = base;\n        String flattened = withoutDotSegments(path);',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['anEmptyPathReferenceNamesTheBase'],
     ),
@@ -13497,6 +13509,76 @@ CONTROLS = [
         replace='verifier-core 190 / cli 12 を別に',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessVerifierCountIsTheVerifiers'],
+    ),
+    dict(
+        id='TY3',
+        what="a reference that cannot be decoded end to end is treated as if NOTHING about it were known, so its readable leading segments stop ruling out payloads they cannot reach",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='                                        && couldStillName(payload, wrote.getKey(),\n                                                packageRootOf(wrote.getKey(), metsPaths),\n                                                referenceOf(href))) {',
+        replace='                                        && true) {',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload'],
+    ),
+    dict(
+        id='TZ3',
+        what="a trailing dot segment stops leaving a trailing slash, so a base that names a directory reads as a file and the directory is reported as a file the package does not carry",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find_span=('            boolean last = at == segments.length - 1;', '            out.addLast(segment);'),
+        replace="""            if (segment.equals(".")) {
+                continue;
+            }
+            if (segment.equals("..")) {
+                if (out.isEmpty()) {
+                    return null;
+                }
+                out.pollLast();
+                continue;
+            }
+            out.addLast(segment);""",
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['anEmptyPathReferenceNamesTheBase'],
+    ),
+    dict(
+        id='UA3',
+        what="the directory question is asked of the base's raw spelling again, so a base ending in a dot segment reads as a file",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        String flattened = withoutDotSegments(path);\n        return (flattened == null ? path : flattened).endsWith("/") ? null : base;',
+        replace='        return path.endsWith("/") ? null : base;',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['anEmptyPathReferenceNamesTheBase'],
+    ),
+    dict(
+        id='UB3',
+        what="the file: authority rule keeps its own copy that ends only at a slash, so a local base with a query reads as another machine and its references are announced as outside the package",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        find='        String authority = authorityOf(href).length() < 2 ? ""\n                : authorityOf(href).substring(2);',
+        replace='        int slash = rest.indexOf(\'/\', 2);\n        String authority = slash < 0 ? rest.substring(2) : rest.substring(2, slash);',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aBaseIsMergedOnItsPathNotItsQuery'],
+    ),
+    dict(
+        id='UC3',
+        what="only the first control-count exit in the readiness document is compared with the runner, so half of a count update leaves the document stating two different totals",
+        module='core',
+        file='docs/design/v3.4-release-readiness.md',
+        find='| 通し negative-control | **938/938 発火・exit 0（8 時間 52 分、2026-09-21〜22）** | 1151 本 |',
+        replace='| 通し negative-control | **938/938 発火・exit 0（8 時間 52 分、2026-09-21〜22）** | 1139 本 |',
+        test='ReleaseReadinessIsMeasuredTest',
+        expect_fail=['theReadinessControlCountIsTheRunners'],
+    ),
+    dict(
+        id='UD3',
+        what="an open residual is left out of the RC gate's classification table, so the gate's 'one P1 remains' is drawn from a list that does not cover every open residual",
+        module='core',
+        file='docs/design/v3.4-release-readiness.md',
+        find='| R91 | **P2** | drive の綴りの参照が',
+        replace='| R910 | **P2** | drive の綴りの参照が',
+        test='ReleaseReadinessIsMeasuredTest',
+        expect_fail=['everyOpenResidualIsClassifiedForTheGate'],
     ),
     dict(
         id='TM3',
