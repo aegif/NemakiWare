@@ -77,8 +77,8 @@ public class DropboxConnectorAdapter {
      * see excluded any of them modified earlier for ever. The whole folder is read; the
      * caller's budget is the caller's.
      *
-     * <p>A response without an {@code entries} array is refused, not read as an empty folder;
-     * {@code has_more} with no cursor is a cut, not an end.
+     * <p>A response without an {@code entries} array or without {@code has_more} is refused,
+     * not read as an empty folder or as its end; {@code has_more} with no cursor is a cut.
      */
     public FileListing listAllFiles(String folderPath, int maxRequests) throws Exception {
         List<DropboxFile> allFiles = new ArrayList<>();
@@ -104,6 +104,13 @@ public class DropboxConnectorAdapter {
                         entry.path("size").asLong(0),
                         entry.path("server_modified").asText(null)
                 ));
+            }
+            // A missing has_more is a malformed answer, not "no more": read as false it made
+            // a broken page the end of the folder, and the checkpoint then excluded the rest
+            // (review, P1). Dropbox always writes the field.
+            if (!root.hasNonNull("has_more")) {
+                throw new RuntimeException("Dropbox answered the folder listing without has_more on request "
+                        + request + ", so whether the folder continues is unknown");
             }
             if (!root.path("has_more").asBoolean(false)) {
                 return new FileListing(allFiles, true, null);

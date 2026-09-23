@@ -65,7 +65,7 @@ public class BoxConnectorAdapter {
 
     /**
      * List EVERY file in a folder (sub-folders excluded), a page of {@value #PAGE_SIZE} at a
-     * time, up to {@code maxRequests} requests.
+     * time, up to {@code maxRequests} requests — by MARKER, not by offset.
      *
      * <p>This replaced a listing stopped at the caller's per-run limit (R107). Box returns folder
      * items by type and name, not by modification time, so a listing cut at N items was the
@@ -73,23 +73,31 @@ public class BoxConnectorAdapter {
      * checkpoint the caller raised from the files it did see excluded any of them modified
      * earlier for ever. The whole folder is read; the caller's budget is the caller's.
      *
-     * <p>A response without an {@code entries} array or a {@code total_count} is a malformed
-     * answer and is refused, not read as an empty folder. An empty page before
-     * {@code total_count} was reached is reported as a cut, not as the end.
+     * <p>Marker pagination ({@code usemarker=true}), because offset pagination skips: an item
+     * deleted while the folder is being listed shifts every later item one place back, so the
+     * item that moved into the page already read is never returned — and, newer than the
+     * checkpoint, is excluded by it for ever (review, P1). A marker names a position, not a
+     * count.
+     *
+     * <p>A response without an {@code entries} array is a malformed answer and is refused, not
+     * read as an empty folder. The end is a missing, null or empty {@code next_marker} — the
+     * documented shape; whether Box ever omits the field on a page that is NOT the last is not
+     * something this reader can tell, and that reading is recorded beside R61's.
      */
     public FileListing listAllFiles(String folderId, int maxRequests) throws Exception {
         List<BoxFile> allFiles = new ArrayList<>();
-        int offset = 0;
+        String marker = null;
         for (int request = 0; request < maxRequests; request++) {
             String url = apiBase + "/folders/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(folderId)
                     + "/items?fields=id,name,type,size,modified_at,parent"
-                    + "&limit=" + PAGE_SIZE + "&offset=" + offset;
+                    + "&limit=" + PAGE_SIZE + "&usemarker=true"
+                    + (marker == null ? "" : "&marker=" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(marker));
             HttpResponse<String> response = get(url);
             JsonNode root = MAPPER.readTree(response.body());
             JsonNode entries = root.get("entries");
-            if (entries == null || !entries.isArray() || !root.hasNonNull("total_count")) {
-                throw new RuntimeException("Box answered the folder listing without an entries array "
-                        + "or a total_count on request " + (request + 1) + ", so how many items the folder holds is unknown");
+            if (entries == null || !entries.isArray()) {
+                throw new RuntimeException("Box answered the folder listing without an entries array on request "
+                        + (request + 1) + ", so how many items the folder holds is unknown");
             }
             for (JsonNode entry : entries) {
                 if (!"file".equals(entry.path("type").asText())) continue;
@@ -102,15 +110,15 @@ public class BoxConnectorAdapter {
                         entry.path("parent").path("id").asText(null)
                 ));
             }
-            int totalCount = root.path("total_count").asInt(0);
-            offset += PAGE_SIZE; // Box API: advance by the requested limit, not by entries.size()
-            if (offset >= totalCount) {
+            String nextMarker = root.path("next_marker").asText("");
+            if (nextMarker.isEmpty()) {
                 return new FileListing(allFiles, true, null);
             }
-            if (entries.isEmpty()) {
-                return new FileListing(allFiles, false, "Box answered an empty page at offset "
-                        + (offset - PAGE_SIZE) + " while total_count says " + totalCount + " items");
+            if (nextMarker.equals(marker)) {
+                return new FileListing(allFiles, false, "Box returned the same marker twice (" + marker
+                        + "), so the listing cannot move forward");
             }
+            marker = nextMarker;
         }
         return new FileListing(allFiles, false, "the cap of " + maxRequests + " listing request(s) was reached with "
                 + allFiles.size() + " file(s) read and more items still in the folder (raise the profile's "

@@ -133,7 +133,9 @@ class FileShareFoldersAreReadWholeTest {
         BOX_LIST_CALLS.set(0);
         DROPBOX_LIST_CALLS.set(0);
         failingDownloads = List.of();
-        boxItems = (exchange, n) -> json(exchange, 200, boxPage(1, "f-1@2026-01-01T00:00:00-00:00"));
+        dlqWritable = true;
+        failingImports = List.of();
+        boxItems = (exchange, n) -> json(exchange, 200, boxPage(null, "f-1@2026-01-01T00:00:00-00:00"));
         dropboxList = (exchange, n) -> json(exchange, 200, dropboxPage(false, null, "d-1@2026-01-01T00:00:00Z"));
     }
 
@@ -155,8 +157,8 @@ class FileShareFoldersAreReadWholeTest {
         exchange.close();
     }
 
-    /** Box entries as {@code id@modified_at}; {@code total_count} is the folder's true size. */
-    private static String boxPage(int totalCount, String... idAtTime) {
+    /** Box entries as {@code id@modified_at}; a {@code nextMarker} of null ends the folder. */
+    private static String boxPage(String nextMarker, String... idAtTime) {
         StringBuilder entries = new StringBuilder();
         for (String spec : idAtTime) {
             String id = spec.substring(0, spec.indexOf('@'));
@@ -166,7 +168,8 @@ class FileShareFoldersAreReadWholeTest {
                     .append(".txt\",\"size\":3,\"modified_at\":\"").append(at)
                     .append("\",\"parent\":{\"id\":\"0\"}}");
         }
-        return "{\"total_count\":" + totalCount + ",\"entries\":[" + entries + "],\"offset\":0,\"limit\":1000}";
+        return "{\"entries\":[" + entries + "],\"limit\":1000"
+                + (nextMarker == null ? "" : ",\"next_marker\":\"" + nextMarker + "\"") + "}";
     }
 
     /** Dropbox entries as {@code id@server_modified}. */
@@ -184,12 +187,12 @@ class FileShareFoldersAreReadWholeTest {
                 + (cursor == null ? "" : ",\"cursor\":\"" + cursor + "\"") + "}";
     }
 
-    private static int offsetOf(HttpExchange exchange) {
+    private static String markerOf(HttpExchange exchange) {
         String query = exchange.getRequestURI().getQuery();
         for (String part : query.split("&")) {
-            if (part.startsWith("offset=")) return Integer.parseInt(part.substring("offset=".length()));
+            if (part.startsWith("marker=")) return part.substring("marker=".length());
         }
-        return 0;
+        return null;
     }
 
     // ── the orchestrators under test ──────────────────────────────
@@ -199,6 +202,10 @@ class FileShareFoldersAreReadWholeTest {
     private CanonicalImportService importService;
     private final List<String> importedIds = new ArrayList<>();
     private final List<String> dlqReasons = new ArrayList<>();
+    /** What the dead-letter store answers when asked to record a failure. */
+    private boolean dlqWritable = true;
+    /** Ids whose import answers an error result (not an exception). */
+    private List<String> failingImports = List.of();
 
     private void wire(Object orchestrator) {
         fetchSupport = mock(FetchSupport.class);
@@ -210,11 +217,18 @@ class FileShareFoldersAreReadWholeTest {
         lenient().doNothing().when(fetchSupport).throttle(anyLong());
         lenient().doAnswer(call -> {
             dlqReasons.add(call.getArgument(1));
-            return null;
-        }).when(fetchSupport).saveToDlq(any(), anyString(), any());
+            return dlqWritable;
+        }).when(fetchSupport).saveSourceNeverReadToDlq(any(), anyString());
+        lenient().doAnswer(call -> {
+            dlqReasons.add(call.getArgument(1));
+            return dlqWritable;
+        }).when(fetchSupport).saveSourceReadToDlq(any(), anyString());
         lenient().when(checkpointManager.loadSimpleCheckpoint(anyString(), anyString())).thenReturn(null);
         lenient().when(importService.execute(any(), any())).thenAnswer(call -> {
             ExternalIngestRequest req = call.getArgument(1);
+            if (failingImports.contains(req.getSourceObjectId())) {
+                return ExternalIngestResult.error("r", "refused by the import service");
+            }
             importedIds.add(req.getSourceObjectId());
             return new ExternalIngestResult("r", "obj-1", "1.0", false, false, false, null, null,
                     List.of(), List.of());
@@ -281,9 +295,9 @@ class FileShareFoldersAreReadWholeTest {
     @DisplayName("Box: a folder larger than a page and than the budget is listed whole and the oldest files are taken first")
     void boxListsTheWholeFolderAndTakesTheOldestFirst() {
         boxItems = (exchange, n) -> {
-            int offset = offsetOf(exchange);
-            StringBuilder page = new StringBuilder("{\"total_count\":1001,\"entries\":[");
-            if (offset == 0) {
+            String marker = markerOf(exchange);
+            StringBuilder page = new StringBuilder("{\"entries\":[");
+            if (marker == null) {
                 for (int i = 0; i < 1000; i++) {
                     if (i > 0) page.append(',');
                     // f-0999 is the oldest file in the folder; everything else on this page is newer
@@ -296,7 +310,7 @@ class FileShareFoldersAreReadWholeTest {
                 page.append("{\"type\":\"file\",\"id\":\"f-1000\",\"name\":\"f.txt\",\"size\":3,"
                         + "\"modified_at\":\"2026-01-02T00:00:00-00:00\",\"parent\":{\"id\":\"0\"}}");
             }
-            json(exchange, 200, page.append("],\"offset\":").append(offset).append(",\"limit\":1000}").toString());
+            json(exchange, 200, page.append("],\"limit\":1000").append(marker == null ? ",\"next_marker\":\"m-2\"" : "").append("}").toString());
         };
         FetchResult result = box().execute(null, profile(), connector("box"), Map.of(), 2);
 
@@ -313,7 +327,7 @@ class FileShareFoldersAreReadWholeTest {
     @Test
     @DisplayName("Box: the next poll skips what the checkpoint names and takes the rest")
     void boxTheNextPollTakesTheRest() {
-        boxItems = (exchange, n) -> json(exchange, 200, boxPage(5, "f-a@2026-01-05T00:00:00-00:00",
+        boxItems = (exchange, n) -> json(exchange, 200, boxPage(null, "f-a@2026-01-05T00:00:00-00:00",
                 "f-b@2026-01-02T00:00:00-00:00", "f-c@2026-01-04T00:00:00-00:00",
                 "f-d@2026-01-01T00:00:00-00:00", "f-e@2026-01-03T00:00:00-00:00"));
         BoxFetchOrchestrator orchestrator = box();
@@ -337,7 +351,7 @@ class FileShareFoldersAreReadWholeTest {
     @Test
     @DisplayName("Box: a listing cut at the request cap imports nothing, holds the checkpoint and names the cap")
     void boxAListingCutAtTheCapImportsNothing() {
-        boxItems = (exchange, n) -> json(exchange, 200, boxPage(5000,
+        boxItems = (exchange, n) -> json(exchange, 200, boxPage("m-2",
                 "f-a@2026-01-05T00:00:00-00:00", "f-b@2026-01-02T00:00:00-00:00"));
         FetchResult result = box().execute(null, profile(), connector("box"),
                 Map.of(BoxFetchOrchestrator.PARAM_MAX_LIST_REQUESTS, "1"), 10);
@@ -350,12 +364,11 @@ class FileShareFoldersAreReadWholeTest {
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }
 
-    /** A Box answer without {@code total_count} is refused, not read as a small folder. */
+    /** A Box answer without an {@code entries} array is refused, not read as an empty folder. */
     @Test
-    @DisplayName("Box: a listing without total_count is refused, not read as the whole folder")
-    void boxAListingWithoutTotalCountIsRefused() {
-        boxItems = (exchange, n) -> json(exchange, 200, "{\"entries\":[{\"type\":\"file\",\"id\":\"f-a\",\"name\":\"a\","
-                + "\"size\":1,\"modified_at\":\"2026-01-05T00:00:00-00:00\",\"parent\":{\"id\":\"0\"}}]}");
+    @DisplayName("Box: a listing without an entries array is refused, not read as an empty folder")
+    void boxAListingWithoutEntriesIsRefused() {
+        boxItems = (exchange, n) -> json(exchange, 200, "{\"limit\":1000}");
         FetchResult result = box().execute(null, profile(), connector("box"), Map.of(), 10);
 
         assertTrue(result.hasErrors(), "a malformed listing was read as a folder: " + result);
@@ -368,7 +381,7 @@ class FileShareFoldersAreReadWholeTest {
     @DisplayName("Box: a file that fails is dead-lettered, not named, and the files behind it are still taken")
     void boxAFailingFileDoesNotBlockTheRest() {
         failingDownloads = List.of("f-bad");
-        boxItems = (exchange, n) -> json(exchange, 200, boxPage(3, "f-bad@2026-01-01T00:00:00-00:00",
+        boxItems = (exchange, n) -> json(exchange, 200, boxPage(null, "f-bad@2026-01-01T00:00:00-00:00",
                 "f-ok@2026-01-01T00:00:00-00:00", "f-new@2026-01-02T00:00:00-00:00"));
         FetchResult result = box().execute(null, profile(), connector("box"), Map.of(), 2);
 
@@ -389,6 +402,68 @@ class FileShareFoldersAreReadWholeTest {
         assertTrue(result.hasErrors(), result.toString());
         assertTrue(result.errors().get(0).contains("boxListMaxRequests"), result.errors().get(0));
         assertEquals(0, BOX_LIST_CALLS.get());
+    }
+
+    /**
+     * An import that ANSWERS an error (no exception) is dead-lettered too, and not settled.
+     *
+     * <p>Adding the message to {@code errors} alone let a newer file that settles move the
+     * checkpoint past it with nothing recording it (review, P1). The row is the metadata-only
+     * record of the miss ({@code saveSourceReadToDlq}).
+     */
+    @Test
+    @DisplayName("Box: an import that answers an error is dead-lettered and not named by the checkpoint")
+    void boxAnImportThatAnswersAnErrorIsDeadLettered() {
+        failingImports = List.of("f-bad");
+        boxItems = (exchange, n) -> json(exchange, 200, boxPage(null, "f-bad@2026-01-01T00:00:00-00:00",
+                "f-good@2026-01-02T00:00:00-00:00"));
+        FetchResult result = box().execute(null, profile(), connector("box"), Map.of(), 10);
+
+        assertEquals(1, dlqReasons.size(), "the refused import was not dead-lettered: " + dlqReasons);
+        assertTrue(dlqReasons.get(0).contains("f-bad"), dlqReasons.get(0));
+        assertEquals(List.of("f-good"), importedIds);
+        assertTrue(result.hasErrors(), result.toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "box.0", "2026-01-02T00:00:00-00:00|f-good");
+    }
+
+    /**
+     * A failure whose dead-letter row could NOT be written holds the checkpoint.
+     *
+     * <p>Otherwise a newer file that settles would move the checkpoint past a file nothing
+     * records — the same silent loss the row exists to prevent, and the usual cause (the
+     * configuration store being unreachable) is the same store the checkpoint goes into.
+     */
+    @Test
+    @DisplayName("Box: a failure that could not be dead-lettered holds the checkpoint and is reported")
+    void boxAnUnrecordedFailureHoldsTheCheckpoint() {
+        dlqWritable = false;
+        failingDownloads = List.of("f-bad");
+        boxItems = (exchange, n) -> json(exchange, 200, boxPage(null, "f-bad@2026-01-01T00:00:00-00:00",
+                "f-good@2026-01-02T00:00:00-00:00"));
+        FetchResult result = box().execute(null, profile(), connector("box"), Map.of(), 10);
+
+        assertEquals(List.of("f-good"), importedIds, "the good file should still be taken");
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("could not be dead-lettered")), result.errors().toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /**
+     * A file with no modification time is a candidate on every poll and never moves the
+     * checkpoint — it cannot be placed against it.
+     */
+    @Test
+    @DisplayName("Box: a file with no modified_at is imported but never named by the checkpoint")
+    void boxAFileWithoutATimestampNeverMovesTheCheckpoint() {
+        boxItems = (exchange, n) -> json(exchange, 200, "{\"entries\":[{\"type\":\"file\",\"id\":\"f-x\","
+                + "\"name\":\"x.txt\",\"size\":1,\"parent\":{\"id\":\"0\"}}],\"limit\":1000}");
+        BoxFetchOrchestrator orchestrator = box();
+        checkpointIs("2026-01-02T00:00:00-00:00|f-good");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector("box"), Map.of(), 10);
+
+        assertEquals(List.of("f-x"), importedIds, "a file that cannot be placed must still be imported");
+        assertFalse(result.hasErrors(), result.errors().toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }
 
     // ── Dropbox ───────────────────────────────────────────────────
@@ -441,6 +516,20 @@ class FileShareFoldersAreReadWholeTest {
         assertEquals(2, DROPBOX_LIST_CALLS.get(), "the cap did not bound the listing");
         assertFalse(result.sawEverything(), result.toString());
         assertTrue(result.incompleteReads().get(0).contains("dropboxListMaxRequests"), result.incompleteReads().get(0));
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /** A page without {@code has_more} is refused — read as false it was the end of the folder. */
+    @Test
+    @DisplayName("Dropbox: a page without has_more is refused, not read as the end of the folder")
+    void dropboxAPageWithoutHasMoreIsRefused() {
+        dropboxList = (exchange, n) -> json(exchange, 200, "{\"entries\":[{\".tag\":\"file\",\"id\":\"d-a\","
+                + "\"name\":\"a.txt\",\"path_display\":\"/a.txt\",\"size\":3,\"server_modified\":\"2026-01-05T00:00:00Z\"}],"
+                + "\"cursor\":\"c-2\"}");
+        FetchResult result = dropbox().execute(null, profile(), connector("dropbox"), Map.of(), 10);
+
+        assertTrue(result.hasErrors(), "a page without has_more was read as the end: " + result);
         assertTrue(importedIds.isEmpty(), importedIds.toString());
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }

@@ -136,6 +136,7 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
             List<jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.Mark> settled = new ArrayList<>();
             int attempted = 0;
             boolean attemptsExhausted = false;
+            int unrecordedFailures = 0;
             for (var file : candidatesThisRun) {
                 if (settled.size() >= limit) {
                     break;
@@ -176,12 +177,24 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
                         settled.add(new jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.Mark(file.serverModified(), file.id()));
                     } else {
                         FetchSupport.addError(errors, "Dropbox " + file.id() + ": " + String.join(", ", result.errors()));
+                        // The import ran and answered that it did not import. Recorded, or the
+                        // checkpoint — moved by a newer file that settles — would pass this one
+                        // with nothing saying so (review, P1). The row is the same one execute()'s
+                        // own net writes for this request, updated in place.
+                        if (!fetchSupport.saveSourceReadToDlq(req, "Dropbox " + file.id() + ": " + String.join(", ", result.errors()))) {
+                            unrecordedFailures++;
+                        }
                     }
                 } catch (Exception e) {
                     // Download/processing failed before execute()'s own DLQ net —
                     // DLQ so the advancing checkpoint does not silently lose it.
                     FetchSupport.addError(errors, "Dropbox file " + file.id() + ": " + e.getMessage());
-                    fetchSupport.saveToDlq(req, "Dropbox file " + file.id() + ": " + e.getMessage(), null);
+                    // saveSourceNeverReadToDlq answers whether the row was WRITTEN; saveToDlq
+                    // swallowed that, and a failure whose record did not land would have been
+                    // passed by the checkpoint as if it were recorded (review, P1).
+                    if (!fetchSupport.saveSourceNeverReadToDlq(req, "Dropbox file " + file.id() + ": " + e.getMessage())) {
+                        unrecordedFailures++;
+                    }
                 } finally {
                     if (content != null) try { content.close(); } catch (Exception ignored) {}
                 }
@@ -203,7 +216,15 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
             // naming every settled id at that timestamp, so a budget that stopped inside a
             // group of files sharing a timestamp leaves the rest for the next poll rather than
             // excluding them (R59 / R107).
-            String next = checkpoint.after(settled).encode();
+            // A failure whose dead-letter row could not be written is a file nothing records.
+            // Moving the checkpoint past it would lose it silently, so the checkpoint holds
+            // for this run and the run says why (the usual cause is the configuration store
+            // being unreachable — the same store the checkpoint goes into).
+            if (unrecordedFailures > 0) {
+                FetchSupport.addError(errors, unrecordedFailures + " Dropbox failure(s) could not be dead-lettered; "
+                        + "the checkpoint holds so that they are offered again");
+            }
+            String next = unrecordedFailures > 0 ? null : checkpoint.after(settled).encode();
             if (next != null && !next.equals(stored)) {
                 checkpointManager.saveSimpleCheckpoint(profile.getProfileId(), "dropbox", next);
             }
