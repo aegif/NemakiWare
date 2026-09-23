@@ -191,6 +191,16 @@ class ReleaseReadinessIsMeasuredTest {
     @Test
     @DisplayName("the readiness document's unit total is at least what the sources declare")
     void theReadinessUnitTotalIsAtLeastTheSources() throws IOException {
+        // The groups surefire is told to skip, from the build itself.
+        Matcher excluded = Pattern.compile("<surefire\\.excludedGroups>([^<]*)</")
+                .matcher(Files.readString(Path.of("pom.xml"), StandardCharsets.UTF_8));
+        assertTrue(excluded.find(), "core/pom.xml no longer declares the excluded groups, so "
+                + "this test cannot mirror what the suite skips");
+        List<String> excludedGroups = java.util.Arrays.stream(excluded.group(1).split(","))
+                .map(String::trim).filter(group -> !group.isEmpty()).toList();
+        assertFalse(excludedGroups.isEmpty(), "the build excludes no group, so the skip below "
+                + "is checking nothing");
+
         int declared = 0;
         try (Stream<Path> walk = Files.walk(Path.of("src/test/java"))) {
             for (Path file : walk.filter(p -> p.toString().endsWith(".java")).toList()) {
@@ -206,14 +216,23 @@ class ReleaseReadinessIsMeasuredTest {
                 // and counting its tests put invocations into a LOWER bound the real suite can
                 // never reach (Codex, twenty-third review, P2).
                 //
-                // ANCHORED to the start of the line, like every other test for an annotation
-                // here. A contains() over the whole line matched the COMMENT that explained
-                // this rule, so this file excluded ITSELF and quietly dropped its own tests
-                // from the count — the exact "does not crash, counts the wrong number" failure
-                // its own javadoc warns about (subagent, twenty-fourth review, P1).
-                if (lines.stream().map(String::trim)
-                        .anyMatch(l -> l.startsWith("@Tag(") && l.contains("atlas-integr"
-                                + "ation"))) {
+                // COMMENTS STRIPPED, and the excluded group READ FROM THE POM rather than
+                // written here. Three shapes of this test have now been wrong: a contains()
+                // over each raw line matched the COMMENT that explains the rule, so this file
+                // excluded ITSELF (subagent, twenty-fourth review, P1); anchoring to the start
+                // of a line then missed a wrapped annotation and one preceded by another on
+                // the same line, counting tests the suite never runs (both reviewers,
+                // twenty-fifth review, P2); and stripping comments alone STILL matched,
+                // because the group name was a string literal in this very method (measured).
+                // Taking the name from the build is what makes the rule describe the suite
+                // instead of resembling it. Neither direction is caught by the bound below —
+                // it has hundreds of invocations of slack — so this is measured by reading,
+                // and said so rather than claimed as a control.
+                String source = String.join("\n", lines)
+                        .replaceAll("(?s)/\\*.*?\\*/", " ")
+                        .replaceAll("(?m)//.*$", " ");
+                if (source.contains("@Tag")
+                        && excludedGroups.stream().anyMatch(source::contains)) {
                     continue;
                 }
                 for (String line : lines) {

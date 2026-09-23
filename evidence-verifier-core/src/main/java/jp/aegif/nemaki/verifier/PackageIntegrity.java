@@ -1077,7 +1077,7 @@ public final class PackageIntegrity {
     }
 
     /**
-     * How many path components this reference has, or -1 when an escape is malformed.
+     * How many path components this reference has. There is no "unknown" answer.
      *
      * <p>Counted from the RAW spelling, which is why it survives a decode this verifier cannot
      * complete: a separator is either a literal {@code /} — and those are the split points —
