@@ -256,7 +256,19 @@ public class IngestDlqController {
                         + " no delivery and cannot be replayed; re-fetch through the connector,"
                         + " then delete this entry");
             }
-            if (dlq.getPayloadWriteToken() != null) {
+            // Whether the item's bytes can come back from its source instead of from the row:
+            // a FILE_SHARE item of a system the re-fetch knows (Box, Dropbox). For such a row
+            // the stored payload is not needed and its defects — never confirmed, dropped,
+            // gone — are not a reason to refuse (review, P2): the replay uses the source's
+            // bytes. For every other row the stored payload is all there is, and the arms
+            // below keep refusing what cannot be attributed.
+            ConnectorDefinition fileShareConnector = request.getConnectorId() == null ? null
+                    : connectorDefinitionService.get(request.getConnectorId());
+            boolean fileShare = fileShareConnector != null
+                    && fileShareConnector.getSourceArchetype() == SourceArchetype.FILE_SHARE;
+            boolean refetchable = fileShare && refetch.canRefetch(fileShareConnector);
+
+            if (dlq.getPayloadWriteToken() != null && !refetchable) {
                 // A payload write for this attempt was started and never confirmed. The row's
                 // attachment — if any — cannot be attributed to THIS attempt: it may be the
                 // previous attempt's bytes, which the unfinished write never replaced.
@@ -278,7 +290,7 @@ public class IngestDlqController {
                         + " through its connector (a fresh failure with bytes replaces this"
                         + " entry), then delete this entry if the item is confirmed present");
             }
-            if (dlq.getPayloadDropReason() != null) {
+            if (dlq.getPayloadDropReason() != null && !refetchable) {
                 // NOT gated on hasContent. A row can carry an OLDER attempt's attachment
                 // (hasContent=true) while THIS attempt's bytes were refused — the request JSON
                 // on the row is the newer attempt's, so replaying pairs the old payload with
@@ -298,8 +310,11 @@ public class IngestDlqController {
                         + " item through its connector instead");
             }
 
-            // Restore content stream from CouchDB attachment if available
-            if (dlq.isHasContent()) {
+            // Restore content stream from CouchDB attachment if available — not for a
+            // re-fetchable row whose payload write was never confirmed (the attachment may be
+            // an earlier attempt's) or whose bytes were dropped: those come from the source.
+            if (dlq.isHasContent() && !(refetchable
+                    && (dlq.getPayloadWriteToken() != null || dlq.getPayloadDropReason() != null))) {
                 // A read that could not answer must not become "this entry had nothing to
                 // restore": the retry would import a content-less document, report success,
                 // and DELETE the row that is the only record the source item was lost.
@@ -326,10 +341,10 @@ public class IngestDlqController {
                     response.put("payloadPresenceNote", "this entry was recorded as carrying a"
                             + " payload while the store could not be asked; the store has now"
                             + " answered that it carries none, so it was replayed without one");
-                } else {
+                } else if (!refetchable) {
                     // The record says it HAS content and the store says there is none. Not a
                     // retry: importing without it would record an empty document as the
-                    // recovered item.
+                    // recovered item. (A re-fetchable row falls through to the source.)
                     return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId
                             + " is recorded as carrying content, but no stored payload came"
                             + " back; the entry is kept and nothing was imported");
@@ -341,10 +356,10 @@ public class IngestDlqController {
             // the only record of the item — would be deleted (review, P1). The bytes are
             // fetched again from the source for the systems this can fetch by the row's own
             // identifiers (Box by file id, Dropbox by path); the others are refused, row kept.
-            if (request.getContentStream() == null && request.getConnectorId() != null) {
-                ConnectorDefinition connector = connectorDefinitionService.get(request.getConnectorId());
-                if (connector != null && connector.getSourceArchetype() == SourceArchetype.FILE_SHARE) {
-                    if (!refetch.canRefetch(connector)) {
+            if (request.getContentStream() == null && fileShare) {
+                ConnectorDefinition connector = fileShareConnector;
+                {
+                    if (!refetchable) {
                         return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId + " carries no bytes, and "
                                 + connector.getSourceSystem() + " items are not fetched again here, so replaying it"
                                 + " would import an empty document; the entry is kept and nothing was imported");
@@ -365,12 +380,23 @@ public class IngestDlqController {
                     }
                     try {
                         request.setContentStream(refetch.refetch(connector, token, request));
+                    } catch (IllegalArgumentException rowDoesNotNameTheItem) {
+                        return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId + " carries no bytes, and "
+                                + rowDoesNotNameTheItem.getMessage() + "; the entry is kept and nothing was imported");
                     } catch (Exception couldNotFetch) {
                         return errorResponse(HttpStatus.BAD_GATEWAY, "DLQ entry " + dlqId + " carries no bytes, and"
                                 + " they could not be fetched again from " + connector.getSourceSystem() + ": "
                                 + couldNotFetch.getMessage() + "; the entry is kept and nothing was imported");
                     }
                     response.put("refetchedFromSource", connector.getSourceSystem());
+                    if (response.containsKey("payloadPresenceNote")) {
+                        // Said "replayed without one" a moment ago; the bytes came from the
+                        // source after all (review, P3).
+                        response.put("payloadPresenceNote", "this entry was recorded as carrying a"
+                                + " payload while the store could not be asked; the store has now"
+                                + " answered that it carries none, and the bytes were fetched again from "
+                                + connector.getSourceSystem());
+                    }
                 }
             }
 

@@ -318,26 +318,32 @@ public class BoxFetchOrchestrator implements FetchOrchestrator {
             }
             // The files that cannot be placed (see above): after the placeable ones, with
             // their own bound, never named. Not when the listing was cut — then nothing is.
-            int unplaceableImported = 0, unplaceableAttempted = 0;
+            // The bound counts imports and failures, not the import service's skips: every
+            // such file is offered on every poll, and a skip must not use up the tries, or
+            // the files behind the first `limit × 4` already-imported ones would never be
+            // reached (review, P1). Each offer is a download — the cost the notes state.
+            int unplaceableImported = 0, unplaceableTried = 0;
             for (var file : listing.complete() ? unplaceable : List.<BoxConnectorAdapter.BoxFile>of()) {
-                if (unplaceableImported >= limit || unplaceableAttempted >= limit * ATTEMPTS_PER_BUDGET) {
+                if (unplaceableImported >= limit || unplaceableTried >= limit * ATTEMPTS_PER_BUDGET) {
                     break;
                 }
-                unplaceableAttempted++;
                 fetchSupport.throttle(throttleMs);
                 switch (attempt(callContext, profile, connector, box, file, errors)) {
-                    case IMPORTED -> { imported++; unplaceableImported++; }
+                    case IMPORTED -> { imported++; unplaceableImported++; unplaceableTried++; }
                     case SKIPPED -> skipped++;
-                    case FAILED_RECORDED -> { }
-                    case FAILED_UNRECORDED -> unrecordedFailures++;
+                    case FAILED_RECORDED -> unplaceableTried++;
+                    case FAILED_UNRECORDED -> { unplaceableTried++; unrecordedFailures++; }
                 }
             }
-            if (!unplaceable.isEmpty()) {
+            // Not on a cut listing: nothing was offered then, and the cut's own note says so
+            // (review, P3 — the note claimed an import that did not happen).
+            if (!unplaceable.isEmpty() && listing.complete()) {
                 incompleteReads.add("Box folder listing: " + unplaceable.size() + " file(s) have no modification time "
                         + "this connector can read (" + unplaceable.stream().limit(5).map(BoxConnectorAdapter.BoxFile::id)
                                 .collect(java.util.stream.Collectors.joining(", "))
-                        + (unplaceable.size() > 5 ? ", …" : "") + ") — they are imported on every poll, the import "
-                        + "service's dedupe answering after the first, and never named by the checkpoint");
+                        + (unplaceable.size() > 5 ? ", …" : "") + ") — they are offered on every poll and imported "
+                        + "up to the run's limit at a time, the import service's dedupe answering for the ones already "
+                        + "imported, and never named by the checkpoint");
             }
             int leftForTheNextPoll = candidatesThisRun.size() - attempted;
             if (leftForTheNextPoll > 0) {

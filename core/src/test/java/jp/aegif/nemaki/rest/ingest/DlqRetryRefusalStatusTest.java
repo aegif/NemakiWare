@@ -77,6 +77,18 @@ class DlqRetryRefusalStatusTest {
     private ResponseEntity<?> retryWith(java.util.function.Consumer<IngestDeadLetterRecord> shapeRow,
             CanonicalImportService importService,
             java.util.function.Consumer<IngestJobService> extraStubbing) throws Exception {
+        return retryWithSystem("box", shapeRow, importService, extraStubbing);
+    }
+
+    /**
+     * As {@link #retryWith}, for a connector of the given system. "box" (the default) models an
+     * item whose bytes can be fetched again from the source; "google_drive" one whose bytes
+     * cannot — for which the stored payload is all there is, and its defects are refusals.
+     */
+    private ResponseEntity<?> retryWithSystem(String system,
+            java.util.function.Consumer<IngestDeadLetterRecord> shapeRow,
+            CanonicalImportService importService,
+            java.util.function.Consumer<IngestJobService> extraStubbing) throws Exception {
         IngestDlqController controller = new IngestDlqController();
 
         IngestJobService jobService = mock(IngestJobService.class);
@@ -111,7 +123,7 @@ class DlqRetryRefusalStatusTest {
         // is no longer replayed through the plain import (that made an empty document — see
         // DeadLetteredFileShareItemsAreFetchedAgainTest); the bytes come back from the source
         // first, and the rest of the replay — what these locks measure — is unchanged.
-        connector.setSourceSystem("box");
+        connector.setSourceSystem(system);
         connector.setCredentialRef("key");
         when(connectorService.get("c1")).thenReturn(connector);
         when(connectorService.countIndexFree("c1")).thenReturn(1);
@@ -194,7 +206,10 @@ class DlqRetryRefusalStatusTest {
         // repository as the recovered item and the only record of the loss is gone. A review
         // traced the chain end to end.
         CanonicalImportService importService = mock(CanonicalImportService.class);
-        ResponseEntity<?> res = retryWith(row -> {
+        // A system whose bytes cannot be fetched again: the stored payload is all there is.
+        // (For a Box row the bytes come from the source and this refusal does not apply — see
+        // DeadLetteredFileShareItemsAreFetchedAgainTest.)
+        ResponseEntity<?> res = retryWithSystem("google_drive", row -> {
             row.setHasContent(false);
             row.setPayloadDropReason("payload not stored: SECURITY ERROR:"
                     + " NEMAKI_ENCRYPTION_KEY is not set");
@@ -247,7 +262,10 @@ class DlqRetryRefusalStatusTest {
         // B's metadata and calls the hybrid the recovered item, then deletes the evidence row.
         // Codex named it in the round after the guard was written.
         CanonicalImportService importService = mock(CanonicalImportService.class);
-        ResponseEntity<?> res = retryWith(row -> {
+        // A system whose bytes cannot be fetched again: the stored payload is all there is.
+        // (For a Box row the bytes come from the source and this refusal does not apply — see
+        // DeadLetteredFileShareItemsAreFetchedAgainTest.)
+        ResponseEntity<?> res = retryWithSystem("google_drive", row -> {
             row.setHasContent(true);
             row.setPayloadDropReason("payload not stored: NEMAKI_ENCRYPTION_KEY is not set");
         }, importService, null);
@@ -317,7 +335,10 @@ class DlqRetryRefusalStatusTest {
         // stored payload cannot be attributed to this attempt until token and attachment are
         // bound, so the door refuses and says what resolves it: a fresh failure with bytes.
         CanonicalImportService importService = mock(CanonicalImportService.class);
-        ResponseEntity<?> res = retryWith(row -> {
+        // A system whose bytes cannot be fetched again: the stored payload is all there is.
+        // (For a Box row the bytes come from the source and this refusal does not apply — see
+        // DeadLetteredFileShareItemsAreFetchedAgainTest.)
+        ResponseEntity<?> res = retryWithSystem("google_drive", row -> {
             row.setHasContent(true);
             row.setPayloadWriteToken("tok-1");
         }, importService, null);

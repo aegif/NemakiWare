@@ -84,6 +84,7 @@ class FileShareFoldersAreReadWholeTest {
 
     private static final AtomicInteger BOX_LIST_CALLS = new AtomicInteger();
     private static volatile String lastBoxListQuery = "";
+    private static volatile String lastDropboxDownloadArg = "";
     private static final AtomicInteger DROPBOX_LIST_CALLS = new AtomicInteger();
 
     @BeforeAll
@@ -108,6 +109,7 @@ class FileShareFoldersAreReadWholeTest {
         server.createContext("/2/files/list_folder", exchange -> dropboxList.respond(exchange, DROPBOX_LIST_CALLS.incrementAndGet()));
         server.createContext("/2/files/download", exchange -> {
             String arg = exchange.getRequestHeaders().getFirst("Dropbox-API-Arg");
+            lastDropboxDownloadArg = String.valueOf(arg);
             boolean failing = false;
             for (String id : failingDownloads) {
                 if (arg != null && arg.contains(id)) failing = true;
@@ -140,6 +142,7 @@ class FileShareFoldersAreReadWholeTest {
         dlqWritable = true;
         failingImports = List.of();
         throwingImports = List.of();
+        skippingImports = List.of();
         boxItems = (exchange, n) -> json(exchange, 200, boxPage(null, "f-1@2026-01-01T00:00:00-00:00"));
         dropboxList = (exchange, n) -> json(exchange, 200, dropboxPage(false, null, "d-1@2026-01-01T00:00:00Z"));
     }
@@ -211,6 +214,8 @@ class FileShareFoldersAreReadWholeTest {
     private final List<String> dlqReadReasons = new ArrayList<>();
     /** Ids whose import THROWS (as opposed to answering an error). */
     private List<String> throwingImports = List.of();
+    /** Ids the import service answers "skipped" for — already imported, by its dedupe. */
+    private List<String> skippingImports = List.of();
     /** What the dead-letter store answers when asked to record a failure. */
     private boolean dlqWritable = true;
     /** Ids whose import answers an error result (not an exception). */
@@ -242,6 +247,9 @@ class FileShareFoldersAreReadWholeTest {
             }
             if (throwingImports.contains(req.getSourceObjectId())) {
                 throw new RuntimeException("the import service threw after reading the content");
+            }
+            if (skippingImports.contains(req.getSourceObjectId())) {
+                return ExternalIngestResult.skipped("r", "already imported");
             }
             importedIds.add(req.getSourceObjectId());
             return new ExternalIngestResult("r", "obj-1", "1.0", false, false, false, null, null,
@@ -760,6 +768,43 @@ class FileShareFoldersAreReadWholeTest {
         verify(checkpointManager).saveSimpleCheckpoint("p-share", "box.0", "2026-09-24T09:58:00.000000000Z|f-fresh");
     }
 
+    /**
+     * The bound on the files that cannot be placed counts imports and failures, not the import
+     * service's skips: with a bound of {@code limit × 4} attempts, the first four already-imported
+     * files would use it up on every poll and the fifth would never be reached (review, P1).
+     */
+    @Test
+    @DisplayName("Box: unplaceable files beyond the try bound are still reached — a dedupe skip is not a try")
+    void boxUnplaceableFilesBeyondTheTryBoundAreStillReached() {
+        skippingImports = List.of("f-1", "f-2", "f-3", "f-4");
+        StringBuilder entries = new StringBuilder();
+        for (int i = 1; i <= 5; i++) {
+            if (i > 1) entries.append(',');
+            entries.append("{\"type\":\"file\",\"id\":\"f-").append(i).append("\",\"name\":\"f.txt\",\"size\":1,\"parent\":{\"id\":\"0\"}}");
+        }
+        boxItems = (exchange, n) -> json(exchange, 200, "{\"entries\":[" + entries + "],\"limit\":1000}");
+
+        FetchResult result = box().execute(null, profile(), connector("box"), Map.of(), 1);
+
+        assertEquals(List.of("f-5"), importedIds, "the file behind four already-imported ones was never reached: " + result);
+        assertEquals(4, result.skipped(), result.toString());
+    }
+
+    /** On a cut listing nothing is offered — the note about unplaceable files must not claim otherwise (review, P3). */
+    @Test
+    @DisplayName("Box: a cut listing does not claim the unplaceable files were imported")
+    void boxACutListingDoesNotClaimUnplaceableFilesWereImported() {
+        boxItems = (exchange, n) -> json(exchange, 200, "{\"entries\":[{\"type\":\"file\",\"id\":\"f-x\",\"name\":\"x.txt\","
+                + "\"size\":1,\"parent\":{\"id\":\"0\"}}],\"limit\":1000,\"next_marker\":\"m-2\"}");
+        FetchResult result = box().execute(null, profile(), connector("box"),
+                Map.of(BoxFetchOrchestrator.PARAM_MAX_LIST_REQUESTS, "1"), 10);
+
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        assertFalse(result.incompleteReads().stream().anyMatch(n -> n.contains("never named")),
+                "the note claims an import that did not happen: " + result.incompleteReads());
+        assertTrue(result.incompleteReads().stream().anyMatch(n -> n.contains("boxListMaxRequests")), result.incompleteReads().toString());
+    }
+
     // ── Dropbox ───────────────────────────────────────────────────
 
     @Test
@@ -1075,6 +1120,53 @@ class FileShareFoldersAreReadWholeTest {
         assertTrue(result.incompleteReads().get(0).contains("same cursor twice"), result.incompleteReads().get(0));
         assertTrue(importedIds.isEmpty(), importedIds.toString());
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("Dropbox: unplaceable files beyond the try bound are still reached — a dedupe skip is not a try")
+    void dropboxUnplaceableFilesBeyondTheTryBoundAreStillReached() {
+        skippingImports = List.of("d-1", "d-2", "d-3", "d-4");
+        StringBuilder entries = new StringBuilder();
+        for (int i = 1; i <= 5; i++) {
+            if (i > 1) entries.append(',');
+            entries.append("{\".tag\":\"file\",\"id\":\"d-").append(i).append("\",\"name\":\"f.txt\",\"path_display\":\"/f")
+                    .append(i).append(".txt\",\"size\":1,\"server_modified\":\"yesterday\"}");
+        }
+        dropboxList = (exchange, n) -> json(exchange, 200, "{\"entries\":[" + entries + "],\"has_more\":false}");
+
+        FetchResult result = dropbox().execute(null, profile(), connector("dropbox"), Map.of(), 1);
+
+        assertEquals(List.of("d-5"), importedIds, "the file behind four already-imported ones was never reached: " + result);
+        assertEquals(4, result.skipped(), result.toString());
+    }
+
+    /**
+     * The poll downloads by the file's id, not its path: a path names whatever sits at it NOW,
+     * and a file moved away and replaced between the listing and the download would come back
+     * as the other file's bytes under this id (review, P1). Dropbox's download accepts "id:…".
+     */
+    @Test
+    @DisplayName("Dropbox: the download names the file by its id, not by its path")
+    void dropboxTheDownloadIsByFileIdNotPath() {
+        dropboxList = (exchange, n) -> json(exchange, 200, dropboxPage(false, null, "d-a@2026-01-05T00:00:00Z"));
+        dropbox().execute(null, profile(), connector("dropbox"), Map.of(), 10);
+
+        assertEquals(List.of("d-a"), importedIds);
+        assertTrue(lastDropboxDownloadArg.contains("\"path\":\"d-a\""), "the download named the path, not the id: " + lastDropboxDownloadArg);
+    }
+
+    @Test
+    @DisplayName("Dropbox: a cut listing does not claim the unplaceable files were imported")
+    void dropboxACutListingDoesNotClaimUnplaceableFilesWereImported() {
+        dropboxList = (exchange, n) -> json(exchange, 200, "{\"entries\":[{\".tag\":\"file\",\"id\":\"d-x\",\"name\":\"x.txt\","
+                + "\"path_display\":\"/x.txt\",\"size\":1,\"server_modified\":\"yesterday\"}],\"has_more\":true,\"cursor\":\"c-2\"}");
+        FetchResult result = dropbox().execute(null, profile(), connector("dropbox"),
+                Map.of(DropboxFetchOrchestrator.PARAM_MAX_LIST_REQUESTS, "1"), 10);
+
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        assertFalse(result.incompleteReads().stream().anyMatch(n -> n.contains("never named")),
+                "the note claims an import that did not happen: " + result.incompleteReads());
+        assertTrue(result.incompleteReads().stream().anyMatch(n -> n.contains("dropboxListMaxRequests")), result.incompleteReads().toString());
     }
 
     /** A page without {@code has_more} is refused — read as false it was the end of the folder. */

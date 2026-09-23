@@ -88,7 +88,11 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
         InputStream content = null;
         try {
             try {
-                content = dropbox.downloadFile(file.pathDisplay());
+                // By the file's id, not its path: a path names whatever sits at it NOW, and a
+                // file moved away and replaced between the listing and this download would
+                // come back as the other file's bytes under this id (review, P1 — the same
+                // window as the dead-letter re-fetch). The download API accepts "id:…".
+                content = dropbox.downloadFile(file.id());
             } catch (Exception downloadFailed) {
                 // The source item was never read: the download is where this arm's failures
                 // come from. A never-read row is replayed by fetching the bytes again — the
@@ -315,26 +319,32 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
             }
             // The files that cannot be placed (see above): after the placeable ones, with
             // their own bound, never named. Not when the listing was cut — then nothing is.
-            int unplaceableImported = 0, unplaceableAttempted = 0;
+            // The bound counts imports and failures, not the import service's skips: every
+            // such file is offered on every poll, and a skip must not use up the tries, or
+            // the files behind the first `limit × 4` already-imported ones would never be
+            // reached (review, P1). Each offer is a download — the cost the notes state.
+            int unplaceableImported = 0, unplaceableTried = 0;
             for (var file : listing.complete() ? unplaceable : List.<DropboxConnectorAdapter.DropboxFile>of()) {
-                if (unplaceableImported >= limit || unplaceableAttempted >= limit * ATTEMPTS_PER_BUDGET) {
+                if (unplaceableImported >= limit || unplaceableTried >= limit * ATTEMPTS_PER_BUDGET) {
                     break;
                 }
-                unplaceableAttempted++;
                 fetchSupport.throttle(throttleMs);
                 switch (attempt(callContext, profile, connector, dropbox, file, errors)) {
-                    case IMPORTED -> { imported++; unplaceableImported++; }
+                    case IMPORTED -> { imported++; unplaceableImported++; unplaceableTried++; }
                     case SKIPPED -> skipped++;
-                    case FAILED_RECORDED -> { }
-                    case FAILED_UNRECORDED -> unrecordedFailures++;
+                    case FAILED_RECORDED -> unplaceableTried++;
+                    case FAILED_UNRECORDED -> { unplaceableTried++; unrecordedFailures++; }
                 }
             }
-            if (!unplaceable.isEmpty()) {
+            // Not on a cut listing: nothing was offered then, and the cut's own note says so
+            // (review, P3 — the note claimed an import that did not happen).
+            if (!unplaceable.isEmpty() && listing.complete()) {
                 incompleteReads.add("Dropbox folder listing: " + unplaceable.size() + " file(s) have no modification time "
                         + "this connector can read (" + unplaceable.stream().limit(5).map(DropboxConnectorAdapter.DropboxFile::id)
                                 .collect(java.util.stream.Collectors.joining(", "))
-                        + (unplaceable.size() > 5 ? ", …" : "") + ") — they are imported on every poll, the import "
-                        + "service's dedupe answering after the first, and never named by the checkpoint");
+                        + (unplaceable.size() > 5 ? ", …" : "") + ") — they are offered on every poll and imported "
+                        + "up to the run's limit at a time, the import service's dedupe answering for the ones already "
+                        + "imported, and never named by the checkpoint");
             }
             int leftForTheNextPoll = candidatesThisRun.size() - attempted;
             if (leftForTheNextPoll > 0) {

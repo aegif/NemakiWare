@@ -15,8 +15,11 @@ import jp.aegif.nemaki.rest.ingest.ExternalIngestRequest;
  * systems this can fetch by the row's own identifiers the bytes come back from the source; for
  * the others the replay is refused with the row kept.
  *
- * <p>Box by the file id the request names; Dropbox by the {@code dropboxPath} the orchestrator
- * put in the request's metadata. Google Drive and OneDrive are not fetched again here (R111).
+ * <p>By the item's IDENTITY, never by a path: a path names whatever sits there now, and a file
+ * that moved away and was replaced would come back as another file's bytes under this row's
+ * id (review, P1). Box by the file id the request names; Dropbox by its {@code id:…} file id,
+ * which its download API accepts in place of a path. Google Drive and OneDrive are not
+ * fetched again here (R111).
  */
 public class FileShareRefetch {
 
@@ -29,7 +32,10 @@ public class FileShareRefetch {
         return "box".equals(system) || "dropbox".equals(system);
     }
 
-    /** The item's bytes, fetched again; throws when the source will not give them or the row does not name the item. */
+    /**
+     * The item's bytes, fetched again. {@link IllegalArgumentException} when the row does not name
+     * the item (the caller refuses the replay); any other exception is the source's answer.
+     */
     public InputStream refetch(ConnectorDefinition connector, String token, ExternalIngestRequest request) throws Exception {
         String system = connector.getSourceSystem();
         if ("box".equals(system)) {
@@ -40,11 +46,12 @@ public class FileShareRefetch {
             return boxFactory.apply(token).downloadFile(fileId);
         }
         if ("dropbox".equals(system)) {
-            Object path = request.getMetadata() == null ? null : request.getMetadata().get("dropboxPath");
-            if (path == null || path.toString().isBlank()) {
-                throw new IllegalArgumentException("the row names no Dropbox path");
+            String fileId = request.getSourceObjectId();
+            if (fileId == null || !fileId.startsWith("id:")) {
+                throw new IllegalArgumentException("the row names no Dropbox file id (an 'id:…' value; a path would"
+                        + " fetch whatever sits at it now)");
             }
-            return dropboxFactory.apply(token).downloadFile(path.toString());
+            return dropboxFactory.apply(token).downloadFile(fileId);
         }
         throw new IllegalArgumentException(system + " items are not fetched again here");
     }
