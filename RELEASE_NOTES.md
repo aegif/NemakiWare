@@ -885,6 +885,16 @@ exit 3 で、**食い違いが見つかれば exit 2** です (`FAILED` は prof
 
 RODA 6.3.0 と Archivematica 1.18.0 に実際に投入して測りました。**渡す前に読んでください。**
 
+- **Archivematica は SIP zip を残しません。** 既定の `automated` 設定は package を展開し、
+  AIP に入るのは展開したツリーです（RODA は `submission/` に SIP ごと残します）。ファイルの
+  bytes は全部保たれます（2026-09-23、22 ファイルの digest が 1:1 で一致）
+- **Archivematica は非 ASCII のファイル名を改名します。** `契約書 v2.txt` は
+  `Qi_Yue_Shu__v2.txt` になり、記録は AIP 内の `filenameChanges.log` に残ります。METS が
+  名指す名前と食い違うので、**ツリーをそのまま zip に組み直して検証器にかけると
+  `mets closure` が FAILED（exit 2）になります。** 記録どおりに名前を戻して組み直すと、
+  往復前と同じ verdict（P0 / P1 とも exit 0）になります。受け取る側の手順に、この再構成を
+  入れてください（[手順](docs/operations/archivematica-round-trip-runbook.md)）
+
 - **RODA には SIP を直接渡してください。bag ではありません。**
   取込プラグインを **`EARKSIP2ToAIPPlugin`** に指定します。同じ名前の旧版
   (`EARKSIPToAIPPlugin`) は古い METS を読むので、**同じパッケージを拒否します** —

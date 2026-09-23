@@ -1,7 +1,7 @@
 # RODA 6.3.0 往復 — 製品の package を実機に受け入れさせ、取り戻して CLI で再検証する
 
-2026-09-23 に実測した手順と結果。**測ったのは RODA 6.3.0 だけ**で、Archivematica は
-含まない。計画 §18 の RC 条件 6「real RODA round-trip を測定」の RODA 側に対応する。
+2026-09-23 に実測した手順と結果。**この文書は RODA 6.3.0 だけ**で、Archivematica は
+[`archivematica-round-trip-runbook.md`](archivematica-round-trip-runbook.md)（同日、再構成付き）。計画 §18 の RC 条件 6「real RODA round-trip を測定」の RODA 側に対応する。
 
 ## 何を測ったか（結論を先に）
 
@@ -14,7 +14,7 @@
 | AIP の中身 | payload `契約書 v2.txt`（非 ASCII 名）は byte 同一、**sha256 が statement の `contentDigest` と一致**（`bc6ad68e…`）。evidence section の 12 ファイル・authenticity report・`dc.xml`・schema 4 本も byte 同一（RODA は `metadata/other/*` を `metadata/descriptive/` に移す）。**我々の METS 2 本と `premis.xml` は AIP 構造には残らない**（RODA が自前の AIP と PREMIS を書く — 8 月と同じ）が、`submission/` に SIP ごと残る |
 | **round-trip 後の CLI** | 承認済み AIP の `/api/v2/aips/{id}/download/submission` は**元 zip を包んだ zip**を返す。中の zip の sha256 は golden と**一致**し、CLI は **`PACKAGE_INTEGRITY_V1` exit 0 / `RECORD_LEDGER_V1` exit 0** — 往復前と同じ verdict |
 
-**測っていないこと（言わない）**: Archivematica。anchors（`anchors/` と ERS）を持つ package —
+**測っていないこと（言わない）**: anchors（`anchors/` と ERS）を持つ package —
 この golden は P0/P1 のみで、**real RFC 3161 / ERS の RODA 往復は未測定**。他版の RODA。
 RODA 側の受領証（v2 API に受領証と分かるリソースは無い — p3-4 §16 のとおり）。
 
