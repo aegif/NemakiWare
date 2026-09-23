@@ -500,17 +500,24 @@ class ReleaseReadinessIsMeasuredTest {
         String notionSource = read(notion);
         int totalTests = 0;
         for (String line : notionSource.split("\n")) {
-            if (line.trim().equals("@Test")) totalTests++;
+            String trimmed = line.trim();
+            if (trimmed.equals("@Test") || trimmed.startsWith("@ParameterizedTest")) totalTests++;
+            assertFalse(trimmed.startsWith("@Disabled"), "a disabled test makes this count wrong: " + notion);
         }
         assertEquals(totalTests, totalStated, "the R59 row says NotionPartialReadsAreNotCompleteTest has "
                 + totalStated + " locks and the source declares " + totalTests);
 
         int r59Listed = 0;
         java.util.Set<String> qualified = new java.util.TreeSet<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
         Matcher name = Pattern.compile("`(?:([A-Za-z]+)#)?([a-z][A-Za-z0-9]+)`").matcher(listed);
         while (name.find()) {
             String cls = name.group(1);
             String method = name.group(2);
+            // A name listed twice kept the count right while a dropped lock went unnoticed
+            // (review, fortieth round, P2).
+            assertTrue(seen.add((cls == null ? "" : cls + "#") + method),
+                    "the R59 row lists a lock twice: " + method);
             String source = notionSource;
             if (cls != null) {
                 qualified.add(cls + "#" + method);
@@ -522,8 +529,8 @@ class ReleaseReadinessIsMeasuredTest {
             } else {
                 r59Listed++;
             }
-            assertTrue(source.contains("void " + method + "("),
-                    "the R59 row names a lock that does not exist: " + (cls == null ? "" : cls + "#") + method);
+            assertTrue(isATest(source, method),
+                    "the R59 row names something that is not a test method: " + (cls == null ? "" : cls + "#") + method);
         }
         assertEquals(r59Listed, r59Stated, "the R59 row says it has " + r59Stated
                 + " locks in NotionPartialReadsAreNotCompleteTest and lists " + r59Listed);
@@ -531,6 +538,25 @@ class ReleaseReadinessIsMeasuredTest {
         // both counts right and every listed name real (review, thirty-seventh round, P3).
         assertTrue(qualified.contains("DlqRetryRefusalStatusTest#theStrippedBinaryNoteDoesNotPromiseARefetch"),
                 "the R59 row no longer names its DLQ-side lock: " + qualified);
+    }
+
+    /**
+     * Whether {@code void <method>(} exists in the source AND is annotated as a test within the
+     * six lines above it. Existence alone let a set-up helper's name stand in for a lock
+     * (review, fortieth round, P2).
+     */
+    private static boolean isATest(String source, String method) {
+        String[] lines = source.split("\n");
+        for (int i = 0; i < lines.length; i++) {
+            if (lines[i].contains("void " + method + "(")) {
+                for (int back = 1; back <= 6 && i - back >= 0; back++) {
+                    String above = lines[i - back].trim();
+                    if (above.equals("@Test") || above.startsWith("@ParameterizedTest")) return true;
+                }
+                return false;
+            }
+        }
+        return false;
     }
 
     @Test
