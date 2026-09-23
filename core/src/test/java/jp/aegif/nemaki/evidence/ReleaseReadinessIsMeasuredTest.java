@@ -496,16 +496,10 @@ class ReleaseReadinessIsMeasuredTest {
         int r59Stated = Integer.parseInt(counts.group(2));
         String listed = counts.group(3);
 
-        Path notion = Path.of("src/test/java/jp/aegif/nemaki/rest/ingest/note/NotionPartialReadsAreNotCompleteTest.java");
-        String notionSource = read(notion);
-        int totalTests = 0;
-        for (String line : notionSource.split("\n")) {
-            String trimmed = line.trim();
-            if (trimmed.equals("@Test") || trimmed.startsWith("@ParameterizedTest")) totalTests++;
-            assertFalse(trimmed.startsWith("@Disabled"), "a disabled test makes this count wrong: " + notion);
-        }
+        String notionClass = "jp.aegif.nemaki.rest.ingest.note.NotionPartialReadsAreNotCompleteTest";
+        int totalTests = testMethodsOf(notionClass).size();
         assertEquals(totalTests, totalStated, "the R59 row says NotionPartialReadsAreNotCompleteTest has "
-                + totalStated + " locks and the source declares " + totalTests);
+                + totalStated + " locks and the class declares " + totalTests);
 
         int r59Listed = 0;
         java.util.Set<String> qualified = new java.util.TreeSet<>();
@@ -518,18 +512,20 @@ class ReleaseReadinessIsMeasuredTest {
             // (review, fortieth round, P2).
             assertTrue(seen.add((cls == null ? "" : cls + "#") + method),
                     "the R59 row lists a lock twice: " + method);
-            String source = notionSource;
+            String className = notionClass;
             if (cls != null) {
                 qualified.add(cls + "#" + method);
                 try (Stream<Path> walk = Files.walk(Path.of("src/test/java"))) {
                     Path found = walk.filter(p -> p.getFileName().toString().equals(cls + ".java")).findFirst()
                             .orElseThrow(() -> new AssertionError("the R59 row names a test class that does not exist: " + cls));
-                    source = read(found);
+                    // src/test/java/jp/aegif/.../Cls.java -> jp.aegif....Cls
+                    String relative = Path.of("src/test/java").relativize(found).toString();
+                    className = relative.substring(0, relative.length() - ".java".length()).replace('/', '.');
                 }
             } else {
                 r59Listed++;
             }
-            assertTrue(isATest(source, method),
+            assertTrue(testMethodsOf(className).contains(method),
                     "the R59 row names something that is not a test method: " + (cls == null ? "" : cls + "#") + method);
         }
         assertEquals(r59Listed, r59Stated, "the R59 row says it has " + r59Stated
@@ -541,28 +537,33 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     /**
-     * Whether {@code void <method>(} exists in the source AND is annotated as a test within the
-     * six lines above it. Existence alone let a set-up helper's name stand in for a lock
-     * (review, fortieth round, P2).
+     * The names of the test methods a test class declares, read by REFLECTION — {@code @Test},
+     * {@code @ParameterizedTest} and {@code @RepeatedTest} — not by scanning source lines. A
+     * six-line window, then a walk up through "annotation-looking" lines, each let a sibling's
+     * {@code @Test} stand for a helper's, or refused a genuine lock whose javadoc did not look
+     * the part (reviews, fortieth and forty-first rounds). A disabled test fails the count, as
+     * in {@link #theReadinessVerifierCountIsTheVerifiers}.
      */
-    private static boolean isATest(String source, String method) {
-        String[] lines = source.split("\n");
-        for (int i = 0; i < lines.length; i++) {
-            if (lines[i].contains("void " + method + "(")) {
-                // Walk up through THIS declaration's annotations and comments only. A window of
-                // six lines reached over a sibling's closing brace to the sibling's @Test, so a
-                // non-test override four lines below a test passed (review, forty-first round).
-                for (int back = 1; i - back >= 0; back++) {
-                    String above = lines[i - back].trim();
-                    if (above.equals("@Test") || above.startsWith("@ParameterizedTest")) return true;
-                    boolean partOfThisDeclaration = above.isEmpty() || above.startsWith("@")
-                            || above.startsWith("*") || above.startsWith("/*") || above.startsWith("//");
-                    if (!partOfThisDeclaration) return false;
-                }
-                return false;
-            }
+    private static java.util.Set<String> testMethodsOf(String className) {
+        Class<?> type;
+        try {
+            type = Class.forName(className);
+        } catch (ClassNotFoundException missing) {
+            throw new AssertionError("the R59 row names a test class that is not on the class path: " + className);
         }
-        return false;
+        java.util.Set<String> names = new TreeSet<>();
+        for (java.lang.reflect.Method m : type.getDeclaredMethods()) {
+            boolean test = m.isAnnotationPresent(Test.class)
+                    || m.isAnnotationPresent(org.junit.jupiter.params.ParameterizedTest.class)
+                    || m.isAnnotationPresent(org.junit.jupiter.api.RepeatedTest.class);
+            if (!test) continue;
+            assertFalse(m.isAnnotationPresent(org.junit.jupiter.api.Disabled.class),
+                    "a disabled test makes this count wrong: " + className + "#" + m.getName());
+            names.add(m.getName());
+        }
+        assertFalse(type.isAnnotationPresent(org.junit.jupiter.api.Disabled.class),
+                "a disabled test class makes this count wrong: " + className);
+        return names;
     }
 
     @Test
