@@ -1954,6 +1954,39 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                         + underMetadata.detail());
         assertTrue(underMetadata.detail().contains("smuggled.bin"), underMetadata.detail());
 
+        // THE OTHER DIRECTION of the same prefix. Without it, "the prefix reaches nothing"
+        // would satisfy every assertion above and the narrowing could be made unsound —
+        // returning false for a payload the reference really could name (subagent,
+        // twenty-second review, P2).
+        Map<String, String> withinPrefix = new LinkedHashMap<>(goodPackage(payload));
+        withinPrefix.put(ROOT + "metadata/x/evil.bin", "content nobody committed to");
+        withinPrefix.put(ROOT + "representations/rep1/data/evil.bin",
+                "content nobody committed to");
+        withinPrefix.put(ROOT + "METS.xml", metsWithLocType("URN", "representations%2frep1/"
+                + "data%2f%FF.bin", "representations/rep1/data/minutes.txt"));
+        Outcome.Check reaches = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "prefix-reaches.zip", withinPrefix)).entries()), "mets closure");
+        assertEquals(Outcome.UNAVAILABLE, reaches.outcome(),
+                "an unreadable locator whose readable prefix DOES reach the payload was read "
+                        + "as ruling it out, so a finding was asserted over a reference that "
+                        + "may be its name: " + reaches.detail());
+
+        // AND THE LIMIT, stated rather than assumed. A prefix that climbs above its base or
+        // collapses to the zip root constrains nothing, and the answer must stay "could not
+        // tell" — an unreadable segment may hide a %2F, so what follows it can be any number
+        // of path components. A review read this as a missed narrowing (subagent,
+        // twenty-second review, P1); it is not one, and narrowing it WOULD be unsound.
+        Map<String, String> climbs = new LinkedHashMap<>(goodPackage(payload));
+        climbs.put(smuggled, "content nobody committed to");
+        climbs.put(ROOT + "METS.xml", metsWithLocType("URN", "%2e%2e/%FF.bin",
+                "representations/rep1/data/minutes.txt"));
+        Outcome.Check aboveTheRoot = checkNamed(PackageIntegrity.check(PackageReader.open(
+                zip(tmp, "prefix-climbs.zip", climbs)).entries()), "mets closure");
+        assertEquals(Outcome.UNAVAILABLE, aboveTheRoot.outcome(),
+                "a reference whose readable part leaves the package and whose remainder cannot "
+                        + "be read was treated as ruling payloads out: "
+                        + aboveTheRoot.detail());
+
         // AND THE ARM IS REACHABLE. A non-URL locator that DOES resolve to the unnamed payload
         // is the case the ambiguity answer exists for; without this the narrowing could be
         // "never ambiguous" and both assertions above would still pass.

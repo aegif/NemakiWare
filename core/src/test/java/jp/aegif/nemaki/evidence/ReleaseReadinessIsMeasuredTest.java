@@ -178,6 +178,50 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     /**
+     * The readiness document's unit total is at least what the sources declare.
+     *
+     * <p>A LOWER BOUND, and the document says so beside the figure. An exact lock is not
+     * available: {@code @ParameterizedTest} runs one annotation many times, so a source scan
+     * counts 7,225 where the suite runs 7,365, and replicating the invocation count would mean
+     * running the suite from inside it. What this catches is the gross drift — a figure left
+     * behind while hundreds of tests were added — not the off-by-one that a stale edit leaves
+     * (Codex, twenty-second review, P3, and the limit is recorded rather than papered over).
+     */
+    @Test
+    @DisplayName("the readiness document's unit total is at least what the sources declare")
+    void theReadinessUnitTotalIsAtLeastTheSources() throws IOException {
+        int declared = 0;
+        try (Stream<Path> walk = Files.walk(Path.of("src/test/java"))) {
+            for (Path file : walk.filter(p -> p.toString().endsWith(".java")).toList()) {
+                String name = file.getFileName().toString().replace(".java", "");
+                if (file.toString().contains("/cmis/tck/") || name.endsWith("IT")
+                        || name.equals("MultiThreadTest") || name.equals("InheritedFlagTest")
+                        || name.equals("AtlasManualDataLoader")) {
+                    continue;
+                }
+                for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                    String trimmed = line.trim();
+                    if (trimmed.equals("@Test") || trimmed.startsWith("@ParameterizedTest")) {
+                        declared++;
+                    }
+                }
+            }
+        }
+        assertTrue(declared > 5000, "only " + declared + " tests were found, so the exclusions "
+                + "this mirrors have stopped matching the suite's own");
+
+        Matcher stated = Pattern.compile("\\*\\*([0-9],[0-9]{3}) 本 green\\*\\*（2026")
+                .matcher(read(READINESS));
+        assertTrue(stated.find(), "the readiness document no longer states a dated unit total");
+        int recorded = Integer.parseInt(stated.group(1).replace(",", ""));
+        assertTrue(recorded >= declared,
+                "the readiness document records " + recorded + " unit tests and the sources "
+                        + "declare " + declared + " test annotations under the same exclusions. "
+                        + "A recorded run can exceed the annotation count (parameterised tests) "
+                        + "but never fall below it");
+    }
+
+    /**
      * Every open residual is classified where the release gate reads the classification.
      *
      * <p>The gate's conclusion — "one P1 remains, and it is R59" — is drawn from a table that
