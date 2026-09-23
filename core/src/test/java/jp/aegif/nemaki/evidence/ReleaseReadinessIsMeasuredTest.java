@@ -173,7 +173,18 @@ class ReleaseReadinessIsMeasuredTest {
                     "the readiness document states " + everywhere.group(1) + " controls "
                             + "somewhere and the runner declares " + declared.size());
         }
-        assertTrue(exits >= 2, "only " + exits + " control-count exits were found, so this "
+        // The CANON states it too, in its own wording, and was not read here — so updating the
+        // readiness document alone left the two disagreeing with every lock green (both
+        // reviewers, twenty-sixth review, P2/P3).
+        Matcher inCanon = Pattern.compile("コントロール \\*\\*([0-9]{3,4})\\*\\*")
+                .matcher(read(CANON));
+        while (inCanon.find()) {
+            exits++;
+            assertEquals(declared.size(), Integer.parseInt(inCanon.group(1)),
+                    "the canon states " + inCanon.group(1) + " controls and the runner "
+                            + "declares " + declared.size());
+        }
+        assertTrue(exits >= 3, "only " + exits + " control-count exits were found, so this "
                 + "checked one place and called it every place");
     }
 
@@ -231,8 +242,15 @@ class ReleaseReadinessIsMeasuredTest {
                 String source = String.join("\n", lines)
                         .replaceAll("(?s)/\\*.*?\\*/", " ")
                         .replaceAll("(?m)//.*$", " ");
-                if (source.contains("@Tag")
-                        && excludedGroups.stream().anyMatch(source::contains)) {
+                // The ANNOTATION, matched as syntax. Asking whether the file mentions the two
+                // strings anywhere left half the self-match in place — the literal "@Tag" is
+                // code in this very method, so only the group name coming from the pom kept
+                // this file out of its own skip list, and a comment reworded to contain the
+                // group name would have put it back (subagent, twenty-sixth review, P2). It
+                // also read a group name appearing in an unrelated message as a tag.
+                if (excludedGroups.stream().anyMatch(group -> source.matches(
+                        "(?s).*@Tag\\s*\\(\\s*(?:value\\s*=\\s*)?\""
+                                + Pattern.quote(group) + "\"\\s*\\).*"))) {
                     continue;
                 }
                 for (String line : lines) {
@@ -425,6 +443,14 @@ class ReleaseReadinessIsMeasuredTest {
         String here = slice(readiness, "開いている残件の内訳", "- **進捗は計画",
                 "the readiness document's breakdown of the open residuals");
 
+        // The SUMMARY LINE above the breakdown repeats the same three figures, and nothing
+        // read it — so §0 could say one thing while the breakdown two lines below said
+        // another (subagent, twenty-sixth review, P2).
+        Matcher inline = Pattern.compile("うち意図した設計 (\\d+)・3\\.4\\.0 に入れない (\\d+)"
+                + "・実際に開いている (\\d+)").matcher(readiness);
+        assertTrue(inline.find(), "the readiness document's summary line no longer repeats the "
+                + "breakdown, so this check has nothing to compare");
+
         // Each group states a count and then names its members. Both are read: the count beside
         // a list is precisely the figure that went stale in §5's ledger twice.
         SortedSet<String> grouped = new TreeSet<>();
@@ -432,6 +458,10 @@ class ReleaseReadinessIsMeasuredTest {
         int found = 0;
         while (groups.find()) {
             found++;
+            assertEquals(inline.group(found), groups.group(2),
+                    "the readiness document's summary line says " + inline.group(found)
+                            + " for group " + found + " and the breakdown below says "
+                            + groups.group(2) + ". One of the two is stale");
             String name = groups.group(1);
             SortedSet<String> members = idsIn(groups.group(3), open);
             assertEquals(members.size(), Integer.parseInt(groups.group(2)),
@@ -883,12 +913,23 @@ class ReleaseReadinessIsMeasuredTest {
         // the added-since-sweep count, on the same line — not once per file. The readiness
         // document states the count in §1.4 and in §4; a single contains() was satisfied by §4
         // after GY3 deleted the phrase from §1.4, so the control did not fire (measured).
-        Pattern site = Pattern.compile("(?m)^.*以後に足した control は \\*{0,2}\\d+ 本.*$");
-        for (var doc : List.of(Map.entry("canon", canon), Map.entry("readiness", readiness))) {
+        // THREE documents, not two. The plan states the same sentence and was not read, so
+        // a count updated in two places and left behind in the third stayed green (both
+        // reviewers, twenty-sixth review, P2/P3).
+        Pattern site = Pattern.compile("(?m)^.*以後に足した control は \\*{0,2}(\\d+) 本.*$");
+        for (var doc : List.of(Map.entry("canon", canon), Map.entry("readiness", readiness),
+                Map.entry("plan", read(PLAN)))) {
             Matcher m = site.matcher(doc.getValue());
             int sites = 0;
             while (m.find()) {
                 sites++;
+                // The NUMBER as well as the phrase. It was only ever checked for being
+                // stated, so a control added without updating it left every assertion green
+                // and the figure wrong (Codex, twenty-sixth review, P3).
+                assertEquals(declared - sweptThen, Integer.parseInt(m.group(1)),
+                        "the " + doc.getKey() + " says " + m.group(1) + " controls were added "
+                                + "since the sweep, and the runner declares " + declared
+                                + " with " + sweptThen + " swept: 「" + m.group().trim() + "」");
                 boolean saysOutstanding = m.group().contains("通し未実施");
                 if (outstanding) {
                     assertTrue(saysOutstanding,
