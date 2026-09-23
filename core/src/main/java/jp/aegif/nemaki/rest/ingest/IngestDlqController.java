@@ -336,8 +336,13 @@ public class IngestDlqController {
                 // The stored request is byte-free by rule; say so, or a "success" here reads as
                 // "everything came back" when the attachments did not.
                 response.put("strippedBinaryCount", dlq.getRequestBinaryStrippedCount());
+                // Not "the next poll re-fetches them": a poll offers an item again only while it
+                // is still above the connector's checkpoint, and the checkpoint moves past a
+                // failed item (its dead-letter row is the record). Said so (review, 33rd round).
                 response.put("strippedBinaryNote", "attachment bytes were not stored with this "
-                        + "entry and were not replayed; the next connector poll re-fetches them");
+                        + "entry and were not replayed; re-fetch them through the connector — a "
+                        + "scheduled poll offers the item again only while it is still above the "
+                        + "connector's checkpoint");
             }
             if (result.skipped() && dlq.isSourceNeverRead()) {
                 // A skip is an idempotent RESOLUTION only when the item is actually in the

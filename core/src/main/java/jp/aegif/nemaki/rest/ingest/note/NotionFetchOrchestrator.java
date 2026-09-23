@@ -99,17 +99,23 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
                     java.util.Comparator.nullsLast(java.util.Comparator.<String>naturalOrder()))
                     .thenComparing(NotionPageSummary::id, java.util.Comparator.nullsLast(java.util.Comparator.<String>naturalOrder()));
 
-    private static int intParam(Map<String, String> params, String name, int fallback, int minimum) {
+    /** The largest index-lag allowance accepted: 30 days, in minutes. Beyond it the checkpoint would never move. */
+    static final int MAX_INDEX_LAG_MINUTES = 30 * 24 * 60;
+    /** The largest request cap accepted: 1,000,000 requests (100 million rows), well past Notion's own limit. */
+    static final int MAX_SEARCH_REQUESTS = 1_000_000;
+
+    private static int intParam(Map<String, String> params, String name, int fallback,
+            int minimum, int maximum) {
         String raw = params == null ? null : params.get(name);
         if (raw == null || raw.isBlank()) return fallback;
         try {
             int value = Integer.parseInt(raw.trim());
-            if (value >= minimum) return value;
+            if (value >= minimum && value <= maximum) return value;
         } catch (NumberFormatException notANumber) {
             // fall through
         }
         throw new IllegalArgumentException("Notion connector parameter " + name
-                + " must be an integer of at least " + minimum + ", not '" + raw + "'");
+                + " must be an integer between " + minimum + " and " + maximum + ", not '" + raw + "'");
     }
 
     /**
@@ -119,11 +125,14 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
      */
     boolean isClosed(String editedAt, int lagMinutes) {
         try {
+            // long arithmetic: 1 + Integer.MAX_VALUE wrapped negative and closed every minute
+            // at once (review, P1). The parameter is bounded as well; this is the second wall.
             return !java.time.Instant.parse(editedAt)
-                    .plus(1 + lagMinutes, java.time.temporal.ChronoUnit.MINUTES)
+                    .plus(1L + lagMinutes, java.time.temporal.ChronoUnit.MINUTES)
                     .isAfter(clock.instant());
-        } catch (java.time.format.DateTimeParseException unreadable) {
-            logger.warn("Notion last_edited_time '{}' is not an ISO-8601 instant; the checkpoint will not name it", editedAt);
+        } catch (java.time.DateTimeException | ArithmeticException unreadable) {
+            logger.warn("Notion last_edited_time '{}' cannot be placed in time ({}); the checkpoint will not name it",
+                    editedAt, unreadable.getMessage());
             return false;
         }
     }
@@ -154,8 +163,9 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
         int lagMinutes;
         try {
             maxRequests = intParam(params, PARAM_MAX_SEARCH_REQUESTS,
-                    NotionConnectorAdapter.DEFAULT_MAX_SEARCH_REQUESTS, 1);
-            lagMinutes = intParam(params, PARAM_INDEX_LAG_MINUTES, DEFAULT_INDEX_LAG_MINUTES, 0);
+                    NotionConnectorAdapter.DEFAULT_MAX_SEARCH_REQUESTS, 1, MAX_SEARCH_REQUESTS);
+            lagMinutes = intParam(params, PARAM_INDEX_LAG_MINUTES, DEFAULT_INDEX_LAG_MINUTES,
+                    0, MAX_INDEX_LAG_MINUTES);
         } catch (IllegalArgumentException badParameter) {
             // A setting that cannot be read as a number is not a connector failure, and it is
             // not the default either: guessing the default would silently ignore what the
@@ -200,9 +210,16 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
                 // exactly what R59 was. Holding the checkpoint and importing the newest rows
                 // would import the same rows again on every poll instead; the operator is told
                 // what to raise.
+                //
+                // The reason is stated only where it holds: for an ORDERED listing the unseen
+                // rows are older than the seen ones; for one Notion refused to sort, nothing
+                // says which rows were left out, and the message says that instead (review,
+                // P3 — the first draft claimed "older" for both).
                 incompleteReads.add("Notion page listing: " + listing.truncatedBecause()
-                        + " — nothing was imported and the checkpoint holds, because the pages this "
-                        + "poll was not shown are older than the ones it was");
+                        + " — nothing was imported and the checkpoint holds: "
+                        + (listing.ordered()
+                                ? "the pages this poll was not shown are older than the ones it was"
+                                : "the listing came back unordered, so which pages were left out cannot be told"));
                 thisRun = List.of();
             } else if (candidates.size() > limit) {
                 // The per-run budget. Oldest first, so what is left is newer than everything
@@ -216,14 +233,12 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
             }
             long throttleMs = FetchSupport.calculateThrottleDelayMs(connector);
 
-            // Every page this run processed, and the subset whose import SETTLED — succeeded
-            // without an attachment failure, or was skipped by the import service. A page that
-            // failed is dead-lettered inside the loop and does not hold the checkpoint back.
-            List<NotionPageSummary> processed = new ArrayList<>();
+            // The pages whose import SETTLED — succeeded without an attachment failure, or was
+            // skipped by the import service. A page that failed is dead-lettered inside the
+            // loop, does not hold the checkpoint back, and is not named by it either.
             List<NotionPageSummary> settled = new ArrayList<>();
             for (NotionPageSummary page : thisRun) {
                 fetchSupport.throttle(throttleMs);
-                processed.add(page);
                 // Declared OUTSIDE the try so the catch can dead-letter the page. Everything
                 // that throws before executeNoteImport — fetchPageAsHtml, extractFiles —
                 // happens above the import service's own DLQ net, so this arm was the only
@@ -377,6 +392,12 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
             //
             // Processing was oldest first, so nothing left for the next poll is older than the
             // chosen minute, and a listing that was cut short imported nothing (above).
+            //
+            // The ids are those of SETTLED pages only. A page that failed at that minute is
+            // dead-lettered and, left out of the set, is offered to the next poll again —
+            // recording it would have named it done (review, P1). A page that failed at an
+            // OLDER minute is passed, as before R59: its dead-letter row is the record, and a
+            // page that fails on every poll must not hold the checkpoint for ever.
             String newestClosed = null;
             for (NotionPageSummary page : settled) {
                 String at = page.lastEditedTime();
@@ -389,7 +410,7 @@ public class NotionFetchOrchestrator implements FetchOrchestrator {
                 if (newestClosed.equals(checkpoint.editedAt())) {
                     idsAtThatMinute.addAll(checkpoint.idsAtThatMinute());
                 }
-                for (NotionPageSummary page : processed) {
+                for (NotionPageSummary page : settled) {
                     if (newestClosed.equals(page.lastEditedTime())) idsAtThatMinute.add(page.id());
                 }
                 String next = new Checkpoint(newestClosed, idsAtThatMinute).encode();

@@ -105,6 +105,12 @@ public class NotionConnectorAdapter {
     public static final int DEFAULT_MAX_SEARCH_REQUESTS = 50;
 
     /**
+     * The most results Notion returns for one search query (documented; {@code has_more} turns
+     * false there and {@code request_status.type} is {@code incomplete}).
+     */
+    public static final int NOTION_QUERY_RESULT_LIMIT = 10_000;
+
+    /**
      * List the pages edited at or after {@code since}, newest first.
      *
      * <p>The search is asked for rows DESCENDING by {@code last_edited_time} — the one timestamp
@@ -151,16 +157,25 @@ public class NotionConnectorAdapter {
         List<NotionPageSummary> allPages = new ArrayList<>();
         String cursor = null;
         boolean sorted = true;
+        // Every /search call counts towards the cap — the retry without the sort included. A
+        // cap of N that allowed N+1 calls was not the "number of requests" the parameter
+        // documents (review, P3).
+        int requests = 0;
 
-        for (int request = 0; request < maxRequests; request++) {
+        while (requests < maxRequests) {
             HttpResponse<String> response = search(query, cursor, sorted);
+            requests++;
             if (response.statusCode() == 400 && sorted) {
                 logger.warn("Notion search refused the last_edited_time sort (400); reading the "
                         + "listing unordered — it is whole only if Notion ends it, and cut short "
                         + "it holds the checkpoint: {}",
                         jp.aegif.nemaki.rest.ingest.AdapterHttpClient.truncateBody(response.body()));
                 sorted = false;
+                if (requests >= maxRequests) {
+                    break;
+                }
                 response = search(query, cursor, sorted);
+                requests++;
             }
             if (response.statusCode() != 200) {
                 throw new RuntimeException("Notion API error " + response.statusCode() + ": " + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.truncateBody(response.body()));
@@ -172,7 +187,7 @@ public class NotionConnectorAdapter {
             // It used to end the loop the same way a genuine last page does.
             if (results == null || !results.isArray()) {
                 throw new NotionReadIncompleteException("Notion search answered without a results "
-                        + "array on request " + (request + 1) + ", so how many pages exist is unknown");
+                        + "array on request " + requests + ", so how many pages exist is unknown");
             }
             // Notion pagination: has_more + next_cursor. Read BEFORE the empty-page arm, because
             // an empty page that says there is more is not the end of anything — treating it as
@@ -188,9 +203,17 @@ public class NotionConnectorAdapter {
                     requestStatus.path("type").asText(""));
 
             for (JsonNode pageNode : results) {
-                String lastEdited = pageNode.hasNonNull("last_edited_time")
-                        ? pageNode.get("last_edited_time").asText() : null;
-                if (sorted && since != null && lastEdited != null && lastEdited.compareTo(since) < 0) {
+                // A page object always carries last_edited_time; one without it is a malformed
+                // answer. Tolerated as null, such a row could never be placed against the
+                // checkpoint — and in an ordered listing it could sit BELOW the row this loop
+                // stops at, never to be read (review, P1). Refused, like a missing results array.
+                if (!pageNode.hasNonNull("last_edited_time")) {
+                    throw new NotionReadIncompleteException("Notion search answered a page without "
+                            + "last_edited_time (" + pageNode.path("id").asText("no id") + ") on request "
+                            + requests + ", so it cannot be placed against the checkpoint");
+                }
+                String lastEdited = pageNode.get("last_edited_time").asText();
+                if (sorted && since != null && lastEdited.compareTo(since) < 0) {
                     // The checkpoint: this row and every row after it were edited before it.
                     return logged(query, since, PageListing.whole(allPages, true));
                 }
@@ -208,6 +231,18 @@ public class NotionConnectorAdapter {
                                 + ")"));
             }
             if (!hasMore) {
+                // Notion caps one query at 10,000 results: pagination then stops with
+                // has_more=false and a request_status saying so. If that field is ABSENT at
+                // exactly the cap — an API version that does not write it, or a shape this
+                // reader does not recognise — has_more alone would call the listing whole and
+                // the checkpoint would move over the tail Notion cut. The documented number is
+                // read as the cut instead (review, P1 on R106).
+                if (requestStatus.isMissingNode() && allPages.size() >= NOTION_QUERY_RESULT_LIMIT) {
+                    return logged(query, since, PageListing.cutShort(allPages, sorted,
+                            "Notion's documented limit of " + NOTION_QUERY_RESULT_LIMIT
+                                    + " results per query was reached and the response carried no "
+                                    + "request_status, so whether the result set was cut is unknown"));
+                }
                 // Notion said there is no more — or omitted has_more, which is read the same
                 // way and is not the same thing (R61).
                 return logged(query, since, PageListing.whole(allPages, sorted));

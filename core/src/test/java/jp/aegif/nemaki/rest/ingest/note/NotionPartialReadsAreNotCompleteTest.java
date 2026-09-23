@@ -737,6 +737,11 @@ class NotionPartialReadsAreNotCompleteTest {
         assertFalse(result.sawEverything(), result.toString());
         assertTrue(result.incompleteReads().get(0).contains("cap of 3"),
                 result.incompleteReads().get(0));
+        // The reason must not claim what an unordered listing cannot show.
+        assertTrue(result.incompleteReads().get(0).contains("unordered"),
+                result.incompleteReads().get(0));
+        assertFalse(result.incompleteReads().get(0).contains("older than"),
+                "an unordered listing claimed its unseen rows are older: " + result.incompleteReads().get(0));
         assertTrue(importedIds.isEmpty(), "pages were imported from a listing whose gaps are unknown: "
                 + importedIds);
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
@@ -760,6 +765,8 @@ class NotionPartialReadsAreNotCompleteTest {
         assertEquals(2, SEARCH_CALLS.get(), "the cap parameter was not what bounded the listing");
         assertFalse(result.sawEverything(), result.toString());
         assertTrue(result.incompleteReads().get(0).contains("notionSearchMaxRequests"),
+                result.incompleteReads().get(0));
+        assertTrue(result.incompleteReads().get(0).contains("older than"),
                 result.incompleteReads().get(0));
         assertFalse(result.hasErrors(), result.errors().toString());
         assertTrue(importedIds.isEmpty(), importedIds.toString());
@@ -833,6 +840,146 @@ class NotionPartialReadsAreNotCompleteTest {
         assertEquals(List.of("p-3"), importedIds);
         verify(checkpointManager).saveSimpleCheckpoint("p-notion", "notion",
                 "2026-01-03T00:00:00.000Z|p-3");
+    }
+
+    /** A parameter past its bound is reported, not clamped and not used (an int overflow lived here). */
+    @Test
+    @DisplayName("an index-lag parameter past its bound is reported and nothing is read")
+    void aLagParameterBeyondTheBoundIsReportedNotUsed() {
+        FetchResult result = orchestrator().execute(null, profile(), connector(),
+                Map.of(NotionFetchOrchestrator.PARAM_INDEX_LAG_MINUTES, "2147483647"), 10);
+
+        assertTrue(result.hasErrors(), result.toString());
+        assertTrue(result.errors().get(0).contains("notionIndexLagMinutes"), result.errors().get(0));
+        assertEquals(0, SEARCH_CALLS.get(), "Notion was asked despite the out-of-range parameter");
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /**
+     * A row without {@code last_edited_time} is a malformed answer, not a page with no edit
+     * time. Tolerated, it could sit below the row the ordered listing stops at and never be
+     * read; and it could never be placed against the checkpoint.
+     */
+    @Test
+    @DisplayName("a search row without last_edited_time is refused, not skipped")
+    void aRowWithoutAnEditTimeIsRefused() {
+        search = (exchange, n) -> json(exchange, 200, "{\"results\":["
+                + rowsJson("p-3@2026-01-03T00:00:00.000Z") + ","
+                + "{\"id\":\"p-x\",\"url\":\"https://notion.so/p-x\","
+                + "\"properties\":{\"title\":{\"type\":\"title\",\"title\":[{\"plain_text\":\"T\"}]}},"
+                + "\"parent\":{\"workspace\":true}},"
+                + rowsJson("p-1@2026-01-01T00:00:00.000Z") + "],\"has_more\":false}");
+        NotionFetchOrchestrator orchestrator = orchestrator();
+        checkpointIs("2026-01-02T00:00:00.000Z");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), Map.of(), 10);
+
+        assertTrue(result.hasErrors(), "a page without an edit time was tolerated: " + result);
+        assertTrue(result.errors().get(0).contains("last_edited_time"), result.errors().get(0));
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /** One hundred pages of one hundred rows: Notion's documented per-query limit, exactly. */
+    private static void serveTenThousandRows(String lastPageExtra) {
+        search = (exchange, n) -> {
+            StringBuilder rows = new StringBuilder();
+            for (int i = 0; i < 100; i++) {
+                if (i > 0) rows.append(',');
+                rows.append(rowsJson("p-" + n + "-" + i + "@2026-01-01T00:00:00.000Z"));
+            }
+            boolean last = n >= 100;
+            json(exchange, 200, "{\"results\":[" + rows + "],\"has_more\":" + !last
+                    + (last ? lastPageExtra : ",\"next_cursor\":\"c" + (n + 1) + "\"") + "}");
+        };
+    }
+
+    /**
+     * Notion's documented limit of 10,000 results per query, reached with no
+     * {@code request_status} in the response, is read as a cut — not as the whole listing.
+     *
+     * <p>This is the fail-closed answer to the part of R106 that could otherwise fail open:
+     * if the real response does not carry the field this reader knows, {@code has_more=false}
+     * at the cap would call the listing whole and the checkpoint would move over the tail.
+     */
+    @Test
+    @DisplayName("Notion's documented result limit reached without a request_status is a cut, not a whole listing")
+    void theDocumentedResultLimitWithoutARequestStatusIsACut() {
+        serveTenThousandRows("");
+        FetchResult result = orchestrator().execute(null, profile(), connector(),
+                Map.of(NotionFetchOrchestrator.PARAM_MAX_SEARCH_REQUESTS, "200"), 10);
+
+        assertEquals(100, SEARCH_CALLS.get(), "the stub did not serve the whole result set");
+        assertFalse(result.sawEverything(), result.toString());
+        assertTrue(result.incompleteReads().get(0).contains("10000"), result.incompleteReads().get(0));
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /** The over-refusal side: the same 10,000 rows that Notion itself calls complete are whole. */
+    @Test
+    @DisplayName("ten thousand rows Notion calls complete are a whole listing")
+    void theDocumentedResultLimitThatNotionCallsCompleteIsWhole() {
+        serveTenThousandRows(",\"request_status\":{\"type\":\"complete\"}");
+        FetchResult result = orchestrator().execute(null, profile(), connector(),
+                Map.of(NotionFetchOrchestrator.PARAM_MAX_SEARCH_REQUESTS, "200"), 10);
+
+        assertEquals(1, result.incompleteReads().size(), result.incompleteReads().toString());
+        assertTrue(result.incompleteReads().get(0).contains("limit of 10"),
+                "cut for a reason other than the run's budget: " + result.incompleteReads().get(0));
+        assertEquals(10, importedIds.size(), importedIds.toString());
+    }
+
+    /** The retry without the sort is a request too; a cap of one allows one. */
+    @Test
+    @DisplayName("the retry without the sort counts towards the request cap")
+    void theSortFallbackCountsTowardTheRequestCap() {
+        search = (exchange, n) -> {
+            if (bodyOf(exchange).contains("\"sort\"")) {
+                json(exchange, 400, "{\"object\":\"error\",\"status\":400,"
+                        + "\"code\":\"validation_error\",\"message\":\"sort is not valid\"}");
+                return;
+            }
+            json(exchange, 200, pageOf(false, "p-1@2026-01-01T00:00:00.000Z"));
+        };
+        FetchResult result = orchestrator().execute(null, profile(), connector(),
+                Map.of(NotionFetchOrchestrator.PARAM_MAX_SEARCH_REQUESTS, "1"), 10);
+
+        assertEquals(1, SEARCH_CALLS.get(), "a cap of one request allowed a second");
+        assertFalse(result.hasErrors(), result.errors().toString());
+        assertFalse(result.sawEverything(), result.toString());
+        assertTrue(result.incompleteReads().get(0).contains("cap of 1"), result.incompleteReads().get(0));
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+    }
+
+    /**
+     * A page that FAILED at the checkpoint minute is not named by the checkpoint.
+     *
+     * <p>Two pages in one minute; one's block listing answers 500 and is dead-lettered, the
+     * other settles. The minute is named, with the settled page only — the failed one is
+     * offered to the next poll again. Naming it would have called it done (review, P1).
+     */
+    @Test
+    @DisplayName("a page that failed at the checkpoint minute is dead-lettered and not named by the checkpoint")
+    void aPageThatFailedAtTheCheckpointMinuteIsNotNamedByIt() {
+        search = (exchange, n) -> json(exchange, 200, pageOf(false,
+                "p-2@2026-01-02T00:00:00.000Z", "p-1@2026-01-02T00:00:00.000Z"));
+        blocks = (exchange, n) -> {
+            if (exchange.getRequestURI().getPath().contains("/p-1/")) {
+                json(exchange, 500, "{\"message\":\"boom\"}");
+            } else {
+                json(exchange, 200, "{\"results\":[],\"has_more\":false}");
+            }
+        };
+
+        FetchResult result = runWithLimit(10);
+
+        assertEquals(1, dlqReasons.size(), "the failed page was not dead-lettered: " + dlqReasons);
+        assertTrue(dlqReasons.get(0).contains("p-1"), dlqReasons.get(0));
+        assertEquals(List.of("p-2"), importedIds);
+        assertTrue(result.hasErrors(), result.toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-notion", "notion",
+                "2026-01-02T00:00:00.000Z|p-2");
     }
 
     /**
