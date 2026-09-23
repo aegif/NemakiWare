@@ -464,21 +464,106 @@ class FileShareFoldersAreReadWholeTest {
     }
 
     /**
-     * A file with no modification time is a candidate on every poll and never moves the
-     * checkpoint — it cannot be placed against it.
+     * A file whose modification time cannot be read is a malformed page, refused whole: Box
+     * writes modified_at for every file, and a file that cannot be placed against the
+     * checkpoint can neither be skipped nor named — offered on every poll it would take the
+     * budget from the files behind it (review, P2). Read as "the oldest" it would be skipped.
      */
     @Test
-    @DisplayName("Box: a file with no modified_at is imported but never named by the checkpoint")
-    void boxAFileWithoutATimestampNeverMovesTheCheckpoint() {
+    @DisplayName("Box: a file whose modified_at cannot be read refuses the listing — not read as oldest, not offered for ever")
+    void boxAFileWithoutAReadableTimestampIsRefused() {
         boxItems = (exchange, n) -> json(exchange, 200, "{\"entries\":[{\"type\":\"file\",\"id\":\"f-x\","
-                + "\"name\":\"x.txt\",\"size\":1,\"parent\":{\"id\":\"0\"}}],\"limit\":1000}");
+                + "\"name\":\"x.txt\",\"size\":1,\"modified_at\":\"yesterday\",\"parent\":{\"id\":\"0\"}},"
+                + "{\"type\":\"file\",\"id\":\"f-ok\",\"name\":\"ok.txt\",\"size\":1,"
+                + "\"modified_at\":\"2026-01-03T00:00:00-00:00\",\"parent\":{\"id\":\"0\"}}],\"limit\":1000}");
         BoxFetchOrchestrator orchestrator = box();
         checkpointIs("2026-01-02T00:00:00-00:00|f-good");
 
         FetchResult result = orchestrator.execute(null, profile(), connector("box"), Map.of(), 10);
 
-        assertEquals(List.of("f-x"), importedIds, "a file that cannot be placed must still be imported");
-        assertFalse(result.hasErrors(), result.errors().toString());
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("f-x") && e.contains("cannot read")), result.errors().toString());
+        assertTrue(importedIds.isEmpty(), "the listing was used although one of its files cannot be placed: " + importedIds);
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /**
+     * A checkpoint above this run's cap — written before this batch, or before the allowance
+     * was raised — covers nothing above the cap. A file modified within the allowance of an
+     * EARLIER listing may still have been missing from it (moved in behind the marker), and
+     * the position that listing wrote must not pass it (review, P1). The position is not
+     * lowered: it is not trusted above the cap until the cap passes it.
+     */
+    @Test
+    @DisplayName("Box: a checkpoint above the cap covers nothing above the cap, and is not lowered")
+    void boxACheckpointAboveTheCapCoversNothingAboveIt() {
+        boxItems = (exchange, n) -> json(exchange, 200, boxPage(null,
+                "f-x@2026-09-24T09:58:00-00:00", "f-old@2026-09-24T09:00:00-00:00"));
+        BoxFetchOrchestrator orchestrator = box();
+        orchestrator.clock = java.time.Clock.fixed(java.time.Instant.parse("2026-09-24T10:00:00Z"), java.time.ZoneOffset.UTC);
+        checkpointIs("2026-09-24T09:59:00Z|f-z");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector("box"), Map.of(), 10);
+
+        // cap = 09:55: f-x (09:58) is above it and must be offered although the checkpoint (09:59)
+        // is past it; f-old (09:00) is below the cap and stays covered.
+        assertEquals(List.of("f-x"), importedIds, "a file within the allowance was passed by a checkpoint above the cap: " + result);
+        assertEquals(1, result.skipped(), result.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /**
+     * Beyond four digits the year is not fixed width ("+10000" sorts before "9999"), so such a
+     * timestamp is unreadable rather than mis-ordered (review, P1): the listing is refused.
+     */
+    @Test
+    @DisplayName("Box: a five-digit year is not ordered by string — the listing is refused")
+    void boxAYearBeyondFourDigitsIsRefused() {
+        boxItems = (exchange, n) -> json(exchange, 200, boxPage(null, "f-y@+10000-01-01T00:00:00-00:00"));
+        BoxFetchOrchestrator orchestrator = box();
+        checkpointIs("2026-01-02T00:00:00Z|f-b");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector("box"), Map.of(), 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("f-y") && e.contains("cannot read")), result.errors().toString());
+        assertTrue(importedIds.isEmpty(), "a five-digit year was ordered as older and skipped, or imported: " + importedIds);
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /**
+     * An item without an id cannot be told from any other: two of them would collapse into
+     * one and the second be dropped without a word (review, P1). The page is refused.
+     */
+    @Test
+    @DisplayName("Box: an item without an id refuses the listing")
+    void boxAnEntryWithoutAnIdIsRefused() {
+        boxItems = (exchange, n) -> json(exchange, 200, "{\"entries\":[{\"type\":\"file\",\"name\":\"a.txt\",\"size\":1,"
+                + "\"modified_at\":\"2026-01-01T00:00:00-00:00\",\"parent\":{\"id\":\"0\"}},"
+                + "{\"type\":\"file\",\"id\":\"f-c\",\"name\":\"c.txt\",\"size\":1,"
+                + "\"modified_at\":\"2026-01-02T00:00:00-00:00\",\"parent\":{\"id\":\"0\"}}],\"limit\":1000}");
+        FetchResult result = box().execute(null, profile(), connector("box"), Map.of(), 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("no id")), result.errors().toString());
+        assertTrue(importedIds.isEmpty(), "an item without an id was imported, or its page was used: " + importedIds);
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /**
+     * A stored checkpoint that cannot be read is NOT "no checkpoint": read as none it would
+     * silently re-offer the whole folder, and nobody would learn that the value is broken
+     * (review, P2).
+     */
+    @Test
+    @DisplayName("Box: a stored checkpoint that cannot be read is an error, not 'no checkpoint'")
+    void boxAStoredCheckpointThatCannotBeReadIsAnError() {
+        boxItems = (exchange, n) -> json(exchange, 200, boxPage(null, "f-a@2026-01-05T00:00:00-00:00"));
+        BoxFetchOrchestrator orchestrator = box();
+        checkpointIs("last tuesday|f-b");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector("box"), Map.of(), 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("last tuesday") && e.contains("not a timestamp this connector can read")), result.errors().toString());
+        assertEquals(0, BOX_LIST_CALLS.get(), "the folder was listed although the checkpoint could not be read");
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }
 
@@ -543,6 +628,7 @@ class FileShareFoldersAreReadWholeTest {
         FetchResult result = box().execute(null, profile(), connector("box"), Map.of(), 10);
 
         assertEquals(1, dlqReadReasons.size(), "the thrown import was not recorded as a READ item: " + dlqReasons);
+        assertEquals(1, dlqReasons.size(), "the thrown import was recorded twice (read AND never-read): " + dlqReasons);
         assertTrue(dlqReadReasons.get(0).contains("f-bad"), dlqReadReasons.get(0));
         assertEquals(List.of("f-good"), importedIds);
         assertTrue(result.hasErrors(), result.toString());
@@ -581,6 +667,52 @@ class FileShareFoldersAreReadWholeTest {
 
         assertEquals(List.of("f-x"), importedIds, "a file newer by half a second was read as older: " + result);
         assertEquals(0, result.skipped(), result.toString());
+    }
+
+    /**
+     * The canonical form carries nine digits of fraction, so a file 100 ns older than the
+     * checkpoint is covered — with three digits the two would tie and the file be offered
+     * although it is older (the width the documentation claims, measured).
+     */
+    @Test
+    @DisplayName("Box: a file 100 nanoseconds older than the checkpoint is covered — the form keeps nine digits")
+    void boxANanosecondOlderFileIsCovered() {
+        boxItems = (exchange, n) -> json(exchange, 200, boxPage(null, "f-x@2026-01-02T00:00:00.000000300-00:00"));
+        BoxFetchOrchestrator orchestrator = box();
+        checkpointIs("2026-01-02T00:00:00.000000400Z|f-b");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector("box"), Map.of(), 10);
+
+        assertTrue(importedIds.isEmpty(), "a file older by 100 ns was read as not older: " + importedIds);
+        assertEquals(1, result.skipped(), result.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /** The lag parameter is validated like the request cap: reported, not replaced by the default. */
+    @Test
+    @DisplayName("Box: a lag parameter that is not in range is reported and nothing is read")
+    void boxABadLagParameterIsReported() {
+        FetchResult result = box().execute(null, profile(), connector("box"),
+                Map.of(BoxFetchOrchestrator.PARAM_CHECKPOINT_LAG_MINUTES, "-1"), 10);
+
+        assertTrue(result.hasErrors(), result.toString());
+        assertTrue(result.errors().get(0).contains("boxCheckpointLagMinutes"), result.errors().get(0));
+        assertEquals(0, BOX_LIST_CALLS.get());
+    }
+
+    /** The lag parameter is what the cap is taken from: with 0, a file modified just before the listing is named. */
+    @Test
+    @DisplayName("Box: the lag parameter moves the cap — with 0 the freshest file is named")
+    void boxTheLagParameterIsHonoured() {
+        boxItems = (exchange, n) -> json(exchange, 200, boxPage(null,
+                "f-old@2026-09-24T09:00:00-00:00", "f-fresh@2026-09-24T09:58:00-00:00"));
+        BoxFetchOrchestrator orchestrator = box();
+        orchestrator.clock = java.time.Clock.fixed(java.time.Instant.parse("2026-09-24T10:00:00Z"), java.time.ZoneOffset.UTC);
+
+        orchestrator.execute(null, profile(), connector("box"),
+                Map.of(BoxFetchOrchestrator.PARAM_CHECKPOINT_LAG_MINUTES, "0"), 10);
+
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "box.0", "2026-09-24T09:58:00.000000000Z|f-fresh");
     }
 
     // ── Dropbox ───────────────────────────────────────────────────
@@ -690,6 +822,7 @@ class FileShareFoldersAreReadWholeTest {
         FetchResult result = dropbox().execute(null, profile(), connector("dropbox"), Map.of(), 10);
 
         assertEquals(1, dlqReadReasons.size(), "the thrown import was not recorded as a READ item: " + dlqReasons);
+        assertEquals(1, dlqReasons.size(), "the thrown import was recorded twice (read AND never-read): " + dlqReasons);
         assertTrue(dlqReadReasons.get(0).contains("d-bad"), dlqReadReasons.get(0));
         assertEquals(List.of("d-good"), importedIds);
         assertTrue(result.hasErrors(), result.toString());
@@ -722,6 +855,143 @@ class FileShareFoldersAreReadWholeTest {
 
         assertEquals(List.of("d-x"), importedIds, "a file newer by half a second was read as older: " + result);
         assertEquals(0, result.skipped(), result.toString());
+    }
+
+    @Test
+    @DisplayName("Dropbox: a file whose server_modified cannot be read refuses the listing")
+    void dropboxAFileWithoutAReadableTimestampIsRefused() {
+        dropboxList = (exchange, n) -> json(exchange, 200, "{\"entries\":[{\".tag\":\"file\",\"id\":\"d-x\",\"name\":\"x.txt\","
+                + "\"path_display\":\"/x.txt\",\"size\":1,\"server_modified\":\"yesterday\"},"
+                + "{\".tag\":\"file\",\"id\":\"d-ok\",\"name\":\"ok.txt\",\"path_display\":\"/ok.txt\",\"size\":1,"
+                + "\"server_modified\":\"2026-01-03T00:00:00Z\"}],\"has_more\":false}");
+        DropboxFetchOrchestrator orchestrator = dropbox();
+        checkpointIs("2026-01-02T00:00:00Z|d-good");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector("dropbox"), Map.of(), 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("d-x") && e.contains("cannot read")), result.errors().toString());
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("Dropbox: a checkpoint above the cap covers nothing above the cap, and is not lowered")
+    void dropboxACheckpointAboveTheCapCoversNothingAboveIt() {
+        dropboxList = (exchange, n) -> json(exchange, 200, dropboxPage(false, null,
+                "d-x@2026-09-24T09:58:00Z", "d-old@2026-09-24T09:00:00Z"));
+        DropboxFetchOrchestrator orchestrator = dropbox();
+        orchestrator.clock = java.time.Clock.fixed(java.time.Instant.parse("2026-09-24T10:00:00Z"), java.time.ZoneOffset.UTC);
+        checkpointIs("2026-09-24T09:59:00Z|d-z");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector("dropbox"), Map.of(), 10);
+
+        assertEquals(List.of("d-x"), importedIds, "a file within the allowance was passed by a checkpoint above the cap: " + result);
+        assertEquals(1, result.skipped(), result.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("Dropbox: a five-digit year is not ordered by string — the listing is refused")
+    void dropboxAYearBeyondFourDigitsIsRefused() {
+        dropboxList = (exchange, n) -> json(exchange, 200, dropboxPage(false, null, "d-y@+10000-01-01T00:00:00Z"));
+        DropboxFetchOrchestrator orchestrator = dropbox();
+        checkpointIs("2026-01-02T00:00:00Z|d-b");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector("dropbox"), Map.of(), 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("d-y") && e.contains("cannot read")), result.errors().toString());
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("Dropbox: a file without an id refuses the listing")
+    void dropboxAnEntryWithoutAnIdIsRefused() {
+        dropboxList = (exchange, n) -> json(exchange, 200, "{\"entries\":[{\".tag\":\"file\",\"name\":\"a.txt\","
+                + "\"path_display\":\"/a.txt\",\"size\":1,\"server_modified\":\"2026-01-01T00:00:00Z\"},"
+                + "{\".tag\":\"file\",\"id\":\"d-c\",\"name\":\"c.txt\",\"path_display\":\"/c.txt\",\"size\":1,"
+                + "\"server_modified\":\"2026-01-02T00:00:00Z\"}],\"has_more\":false}");
+        FetchResult result = dropbox().execute(null, profile(), connector("dropbox"), Map.of(), 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("no id")), result.errors().toString());
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("Dropbox: a stored checkpoint that cannot be read is an error, not 'no checkpoint'")
+    void dropboxAStoredCheckpointThatCannotBeReadIsAnError() {
+        dropboxList = (exchange, n) -> json(exchange, 200, dropboxPage(false, null, "d-a@2026-01-05T00:00:00Z"));
+        DropboxFetchOrchestrator orchestrator = dropbox();
+        checkpointIs("last tuesday|d-b");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector("dropbox"), Map.of(), 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("last tuesday") && e.contains("not a timestamp this connector can read")), result.errors().toString());
+        assertEquals(0, DROPBOX_LIST_CALLS.get(), "the folder was listed although the checkpoint could not be read");
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("Dropbox: a file 100 nanoseconds older than the checkpoint is covered — the form keeps nine digits")
+    void dropboxANanosecondOlderFileIsCovered() {
+        dropboxList = (exchange, n) -> json(exchange, 200, dropboxPage(false, null, "d-x@2026-01-02T00:00:00.000000300Z"));
+        DropboxFetchOrchestrator orchestrator = dropbox();
+        checkpointIs("2026-01-02T00:00:00.000000400Z|d-b");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector("dropbox"), Map.of(), 10);
+
+        assertTrue(importedIds.isEmpty(), "a file older by 100 ns was read as not older: " + importedIds);
+        assertEquals(1, result.skipped(), result.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("Dropbox: a lag parameter that is not in range is reported and nothing is read")
+    void dropboxABadLagParameterIsReported() {
+        FetchResult result = dropbox().execute(null, profile(), connector("dropbox"),
+                Map.of(DropboxFetchOrchestrator.PARAM_CHECKPOINT_LAG_MINUTES, "-1"), 10);
+
+        assertTrue(result.hasErrors(), result.toString());
+        assertTrue(result.errors().get(0).contains("dropboxCheckpointLagMinutes"), result.errors().get(0));
+        assertEquals(0, DROPBOX_LIST_CALLS.get());
+    }
+
+    @Test
+    @DisplayName("Dropbox: the lag parameter moves the cap — with 0 the freshest file is named")
+    void dropboxTheLagParameterIsHonoured() {
+        dropboxList = (exchange, n) -> json(exchange, 200, dropboxPage(false, null,
+                "d-old@2026-09-24T09:00:00Z", "d-fresh@2026-09-24T09:58:00Z"));
+        DropboxFetchOrchestrator orchestrator = dropbox();
+        orchestrator.clock = java.time.Clock.fixed(java.time.Instant.parse("2026-09-24T10:00:00Z"), java.time.ZoneOffset.UTC);
+
+        orchestrator.execute(null, profile(), connector("dropbox"),
+                Map.of(DropboxFetchOrchestrator.PARAM_CHECKPOINT_LAG_MINUTES, "0"), 10);
+
+        verify(checkpointManager).saveSimpleCheckpoint("p-share", "dropbox", "2026-09-24T09:58:00.000000000Z|d-fresh");
+    }
+
+    /**
+     * The same cursor twice cannot move forward and is a cut. Only that: Dropbox may answer an
+     * empty page with a NEW cursor and has_more true, so "a page that adds nothing" is not a cut
+     * here (it would refuse real folders) — those pages are bounded by the request cap.
+     */
+    @Test
+    @DisplayName("Dropbox: the same cursor twice is a cut; an empty page with a new cursor is not")
+    void dropboxTheSameCursorTwiceIsACut() {
+        dropboxList = (exchange, n) -> json(exchange, 200, n == 1
+                ? dropboxPage(true, "c-1", "d-a@2026-01-01T00:00:00Z")
+                : n == 2 ? dropboxPage(true, "c-2")           // empty page, NEW cursor: not a cut
+                : dropboxPage(true, "c-2", "d-b@2026-01-02T00:00:00Z"));  // the same cursor again: a cut
+        FetchResult result = dropbox().execute(null, profile(), connector("dropbox"),
+                Map.of(DropboxFetchOrchestrator.PARAM_MAX_LIST_REQUESTS, "6"), 10);
+
+        assertEquals(3, DROPBOX_LIST_CALLS.get(), "the repeated cursor was not recognised on the request that repeated it");
+        assertFalse(result.sawEverything(), result.toString());
+        assertTrue(result.incompleteReads().get(0).contains("same cursor twice"), result.incompleteReads().get(0));
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }
 
     /** A page without {@code has_more} is refused — read as false it was the end of the folder. */

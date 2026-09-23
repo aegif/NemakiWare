@@ -102,13 +102,20 @@ public class BoxConnectorAdapter {
             }
             int newOnThisPage = 0;
             for (JsonNode entry : entries) {
+                // An item without an id cannot be told from any other — two of them would
+                // collapse into one and the second be dropped without a word (review, P1).
+                String id = entry.path("id").asText("");
+                if (id.isEmpty()) {
+                    throw new RuntimeException("Box answered the folder listing with an item that has no id on request "
+                            + (request + 1) + ", so the items cannot be told apart");
+                }
                 // An item this listing already holds is not listed twice: a page that repeats
                 // part of the previous one still makes progress by what it adds.
-                if (!seen.add(entry.path("id").asText())) continue;
+                if (!seen.add(id)) continue;
                 newOnThisPage++;
                 if (!"file".equals(entry.path("type").asText())) continue;
                 allFiles.add(new BoxFile(
-                        entry.path("id").asText(),
+                        id,
                         entry.path("name").asText(),
                         entry.path("type").asText(),
                         entry.path("size").asLong(0),

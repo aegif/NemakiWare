@@ -15,8 +15,11 @@ import java.util.TreeSet;
  *
  * <p>Stored as {@code <at>} or {@code <at>|<id>,<id>,…}. The first form is what every checkpoint
  * written before this class looks like; it reads as "no id at that timestamp is known to be
- * done", so such a timestamp is offered again once. Timestamps compare as strings, which is
- * the order of ISO-8601 instants written the same way — what the sources this serves write.
+ * done", so such a timestamp is offered again once. Timestamps compare as strings, so every
+ * timestamp that reaches this class — the checkpoint's, each item's, a cap — must be in the
+ * one fixed-width UTC form {@link #canonical(String)} writes, in which string order is time
+ * order. A source's own string is not that form: an offset does not sort, and a dropped zero
+ * fraction ({@code Instant.toString()}) sorts "…:00Z" after "…:00.5Z" ('Z' > '.').
  *
  * @param at the newest timestamp fully or partly done, or null when nothing has been
  * @param idsAt the ids done at {@code at}
@@ -24,6 +27,38 @@ import java.util.TreeSet;
 public record WatermarkCheckpoint(String at, Set<String> idsAt) {
 
     public static final WatermarkCheckpoint NONE = new WatermarkCheckpoint(null, Set.of());
+
+    /**
+     * The one form timestamps compare in: {@code uuuu-MM-ddTHH:mm:ss.SSSSSSSSSZ}, fixed width for
+     * the four-digit years RFC 3339 writes. Outside them the year is not fixed width ("+10000"
+     * sorts before "9999"), so such an instant is unreadable rather than mis-ordered.
+     */
+    private static final java.time.format.DateTimeFormatter CANONICAL = java.time.format.DateTimeFormatter
+            .ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSSSSSSSS'Z'").withZone(java.time.ZoneOffset.UTC);
+    private static final java.time.Instant FIRST_FOUR_DIGIT_YEAR = java.time.Instant.parse("0000-01-01T00:00:00Z");
+    private static final java.time.Instant LAST_FOUR_DIGIT_YEAR = java.time.Instant.parse("9999-12-31T23:59:59.999999999Z");
+
+    /**
+     * A source's RFC 3339 timestamp in the canonical form, or null when it cannot be read —
+     * not RFC 3339 as {@link java.time.OffsetDateTime#parse} reads it, or outside the four-digit
+     * years. Null is "unreadable", never "the oldest" or "the newest": the caller decides what
+     * a timestamp it cannot place means, and answers for it.
+     */
+    public static String canonical(String rfc3339) {
+        if (rfc3339 == null || rfc3339.isBlank()) return null;
+        try {
+            java.time.Instant instant = java.time.OffsetDateTime.parse(rfc3339).toInstant();
+            if (instant.isBefore(FIRST_FOUR_DIGIT_YEAR) || instant.isAfter(LAST_FOUR_DIGIT_YEAR)) return null;
+            return canonical(instant);
+        } catch (java.time.format.DateTimeParseException unreadable) {
+            return null;
+        }
+    }
+
+    /** An instant in the canonical form (the caller's clock is within the four-digit years). */
+    public static String canonical(java.time.Instant instant) {
+        return CANONICAL.format(instant);
+    }
 
     /** One settled item: what timestamp it carried and which id it had. */
     public record Mark(String at, String id) {}

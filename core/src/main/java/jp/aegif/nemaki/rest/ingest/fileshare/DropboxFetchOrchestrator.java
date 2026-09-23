@@ -57,36 +57,7 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
     /** The clock the cap is taken from; tests fix it. */
     java.time.Clock clock = java.time.Clock.systemUTC();
 
-    /**
-     * A source timestamp as an ISO-8601 UTC instant string, so that every comparison in this
-     * orchestrator — against the checkpoint, the cap and each other — is one of strings that
-     * sort in time order. Dropbox writes RFC 3339 with an offset, and two offsets do not sort
-     * as strings. Unreadable → null, which never covers and never advances (fail closed).
-     */
-    static String utcInstant(String sourceTimestamp) {
-        if (sourceTimestamp == null || sourceTimestamp.isBlank()) return null;
-        try {
-            return utcInstant(java.time.OffsetDateTime.parse(sourceTimestamp).toInstant());
-        } catch (java.time.format.DateTimeParseException unreadable) {
-            logger.warn("Dropbox timestamp '{}' is not RFC 3339; the file will be offered on every poll and never named by the checkpoint", sourceTimestamp);
-            return null;
-        }
-    }
 
-    /**
-     * Fixed-width UTC form ({@code uuuu-MM-ddTHH:mm:ss.SSSSSSSSSZ}), so that the strings compare
-     * in time order whatever fraction of a second the source wrote. {@code Instant.toString()}
-     * drops a zero fraction, and "…:00Z" then sorts AFTER "…:00.5Z" ('Z' > '.'): a file half a
-     * second newer than the checkpoint was read as older and skipped.
-     */
-    static final java.time.format.DateTimeFormatter CANONICAL_INSTANT = java.time.format.DateTimeFormatter
-            .ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSSSSSSSS'Z'").withZone(java.time.ZoneOffset.UTC);
-
-    static String utcInstant(java.time.Instant instant) {
-        return CANONICAL_INSTANT.format(instant);
-    }
-
-    private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(DropboxFetchOrchestrator.class);
 
     private static int intParam(Map<String, String> params, String name, int fallback, int minimum, int maximum) {
         String raw = params == null ? null : params.get(name);
@@ -141,20 +112,62 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
             String stored = checkpointManager.loadSimpleCheckpoint(profile.getProfileId(), "dropbox");
             jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint parsed =
                     jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.parse(stored);
-            // Checkpoints written before this batch carried the source's own timestamp string
-            // (Dropbox writes RFC 3339 with an offset); every comparison below is on UTC instants.
-            jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint checkpoint = parsed.at() == null ? parsed
-                    : new jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint(utcInstant(parsed.at()), parsed.idsAt());
+            // Checkpoints written before this batch carried the source's own timestamp string;
+            // every comparison below is on the canonical form. A stored checkpoint that cannot
+            // be read is NOT "no checkpoint": read as none it would silently re-offer the whole
+            // folder, and nobody would learn that the stored value is broken (review, P2).
+            jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint checkpoint = parsed;
+            if (parsed.at() != null) {
+                String at = jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.canonical(parsed.at());
+                if (at == null) {
+                    FetchSupport.addError(errors, "Dropbox checkpoint '" + stored + "' for folder '" + folderPath + "'"
+                            + " is not a timestamp this connector can read; correct or clear it — nothing was read");
+                    return new FetchResult(0, 0, 0, errors);
+                }
+                checkpoint = new jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint(at, parsed.idsAt());
+            }
             // The WHOLE folder (R107). A listing stopped at the per-run limit was the first N
             // names — Dropbox does not list by modification time — so every file after them
             // was never listed on any poll, and the checkpoint raised from the files that were
             // seen excluded any of them modified earlier for ever.
             java.time.Instant listingStartedAt = clock.instant();
+            // The cap: nothing modified within `lagMinutes` of the listing's start is named,
+            // so a file added or moved in while the pages were being read — at a position the
+            // marker had passed — is still above the checkpoint next time (review, P1). Marks
+            // above the cap are simply not handed to the checkpoint: those files are offered
+            // again next poll and the import service's dedupe answers for them.
+            String cap = jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.canonical(
+                    listingStartedAt.minus(lagMinutes, java.time.temporal.ChronoUnit.MINUTES));
+            // A checkpoint ABOVE this run's cap — written before this batch, or before the
+            // allowance was raised — covers nothing above the cap: a file modified within the
+            // allowance of an earlier listing may still have been missing from it, and the
+            // position that listing wrote must not pass it (review, P1). The stored position is
+            // not lowered; it is not trusted above the cap until the cap passes it.
+            jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint effective =
+                    checkpoint.at() != null && checkpoint.at().compareTo(cap) > 0
+                            ? new jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint(cap, java.util.Set.of())
+                            : checkpoint;
             DropboxConnectorAdapter.FileListing listing = dropbox.listAllFiles(folderPath, maxRequests);
             fetched = listing.files().size();
+            // Every file's modification time in the canonical form, the listing refused if one
+            // cannot be read: Dropbox writes it for every file, so one that cannot be read is a
+            // malformed page — and a file that cannot be placed against the checkpoint can
+            // neither be skipped nor named, so offered on every poll it would take the budget
+            // from the files behind it (review, P2).
+            Map<String, String> modifiedAt = new java.util.HashMap<>();
+            for (var file : listing.files()) {
+                String at = jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.canonical(file.serverModified());
+                if (at == null) {
+                    FetchSupport.addError(errors, "Dropbox listed file " + file.id()
+                            + " with a modification time this connector cannot read ('" + file.serverModified()
+                            + "'); nothing was imported and the checkpoint holds");
+                    return new FetchResult(fetched, 0, 0, errors);
+                }
+                modifiedAt.put(file.id(), at);
+            }
             List<DropboxConnectorAdapter.DropboxFile> candidates = new ArrayList<>();
             for (var file : listing.files()) {
-                if (checkpoint.covers(utcInstant(file.serverModified()), file.id())) {
+                if (effective.covers(modifiedAt.get(file.id()), file.id())) {
                     skipped++;
                     continue;
                 }
@@ -162,9 +175,8 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
             }
             // Oldest first, so that what a budget leaves for the next poll is always NEWER than
             // what it took and the checkpoint can move without passing it.
-            candidates.sort(java.util.Comparator.comparing((DropboxConnectorAdapter.DropboxFile f) -> utcInstant(f.serverModified()),
-                            java.util.Comparator.nullsLast(java.util.Comparator.<String>naturalOrder()))
-                    .thenComparing(f -> f.id(), java.util.Comparator.nullsLast(java.util.Comparator.<String>naturalOrder())));
+            candidates.sort(java.util.Comparator.comparing((DropboxConnectorAdapter.DropboxFile f) -> modifiedAt.get(f.id()))
+                    .thenComparing(DropboxConnectorAdapter.DropboxFile::id));
 
             List<DropboxConnectorAdapter.DropboxFile> candidatesThisRun;
             if (!listing.complete()) {
@@ -238,7 +250,7 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
                         // isSuccess()==true (no errors), so it would be
                         // miscounted as imported otherwise.
                         if (result.skipped()) skipped++; else imported++;
-                        settled.add(new jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.Mark(utcInstant(file.serverModified()), file.id()));
+                        settled.add(new jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.Mark(modifiedAt.get(file.id()), file.id()));
                     } else {
                         FetchSupport.addError(errors, "Dropbox " + file.id() + ": " + String.join(", ", result.errors()));
                         // The import ran and answered that it did not import. Recorded, or the
@@ -289,15 +301,10 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
                 FetchSupport.addError(errors, unrecordedFailures + " Dropbox failure(s) could not be dead-lettered; "
                         + "the checkpoint holds so that they are offered again");
             }
-            // The cap: nothing modified within `lagMinutes` of the listing's start is named,
-            // so a file added or moved in while the pages were being read — at a position the
-            // marker had passed — is still above the checkpoint next time (review, P1). Marks
-            // above the cap are simply not handed to the checkpoint: those files are offered
-            // again next poll and the import service's dedupe answers for them.
-            String cap = utcInstant(listingStartedAt.minus(lagMinutes, java.time.temporal.ChronoUnit.MINUTES));
+            // Only the marks at or below the cap are handed to the checkpoint (see `cap` above).
             List<jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.Mark> nameable = new ArrayList<>();
             for (var mark : settled) {
-                if (mark.at() != null && mark.at().compareTo(cap) <= 0) nameable.add(mark);
+                if (mark.at().compareTo(cap) <= 0) nameable.add(mark);
             }
             // Saved only when the POSITION moved: a legacy checkpoint read in the source's own
             // timestamp form encodes differently after normalisation without having moved.

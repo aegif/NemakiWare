@@ -78,11 +78,13 @@ public class DropboxConnectorAdapter {
      * caller's budget is the caller's.
      *
      * <p>A response without an {@code entries} array or without {@code has_more} is refused,
-     * not read as an empty folder or as its end; {@code has_more} with no cursor is a cut.
+     * not read as an empty folder or as its end; {@code has_more} with no cursor, or with the
+     * cursor of the previous page, is a cut. A file without an id is refused.
      */
     public FileListing listAllFiles(String folderPath, int maxRequests) throws Exception {
         List<DropboxFile> allFiles = new ArrayList<>();
         java.util.Set<String> seen = new java.util.HashSet<>();
+        String previousCursor = null;
         String body = MAPPER.writeValueAsString(java.util.Map.of(
                 "path", folderPath != null ? folderPath : "",
                 "recursive", false,
@@ -98,10 +100,17 @@ public class DropboxConnectorAdapter {
             }
             for (JsonNode entry : entries) {
                 if (!"file".equals(entry.path(".tag").asText())) continue;
+                // A file without an id cannot be told from any other — two of them would
+                // collapse into one and the second be dropped without a word (review, P1).
+                String id = entry.path("id").asText("");
+                if (id.isEmpty()) {
+                    throw new RuntimeException("Dropbox answered the folder listing with a file that has no id on request "
+                            + request + ", so the files cannot be told apart");
+                }
                 // An item this listing already holds is not listed twice.
-                if (!seen.add(entry.path("id").asText())) continue;
+                if (!seen.add(id)) continue;
                 allFiles.add(new DropboxFile(
-                        entry.path("id").asText(),
+                        id,
                         entry.path("name").asText(),
                         entry.path("path_display").asText(),
                         entry.path("size").asLong(0),
@@ -123,6 +132,15 @@ public class DropboxConnectorAdapter {
                 return new FileListing(allFiles, false, "Dropbox said there is more and gave no cursor to read it with, after "
                         + allFiles.size() + " file(s)");
             }
+            // The same cursor twice cannot move forward. Only that is read as "no progress":
+            // Dropbox may answer an empty page with a NEW cursor and has_more true (entries it
+            // filtered out), so Box's rule — a page that adds nothing is a cut — would refuse
+            // real folders here. Pages that add nothing are bounded by maxRequests instead.
+            if (cursor.equals(previousCursor)) {
+                return new FileListing(allFiles, false, "Dropbox returned the same cursor twice (" + cursor
+                        + "), so the listing cannot move forward");
+            }
+            previousCursor = cursor;
             if (request == maxRequests) break;
             String continueBody = MAPPER.writeValueAsString(java.util.Map.of("cursor", cursor));
             response = post(apiBase + "/files/list_folder/continue", continueBody);
