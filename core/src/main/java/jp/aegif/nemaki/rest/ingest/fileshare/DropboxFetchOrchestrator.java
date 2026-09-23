@@ -358,11 +358,16 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
                                         + " failed" + (unplaceableFailed > 0
                                                 ? unplaceableUnrecorded > 0
                                                         ? " — " + unplaceableUnrecorded + " of the failures could not be "
-                                                                + "dead-lettered, so the checkpoint holds"
-                                                        : " — the failures are in the dead-letter queue"
-                                                : "")
-                                        + "); the files behind them are reached on a later poll, once the failures "
-                                        + "settle, or with a higher limit"
+                                                                + "dead-lettered, so the checkpoint holds); the files behind "
+                                                                + "them are reached once the dead-letter queue can be written "
+                                                                + "and the failures settle, or with a higher limit"
+                                                        : " — the failures are in the dead-letter queue); the files behind "
+                                                                + "them are reached once the failures settle, or with a higher limit"
+                                                // No failure: the imported ones are skipped next poll, and the rest
+                                                // are reached then (review, P2 — "once the failures settle" was
+                                                // said here too).
+                                                : "); the files behind them are reached on a later poll, the imported "
+                                                        + "ones being skipped then, or sooner with a higher limit")
                                 : ""));
             }
             int leftForTheNextPoll = candidatesThisRun.size() - attempted;

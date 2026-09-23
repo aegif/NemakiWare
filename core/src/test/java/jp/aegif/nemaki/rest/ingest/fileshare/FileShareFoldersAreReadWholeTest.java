@@ -825,8 +825,10 @@ class FileShareFoldersAreReadWholeTest {
 
         assertTrue(importedIds.isEmpty(), "the bound was not honoured: " + importedIds);
         assertEquals(4, dlqReasons.size(), dlqReasons.toString());
-        assertTrue(result.incompleteReads().stream().anyMatch(n -> n.contains("1 of them were left untried")),
-                "the run claimed every unplaceable file was offered: " + result.incompleteReads());
+        String note = result.incompleteReads().stream().filter(n -> n.contains("left untried")).findFirst().orElse("");
+        assertTrue(note.contains("1 of them were left untried"), "the run claimed every unplaceable file was offered: " + result.incompleteReads());
+        assertTrue(note.contains("0 imported, 4 failed") && note.contains("in the dead-letter queue"), note);
+        assertFalse(note.contains("could not be dead-lettered"), "the failures WERE recorded: " + note);
     }
 
     /** The bound is reached by imports too; the note must say why, not blame failures that did not happen (review, P2). */
@@ -846,7 +848,29 @@ class FileShareFoldersAreReadWholeTest {
         assertTrue(dlqReasons.isEmpty(), dlqReasons.toString());
         String note = result.incompleteReads().stream().filter(n -> n.contains("left untried")).findFirst().orElse("");
         assertTrue(note.contains("4 of them were left untried") && note.contains("1 imported, 0 failed"), note);
-        assertFalse(note.contains("dead-letter"), "the note blames failures that did not happen: " + note);
+        assertFalse(note.contains("dead-letter") || note.contains("failures settle"), "the note blames failures that did not happen: " + note);
+        assertTrue(note.contains("reached on a later poll"), note);
+    }
+
+    /** Failures that could not be dead-lettered: the note says so, says the checkpoint holds, and does not point at a queue that has nothing. */
+    @Test
+    @DisplayName("Box: untried unplaceable files behind failures that could not be dead-lettered say so — not 'in the queue'")
+    void boxUntriedUnplaceableFilesAfterUnrecordedFailuresSayTheCheckpointHolds() {
+        dlqWritable = false;
+        failingDownloads = List.of("f-1", "f-2", "f-3", "f-4");
+        StringBuilder entries = new StringBuilder();
+        for (int i = 1; i <= 5; i++) {
+            if (i > 1) entries.append(',');
+            entries.append("{\"type\":\"file\",\"id\":\"f-").append(i).append("\",\"name\":\"f.txt\",\"size\":1,\"parent\":{\"id\":\"0\"}}");
+        }
+        boxItems = (exchange, n) -> json(exchange, 200, "{\"entries\":[" + entries + "],\"limit\":1000}");
+
+        FetchResult result = box().execute(null, profile(), connector("box"), Map.of(), 1);
+
+        String note = result.incompleteReads().stream().filter(n -> n.contains("left untried")).findFirst().orElse("");
+        assertTrue(note.contains("4 of the failures could not be dead-lettered") && note.contains("checkpoint holds"), note);
+        assertFalse(note.contains("in the dead-letter queue"), "the note points at a queue that has nothing: " + note);
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }
 
     // ── Dropbox ───────────────────────────────────────────────────
@@ -1229,8 +1253,10 @@ class FileShareFoldersAreReadWholeTest {
 
         assertTrue(importedIds.isEmpty(), importedIds.toString());
         assertEquals(4, dlqReasons.size(), dlqReasons.toString());
-        assertTrue(result.incompleteReads().stream().anyMatch(n -> n.contains("1 of them were left untried")),
-                "the run claimed every unplaceable file was offered: " + result.incompleteReads());
+        String note = result.incompleteReads().stream().filter(n -> n.contains("left untried")).findFirst().orElse("");
+        assertTrue(note.contains("1 of them were left untried"), "the run claimed every unplaceable file was offered: " + result.incompleteReads());
+        assertTrue(note.contains("0 imported, 4 failed") && note.contains("in the dead-letter queue"), note);
+        assertFalse(note.contains("could not be dead-lettered"), "the failures WERE recorded: " + note);
     }
 
     @Test
@@ -1250,7 +1276,29 @@ class FileShareFoldersAreReadWholeTest {
         assertTrue(dlqReasons.isEmpty(), dlqReasons.toString());
         String note = result.incompleteReads().stream().filter(n -> n.contains("left untried")).findFirst().orElse("");
         assertTrue(note.contains("4 of them were left untried") && note.contains("1 imported, 0 failed"), note);
-        assertFalse(note.contains("dead-letter"), "the note blames failures that did not happen: " + note);
+        assertFalse(note.contains("dead-letter") || note.contains("failures settle"), "the note blames failures that did not happen: " + note);
+        assertTrue(note.contains("reached on a later poll"), note);
+    }
+
+    @Test
+    @DisplayName("Dropbox: untried unplaceable files behind failures that could not be dead-lettered say so — not 'in the queue'")
+    void dropboxUntriedUnplaceableFilesAfterUnrecordedFailuresSayTheCheckpointHolds() {
+        dlqWritable = false;
+        failingDownloads = List.of("d-1", "d-2", "d-3", "d-4");
+        StringBuilder entries = new StringBuilder();
+        for (int i = 1; i <= 5; i++) {
+            if (i > 1) entries.append(',');
+            entries.append("{\".tag\":\"file\",\"id\":\"d-").append(i).append("\",\"name\":\"f.txt\",\"path_display\":\"/f")
+                    .append(i).append(".txt\",\"size\":1,\"server_modified\":\"yesterday\"}");
+        }
+        dropboxList = (exchange, n) -> json(exchange, 200, "{\"entries\":[" + entries + "],\"has_more\":false}");
+
+        FetchResult result = dropbox().execute(null, profile(), connector("dropbox"), Map.of(), 1);
+
+        String note = result.incompleteReads().stream().filter(n -> n.contains("left untried")).findFirst().orElse("");
+        assertTrue(note.contains("4 of the failures could not be dead-lettered") && note.contains("checkpoint holds"), note);
+        assertFalse(note.contains("in the dead-letter queue"), "the note points at a queue that has nothing: " + note);
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }
 
     /** A page without {@code has_more} is refused — read as false it was the end of the folder. */
