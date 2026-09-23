@@ -319,14 +319,17 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
             }
             // The files that cannot be placed (see above): after the placeable ones, with
             // their own bound, never named. Not when the listing was cut — then nothing is.
-            // The bound counts imports and failures, not the import service's skips: every
-            // such file is offered on every poll, and a skip must not use up the tries, or
-            // the files behind the first `limit × 4` already-imported ones would never be
-            // reached (review, P1). Each offer is a download — the cost the notes state.
-            int unplaceableImported = 0, unplaceableTried = 0;
+            // The bound counts imports and failures, not the import service's skips: a skip
+            // must not use up the tries, or the files behind the first `limit × 4` already-
+            // imported ones would never be reached (review, P1). Each offer is a download —
+            // the cost the notes state. Failures DO count, so `limit × 4` files that keep
+            // failing leave the ones behind them untried — said so below, not claimed away
+            // (review, P2).
+            int unplaceableImported = 0, unplaceableTried = 0, unplaceableUntried = 0;
             for (var file : listing.complete() ? unplaceable : List.<DropboxConnectorAdapter.DropboxFile>of()) {
                 if (unplaceableImported >= limit || unplaceableTried >= limit * ATTEMPTS_PER_BUDGET) {
-                    break;
+                    unplaceableUntried++;
+                    continue;
                 }
                 fetchSupport.throttle(throttleMs);
                 switch (attempt(callContext, profile, connector, dropbox, file, errors)) {
@@ -342,9 +345,14 @@ public class DropboxFetchOrchestrator implements FetchOrchestrator {
                 incompleteReads.add("Dropbox folder listing: " + unplaceable.size() + " file(s) have no modification time "
                         + "this connector can read (" + unplaceable.stream().limit(5).map(DropboxConnectorAdapter.DropboxFile::id)
                                 .collect(java.util.stream.Collectors.joining(", "))
-                        + (unplaceable.size() > 5 ? ", …" : "") + ") — they are offered on every poll and imported "
-                        + "up to the run's limit at a time, the import service's dedupe answering for the ones already "
-                        + "imported, and never named by the checkpoint");
+                        + (unplaceable.size() > 5 ? ", …" : "") + ") — offered on every poll (up to the run's limit "
+                        + "imported and " + ATTEMPTS_PER_BUDGET + " × the limit tried at a time, the import service's dedupe "
+                        + "answering for the ones already imported) and never named by the checkpoint"
+                        + (unplaceableUntried > 0
+                                ? "; " + unplaceableUntried + " of them were left untried this run because the "
+                                        + "bound was reached — the failures are in the dead-letter queue, and the "
+                                        + "files behind them are reached only once they settle or with a higher limit"
+                                : ""));
             }
             int leftForTheNextPoll = candidatesThisRun.size() - attempted;
             if (leftForTheNextPoll > 0) {

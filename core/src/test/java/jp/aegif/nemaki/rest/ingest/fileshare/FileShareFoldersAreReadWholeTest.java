@@ -805,6 +805,30 @@ class FileShareFoldersAreReadWholeTest {
         assertTrue(result.incompleteReads().stream().anyMatch(n -> n.contains("boxListMaxRequests")), result.incompleteReads().toString());
     }
 
+    /**
+     * Failures DO count against the try bound, so `limit × 4` unplaceable files that keep failing
+     * leave the ones behind them untried. That is a cost, not a claim: the run says how many were
+     * left untried instead of saying every such file was offered (review, P2).
+     */
+    @Test
+    @DisplayName("Box: unplaceable files behind the try bound are reported as left untried, not claimed offered")
+    void boxUnplaceableFilesBehindTheTryBoundAreReportedNotClaimed() {
+        failingDownloads = List.of("f-1", "f-2", "f-3", "f-4");
+        StringBuilder entries = new StringBuilder();
+        for (int i = 1; i <= 5; i++) {
+            if (i > 1) entries.append(',');
+            entries.append("{\"type\":\"file\",\"id\":\"f-").append(i).append("\",\"name\":\"f.txt\",\"size\":1,\"parent\":{\"id\":\"0\"}}");
+        }
+        boxItems = (exchange, n) -> json(exchange, 200, "{\"entries\":[" + entries + "],\"limit\":1000}");
+
+        FetchResult result = box().execute(null, profile(), connector("box"), Map.of(), 1);
+
+        assertTrue(importedIds.isEmpty(), "the bound was not honoured: " + importedIds);
+        assertEquals(4, dlqReasons.size(), dlqReasons.toString());
+        assertTrue(result.incompleteReads().stream().anyMatch(n -> n.contains("1 of them were left untried")),
+                "the run claimed every unplaceable file was offered: " + result.incompleteReads());
+    }
+
     // ── Dropbox ───────────────────────────────────────────────────
 
     @Test
@@ -1167,6 +1191,26 @@ class FileShareFoldersAreReadWholeTest {
         assertFalse(result.incompleteReads().stream().anyMatch(n -> n.contains("never named")),
                 "the note claims an import that did not happen: " + result.incompleteReads());
         assertTrue(result.incompleteReads().stream().anyMatch(n -> n.contains("dropboxListMaxRequests")), result.incompleteReads().toString());
+    }
+
+    @Test
+    @DisplayName("Dropbox: unplaceable files behind the try bound are reported as left untried, not claimed offered")
+    void dropboxUnplaceableFilesBehindTheTryBoundAreReportedNotClaimed() {
+        failingDownloads = List.of("d-1", "d-2", "d-3", "d-4");
+        StringBuilder entries = new StringBuilder();
+        for (int i = 1; i <= 5; i++) {
+            if (i > 1) entries.append(',');
+            entries.append("{\".tag\":\"file\",\"id\":\"d-").append(i).append("\",\"name\":\"f.txt\",\"path_display\":\"/f")
+                    .append(i).append(".txt\",\"size\":1,\"server_modified\":\"yesterday\"}");
+        }
+        dropboxList = (exchange, n) -> json(exchange, 200, "{\"entries\":[" + entries + "],\"has_more\":false}");
+
+        FetchResult result = dropbox().execute(null, profile(), connector("dropbox"), Map.of(), 1);
+
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        assertEquals(4, dlqReasons.size(), dlqReasons.toString());
+        assertTrue(result.incompleteReads().stream().anyMatch(n -> n.contains("1 of them were left untried")),
+                "the run claimed every unplaceable file was offered: " + result.incompleteReads());
     }
 
     /** A page without {@code has_more} is refused — read as false it was the end of the folder. */

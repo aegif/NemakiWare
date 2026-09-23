@@ -259,7 +259,8 @@ public class IngestDlqController {
             // Whether the item's bytes can come back from its source instead of from the row:
             // a FILE_SHARE item of a system the re-fetch knows (Box, Dropbox). For such a row
             // the stored payload is not needed and its defects — never confirmed, dropped,
-            // gone — are not a reason to refuse (review, P2): the replay uses the source's
+            // gone — are not a reason to refuse (review, P2): a SOUND stored payload (the bytes
+            // read at the time) is still used, as before; without one the replay uses the source's
             // bytes. For every other row the stored payload is all there is, and the arms
             // below keep refusing what cannot be attributed.
             ConnectorDefinition fileShareConnector = request.getConnectorId() == null ? null
@@ -355,7 +356,8 @@ public class IngestDlqController {
             // execute() would create a content-less document, report success, and the row —
             // the only record of the item — would be deleted (review, P1). The bytes are
             // fetched again from the source for the systems this can fetch by the row's own
-            // identifiers (Box by file id, Dropbox by path); the others are refused, row kept.
+            // identifiers (Box and Dropbox by file id — never by a path); the others are refused,
+            // row kept.
             if (request.getContentStream() == null && fileShare) {
                 ConnectorDefinition connector = fileShareConnector;
                 {
