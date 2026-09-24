@@ -369,6 +369,48 @@ class SlackChannelsAreReadToTheCheckpointTest {
         verify(checkpointManager).saveSimpleCheckpoint("p-slack", "slack.C1", "1700000002.000000");
     }
 
+    /** A file without a download URL cannot be read; skipped, the message would settle and the checkpoint pass it (Codex P1). */
+    @Test
+    @DisplayName("Slack: a file without a download URL is dead-lettered as never read, not skipped — the message is not named")
+    void slackAFileWithoutADownloadUrlIsDeadLetteredNotSkipped() {
+        history = (exchange, n) -> json(exchange, 200, page(false, null, msg("1700000002.000000"),
+                "{\"ts\":\"1700000001.000000\",\"user\":\"U1\",\"text\":\"see file\",\"files\":[{\"id\":\"F-nourl\",\"name\":\"a.pdf\",\"mimetype\":\"application/pdf\",\"size\":3}]}"));
+        FetchResult result = slack().execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertEquals(1, dlqReasons.size(), "the file without a URL was skipped, not recorded: " + dlqReasons);
+        assertTrue(dlqReasons.get(0).contains("F-nourl") && dlqReadReasons.isEmpty(), dlqReasons.toString());
+        assertTrue(result.hasErrors(), result.toString());
+        // the newer message settles and passes the failed one — the row is the record
+        verify(checkpointManager).saveSimpleCheckpoint("p-slack", "slack.C1", "1700000002.000000");
+    }
+
+    /** A file Slack only links to (mode external) has no URL by design: not an attachment, not a failure. */
+    @Test
+    @DisplayName("Slack: an external (linked) file is not an attachment — the message settles without a dead-letter row")
+    void slackAnExternalFileIsNotAnAttachment() {
+        history = (exchange, n) -> json(exchange, 200, page(false, null,
+                "{\"ts\":\"1700000001.000000\",\"user\":\"U1\",\"text\":\"see link\",\"files\":[{\"id\":\"F-ext\",\"name\":\"doc\",\"mode\":\"external\",\"is_external\":true,\"size\":0}]}"));
+        FetchResult result = slack().execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertTrue(dlqReasons.isEmpty(), dlqReasons.toString());
+        assertFalse(result.hasErrors(), result.errors().toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-slack", "slack.C1", "1700000001.000000");
+    }
+
+    @Test
+    @DisplayName("Slack: an import that throws after the read is dead-lettered as read, not never-read")
+    void slackAnImportThatThrowsIsDeadLetteredAsRead() {
+        throwingImports = List.of("1700000001.000000");
+        history = (exchange, n) -> json(exchange, 200, page(false, null, msg("1700000002.000000"), msg("1700000001.000000")));
+        FetchResult result = slack().execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertEquals(1, dlqReadReasons.size(), "the thrown import was not recorded as a READ item: " + dlqReasons);
+        assertEquals(1, dlqReasons.size(), dlqReasons.toString());
+        assertEquals(List.of("1700000002.000000"), importedIds);
+        assertTrue(result.hasErrors(), result.toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-slack", "slack.C1", "1700000002.000000");
+    }
+
     @Test
     @DisplayName("Slack: an import that answers an error is dead-lettered as read and the message is not named")
     void slackAnImportThatAnswersAnErrorIsDeadLetteredAsRead() {

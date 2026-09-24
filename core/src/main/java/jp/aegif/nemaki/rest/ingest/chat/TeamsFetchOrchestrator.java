@@ -260,9 +260,11 @@ public class TeamsFetchOrchestrator implements FetchOrchestrator {
             }
         }
         for (TeamsFile file : msg.attachments()) {
-            if (file.contentUrl() == null) continue;
             // Built BEFORE the download, so a download failure still has an item-naming row to
             // write. The URL travels with the row: the DLQ controller fetches the bytes again by it.
+            // A file attachment without a content URL cannot be read: skipped, the message would
+            // settle and the checkpoint pass a file nothing recorded (review, P1 on Slack) — so
+            // it is a never-read failure, recorded.
             ExternalIngestRequest req = new ExternalIngestRequest();
             req.setProfileId(profile.getProfileId());
             req.setConnectorId(connector.getConnectorId());
@@ -281,6 +283,14 @@ public class TeamsFetchOrchestrator implements FetchOrchestrator {
             if (msg.replyToId() != null) fileMeta.put("threadId", msg.replyToId());
             fileMeta.put("teamsFileUrl", file.contentUrl());
             req.setMetadata(fileMeta);
+            if (file.contentUrl() == null) {
+                failed = true;
+                FetchSupport.addError(errors, "Teams file " + file.id() + ": no content URL — the file cannot be read");
+                if (!fetchSupport.saveSourceNeverReadToDlq(req, "Teams file " + file.id() + ": no content URL — the file cannot be read")) {
+                    unrecorded = true;
+                }
+                continue;
+            }
             InputStream content = null;
             try {
                 try {

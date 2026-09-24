@@ -294,7 +294,11 @@ public class SlackFetchOrchestrator implements FetchOrchestrator {
             }
         }
         for (SlackFile file : msg.files()) {
-            if (file.urlPrivateDownload() == null) continue;
+            // A file Slack only links to (external) has no download URL by design and is not an
+            // attachment to import. Any OTHER file without a URL cannot be read: skipped, the
+            // message would settle and the checkpoint pass a file nothing recorded (review, P1)
+            // — so it is a never-read failure, recorded (and not replayable: there is no URL).
+            if (file.external()) continue;
             // Built BEFORE the download, so a download failure — the likeliest per-file
             // failure — still has an item-naming row to write. The URL travels with the row:
             // it is what the DLQ controller fetches the bytes again by.
@@ -316,6 +320,14 @@ public class SlackFetchOrchestrator implements FetchOrchestrator {
             fileMeta.put("workspaceId", connector.getTenantId());
             fileMeta.put("slackFileUrl", file.urlPrivateDownload());
             fileReq.setMetadata(fileMeta);
+            if (file.urlPrivateDownload() == null) {
+                failed = true;
+                FetchSupport.addError(errors, "Slack file " + file.id() + ": no download URL — the file cannot be read");
+                if (!fetchSupport.saveSourceNeverReadToDlq(fileReq, "Slack file " + file.id() + ": no download URL — the file cannot be read")) {
+                    unrecorded = true;
+                }
+                continue;
+            }
 
             InputStream content = null;
             try {

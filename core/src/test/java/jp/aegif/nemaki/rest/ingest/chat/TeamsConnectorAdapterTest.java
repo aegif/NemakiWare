@@ -212,7 +212,7 @@ class TeamsConnectorAdapterTest {
         wireMock.stubFor(get(urlPathMatching("/teams/.*/channels/.*/messages"))
                 .withQueryParam("$top", matching(".*"))
                 .willReturn(okJson("""
-                    {"value":[{"id":"m1","body":{"content":"a"},"createdDateTime":"2026-01-01T00:00:00Z"}],
+                    {"value":[{"id":"m2","body":{"content":"b"},"createdDateTime":"2026-01-01T00:01:00Z"}],
                      "@odata.nextLink":"http://localhost:%d/teams/T1/channels/C1/messages?$skiptoken=page2"}
                     """.formatted(wireMock.port()))));
 
@@ -220,7 +220,7 @@ class TeamsConnectorAdapterTest {
         wireMock.stubFor(get(urlPathMatching("/teams/.*/channels/.*/messages"))
                 .withQueryParam("$skiptoken", equalTo("page2"))
                 .willReturn(okJson("""
-                    {"value":[{"id":"m2","body":{"content":"b"},"createdDateTime":"2026-01-01T00:01:00Z"}]}
+                    {"value":[{"id":"m1","body":{"content":"a"},"createdDateTime":"2026-01-01T00:00:00Z"}]}
                     """)));
 
         var listing = adapter.listSince("T1", "C1", null, 10);

@@ -865,9 +865,13 @@ class FileShareFoldersAreReadWholeTest {
             if (i > 1) entries.append(',');
             entries.append("{\"type\":\"file\",\"id\":\"f-").append(i).append("\",\"name\":\"f.txt\",\"size\":1,\"parent\":{\"id\":\"0\"}}");
         }
+        // A placeable file that settles, so the checkpoint WOULD move were the hold dropped — the
+        // never() below is then the hold's own assertion, not an accident of an empty run (Codex, 11th round).
+        entries.append(",{\"type\":\"file\",\"id\":\"f-ok\",\"name\":\"ok.txt\",\"size\":1,\"modified_at\":\"2026-01-03T00:00:00-00:00\",\"parent\":{\"id\":\"0\"}}");
         boxItems = (exchange, n) -> json(exchange, 200, "{\"entries\":[" + entries + "],\"limit\":1000}");
 
         FetchResult result = box().execute(null, profile(), connector("box"), Map.of(), 1);
+        assertEquals(List.of("f-ok"), importedIds, "the placeable file must settle for the hold to be measured: " + importedIds);
 
         String note = result.incompleteReads().stream().filter(n -> n.contains("left untried")).findFirst().orElse("");
         assertTrue(note.contains("4 of the failures could not be dead-lettered") && note.contains("checkpoint holds"), note);
@@ -1295,9 +1299,11 @@ class FileShareFoldersAreReadWholeTest {
             entries.append("{\".tag\":\"file\",\"id\":\"d-").append(i).append("\",\"name\":\"f.txt\",\"path_display\":\"/f")
                     .append(i).append(".txt\",\"size\":1,\"server_modified\":\"yesterday\"}");
         }
+        entries.append(",{\".tag\":\"file\",\"id\":\"d-ok\",\"name\":\"ok.txt\",\"path_display\":\"/ok.txt\",\"size\":1,\"server_modified\":\"2026-01-03T00:00:00Z\"}");
         dropboxList = (exchange, n) -> json(exchange, 200, "{\"entries\":[" + entries + "],\"has_more\":false}");
 
         FetchResult result = dropbox().execute(null, profile(), connector("dropbox"), Map.of(), 1);
+        assertEquals(List.of("d-ok"), importedIds, importedIds.toString());
 
         String note = result.incompleteReads().stream().filter(n -> n.contains("left untried")).findFirst().orElse("");
         assertTrue(note.contains("4 of the failures could not be dead-lettered") && note.contains("checkpoint holds"), note);

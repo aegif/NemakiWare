@@ -100,6 +100,7 @@ class TeamsChannelsAreReadToTheCheckpointTest {
         failingDownloads = List.of();
         dlqWritable = true;
         failingImports = List.of();
+        throwingImports = List.of();
         messages = (exchange, n) -> json(exchange, 200, page(null, msg("m1", "2026-01-01T00:00:01Z")));
     }
 
@@ -138,6 +139,7 @@ class TeamsChannelsAreReadToTheCheckpointTest {
     private final List<ExternalIngestRequest> dlqRequests = new ArrayList<>();
     private boolean dlqWritable = true;
     private List<String> failingImports = List.of();
+    private List<String> throwingImports = List.of();
 
     private TeamsFetchOrchestrator teams() {
         TeamsFetchOrchestrator orchestrator = new TeamsFetchOrchestrator();
@@ -166,6 +168,9 @@ class TeamsChannelsAreReadToTheCheckpointTest {
             ExternalIngestRequest req = call.getArgument(1);
             if (failingImports.contains(req.getSourceObjectId())) {
                 return ExternalIngestResult.error("r", "refused by the import service");
+            }
+            if (throwingImports.contains(req.getSourceObjectId())) {
+                throw new RuntimeException("the import service threw after reading the content");
             }
             importedIds.add(req.getSourceObjectId());
             return new ExternalIngestResult("r", "obj-" + req.getSourceObjectId(), "1.0", false, false, false, null, null,
@@ -240,6 +245,32 @@ class TeamsChannelsAreReadToTheCheckpointTest {
         verify(checkpointManager).saveSimpleCheckpoint("p-teams", KEY, "2026-01-01T00:00:05.000000000Z|m5");
     }
 
+    /**
+     * The checkpoint's own message at the END of a page: nothing older is on that page, so the
+     * next page is read too — a message at the checkpoint's own time can continue on it (m2b), and
+     * only a strictly older message (m1) says the span is done. One page more than a stop at the
+     * checkpoint's time would cost, and it is not optional (subagent, Teams 1st round).
+     */
+    @Test
+    @DisplayName("Teams: a checkpoint at the end of a page reads the next page — a same-time message on it is not lost")
+    void teamsACheckpointAtThePageEndReadsTheNextPage() {
+        messages = (exchange, n) -> {
+            if (n == 1) json(exchange, 200, page(2, msg("m5", "2026-01-01T00:00:05Z"), msg("m4", "2026-01-01T00:00:04Z")));
+            else if (n == 2) json(exchange, 200, page(3, msg("m3", "2026-01-01T00:00:03Z"), msg("m2", "2026-01-01T00:00:02Z")));
+            else if (n == 3) json(exchange, 200, page(4, msg("m2b", "2026-01-01T00:00:02Z"), msg("m1", "2026-01-01T00:00:01Z")));
+            else json(exchange, 200, page(null, msg("m0", "2026-01-01T00:00:00Z")));
+        };
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs("2026-01-01T00:00:02Z|m2");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertEquals(3, MESSAGE_CALLS.get(), "the page after the checkpoint's is read once (to see an older message), and no further");
+        assertEquals(List.of("m2b", "m3", "m4", "m5"), importedIds, "the same-time message on the next page was lost: " + importedIds);
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-teams", KEY, "2026-01-01T00:00:05.000000000Z|m5");
+    }
+
     /** A message AT the checkpoint's timestamp that the checkpoint names is skipped; one it does not name is taken. */
     @Test
     @DisplayName("Teams: at the checkpoint's timestamp only the ids it names are skipped")
@@ -305,6 +336,28 @@ class TeamsChannelsAreReadToTheCheckpointTest {
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }
 
+    /**
+     * The stop at the checkpoint rests on Graph listing newest first. A listing that is not —
+     * a message newer than the one before it — is refused: a stop taken on it would report as
+     * complete a span with newer messages behind it (Codex P1; R112).
+     */
+    @Test
+    @DisplayName("Teams: a listing that is not newest first is refused — the stop at the checkpoint would lose what is behind it")
+    void teamsAListingNotNewestFirstIsRefused() {
+        // m5 comes AFTER m3 — newer than the one before it — while the listing is still above the
+        // checkpoint. (A page in order whose last message is below the checkpoint hides a newer
+        // message on the NEXT page from any check: that is the residual, R112.)
+        messages = (exchange, n) -> json(exchange, 200, page(null, msg("m3", "2026-01-01T00:00:03Z"), msg("m5", "2026-01-01T00:00:05Z"), msg("m4", "2026-01-01T00:00:04Z")));
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs("2026-01-01T00:00:02Z|m2");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("not listed newest first")), result.errors().toString());
+        assertTrue(importedIds.isEmpty(), "a listing that is not newest first was trusted: " + importedIds);
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
     @Test
     @DisplayName("Teams: the same nextLink twice is a cut, not progress")
     void teamsTheSameNextLinkTwiceIsACut() {
@@ -329,6 +382,35 @@ class TeamsChannelsAreReadToTheCheckpointTest {
         assertEquals(1, dlqReasons.size(), dlqReasons.toString());
         assertTrue(dlqReasons.get(0).contains("F-bad") && dlqReadReasons.isEmpty(), "expected a never-read row: " + dlqReasons);
         assertEquals(base + "/files/F-bad", dlqRequests.get(0).getMetadata().get("teamsFileUrl"), "the row must carry the URL it is fetched again by");
+        assertTrue(result.hasErrors(), result.toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-teams", KEY, "2026-01-01T00:00:02.000000000Z|m2");
+    }
+
+    /** A file attachment without a content URL cannot be read; skipped, the message would settle and the checkpoint pass it. */
+    @Test
+    @DisplayName("Teams: a file attachment without a content URL is dead-lettered as never read, not skipped")
+    void teamsAFileWithoutAContentUrlIsDeadLetteredNotSkipped() {
+        messages = (exchange, n) -> json(exchange, 200, page(null, msg("m2", "2026-01-01T00:00:02Z"),
+                "{\"id\":\"m1\",\"createdDateTime\":\"2026-01-01T00:00:01Z\",\"body\":{\"content\":\"see file\"},\"from\":{\"user\":{\"displayName\":\"u\"}},"
+                + "\"attachments\":[{\"id\":\"att-nourl\",\"name\":\"a.pdf\",\"contentType\":\"file\",\"contentUrl\":null}]}"));
+        FetchResult result = teams().execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertEquals(1, dlqReasons.size(), "the attachment without a URL was skipped, not recorded: " + dlqReasons);
+        assertTrue(dlqReasons.get(0).contains("att-nourl") && dlqReadReasons.isEmpty(), dlqReasons.toString());
+        assertTrue(result.hasErrors(), result.toString());
+        verify(checkpointManager).saveSimpleCheckpoint("p-teams", KEY, "2026-01-01T00:00:02.000000000Z|m2");
+    }
+
+    @Test
+    @DisplayName("Teams: an import that throws after the read is dead-lettered as read, not never-read")
+    void teamsAnImportThatThrowsIsDeadLetteredAsRead() {
+        throwingImports = List.of("m1");
+        messages = (exchange, n) -> json(exchange, 200, page(null, msg("m2", "2026-01-01T00:00:02Z"), msg("m1", "2026-01-01T00:00:01Z")));
+        FetchResult result = teams().execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertEquals(1, dlqReadReasons.size(), "the thrown import was not recorded as a READ item: " + dlqReasons);
+        assertEquals(1, dlqReasons.size(), dlqReasons.toString());
+        assertEquals(List.of("m2"), importedIds);
         assertTrue(result.hasErrors(), result.toString());
         verify(checkpointManager).saveSimpleCheckpoint("p-teams", KEY, "2026-01-01T00:00:02.000000000Z|m2");
     }

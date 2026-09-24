@@ -52,7 +52,11 @@ public class SlackConnectorAdapter {
     }
 
     public record SlackMessage(String ts, String userId, String text, String threadTs, List<SlackFile> files) {}
-    public record SlackFile(String id, String name, String mimeType, String urlPrivateDownload, long size) {}
+    /**
+     * @param external a file Slack only links to ({@code mode} "external" / {@code is_external}) — it
+     *                 has no download URL by design and is not an attachment to import
+     */
+    public record SlackFile(String id, String name, String mimeType, String urlPrivateDownload, long size, boolean external) {}
     public record SlackChannel(String id, String name, boolean isPrivate) {}
 
     /**
@@ -189,7 +193,8 @@ public class SlackConnectorAdapter {
                         f.path("name").asText(),
                         f.path("mimetype").asText(),
                         f.path("url_private_download").asText(null),
-                        f.path("size").asLong(0)));
+                        f.path("size").asLong(0),
+                        "external".equals(f.path("mode").asText("")) || f.path("is_external").asBoolean(false)));
             }
         }
         return new SlackMessage(

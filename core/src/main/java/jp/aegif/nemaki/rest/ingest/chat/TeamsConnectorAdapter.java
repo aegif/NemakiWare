@@ -106,6 +106,7 @@ public class TeamsConnectorAdapter {
                 + "/messages?$top=" + PAGE_SIZE;
         List<TeamsMessage> newer = new ArrayList<>();
         String previous = null;
+        String previousAt = null;
         for (int request = 1; request <= maxRequests; request++) {
             JsonNode root = graphGet(url);
             JsonNode values = root.get("value");
@@ -120,6 +121,16 @@ public class TeamsConnectorAdapter {
                     throw new RuntimeException("Graph listed message " + msg.id() + " without a creation time this connector can read ('"
                             + msg.createdDateTime() + "'), so it can neither be skipped nor named");
                 }
+                // The stop below rests on newest-first order. A message NEWER than the one before
+                // it — within a page or across the pages read — breaks that, and a stop taken on
+                // such a listing would report as complete a span with newer messages behind it
+                // (review, P1). Refused; the pages not read cannot be checked (R112).
+                if (previousAt != null && at.compareTo(previousAt) > 0) {
+                    throw new RuntimeException("Graph listed message " + msg.id() + " (" + msg.createdDateTime()
+                            + ") newer than the one before it, so the channel is not listed newest first and "
+                            + "the listing cannot tell where the checkpoint is");
+                }
+                previousAt = at;
                 if (sinceCanonical != null && at.compareTo(sinceCanonical) < 0) {
                     // Newest first: this and everything after it is older than the checkpoint. A
                     // message AT the checkpoint's time is passed on — the checkpoint names the
