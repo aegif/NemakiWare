@@ -57,7 +57,7 @@ public final class AdapterRegistry {
                 "slack", "Slack",
                 SourceArchetype.CHAT_CONTEXT,
                 Set.of("channelId"),
-                Set.of("limit"),
+                Set.of("limit", "slackHistoryMaxRequests"),
                 List.of("channelId"),
                 3, "{\"channelId\":\"C01ABCD2345\"}"));
 

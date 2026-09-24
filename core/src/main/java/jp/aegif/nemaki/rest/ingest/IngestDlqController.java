@@ -265,9 +265,13 @@ public class IngestDlqController {
             // below keep refusing what cannot be attributed.
             ConnectorDefinition fileShareConnector = request.getConnectorId() == null ? null
                     : connectorDefinitionService.get(request.getConnectorId());
+            // The same for an ATTACHMENT row of any connector: an attachment is bytes or nothing,
+            // and the chat and mail imports create a content-less document from a request
+            // without them just as the file-share import does.
             boolean fileShare = fileShareConnector != null
-                    && fileShareConnector.getSourceArchetype() == SourceArchetype.FILE_SHARE;
-            boolean refetchable = fileShare && refetch.canRefetch(fileShareConnector);
+                    && (fileShareConnector.getSourceArchetype() == SourceArchetype.FILE_SHARE
+                            || "attachment".equals(request.getSourceObjectType()));
+            boolean refetchable = fileShare && refetch.canRefetch(fileShareConnector, request);
 
             if (dlq.getPayloadWriteToken() != null && !refetchable) {
                 // A payload write for this attempt was started and never confirmed. The row's
@@ -352,7 +356,7 @@ public class IngestDlqController {
                 }
             }
 
-            // A FILE_SHARE row without its bytes cannot be replayed through the plain import:
+            // A FILE_SHARE row — or any attachment row — without its bytes cannot be replayed through the plain import:
             // execute() would create a content-less document, report success, and the row —
             // the only record of the item — would be deleted (review, P1). The bytes are
             // fetched again from the source for the systems this can fetch by the row's own

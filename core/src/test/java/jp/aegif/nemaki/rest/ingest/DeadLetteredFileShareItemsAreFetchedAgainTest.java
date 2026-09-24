@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jp.aegif.nemaki.rest.ingest.fileshare.BoxConnectorAdapter;
 import jp.aegif.nemaki.rest.ingest.fileshare.DropboxConnectorAdapter;
 import jp.aegif.nemaki.rest.ingest.fileshare.FileShareRefetch;
+import jp.aegif.nemaki.rest.ingest.chat.SlackConnectorAdapter;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.junit.jupiter.api.DisplayName;
@@ -23,6 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -58,6 +60,12 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
     private ResponseEntity<?> retry(String system, boolean rowHasContent, String storedBytes, String requestJson,
             java.util.function.Function<String, InputStream> download,
             java.util.function.Consumer<IngestDeadLetterRecord> shapeRow) throws Exception {
+        return retry(system, SourceArchetype.FILE_SHARE, rowHasContent, storedBytes, requestJson, download, shapeRow);
+    }
+
+    private ResponseEntity<?> retry(String system, SourceArchetype archetype, boolean rowHasContent, String storedBytes,
+            String requestJson, java.util.function.Function<String, InputStream> download,
+            java.util.function.Consumer<IngestDeadLetterRecord> shapeRow) throws Exception {
         IngestDlqController controller = new IngestDlqController();
 
         IngestJobService jobService = mock(IngestJobService.class);
@@ -83,11 +91,17 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
             executed.add(req);
             return ExternalIngestResult.success("req-1", "obj-1", "1.0", false, null);
         });
+        // a CHAT_CONTEXT row dispatches to the chat import; the same record
+        when(importService.executeChatContextImport(any(), any())).thenAnswer(inv -> {
+            ExternalIngestRequest req = inv.getArgument(1);
+            executed.add(req);
+            return ExternalIngestResult.success("req-1", "obj-1", "1.0", false, null);
+        });
 
         ConnectorDefinitionService connectorService = mock(ConnectorDefinitionService.class);
         ConnectorDefinition connector = new ConnectorDefinition();
         connector.setConnectorId("c1");
-        connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
+        connector.setSourceArchetype(archetype);
         connector.setSourceSystem(system);
         connector.setCredentialRef("key");
         when(connectorService.get("c1")).thenReturn(connector);
@@ -105,6 +119,17 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
                 @Override public InputStream downloadFile(String fileId) {
                     downloaded.add("box:" + fileId);
                     return download.apply(fileId);
+                }
+            };
+        });
+        Field slackFactory = FileShareRefetch.class.getDeclaredField("slackFactory");
+        slackFactory.setAccessible(true);
+        slackFactory.set(refetch, (java.util.function.Function<String, SlackConnectorAdapter>) token -> {
+            adaptersBuilt.incrementAndGet();
+            return new SlackConnectorAdapter(token) {
+                @Override public InputStream downloadFile(String url) {
+                    downloaded.add("slack:" + url);
+                    return download.apply(url);
                 }
             };
         });
@@ -326,6 +351,45 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
         wire(controller, "fetchSupport", none);
         wire(controller, "httpRequest", http);
         return controller.retryDlqEntry("dlq-1");
+    }
+
+    private static final String SLACK_ATTACHMENT_ROW = "{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\",\"sourceObjectId\":\"F-1\","
+            + "\"sourceObjectType\":\"attachment\",\"metadata\":{\"slackFileUrl\":\"https://files.slack.com/files-pri/T1-F-1/download/a.pdf\"}}";
+
+    /** A Slack attachment row is bytes or nothing too: the chat import would create a content-less document from it. */
+    @Test
+    @DisplayName("a Slack attachment row without bytes is fetched again by the URL the orchestrator recorded")
+    void aSlackAttachmentRowIsFetchedAgainByItsUrl() throws Exception {
+        ResponseEntity<?> res = retry("slack", SourceArchetype.CHAT_CONTEXT, false, null, SLACK_ATTACHMENT_ROW,
+                url -> new ByteArrayInputStream("fresh bytes".getBytes(StandardCharsets.UTF_8)), row -> { });
+
+        assertEquals(HttpStatus.OK, res.getStatusCode(), String.valueOf(res.getBody()));
+        assertEquals(List.of("slack:https://files.slack.com/files-pri/T1-F-1/download/a.pdf"), downloaded);
+        assertEquals(1, executed.size());
+        assertEquals("fresh bytes", read(requireBytes(executed.get(0))));
+    }
+
+    @Test
+    @DisplayName("a Teams attachment row without bytes is refused, not replayed as an empty document")
+    void aTeamsAttachmentRowWithoutBytesIsRefused() throws Exception {
+        ResponseEntity<?> res = retry("teams", SourceArchetype.CHAT_CONTEXT, false, null, SLACK_ATTACHMENT_ROW,
+                url -> new ByteArrayInputStream(new byte[0]), row -> { });
+
+        assertTrue(executed.isEmpty(), "replayed without bytes: an empty document would have been imported");
+        assertEquals(HttpStatus.CONFLICT, res.getStatusCode(), String.valueOf(res.getBody()));
+        assertTrue(String.valueOf(res.getBody()).contains("teams"), String.valueOf(res.getBody()));
+    }
+
+    /** A chat MESSAGE row (not an attachment) is metadata-only by design and still replays as before. */
+    @Test
+    @DisplayName("a chat message row without bytes still replays — only attachments are bytes-or-nothing")
+    void aChatMessageRowWithoutBytesStillReplays() throws Exception {
+        String messageRow = "{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\",\"sourceObjectId\":\"1700000000.000100\",\"sourceObjectType\":\"chat_message\"}";
+        ResponseEntity<?> res = retry("teams", SourceArchetype.CHAT_CONTEXT, false, null, messageRow,
+                url -> new ByteArrayInputStream(new byte[0]), row -> { });
+
+        assertNotEquals(HttpStatus.CONFLICT, res.getStatusCode(), "a message row was refused as if it were an attachment: " + res.getBody());
+        assertTrue(downloaded.isEmpty(), downloaded.toString());
     }
 
     @Test

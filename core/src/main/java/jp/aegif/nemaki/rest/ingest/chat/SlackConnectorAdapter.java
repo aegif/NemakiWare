@@ -30,8 +30,6 @@ public class SlackConnectorAdapter {
     private static final Logger logger = LoggerFactory.getLogger(SlackConnectorAdapter.class);
     private static final String DEFAULT_API = "https://slack.com/api";
     private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
-    /** Hard cap on total messages per getHistory() call to prevent runaway pagination. */
-    private static final int MAX_PAGES = 50;
 
     private final String token;
     private final String apiBase;
@@ -76,53 +74,71 @@ public class SlackConnectorAdapter {
         return result;
     }
 
-    /**
-     * Fetch conversation history for a channel with cursor-based pagination.
-     *
-     * <p>Follows {@code response_metadata.next_cursor} across multiple pages
-     * until all messages since {@code oldest} are retrieved, up to
-     * {@code limit} total messages (hard capped at {@link #MAX_PAGES} pages).
-     *
-     * @param channelId Slack channel ID
-     * @param oldest    Unix timestamp (seconds) for oldest message (nullable)
-     * @param limit     max messages per API call (Slack max: 999)
-     */
-    public List<SlackMessage> getHistory(String channelId, String oldest, int limit) throws Exception {
-        List<SlackMessage> allMessages = new ArrayList<>();
-        String cursor = null;
+    /** Messages per request; Slack recommends at most 200. */
+    static final int PAGE_SIZE = 200;
+    /** How many {@code conversations.history} requests one listing may make unless the caller says otherwise. */
+    public static final int DEFAULT_MAX_HISTORY_REQUESTS = 50;
 
-        for (int page = 0; page < MAX_PAGES; page++) {
+    /** What one listing came back with: the messages, whether the channel was read to the end, and if not why. */
+    public record HistoryListing(List<SlackMessage> messages, boolean complete, String truncatedBecause) {}
+
+    /**
+     * EVERY message after {@code oldest} (exclusive — Slack's own semantics for the parameter),
+     * newest first as Slack lists them, following {@code response_metadata.next_cursor} up to
+     * {@code maxRequests} requests.
+     *
+     * <p>This replaced a listing stopped at the caller's per-run limit (R107). Slack lists newest
+     * first, so a listing cut at N messages was the N NEWEST since the checkpoint; the caller
+     * then raised the checkpoint to the newest it saw, and every older message the cut had left
+     * out fell below the checkpoint for ever. The whole span is read; the caller's budget is
+     * the caller's.
+     *
+     * <p>A response without a {@code messages} array or without {@code has_more} is refused, not
+     * read as an empty channel or as its end; {@code has_more} with no cursor, or with the cursor
+     * of the previous page, is a cut.
+     */
+    public HistoryListing listSince(String channelId, String oldest, int maxRequests) throws Exception {
+        List<SlackMessage> all = new ArrayList<>();
+        String cursor = null;
+        for (int request = 1; request <= maxRequests; request++) {
             StringBuilder urlBuilder = new StringBuilder(apiBase)
                     .append("/conversations.history?channel=").append(jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(channelId))
-                    .append("&limit=").append(Math.min(limit, 200)); // Slack recommends ≤200
+                    .append("&limit=").append(PAGE_SIZE);
             if (oldest != null && !oldest.isBlank()) urlBuilder.append("&oldest=").append(jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(oldest));
             if (cursor != null) urlBuilder.append("&cursor=").append(jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(cursor));
 
             JsonNode root = slackGet(urlBuilder.toString());
             JsonNode messages = root.get("messages");
-            if (messages == null || !messages.isArray() || messages.isEmpty()) break;
-
-            for (JsonNode msg : messages) {
-                allMessages.add(parseMessage(msg));
-                if (allMessages.size() >= limit) break; // Respect total cap
+            if (messages == null || !messages.isArray()) {
+                throw new RuntimeException("Slack answered conversations.history without a messages array on request "
+                        + request + ", so how many messages the channel holds is unknown");
             }
-            if (allMessages.size() >= limit) break;
-
-            // Check for next page via cursor
-            JsonNode meta = root.path("response_metadata");
-            String nextCursor = meta.path("next_cursor").asText(null);
-            if (nextCursor == null || nextCursor.isBlank()) break;
-            cursor = nextCursor;
-
-            // Also check has_more for timestamp-based pagination
-            if (!root.path("has_more").asBoolean(false)) break;
-
-            logger.debug("Slack pagination: page {}, fetched {} so far, next_cursor present",
-                    page + 1, allMessages.size());
+            for (JsonNode msg : messages) {
+                all.add(parseMessage(msg));
+            }
+            // A missing has_more is a malformed answer, not "no more": read as false it would
+            // make a broken page the end of the channel. Slack always writes the field.
+            if (!root.hasNonNull("has_more")) {
+                throw new RuntimeException("Slack answered conversations.history without has_more on request "
+                        + request + ", so whether the channel continues is unknown");
+            }
+            if (!root.path("has_more").asBoolean(false)) {
+                return new HistoryListing(all, true, null);
+            }
+            String next = root.path("response_metadata").path("next_cursor").asText("");
+            if (next.isEmpty()) {
+                return new HistoryListing(all, false, "Slack said there is more and gave no cursor to read it with, after "
+                        + all.size() + " message(s)");
+            }
+            if (next.equals(cursor)) {
+                return new HistoryListing(all, false, "Slack returned the same cursor twice (" + next
+                        + "), so the listing cannot move forward");
+            }
+            cursor = next;
         }
-
-        logger.info("Slack getHistory: channel={}, oldest={}, total fetched={}", channelId, oldest, allMessages.size());
-        return allMessages;
+        return new HistoryListing(all, false, "the cap of " + maxRequests + " history request(s) was reached with "
+                + all.size() + " message(s) read and more still in the channel (raise the profile's "
+                + "slackHistoryMaxRequests parameter)");
     }
 
     /**

@@ -59,9 +59,9 @@ class SlackConnectorAdapterTest {
         wireMock.stubFor(get(urlPathEqualTo("/conversations.history"))
                 .withQueryParam("channel", equalTo("C001"))
                 .withQueryParam("oldest", equalTo("1700000000.000000"))
-                .willReturn(aResponse().withBody("{\"ok\":true,\"messages\":[]}")));
+                .willReturn(aResponse().withBody("{\"ok\":true,\"messages\":[],\"has_more\":false}")));
 
-        adapter.getHistory("C001", "1700000000.000000", 100);
+        adapter.listSince("C001", "1700000000.000000", 10);
         wireMock.verify(getRequestedFor(urlPathEqualTo("/conversations.history"))
                 .withQueryParam("oldest", equalTo("1700000000.000000")));
     }
@@ -69,8 +69,8 @@ class SlackConnectorAdapterTest {
     @Test
     void shouldOmitOldestWhenNull() throws Exception {
         wireMock.stubFor(get(urlPathEqualTo("/conversations.history"))
-                .willReturn(aResponse().withBody("{\"ok\":true,\"messages\":[]}")));
-        adapter.getHistory("C001", null, 50);
+                .willReturn(aResponse().withBody("{\"ok\":true,\"messages\":[],\"has_more\":false}")));
+        adapter.listSince("C001", null, 10);
         wireMock.verify(getRequestedFor(urlPathEqualTo("/conversations.history"))
                 .withoutQueryParam("oldest"));
     }
@@ -87,10 +87,10 @@ class SlackConnectorAdapterTest {
                         "text": "thread reply",
                         "thread_ts": "1700000000.000000",
                         "files": []
-                    }]}
+                    }],"has_more":false}
                     """)));
 
-        var msgs = adapter.getHistory("C001", null, 100);
+        var msgs = adapter.listSince("C001", null, 10).messages();
         assertEquals("1700000000.000000", msgs.get(0).threadTs());
     }
 
@@ -108,10 +108,10 @@ class SlackConnectorAdapterTest {
                             {"id":"F1","name":"a.pdf","mimetype":"application/pdf","url_private_download":"http://host/f1","size":100},
                             {"id":"F2","name":"b.png","mimetype":"image/png","url_private_download":"http://host/f2","size":200}
                         ]
-                    }]}
+                    }],"has_more":false}
                     """)));
 
-        var msgs = adapter.getHistory("C001", null, 100);
+        var msgs = adapter.listSince("C001", null, 10).messages();
         assertEquals(2, msgs.get(0).files().size());
         assertEquals("F1", msgs.get(0).files().get(0).id());
         assertEquals("F2", msgs.get(0).files().get(1).id());
@@ -144,7 +144,7 @@ class SlackConnectorAdapterTest {
     void shouldThrowOnHttp500() {
         wireMock.stubFor(get(urlPathEqualTo("/conversations.history"))
                 .willReturn(aResponse().withStatus(500)));
-        assertThrows(RuntimeException.class, () -> adapter.getHistory("C001", null, 50));
+        assertThrows(RuntimeException.class, () -> adapter.listSince("C001", null, 10));
     }
 
     // ── Channel listing ──────────────────────────────────────────
@@ -167,7 +167,7 @@ class SlackConnectorAdapterTest {
     // ── Pagination contract ──────────────────────────────────────
 
     @Test
-    void getHistoryFollowsCursorPagination() throws Exception {
+    void theListingFollowsTheCursorToTheEnd() throws Exception {
         // Page 1: has_more=true with next_cursor
         wireMock.stubFor(get(urlPathEqualTo("/conversations.history"))
                 .withQueryParam("channel", equalTo("C1"))
@@ -186,26 +186,31 @@ class SlackConnectorAdapterTest {
                     ],"has_more":false}
                     """)));
 
-        var messages = adapter.getHistory("C1", null, 200);
-        assertEquals(2, messages.size());
-        assertEquals("1.1", messages.get(0).ts());
-        assertEquals("1.2", messages.get(1).ts());
+        var listing = adapter.listSince("C1", null, 10);
+        assertTrue(listing.complete(), listing.truncatedBecause());
+        assertEquals(2, listing.messages().size());
+        assertEquals("1.1", listing.messages().get(0).ts());
+        assertEquals("1.2", listing.messages().get(1).ts());
     }
 
+    /**
+     * A listing stopped at the request cap says so and is NOT complete — the messages it did not
+     * reach are the older ones, and a checkpoint raised over the ones it did reach would exclude
+     * them for ever (R107). The old getHistory() cut at a message count and said nothing.
+     */
     @Test
-    void getHistoryRespectsLimitCap() throws Exception {
-        // Return 3 messages but limit is 2
+    void aListingCutAtTheRequestCapSaysSoAndIsNotComplete() throws Exception {
         wireMock.stubFor(get(urlPathEqualTo("/conversations.history"))
                 .willReturn(okJson("""
                     {"ok":true,"messages":[
-                        {"ts":"1","user":"U1","text":"a"},
-                        {"ts":"2","user":"U1","text":"b"},
                         {"ts":"3","user":"U1","text":"c"}
-                    ],"has_more":false}
+                    ],"has_more":true,"response_metadata":{"next_cursor":"more"}}
                     """)));
 
-        var messages = adapter.getHistory("C1", null, 2);
-        assertEquals(2, messages.size(), "Should respect limit cap of 2");
+        var listing = adapter.listSince("C1", null, 1);
+        assertFalse(listing.complete(), "a cut listing was reported whole");
+        assertTrue(listing.truncatedBecause().contains("slackHistoryMaxRequests"), listing.truncatedBecause());
+        assertEquals(1, listing.messages().size());
     }
 
     // ── Thread replies contract ──────────────────────────────────
