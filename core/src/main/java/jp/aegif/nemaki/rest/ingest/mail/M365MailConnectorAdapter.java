@@ -32,6 +32,8 @@ public class M365MailConnectorAdapter {
     private final String graphBase;
     /** Graph API path prefix: "/me" for delegated auth, "/users/{id}" for client credentials. */
     private final String mailboxPath;
+    /** The user id / UPN this adapter was given, or null for /me. */
+    private final String mailboxLabel;
 
     public M365MailConnectorAdapter(String accessToken) {
         this(accessToken, null, jp.aegif.nemaki.rest.ingest.AdapterHttpClient.shared(), DEFAULT_GRAPH_BASE);
@@ -58,6 +60,7 @@ public class M365MailConnectorAdapter {
         // Client Credentials auth requires /users/{id}; delegated auth uses /me
         this.mailboxPath = (userId != null && !userId.isBlank())
                 ? "/users/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(userId) : "/me";
+        this.mailboxLabel = (userId != null && !userId.isBlank()) ? userId : null;
     }
 
     /**
@@ -70,71 +73,185 @@ public class M365MailConnectorAdapter {
             String from,
             String receivedDateTime) {}
 
+    /** How many delta-feed page requests one run may make unless the caller says otherwise. */
+    public static final int DEFAULT_MAX_MESSAGE_REQUESTS = 50;
+    /** Messages per delta page, asked for with {@code Prefer: odata.maxpagesize} (the delta call's own page size). */
+    static final int PAGE_SIZE = 50;
+
+    /** The mailbox this adapter reads: {@code me}, or the user id / UPN it was given. */
+    public String mailbox() {
+        return mailboxPath.equals("/me") ? "me" : mailboxLabel;
+    }
+
     /**
-     * List messages from a mail folder.
-     *
-     * @param folderId folder ID or well-known name ("inbox", "sentitems", etc.)
-     * @param top      max messages to return
-     * @param filter   OData filter expression (nullable)
+     * One page of the folder's delta feed: the messages it carries (removed ones — deleted, or moved
+     * out of the folder — counted, not carried), and the link to the next page
+     * ({@code @odata.nextLink}) or, when the round is complete, the link the next round starts from
+     * ({@code @odata.deltaLink}).
      */
+    public record DeltaPage(List<M365MessageSummary> messages, int removed, String nextLink, String deltaLink) {}
+
+    private String deltaBase(String folderId) {
+        return graphBase + mailboxPath + "/mailFolders/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(folderId)
+                + "/messages/delta";
+    }
+
     /**
-     * List messages from a mail folder with {@code @odata.nextLink} pagination
-     * and retry on HTTP 429/503.
-     *
-     * @param folderId folder ID or well-known name ("inbox", "sentitems", etc.)
-     * @param top      max total messages to return (also controls page size)
-     * @param filter   OData filter expression (nullable)
+     * The first request of a round of the folder's delta feed ({@code /mailFolders/{id}/messages/delta}):
+     * every message in the folder, or those received at or after {@code receivedFrom} (Graph's
+     * delta filter {@code receivedDateTime ge}, written to the millisecond). A message MOVED into the
+     * folder comes in the feed like one received there — the reason for the feed: a listing by
+     * received time never offers a message filed into the folder after the checkpoint passed it.
      */
-    public List<M365MessageSummary> listMessages(String folderId, int top, String filter) throws Exception {
-        int pageSize = Math.min(top, 50); // Graph API page size max
-        String url = graphBase + mailboxPath + "/mailFolders/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(folderId) + "/messages"
-                + "?$top=" + pageSize
-                + "&$select=id,internetMessageId,subject,from,receivedDateTime"
-                + "&$orderby=receivedDateTime%20desc";
-        if (filter != null && !filter.isBlank()) {
-            url += "&$filter=" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(filter);
+    public String initialDeltaLink(String folderId, java.time.Instant receivedFrom) {
+        String url = deltaBase(folderId) + "?$select=id,internetMessageId,subject,from,receivedDateTime";
+        if (receivedFrom != null) {
+            String stamp = java.time.format.DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSS'Z'")
+                    .withZone(java.time.ZoneOffset.UTC).format(receivedFrom);
+            url += "&$filter=" + java.net.URLEncoder.encode("receivedDateTime ge " + stamp, java.nio.charset.StandardCharsets.UTF_8)
+                    .replace("+", "%20");
         }
+        return url;
+    }
 
-        List<M365MessageSummary> allSummaries = new ArrayList<>();
-        for (int page = 0; page < 100 && url != null; page++) {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header("Authorization", "Bearer " + accessToken)
-                    .header("Accept", "application/json")
-                    .timeout(Duration.ofSeconds(30))
-                    .GET()
-                    .build();
-
-            HttpResponse<String> response = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRetry(
-                    httpClient, request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() != 200) {
-                throw new RuntimeException("Graph API error " + response.statusCode() + ": " + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.truncateBody(response.body()));
+    /**
+     * Whether a link is a mail-folder delta link on THIS endpoint — the only links read or saved:
+     * the scheme, the host, the effective port, and a decoded path of the shape
+     * {@code <base>/(me | users/<id>)/mailFolders/<id>/messages/delta}, read as OData segments (the
+     * key syntax {@code mailFolders('…')} and {@code delta()} included, the names in any case).
+     *
+     * <p>The mailbox and folder VALUES are not compared. Graph's documentation writes the same feed
+     * as {@code mailFolders/{id}} and as {@code mailfolders('{id}')}, and a mailbox given as a UPN or
+     * a folder given by its well-known name may come back as their ids — a comparison of the values
+     * would refuse Graph's own link and stop the folder for good. What ties a stored link to this
+     * profile's mailbox is the checkpoint, which names the mailbox it was written for; the folder is
+     * in the checkpoint's key; a link Graph answers comes from a request this connector made.
+     */
+    public boolean isMailDeltaLink(String link) {
+        if (link == null) return false;
+        try {
+            URI candidate = URI.create(link);
+            URI own = URI.create(graphBase);
+            if (candidate.getScheme() == null || own.getScheme() == null
+                    || !candidate.getScheme().equalsIgnoreCase(own.getScheme())) {
+                return false;
             }
-
-            JsonNode root = MAPPER.readTree(response.body());
-            JsonNode values = root.get("value");
-            if (values == null || !values.isArray() || values.isEmpty()) break;
-
-            for (JsonNode msg : values) {
-                String from = null;
-                JsonNode fromNode = msg.path("from").path("emailAddress").path("address");
-                if (!fromNode.isMissingNode()) from = fromNode.asText();
-
-                allSummaries.add(new M365MessageSummary(
-                        msg.path("id").asText(),
-                        msg.has("internetMessageId") ? msg.path("internetMessageId").asText() : null,
-                        msg.has("subject") ? msg.path("subject").asText() : null,
-                        from,
-                        msg.has("receivedDateTime") ? msg.path("receivedDateTime").asText() : null));
-                if (allSummaries.size() >= top) break; // Respect total cap
+            if (candidate.getHost() == null || own.getHost() == null
+                    || !candidate.getHost().equalsIgnoreCase(own.getHost())) {
+                return false;
             }
-            if (allSummaries.size() >= top) break;
-
-            // Follow @odata.nextLink for next page
-            JsonNode nextLink = root.get("@odata.nextLink");
-            url = (nextLink != null && !nextLink.isNull()) ? nextLink.asText(null) : null;
+            if (effectivePort(candidate) != effectivePort(own)) {
+                return false;
+            }
+            List<String> base = odataSegments(own.getPath());
+            List<String> path = odataSegments(candidate.getPath());
+            for (int i = 0; i < base.size(); i++) {
+                if (i >= path.size() || !base.get(i).equalsIgnoreCase(path.get(i))) return false;
+            }
+            List<String> rest = path.subList(base.size(), path.size());
+            int mailbox;
+            if (rest.size() == 5 && "me".equalsIgnoreCase(rest.get(0))) {
+                mailbox = 1;
+            } else if (rest.size() == 6 && "users".equalsIgnoreCase(rest.get(0)) && !rest.get(1).isBlank()) {
+                mailbox = 2;
+            } else {
+                return false;
+            }
+            return "mailFolders".equalsIgnoreCase(rest.get(mailbox))
+                    && !rest.get(mailbox + 1).isBlank()
+                    && "messages".equalsIgnoreCase(rest.get(mailbox + 2))
+                    && "delta".equalsIgnoreCase(rest.get(mailbox + 3));
+        } catch (IllegalArgumentException malformed) {
+            return false;
         }
-        return allSummaries;
+    }
+
+    private static int effectivePort(URI uri) {
+        if (uri.getPort() != -1) return uri.getPort();
+        return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : "http".equalsIgnoreCase(uri.getScheme()) ? 80 : -1;
+    }
+
+    private static final java.util.regex.Pattern KEY_SEGMENT = java.util.regex.Pattern.compile("^([^(]+)\\('(.*)'\\)$");
+
+    /** A decoded path as OData segments: {@code name('key')} is two segments, {@code delta()} is {@code delta}. */
+    static List<String> odataSegments(String decodedPath) {
+        List<String> out = new ArrayList<>();
+        if (decodedPath == null) return out;
+        for (String part : decodedPath.split("/")) {
+            if (part.isEmpty()) continue;
+            java.util.regex.Matcher key = KEY_SEGMENT.matcher(part);
+            if (key.matches()) {
+                out.add(key.group(1));
+                out.add(key.group(2).replace("''", "'"));
+                continue;
+            }
+            String segment = part.endsWith("()") ? part.substring(0, part.length() - 2) : part;
+            if (segment.startsWith("microsoft.graph.")) {
+                segment = segment.substring("microsoft.graph.".length());
+            }
+            out.add(segment);
+        }
+        return out;
+    }
+
+    /**
+     * One page of the delta feed at {@code link}, asked with {@code Prefer: odata.maxpagesize}. A
+     * message marked {@code @removed} (deleted, or moved out of the folder) is counted, not carried.
+     * Refused: a response without a {@code value} array, and a page that carries neither
+     * {@code @odata.nextLink} nor {@code @odata.deltaLink}, or whose next link is its own.
+     */
+    public DeltaPage delta(String link) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(link))
+                .header("Authorization", "Bearer " + accessToken)
+                .header("Accept", "application/json")
+                .header("Prefer", "odata.maxpagesize=" + PAGE_SIZE)
+                .timeout(Duration.ofSeconds(30))
+                .GET()
+                .build();
+        HttpResponse<String> response = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRetry(
+                httpClient, request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 200) {
+            throw new RuntimeException("Graph API error " + response.statusCode() + ": "
+                    + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.truncateBody(response.body()));
+        }
+        JsonNode root = MAPPER.readTree(response.body());
+        JsonNode values = root.get("value");
+        if (values == null || !values.isArray()) {
+            throw new RuntimeException("Graph answered the mail delta feed without a value array, so the page cannot be read");
+        }
+        List<M365MessageSummary> messages = new ArrayList<>();
+        int removed = 0;
+        for (JsonNode msg : values) {
+            if (msg.has("@removed")) {
+                removed++;
+                continue;
+            }
+            String from = null;
+            JsonNode fromNode = msg.path("from").path("emailAddress").path("address");
+            if (!fromNode.isMissingNode()) from = fromNode.asText();
+            messages.add(new M365MessageSummary(
+                    msg.path("id").asText(""),
+                    msg.has("internetMessageId") ? msg.path("internetMessageId").asText() : null,
+                    msg.has("subject") ? msg.path("subject").asText() : null,
+                    from,
+                    msg.has("receivedDateTime") ? msg.path("receivedDateTime").asText() : null));
+        }
+        JsonNode nextNode = root.get("@odata.nextLink");
+        JsonNode deltaNode = root.get("@odata.deltaLink");
+        String next = nextNode == null || nextNode.isNull() ? null : nextNode.asText(null);
+        String deltaLink = deltaNode == null || deltaNode.isNull() ? null : deltaNode.asText(null);
+        if (next != null && next.isBlank()) next = null;
+        if (deltaLink != null && deltaLink.isBlank()) deltaLink = null;
+        if (next == null && deltaLink == null) {
+            throw new RuntimeException("Graph answered a mail delta page without @odata.nextLink or @odata.deltaLink, "
+                    + "so the feed cannot be continued from it");
+        }
+        if (link.equals(next)) {
+            throw new RuntimeException("Graph returned the mail delta page's own link as its @odata.nextLink (" + next
+                    + "), so the feed cannot move forward");
+        }
+        return new DeltaPage(messages, removed, next, deltaLink);
     }
 
     /**

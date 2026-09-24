@@ -498,6 +498,28 @@ class TeamsChannelsAreReadToTheCheckpointTest {
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }
 
+    /**
+     * The other half: a message whose body was refused (and recorded) but whose attachment was
+     * imported has spent the budget too. The lock above imports only the body; a count by the
+     * body's own outcome passes it, and here imports the second message past the limit (review, P3).
+     */
+    @Test
+    @DisplayName("Teams: a message whose body failed but whose attachment was imported spends the budget")
+    void teamsAMessageWhoseBodyFailedButWhoseAttachmentWasImportedSpendsTheBudget() {
+        failingImports = List.of("m1", "m2");
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2",
+                msgWithFile("m1", "2026-01-01T00:00:01Z", "F-ok1"), msgWithFile("m2", "2026-01-01T00:00:02Z", "F-ok2")));
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs(String.format(STORED, base));
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 1);
+
+        assertEquals(List.of("F-ok1"), importedIds, "a message past the limit was imported: " + importedIds);
+        assertEquals(1, dlqReadReasons.size(), "only the first message's body should have been tried: " + dlqReasons);
+        assertTrue(result.incompleteReads().stream().anyMatch(r -> r.contains("read again next poll")), result.incompleteReads().toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
     /** The budget reached at a page boundary: the page is passed and the next one is not asked for. */
     @Test
     @DisplayName("Teams: the budget reached at a page boundary passes the page and asks for no further one")

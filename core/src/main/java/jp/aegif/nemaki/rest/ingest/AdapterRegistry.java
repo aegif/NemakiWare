@@ -48,7 +48,7 @@ public final class AdapterRegistry {
                 "m365_mail", "M365 Mail",
                 SourceArchetype.MESSAGE_CONTEXT,
                 Set.of(),
-                Set.of("userId", "folderId", "limit"),
+                Set.of("userId", "folderId", "limit", "m365MessageMaxRequests"),
                 List.of("userId", "folderId"),
                 3, "{\"userId\":\"user@contoso.com\",\"folderId\":\"inbox\"}"));
 

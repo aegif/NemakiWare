@@ -98,7 +98,8 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
         when(importService.executeChatContextImport(any(), any())).thenAnswer(inv -> {
             ExternalIngestRequest req = inv.getArgument(1);
             executed.add(req);
-            return ExternalIngestResult.success("req-1", "obj-1", "1.0", false, null);
+            return replaySkips ? ExternalIngestResult.skipped("req-1", "obj-1", "already imported")
+                    : ExternalIngestResult.success("req-1", "obj-1", "1.0", false, null);
         });
 
         ConnectorDefinitionService connectorService = mock(ConnectorDefinitionService.class);
@@ -203,6 +204,8 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
     private FetchSupport lastFetchSupport;
     /** Whether the link to the parent fails on the next replay. */
     private boolean relinkFails;
+    /** Whether the next chat replay answers "skipped" (the item is already in the repository). */
+    private boolean replaySkips;
 
     private static void wire(IngestDlqController controller, String field, Object value) throws Exception {
         Field f = IngestDlqController.class.getDeclaredField(field);
@@ -512,6 +515,26 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
 
         assertEquals(HttpStatus.OK, res.getStatusCode(), String.valueOf(res.getBody()));
         assertTrue(String.valueOf(res.getBody()).contains("entryKept=true"), String.valueOf(res.getBody()));
+        verify(jobService, never()).deleteDlqEntry(any());
+    }
+
+    /**
+     * The same on the SKIP path: the attachment is already in the repository (a replay of a row
+     * whose bytes were kept), and its link to the parent fails — the row stays. Only the success
+     * path was measured, and a protection that dropped the skip half stayed green (Codex P2).
+     */
+    @Test
+    @DisplayName("a replay that finds the item already there, and fails to link it to its parent, keeps the entry")
+    void aSkippedReplayWhoseParentLinkFailsKeepsTheEntry() throws Exception {
+        relinkFails = true;
+        replaySkips = true;
+        String row = "{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\",\"sourceObjectId\":\"F-1\",\"sourceObjectType\":\"attachment\","
+                + "\"metadata\":{\"slackFileUrl\":\"https://files.slack.com/files-pri/T1-F-1/download/a.pdf\",\"parentObjectId\":\"obj-msg\"}}";
+        ResponseEntity<?> res = retry("slack", SourceArchetype.CHAT_CONTEXT, true, "kept bytes", row,
+                url -> new ByteArrayInputStream("fresh bytes".getBytes(StandardCharsets.UTF_8)), r -> { });
+
+        assertEquals(HttpStatus.OK, res.getStatusCode(), String.valueOf(res.getBody()));
+        assertTrue(String.valueOf(res.getBody()).contains("resolved-entry-kept"), String.valueOf(res.getBody()));
         verify(jobService, never()).deleteDlqEntry(any());
     }
 

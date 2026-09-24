@@ -45,7 +45,8 @@ import java.util.Map;
  * <p>A message is imported with its body and every attachment. A failure is dead-lettered — a
  * download failure as a never-read row that the DLQ controller fetches again by the file's URL, a
  * body failure as a read row that carries the body, an attachment failure after the read as a read
- * row — and an attachment row names the message document, so that a replay links it again.
+ * row — and an attachment row names the message document, so that a replay can link it again
+ * (the DLQ controller keeps the row while the link cannot be made).
  *
  * <p>Not covered: replies (not in the feed), history older than the feed's window, and a message
  * edited after its import (it comes again; the import service's dedupe decides — the default
@@ -399,8 +400,8 @@ public class TeamsFetchOrchestrator implements FetchOrchestrator {
     /**
      * The message document the attachment belongs to, named on the dead-letter row so that a
      * replay links the attachment to it again: the DLQ controller creates the relationship from
-     * this metadata, as the orchestrator does on the normal path. Without it a replayed
-     * attachment stood alone for ever (review, P2).
+     * this metadata, as the orchestrator does on the normal path, and keeps the row while the
+     * link cannot be made. Without it a replayed attachment stood alone for ever (review, P2).
      */
     private static void nameTheParent(ExternalIngestRequest req, String parentObjectId) {
         if (parentObjectId != null && req.getMetadata() != null) {

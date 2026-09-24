@@ -456,13 +456,15 @@ public class IngestDlqController {
             if (!parentLinked && (result.skipped() || result.isSuccess())) {
                 // The item is in the repository, but its link to the message it belongs to could
                 // not be made. Deleting the row would leave it standing alone with nothing to retry
-                // from (review, P2): kept, and a retry — the import is idempotent — links it.
+                // from (review, P2): kept, and a retry — the import is idempotent — links it once
+                // the cause is gone. A parent that no longer exists never links: the note says so.
                 response.put("status", result.skipped() ? "resolved-entry-kept" : "success-entry-kept");
                 response.put("entryKept", true);
                 if (result.objectId() != null) response.put("objectId", result.objectId());
                 response.put("entryKeptNote", "the item was replayed, but its link to the message it belongs to could"
-                        + " not be made (see relationshipWarnings); the entry is kept so that a retry links it — the"
-                        + " replay itself is idempotent");
+                        + " not be made (see relationshipWarnings); the entry is kept. A retry links it once the cause is"
+                        + " resolved — the replay itself is idempotent. If the message document is gone the link cannot"
+                        + " be made: delete this entry once that is confirmed");
                 return ResponseEntity.ok(response);
             }
             if (result.skipped()) {
@@ -617,7 +619,8 @@ public class IngestDlqController {
      * (review, P2). Linked here the way the normal path links (idempotent: a link that is there is
      * found, not doubled), for an import that succeeded or was skipped. A link that could not be
      * made is not a failed replay — the document exists — but it is not a resolution either: the
-     * caller keeps the row so that a retry links it (review, P2).
+     * caller keeps the row, and a retry links it once the cause is gone (review, P2). A parent
+     * document that no longer exists never links; the row stays until it is deleted by hand.
      *
      * @return false when a parent was named and the link could not be made
      */

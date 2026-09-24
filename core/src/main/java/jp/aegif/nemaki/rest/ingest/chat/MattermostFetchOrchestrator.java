@@ -364,8 +364,8 @@ public class MattermostFetchOrchestrator implements FetchOrchestrator {
     /**
      * The message document the attachment belongs to, named on the dead-letter row so that a
      * replay links the attachment to it again: the DLQ controller creates the relationship from
-     * this metadata, as the orchestrator does on the normal path. Without it a replayed
-     * attachment stood alone for ever (review, P2).
+     * this metadata, as the orchestrator does on the normal path, and keeps the row while the
+     * link cannot be made. Without it a replayed attachment stood alone for ever (review, P2).
      */
     private static void nameTheParent(ExternalIngestRequest req, String parentObjectId) {
         if (parentObjectId != null && req.getMetadata() != null) {
