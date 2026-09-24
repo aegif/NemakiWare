@@ -238,7 +238,7 @@ INGEST_NOTION_SITES_TOKEN=ntn_...
   上限。1 回 200 件、既定 50 = 10,000 件。checkpoint 以降がそれを超えると**何も取り込まず** `PARTIAL` で
   止まるので上げる）。**checkpoint より新しいメッセージは毎回全部読む**。checkpoint はメッセージの `ts`。
   記録できなかった失敗が 1 つでもあると checkpoint は進まない。添付の download 失敗は死信キューに
-  URL 付きで記録され、再送時に Slack から取り直す。
+  URL 付きで記録され、再送時に Slack から取り直す（この版より前に書かれた行は URL を持たず、再送は拒否される）。
 
 **（任意）Webhook 設定**
 - Slack アプリの **Event Subscriptions** を ON。
@@ -276,7 +276,13 @@ INGEST_NOTION_SITES_TOKEN=ntn_...
   サブスクリプションの `clientState` を設定。
 
 **C. プロファイル**
-- `schedulerParams`：`teamId` と `channelId`（両方必須）、任意 `limit`。
+- `schedulerParams`：`teamId` と `channelId`（両方必須）、任意 `limit`（1 回の実行で取り込むメッセージ数。
+  古い順に取り、残りは次回に回って `PARTIAL`。試みるのは `limit` の 4 倍まで）、任意 `teamsMessageMaxRequests`
+  （1 回の listing でメッセージのページを読む回数の上限。1 回 50 件、既定 50 = 2,500 件。checkpoint より
+  新しいメッセージがそれを超えると**何も取り込まず** `PARTIAL` で止まるので上げる）。checkpoint は
+  `<作成時刻を UTC に正規化>|<id>,…`。記録できなかった失敗が 1 つでもあると checkpoint は進まない。
+  添付の download 失敗は死信キューに content URL 付きで記録され、再送時に Teams から取り直す（この版より
+  前に書かれた行は URL を持たず、再送は拒否される）。
 
 **（任意）Webhook**
 - Graph の change notification subscription を作成し、notificationUrl に
