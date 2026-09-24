@@ -288,7 +288,9 @@ public class IngestJobService {
             byte[] contentBytes, boolean sourceNeverRead, boolean sourceWasRead,
             boolean webhookDeliveryRecord, boolean gapRecord) {
         try {
-            String dlqId = deadLetterIdFor(request);
+            String dlqId = gapRecord ? recordRowIdFor("gap", request)
+                    : webhookDeliveryRecord ? recordRowIdFor("webhook", request)
+                    : deadLetterIdFor(request);
             // The WRITE path must not inherit the read path's refusal. getDlqEntry refuses a
             // stored row it cannot decode so the endpoint stops answering 404 for it — but
             // here the refusal aborted the save, and the id is deterministic, so EVERY later
@@ -349,6 +351,7 @@ public class IngestJobService {
 
             IngestDeadLetterRecord dlq = buildDlqRecord(request, errorMessage, existing,
                     Instant.now().toString(), rowWasUnreadable);
+            dlq.setDlqId(dlqId);
             // Inherited only while the source STILL has not been read. The first version kept
             // the mark even when a later attempt read the page fully and failed during the
             // import — the row's request is then complete and replayable, so refusing to
@@ -730,6 +733,19 @@ public class IngestJobService {
         } catch (java.security.NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is required", e);
         }
+    }
+
+    /**
+     * The id of a row that RECORDS something instead of carrying an item — webhook deliveries
+     * accepted and not fetched, a possible gap in a chat source: {@code dlq-<kind>-…}, where an
+     * item's id is {@code dlq-} and hex only. The four fields an item's id is made of are the
+     * caller's, so a request naming a record row's fields got the record's id: its save wrote
+     * over the record and cleared its mark — the next replay imported an empty document and
+     * deleted the only record — and a record's save over an item's row made that item
+     * un-replayable (review, P2). In a namespace of its own neither can reach the other.
+     */
+    static String recordRowIdFor(String kind, ExternalIngestRequest request) {
+        return "dlq-" + kind + "-" + deadLetterIdFor(request).substring("dlq-".length());
     }
 
     private static String nullToEmpty(String s) {

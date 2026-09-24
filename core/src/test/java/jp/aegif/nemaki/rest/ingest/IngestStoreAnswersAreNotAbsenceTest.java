@@ -422,6 +422,33 @@ class IngestStoreAnswersAreNotAbsenceTest {
     }
 
     @Test
+    @DisplayName("a record row and an item row naming the same fields are two rows")
+    void aRecordRowAndAnItemRowOfTheSameFieldsAreTwoRows() {
+        // An item's id is made of the caller's four fields. A record row that shared it was written
+        // over by an item naming those fields — its mark cleared, the next replay deleted it — and
+        // a record's save made that item's row un-replayable (review, P2).
+        Cloudant cloudant = mock(Cloudant.class);
+        ServiceCall<FindResult> find = findAnswering(List.of());
+        when(cloudant.postFind(any())).thenReturn(find);
+        ServiceCall<DocumentResult> post = writeAnswering(true);
+        when(cloudant.postDocument(any())).thenReturn(post);
+        IngestJobService jobs = serviceOn(cloudant);
+
+        assertTrue(jobs.saveGapRecordToDlq(itemRequest(), "a possible gap"));
+        assertTrue(jobs.saveWebhookDeliveryRecordToDlq(itemRequest(), "not fetched"));
+        assertTrue(jobs.saveToDlqReporting(itemRequest(), "boom", null, true, false));
+
+        ArgumentCaptor<PostDocumentOptions> written = ArgumentCaptor.forClass(PostDocumentOptions.class);
+        verify(cloudant, org.mockito.Mockito.times(3)).postDocument(written.capture());
+        List<String> ids = written.getAllValues().stream().map(w -> w.document().getId()).toList();
+        assertEquals(3, new java.util.HashSet<>(ids).size(), "two of the three saves wrote the same row: " + ids);
+        assertTrue(ids.get(0).startsWith("ingest_dlq:dlq-gap-"), ids.toString());
+        assertTrue(ids.get(1).startsWith("ingest_dlq:dlq-webhook-"), ids.toString());
+        assertEquals(ids.get(0), "ingest_dlq:" + written.getAllValues().get(0).document().get("dlqId"),
+                "the gap row's own dlqId is not the id it was written under");
+    }
+
+    @Test
     @DisplayName("a query the store did not answer is the typed refusal, not a raw failure")
     @SuppressWarnings("unchecked")
     void aQueryTheStoreDidNotAnswerIsATypedRefusal() {

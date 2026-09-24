@@ -263,7 +263,13 @@ public class IngestDlqController {
             // deleted with it. By the row's own mark, as above: the first version read the row's
             // sourceObjectType, a caller-supplied string, and refused a genuine item of that type
             // for ever (review, P2).
-            if (dlq.isGapRecord()) {
+            // A gap row written before gap records carried the mark (the build that first recorded
+            // gaps, never released) has the gap's type, was never read and holds nothing: replayed,
+            // it too would be an empty document and the record deleted (review, P2). Refused by that
+            // shape — which a genuine item of the type does not have: one with bytes is replayed.
+            boolean unmarkedGap = jp.aegif.nemaki.rest.ingest.chat.ChatworkFetchOrchestrator.GAP_TYPE.equals(request.getSourceObjectType())
+                    && dlq.isSourceNeverRead() && !dlq.isHasContent();
+            if (dlq.isGapRecord() || unmarkedGap) {
                 return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId + " records a possible gap: messages"
                         + " the source may have had and no longer answers, so there is nothing to replay; the entry is"
                         + " kept. Delete it once the gap is acknowledged");

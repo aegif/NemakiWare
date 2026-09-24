@@ -581,12 +581,32 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
         String row = "{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\",\"sourceObjectId\":\"gap:R1:1000-2001\","
                 + "\"sourceObjectType\":\"chat_gap\",\"metadata\":{\"channelId\":\"R1\",\"gapAfterMessageId\":\"1000\","
                 + "\"gapBeforeMessageId\":\"2001\"}}";
+        // Marked, and not in the shape an unmarked gap row is refused by (never read): the mark alone refuses it.
         ResponseEntity<?> res = retry("chatwork", SourceArchetype.CHAT_CONTEXT, false, null, row,
-                url -> new ByteArrayInputStream(new byte[0]), r -> r.setGapRecord(true));
+                url -> new ByteArrayInputStream(new byte[0]), r -> { r.setGapRecord(true); r.setSourceNeverRead(false); });
 
         assertEquals(HttpStatus.CONFLICT, res.getStatusCode(), String.valueOf(res.getBody()));
         assertTrue(String.valueOf(res.getBody()).contains("records a possible gap"), String.valueOf(res.getBody()));
         assertTrue(executed.isEmpty(), "a gap row was replayed: " + executed);
+        verify(jobService, never()).deleteDlqEntry(any());
+    }
+
+    /**
+     * A gap row the build before the mark wrote: the gap's type, never read, nothing held, no mark.
+     * Replayed, it was an empty document and the record went with the row (review, P2).
+     */
+    @Test
+    @DisplayName("a gap row written before gap rows were marked is not replayed either")
+    void aGapRowFromBeforeTheMarkIsNotReplayed() throws Exception {
+        String row = "{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\",\"sourceObjectId\":\"gap:R1:1000-2001\","
+                + "\"sourceObjectType\":\"chat_gap\",\"metadata\":{\"channelId\":\"R1\",\"gapAfterMessageId\":\"1000\","
+                + "\"gapBeforeMessageId\":\"2001\"}}";
+        ResponseEntity<?> res = retry("chatwork", SourceArchetype.CHAT_CONTEXT, false, null, row,
+                url -> new ByteArrayInputStream(new byte[0]), r -> { });
+
+        assertEquals(HttpStatus.CONFLICT, res.getStatusCode(), String.valueOf(res.getBody()));
+        assertTrue(String.valueOf(res.getBody()).contains("records a possible gap"), String.valueOf(res.getBody()));
+        assertTrue(executed.isEmpty(), "an unmarked gap row was replayed: " + executed);
         verify(jobService, never()).deleteDlqEntry(any());
     }
 

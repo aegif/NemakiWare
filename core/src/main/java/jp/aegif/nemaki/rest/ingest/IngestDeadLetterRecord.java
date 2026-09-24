@@ -188,7 +188,8 @@ public class IngestDeadLetterRecord {
      * True for a row that records webhook deliveries this node accepted and did not fetch.
      * Such a row carries no item: the retry door refuses to replay it and says to re-fetch
      * through the connector. Only {@code IngestJobService.saveWebhookDeliveryRecordToDlq}
-     * sets it — callers of the ingest API cannot (R10).
+     * sets it — callers of the ingest API cannot (R10) — on a row with an id of its own kind
+     * ({@code dlq-webhook-…}): an item naming the same fields used to share the id and write over it.
      */
     private boolean webhookDeliveryRecord;
     public boolean isWebhookDeliveryRecord() { return webhookDeliveryRecord; }
@@ -199,9 +200,10 @@ public class IngestDeadLetterRecord {
     /**
      * True for a row that records a possible GAP in a chat source: messages that source may have
      * had and no longer answers (Chatwork gives a room's latest 100). There is no item behind it:
-     * the retry door refuses to replay it. Only {@code IngestJobService.saveGapRecordToDlq} sets it
-     * — the first version keyed on the row's sourceObjectType, a string any caller of the ingest API
-     * may send, so a genuine item of that type was refused for ever (review, P2).
+     * the retry door refuses to replay it. Only {@code IngestJobService.saveGapRecordToDlq} sets it,
+     * on a row with an id of its own kind ({@code dlq-gap-…}) that no item's save can reach — the
+     * first version keyed on the row's sourceObjectType, a string any caller of the ingest API may
+     * send, so a genuine item of that type was refused for ever (review, P2).
      */
     private boolean gapRecord;
     public boolean isGapRecord() { return gapRecord; }

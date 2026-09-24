@@ -112,7 +112,7 @@ public final class StoreBehaviourFacts {
         FIND_ROW_CARRIES_ATTACHMENT_STUBS(
                 "a Mango _find row DOES carry _attachments stubs — the DLQ's payload carry-forward "
                         + "would destroy the binary on every update if it did not",
-                "core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java:798-807",
+                "core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestJobService.java:814-823",
                 "getAttachments",
                 Map.of("3.3", true, "3.4", true, "3.5", true)),
 

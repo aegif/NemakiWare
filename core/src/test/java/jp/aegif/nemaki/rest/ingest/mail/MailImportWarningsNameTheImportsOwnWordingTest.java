@@ -26,7 +26,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * first version read only the first direction, and a link refusal the connectors did not recognise
  * ({@code Relationship not authorised: …}) passed it. The helpers the mail import hands its list to
  * are named and classified too — the body alone is not every warning: {@code emitReimportEvent}
- * adds its own.
+ * adds its own — and so is the public entry, whose {@code withCaptureOutcome} adds the capture
+ * record's warning to the result.
+ *
+ * <p>The source is read with its comments dropped and its white space outside literals folded
+ * ({@link #normalized}): counted as raw text, a call split over lines ({@code warnings\n    .add(…)})
+ * escaped both the match and the count it was checked against (review, P1).
  */
 class MailImportWarningsNameTheImportsOwnWordingTest {
 
@@ -55,7 +60,7 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
     @DisplayName("every missing-part wording the mail connectors recognise is one the mail import writes")
     void everyMissingPartWordingIsTheImportsOwn() throws Exception {
         assertTrue(Files.exists(IMPORT), "this lock reads " + IMPORT + ", which is not there");
-        String source = Files.readString(IMPORT, StandardCharsets.UTF_8);
+        String source = normalized(Files.readString(IMPORT, StandardCharsets.UTF_8));
         for (String start : List.of("Attachment '", "Raw .eml preservation", "Relationship failed",
                 "Relationship not authorised", "the relationship was not created")) {
             assertTrue(source.contains("\"" + start), "the mail import no longer writes a warning starting \"" + start + "\"");
@@ -66,7 +71,7 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
     @Test
     @DisplayName("every refusal the import's link step writes is read as a missing part")
     void everyLinkRefusalIsAMissingPart() throws Exception {
-        String source = Files.readString(IMPORT, StandardCharsets.UTF_8);
+        String source = normalized(Files.readString(IMPORT, StandardCharsets.UTF_8));
         Matcher refusal = Pattern.compile("LinkOutcome\\.notLinked\\(\"([^\"]*)\"").matcher(source);
         int literals = 0;
         while (refusal.find()) {
@@ -82,11 +87,21 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
     @Test
     @DisplayName("every warning the mail import writes is classified: a missing part, or evidence")
     void everyWarningOfTheMailImportIsClassified() throws Exception {
-        String source = Files.readString(IMPORT, StandardCharsets.UTF_8);
-        int from = source.indexOf("private ExternalIngestResult executeMailImportInternal(");
-        int to = from < 0 ? -1 : source.indexOf("public ExternalIngestResult executeNoteImport(", from);
-        assertTrue(from >= 0 && to > from, "this lock no longer finds the mail import in " + IMPORT);
-        String body = source.substring(from, to);
+        String source = normalized(Files.readString(IMPORT, StandardCharsets.UTF_8));
+        String body = bodyOf(source, "private ExternalIngestResult executeMailImportInternal(");
+
+        // The public entry: what it does with the internal result is part of what the connectors read.
+        String entry = bodyOf(source, "public ExternalIngestResult executeMailImport(");
+        Matcher call = Pattern.compile("([A-Za-z_][A-Za-z0-9_]*)\\(").matcher(entry.substring(entry.indexOf('{')));
+        java.util.Set<String> entryCalls = new java.util.TreeSet<>();
+        while (call.find()) entryCalls.add(call.group(1));
+        assertEquals(new java.util.TreeSet<>(List.of("executeMailImportInternal", "newCaptureScope", "withCaptureOutcome")), entryCalls,
+                "the mail import's public entry does something to its result this lock does not read");
+        // withCaptureOutcome adds one warning: the capture record's own — evidence about the capture.
+        String capture = bodyOf(source, "ExternalIngestResult withCaptureOutcome(");
+        assertEquals(1, occurrences(capture, "warnings.add("), "withCaptureOutcome adds a warning this lock does not read");
+        assertEquals(1, occurrences(capture, "warnings.add(outcome.warning())"),
+                "withCaptureOutcome adds a warning other than the capture record's");
 
         Matcher add = Pattern.compile("warnings\\.add\\(\\s*(?:\"([^\"]*)\"|([A-Za-z_][A-Za-z0-9_]*)\\s*\\))").matcher(body);
         int literals = 0, passedOn = 0;
@@ -140,7 +155,7 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
         assertEquals(new java.util.TreeSet<>(HANDED_TO.keySet()), helpers,
                 "the mail import hands its warnings to a method this lock does not classify");
 
-        String reimport = methodBody(source, "private void emitReimportEvent(");
+        String reimport = bodyOf(source, "private void emitReimportEvent(");
         Matcher written = Pattern.compile("warnings\\.add\\(\\s*\"([^\"]*)\"").matcher(reimport);
         int reimportWarnings = 0;
         while (written.find()) {
@@ -172,13 +187,77 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
         return text.substring(start, end);
     }
 
-    /** A method's body, from its declaration to its closing brace at the class's indentation. */
-    private static String methodBody(String source, String declaration) {
+    /** A method's body in the normalized source: from its declaration to the brace that closes it. */
+    private static String bodyOf(String source, String declaration) {
         int from = source.indexOf(declaration);
         assertTrue(from >= 0, "this lock no longer finds " + declaration);
-        int to = source.indexOf("\n    }\n", from);
-        assertTrue(to > from, "this lock cannot find the end of " + declaration);
-        return source.substring(from, to);
+        assertEquals(-1, source.indexOf(declaration, from + 1), declaration + " is declared twice");
+        int depth = 0;
+        for (int i = source.indexOf('{', from); i < source.length(); i++) {
+            char c = source.charAt(i);
+            if (c == '"' || c == '\'') {
+                i = endOfLiteral(source, i);
+            } else if (c == '{') {
+                depth++;
+            } else if (c == '}' && --depth == 0) {
+                return source.substring(from, i + 1);
+            }
+        }
+        throw new AssertionError("this lock cannot find the end of " + declaration);
+    }
+
+    /** The index of the last character of the string, text-block or character literal starting at {@code at}. */
+    private static int endOfLiteral(String source, int at) {
+        if (source.startsWith("\"\"\"", at)) {
+            int end = at + 3;
+            while (!source.startsWith("\"\"\"", end) || source.charAt(end - 1) == '\\') end++;
+            return end + 2;
+        }
+        char quote = source.charAt(at);
+        int i = at + 1;
+        while (source.charAt(i) != quote) i += source.charAt(i) == '\\' ? 2 : 1;
+        return i;
+    }
+
+    /**
+     * The source as this lock reads it: comments dropped; outside string, text-block and character
+     * literals, every run of white space one space, and none next to {@code . ( ) , ;}. A call split
+     * over lines, or spaced, reads as the same call; a literal is kept as written.
+     */
+    static String normalized(String source) {
+        StringBuilder out = new StringBuilder(source.length());
+        boolean space = false;
+        for (int i = 0; i < source.length(); i++) {
+            char c = source.charAt(i);
+            if (source.startsWith("//", i)) {
+                int eol = source.indexOf('\n', i);
+                i = eol < 0 ? source.length() : eol - 1;
+                space = true;
+                continue;
+            }
+            if (source.startsWith("/*", i)) {
+                int close = source.indexOf("*/", i + 2);
+                i = close < 0 ? source.length() : close + 1;
+                space = true;
+                continue;
+            }
+            if (Character.isWhitespace(c)) {
+                space = true;
+                continue;
+            }
+            if (space && out.length() > 0 && ".(),;".indexOf(out.charAt(out.length() - 1)) < 0 && ".(),;".indexOf(c) < 0) {
+                out.append(' ');
+            }
+            space = false;
+            if (c == '"' || c == '\'') {
+                int end = endOfLiteral(source, i);
+                out.append(source, i, end + 1);
+                i = end;
+            } else {
+                out.append(c);
+            }
+        }
+        return out.toString();
     }
 
     @Test
