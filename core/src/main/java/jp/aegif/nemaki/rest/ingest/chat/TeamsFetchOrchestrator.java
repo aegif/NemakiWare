@@ -36,9 +36,11 @@ import java.util.Map;
  * <p>A page is passed — the next link saved — only when every message on it was imported,
  * skipped by the import service, or dead-lettered. The run's budget ({@code limit} messages
  * imported; a skip spends none, so a page read again is not held by what it already took) stops
- * INSIDE a page without passing it, and the next poll reads the same link again. A failure whose
+ * INSIDE a page without passing it, and the next poll reads the same link again; a message that
+ * imported part of itself before a part failed spends it too. A failure whose
  * row could not be written holds the page. At most {@code limit × 4} messages are tried in a run,
- * counted between pages. A run cut at the request cap saves the link it reached: nothing is lost.
+ * counted between pages. A run cut at the request cap saves the link it reached, and the next poll
+ * continues from it.
  *
  * <p>A message is imported with its body and every attachment. A failure is dead-lettered — a
  * download failure as a never-read row that the DLQ controller fetches again by the file's URL, a
@@ -199,10 +201,17 @@ public class TeamsFetchOrchestrator implements FetchOrchestrator {
                         break;
                     }
                     fetchSupport.throttle(throttleMs);
+                    int documentsBefore = counts.imported;
                     switch (attempt(callContext, profile, connector, teams, teamId, channelId, msg, errors, counts)) {
                         case IMPORTED -> { imported++; attempted++; }
                         case SKIPPED -> { }
-                        case FAILED_RECORDED -> attempted++;
+                        case FAILED_RECORDED -> {
+                            attempted++;
+                            // A message that imported part of itself — its body, say — before an
+                            // attachment failed has spent the budget as much as one imported whole;
+                            // not counting it let one page import past the limit (review, P2).
+                            if (counts.imported > documentsBefore) imported++;
+                        }
                         case FAILED_UNRECORDED -> { attempted++; unrecordedFailures++; }
                     }
                     if (unrecordedFailures > 0) {

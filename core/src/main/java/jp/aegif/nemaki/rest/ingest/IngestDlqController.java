@@ -423,7 +423,7 @@ public class IngestDlqController {
             }
 
             ExternalIngestResult result = dispatchByArchetype(callContext, request);
-            relinkToTheParent(callContext, request, result, response);
+            boolean parentLinked = relinkToTheParent(callContext, request, result, response);
 
             if (dlq.getRequestBinaryStrippedCount() > 0) {
                 // The stored request is byte-free by rule; say so, or a "success" here reads as
@@ -451,6 +451,18 @@ public class IngestDlqController {
                         + " read, so 'nothing to import' is not evidence that it was recovered."
                         + " The entry is kept. Re-fetch through the connector, then delete this"
                         + " entry if the item is confirmed present");
+                return ResponseEntity.ok(response);
+            }
+            if (!parentLinked && (result.skipped() || result.isSuccess())) {
+                // The item is in the repository, but its link to the message it belongs to could
+                // not be made. Deleting the row would leave it standing alone with nothing to retry
+                // from (review, P2): kept, and a retry — the import is idempotent — links it.
+                response.put("status", result.skipped() ? "resolved-entry-kept" : "success-entry-kept");
+                response.put("entryKept", true);
+                if (result.objectId() != null) response.put("objectId", result.objectId());
+                response.put("entryKeptNote", "the item was replayed, but its link to the message it belongs to could"
+                        + " not be made (see relationshipWarnings); the entry is kept so that a retry links it — the"
+                        + " replay itself is idempotent");
                 return ResponseEntity.ok(response);
             }
             if (result.skipped()) {
@@ -604,21 +616,26 @@ public class IngestDlqController {
      * import links from metadata only when a policy is set — so a replayed attachment stood alone
      * (review, P2). Linked here the way the normal path links (idempotent: a link that is there is
      * found, not doubled), for an import that succeeded or was skipped. A link that could not be
-     * made is a warning on the answer, not a failed replay: the document exists either way.
+     * made is not a failed replay — the document exists — but it is not a resolution either: the
+     * caller keeps the row so that a retry links it (review, P2).
+     *
+     * @return false when a parent was named and the link could not be made
      */
-    private void relinkToTheParent(CallContext callContext, ExternalIngestRequest request,
-                                   ExternalIngestResult result, Map<String, Object> response) {
+    private boolean relinkToTheParent(CallContext callContext, ExternalIngestRequest request,
+                                      ExternalIngestResult result, Map<String, Object> response) {
         Object parent = request.getMetadata() == null ? null : request.getMetadata().get("parentObjectId");
         if (parent == null || parent.toString().isBlank() || result == null || result.objectId() == null
                 || !(result.isSuccess() || result.skipped())) {
-            return;
+            return true;
         }
         List<String> linkWarnings = new ArrayList<>();
         fetchSupport.createRelationshipSafe(callContext, request.getRepositoryId(), parent.toString(),
                 result.objectId(), null, request, linkWarnings);
         if (!linkWarnings.isEmpty()) {
             response.put("relationshipWarnings", linkWarnings);
+            return false;
         }
+        return true;
     }
 
     /**

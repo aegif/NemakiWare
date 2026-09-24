@@ -477,6 +477,27 @@ class TeamsChannelsAreReadToTheCheckpointTest {
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }
 
+    /**
+     * A message whose body was imported before its attachment failed (and was recorded) has spent
+     * the budget: with a limit of 1 the second such message is not attempted, and the page is read
+     * again next poll — not a page of fifty partial imports past the limit (Codex P2).
+     */
+    @Test
+    @DisplayName("Teams: a message that imported part of itself before a part failed spends the budget")
+    void teamsAMessageThatImportedPartOfItselfSpendsTheBudget() {
+        failingDownloads = List.of("F-bad1", "F-bad2");
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2",
+                msgWithFile("m1", "2026-01-01T00:00:01Z", "F-bad1"), msgWithFile("m2", "2026-01-01T00:00:02Z", "F-bad2")));
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs(String.format(STORED, base));
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 1);
+
+        assertEquals(List.of("m1"), importedIds, "a message past the limit was imported: " + importedIds);
+        assertTrue(result.incompleteReads().stream().anyMatch(r -> r.contains("read again next poll")), result.incompleteReads().toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
     /** The budget reached at a page boundary: the page is passed and the next one is not asked for. */
     @Test
     @DisplayName("Teams: the budget reached at a page boundary passes the page and asks for no further one")

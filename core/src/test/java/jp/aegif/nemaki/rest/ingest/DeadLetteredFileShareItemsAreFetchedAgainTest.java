@@ -113,6 +113,13 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
 
         FetchSupport fetchSupport = mock(FetchSupport.class);
         when(fetchSupport.resolvePasswordOrRefuse(any())).thenReturn("tok");
+        if (relinkFails) {
+            org.mockito.Mockito.doAnswer(inv -> {
+                java.util.List<String> warnings = inv.getArgument(6);
+                warnings.add("the link could not be made");
+                return null;
+            }).when(fetchSupport).createRelationshipSafe(any(), any(), any(), any(), any(), any(), any());
+        }
 
         FileShareRefetch refetch = new FileShareRefetch();
         Field mattermostFactory = FileShareRefetch.class.getDeclaredField("mattermostFactory");
@@ -194,6 +201,8 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
     private IngestJobService jobService;
     /** The FetchSupport the last replay was given — the link to the parent is asked of it. */
     private FetchSupport lastFetchSupport;
+    /** Whether the link to the parent fails on the next replay. */
+    private boolean relinkFails;
 
     private static void wire(IngestDlqController controller, String field, Object value) throws Exception {
         Field f = IngestDlqController.class.getDeclaredField(field);
@@ -489,6 +498,21 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
 
         assertEquals(HttpStatus.OK, res.getStatusCode(), String.valueOf(res.getBody()));
         verify(lastFetchSupport).createRelationshipSafe(any(), eq("bedroom"), eq("obj-msg"), eq("obj-1"), isNull(), any(), any());
+    }
+
+    /** A replay whose link to the parent could not be made keeps its row: deleted, the attachment would stand alone with nothing to retry from (Codex P2). */
+    @Test
+    @DisplayName("a replay whose link to the parent fails keeps the entry for a retry")
+    void aReplayWhoseParentLinkFailsKeepsTheEntry() throws Exception {
+        relinkFails = true;
+        String row = "{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\",\"sourceObjectId\":\"F-1\",\"sourceObjectType\":\"attachment\","
+                + "\"metadata\":{\"slackFileUrl\":\"https://files.slack.com/files-pri/T1-F-1/download/a.pdf\",\"parentObjectId\":\"obj-msg\"}}";
+        ResponseEntity<?> res = retry("slack", SourceArchetype.CHAT_CONTEXT, false, null, row,
+                url -> new ByteArrayInputStream("fresh bytes".getBytes(StandardCharsets.UTF_8)), r -> { });
+
+        assertEquals(HttpStatus.OK, res.getStatusCode(), String.valueOf(res.getBody()));
+        assertTrue(String.valueOf(res.getBody()).contains("entryKept=true"), String.valueOf(res.getBody()));
+        verify(jobService, never()).deleteDlqEntry(any());
     }
 
     @Test

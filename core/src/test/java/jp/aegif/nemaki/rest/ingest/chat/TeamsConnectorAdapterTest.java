@@ -212,12 +212,28 @@ class TeamsConnectorAdapterTest {
         String host = "http://localhost:" + wireMock.port();
         assertTrue(adapter.isOwnDeltaLink(host + "/teams('T1')/channels('19:abc@thread.tacv2')/messages/delta()?$skiptoken=x", "T1", channel),
                 "the key syntax was refused");
-        assertTrue(adapter.isOwnDeltaLink(host + "/Teams/t1/Channels/19:ABC@thread.tacv2/messages/microsoft.graph.delta()?$deltatoken=y", "T1", channel),
-                "Graph's own case, or the qualified function name, was refused");
+        assertTrue(adapter.isOwnDeltaLink(host + "/Teams/T1/Channels/19:abc@thread.tacv2/MESSAGES/microsoft.graph.delta()?$deltatoken=y", "T1", channel),
+                "the path names in another case, or the qualified function name, were refused");
         assertFalse(adapter.isOwnDeltaLink(host + "/teams('T1')/channels('19:other@thread.tacv2')/messages/delta()?$skiptoken=x", "T1", channel),
                 "another channel in the key syntax was read as this channel's");
         assertFalse(adapter.isOwnDeltaLink(host + "/teams('T1')/channels('19:abc@thread.tacv2')/messages/delta()/extra", "T1", channel),
                 "a longer path was read as the feed");
+    }
+
+    /**
+     * Graph's resource ids are case-sensitive: a channel id in another case can be another channel,
+     * and its link is not this channel's (review, P1). A team GUID is the same GUID in either case.
+     */
+    @Test
+    void aDeltaLinkWithAnIdInAnotherCaseIsNotTheChannelsOwn() {
+        String host = "http://localhost:" + wireMock.port();
+        assertFalse(adapter.isOwnDeltaLink(host + "/teams/T1/channels/19:ABC@thread.tacv2/messages/delta", "T1", "19:abc@thread.tacv2"),
+                "a channel id in another case was read as this channel");
+        assertFalse(adapter.isOwnDeltaLink(host + "/teams/t1/channels/C1/messages/delta", "T1", "C1"),
+                "a team id that is not a GUID was folded to another case");
+        String guid = "fbe2bf47-16c8-47cf-b4a5-4b9b187c508b";
+        assertTrue(adapter.isOwnDeltaLink(host + "/teams/" + guid.toUpperCase() + "/channels/C1/messages/delta", guid, "C1"),
+                "the same team GUID in another case was refused");
     }
 
     /** A deleted message comes back marked — deletedDateTime, or the delta convention @removed — and is counted, not carried. */

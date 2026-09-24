@@ -119,9 +119,14 @@ public class TeamsConnectorAdapter {
      * or saved. Compared on the scheme, the host, the effective port and the DECODED path read as
      * OData segments: Graph writes the channel id raw in the links it returns ({@code 19:…@thread.tacv2})
      * where this connector writes it encoded, and Graph's links may use the key syntax
-     * ({@code teams('…')/channels('…')/messages/delta()} — its mail delta links do) and its own case.
-     * The same feed in every one of these spellings; a comparison of the strings refused every link
-     * Graph handed back and stopped the channel for good.
+     * ({@code teams('…')/channels('…')/messages/delta()} — its mail delta links do). The same feed in
+     * every one of these spellings; a comparison of the strings refused every link Graph handed back
+     * and stopped the channel for good.
+     *
+     * <p>The names in the path ({@code teams}, {@code channels}, {@code messages}, {@code delta}, the
+     * version) are compared ignoring case, as Graph reads them; the RESOURCE IDS are not — Graph's
+     * ids are case-sensitive, and a channel id folded to another case can name another channel
+     * (review, P1). A team id that is a GUID is compared as a GUID, whose case does not matter.
      */
     public boolean isOwnDeltaLink(String link, String teamId, String channelId) {
         if (link == null || teamId == null || channelId == null) return false;
@@ -139,18 +144,22 @@ public class TeamsConnectorAdapter {
             if (effectivePort(candidate) != effectivePort(own)) {
                 return false;
             }
-            List<String> expected = new ArrayList<>(odataSegments(own.getPath()));
-            expected.addAll(List.of("teams", teamId, "channels", channelId, "messages", "delta"));
+            List<String> basePath = odataSegments(own.getPath());
             List<String> actual = odataSegments(candidate.getPath());
-            if (actual.size() != expected.size()) {
+            int base = basePath.size();
+            // base…, teams, <team>, channels, <channel>, messages, delta
+            if (actual.size() != base + 6) {
                 return false;
             }
-            for (int i = 0; i < expected.size(); i++) {
-                if (!expected.get(i).equalsIgnoreCase(actual.get(i))) {
-                    return false;
-                }
+            for (int i = 0; i < base; i++) {
+                if (!basePath.get(i).equalsIgnoreCase(actual.get(i))) return false;
             }
-            return true;
+            return "teams".equalsIgnoreCase(actual.get(base))
+                    && sameTeamId(teamId, actual.get(base + 1))
+                    && "channels".equalsIgnoreCase(actual.get(base + 2))
+                    && channelId.equals(actual.get(base + 3))
+                    && "messages".equalsIgnoreCase(actual.get(base + 4))
+                    && "delta".equalsIgnoreCase(actual.get(base + 5));
         } catch (IllegalArgumentException malformed) {
             return false;
         }
@@ -180,6 +189,18 @@ public class TeamsConnectorAdapter {
             out.add(segment);
         }
         return out;
+    }
+
+    /** A team id: the same GUID in either case, otherwise exactly the same string. */
+    private static boolean sameTeamId(String expected, String actual) {
+        if (expected.length() == 36 && actual.length() == 36) {
+            try {
+                return java.util.UUID.fromString(expected).equals(java.util.UUID.fromString(actual));
+            } catch (IllegalArgumentException notAGuid) {
+                // fall through to the exact comparison
+            }
+        }
+        return expected.equals(actual);
     }
 
     private static int effectivePort(URI uri) {
