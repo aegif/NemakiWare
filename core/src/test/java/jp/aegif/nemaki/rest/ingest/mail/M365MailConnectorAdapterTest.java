@@ -149,6 +149,21 @@ class M365MailConnectorAdapterTest {
         assertFalse(adapter.isMailDeltaLink("not a url"));
     }
 
+    /**
+     * The path is split before each segment is decoded: a folder id holding an encoded '/' is one
+     * segment, and an encoded '/' is not a separator. Decoded first, the first link had a segment
+     * too many and was refused on every poll (review, P2).
+     */
+    @Test
+    void anEncodedSlashIsPartOfItsSegmentNotASeparator() {
+        String host = "http://localhost:" + wireMock.port();
+        assertTrue(adapter.isMailDeltaLink(host + "/me/mailFolders/AAMk%2FSlash/messages/delta?$deltatoken=y"),
+                "a folder id holding an encoded slash was split");
+        assertTrue(adapter.isMailDeltaLink(host + "/me/mailFolders('AAMk%2FSlash')/messages/delta()"),
+                "a key holding an encoded slash was split");
+        assertFalse(adapter.isMailDeltaLink(host + "/me/mailFolders%2Finbox/messages/delta"), "an encoded slash was read as a separator");
+    }
+
     @Test
     void aDeltaPageWithoutALinkIsRefused() {
         wireMock.stubFor(get(urlPathEqualTo("/me/mailFolders/inbox/messages/delta"))

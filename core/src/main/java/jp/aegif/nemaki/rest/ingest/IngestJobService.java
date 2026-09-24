@@ -244,12 +244,28 @@ public class IngestJobService {
      * way was refused for ever and nothing stopped a caller from naming one so (R10).
      */
     public boolean saveWebhookDeliveryRecordToDlq(ExternalIngestRequest request, String errorMessage) {
-        return saveToDlqReporting(request, errorMessage, null, true, false, true);
+        return saveToDlqReporting(request, errorMessage, null, true, false, true, false);
+    }
+
+    /**
+     * A row that RECORDS a possible gap in a chat source — messages it may have had and no longer
+     * answers. It carries no item and is not replayable; the retry door refuses it by this mark,
+     * which no caller of the ingest API can set (review, P2).
+     */
+    public boolean saveGapRecordToDlq(ExternalIngestRequest request, String errorMessage) {
+        return saveToDlqReporting(request, errorMessage, null, true, false, false, true);
     }
 
     boolean saveToDlqReporting(ExternalIngestRequest request, String errorMessage,
             byte[] contentBytes, boolean sourceNeverRead, boolean sourceWasRead,
             boolean webhookDeliveryRecord) {
+        return saveToDlqReporting(request, errorMessage, contentBytes, sourceNeverRead, sourceWasRead,
+                webhookDeliveryRecord, false);
+    }
+
+    boolean saveToDlqReporting(ExternalIngestRequest request, String errorMessage,
+            byte[] contentBytes, boolean sourceNeverRead, boolean sourceWasRead,
+            boolean webhookDeliveryRecord, boolean gapRecord) {
         // Bounded re-merge on a compare-and-swap conflict: the row changed under this save
         // (another failure of the same item, a reservation, a confirming write). The merge is
         // recomputed from a fresh read. Three losses in a row is contention this save will not
@@ -257,7 +273,7 @@ public class IngestJobService {
         for (int attempt = 1; attempt <= 3; attempt++) {
             try {
                 return saveToDlqOnce(request, errorMessage, contentBytes, sourceNeverRead,
-                        sourceWasRead, webhookDeliveryRecord);
+                        sourceWasRead, webhookDeliveryRecord, gapRecord);
             } catch (DlqWriteConflictException lost) {
                 logger.warn("the DLQ save for {} lost a write race (attempt {} of 3): {}",
                         request.getSourceObjectId(), attempt, lost.getMessage());
@@ -270,7 +286,7 @@ public class IngestJobService {
 
     private boolean saveToDlqOnce(ExternalIngestRequest request, String errorMessage,
             byte[] contentBytes, boolean sourceNeverRead, boolean sourceWasRead,
-            boolean webhookDeliveryRecord) {
+            boolean webhookDeliveryRecord, boolean gapRecord) {
         try {
             String dlqId = deadLetterIdFor(request);
             // The WRITE path must not inherit the read path's refusal. getDlqEntry refuses a
@@ -342,6 +358,7 @@ public class IngestJobService {
                     || (!sourceWasRead && existing != null && existing.isSourceNeverRead()));
             // Set by the WRITER, never inherited: the row means what its latest save says.
             dlq.setWebhookDeliveryRecord(webhookDeliveryRecord);
+            dlq.setGapRecord(gapRecord);
 
             // The payload is encrypted or it is not written. Storing ingested bytes in the
             // clear in nemaki_conf — no ACL of its own, no retention — is not an acceptable

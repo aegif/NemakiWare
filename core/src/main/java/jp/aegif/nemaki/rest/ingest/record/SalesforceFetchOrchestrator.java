@@ -27,7 +27,11 @@ import java.util.regex.Pattern;
  * and {@code SystemModstamp} to the fields when they are missing, puts the profile's condition in
  * parentheses, adds the key condition {@code (SystemModstamp > T OR (SystemModstamp = T AND Id > 'I'))}
  * and orders by {@code SystemModstamp, Id}; a SOQL with its own ORDER BY, LIMIT, OFFSET, GROUP BY,
- * HAVING, FOR, WITH or USING at the top level is refused. SystemModstamp rather than
+ * HAVING, FOR, WITH or USING at the top level is refused, and so is one that carries a statement
+ * separator, a comment or a word that changes data ({@code DELETE}, {@code UPDATE}, {@code INSERT})
+ * outside its quoted strings — as the profile's error, before anything is sent. Only the top-level
+ * fields are read for Id and SystemModstamp: a sub-query's or a TYPEOF's own Id is not the record's.
+ * SystemModstamp rather than
  * LastModifiedDate: every change sets it, it is indexed, and it cannot be back-dated — a data load
  * can set LastModifiedDate below a watermark. Salesforce stores these timestamps to the second and
  * SOQL writes them to the second; {@code Id} breaks ties, so a second holding any number of records
@@ -37,8 +41,11 @@ import java.util.regex.Pattern;
  * and every batch of the answer is read ({@code nextRecordsUrl}), up to
  * {@code salesforceQueryMaxRequests} (default 50) requests; the records come in key order, so what
  * a cut request cap leaves read is a prefix and is taken. The answer is checked whole before any
- * record is taken — every record with an Id and a SystemModstamp, in key order — and one that is
- * not is refused: nothing is taken and the checkpoint does not move. Each
+ * record is taken — every record with an Id and a SystemModstamp, in key order from the checkpoint
+ * on — and one that is not is refused: nothing is taken and the checkpoint does not move. Within one
+ * second the Ids are compared case-sensitively: Salesforce documents its Ids as case-sensitive, and
+ * the key's {@code Id > 'I'} is taken to continue in that order (not measured against a real org).
+ * Each
  * record settles (imported, or skipped by the import service) or is dead-lettered as read with its
  * JSON — the replay imports it — and the checkpoint moves over it; a failure whose row could not be
  * written stops the run with the checkpoint before it. The budget counts settled records; at most
@@ -111,6 +118,13 @@ public class SalesforceFetchOrchestrator implements FetchOrchestrator {
      */
     static Soql parse(String soql) {
         String text = soql == null ? "" : soql.trim();
+        // The adapter refuses these too, before it sends; refused HERE they are the profile's error.
+        // Refused there, the run reported a "connection failed" for a SOQL the operator wrote (review, P2).
+        String prohibited = SalesforceConnectorAdapter.prohibitedIn(text);
+        if (prohibited != null) {
+            throw new IllegalArgumentException("the profile's Salesforce SOQL carries '" + prohibited
+                    + "' outside a quoted string; a query is one read-only statement, and nothing was read");
+        }
         List<int[]> words = topLevelWords(text);
         int select = -1, from = -1, where = -1;
         for (int[] w : words) {
@@ -162,14 +176,59 @@ public class SalesforceFetchOrchestrator implements FetchOrchestrator {
         return out;
     }
 
-    /** The fields with Id and SystemModstamp added when the profile's list does not name them. */
+    /**
+     * The fields with Id and SystemModstamp added when the profile's list does not name them at the
+     * top level. Split at every comma, the list took a sub-query's {@code Id}
+     * ({@code (SELECT Name, Id FROM Contacts)}) for the record's, added none, and the answer — its
+     * records without an Id — was refused on every poll.
+     */
     static String withKeyFields(String fields) {
         List<String> names = new ArrayList<>();
-        for (String f : fields.split(",")) names.add(f.trim().toUpperCase(Locale.ROOT));
+        for (String f : topLevelFields(fields)) names.add(f.toUpperCase(Locale.ROOT));
         StringBuilder out = new StringBuilder(fields.trim());
         if (!names.contains("ID")) out.append(", Id");
         if (!names.contains("SYSTEMMODSTAMP")) out.append(", SystemModstamp");
         return out.toString();
+    }
+
+    /**
+     * The items of a SELECT list at the top level: split at the commas outside parentheses, quoted
+     * strings and {@code TYPEOF … END} — whose {@code THEN} lists are the related object's fields.
+     */
+    static List<String> topLevelFields(String fields) {
+        List<String> out = new ArrayList<>();
+        int depth = 0, typeOf = 0, start = 0;
+        boolean quoted = false;
+        for (int i = 0; i < fields.length(); i++) {
+            char c = fields.charAt(i);
+            if (quoted) {
+                if (c == '\\') i++;
+                else if (c == '\'') quoted = false;
+                continue;
+            }
+            if (c == '\'') { quoted = true; continue; }
+            if (c == '(') { depth++; continue; }
+            if (c == ')') { depth--; continue; }
+            if (depth == 0 && Character.isLetter(c) && (i == 0 || !isWordChar(fields.charAt(i - 1)))) {
+                int end = i;
+                while (end < fields.length() && isWordChar(fields.charAt(end))) end++;
+                String word = fields.substring(i, end).toUpperCase(Locale.ROOT);
+                if (word.equals("TYPEOF")) typeOf++;
+                else if (word.equals("END") && typeOf > 0) typeOf--;
+                i = end - 1;
+                continue;
+            }
+            if (c == ',' && depth == 0 && typeOf == 0) {
+                out.add(fields.substring(start, i).trim());
+                start = i + 1;
+            }
+        }
+        out.add(fields.substring(start).trim());
+        return out;
+    }
+
+    private static boolean isWordChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '_';
     }
 
     /** The key a checkpoint names: the SystemModstamp to the second, and the Id. */
@@ -314,6 +373,7 @@ public class SalesforceFetchOrchestrator implements FetchOrchestrator {
             // part of it would move the checkpoint over a record not yet taken.
             List<Instant> stamps = new ArrayList<>();
             Instant last = from == null ? null : from.at();
+            String lastId = from == null ? null : from.id();
             for (var rec : records) {
                 Instant stamp = readTimestamp(asText(rec.fields().get("SystemModstamp")));
                 // To the second: what Salesforce stores and what a SOQL literal carries.
@@ -328,7 +388,16 @@ public class SalesforceFetchOrchestrator implements FetchOrchestrator {
                             + "nothing on the answer was taken");
                     return new FetchResult(fetched, 0, 0, errors, List.copyOf(incompleteReads));
                 }
+                // Within one second, the Id: an answer whose records of one second — or whose first
+                // record, against the checkpoint — are not in Id order would move the checkpoint past
+                // a record not yet taken; the next query's Id > 'I' would never select it (review, P1).
+                if (last != null && at.equals(last) && lastId != null && rec.id().compareTo(lastId) <= 0) {
+                    FetchSupport.addError(errors, "Salesforce answered record " + rec.id() + " out of Id order within its "
+                            + "SystemModstamp second (after " + lastId + "); nothing on the answer was taken");
+                    return new FetchResult(fetched, 0, 0, errors, List.copyOf(incompleteReads));
+                }
                 last = at;
+                lastId = rec.id();
                 stamps.add(at);
             }
 

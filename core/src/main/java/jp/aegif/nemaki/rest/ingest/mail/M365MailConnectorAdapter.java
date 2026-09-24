@@ -152,8 +152,8 @@ public class M365MailConnectorAdapter {
     /** The mailbox ({@code me} or {@code users/<id>}) and the folder a mail delta link names; null when it is not one. */
     private List<String> mailboxAndFolder(String link) {
         if (!isMailDeltaLink(link)) return null;
-        List<String> base = odataSegments(URI.create(graphBase).getPath());
-        List<String> path = odataSegments(URI.create(link).getPath());
+        List<String> base = jp.aegif.nemaki.rest.ingest.GraphLinkPath.odataSegments(URI.create(graphBase));
+        List<String> path = jp.aegif.nemaki.rest.ingest.GraphLinkPath.odataSegments(URI.create(link));
         List<String> rest = path.subList(base.size(), path.size());
         return "me".equalsIgnoreCase(rest.get(0)) ? List.of("me", rest.get(2)) : List.of("users/" + rest.get(1), rest.get(3));
     }
@@ -181,9 +181,11 @@ public class M365MailConnectorAdapter {
 
     /**
      * Whether a link is a mail-folder delta link on THIS endpoint — the only links read or saved:
-     * the scheme, the host, the effective port, and a decoded path of the shape
+     * the scheme, the host, the effective port, and a path of the shape
      * {@code <base>/(me | users/<id>)/mailFolders/<id>/messages/delta}, read as OData segments (the
-     * key syntax {@code mailFolders('…')} and {@code delta()} included, the names in any case).
+     * key syntax {@code mailFolders('…')} and {@code delta()} included, the names in any case) — split
+     * before each segment is decoded, so an id holding an encoded {@code /} is one segment
+     * ({@link jp.aegif.nemaki.rest.ingest.GraphLinkPath}).
      *
      * <p>The mailbox and folder VALUES are not compared. Graph's documentation writes the same feed
      * as {@code mailFolders/{id}} and as {@code mailfolders('{id}')}, and a mailbox given as a UPN or
@@ -209,8 +211,8 @@ public class M365MailConnectorAdapter {
             if (effectivePort(candidate) != effectivePort(own)) {
                 return false;
             }
-            List<String> base = odataSegments(own.getPath());
-            List<String> path = odataSegments(candidate.getPath());
+            List<String> base = jp.aegif.nemaki.rest.ingest.GraphLinkPath.odataSegments(own);
+            List<String> path = jp.aegif.nemaki.rest.ingest.GraphLinkPath.odataSegments(candidate);
             for (int i = 0; i < base.size(); i++) {
                 if (i >= path.size() || !base.get(i).equalsIgnoreCase(path.get(i))) return false;
             }
@@ -237,28 +239,6 @@ public class M365MailConnectorAdapter {
         return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : "http".equalsIgnoreCase(uri.getScheme()) ? 80 : -1;
     }
 
-    private static final java.util.regex.Pattern KEY_SEGMENT = java.util.regex.Pattern.compile("^([^(]+)\\('(.*)'\\)$");
-
-    /** A decoded path as OData segments: {@code name('key')} is two segments, {@code delta()} is {@code delta}. */
-    static List<String> odataSegments(String decodedPath) {
-        List<String> out = new ArrayList<>();
-        if (decodedPath == null) return out;
-        for (String part : decodedPath.split("/")) {
-            if (part.isEmpty()) continue;
-            java.util.regex.Matcher key = KEY_SEGMENT.matcher(part);
-            if (key.matches()) {
-                out.add(key.group(1));
-                out.add(key.group(2).replace("''", "'"));
-                continue;
-            }
-            String segment = part.endsWith("()") ? part.substring(0, part.length() - 2) : part;
-            if (segment.startsWith("microsoft.graph.")) {
-                segment = segment.substring("microsoft.graph.".length());
-            }
-            out.add(segment);
-        }
-        return out;
-    }
 
     /**
      * One page of the delta feed at {@code link}, asked with {@code Prefer: odata.maxpagesize}. A

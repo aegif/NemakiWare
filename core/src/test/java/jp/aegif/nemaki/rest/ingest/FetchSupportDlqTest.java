@@ -90,6 +90,22 @@ public class FetchSupportDlqTest {
         assertTrue(fetchSupport.saveWebhookDeliveryRecordToDlq(req, "not fetched"));
     }
 
+    @Test
+    public void saveGapRecordToDlqReportsTheServicesAnswer() {
+        IngestJobService jobService = mock(IngestJobService.class);
+        when(jobService.saveGapRecordToDlq(any(), any())).thenReturn(false);
+        FetchSupport fetchSupport = new FetchSupport();
+        fetchSupport.setIngestJobService(jobService);
+        ExternalIngestRequest req = new ExternalIngestRequest();
+        req.setSourceObjectId("gap:R1:1000-2001");
+
+        assertFalse(fetchSupport.saveGapRecordToDlq(req, "a possible gap"),
+                "the helper claimed a record the service said it did not write");
+
+        when(jobService.saveGapRecordToDlq(any(), any())).thenReturn(true);
+        assertTrue(fetchSupport.saveGapRecordToDlq(req, "a possible gap"));
+    }
+
     // ── R4: the after-import link carries its authority, or is not made ──
 
     @Test

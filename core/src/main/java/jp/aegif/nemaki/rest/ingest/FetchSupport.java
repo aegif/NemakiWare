@@ -309,6 +309,22 @@ public class FetchSupport {
     }
 
     /**
+     * A row that RECORDS a possible gap in a chat source — marked as such by the service, not by
+     * anything the request carries (review, P2). Same boolean contract as above.
+     */
+    public boolean saveGapRecordToDlq(ExternalIngestRequest request, String errorMessage) {
+        if (ingestJobService == null) {
+            return false;
+        }
+        try {
+            return ingestJobService.saveGapRecordToDlq(request, errorMessage);
+        } catch (Exception e) {
+            logger.warn("Failed to save to DLQ — a possible gap may go unrecorded: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Sleep for the throttle delay, if configured. Also sends a progress-based
      * heartbeat at most once per 5 minutes.
      */

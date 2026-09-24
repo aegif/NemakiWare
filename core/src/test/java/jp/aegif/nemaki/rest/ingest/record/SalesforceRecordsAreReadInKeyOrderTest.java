@@ -76,6 +76,8 @@ class SalesforceRecordsAreReadInKeyOrderTest {
     private static volatile boolean noRecordsArray;
     /** Answer the records against the requested order: the second of each pair swapped. */
     private static volatile boolean outOfOrder;
+    /** Answer from the beginning, whatever key the query names. */
+    private static volatile boolean keyIgnored;
     /** Ids answered without their SystemModstamp. */
     private static volatile java.util.Set<String> unstamped = java.util.Set.of();
     /** The SOQL strings asked for, in order. */
@@ -127,6 +129,7 @@ class SalesforceRecordsAreReadInKeyOrderTest {
         doneWithoutNext = false;
         noRecordsArray = false;
         outOfOrder = false;
+        keyIgnored = false;
         unstamped = java.util.Set.of();
         QUERIES.clear();
         NEXT_PATHS.clear();
@@ -152,7 +155,7 @@ class SalesforceRecordsAreReadInKeyOrderTest {
         Matcher key = KEY.matcher(q);
         Instant keyAt = null;
         String keyId = null;
-        if (key.find()) {
+        if (key.find() && !keyIgnored) {
             keyAt = Instant.parse(key.group(1));
             keyId = key.group(3);
         }
@@ -366,6 +369,55 @@ class SalesforceRecordsAreReadInKeyOrderTest {
         assertTrue(QUERIES.isEmpty(), QUERIES.toString());
     }
 
+    /**
+     * A statement separator, a comment or a word that changes data is refused outside a quoted
+     * string only, and as a whole word: inside one it is data, and {@code Last_Updated__c} is a
+     * field. Searched for as letters anywhere, {@code WHERE Status__c = 'Updated'} was refused on
+     * every poll.
+     */
+    @Test
+    @DisplayName("Salesforce: a mutation word inside a quoted string, or inside a field's name, is not a mutation")
+    void salesforceAWordInsideAQuotedStringIsNotAMutation() {
+        org = five();
+        String soql = "SELECT Id, Name, Last_Updated__c FROM Account WHERE Status__c = 'Updated' AND Name != 'x -- y; delete'";
+        FetchResult result = salesforce().execute(null, profile(), connector(), Map.of("soql", soql), 10);
+
+        assertFalse(result.hasErrors(), result.errors().toString());
+        assertEquals(5, importedIds.size(), importedIds.toString());
+        assertTrue(QUERIES.get(0).contains("(Status__c = 'Updated' AND Name != 'x -- y; delete')"), QUERIES.toString());
+    }
+
+    /** Outside a quoted string they are the profile's error, before anything is sent — not a failed connection. */
+    @Test
+    @DisplayName("Salesforce: a statement separator or a comment outside a quoted string is the profile's error")
+    void salesforceAStatementOrACommentOutsideAQuotedStringIsTheProfilesError() {
+        for (String soql : List.of("SELECT Id FROM Account WHERE Name = 'a' -- the rest", "SELECT Id FROM Account WHERE Name = 'a'; DELETE FROM Account")) {
+            FetchResult result = salesforce().execute(null, profile(), connector(), Map.of("soql", soql), 10);
+            assertTrue(result.errors().stream().anyMatch(e -> e.contains("the profile's Salesforce SOQL carries")), soql + ": " + result.errors());
+        }
+        assertTrue(QUERIES.isEmpty(), QUERIES.toString());
+    }
+
+    /**
+     * Id and SystemModstamp are looked for among the top-level fields only: a sub-query's Id, or one
+     * in a TYPEOF's THEN list, is another object's. Taken for the record's, no Id was added and the
+     * answer — records without an Id — was refused on every poll. Each Id sits between two other
+     * fields, where a split at every comma makes it an item of its own: at the end of a THEN list
+     * ({@code THEN Id, Name END}) the split leaves {@code Id END}, and the example told nothing apart.
+     */
+    @Test
+    @DisplayName("Salesforce: an Id inside a sub-query or a TYPEOF is not the record's, and the record's is added")
+    void salesforceAnIdInsideASubQueryOrATypeofIsNotTheRecordsId() {
+        org = five();
+        salesforce().execute(null, profile(), connector(), Map.of("soql", "SELECT Name, (SELECT Name, Id, Email FROM Contacts) FROM Account"), 10);
+        salesforce().execute(null, profile(), connector(), Map.of("soql", "SELECT TYPEOF What WHEN Account THEN Name, Id, Phone END FROM Event"), 10);
+
+        assertTrue(QUERIES.get(0).startsWith("SELECT Name, (SELECT Name, Id, Email FROM Contacts), Id, SystemModstamp FROM Account "),
+                QUERIES.toString());
+        assertTrue(QUERIES.get(1).startsWith("SELECT TYPEOF What WHEN Account THEN Name, Id, Phone END, Id, SystemModstamp FROM Event "),
+                QUERIES.toString());
+    }
+
     /** A clause word inside a sub-query or a literal is not a clause of the query. */
     @Test
     @DisplayName("Salesforce: a word inside a sub-query or a literal is not taken for a clause")
@@ -457,6 +509,41 @@ class SalesforceRecordsAreReadInKeyOrderTest {
 
         assertTrue(result.errors().stream().anyMatch(e -> e.contains("out of SystemModstamp order")), result.errors().toString());
         assertTrue(importedIds.isEmpty(), "part of an answer out of order was taken: " + importedIds);
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /**
+     * Within one second the Id orders the records. Taking an answer whose records of one second are
+     * not in Id order would put the checkpoint on a record with an unread one before it — the next
+     * query's {@code Id > 'I'} never selects that one again.
+     */
+    @Test
+    @DisplayName("Salesforce: records of one second answered out of Id order are refused whole")
+    void salesforceRecordsOfOneSecondOutOfIdOrderAreRefused() {
+        outOfOrder = true;
+        org = List.of(rec("A1", "2026-03-01T10:00:01Z"), rec("B2", "2026-03-01T10:00:01Z"), rec("C3", "2026-03-01T10:00:02Z"));
+        SalesforceFetchOrchestrator orchestrator = salesforce();
+        FetchResult result = orchestrator.execute(null, profile(), connector(), ACCOUNTS, 1);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("out of Id order within its SystemModstamp second")),
+                result.errors().toString());
+        assertTrue(importedIds.isEmpty(), "part of an answer out of Id order was taken: " + importedIds);
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /** The answer starts after the checkpoint's key; one that does not is not the answer asked for. */
+    @Test
+    @DisplayName("Salesforce: an answer whose first record is not after the checkpoint's key is refused whole")
+    void salesforceAnAnswerThatDoesNotStartAfterTheCheckpointKeyIsRefused() {
+        keyIgnored = true;
+        org = List.of(rec("A1", "2026-03-01T10:00:02Z"), rec("B2", "2026-03-01T10:00:02Z"), rec("C3", "2026-03-01T10:00:03Z"));
+        SalesforceFetchOrchestrator orchestrator = salesforce();
+        checkpointIs("key:2026-03-01T10:00:02Z|" + id("B2"));
+        FetchResult result = orchestrator.execute(null, profile(), connector(), ACCOUNTS, 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("out of Id order within its SystemModstamp second")),
+                result.errors().toString());
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }
 

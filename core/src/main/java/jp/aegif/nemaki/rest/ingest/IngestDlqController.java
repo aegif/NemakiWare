@@ -257,14 +257,16 @@ public class IngestDlqController {
                         + " no delivery and cannot be replayed; re-fetch through the connector,"
                         + " then delete this entry");
             }
-            // The same for a GAP row: it records messages a chat API no longer answers (Chatwork
-            // gives a room's latest 100 and nothing older). There is no item behind it; replayed,
-            // the chat import would make an empty document and the only record of the loss would
-            // be deleted with it.
-            if (jp.aegif.nemaki.rest.ingest.chat.ChatworkFetchOrchestrator.GAP_TYPE.equals(request.getSourceObjectType())) {
-                return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId + " records a gap: messages the"
-                        + " source no longer answers, so there is nothing to replay; the entry is kept. Delete it"
-                        + " once the gap is acknowledged");
+            // The same for a GAP row: it records messages a chat API may have had and no longer
+            // answers (Chatwork gives a room's latest 100 and nothing older). There is no item behind
+            // it; replayed, the chat import would make an empty document and the only record would be
+            // deleted with it. By the row's own mark, as above: the first version read the row's
+            // sourceObjectType, a caller-supplied string, and refused a genuine item of that type
+            // for ever (review, P2).
+            if (dlq.isGapRecord()) {
+                return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId + " records a possible gap: messages"
+                        + " the source may have had and no longer answers, so there is nothing to replay; the entry is"
+                        + " kept. Delete it once the gap is acknowledged");
             }
             // Whether the item's bytes can come back from its source instead of from the row:
             // a FILE_SHARE item of a system the re-fetch knows (Box, Dropbox). For such a row

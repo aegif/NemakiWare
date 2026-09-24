@@ -28,17 +28,19 @@ import java.util.Map;
  * recorded without its text.
  *
  * <p>Now the answer is checked whole — every message with a numeric id, or nothing is taken — and
- * sorted by id. A gap is possible only when the answer is full (100 messages) and its oldest message
- * is newer than the checkpoint: the gap is then recorded, as a dead-letter row naming the room and
- * the ids it lies between (the messages in it are ones this API cannot give; the DLQ controller does
- * not replay such a row), and the run goes on. The messages newer than the checkpoint are taken
+ * sorted by id. A gap is possible only when the answer is full (the API's 100) and its oldest message
+ * is newer than the checkpoint. Whether there IS one the answer cannot say — the ids are not
+ * consecutive, and exactly 100 new messages look the same — so it is recorded as a possible gap: a
+ * dead-letter row naming the room and the ids it would lie between, marked as a gap record by the
+ * service (the DLQ controller does not replay such a row), and the run goes on. The messages newer
+ * than the checkpoint are taken
  * oldest first within a budget of settled messages, at most {@code limit × 4} tried; a failure is
  * dead-lettered as read with the message's text, and passed; a failure or a gap whose row could not
  * be written stops the run with the checkpoint before it. The checkpoint is the newest message
  * passed.
  *
  * <p>Not covered: the messages that left the 100-message window before a poll reached them — the gap
- * row records where they were. Files: the room's latest 100, offered on every scheduled poll (the
+ * row records where they would have been. Files: the room's latest 100, offered on every scheduled poll (the
  * import service's dedupe answers for the ones imported).
  */
 public class ChatworkFetchOrchestrator implements FetchOrchestrator {
@@ -48,7 +50,10 @@ public class ChatworkFetchOrchestrator implements FetchOrchestrator {
     static final int WINDOW = 100;
     /** How many messages one run may TRY per unit of budget: bounds a run whose messages keep failing. */
     static final int ATTEMPTS_PER_BUDGET = 4;
-    /** The dead-letter row type of a gap: messages the API can no longer give. The DLQ controller does not replay it. */
+    /**
+     * The source object type of a gap row, for whoever reads the queue. The DLQ controller refuses to
+     * replay such a row by the mark the service writes, not by this type: any caller may send it.
+     */
     public static final String GAP_TYPE = "chat_gap";
 
     private FetchSupport fetchSupport;
@@ -134,16 +139,19 @@ public class ChatworkFetchOrchestrator implements FetchOrchestrator {
 
             long passed = checkpoint;
             if (checkpoint > 0 && ordered.size() >= WINDOW && idOf(ordered.get(0)) > checkpoint) {
-                // The window no longer reaches the checkpoint: the messages between were not
-                // answered, and this API cannot give them. Recorded, and the run goes on — stopping
-                // could not bring them back, and it stopped every later poll too (R107, P2).
+                // The window no longer reaches the checkpoint: if messages were sent between, they
+                // were not answered, and this API cannot give them. Whether there were any the answer
+                // cannot say — Chatwork's ids are not consecutive, and exactly 100 new messages would
+                // look the same (review, P2). Recorded as a POSSIBLE gap, and the run goes on:
+                // stopping could not bring them back, and it stopped every later poll too (R107, P2).
                 long oldest = idOf(ordered.get(0));
-                String why = "Chatwork room " + roomId + ": the API answers only the latest " + WINDOW + " messages, and the "
-                        + "messages after id " + checkpoint + " and before id " + oldest + " were not among them — they cannot be fetched";
+                String why = "Chatwork room " + roomId + ": a possible gap — the API answers only the latest " + WINDOW
+                        + " messages, the answer was full, and its oldest, id " + oldest + ", is newer than the checkpoint, id "
+                        + checkpoint + "; messages sent between them, if there were any, were not answered and cannot be fetched";
                 FetchSupport.addError(errors, why);
-                if (!fetchSupport.saveSourceNeverReadToDlq(gapRequest(profile, connector, roomId, checkpoint, oldest), why)) {
-                    FetchSupport.addError(errors, "the Chatwork gap in room " + roomId + " could not be dead-lettered; the checkpoint "
-                            + "holds so that it is found again");
+                if (!fetchSupport.saveGapRecordToDlq(gapRequest(profile, connector, roomId, checkpoint, oldest), why)) {
+                    FetchSupport.addError(errors, "the possible Chatwork gap in room " + roomId + " could not be dead-lettered; the "
+                            + "checkpoint holds so that it is found again");
                     return new FetchResult(fetched, 0, 0, errors, List.copyOf(incompleteReads));
                 }
             }

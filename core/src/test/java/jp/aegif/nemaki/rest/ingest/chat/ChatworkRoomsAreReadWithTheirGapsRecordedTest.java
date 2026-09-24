@@ -126,6 +126,9 @@ class ChatworkRoomsAreReadWithTheirGapsRecordedTest {
     private final List<String> importedIds = new ArrayList<>();
     private final List<String> dlqNeverRead = new ArrayList<>();
     private final List<ExternalIngestRequest> dlqNeverReadRequests = new ArrayList<>();
+    /** The possible gaps recorded — through the save that marks a row as a gap record. */
+    private final List<String> dlqGaps = new ArrayList<>();
+    private final List<ExternalIngestRequest> dlqGapRequests = new ArrayList<>();
     private final List<String> dlqRead = new ArrayList<>();
     private final Map<String, byte[]> dlqBytes = new HashMap<>();
     private boolean dlqWritable = true;
@@ -140,6 +143,8 @@ class ChatworkRoomsAreReadWithTheirGapsRecordedTest {
         importedIds.clear();
         dlqNeverRead.clear();
         dlqNeverReadRequests.clear();
+        dlqGaps.clear();
+        dlqGapRequests.clear();
         dlqRead.clear();
         dlqBytes.clear();
         lenient().when(fetchSupport.resolvePasswordOrRefuse(any())).thenReturn("cw-token");
@@ -149,6 +154,11 @@ class ChatworkRoomsAreReadWithTheirGapsRecordedTest {
             dlqNeverRead.add(call.getArgument(1));
             return dlqWritable;
         }).when(fetchSupport).saveSourceNeverReadToDlq(any(), anyString());
+        lenient().doAnswer(call -> {
+            dlqGapRequests.add(call.getArgument(0));
+            dlqGaps.add(call.getArgument(1));
+            return dlqWritable;
+        }).when(fetchSupport).saveGapRecordToDlq(any(), anyString());
         lenient().doAnswer(call -> {
             ExternalIngestRequest r = call.getArgument(0);
             dlqRead.add(call.getArgument(1));
@@ -217,8 +227,10 @@ class ChatworkRoomsAreReadWithTheirGapsRecordedTest {
     // ── the gap ───────────────────────────────────────────────────
 
     /**
-     * A full window whose oldest message is newer than the checkpoint: the messages between cannot
-     * be fetched. The gap is recorded, and the run goes on — it used to stop, and every poll after it.
+     * A full window whose oldest message is newer than the checkpoint: messages sent between, if
+     * there were any, cannot be fetched — and whether there were the answer cannot say. The possible
+     * gap is recorded through the save that marks the row as a gap record, and the run goes on — it
+     * used to stop, and every poll after it.
      */
     @Test
     @DisplayName("Chatwork: a full window past the checkpoint records the gap and goes on")
@@ -229,14 +241,16 @@ class ChatworkRoomsAreReadWithTheirGapsRecordedTest {
 
         FetchResult result = orchestrator.execute(null, profile(), connector(), ROOM, 200);
 
-        assertEquals(1, dlqNeverReadRequests.size(), "the gap was not recorded: " + dlqNeverRead);
-        ExternalIngestRequest gap = dlqNeverReadRequests.get(0);
+        assertEquals(1, dlqGapRequests.size(), "the gap was not recorded as a gap record: " + dlqGaps + " / " + dlqNeverRead);
+        assertTrue(dlqNeverRead.isEmpty(), "the gap was recorded as an ordinary row, which the retry door replays: " + dlqNeverRead);
+        ExternalIngestRequest gap = dlqGapRequests.get(0);
         assertEquals(ChatworkFetchOrchestrator.GAP_TYPE, gap.getSourceObjectType());
         assertEquals("1000", gap.getMetadata().get("gapAfterMessageId"));
         assertEquals("2001", gap.getMetadata().get("gapBeforeMessageId"));
         assertEquals(ChatworkFetchOrchestrator.WINDOW, importedIds.size(), "the run stopped at the gap: " + importedIds);
         assertEquals("2100", savedCheckpoint());
-        assertTrue(result.errors().stream().anyMatch(e -> e.contains("cannot be fetched")), result.errors().toString());
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("a possible gap") && e.contains("if there were any")),
+                result.errors().toString());
     }
 
     /** Fewer messages than the window: the room's whole history was answered, so a missing checkpoint message is no gap. */
@@ -249,7 +263,7 @@ class ChatworkRoomsAreReadWithTheirGapsRecordedTest {
 
         FetchResult result = orchestrator.execute(null, profile(), connector(), ROOM, 10);
 
-        assertTrue(dlqNeverRead.isEmpty(), "a gap was recorded for a short answer: " + dlqNeverRead);
+        assertTrue(dlqGaps.isEmpty() && dlqNeverRead.isEmpty(), "a gap was recorded for a short answer: " + dlqGaps + " / " + dlqNeverRead);
         assertEquals(List.of("1005", "1006"), importedIds);
         assertTrue(result.errors().isEmpty(), result.errors().toString());
     }

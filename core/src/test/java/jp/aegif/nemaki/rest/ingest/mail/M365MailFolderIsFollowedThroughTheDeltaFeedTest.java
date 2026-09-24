@@ -97,6 +97,12 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
         // another folder, is resolved to.
         server.createContext("/v1.0/users/" + USER + "/mailFolders/AAMkInbox", exchange -> json(exchange, 200, "{\"id\":\"" + FOLDER_ID + "\"}"));
         server.createContext("/v1.0/users/other@x.com/mailFolders/inbox", exchange -> json(exchange, 200, "{\"id\":\"AAMkOthersInbox\"}"));
+        // A folder whose id holds a '/': Graph's paths carry it encoded (%2F); the stub routes the
+        // decoded path.
+        server.createContext("/v1.0/users/" + USER + "/mailFolders/AAMk/Slash", exchange -> {
+            if (exchange.getRequestURI().getPath().endsWith("/mailFolders/AAMk/Slash")) json(exchange, 200, "{\"id\":\"AAMk/Slash\"}");
+            else deltaPages.respond(exchange, DELTA_CALLS.incrementAndGet());
+        });
         server.createContext("/v1.0/users/" + USER + "/mailFolders/Other", exchange -> {
             if (exchange.getRequestURI().getPath().endsWith("/mailFolders/Other")) json(exchange, 200, "{\"id\":\"AAMkOther\"}");
             else deltaPages.respond(exchange, DELTA_CALLS.incrementAndGet());
@@ -379,6 +385,27 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
 
         assertTrue(result.errors().stream().anyMatch(e -> e.contains("written for the folder 'aamkinbox'")), result.errors().toString());
         assertEquals(0, DELTA_CALLS.get());
+    }
+
+    /**
+     * A folder whose id holds a '/': the connector sends it encoded ({@code %2F}), and Graph's links
+     * carry it so. Split after decoding, such a link had one segment too many and was refused as not
+     * a mail delta link — on every poll (review, P2).
+     */
+    @Test
+    @DisplayName("M365: a folder whose id holds a slash is followed through Graph's encoded links")
+    void m365AFolderWhoseIdHoldsASlashIsFollowed() {
+        String slashed = base + "/v1.0/users/" + USER + "/mailFolders/AAMk%2FSlash/messages/delta?$deltatoken=t2";
+        deltaPages = (exchange, n) -> json(exchange, 200, pageLinking(slashed, false, msg("m7")));
+        M365MailFetchOrchestrator orchestrator = m365();
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), Map.of("folderId", "AAMk/Slash"), 10);
+
+        assertFalse(result.hasErrors(), result.errors().toString());
+        assertEquals(List.of("m7"), importedIds);
+        ArgumentCaptor<String> saved = ArgumentCaptor.forClass(String.class);
+        verify(checkpointManager).saveSimpleCheckpoint(eq("p-m365"), eq("m365mail.AAMk/Slash"), saved.capture());
+        assertEquals("delta:AAMk/Slash|" + slashed, saved.getValue());
     }
 
     /** The same mailbox named by its object id instead of its UPN answers the same folder: the feed goes on (review, P2). */

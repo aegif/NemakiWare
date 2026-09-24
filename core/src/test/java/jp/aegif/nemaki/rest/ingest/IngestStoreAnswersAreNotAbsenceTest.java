@@ -399,6 +399,29 @@ class IngestStoreAnswersAreNotAbsenceTest {
     }
 
     @Test
+    @DisplayName("a possible gap is written with its own mark, and an ordinary row without it")
+    void aGapRecordSaveWritesTheMark() {
+        // The mark the retry door reads; the first version read the row's sourceObjectType, the
+        // caller's string (review, P2).
+        Cloudant cloudant = mock(Cloudant.class);
+        ServiceCall<FindResult> find = findAnswering(List.of());
+        when(cloudant.postFind(any())).thenReturn(find);
+        ServiceCall<DocumentResult> post = writeAnswering(true);
+        when(cloudant.postDocument(any())).thenReturn(post);
+        IngestJobService jobs = serviceOn(cloudant);
+
+        assertTrue(jobs.saveGapRecordToDlq(itemRequest(), "a possible gap"));
+        assertTrue(jobs.saveToDlqReporting(itemRequest(), "boom", null, true, false));
+
+        ArgumentCaptor<PostDocumentOptions> written = ArgumentCaptor.forClass(PostDocumentOptions.class);
+        verify(cloudant, org.mockito.Mockito.times(2)).postDocument(written.capture());
+        assertEquals(Boolean.TRUE, written.getAllValues().get(0).document().get("gapRecord"),
+                "the gap row was written without its mark");
+        assertEquals(Boolean.FALSE, written.getAllValues().get(1).document().get("gapRecord"),
+                "an ordinary row was written as a gap record");
+    }
+
+    @Test
     @DisplayName("a query the store did not answer is the typed refusal, not a raw failure")
     @SuppressWarnings("unchecked")
     void aQueryTheStoreDidNotAnswerIsATypedRefusal() {

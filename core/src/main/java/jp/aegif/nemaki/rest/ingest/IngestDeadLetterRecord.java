@@ -197,6 +197,19 @@ public class IngestDeadLetterRecord {
     }
 
     /**
+     * True for a row that records a possible GAP in a chat source: messages that source may have
+     * had and no longer answers (Chatwork gives a room's latest 100). There is no item behind it:
+     * the retry door refuses to replay it. Only {@code IngestJobService.saveGapRecordToDlq} sets it
+     * — the first version keyed on the row's sourceObjectType, a string any caller of the ingest API
+     * may send, so a genuine item of that type was refused for ever (review, P2).
+     */
+    private boolean gapRecord;
+    public boolean isGapRecord() { return gapRecord; }
+    public void setGapRecord(boolean gapRecord) {
+        this.gapRecord = gapRecord;
+    }
+
+    /**
      * Storage bookkeeping of the row this record was READ from — never persisted, never
      * inherited. A write that follows a read is conditioned on this revision (a
      * compare-and-swap), so a concurrent save is a 409 to re-merge from rather than a lost

@@ -203,6 +203,19 @@ class TeamsConnectorAdapterTest {
     }
 
     /**
+     * The path is split before each segment is decoded — the parse the M365 mail connector shares:
+     * an id holding an encoded '/' is one segment, and an encoded '/' is not a separator.
+     */
+    @Test
+    void anEncodedSlashIsPartOfItsSegmentNotASeparator() {
+        String host = "http://localhost:" + wireMock.port();
+        assertTrue(adapter.isOwnDeltaLink(host + "/teams/T1/channels/19%3Aa%2Fb%40thread.tacv2/messages/delta", "T1", "19:a/b@thread.tacv2"),
+                "an id holding an encoded slash was split");
+        assertFalse(adapter.isOwnDeltaLink(host + "/teams/T1/channels%2F19:abc@thread.tacv2/messages/delta", "T1", "19:abc@thread.tacv2"),
+                "an encoded slash was read as a separator");
+    }
+
+    /**
      * Graph may spell the same feed in the OData key syntax, with delta() as a function call and
      * in its own case — its mail delta links do. All the channel's own; another channel is not.
      */

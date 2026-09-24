@@ -582,12 +582,29 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
                 + "\"sourceObjectType\":\"chat_gap\",\"metadata\":{\"channelId\":\"R1\",\"gapAfterMessageId\":\"1000\","
                 + "\"gapBeforeMessageId\":\"2001\"}}";
         ResponseEntity<?> res = retry("chatwork", SourceArchetype.CHAT_CONTEXT, false, null, row,
-                url -> new ByteArrayInputStream(new byte[0]), r -> { });
+                url -> new ByteArrayInputStream(new byte[0]), r -> r.setGapRecord(true));
 
         assertEquals(HttpStatus.CONFLICT, res.getStatusCode(), String.valueOf(res.getBody()));
-        assertTrue(String.valueOf(res.getBody()).contains("records a gap"), String.valueOf(res.getBody()));
+        assertTrue(String.valueOf(res.getBody()).contains("records a possible gap"), String.valueOf(res.getBody()));
         assertTrue(executed.isEmpty(), "a gap row was replayed: " + executed);
         verify(jobService, never()).deleteDlqEntry(any());
+    }
+
+    /**
+     * A row is a gap record by the mark the service writes, not by its type: sourceObjectType is the
+     * caller's string, and keyed on it a genuine item that carried "chat_gap" was refused for ever
+     * (review, P2).
+     */
+    @Test
+    @DisplayName("a row that only names the gap type is replayed like any other")
+    void aRowThatOnlyNamesTheGapTypeIsReplayed() throws Exception {
+        String row = "{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\",\"sourceObjectId\":\"m-1\","
+                + "\"sourceObjectType\":\"chat_gap\",\"fileName\":\"m-1.txt\",\"metadata\":{\"channelId\":\"R1\"}}";
+        ResponseEntity<?> res = retry("chatwork", SourceArchetype.CHAT_CONTEXT, true, "the message text", row,
+                url -> new ByteArrayInputStream(new byte[0]), r -> { });
+
+        assertEquals(HttpStatus.OK, res.getStatusCode(), String.valueOf(res.getBody()));
+        assertEquals(1, executed.size(), "a genuine item was refused as a gap: " + res.getBody());
     }
 
     /** A row that does not say what the text was is not read as an empty message. */

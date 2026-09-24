@@ -144,8 +144,8 @@ public class TeamsConnectorAdapter {
             if (effectivePort(candidate) != effectivePort(own)) {
                 return false;
             }
-            List<String> basePath = odataSegments(own.getPath());
-            List<String> actual = odataSegments(candidate.getPath());
+            List<String> basePath = jp.aegif.nemaki.rest.ingest.GraphLinkPath.odataSegments(own);
+            List<String> actual = jp.aegif.nemaki.rest.ingest.GraphLinkPath.odataSegments(candidate);
             int base = basePath.size();
             // base…, teams, <team>, channels, <channel>, messages, delta
             if (actual.size() != base + 6) {
@@ -165,31 +165,6 @@ public class TeamsConnectorAdapter {
         }
     }
 
-    private static final java.util.regex.Pattern KEY_SEGMENT = java.util.regex.Pattern.compile("^([^(]+)\\('(.*)'\\)$");
-
-    /**
-     * A decoded path as OData segments: {@code name('key')} is two segments, {@code delta()} and
-     * {@code microsoft.graph.delta()} are {@code delta}, empty segments are dropped.
-     */
-    static List<String> odataSegments(String decodedPath) {
-        List<String> out = new ArrayList<>();
-        if (decodedPath == null) return out;
-        for (String part : decodedPath.split("/")) {
-            if (part.isEmpty()) continue;
-            java.util.regex.Matcher key = KEY_SEGMENT.matcher(part);
-            if (key.matches()) {
-                out.add(key.group(1));
-                out.add(key.group(2).replace("''", "'"));
-                continue;
-            }
-            String segment = part.endsWith("()") ? part.substring(0, part.length() - 2) : part;
-            if (segment.startsWith("microsoft.graph.")) {
-                segment = segment.substring("microsoft.graph.".length());
-            }
-            out.add(segment);
-        }
-        return out;
-    }
 
     /** A team id: the same GUID in either case, otherwise exactly the same string. */
     private static boolean sameTeamId(String expected, String actual) {

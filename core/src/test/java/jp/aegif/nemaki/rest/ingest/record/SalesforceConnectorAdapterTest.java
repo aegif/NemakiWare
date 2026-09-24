@@ -65,6 +65,36 @@ class SalesforceConnectorAdapterTest {
                 .withQueryParam("q", equalTo("SELECT Id, Name FROM Account WHERE Name = 'Acme'")));
     }
 
+    // ── What a query carries outside its quoted strings ──────────
+
+    /**
+     * A mutation word, a comment or a statement separator is refused outside a quoted string, as a
+     * whole word; inside one it is data, and a field named with the letters is a field. The first
+     * version searched the whole string for the letters.
+     */
+    @Test
+    void aWordInsideAQuotedStringIsNotAMutation() throws Exception {
+        assertNull(SalesforceConnectorAdapter.prohibitedIn(
+                "SELECT Id, Last_Updated__c FROM Account WHERE Status__c = 'Updated' AND Name = 'it\\'s -- ; delete'"));
+        wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
+                .willReturn(aResponse().withBody("{\"totalSize\":0,\"done\":true,\"records\":[]}")));
+        adapter.query("SELECT Id FROM Account WHERE Status__c = 'Updated'");
+        wireMock.verify(getRequestedFor(urlPathEqualTo("/services/data/v59.0/query"))
+                .withQueryParam("q", equalTo("SELECT Id FROM Account WHERE Status__c = 'Updated'")));
+    }
+
+    /** Outside a quoted string they are refused, and nothing is sent. */
+    @Test
+    void aStatementSeparatorACommentOrAMutationOutsideAQuotedStringIsNotSent() {
+        assertEquals(";", SalesforceConnectorAdapter.prohibitedIn("SELECT Id FROM Account WHERE Name = 'a\\';'; x"));
+        assertEquals("--", SalesforceConnectorAdapter.prohibitedIn("SELECT Id FROM Account -- x"));
+        assertEquals("UPDATE", SalesforceConnectorAdapter.prohibitedIn("SELECT Id FROM Account FOR update"));
+        IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
+                () -> adapter.query("SELECT Id FROM Account WHERE Name = 'a'; DELETE FROM Account"));
+        assertTrue(refused.getMessage().contains("refused to send"), refused.getMessage());
+        wireMock.verify(0, getRequestedFor(urlPathEqualTo("/services/data/v59.0/query")));
+    }
+
     // ── Record parsing with fields ───────────────────────────────
 
     @Test
