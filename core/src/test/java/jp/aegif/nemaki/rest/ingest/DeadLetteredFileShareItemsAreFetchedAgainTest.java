@@ -487,7 +487,8 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
 
     /**
      * An attachment row names the message document it belongs to; the replay links the two the
-     * way the orchestrator does on the normal path — whatever the profile's relationship policy,
+     * way the orchestrator does on the normal path (when the link cannot be made the row stays —
+     * the locks below) — whatever the profile's relationship policy,
      * which the chat import's own linking obeys (Codex P2 on Mattermost: a replayed attachment
      * stood alone for ever).
      */

@@ -796,7 +796,7 @@ class TeamsChannelsAreReadToTheCheckpointTest {
         assertEquals("hello m1", new String(dlqBodies.getOrDefault("m1", new byte[0]), StandardCharsets.UTF_8), "the row for the thrown body carries no bytes");
     }
 
-    /** The attachment row names the message document, so a replay links the attachment to it again (Codex P2 on Mattermost). */
+    /** The attachment row names the message document, so a replay can link the attachment to it again (Codex P2 on Mattermost). */
     @Test
     @DisplayName("Teams: a failed attachment row names its message document for the replay to link to")
     void teamsAFailedAttachmentRowNamesItsMessageDocument() {

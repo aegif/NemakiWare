@@ -53,7 +53,7 @@ class M365MailConnectorAdapterTest {
     void shouldSendBearerTokenOnEveryRequest() throws Exception {
         wireMock.stubFor(get(urlPathMatching("/me/mailFolders/.*"))
                 .willReturn(aResponse().withBody(deltaPage(""))));
-        adapter.delta(adapter.initialDeltaLink("inbox", null));
+        adapter.delta(adapter.initialDeltaLink("inbox"));
         wireMock.verify(getRequestedFor(urlPathMatching("/me/mailFolders/.*"))
                 .withHeader("Authorization", equalTo("Bearer test-graph-token")));
     }
@@ -68,7 +68,7 @@ class M365MailConnectorAdapterTest {
                      "from":{"emailAddress":{"address":"user@test.com"}},
                      "receivedDateTime":"2026-01-01T00:00:00Z"}"""))));
 
-        var page = adapter.delta(adapter.initialDeltaLink("inbox", null));
+        var page = adapter.delta(adapter.initialDeltaLink("inbox"));
         assertEquals(1, page.messages().size());
         assertEquals("msg1", page.messages().get(0).id());
         assertEquals("<abc@test>", page.messages().get(0).internetMessageId());
@@ -83,7 +83,7 @@ class M365MailConnectorAdapterTest {
     void theDeltaFeedAsksForItsPageSizeWithPrefer() throws Exception {
         wireMock.stubFor(get(urlPathEqualTo("/me/mailFolders/inbox/messages/delta"))
                 .willReturn(aResponse().withBody(deltaPage(""))));
-        adapter.delta(adapter.initialDeltaLink("inbox", null));
+        adapter.delta(adapter.initialDeltaLink("inbox"));
         wireMock.verify(getRequestedFor(urlPathEqualTo("/me/mailFolders/inbox/messages/delta"))
                 .withHeader("Prefer", equalTo("odata.maxpagesize=50")));
     }
@@ -93,17 +93,40 @@ class M365MailConnectorAdapterTest {
     void aRemovedMessageIsCountedNotCarried() throws Exception {
         wireMock.stubFor(get(urlPathEqualTo("/me/mailFolders/inbox/messages/delta"))
                 .willReturn(aResponse().withBody(deltaPage("{\"id\":\"gone\",\"@removed\":{\"reason\":\"deleted\"}}"))));
-        var page = adapter.delta(adapter.initialDeltaLink("inbox", null));
+        var page = adapter.delta(adapter.initialDeltaLink("inbox"));
         assertTrue(page.messages().isEmpty(), page.messages().toString());
         assertEquals(1, page.removed());
     }
 
+    /** No $filter: Graph caps a filtered delta query at 5,000 messages (review, P1). */
     @Test
-    void theInitialDeltaLinkSelectsAndFiltersOnReceivedToTheMillisecond() {
-        String link = adapter.initialDeltaLink("inbox", java.time.Instant.parse("2026-01-01T00:00:01Z"));
+    void theInitialDeltaLinkSelectsAndCarriesNoFilter() {
+        String link = adapter.initialDeltaLink("inbox");
         assertEquals("http://localhost:" + wireMock.port() + "/me/mailFolders/inbox/messages/delta"
-                + "?$select=id,internetMessageId,subject,from,receivedDateTime"
-                + "&$filter=receivedDateTime%20ge%202026-01-01T00%3A00%3A01.000Z", link);
+                + "?$select=id,internetMessageId,subject,from,receivedDateTime", link);
+    }
+
+    @Test
+    void theFolderIdentityIsTheIdGraphAnswersForTheFolder() throws Exception {
+        wireMock.stubFor(get(urlPathEqualTo("/me/mailFolders/inbox")).withQueryParam("$select", equalTo("id"))
+                .willReturn(aResponse().withBody("{\"id\":\"AAMkX\"}")));
+        assertEquals("AAMkX", adapter.folderIdentity("inbox"));
+    }
+
+    @Test
+    void aFolderAnsweredWithoutAnIdIsRefused() {
+        wireMock.stubFor(get(urlPathEqualTo("/me/mailFolders/inbox")).willReturn(aResponse().withBody("{\"displayName\":\"Inbox\"}")));
+        RuntimeException refused = assertThrows(RuntimeException.class, () -> adapter.folderIdentity("inbox"));
+        assertTrue(refused.getMessage().contains("without an id"), refused.getMessage());
+    }
+
+    /** A removal without an id cannot be accounted for: the page is refused (review, P3). */
+    @Test
+    void aRemovedEntryWithoutAnIdIsRefused() {
+        wireMock.stubFor(get(urlPathEqualTo("/me/mailFolders/inbox/messages/delta"))
+                .willReturn(aResponse().withBody(deltaPage("{\"@removed\":{\"reason\":\"deleted\"}}"))));
+        RuntimeException refused = assertThrows(RuntimeException.class, () -> adapter.delta(adapter.initialDeltaLink("inbox")));
+        assertTrue(refused.getMessage().contains("removed entry without an id"), refused.getMessage());
     }
 
     /**
@@ -130,7 +153,7 @@ class M365MailConnectorAdapterTest {
     void aDeltaPageWithoutALinkIsRefused() {
         wireMock.stubFor(get(urlPathEqualTo("/me/mailFolders/inbox/messages/delta"))
                 .willReturn(aResponse().withBody("{\"value\":[]}")));
-        RuntimeException refused = assertThrows(RuntimeException.class, () -> adapter.delta(adapter.initialDeltaLink("inbox", null)));
+        RuntimeException refused = assertThrows(RuntimeException.class, () -> adapter.delta(adapter.initialDeltaLink("inbox")));
         assertTrue(refused.getMessage().contains("@odata.nextLink or @odata.deltaLink"), refused.getMessage());
     }
 
@@ -138,7 +161,7 @@ class M365MailConnectorAdapterTest {
     void theDeltaFeedFailingIsAnError() {
         wireMock.stubFor(get(urlPathMatching("/me/mailFolders/.*"))
                 .willReturn(aResponse().withStatus(500).withBody("Server Error")));
-        assertThrows(RuntimeException.class, () -> adapter.delta(adapter.initialDeltaLink("inbox", null)));
+        assertThrows(RuntimeException.class, () -> adapter.delta(adapter.initialDeltaLink("inbox")));
     }
 
     // ── fetchMimeMessage ──
@@ -164,7 +187,7 @@ class M365MailConnectorAdapterTest {
         wireMock.stubFor(get(urlPathMatching("/users/.*/mailFolders/.*"))
                 .willReturn(aResponse().withBody(deltaPage(""))));
 
-        userAdapter.delta(userAdapter.initialDeltaLink("inbox", null));
+        userAdapter.delta(userAdapter.initialDeltaLink("inbox"));
         wireMock.verify(getRequestedFor(urlPathMatching("/users/admin%40contoso\\.com/mailFolders/.*")));
         assertEquals("admin@contoso.com", userAdapter.mailbox());
     }
@@ -174,7 +197,7 @@ class M365MailConnectorAdapterTest {
         wireMock.stubFor(get(urlPathMatching("/me/mailFolders/.*"))
                 .willReturn(aResponse().withBody(deltaPage(""))));
 
-        adapter.delta(adapter.initialDeltaLink("inbox", null));
+        adapter.delta(adapter.initialDeltaLink("inbox"));
         wireMock.verify(getRequestedFor(urlPathMatching("/me/mailFolders/.*")));
         assertEquals("me", adapter.mailbox());
     }

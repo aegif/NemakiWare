@@ -71,6 +71,13 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
     private static volatile String lastPrefer;
 
     private static final String USER = "u@x.com";
+    /** The same mailbox named by its object id. */
+    private static final String OBJECT_ID = "0f0e0d0c-0000-4000-8000-000000000001";
+    /** The id Graph answers for the inbox — what a checkpoint is bound to. */
+    private static final String FOLDER_ID = "AAMkInbox";
+    /** What the folder read answers: an id, or (null) a failure. */
+    private static volatile String folderAnswer = FOLDER_ID;
+    private static final AtomicInteger FOLDER_CALLS = new AtomicInteger();
     /** The inbox in the spelling Graph's own links may use: the key syntax, the folder by id. */
     private static final String GRAPH_SPELLED_FEED = "/v1.0/users('u@x.com')/mailfolders('AAMkInbox')/messages/delta()";
 
@@ -86,23 +93,36 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
                 deltaPages.respond(exchange, DELTA_CALLS.incrementAndGet());
             });
         }
+        for (String mailbox : List.of(USER, OBJECT_ID)) {
+            server.createContext("/v1.0/users/" + mailbox + "/mailFolders/inbox", exchange -> {
+                if (!exchange.getRequestURI().getPath().endsWith("/mailFolders/inbox")) {
+                    json(exchange, 404, "{\"error\":\"not here\"}");
+                    return;
+                }
+                FOLDER_CALLS.incrementAndGet();
+                if (folderAnswer == null) json(exchange, 500, "{\"error\":\"boom\"}");
+                else json(exchange, 200, "{\"id\":\"" + folderAnswer + "\"}");
+            });
+        }
         server.createContext("/v1.0/users/" + USER + "/mailFolders/inbox/messages", exchange -> {
             LISTING_CALLS.incrementAndGet();
             json(exchange, 200, "{\"value\":[]}");
         });
-        server.createContext("/v1.0/users/" + USER + "/messages/", exchange -> {
-            String[] parts = exchange.getRequestURI().getPath().split("/");
-            String id = parts[parts.length - 2];
-            if (failingFetches.contains(id)) {
-                json(exchange, 500, "{\"error\":\"boom\"}");
-            } else {
-                byte[] out = ("From: a@x.com\r\nSubject: " + id + "\r\n\r\nbody of " + id).getBytes(StandardCharsets.UTF_8);
-                exchange.getResponseHeaders().add("Content-Type", "message/rfc822");
-                exchange.sendResponseHeaders(200, out.length);
-                exchange.getResponseBody().write(out);
-                exchange.close();
-            }
-        });
+        for (String mailbox : List.of(USER, OBJECT_ID)) {
+            server.createContext("/v1.0/users/" + mailbox + "/messages/", exchange -> {
+                String[] parts = exchange.getRequestURI().getPath().split("/");
+                String id = parts[parts.length - 2];
+                if (failingFetches.contains(id)) {
+                    json(exchange, 500, "{\"error\":\"boom\"}");
+                } else {
+                    byte[] out = ("From: a@x.com\r\nSubject: " + id + "\r\n\r\nbody of " + id).getBytes(StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().add("Content-Type", "message/rfc822");
+                    exchange.sendResponseHeaders(200, out.length);
+                    exchange.getResponseBody().write(out);
+                    exchange.close();
+                }
+            });
+        }
         server.start();
         base = "http://127.0.0.1:" + server.getAddress().getPort();
     }
@@ -121,6 +141,9 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
     void reset() {
         LISTING_CALLS.set(0);
         DELTA_CALLS.set(0);
+        FOLDER_CALLS.set(0);
+        folderAnswer = FOLDER_ID;
+        skippedWithMissingAttachments = List.of();
         DELTA_LINKS.clear();
         lastPrefer = null;
         failingFetches = List.of();
@@ -172,6 +195,8 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
     private List<String> skippingImports = List.of();
     /** Ids the import answers "imported, but an attachment failed" for. */
     private List<String> attachmentWarningImports = List.of();
+    /** Ids the import answers "already imported" for, with an attachment it tried again and could not import. */
+    private List<String> skippedWithMissingAttachments = List.of();
 
     private M365MailFetchOrchestrator m365() {
         M365MailFetchOrchestrator orchestrator = new M365MailFetchOrchestrator();
@@ -203,6 +228,10 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
             if (failingImports.contains(id)) return ExternalIngestResult.error("r", "refused by the import service");
             if (throwingImports.contains(id)) throw new RuntimeException("the import service threw after reading the content");
             if (skippingImports.contains(id)) return ExternalIngestResult.skipped("r", "obj-" + id, "already imported");
+            if (skippedWithMissingAttachments.contains(id)) {
+                return new ExternalIngestResult("r", "obj-" + id, "1.0", false, false, true, "already imported", null, List.of(),
+                        List.of("Attachment 'a.pdf' import failed: boom"));
+            }
             importedIds.add(id);
             List<String> warnings = attachmentWarningImports.contains(id)
                     ? List.of("Attachment 'a.pdf' import failed: boom") : List.of();
@@ -245,14 +274,20 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
     private static final String KEY = "m365mail.inbox";
 
     private String stored(String kind, String token) {
-        return "delta:" + USER + "|" + link(kind, token);
+        return "delta:" + FOLDER_ID + "|" + link(kind, token);
+    }
+
+    private static ImportProfileDefinition profileReading(String userId) {
+        ImportProfileDefinition profile = profile();
+        profile.setSchedulerParams(Map.of("userId", userId, "folderId", "inbox"));
+        return profile;
     }
 
     // ── where the feed starts ──────────────────────────────────────
 
     @Test
-    @DisplayName("M365: a fresh profile reads the folder's whole delta feed, not the listing, and saves the link with its mailbox")
-    void m365AFreshProfileReadsTheWholeFeedAndSavesTheLinkWithItsMailbox() {
+    @DisplayName("M365: a fresh profile reads the folder's whole delta feed, not the listing, and saves the link with its folder")
+    void m365AFreshProfileReadsTheWholeFeedAndSavesTheLinkWithItsFolder() {
         deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2", msg("m1"), msg("m2")));
         FetchResult result = m365().execute(null, profile(), connector(), FOLDER, 10);
 
@@ -263,22 +298,26 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
         assertEquals(List.of("m1", "m2"), importedIds);
         assertTrue(result.sawEverything(), result.incompleteReads().toString());
         assertFalse(result.hasErrors(), result.errors().toString());
-        assertEquals("delta:" + USER + "|" + link("delta", "t2"), savedCheckpoint());
+        assertEquals("delta:" + FOLDER_ID + "|" + link("delta", "t2"), savedCheckpoint());
     }
 
-    /** The received-time checkpoint an earlier version wrote: the feed starts AT it (ge), to the millisecond. */
+    /**
+     * The received-time checkpoint an earlier version wrote: the WHOLE folder is read again, with no
+     * {@code $filter} — Graph caps a filtered delta query at 5,000 messages and ends the cut round
+     * like a complete one (review, P1).
+     */
     @Test
-    @DisplayName("M365: a legacy received-time checkpoint starts the feed at its time")
-    void m365ALegacyCheckpointStartsTheFeedAtItsTime() {
+    @DisplayName("M365: a legacy received-time checkpoint reads the whole folder again, with no filter")
+    void m365ALegacyCheckpointReadsTheWholeFolderAgain() {
         deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2", msg("m1")));
         M365MailFetchOrchestrator orchestrator = m365();
         checkpointIs("2026-01-01T00:00:01Z");
 
         orchestrator.execute(null, profile(), connector(), FOLDER, 10);
 
-        assertEquals(List.of(base + "/v1.0/users/u%40x.com/mailFolders/inbox/messages/delta?$select=id,internetMessageId,subject,from,receivedDateTime"
-                + "&$filter=receivedDateTime%20ge%202026-01-01T00%3A00%3A01.000Z"), DELTA_LINKS);
-        assertEquals("delta:" + USER + "|" + link("delta", "t2"), savedCheckpoint());
+        assertEquals(List.of(base + "/v1.0/users/u%40x.com/mailFolders/inbox/messages/delta?$select=id,internetMessageId,subject,from,receivedDateTime"),
+                DELTA_LINKS, "the legacy time was sent as a filter, which Graph caps at 5,000 messages");
+        assertEquals("delta:" + FOLDER_ID + "|" + link("delta", "t2"), savedCheckpoint());
     }
 
     @Test
@@ -294,32 +333,67 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }
 
-    /** A checkpoint written for another mailbox reads THAT mailbox: an error, not a place to continue from. */
+    /**
+     * The folder now answers another id — the token belongs to someone else (both are "me"), or the
+     * userId names another mailbox: the checkpoint's link reads the folder it was written for, so it
+     * is an error, not a place to continue from (review, P2).
+     */
     @Test
-    @DisplayName("M365: a checkpoint written for another mailbox is not followed")
-    void m365ACheckpointWrittenForAnotherMailboxIsNotFollowed() {
+    @DisplayName("M365: a checkpoint written for another folder is not followed")
+    void m365ACheckpointWrittenForAnotherFolderIsNotFollowed() {
+        folderAnswer = "AAMkBobsInbox";
         M365MailFetchOrchestrator orchestrator = m365();
-        checkpointIs("delta:other@x.com|" + link("delta", "t1"));
+        checkpointIs(stored("delta", "t1"));
 
         FetchResult result = orchestrator.execute(null, profile(), connector(), FOLDER, 10);
 
-        assertTrue(result.errors().stream().anyMatch(e -> e.contains("written for mailbox 'other@x.com'")), result.errors().toString());
-        assertEquals(0, DELTA_CALLS.get(), "another mailbox's feed was read: " + DELTA_LINKS);
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("written for the folder '" + FOLDER_ID + "'")
+                && e.contains("'AAMkBobsInbox'")), result.errors().toString());
+        assertEquals(0, DELTA_CALLS.get(), "another folder's feed was read: " + DELTA_LINKS);
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }
 
-    /** A mailbox named as a UPN is an address: the same mailbox in either case. */
+    /** Graph's ids are case-sensitive: an id in another case is another folder. */
     @Test
-    @DisplayName("M365: the checkpoint's mailbox is compared as an address, ignoring case")
-    void m365TheCheckpointMailboxIsComparedIgnoringCase() {
-        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2", msg("m7")));
+    @DisplayName("M365: the checkpoint's folder is compared exactly")
+    void m365TheCheckpointFolderIsComparedExactly() {
         M365MailFetchOrchestrator orchestrator = m365();
-        checkpointIs("delta:U@X.COM|" + link("delta", "t1"));
+        checkpointIs("delta:aamkinbox|" + link("delta", "t1"));
 
         FetchResult result = orchestrator.execute(null, profile(), connector(), FOLDER, 10);
 
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("written for the folder 'aamkinbox'")), result.errors().toString());
+        assertEquals(0, DELTA_CALLS.get());
+    }
+
+    /** The same mailbox named by its object id instead of its UPN answers the same folder: the feed goes on (review, P2). */
+    @Test
+    @DisplayName("M365: the same mailbox named by its object id continues the feed")
+    void m365TheSameMailboxByItsObjectIdContinuesTheFeed() {
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2", msg("m7")));
+        M365MailFetchOrchestrator orchestrator = m365();
+        checkpointIs(stored("delta", "t1"));
+
+        FetchResult result = orchestrator.execute(null, profileReading(OBJECT_ID), connector(), FOLDER, 10);
+
         assertFalse(result.hasErrors(), result.errors().toString());
         assertEquals(List.of("m7"), importedIds);
+        assertEquals(1, FOLDER_CALLS.get());
+    }
+
+    /** The folder cannot be read: the stored link cannot be checked against it, so nothing is read. */
+    @Test
+    @DisplayName("M365: a folder whose id cannot be read is an error, and nothing is read")
+    void m365AFolderWhoseIdCannotBeReadIsAnError() {
+        folderAnswer = null;
+        M365MailFetchOrchestrator orchestrator = m365();
+        checkpointIs(stored("delta", "t1"));
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), FOLDER, 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("reading the mail folder")), result.errors().toString());
+        assertEquals(0, DELTA_CALLS.get());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }
 
     @Test
@@ -337,8 +411,8 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
     }
 
     @Test
-    @DisplayName("M365: a stored delta value that names no mailbox is not followed")
-    void m365AStoredValueThatNamesNoMailboxIsNotFollowed() {
+    @DisplayName("M365: a stored delta value that names no folder is not followed")
+    void m365AStoredValueThatNamesNoFolderIsNotFollowed() {
         M365MailFetchOrchestrator orchestrator = m365();
         checkpointIs("delta:" + link("delta", "t1"));
 
@@ -365,7 +439,7 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
         assertFalse(result.hasErrors(), "Graph's own link was refused: " + result.errors());
         assertEquals(graphLink, DELTA_LINKS.get(1));
         assertEquals(List.of("m7", "m8"), importedIds);
-        assertEquals("delta:" + USER + "|" + link("delta", "t2"), savedCheckpoint());
+        assertEquals("delta:" + FOLDER_ID + "|" + link("delta", "t2"), savedCheckpoint());
     }
 
     // ── following the feed ─────────────────────────────────────────
@@ -385,7 +459,7 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
         assertEquals(link("skip", "s1"), DELTA_LINKS.get(1), "the nextLink was not followed");
         assertEquals(List.of("m7", "m8"), importedIds);
         assertTrue(result.sawEverything(), result.incompleteReads().toString());
-        assertEquals("delta:" + USER + "|" + link("delta", "t2"), savedCheckpoint());
+        assertEquals("delta:" + FOLDER_ID + "|" + link("delta", "t2"), savedCheckpoint());
     }
 
     @Test
@@ -402,7 +476,7 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
         assertEquals(List.of("m1"), importedIds);
         assertFalse(result.sawEverything(), result.toString());
         assertTrue(result.incompleteReads().stream().anyMatch(r -> r.contains("m365MessageMaxRequests")), result.incompleteReads().toString());
-        assertEquals("delta:" + USER + "|" + link("skip", "s1"), savedCheckpoint());
+        assertEquals("delta:" + FOLDER_ID + "|" + link("skip", "s1"), savedCheckpoint());
     }
 
     @Test
@@ -434,7 +508,7 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
         assertEquals(1, DELTA_CALLS.get(), DELTA_LINKS.toString());
         assertEquals(List.of("m7"), importedIds);
         assertTrue(result.incompleteReads().stream().anyMatch(r -> r.contains("continues from the saved link")), result.incompleteReads().toString());
-        assertEquals("delta:" + USER + "|" + link("skip", "s1"), savedCheckpoint());
+        assertEquals("delta:" + FOLDER_ID + "|" + link("skip", "s1"), savedCheckpoint());
     }
 
     @Test
@@ -449,7 +523,7 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
 
         assertEquals(List.of("m8"), importedIds);
         assertTrue(result.sawEverything(), result.incompleteReads().toString());
-        assertEquals("delta:" + USER + "|" + link("delta", "t2"), savedCheckpoint());
+        assertEquals("delta:" + FOLDER_ID + "|" + link("delta", "t2"), savedCheckpoint());
     }
 
     @Test
@@ -467,7 +541,7 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
         FetchResult result = orchestrator.execute(null, profile(), connector(), FOLDER, 10);
 
         assertTrue(result.errors().stream().anyMatch(e -> e.contains("could not be dead-lettered")), result.errors().toString());
-        assertEquals("delta:" + USER + "|" + link("skip", "s1"), savedCheckpoint());
+        assertEquals("delta:" + FOLDER_ID + "|" + link("skip", "s1"), savedCheckpoint());
     }
 
     /** A MIME that could not be fetched: a never-read row naming the message and its mailbox; the page passes. */
@@ -487,7 +561,7 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
         assertEquals(USER, dlqRequests.get(0).getMetadata().get("m365Mailbox"));
         assertEquals(List.of("m8"), importedIds);
         assertTrue(result.hasErrors(), result.toString());
-        assertEquals("delta:" + USER + "|" + link("delta", "t2"), savedCheckpoint());
+        assertEquals("delta:" + FOLDER_ID + "|" + link("delta", "t2"), savedCheckpoint());
     }
 
     @Test
@@ -501,7 +575,43 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
 
         assertEquals(List.of("m7"), importedIds);
         assertEquals(1, result.skipped(), result.toString());
-        assertEquals("delta:" + USER + "|" + link("delta", "t2"), savedCheckpoint());
+        assertEquals("delta:" + FOLDER_ID + "|" + link("delta", "t2"), savedCheckpoint());
+    }
+
+    /** A removal that names nothing is not one this connector can account for: the page is not passed on it (review, P3). */
+    @Test
+    @DisplayName("M365: a removed entry without an id holds its page, nothing on it imported")
+    void m365ARemovedEntryWithoutAnIdHoldsThePage() {
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2", "{\"@removed\":{\"reason\":\"deleted\"}}", msg("m1")));
+        M365MailFetchOrchestrator orchestrator = m365();
+        checkpointIs(stored("delta", "t1"));
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), FOLDER, 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("removed entry without an id")), result.errors().toString());
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /**
+     * A message imported before comes again; the import service skips it and tries its missing
+     * attachments again, and one still fails. Passed as a skip, nothing recorded it (review, P1):
+     * a read row, and the page passes on the record.
+     */
+    @Test
+    @DisplayName("M365: an already imported message whose attachments are still missing is recorded")
+    void m365AnAlreadyImportedMessageWithAttachmentsStillMissingIsRecorded() {
+        skippedWithMissingAttachments = List.of("m1");
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2", msg("m1")));
+        M365MailFetchOrchestrator orchestrator = m365();
+        checkpointIs(stored("delta", "t1"));
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), FOLDER, 10);
+
+        assertEquals(1, dlqReadReasons.size(), "the missing attachment was not recorded: " + dlqReasons);
+        assertTrue(dlqReadReasons.get(0).contains("still missing"), dlqReadReasons.toString());
+        assertEquals(1, result.skipped(), result.toString());
+        assertEquals("delta:" + FOLDER_ID + "|" + link("delta", "t2"), savedCheckpoint());
     }
 
     @Test
@@ -591,7 +701,7 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
         assertEquals(2, DELTA_CALLS.get(), DELTA_LINKS.toString());
         assertEquals(5, dlqReadReasons.size(), dlqReasons.toString());
         assertTrue(result.incompleteReads().stream().anyMatch(r -> r.contains("4 × the limit of 1")), result.incompleteReads().toString());
-        assertEquals("delta:" + USER + "|" + link("skip", "s2"), savedCheckpoint());
+        assertEquals("delta:" + FOLDER_ID + "|" + link("skip", "s2"), savedCheckpoint());
     }
 
     @Test
@@ -618,7 +728,7 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
 
         assertTrue(result.errors().stream().anyMatch(e -> e.contains("connection failed")), result.errors().toString());
         assertEquals(List.of("m7"), importedIds);
-        assertEquals("delta:" + USER + "|" + link("skip", "s1"), savedCheckpoint());
+        assertEquals("delta:" + FOLDER_ID + "|" + link("skip", "s1"), savedCheckpoint());
     }
 
     // ── one message ────────────────────────────────────────────────
@@ -633,7 +743,7 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
         assertEquals(1, dlqReadReasons.size(), dlqReasons.toString());
         assertEquals(List.of("m2"), importedIds);
         assertTrue(result.hasErrors(), result.toString());
-        assertEquals("delta:" + USER + "|" + link("delta", "t2"), savedCheckpoint());
+        assertEquals("delta:" + FOLDER_ID + "|" + link("delta", "t2"), savedCheckpoint());
     }
 
     @Test
@@ -646,7 +756,7 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
         assertEquals(1, dlqReadReasons.size(), "the thrown import was not recorded as a READ item: " + dlqReasons);
         assertEquals(1, dlqReasons.size(), dlqReasons.toString());
         assertEquals(List.of("m2"), importedIds);
-        assertEquals("delta:" + USER + "|" + link("delta", "t2"), savedCheckpoint());
+        assertEquals("delta:" + FOLDER_ID + "|" + link("delta", "t2"), savedCheckpoint());
     }
 
     /**

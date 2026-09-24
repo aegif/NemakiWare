@@ -98,20 +98,44 @@ public class M365MailConnectorAdapter {
 
     /**
      * The first request of a round of the folder's delta feed ({@code /mailFolders/{id}/messages/delta}):
-     * every message in the folder, or those received at or after {@code receivedFrom} (Graph's
-     * delta filter {@code receivedDateTime ge}, written to the millisecond). A message MOVED into the
-     * folder comes in the feed like one received there — the reason for the feed: a listing by
-     * received time never offers a message filed into the folder after the checkpoint passed it.
+     * every message in the folder. A message MOVED into the folder comes in the feed like one
+     * received there — the reason for the feed: a listing by received time never offers a message
+     * filed into the folder after the checkpoint passed it.
+     *
+     * <p>No {@code $filter}: Graph documents that a delta query with {@code $filter} "returns only up to
+     * 5,000 messages", and a round cut there ends with a deltaLink like a complete one — the messages
+     * past the cut would never come (review, P1).
      */
-    public String initialDeltaLink(String folderId, java.time.Instant receivedFrom) {
-        String url = deltaBase(folderId) + "?$select=id,internetMessageId,subject,from,receivedDateTime";
-        if (receivedFrom != null) {
-            String stamp = java.time.format.DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSS'Z'")
-                    .withZone(java.time.ZoneOffset.UTC).format(receivedFrom);
-            url += "&$filter=" + java.net.URLEncoder.encode("receivedDateTime ge " + stamp, java.nio.charset.StandardCharsets.UTF_8)
-                    .replace("+", "%20");
+    public String initialDeltaLink(String folderId) {
+        return deltaBase(folderId) + "?$select=id,internetMessageId,subject,from,receivedDateTime";
+    }
+
+    /**
+     * The id Graph answers for the folder this adapter reads ({@code GET /mailFolders/{id}?$select=id}).
+     * A checkpoint is bound to it: the configured mailbox is only a string — {@code me} is whoever
+     * the token belongs to, and one mailbox can be named by its UPN or its object id — while the
+     * folder's id belongs to one folder of one mailbox (review, P2).
+     */
+    public String folderIdentity(String folderId) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(graphBase + mailboxPath + "/mailFolders/"
+                        + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(folderId) + "?$select=id"))
+                .header("Authorization", "Bearer " + accessToken)
+                .header("Accept", "application/json")
+                .timeout(Duration.ofSeconds(30))
+                .GET()
+                .build();
+        HttpResponse<String> response = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendWithRetry(
+                httpClient, request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 200) {
+            throw new RuntimeException("Graph API error " + response.statusCode() + " reading the mail folder '" + folderId + "': "
+                    + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.truncateBody(response.body()));
         }
-        return url;
+        JsonNode id = MAPPER.readTree(response.body()).get("id");
+        if (id == null || !id.isTextual() || id.asText().isBlank()) {
+            throw new RuntimeException("Graph answered the mail folder '" + folderId + "' without an id");
+        }
+        return id.asText();
     }
 
     /**
@@ -124,8 +148,9 @@ public class M365MailConnectorAdapter {
      * as {@code mailFolders/{id}} and as {@code mailfolders('{id}')}, and a mailbox given as a UPN or
      * a folder given by its well-known name may come back as their ids — a comparison of the values
      * would refuse Graph's own link and stop the folder for good. What ties a stored link to this
-     * profile's mailbox is the checkpoint, which names the mailbox it was written for; the folder is
-     * in the checkpoint's key; a link Graph answers comes from a request this connector made.
+     * profile's folder is the checkpoint, which names the id Graph answered for the folder it was
+     * written for ({@link #folderIdentity}); a link Graph answers comes from a request this
+     * connector made.
      */
     public boolean isMailDeltaLink(String link) {
         if (link == null) return false;
@@ -224,6 +249,11 @@ public class M365MailConnectorAdapter {
         int removed = 0;
         for (JsonNode msg : values) {
             if (msg.has("@removed")) {
+                // A removal names what was removed. One without an id is not a removal this
+                // connector can account for, and counting it would pass the page on it (review, P3).
+                if (!msg.path("id").isTextual() || msg.path("id").asText().isBlank()) {
+                    throw new RuntimeException("Graph's mail delta feed carried a removed entry without an id, so the page cannot be passed");
+                }
                 removed++;
                 continue;
             }

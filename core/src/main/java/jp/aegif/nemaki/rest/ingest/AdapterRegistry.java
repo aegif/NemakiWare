@@ -37,7 +37,7 @@ public final class AdapterRegistry {
                 "gmail_mail", "Gmail",
                 SourceArchetype.MESSAGE_CONTEXT,
                 Set.of(),
-                Set.of("query", "limit"),
+                Set.of("query", "limit", "gmailListMaxRequests", "gmailCheckpointLagMinutes"),
                 List.of(),
                 3, "{\"query\":\"in:inbox is:unread\"}"));
 
