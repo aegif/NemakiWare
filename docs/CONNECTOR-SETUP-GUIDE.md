@@ -412,7 +412,14 @@ Webhook 非対応。アクセストークンは短命なので継続運用では
 **C. プロファイル**
 - `schedulerParams`：`folderId`（メールフォルダ ID または `inbox` 等の既知名、既定 `inbox`）。
   クライアント資格情報フローで特定ユーザのメールを読む場合は `userId`
-  （`user@contoso.com` または UPN）も指定（未指定なら委任認証の `/me`）。任意 `limit`。
+  （`user@contoso.com` または UPN）も指定（未指定なら委任認証の `/me`）。任意 `limit`（1 回の実行で取り込む
+  メール数。ページの途中で尽きたらそのページは次回もう一度読む。試みるのは `limit` の 4 倍まで）、任意
+  `m365MessageMaxRequests`（1 回の実行で Graph の mail delta feed に投げるページ要求の上限、既定 50。切れても
+  読めたところまでの link を保存して次回続く）。
+  フォルダの一覧は読まず、Graph の mail folder の delta feed を追う（フォルダへ移動されてきたメールも取り込む）。
+  checkpoint は `delta:<メールボックス>|<Graph の delta link>`。`userId` を変えると前のメールボックスの checkpoint は
+  エラーになる — 消すと新しいメールボックスを最初から読む。この版より前の checkpoint（受信日時）はその時刻から
+  読む。記録できなかった失敗が 1 つでもあるとそのページは進まない。
 
 **（任意）Webhook**
 - Graph subscription の notificationUrl に
