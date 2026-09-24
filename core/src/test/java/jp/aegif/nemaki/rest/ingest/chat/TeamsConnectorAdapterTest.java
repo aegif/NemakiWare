@@ -67,7 +67,7 @@ class TeamsConnectorAdapterTest {
                     }]}
                     """)));
 
-        var msgs = adapter.getMessages("T1", "C1", 50);
+        var msgs = adapter.listSince("T1", "C1", null, 10).messages();
         assertEquals(1, msgs.size());
         assertEquals("msg-1", msgs.get(0).id());
         assertEquals("<p>Hello Teams</p>", msgs.get(0).body());
@@ -95,7 +95,7 @@ class TeamsConnectorAdapterTest {
                     }]}
                     """)));
 
-        var msgs = adapter.getMessages("T1", "C1", 50);
+        var msgs = adapter.listSince("T1", "C1", null, 10).messages();
         assertEquals(1, msgs.size());
         // Only contentType="file" should be extracted — reference and card should be ignored
         assertEquals(1, msgs.get(0).attachments().size());
@@ -111,7 +111,7 @@ class TeamsConnectorAdapterTest {
                         "from": {"user": {"displayName": "U"}}, "createdDateTime": "2024-01-15T12:00:00Z",
                         "attachments": []}]}
                     """)));
-        var msgs = adapter.getMessages("T1", "C1", 50);
+        var msgs = adapter.listSince("T1", "C1", null, 10).messages();
         assertTrue(msgs.get(0).attachments().isEmpty());
     }
 
@@ -164,28 +164,50 @@ class TeamsConnectorAdapterTest {
     void shouldThrowOn500() {
         wireMock.stubFor(get(urlPathEqualTo("/teams/T1/channels/C1/messages"))
                 .willReturn(aResponse().withStatus(500)));
-        assertThrows(RuntimeException.class, () -> adapter.getMessages("T1", "C1", 50));
+        assertThrows(RuntimeException.class, () -> adapter.listSince("T1", "C1", null, 10));
     }
 
     // ── Pagination contract ──────────────────────────────────────
 
+    /**
+     * A listing stopped at the request cap says so and is NOT complete — the messages it did not
+     * reach are the older ones, and a checkpoint raised over the ones it did reach would exclude
+     * them for ever (R107). The old getMessages() cut at a message count and said nothing.
+     */
     @Test
-    void getMessagesRespectsLimitCap() throws Exception {
+    void aListingCutAtTheRequestCapSaysSoAndIsNotComplete() throws Exception {
         wireMock.stubFor(get(urlPathMatching("/teams/.*/channels/.*/messages.*"))
                 .willReturn(okJson("""
                     {"value":[
-                        {"id":"m1","body":{"content":"a"},"createdDateTime":"2026-01-01T00:00:00Z"},
-                        {"id":"m2","body":{"content":"b"},"createdDateTime":"2026-01-01T00:01:00Z"},
                         {"id":"m3","body":{"content":"c"},"createdDateTime":"2026-01-01T00:02:00Z"}
-                    ]}
-                    """)));
+                    ],"@odata.nextLink":"http://localhost:%d/teams/T1/channels/C1/messages?$skiptoken=more"}
+                    """.formatted(wireMock.port()))));
+        var listing = adapter.listSince("T1", "C1", null, 1);
+        assertFalse(listing.complete(), "a cut listing was reported whole");
+        assertTrue(listing.truncatedBecause().contains("teamsMessageMaxRequests"), listing.truncatedBecause());
+        assertEquals(1, listing.messages().size());
+    }
 
-        var messages = adapter.getMessages("T1", "C1", 2);
-        assertEquals(2, messages.size(), "Should respect limit cap of 2");
+    /** The listing stops at the first message at or below the checkpoint — Graph lists newest first. */
+    @Test
+    void theListingStopsAtTheCheckpoint() throws Exception {
+        wireMock.stubFor(get(urlPathMatching("/teams/.*/channels/.*/messages.*"))
+                .willReturn(okJson("""
+                    {"value":[
+                        {"id":"m3","body":{"content":"c"},"createdDateTime":"2026-01-01T00:02:00Z"},
+                        {"id":"m2","body":{"content":"b"},"createdDateTime":"2026-01-01T00:01:00Z"},
+                        {"id":"m1","body":{"content":"a"},"createdDateTime":"2026-01-01T00:00:00Z"}
+                    ],"@odata.nextLink":"http://localhost:%d/teams/T1/channels/C1/messages?$skiptoken=older"}
+                    """.formatted(wireMock.port()))));
+        var listing = adapter.listSince("T1", "C1", "2026-01-01T00:01:30.000000000Z", 10);
+        assertTrue(listing.complete(), listing.truncatedBecause());
+        assertEquals(1, listing.messages().size(), "only the message newer than the checkpoint: " + listing.messages());
+        assertEquals("m3", listing.messages().get(0).id());
+        wireMock.verify(0, getRequestedFor(urlPathMatching("/teams/.*")).withQueryParam("$skiptoken", equalTo("older")));
     }
 
     @Test
-    void getMessagesFollowsNextLink() throws Exception {
+    void theListingFollowsTheNextLinkToTheEnd() throws Exception {
         // Page 1 with @odata.nextLink
         wireMock.stubFor(get(urlPathMatching("/teams/.*/channels/.*/messages"))
                 .withQueryParam("$top", matching(".*"))
@@ -201,7 +223,8 @@ class TeamsConnectorAdapterTest {
                     {"value":[{"id":"m2","body":{"content":"b"},"createdDateTime":"2026-01-01T00:01:00Z"}]}
                     """)));
 
-        var messages = adapter.getMessages("T1", "C1", 50);
-        assertEquals(2, messages.size());
+        var listing = adapter.listSince("T1", "C1", null, 10);
+        assertTrue(listing.complete(), listing.truncatedBecause());
+        assertEquals(2, listing.messages().size());
     }
 }

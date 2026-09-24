@@ -75,47 +75,74 @@ public class TeamsConnectorAdapter {
         return result;
     }
 
-    /**
-     * Fetch messages from a channel with {@code @odata.nextLink} pagination.
-     *
-     * <p>Graph API returns max 50 messages per page.  This method follows
-     * {@code @odata.nextLink} URLs until {@code top} messages are collected
-     * or no more pages remain, capped at {@link #MAX_PAGES} pages.
-     *
-     * @param teamId    team ID
-     * @param channelId channel ID
-     * @param top       max total messages to return (also used as page size, Graph API max: 50)
-     */
-    public List<TeamsMessage> getMessages(String teamId, String channelId, int top) throws Exception {
-        int pageSize = Math.min(top, 50);
-        String url = apiBase + "/teams/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(teamId) + "/channels/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(channelId)
-                + "/messages?$top=" + pageSize;
+    /** Messages per page; Graph's maximum for channel messages. */
+    static final int PAGE_SIZE = 50;
+    /** How many message-page requests one listing may make unless the caller says otherwise. */
+    public static final int DEFAULT_MAX_MESSAGE_REQUESTS = 50;
 
-        List<TeamsMessage> allMessages = new ArrayList<>();
-        for (int page = 0; page < MAX_PAGES && url != null; page++) {
+    /** What one listing came back with: the messages newer than the checkpoint, whether it read down to it, and if not why. */
+    public record MessageListing(List<TeamsMessage> messages, boolean complete, String truncatedBecause) {}
+
+    /**
+     * EVERY channel message newer than {@code sinceCanonical} (a {@link WatermarkCheckpoint#canonical}
+     * form, or null for all), following {@code @odata.nextLink} up to {@code maxRequests} requests.
+     *
+     * <p>This replaced a listing stopped at the caller's per-run limit (R107). Graph lists channel
+     * messages newest first and offers no {@code $filter} on the creation time, so a listing cut at
+     * N messages was the N NEWEST; the caller then raised the checkpoint to the newest it had seen,
+     * and every older message the cut had left out fell below the checkpoint for ever. The listing
+     * now reads DOWN TO the checkpoint: pages are newest first, so the first page holding a message
+     * older than it is the last one read (the rest of that page and every later page are older;
+     * messages AT the checkpoint's time are passed on for the caller's id-level check).
+     * That rests on Graph's order being by creation time, newest first — measured against a stub,
+     * not against Graph.
+     *
+     * <p>A response without a {@code value} array, or a message without a creation time this
+     * connector can read, is refused, not read around: a message that cannot be placed can neither
+     * be skipped nor named. The same {@code @odata.nextLink} twice is a cut.
+     */
+    public MessageListing listSince(String teamId, String channelId, String sinceCanonical, int maxRequests) throws Exception {
+        String url = apiBase + "/teams/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(teamId) + "/channels/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(channelId)
+                + "/messages?$top=" + PAGE_SIZE;
+        List<TeamsMessage> newer = new ArrayList<>();
+        String previous = null;
+        for (int request = 1; request <= maxRequests; request++) {
             JsonNode root = graphGet(url);
             JsonNode values = root.get("value");
-            if (values == null || !values.isArray() || values.isEmpty()) break;
-
-            for (JsonNode msg : values) {
-                allMessages.add(parseMessage(msg));
-                if (allMessages.size() >= top) break; // Respect total cap
+            if (values == null || !values.isArray()) {
+                throw new RuntimeException("Graph answered the channel messages without a value array on request "
+                        + request + ", so how many messages the channel holds is unknown");
             }
-            if (allMessages.size() >= top) break;
-
-            // Follow @odata.nextLink for next page
+            for (JsonNode node : values) {
+                TeamsMessage msg = parseMessage(node);
+                String at = jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.canonical(msg.createdDateTime());
+                if (at == null) {
+                    throw new RuntimeException("Graph listed message " + msg.id() + " without a creation time this connector can read ('"
+                            + msg.createdDateTime() + "'), so it can neither be skipped nor named");
+                }
+                if (sinceCanonical != null && at.compareTo(sinceCanonical) < 0) {
+                    // Newest first: this and everything after it is older than the checkpoint. A
+                    // message AT the checkpoint's time is passed on — the checkpoint names the
+                    // ids done at its time, and only the caller can tell those from the rest.
+                    return new MessageListing(newer, true, null);
+                }
+                newer.add(msg);
+            }
             JsonNode nextLink = root.get("@odata.nextLink");
-            url = (nextLink != null && !nextLink.isNull()) ? nextLink.asText(null) : null;
-
-            if (url != null) {
-                logger.debug("Teams pagination: page {}, fetched {} of {} max",
-                        page + 1, allMessages.size(), top);
+            String next = nextLink == null || nextLink.isNull() ? null : nextLink.asText(null);
+            if (next == null || next.isBlank()) {
+                return new MessageListing(newer, true, null);
             }
+            if (next.equals(previous) || next.equals(url)) {
+                return new MessageListing(newer, false, "Graph returned the same @odata.nextLink twice (" + next
+                        + "), so the listing cannot move forward");
+            }
+            previous = url;
+            url = next;
         }
-
-        logger.info("Teams getMessages: team={}, channel={}, fetched={}, limit={}",
-                teamId, channelId, allMessages.size(), top);
-        return allMessages;
+        return new MessageListing(newer, false, "the cap of " + maxRequests + " message request(s) was reached with "
+                + newer.size() + " message(s) read and older ones still above the checkpoint (raise the profile's "
+                + "teamsMessageMaxRequests parameter)");
     }
 
     /**

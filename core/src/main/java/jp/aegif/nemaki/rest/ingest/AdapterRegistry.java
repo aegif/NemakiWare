@@ -65,7 +65,7 @@ public final class AdapterRegistry {
                 "teams", "Microsoft Teams",
                 SourceArchetype.CHAT_CONTEXT,
                 Set.of("teamId", "channelId"),
-                Set.of("limit"),
+                Set.of("limit", "teamsMessageMaxRequests"),
                 List.of("teamId", "channelId"),
                 3, "{\"teamId\":\"...\",\"channelId\":\"...\"}"));
 

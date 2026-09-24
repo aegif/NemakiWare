@@ -5,6 +5,7 @@ import jp.aegif.nemaki.rest.ingest.fileshare.BoxConnectorAdapter;
 import jp.aegif.nemaki.rest.ingest.fileshare.DropboxConnectorAdapter;
 import jp.aegif.nemaki.rest.ingest.fileshare.FileShareRefetch;
 import jp.aegif.nemaki.rest.ingest.chat.SlackConnectorAdapter;
+import jp.aegif.nemaki.rest.ingest.chat.TeamsConnectorAdapter;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.junit.jupiter.api.DisplayName;
@@ -129,6 +130,17 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
             return new SlackConnectorAdapter(token) {
                 @Override public InputStream downloadFile(String url) {
                     downloaded.add("slack:" + url);
+                    return download.apply(url);
+                }
+            };
+        });
+        Field teamsFactory = FileShareRefetch.class.getDeclaredField("teamsFactory");
+        teamsFactory.setAccessible(true);
+        teamsFactory.set(refetch, (java.util.function.Function<String, TeamsConnectorAdapter>) token -> {
+            adaptersBuilt.incrementAndGet();
+            return new TeamsConnectorAdapter(token) {
+                @Override public InputStream downloadFile(String url) {
+                    downloaded.add("teams:" + url);
                     return download.apply(url);
                 }
             };
@@ -369,15 +381,56 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
         assertEquals("fresh bytes", read(requireBytes(executed.get(0))));
     }
 
+    private static final String TEAMS_ATTACHMENT_ROW = "{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\",\"sourceObjectId\":\"att-1\","
+            + "\"sourceObjectType\":\"attachment\",\"metadata\":{\"teamsFileUrl\":\"https://contoso.sharepoint.com/sites/x/a.pdf\"}}";
+
     @Test
-    @DisplayName("a Teams attachment row without bytes is refused, not replayed as an empty document")
-    void aTeamsAttachmentRowWithoutBytesIsRefused() throws Exception {
-        ResponseEntity<?> res = retry("teams", SourceArchetype.CHAT_CONTEXT, false, null, SLACK_ATTACHMENT_ROW,
+    @DisplayName("a Teams attachment row without bytes is fetched again by the content URL the orchestrator recorded")
+    void aTeamsAttachmentRowIsFetchedAgainByItsUrl() throws Exception {
+        ResponseEntity<?> res = retry("teams", SourceArchetype.CHAT_CONTEXT, false, null, TEAMS_ATTACHMENT_ROW,
+                url -> new ByteArrayInputStream("fresh bytes".getBytes(StandardCharsets.UTF_8)), row -> { });
+
+        assertEquals(HttpStatus.OK, res.getStatusCode(), String.valueOf(res.getBody()));
+        assertEquals(List.of("teams:https://contoso.sharepoint.com/sites/x/a.pdf"), downloaded);
+        assertEquals("fresh bytes", read(requireBytes(executed.get(0))));
+    }
+
+    /** A row written before the orchestrator recorded the URL — every Slack attachment row from before this batch — cannot be fetched again: refused, kept. */
+    @Test
+    @DisplayName("a Slack attachment row without a recorded download URL is refused, not fetched by anything else")
+    void aSlackAttachmentRowWithoutAUrlIsRefused() throws Exception {
+        String noUrl = "{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\",\"sourceObjectId\":\"F-1\",\"sourceObjectType\":\"attachment\","
+                + "\"metadata\":{\"channelId\":\"C1\"}}";
+        ResponseEntity<?> res = retry("slack", SourceArchetype.CHAT_CONTEXT, false, null, noUrl,
+                url -> new ByteArrayInputStream("fresh bytes".getBytes(StandardCharsets.UTF_8)), row -> { });
+
+        assertEquals(HttpStatus.CONFLICT, res.getStatusCode(), String.valueOf(res.getBody()));
+        assertTrue(String.valueOf(res.getBody()).contains("download URL"), String.valueOf(res.getBody()));
+        assertTrue(executed.isEmpty() && downloaded.isEmpty(), "replayed or fetched without a URL: " + executed.size() + " / " + downloaded);
+    }
+
+    @Test
+    @DisplayName("a Teams attachment row without a recorded content URL is refused, not fetched by anything else")
+    void aTeamsAttachmentRowWithoutAUrlIsRefused() throws Exception {
+        String noUrl = "{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\",\"sourceObjectId\":\"att-1\",\"sourceObjectType\":\"attachment\","
+                + "\"metadata\":{\"channelId\":\"C1\"}}";
+        ResponseEntity<?> res = retry("teams", SourceArchetype.CHAT_CONTEXT, false, null, noUrl,
+                url -> new ByteArrayInputStream("fresh bytes".getBytes(StandardCharsets.UTF_8)), row -> { });
+
+        assertEquals(HttpStatus.CONFLICT, res.getStatusCode(), String.valueOf(res.getBody()));
+        assertTrue(String.valueOf(res.getBody()).contains("content URL"), String.valueOf(res.getBody()));
+        assertTrue(executed.isEmpty() && downloaded.isEmpty(), "replayed or fetched without a URL: " + executed.size() + " / " + downloaded);
+    }
+
+    @Test
+    @DisplayName("a Mattermost attachment row without bytes is refused, not replayed as an empty document")
+    void aMattermostAttachmentRowWithoutBytesIsRefused() throws Exception {
+        ResponseEntity<?> res = retry("mattermost", SourceArchetype.CHAT_CONTEXT, false, null, SLACK_ATTACHMENT_ROW,
                 url -> new ByteArrayInputStream(new byte[0]), row -> { });
 
         assertTrue(executed.isEmpty(), "replayed without bytes: an empty document would have been imported");
         assertEquals(HttpStatus.CONFLICT, res.getStatusCode(), String.valueOf(res.getBody()));
-        assertTrue(String.valueOf(res.getBody()).contains("teams"), String.valueOf(res.getBody()));
+        assertTrue(String.valueOf(res.getBody()).contains("mattermost"), String.valueOf(res.getBody()));
     }
 
     /** A chat MESSAGE row (not an attachment) is metadata-only by design and still replays as before. */

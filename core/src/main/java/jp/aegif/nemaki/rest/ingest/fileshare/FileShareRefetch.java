@@ -7,6 +7,7 @@ import jp.aegif.nemaki.rest.ingest.ConnectorDefinition;
 import jp.aegif.nemaki.rest.ingest.ExternalIngestRequest;
 import jp.aegif.nemaki.rest.ingest.SourceArchetype;
 import jp.aegif.nemaki.rest.ingest.chat.SlackConnectorAdapter;
+import jp.aegif.nemaki.rest.ingest.chat.TeamsConnectorAdapter;
 
 /**
  * The bytes of a dead-lettered FILE_SHARE item, fetched again from its source.
@@ -21,9 +22,10 @@ import jp.aegif.nemaki.rest.ingest.chat.SlackConnectorAdapter;
  * that moved away and was replaced would come back as another file's bytes under this row's
  * id (review, P1). Box by the file id the request names; Dropbox by its {@code id:…} file id,
  * which its download API accepts in place of a path. A Slack attachment by the download URL
- * the orchestrator put in the request's metadata ({@code slackFileUrl}). Google Drive and
- * OneDrive files, and the attachments of the other chat and mail connectors, are not fetched
- * again here (R111) — their rows are refused rather than replayed as empty documents.
+ * the orchestrator put in the request's metadata ({@code slackFileUrl}); a Teams attachment by
+ * its content URL ({@code teamsFileUrl}). Google Drive and OneDrive files, and the attachments of
+ * the other chat and mail connectors, are not fetched again here (R111) — their rows are refused
+ * rather than replayed as empty documents.
  */
 public class FileShareRefetch {
 
@@ -31,6 +33,7 @@ public class FileShareRefetch {
     Function<String, BoxConnectorAdapter> boxFactory = BoxConnectorAdapter::new;
     Function<String, DropboxConnectorAdapter> dropboxFactory = DropboxConnectorAdapter::new;
     Function<String, SlackConnectorAdapter> slackFactory = SlackConnectorAdapter::new;
+    Function<String, TeamsConnectorAdapter> teamsFactory = TeamsConnectorAdapter::new;
 
     /** Whether the row's item is one this can fetch again: a Box / Dropbox file, or a Slack attachment. */
     public boolean canRefetch(ConnectorDefinition connector, ExternalIngestRequest request) {
@@ -38,7 +41,7 @@ public class FileShareRefetch {
         if (connector.getSourceArchetype() == SourceArchetype.FILE_SHARE) {
             return "box".equals(system) || "dropbox".equals(system);
         }
-        return "slack".equals(system) && "attachment".equals(request.getSourceObjectType());
+        return ("slack".equals(system) || "teams".equals(system)) && "attachment".equals(request.getSourceObjectType());
     }
 
     /**
@@ -69,6 +72,14 @@ public class FileShareRefetch {
                         + "connector recorded one cannot be fetched again)");
             }
             return slackFactory.apply(token).downloadFile(url.toString());
+        }
+        if ("teams".equals(system) && "attachment".equals(request.getSourceObjectType())) {
+            Object url = request.getMetadata() == null ? null : request.getMetadata().get("teamsFileUrl");
+            if (url == null || url.toString().isBlank()) {
+                throw new IllegalArgumentException("the row names no Teams content URL (rows written before this "
+                        + "connector recorded one cannot be fetched again)");
+            }
+            return teamsFactory.apply(token).downloadFile(url.toString());
         }
         throw new IllegalArgumentException(system + " items are not fetched again here");
     }
