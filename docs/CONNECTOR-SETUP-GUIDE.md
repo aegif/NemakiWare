@@ -390,8 +390,17 @@ Webhook 非対応（ポーリング。アダプタ内部では IDLE による継
 - endpoint 不要。
 
 **C. プロファイル**
-- `schedulerParams`：`query`（Gmail 検索式、既定 `in:inbox is:unread`。
-  例 `newer_than:1d`, `label:invoices`）、任意 `limit`。
+- `schedulerParams`：`query`（Gmail 検索式、既定 `in:inbox is:unread` — poll の前に既読にしたメールは
+  取り込まない。全部取り込むなら `in:inbox`。例 `newer_than:1d`, `label:invoices`）、任意 `limit`（1 回の実行で
+  取り込むメール数。取り込み済みで飛ばしたメールも数える。試みるのは `limit` の 4 倍まで）、任意
+  `gmailListMaxRequests`（1 回の実行で投げる一覧要求の上限、既定 50。時間の窓を探す要求もこれに数える。切れたら
+  読み終えた窓までを保存して次回続く）、任意 `gmailCheckpointLagMinutes`（checkpoint を一覧開始の何分前までに
+  止めるか、既定 5。Gmail の検索索引の遅れの見込み）。
+  checkpoint から今までを時間の窓に分けて古い順に読み（一覧の順序は文書化されていないので、メールごとに
+  internal date を読んで並べる）、checkpoint は取り込み終えた最新のメールの internal date と id
+  （`<時刻>|<id>`）。この版より前の日付の checkpoint は、その日の UTC 0 時から読み直す。
+  checkpoint が過ぎた後で query に合うようになったメール（ラベルの付与、受信箱へ戻す、未読に戻す）は取り込まない
+  （残件 R114）。
 
 Webhook 非対応。アクセストークンは短命なので継続運用ではリフレッシュ運用が必要。
 
@@ -417,9 +426,12 @@ Webhook 非対応。アクセストークンは短命なので継続運用では
   `m365MessageMaxRequests`（1 回の実行で Graph の mail delta feed に投げるページ要求の上限、既定 50。切れても
   読めたところまでの link を保存して次回続く）。
   フォルダの一覧は読まず、Graph の mail folder の delta feed を追う（フォルダへ移動されてきたメールも取り込む）。
-  checkpoint は `delta:<メールボックス>|<Graph の delta link>`。`userId` を変えると前のメールボックスの checkpoint は
-  エラーになる — 消すと新しいメールボックスを最初から読む。この版より前の checkpoint（受信日時）はその時刻から
-  読む。記録できなかった失敗が 1 つでもあるとそのページは進まない。
+  checkpoint は `delta:<フォルダの id>|<Graph の delta link>`（フォルダの id は Graph がそのフォルダに答える id で、
+  毎回問い合わせて完全一致で比べる）。トークンの持ち主・`userId`・`folderId` が別のフォルダを指すようになると
+  エラー — 消すと今のフォルダを最初から読む。同じメールボックスを UPN から object id に替えただけならそのまま続く。
+  この版より前の checkpoint（受信日時）はフォルダを名指していないので照合できず、今のフォルダを最初から読み直す
+  （Graph は filter 付きの delta を 5,000 件で打ち切るため、その時刻からは読まない）。記録できなかった失敗が 1 つでも
+  あるとそのページは進まない。
 
 **（任意）Webhook**
 - Graph subscription の notificationUrl に
