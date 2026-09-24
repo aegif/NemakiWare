@@ -592,6 +592,41 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
     }
 
     /**
+     * A webhook record row the 3.4 builds before the mark wrote: the record's type, never read,
+     * nothing held, no mark. Replayed, it was an empty request dispatched as a success and the only
+     * record of the missed deliveries deleted (review, P1).
+     */
+    @Test
+    @DisplayName("a webhook record row written before record rows were marked is not replayed")
+    void aWebhookRecordFromBeforeTheMarkIsNotReplayed() throws Exception {
+        String row = "{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\",\"sourceObjectId\":\"webhook-deliveries:p1:c1\","
+                + "\"sourceObjectType\":\"webhook_event\",\"executionMode\":\"webhook\"}";
+        ResponseEntity<?> res = retry("slack", SourceArchetype.CHAT_CONTEXT, false, null, row,
+                url -> new ByteArrayInputStream(new byte[0]), r -> { });
+
+        assertEquals(HttpStatus.CONFLICT, res.getStatusCode(), String.valueOf(res.getBody()));
+        assertTrue(String.valueOf(res.getBody()).contains("records webhook deliveries"), String.valueOf(res.getBody()));
+        assertTrue(executed.isEmpty(), "an unmarked webhook record row was replayed: " + executed);
+        verify(jobService, never()).deleteDlqEntry(any());
+    }
+
+    /**
+     * The record's shape is refused only when nothing can be replayed: an item of the record's type
+     * whose source can give its bytes again — a Box file, by its id — is fetched and replayed.
+     */
+    @Test
+    @DisplayName("an item of a record's type that its source can give again is fetched and replayed")
+    void aRefetchableItemOfARecordsTypeIsReplayed() throws Exception {
+        String row = "{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\",\"sourceObjectId\":\"f-1\","
+                + "\"sourceObjectType\":\"webhook_event\"}";
+        ResponseEntity<?> res = retry("box", false, row, id -> new ByteArrayInputStream("fresh bytes".getBytes(StandardCharsets.UTF_8)));
+
+        assertEquals(HttpStatus.OK, res.getStatusCode(), String.valueOf(res.getBody()));
+        assertEquals(1, executed.size(), "a refetchable item was refused as a record: " + res.getBody());
+        assertEquals("fresh bytes", read(executed.get(0).getContentStream()));
+    }
+
+    /**
      * A gap row the build before the mark wrote: the gap's type, never read, nothing held, no mark.
      * Replayed, it was an empty document and the record went with the row (review, P2).
      */

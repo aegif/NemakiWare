@@ -252,10 +252,7 @@ public class IngestDlqController {
                 // dispatching it would create an empty "imported-webhook:..." document and,
                 // depending on the archetype, report success and delete the record. A review
                 // traced the replay path. Recovery is a connector re-fetch.
-                return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId + " records"
-                        + " webhook deliveries that were accepted but never fetched. It carries"
-                        + " no delivery and cannot be replayed; re-fetch through the connector,"
-                        + " then delete this entry");
+                return webhookRecordRefusal(dlqId);
             }
             // The same for a GAP row: it records messages a chat API may have had and no longer
             // answers (Chatwork gives a room's latest 100 and nothing older). There is no item behind
@@ -263,16 +260,8 @@ public class IngestDlqController {
             // deleted with it. By the row's own mark, as above: the first version read the row's
             // sourceObjectType, a caller-supplied string, and refused a genuine item of that type
             // for ever (review, P2).
-            // A gap row written before gap records carried the mark (the build that first recorded
-            // gaps, never released) has the gap's type, was never read and holds nothing: replayed,
-            // it too would be an empty document and the record deleted (review, P2). Refused by that
-            // shape — which a genuine item of the type does not have: one with bytes is replayed.
-            boolean unmarkedGap = jp.aegif.nemaki.rest.ingest.chat.ChatworkFetchOrchestrator.GAP_TYPE.equals(request.getSourceObjectType())
-                    && dlq.isSourceNeverRead() && !dlq.isHasContent();
-            if (dlq.isGapRecord() || unmarkedGap) {
-                return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId + " records a possible gap: messages"
-                        + " the source may have had and no longer answers, so there is nothing to replay; the entry is"
-                        + " kept. Delete it once the gap is acknowledged");
+            if (dlq.isGapRecord()) {
+                return gapRecordRefusal(dlqId);
             }
             // Whether the item's bytes can come back from its source instead of from the row:
             // a FILE_SHARE item of a system the re-fetch knows (Box, Dropbox). For such a row
@@ -290,6 +279,19 @@ public class IngestDlqController {
                     && (fileShareConnector.getSourceArchetype() == SourceArchetype.FILE_SHARE
                             || "attachment".equals(request.getSourceObjectType()));
             boolean refetchable = fileShare && refetch.canRefetch(fileShareConnector, request);
+
+            // A record row written before record rows carried their mark (the 3.4 builds that first
+            // wrote them — never released) has the record's type, was never read, holds nothing and
+            // cannot be fetched again: replayed, it would be an empty document and the only record
+            // deleted (review, P1 / P2). Refused by that shape, which a genuine item of the type does
+            // not have: one that holds its bytes, or whose source can give them again, is replayed.
+            boolean nothingToReplay = dlq.isSourceNeverRead() && !dlq.isHasContent() && !refetchable;
+            if (nothingToReplay && "webhook_event".equals(request.getSourceObjectType())) {
+                return webhookRecordRefusal(dlqId);
+            }
+            if (nothingToReplay && jp.aegif.nemaki.rest.ingest.chat.ChatworkFetchOrchestrator.GAP_TYPE.equals(request.getSourceObjectType())) {
+                return gapRecordRefusal(dlqId);
+            }
 
             if (dlq.getPayloadWriteToken() != null && !refetchable) {
                 // A payload write for this attempt was started and never confirmed. The row's
@@ -686,6 +688,21 @@ public class IngestDlqController {
     private ResponseEntity<?> forbidden() {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(Map.of("status", "error", "message", "Admin access required"));
+    }
+
+    /** The answer for a row that records webhook deliveries accepted and never fetched. */
+    private ResponseEntity<?> webhookRecordRefusal(String dlqId) {
+        return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId + " records"
+                + " webhook deliveries that were accepted but never fetched. It carries"
+                + " no delivery and cannot be replayed; re-fetch through the connector,"
+                + " then delete this entry");
+    }
+
+    /** The answer for a row that records a possible gap in a chat source. */
+    private ResponseEntity<?> gapRecordRefusal(String dlqId) {
+        return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId + " records a possible gap: messages"
+                + " the source may have had and no longer answers, so there is nothing to replay; the entry is"
+                + " kept. Delete it once the gap is acknowledged");
     }
 
     private ResponseEntity<?> errorResponse(HttpStatus status, String message) {
