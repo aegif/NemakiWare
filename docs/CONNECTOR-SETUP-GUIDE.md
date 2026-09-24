@@ -346,8 +346,10 @@ Webhook はこのコネクタでは未対応（ポーリングのみ）。
 
 **C. プロファイル**
 - `schedulerParams`：`roomId`（必須）、任意 `limit`。
-- 注意：Chatwork API は 1 回あたり最大 100 件・タイムスタンプ絞り込み不可。
-  メッセージ流量が多いルームは取りこぼし警告がログに出ます（短い間隔での取り込みを推奨）。
+- 注意：Chatwork API はルームの最新 100 件しか返さない（それより古いものは取れない）。答えが 100 件ちょうどで、
+  その一番古いメッセージが checkpoint より新しいと、間のメッセージは取れない — そのときは欠落を死信キューに記録して
+  （ルームと id の範囲。再送はできないので、確かめたら消す）先へ進む。メッセージ流量が多いルームは短い間隔で
+  取り込むこと。任意 `limit`（1 回の実行で取り込むメッセージ数。試みるのは 4 倍まで）。
 
 ---
 
@@ -486,11 +488,15 @@ Webhook 非対応。
 - credentialRef = キー（実値はアクセストークン、§2 で provision）。
 
 **C. プロファイル**
-- `schedulerParams`：`soql`（取得対象の SELECT クエリ。例
-  `SELECT Id,Name,LastModifiedDate FROM Account`。未指定なら Account の既定テンプレ）。任意 `limit`。
+- `schedulerParams`：`soql`（取得対象の `SELECT … FROM … [WHERE …]`。例
+  `SELECT Id, Name FROM Account WHERE Type = 'Customer'`。未指定なら `SELECT Id, Name FROM Account`）。
+  一番外側に `ORDER BY` / `LIMIT` / `OFFSET` / `GROUP BY` / `HAVING` / `FOR` / `WITH` / `USING` は書けない（コネクタが
+  SystemModstamp と Id の順・件数・checkpoint の条件を付けるため。書くとエラーで何も読まない）。任意 `limit`（1 回の
+  実行で取り込むレコード数。試みるのは 4 倍まで）、任意 `salesforceQueryMaxRequests`（1 回の実行で答えの batch を
+  読む要求の上限、既定 50）、任意 `salesforceCheckpointLagMinutes`（checkpoint を一覧開始の何分前までに止めるか、既定 5）。
   - 安全のため `DELETE`/`UPDATE`/`INSERT`、`--` コメント、`;` を含む SOQL は拒否されます。
-  - `LastModifiedDate` での増分取得が自動で WHERE に注入されます（SELECT に
-    `LastModifiedDate` を含めると確実）。
+  - checkpoint は `key:<SystemModstamp>|<Id>`。この版より前の checkpoint（LastModifiedDate）は効いていなかったので、
+    最初から読み直す（取り込み済みは重複判定が飛ばす）。
 
 Webhook 非対応。
 
