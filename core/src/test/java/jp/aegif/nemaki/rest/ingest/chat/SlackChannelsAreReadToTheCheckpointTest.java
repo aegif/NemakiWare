@@ -152,6 +152,8 @@ class SlackChannelsAreReadToTheCheckpointTest {
     private final List<String> dlqReasons = new ArrayList<>();
     private final List<String> dlqReadReasons = new ArrayList<>();
     private final List<ExternalIngestRequest> dlqRequests = new ArrayList<>();
+    /** The bytes a read row was written with, by source object id (null: metadata-only). */
+    private final Map<String, byte[]> dlqBodies = new java.util.HashMap<>();
     private List<String> throwingImports = List.of();
     private boolean dlqWritable = true;
     private List<String> failingImports = List.of();
@@ -165,6 +167,7 @@ class SlackChannelsAreReadToTheCheckpointTest {
         dlqReasons.clear();
         dlqReadReasons.clear();
         dlqRequests.clear();
+        dlqBodies.clear();
         lenient().when(fetchSupport.resolvePasswordOrRefuse(any())).thenReturn("xoxb-secret");
         lenient().doNothing().when(fetchSupport).throttle(anyLong());
         lenient().doAnswer(call -> {
@@ -178,6 +181,14 @@ class SlackChannelsAreReadToTheCheckpointTest {
             dlqReadReasons.add(call.getArgument(1));
             return dlqWritable;
         }).when(fetchSupport).saveSourceReadToDlq(any(), anyString());
+        lenient().doAnswer(call -> {
+            ExternalIngestRequest r = call.getArgument(0);
+            dlqRequests.add(r);
+            dlqReasons.add(call.getArgument(1));
+            dlqReadReasons.add(call.getArgument(1));
+            dlqBodies.put(r.getSourceObjectId(), call.getArgument(2));
+            return dlqWritable;
+        }).when(fetchSupport).saveSourceReadToDlq(any(), anyString(), any());
         lenient().when(checkpointManager.loadSimpleCheckpoint(anyString(), anyString())).thenReturn(null);
         lenient().when(importService.executeChatContextImport(any(), any())).thenAnswer(call -> {
             ExternalIngestRequest req = call.getArgument(1);
@@ -422,6 +433,32 @@ class SlackChannelsAreReadToTheCheckpointTest {
         assertEquals(List.of("1700000001.000000"), importedIds);
         assertTrue(result.hasErrors(), result.toString());
         verify(checkpointManager).saveSimpleCheckpoint("p-slack", "slack.C1", "1700000001.000000");
+    }
+
+    /** A message whose body import failed is dead-lettered WITH the body: replayable, not only a record of the miss (Codex P1 on Mattermost). */
+    @Test
+    @DisplayName("Slack: a failed body import is dead-lettered with the body bytes, so the replay imports the text")
+    void slackAFailedBodyImportRowCarriesTheBodyBytes() {
+        failingImports = List.of("1700000002.000000");
+        throwingImports = List.of("1700000001.000000");
+        history = (exchange, n) -> json(exchange, 200, page(false, null, msg("1700000002.000000"), msg("1700000001.000000")));
+        slack().execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertEquals(2, dlqReadReasons.size(), dlqReasons.toString());
+        assertEquals("hello 1700000002.000000", new String(dlqBodies.getOrDefault("1700000002.000000", new byte[0]), StandardCharsets.UTF_8), "the row for the refused body carries no bytes");
+        assertEquals("hello 1700000001.000000", new String(dlqBodies.getOrDefault("1700000001.000000", new byte[0]), StandardCharsets.UTF_8), "the row for the thrown body carries no bytes");
+    }
+
+    /** The attachment row names the message document, so a replay links the attachment to it again (Codex P2 on Mattermost). */
+    @Test
+    @DisplayName("Slack: a failed attachment row names its message document for the replay to link to")
+    void slackAFailedAttachmentRowNamesItsMessageDocument() {
+        failingDownloads = List.of("F-bad");
+        history = (exchange, n) -> json(exchange, 200, page(false, null, msgWithFile("1700000001.000000", "F-bad")));
+        slack().execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertEquals(1, dlqRequests.size(), dlqReasons.toString());
+        assertEquals("obj-1700000001.000000", dlqRequests.get(0).getMetadata().get("parentObjectId"), "the row does not name the message document: " + dlqRequests.get(0).getMetadata());
     }
 
     @Test

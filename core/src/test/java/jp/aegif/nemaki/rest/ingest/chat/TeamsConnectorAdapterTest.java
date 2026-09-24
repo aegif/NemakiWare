@@ -55,9 +55,9 @@ class TeamsConnectorAdapterTest {
 
     @Test
     void shouldParseMessageFieldsForScheduler() throws Exception {
-        wireMock.stubFor(get(urlPathEqualTo("/teams/T1/channels/C1/messages"))
+        wireMock.stubFor(get(urlPathEqualTo("/teams/T1/channels/C1/messages/delta"))
                 .willReturn(aResponse().withBody("""
-                    {"value": [{
+                    {"@odata.deltaLink": "http://x/d", "value": [{
                         "id": "msg-1",
                         "body": {"content": "<p>Hello Teams</p>"},
                         "from": {"user": {"displayName": "Admin"}},
@@ -67,7 +67,7 @@ class TeamsConnectorAdapterTest {
                     }]}
                     """)));
 
-        var msgs = adapter.listSince("T1", "C1", null, 10).messages();
+        var msgs = adapter.delta(adapter.initialDeltaLink("T1", "C1", null)).messages();
         assertEquals(1, msgs.size());
         assertEquals("msg-1", msgs.get(0).id());
         assertEquals("<p>Hello Teams</p>", msgs.get(0).body());
@@ -80,9 +80,9 @@ class TeamsConnectorAdapterTest {
 
     @Test
     void shouldExtractOnlyFileTypeAttachments() throws Exception {
-        wireMock.stubFor(get(urlPathEqualTo("/teams/T1/channels/C1/messages"))
+        wireMock.stubFor(get(urlPathEqualTo("/teams/T1/channels/C1/messages/delta"))
                 .willReturn(aResponse().withBody("""
-                    {"value": [{
+                    {"@odata.deltaLink": "http://x/d", "value": [{
                         "id": "msg-2",
                         "body": {"content": "files"},
                         "from": {"user": {"displayName": "User"}},
@@ -95,7 +95,7 @@ class TeamsConnectorAdapterTest {
                     }]}
                     """)));
 
-        var msgs = adapter.listSince("T1", "C1", null, 10).messages();
+        var msgs = adapter.delta(adapter.initialDeltaLink("T1", "C1", null)).messages();
         assertEquals(1, msgs.size());
         // Only contentType="file" should be extracted — reference and card should be ignored
         assertEquals(1, msgs.get(0).attachments().size());
@@ -105,13 +105,13 @@ class TeamsConnectorAdapterTest {
 
     @Test
     void shouldHandleMessageWithNoAttachments() throws Exception {
-        wireMock.stubFor(get(urlPathEqualTo("/teams/T1/channels/C1/messages"))
+        wireMock.stubFor(get(urlPathEqualTo("/teams/T1/channels/C1/messages/delta"))
                 .willReturn(aResponse().withBody("""
-                    {"value": [{"id": "msg-3", "body": {"content": "text only"},
+                    {"@odata.deltaLink": "http://x/d", "value": [{"id": "msg-3", "body": {"content": "text only"},
                         "from": {"user": {"displayName": "U"}}, "createdDateTime": "2024-01-15T12:00:00Z",
                         "attachments": []}]}
                     """)));
-        var msgs = adapter.listSince("T1", "C1", null, 10).messages();
+        var msgs = adapter.delta(adapter.initialDeltaLink("T1", "C1", null)).messages();
         assertTrue(msgs.get(0).attachments().isEmpty());
     }
 
@@ -162,69 +162,102 @@ class TeamsConnectorAdapterTest {
 
     @Test
     void shouldThrowOn500() {
-        wireMock.stubFor(get(urlPathEqualTo("/teams/T1/channels/C1/messages"))
+        wireMock.stubFor(get(urlPathEqualTo("/teams/T1/channels/C1/messages/delta"))
                 .willReturn(aResponse().withStatus(500)));
-        assertThrows(RuntimeException.class, () -> adapter.listSince("T1", "C1", null, 10));
+        assertThrows(RuntimeException.class, () -> adapter.delta(adapter.initialDeltaLink("T1", "C1", null)));
     }
 
-    // ── Pagination contract ──────────────────────────────────────
+    // ── the delta feed ───────────────────────────────────────────
+
+    /** The first request of a round: the feed, filtered on lastModifiedDateTime to the millisecond — or the whole feed. No $top: Graph's default page. */
+    @Test
+    void theInitialDeltaLinkFiltersOnLastModifiedToTheMillisecond() {
+        String link = adapter.initialDeltaLink("T1", "C1", java.time.Instant.parse("2026-01-01T00:55:00Z"));
+        assertEquals("http://localhost:" + wireMock.port() + "/teams/T1/channels/C1/messages/delta?$filter=lastModifiedDateTime%20gt%202026-01-01T00%3A55%3A00.000Z", link);
+        assertEquals("http://localhost:" + wireMock.port() + "/teams/T1/channels/C1/messages/delta", adapter.initialDeltaLink("T1", "C1", null));
+        assertTrue(adapter.isOwnDeltaLink(link, "T1", "C1"));
+        assertFalse(adapter.isOwnDeltaLink(link, "T1", "C2"), "another channel's link read as this channel's");
+        assertFalse(adapter.isOwnDeltaLink("https://graph.microsoft.com/v1.0/teams/T1/channels/C1/messages/delta", "T1", "C1"), "another host's link read as this endpoint's");
+    }
 
     /**
-     * A listing stopped at the request cap says so and is NOT complete — the messages it did not
-     * reach are the older ones, and a checkpoint raised over the ones it did reach would exclude
-     * them for ever (R107). The old getMessages() cut at a message count and said nothing.
+     * A channel id with a colon and an at sign: this connector encodes it in the links it writes,
+     * Graph leaves it raw in the links it returns. Both are the channel's own feed; a comparison of
+     * the raw strings refused every link Graph handed back.
      */
     @Test
-    void aListingCutAtTheRequestCapSaysSoAndIsNotComplete() throws Exception {
-        wireMock.stubFor(get(urlPathMatching("/teams/.*/channels/.*/messages.*"))
-                .willReturn(okJson("""
-                    {"value":[
-                        {"id":"m3","body":{"content":"c"},"createdDateTime":"2026-01-01T00:02:00Z"}
-                    ],"@odata.nextLink":"http://localhost:%d/teams/T1/channels/C1/messages?$skiptoken=more"}
-                    """.formatted(wireMock.port()))));
-        var listing = adapter.listSince("T1", "C1", null, 1);
-        assertFalse(listing.complete(), "a cut listing was reported whole");
-        assertTrue(listing.truncatedBecause().contains("teamsMessageMaxRequests"), listing.truncatedBecause());
-        assertEquals(1, listing.messages().size());
+    void aDeltaLinkIsTheChannelsOwnWhetherItsIdIsWrittenRawOrEncoded() {
+        String channel = "19:abc@thread.tacv2";
+        String written = adapter.initialDeltaLink("T1", channel, null);
+        assertTrue(written.contains("19%3Aabc%40thread.tacv2"), "the id was not encoded in the link this connector writes: " + written);
+        assertTrue(adapter.isOwnDeltaLink(written, "T1", channel), written);
+        assertTrue(adapter.isOwnDeltaLink("http://localhost:" + wireMock.port() + "/teams/T1/channels/19:abc@thread.tacv2/messages/delta?$skiptoken=x", "T1", channel),
+                "Graph's raw form of the same link was refused");
+        assertTrue(adapter.isOwnDeltaLink("http://LOCALHOST:" + wireMock.port() + "/teams/T1/channels/" + "19:abc@thread.tacv2" + "/messages/delta", "T1", channel),
+                "a host name differing only in case was refused");
+        assertFalse(adapter.isOwnDeltaLink("http://localhost:" + wireMock.port() + "/teams/T1/channels/19:abc@thread.tacv2/messages", "T1", channel),
+                "the channel listing was read as the delta feed");
+        assertFalse(adapter.isOwnDeltaLink("http://localhost:" + (wireMock.port() + 1) + "/teams/T1/channels/19:abc@thread.tacv2/messages/delta", "T1", channel),
+                "another port was read as this endpoint");
+        assertFalse(adapter.isOwnDeltaLink("not a url at all", "T1", channel));
     }
 
-    /** The listing stops at the first message at or below the checkpoint — Graph lists newest first. */
+    /**
+     * Graph may spell the same feed in the OData key syntax, with delta() as a function call and
+     * in its own case — its mail delta links do. All the channel's own; another channel is not.
+     */
     @Test
-    void theListingStopsAtTheCheckpoint() throws Exception {
-        wireMock.stubFor(get(urlPathMatching("/teams/.*/channels/.*/messages.*"))
+    void aDeltaLinkInGraphsKeySyntaxIsTheChannelsOwn() {
+        String channel = "19:abc@thread.tacv2";
+        String host = "http://localhost:" + wireMock.port();
+        assertTrue(adapter.isOwnDeltaLink(host + "/teams('T1')/channels('19:abc@thread.tacv2')/messages/delta()?$skiptoken=x", "T1", channel),
+                "the key syntax was refused");
+        assertTrue(adapter.isOwnDeltaLink(host + "/Teams/t1/Channels/19:ABC@thread.tacv2/messages/microsoft.graph.delta()?$deltatoken=y", "T1", channel),
+                "Graph's own case, or the qualified function name, was refused");
+        assertFalse(adapter.isOwnDeltaLink(host + "/teams('T1')/channels('19:other@thread.tacv2')/messages/delta()?$skiptoken=x", "T1", channel),
+                "another channel in the key syntax was read as this channel's");
+        assertFalse(adapter.isOwnDeltaLink(host + "/teams('T1')/channels('19:abc@thread.tacv2')/messages/delta()/extra", "T1", channel),
+                "a longer path was read as the feed");
+    }
+
+    /** A deleted message comes back marked — deletedDateTime, or the delta convention @removed — and is counted, not carried. */
+    @Test
+    void aRemovedMessageIsCountedNotCarried() throws Exception {
+        String link = "http://localhost:" + wireMock.port() + "/teams/T1/channels/C1/messages/delta?$deltatoken=t1";
+        wireMock.stubFor(get(urlPathEqualTo("/teams/T1/channels/C1/messages/delta"))
                 .willReturn(okJson("""
-                    {"value":[
-                        {"id":"m3","body":{"content":"c"},"createdDateTime":"2026-01-01T00:02:00Z"},
-                        {"id":"m2","body":{"content":"b"},"createdDateTime":"2026-01-01T00:01:00Z"},
-                        {"id":"m1","body":{"content":"a"},"createdDateTime":"2026-01-01T00:00:00Z"}
-                    ],"@odata.nextLink":"http://localhost:%d/teams/T1/channels/C1/messages?$skiptoken=older"}
+                    {"value":[{"id":"m4","@removed":{"reason":"deleted"}}],"@odata.deltaLink":"http://localhost:%d/teams/T1/channels/C1/messages/delta?$deltatoken=t2"}
                     """.formatted(wireMock.port()))));
-        var listing = adapter.listSince("T1", "C1", "2026-01-01T00:01:30.000000000Z", 10);
-        assertTrue(listing.complete(), listing.truncatedBecause());
-        assertEquals(1, listing.messages().size(), "only the message newer than the checkpoint: " + listing.messages());
-        assertEquals("m3", listing.messages().get(0).id());
-        wireMock.verify(0, getRequestedFor(urlPathMatching("/teams/.*")).withQueryParam("$skiptoken", equalTo("older")));
+        var page = adapter.delta(link);
+        assertTrue(page.messages().isEmpty(), page.messages().toString());
+        assertEquals(1, page.deleted());
     }
 
     @Test
-    void theListingFollowsTheNextLinkToTheEnd() throws Exception {
-        // Page 1 with @odata.nextLink
-        wireMock.stubFor(get(urlPathMatching("/teams/.*/channels/.*/messages"))
-                .withQueryParam("$top", matching(".*"))
+    void aDeltaPageCarriesItsMessagesAndTheLinkToContinueFrom() throws Exception {
+        String link = "http://localhost:" + wireMock.port() + "/teams/T1/channels/C1/messages/delta?$deltatoken=t1";
+        wireMock.stubFor(get(urlPathEqualTo("/teams/T1/channels/C1/messages/delta"))
+                .withQueryParam("$deltatoken", equalTo("t1"))
                 .willReturn(okJson("""
-                    {"value":[{"id":"m2","body":{"content":"b"},"createdDateTime":"2026-01-01T00:01:00Z"}],
-                     "@odata.nextLink":"http://localhost:%d/teams/T1/channels/C1/messages?$skiptoken=page2"}
+                    {"value":[
+                        {"id":"m9","body":{"content":"new"},"createdDateTime":"2026-01-01T00:09:00Z"},
+                        {"id":"m5","body":{"content":""},"createdDateTime":"2026-01-01T00:05:00Z","deletedDateTime":"2026-01-02T00:00:00Z"}
+                    ],"@odata.nextLink":"http://localhost:%d/teams/T1/channels/C1/messages/delta?$skiptoken=s1"}
                     """.formatted(wireMock.port()))));
+        var page = adapter.delta(link);
+        assertEquals(1, page.messages().size(), "the deleted message was carried: " + page.messages());
+        assertEquals("m9", page.messages().get(0).id());
+        assertEquals(1, page.deleted());
+        assertEquals("http://localhost:" + wireMock.port() + "/teams/T1/channels/C1/messages/delta?$skiptoken=s1", page.nextLink());
+        assertNull(page.deltaLink());
+    }
 
-        // Page 2 (no nextLink)
-        wireMock.stubFor(get(urlPathMatching("/teams/.*/channels/.*/messages"))
-                .withQueryParam("$skiptoken", equalTo("page2"))
-                .willReturn(okJson("""
-                    {"value":[{"id":"m1","body":{"content":"a"},"createdDateTime":"2026-01-01T00:00:00Z"}]}
-                    """)));
-
-        var listing = adapter.listSince("T1", "C1", null, 10);
-        assertTrue(listing.complete(), listing.truncatedBecause());
-        assertEquals(2, listing.messages().size());
+    @Test
+    void aDeltaPageWithoutALinkIsRefused() {
+        String link = "http://localhost:" + wireMock.port() + "/teams/T1/channels/C1/messages/delta?$deltatoken=t1";
+        wireMock.stubFor(get(urlPathEqualTo("/teams/T1/channels/C1/messages/delta"))
+                .willReturn(okJson("{\"value\":[]}")));
+        RuntimeException refused = assertThrows(RuntimeException.class, () -> adapter.delta(link));
+        assertTrue(refused.getMessage().contains("@odata.nextLink or @odata.deltaLink"), refused.getMessage());
     }
 }

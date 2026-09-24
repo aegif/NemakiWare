@@ -272,6 +272,27 @@ public class FetchSupport {
     }
 
     /**
+     * As {@link #saveSourceReadToDlq(ExternalIngestRequest, String)}, with the bytes the import
+     * was given: for an item whose bytes the caller still holds — a chat message body, built
+     * from text the listing carried — the row is replayable, not only a record. A metadata-only
+     * row for such an item replayed as a content-less document that reported success and
+     * deleted the row (review, P1).
+     *
+     * @return whether the row was written, for the same reason as above
+     */
+    public boolean saveSourceReadToDlq(ExternalIngestRequest request, String errorMessage, byte[] contentBytes) {
+        if (ingestJobService == null) {
+            return false;
+        }
+        try {
+            return ingestJobService.saveToDlqReporting(request, errorMessage, contentBytes, false, true);
+        } catch (Exception e) {
+            logger.warn("Failed to save to DLQ — item may be lost: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * A row that RECORDS webhook deliveries accepted and not fetched — marked as such by the
      * service, not by anything the request carries (R10). Same boolean contract as above.
      */

@@ -26,10 +26,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -119,6 +120,9 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
         mattermostFactory.set(refetch, (java.util.function.BiFunction<String, String, MattermostConnectorAdapter>) (endpoint, token) -> {
             adaptersBuilt.incrementAndGet();
             return new MattermostConnectorAdapter(endpoint, token) {
+                @Override public MattermostFile getFileInfo(String fileId) {
+                    return new MattermostFile(fileId, "report.pdf", "application/pdf", 3);
+                }
                 @Override public InputStream downloadFile(String fileId) {
                     downloaded.add("mattermost:" + endpoint + "#" + fileId);
                     return download.apply(fileId);
@@ -183,10 +187,13 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
         wire(controller, "refetch", refetch);
         wire(controller, "httpRequest", http);
         this.jobService = jobService;
+        this.lastFetchSupport = fetchSupport;
         return controller.retryDlqEntry("dlq-1");
     }
 
     private IngestJobService jobService;
+    /** The FetchSupport the last replay was given — the link to the parent is asked of it. */
+    private FetchSupport lastFetchSupport;
 
     private static void wire(IngestDlqController controller, String field, Object value) throws Exception {
         Field f = IngestDlqController.class.getDeclaredField(field);
@@ -451,6 +458,107 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
         assertEquals("fresh bytes", read(requireBytes(executed.get(0))));
     }
 
+    /** A row written when the info call failed is named by the id alone; the replay asks the info again (Codex P2). */
+    @Test
+    @DisplayName("a Mattermost attachment row named by its id alone gets its name and type from the file info again")
+    void aMattermostAttachmentRowNamedByItsIdGetsItsNameFromTheFileInfo() throws Exception {
+        String namedById = "{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\",\"sourceObjectId\":\"f-1\",\"sourceObjectType\":\"attachment\","
+                + "\"fileName\":\"f-1\",\"metadata\":{\"channelId\":\"C1\"}}";
+        ResponseEntity<?> res = retry("mattermost", SourceArchetype.CHAT_CONTEXT, false, null, namedById,
+                id -> new ByteArrayInputStream("fresh bytes".getBytes(StandardCharsets.UTF_8)), row -> { });
+
+        assertEquals(HttpStatus.OK, res.getStatusCode(), String.valueOf(res.getBody()));
+        assertEquals("report.pdf", executed.get(0).getFileName(), "the replay kept the id as the name");
+        assertEquals("application/pdf", executed.get(0).getMimeType(), "the replay has no type for the bytes");
+        assertEquals("fresh bytes", read(requireBytes(executed.get(0))));
+    }
+
+    /**
+     * An attachment row names the message document it belongs to; the replay links the two the
+     * way the orchestrator does on the normal path — whatever the profile's relationship policy,
+     * which the chat import's own linking obeys (Codex P2 on Mattermost: a replayed attachment
+     * stood alone for ever).
+     */
+    @Test
+    @DisplayName("a replayed attachment that names its message document is linked to it again")
+    void aReplayedAttachmentIsLinkedToTheMessageItBelongsTo() throws Exception {
+        String row = "{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\",\"sourceObjectId\":\"F-1\",\"sourceObjectType\":\"attachment\","
+                + "\"metadata\":{\"slackFileUrl\":\"https://files.slack.com/files-pri/T1-F-1/download/a.pdf\",\"parentObjectId\":\"obj-msg\"}}";
+        ResponseEntity<?> res = retry("slack", SourceArchetype.CHAT_CONTEXT, false, null, row,
+                url -> new ByteArrayInputStream("fresh bytes".getBytes(StandardCharsets.UTF_8)), r -> { });
+
+        assertEquals(HttpStatus.OK, res.getStatusCode(), String.valueOf(res.getBody()));
+        verify(lastFetchSupport).createRelationshipSafe(any(), eq("bedroom"), eq("obj-msg"), eq("obj-1"), isNull(), any(), any());
+    }
+
+    @Test
+    @DisplayName("a replayed row that names no parent is linked to nothing")
+    void aReplayedRowThatNamesNoParentIsLinkedToNothing() throws Exception {
+        ResponseEntity<?> res = retry("slack", SourceArchetype.CHAT_CONTEXT, false, null, SLACK_ATTACHMENT_ROW,
+                url -> new ByteArrayInputStream("fresh bytes".getBytes(StandardCharsets.UTF_8)), r -> { });
+
+        assertEquals(HttpStatus.OK, res.getStatusCode(), String.valueOf(res.getBody()));
+        verify(lastFetchSupport, never()).createRelationshipSafe(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    private static String chatMessageRow(String metadataJson) {
+        return "{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\",\"sourceObjectId\":\"1700000001.000000\","
+                + "\"sourceObjectType\":\"chat_message\",\"fileName\":\"slack-1.txt\",\"metadata\":" + metadataJson + "}";
+    }
+
+    /**
+     * A chat message row without its body — every body row written before the body was kept with
+     * it — is refused, row kept: the chat import made an empty document from it, reported success
+     * and deleted the row, the only record of the message (Codex P1 on Mattermost).
+     */
+    @Test
+    @DisplayName("a chat message row without its body is refused, not replayed as an empty document")
+    void aChatMessageRowWithoutItsBodyIsRefused() throws Exception {
+        ResponseEntity<?> res = retry("slack", SourceArchetype.CHAT_CONTEXT, false, null, chatMessageRow("{\"messageText\":\"hello\"}"),
+                url -> new ByteArrayInputStream(new byte[0]), r -> { });
+
+        assertEquals(HttpStatus.CONFLICT, res.getStatusCode(), String.valueOf(res.getBody()));
+        assertTrue(String.valueOf(res.getBody()).contains("without its body"), String.valueOf(res.getBody()));
+        assertTrue(executed.isEmpty(), "replayed without its body: an empty document would have been imported");
+    }
+
+    /** A row that does not say what the text was is not read as an empty message. */
+    @Test
+    @DisplayName("a chat message row that does not record its text is refused too")
+    void aChatMessageRowThatDoesNotRecordItsTextIsRefused() throws Exception {
+        ResponseEntity<?> res = retry("slack", SourceArchetype.CHAT_CONTEXT, false, null, chatMessageRow("{\"channelId\":\"C1\"}"),
+                url -> new ByteArrayInputStream(new byte[0]), r -> { });
+
+        assertEquals(HttpStatus.CONFLICT, res.getStatusCode(), String.valueOf(res.getBody()));
+        assertTrue(executed.isEmpty(), "replayed without its body");
+    }
+
+    @Test
+    @DisplayName("a chat message row that carries its body is replayed with it")
+    void aChatMessageRowWithItsBodyIsReplayedWithIt() throws Exception {
+        ResponseEntity<?> res = retry("slack", SourceArchetype.CHAT_CONTEXT, true, "hello", chatMessageRow("{\"messageText\":\"hello\"}"),
+                url -> new ByteArrayInputStream(new byte[0]), r -> { });
+
+        assertEquals(HttpStatus.OK, res.getStatusCode(), String.valueOf(res.getBody()));
+        assertEquals("hello", read(requireBytes(executed.get(0))));
+    }
+
+    /**
+     * A message that had no text: an empty document is the faithful replay, not a refusal. Nor is
+     * a message row an attachment — nothing is fetched again for it. (This replaces a lock that
+     * said every message row without bytes still replays: that was the empty-document defect.)
+     */
+    @Test
+    @DisplayName("a chat message row recording an empty message is replayed as one, and nothing is fetched for it")
+    void aChatMessageRowRecordingAnEmptyMessageIsReplayed() throws Exception {
+        ResponseEntity<?> res = retry("teams", SourceArchetype.CHAT_CONTEXT, false, null, chatMessageRow("{\"messageText\":\"\"}"),
+                url -> new ByteArrayInputStream(new byte[0]), r -> { });
+
+        assertEquals(HttpStatus.OK, res.getStatusCode(), String.valueOf(res.getBody()));
+        assertEquals(1, executed.size());
+        assertTrue(downloaded.isEmpty(), "a message row was fetched as if it were an attachment: " + downloaded);
+    }
+
     @Test
     @DisplayName("a Mattermost attachment row that names no file id is refused, not fetched by anything else")
     void aMattermostAttachmentRowWithoutAFileIdIsRefused() throws Exception {
@@ -462,18 +570,6 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
         assertEquals(HttpStatus.CONFLICT, res.getStatusCode(), String.valueOf(res.getBody()));
         assertTrue(String.valueOf(res.getBody()).contains("file id"), String.valueOf(res.getBody()));
         assertTrue(executed.isEmpty() && downloaded.isEmpty(), "replayed or fetched without a file id: " + executed.size() + " / " + downloaded);
-    }
-
-    /** A chat MESSAGE row (not an attachment) is metadata-only by design and still replays as before. */
-    @Test
-    @DisplayName("a chat message row without bytes still replays — only attachments are bytes-or-nothing")
-    void aChatMessageRowWithoutBytesStillReplays() throws Exception {
-        String messageRow = "{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\",\"sourceObjectId\":\"1700000000.000100\",\"sourceObjectType\":\"chat_message\"}";
-        ResponseEntity<?> res = retry("teams", SourceArchetype.CHAT_CONTEXT, false, null, messageRow,
-                url -> new ByteArrayInputStream(new byte[0]), row -> { });
-
-        assertNotEquals(HttpStatus.CONFLICT, res.getStatusCode(), "a message row was refused as if it were an attachment: " + res.getBody());
-        assertTrue(downloaded.isEmpty(), downloaded.toString());
     }
 
     @Test

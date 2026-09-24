@@ -75,85 +75,156 @@ public class TeamsConnectorAdapter {
         return result;
     }
 
-    /** Messages per page; Graph's maximum for channel messages. */
-    static final int PAGE_SIZE = 50;
-    /** How many message-page requests one listing may make unless the caller says otherwise. */
+    /** How many delta-feed page requests one run may make unless the caller says otherwise. */
     public static final int DEFAULT_MAX_MESSAGE_REQUESTS = 50;
 
-    /** What one listing came back with: the messages newer than the checkpoint, whether it read down to it, and if not why. */
-    public record MessageListing(List<TeamsMessage> messages, boolean complete, String truncatedBecause) {}
+    /**
+     * One page of the channel's delta feed: the messages it carries (deleted ones counted, not
+     * carried), and the link to the next page ({@code @odata.nextLink}) or, when the round is
+     * complete, the link the next round starts from ({@code @odata.deltaLink}).
+     */
+    public record DeltaPage(List<TeamsMessage> messages, int deleted, String nextLink, String deltaLink) {}
+
+    /** The channel's delta feed on this endpoint, the path segments encoded as this connector writes them. */
+    private String deltaBase(String teamId, String channelId) {
+        return apiBase + "/teams/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(teamId) + "/channels/"
+                + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(channelId) + "/messages/delta";
+    }
 
     /**
-     * EVERY channel message newer than {@code sinceCanonical} (a {@link WatermarkCheckpoint#canonical}
-     * form, or null for all), following {@code @odata.nextLink} up to {@code maxRequests} requests.
+     * The first request of a round of the channel's delta feed ({@code /messages/delta}): every
+     * root message created or changed after {@code modifiedAfter} — Graph's only delta filter,
+     * {@code lastModifiedDateTime gt}, written to the millisecond — or the whole feed when null.
      *
-     * <p>This replaced a listing stopped at the caller's per-run limit (R107). Graph lists channel
-     * messages newest first and offers no {@code $filter} on the creation time, so a listing cut at
-     * N messages was the N NEWEST; the caller then raised the checkpoint to the newest it had seen,
-     * and every older message the cut had left out fell below the checkpoint for ever. The listing
-     * now reads DOWN TO the checkpoint: pages are newest first, so the first page holding a message
-     * older than it is the last one read (the rest of that page and every later page are older;
-     * messages AT the checkpoint's time are passed on for the caller's id-level check).
-     * That rests on Graph's order being by creation time, newest first — measured against a stub,
-     * not against Graph.
-     *
-     * <p>A response without a {@code value} array, or a message without a creation time this
-     * connector can read, is refused, not read around: a message that cannot be placed can neither
-     * be skipped nor named. The same {@code @odata.nextLink} twice is a cut.
+     * <p>Why the feed and not the channel listing: Graph lists channel messages sorted by the last
+     * modified time of the whole reply chain (List channel messages, "Response"), so a root with a
+     * fresh reply comes first whatever its creation time, and no listing can stop at a checkpoint
+     * on the creation time; the feed is Graph's own change tracking. Graph documents it with an
+     * eight-month window (older copies of the chatMessage delta page), and without {@code $top}
+     * here: its page size is Graph's default. Measured against a stub, not against Graph.
      */
-    public MessageListing listSince(String teamId, String channelId, String sinceCanonical, int maxRequests) throws Exception {
-        String url = apiBase + "/teams/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(teamId) + "/channels/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(channelId)
-                + "/messages?$top=" + PAGE_SIZE;
-        List<TeamsMessage> newer = new ArrayList<>();
-        String previous = null;
-        String previousAt = null;
-        for (int request = 1; request <= maxRequests; request++) {
-            JsonNode root = graphGet(url);
-            JsonNode values = root.get("value");
-            if (values == null || !values.isArray()) {
-                throw new RuntimeException("Graph answered the channel messages without a value array on request "
-                        + request + ", so how many messages the channel holds is unknown");
-            }
-            for (JsonNode node : values) {
-                TeamsMessage msg = parseMessage(node);
-                String at = jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint.canonical(msg.createdDateTime());
-                if (at == null) {
-                    throw new RuntimeException("Graph listed message " + msg.id() + " without a creation time this connector can read ('"
-                            + msg.createdDateTime() + "'), so it can neither be skipped nor named");
-                }
-                // The stop below rests on newest-first order. A message NEWER than the one before
-                // it — within a page or across the pages read — breaks that, and a stop taken on
-                // such a listing would report as complete a span with newer messages behind it
-                // (review, P1). Refused; the pages not read cannot be checked (R112).
-                if (previousAt != null && at.compareTo(previousAt) > 0) {
-                    throw new RuntimeException("Graph listed message " + msg.id() + " (" + msg.createdDateTime()
-                            + ") newer than the one before it, so the channel is not listed newest first and "
-                            + "the listing cannot tell where the checkpoint is");
-                }
-                previousAt = at;
-                if (sinceCanonical != null && at.compareTo(sinceCanonical) < 0) {
-                    // Newest first: this and everything after it is older than the checkpoint. A
-                    // message AT the checkpoint's time is passed on — the checkpoint names the
-                    // ids done at its time, and only the caller can tell those from the rest.
-                    return new MessageListing(newer, true, null);
-                }
-                newer.add(msg);
-            }
-            JsonNode nextLink = root.get("@odata.nextLink");
-            String next = nextLink == null || nextLink.isNull() ? null : nextLink.asText(null);
-            if (next == null || next.isBlank()) {
-                return new MessageListing(newer, true, null);
-            }
-            if (next.equals(previous) || next.equals(url)) {
-                return new MessageListing(newer, false, "Graph returned the same @odata.nextLink twice (" + next
-                        + "), so the listing cannot move forward");
-            }
-            previous = url;
-            url = next;
+    public String initialDeltaLink(String teamId, String channelId, java.time.Instant modifiedAfter) {
+        String url = deltaBase(teamId, channelId);
+        if (modifiedAfter != null) {
+            String stamp = java.time.format.DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSS'Z'")
+                    .withZone(java.time.ZoneOffset.UTC).format(modifiedAfter);
+            url += "?$filter=" + java.net.URLEncoder.encode("lastModifiedDateTime gt " + stamp, java.nio.charset.StandardCharsets.UTF_8)
+                    .replace("+", "%20");
         }
-        return new MessageListing(newer, false, "the cap of " + maxRequests + " message request(s) was reached with "
-                + newer.size() + " message(s) read and older ones still above the checkpoint (raise the profile's "
-                + "teamsMessageMaxRequests parameter)");
+        return url;
+    }
+
+    /**
+     * Whether a link points into THIS channel's delta feed on THIS endpoint — the only links read
+     * or saved. Compared on the scheme, the host, the effective port and the DECODED path read as
+     * OData segments: Graph writes the channel id raw in the links it returns ({@code 19:…@thread.tacv2})
+     * where this connector writes it encoded, and Graph's links may use the key syntax
+     * ({@code teams('…')/channels('…')/messages/delta()} — its mail delta links do) and its own case.
+     * The same feed in every one of these spellings; a comparison of the strings refused every link
+     * Graph handed back and stopped the channel for good.
+     */
+    public boolean isOwnDeltaLink(String link, String teamId, String channelId) {
+        if (link == null || teamId == null || channelId == null) return false;
+        try {
+            URI candidate = URI.create(link);
+            URI own = URI.create(apiBase);
+            if (candidate.getScheme() == null || own.getScheme() == null
+                    || !candidate.getScheme().equalsIgnoreCase(own.getScheme())) {
+                return false;
+            }
+            if (candidate.getHost() == null || own.getHost() == null
+                    || !candidate.getHost().equalsIgnoreCase(own.getHost())) {
+                return false;
+            }
+            if (effectivePort(candidate) != effectivePort(own)) {
+                return false;
+            }
+            List<String> expected = new ArrayList<>(odataSegments(own.getPath()));
+            expected.addAll(List.of("teams", teamId, "channels", channelId, "messages", "delta"));
+            List<String> actual = odataSegments(candidate.getPath());
+            if (actual.size() != expected.size()) {
+                return false;
+            }
+            for (int i = 0; i < expected.size(); i++) {
+                if (!expected.get(i).equalsIgnoreCase(actual.get(i))) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (IllegalArgumentException malformed) {
+            return false;
+        }
+    }
+
+    private static final java.util.regex.Pattern KEY_SEGMENT = java.util.regex.Pattern.compile("^([^(]+)\\('(.*)'\\)$");
+
+    /**
+     * A decoded path as OData segments: {@code name('key')} is two segments, {@code delta()} and
+     * {@code microsoft.graph.delta()} are {@code delta}, empty segments are dropped.
+     */
+    static List<String> odataSegments(String decodedPath) {
+        List<String> out = new ArrayList<>();
+        if (decodedPath == null) return out;
+        for (String part : decodedPath.split("/")) {
+            if (part.isEmpty()) continue;
+            java.util.regex.Matcher key = KEY_SEGMENT.matcher(part);
+            if (key.matches()) {
+                out.add(key.group(1));
+                out.add(key.group(2).replace("''", "'"));
+                continue;
+            }
+            String segment = part.endsWith("()") ? part.substring(0, part.length() - 2) : part;
+            if (segment.startsWith("microsoft.graph.")) {
+                segment = segment.substring("microsoft.graph.".length());
+            }
+            out.add(segment);
+        }
+        return out;
+    }
+
+    private static int effectivePort(URI uri) {
+        if (uri.getPort() != -1) return uri.getPort();
+        return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : "http".equalsIgnoreCase(uri.getScheme()) ? 80 : -1;
+    }
+
+    /**
+     * One page of the delta feed at {@code link}. A deleted message — {@code deletedDateTime}
+     * set, or the delta convention {@code @removed} — is counted, not carried: there is nothing to
+     * import. Refused: a response without a {@code value} array, and a page that carries neither
+     * {@code @odata.nextLink} nor {@code @odata.deltaLink} — the feed could not be continued from
+     * it, and a page taken as the end would drop what follows. A page whose next link is the link
+     * it was read from is refused too: it cannot move forward.
+     */
+    public DeltaPage delta(String link) throws Exception {
+        JsonNode root = graphGet(link);
+        JsonNode values = root.get("value");
+        if (values == null || !values.isArray()) {
+            throw new RuntimeException("Graph answered the delta feed without a value array, so the page cannot be read");
+        }
+        List<TeamsMessage> messages = new ArrayList<>();
+        int deleted = 0;
+        for (JsonNode node : values) {
+            if (node.hasNonNull("deletedDateTime") || node.has("@removed")) {
+                deleted++;
+                continue;
+            }
+            messages.add(parseMessage(node));
+        }
+        JsonNode nextNode = root.get("@odata.nextLink");
+        JsonNode deltaNode = root.get("@odata.deltaLink");
+        String next = nextNode == null || nextNode.isNull() ? null : nextNode.asText(null);
+        String deltaLink = deltaNode == null || deltaNode.isNull() ? null : deltaNode.asText(null);
+        if (next != null && next.isBlank()) next = null;
+        if (deltaLink != null && deltaLink.isBlank()) deltaLink = null;
+        if (next == null && deltaLink == null) {
+            throw new RuntimeException("Graph answered a delta page without @odata.nextLink or @odata.deltaLink, "
+                    + "so the feed cannot be continued from it");
+        }
+        if (link.equals(next)) {
+            throw new RuntimeException("Graph returned the delta page's own link as its @odata.nextLink (" + next
+                    + "), so the feed cannot move forward");
+        }
+        return new DeltaPage(messages, deleted, next, deltaLink);
     }
 
     /**

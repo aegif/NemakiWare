@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -31,20 +32,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 /**
- * A Teams channel is read down to the checkpoint and the OLDEST new messages are taken first (R107).
+ * A Teams channel is followed through Graph's delta feed, page by page (R107).
  *
- * <p>Graph lists channel messages newest first and offers no filter on the creation time. The
- * previous orchestrator asked for the first {@code limit} messages — the {@code limit} NEWEST —
- * and raised the checkpoint to the newest it had seen, so in a burst every older new message fell
- * below the checkpoint for ever. What is measured here is the REAL adapter pointed at a local stub
- * of Graph — its paging, its stop at the checkpoint and its refusals — and the orchestrator's
- * budget, dead-letter answers and checkpoint.
+ * <p>Graph sorts the channel listing by the last modified time of the whole reply chain, not by
+ * the creation time, and has no filter on it — so no creation-time checkpoint over that listing
+ * holds: the shapes this orchestrator had took the newest {@code limit} and passed the rest, then
+ * refused every channel with a live thread, then could lose a message whose thread rose above the
+ * page cursor during a listing. What is measured here is the REAL adapter pointed at a local stub
+ * of Graph — the delta feed and its links — and the orchestrator's start, page-by-page progress,
+ * budget, dead-letter answers and the checkpoint it saves. The channel listing is never read.
  */
 class TeamsChannelsAreReadToTheCheckpointTest {
 
@@ -57,16 +60,37 @@ class TeamsChannelsAreReadToTheCheckpointTest {
         void respond(HttpExchange exchange, int callNumber) throws IOException;
     }
 
-    private static volatile Responder messages;
+    /** What the delta feed answers; set per test. */
+    private static volatile Responder deltaPages;
     private static volatile List<String> failingDownloads = List.of();
+    /** Calls to the channel LISTING — the orchestrator must not use it. */
     private static final AtomicInteger MESSAGE_CALLS = new AtomicInteger();
+    private static final AtomicInteger DELTA_CALLS = new AtomicInteger();
+    /** The delta links asked for, as full URLs, in order. */
+    private static final List<String> DELTA_LINKS = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** The C1 feed in the OData key syntax, as Graph may write it in the links it returns (its mail delta links do). */
+    private static final String KEY_SYNTAX_FEED = "/v1.0/teams('T1')/channels('C1')/messages/delta()";
+
+    /** A channel id as Graph writes it: a colon and an at sign, which Graph leaves raw in the links it returns. */
+    private static final String RAW_CHANNEL = "19:abc@thread.tacv2";
 
     @BeforeAll
     static void startStub() throws Exception {
         previousAllowLocalhost = System.getProperty("nemaki.ingest.allowLocalhost");
         System.setProperty("nemaki.ingest.allowLocalhost", "true");
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.createContext("/v1.0/teams/T1/channels/C1/messages", exchange -> messages.respond(exchange, MESSAGE_CALLS.incrementAndGet()));
+        for (String feed : List.of("/v1.0/teams/T1/channels/C1/messages/delta", "/v1.0/teams/T1/channels/" + RAW_CHANNEL + "/messages/delta",
+                KEY_SYNTAX_FEED)) {
+            server.createContext(feed, exchange -> {
+                DELTA_LINKS.add(base + exchange.getRequestURI().toString());
+                deltaPages.respond(exchange, DELTA_CALLS.incrementAndGet());
+            });
+        }
+        server.createContext("/v1.0/teams/T1/channels/C1/messages", exchange -> {
+            MESSAGE_CALLS.incrementAndGet();
+            json(exchange, 200, "{\"value\":[]}");
+        });
         server.createContext("/files/", exchange -> {
             String[] parts = exchange.getRequestURI().getPath().split("/");
             String id = parts[parts.length - 1];
@@ -97,11 +121,14 @@ class TeamsChannelsAreReadToTheCheckpointTest {
     @BeforeEach
     void reset() {
         MESSAGE_CALLS.set(0);
+        DELTA_CALLS.set(0);
+        DELTA_LINKS.clear();
         failingDownloads = List.of();
         dlqWritable = true;
         failingImports = List.of();
         throwingImports = List.of();
-        messages = (exchange, n) -> json(exchange, 200, page(null, msg("m1", "2026-01-01T00:00:01Z")));
+        skippingImports = List.of();
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t-end"));
     }
 
     private static void json(HttpExchange exchange, int status, String body) throws IOException {
@@ -124,10 +151,22 @@ class TeamsChannelsAreReadToTheCheckpointTest {
                 + ".txt\",\"contentType\":\"file\",\"contentUrl\":\"" + base + "/files/" + fileId + "\"}]}";
     }
 
-    /** A page; {@code nextPage} is the number of the page the nextLink points at (null: last page). */
-    private static String page(Integer nextPage, String... msgs) {
-        return "{\"value\":[" + String.join(",", msgs) + "]"
-                + (nextPage == null ? "" : ",\"@odata.nextLink\":\"" + base + "/v1.0/teams/T1/channels/C1/messages?$skiptoken=p" + nextPage + "\"") + "}";
+    /** A delta link on the stub; {@code kind} is "skip" (a nextLink) or "delta" (a deltaLink). */
+    private static String deltaLink(String kind, String token) {
+        return deltaLink("C1", kind, token);
+    }
+
+    private static String deltaLink(String channel, String kind, String token) {
+        return base + "/v1.0/teams/T1/channels/" + channel + "/messages/delta?$" + kind + "token=" + token;
+    }
+
+    /** A page of the feed; {@code kind} "skip" carries a nextLink, "delta" a deltaLink (the round is complete). */
+    private static String deltaPage(String kind, String token, String... msgs) {
+        return deltaPageLinking(deltaLink(kind, token), "skip".equals(kind), msgs);
+    }
+
+    private static String deltaPageLinking(String link, boolean next, String... msgs) {
+        return "{\"value\":[" + String.join(",", msgs) + "],\"@odata." + (next ? "nextLink" : "deltaLink") + "\":\"" + link + "\"}";
     }
 
     private FetchSupport fetchSupport;
@@ -137,9 +176,13 @@ class TeamsChannelsAreReadToTheCheckpointTest {
     private final List<String> dlqReasons = new ArrayList<>();
     private final List<String> dlqReadReasons = new ArrayList<>();
     private final List<ExternalIngestRequest> dlqRequests = new ArrayList<>();
+    /** The bytes a read row was written with, by source object id (null: metadata-only). */
+    private final Map<String, byte[]> dlqBodies = new java.util.HashMap<>();
     private boolean dlqWritable = true;
     private List<String> failingImports = List.of();
     private List<String> throwingImports = List.of();
+    /** Ids the import service answers "skipped" for — already imported. */
+    private List<String> skippingImports = List.of();
 
     private TeamsFetchOrchestrator teams() {
         TeamsFetchOrchestrator orchestrator = new TeamsFetchOrchestrator();
@@ -150,6 +193,7 @@ class TeamsChannelsAreReadToTheCheckpointTest {
         dlqReasons.clear();
         dlqReadReasons.clear();
         dlqRequests.clear();
+        dlqBodies.clear();
         lenient().when(fetchSupport.resolvePasswordOrRefuse(any())).thenReturn("graph-token");
         lenient().doNothing().when(fetchSupport).throttle(anyLong());
         lenient().doAnswer(call -> {
@@ -163,6 +207,14 @@ class TeamsChannelsAreReadToTheCheckpointTest {
             dlqReadReasons.add(call.getArgument(1));
             return dlqWritable;
         }).when(fetchSupport).saveSourceReadToDlq(any(), anyString());
+        lenient().doAnswer(call -> {
+            ExternalIngestRequest r = call.getArgument(0);
+            dlqRequests.add(r);
+            dlqReasons.add(call.getArgument(1));
+            dlqReadReasons.add(call.getArgument(1));
+            dlqBodies.put(r.getSourceObjectId(), call.getArgument(2));
+            return dlqWritable;
+        }).when(fetchSupport).saveSourceReadToDlq(any(), anyString(), any());
         lenient().when(checkpointManager.loadSimpleCheckpoint(anyString(), anyString())).thenReturn(null);
         lenient().when(importService.executeChatContextImport(any(), any())).thenAnswer(call -> {
             ExternalIngestRequest req = call.getArgument(1);
@@ -171,6 +223,9 @@ class TeamsChannelsAreReadToTheCheckpointTest {
             }
             if (throwingImports.contains(req.getSourceObjectId())) {
                 throw new RuntimeException("the import service threw after reading the content");
+            }
+            if (skippingImports.contains(req.getSourceObjectId())) {
+                return ExternalIngestResult.skipped("r", "obj-" + req.getSourceObjectId(), "already imported");
             }
             importedIds.add(req.getSourceObjectId());
             return new ExternalIngestResult("r", "obj-" + req.getSourceObjectId(), "1.0", false, false, false, null, null,
@@ -185,6 +240,17 @@ class TeamsChannelsAreReadToTheCheckpointTest {
 
     private void checkpointIs(String stored) {
         lenient().when(checkpointManager.loadSimpleCheckpoint(anyString(), anyString())).thenReturn(stored);
+    }
+
+    /** What was saved as the checkpoint, exactly once. */
+    private String savedCheckpoint() {
+        return savedCheckpoint(KEY);
+    }
+
+    private String savedCheckpoint(String key) {
+        ArgumentCaptor<String> saved = ArgumentCaptor.forClass(String.class);
+        verify(checkpointManager).saveSimpleCheckpoint(eq("p-teams"), eq(key), saved.capture());
+        return saved.getValue();
     }
 
     private static ImportProfileDefinition profile() {
@@ -203,255 +269,401 @@ class TeamsChannelsAreReadToTheCheckpointTest {
 
     private static final Map<String, String> CHANNEL = Map.of("teamId", "T1", "channelId", "C1");
     private static final String KEY = "teams.T1.C1";
+    private static final String STORED = "delta:%s/v1.0/teams/T1/channels/C1/messages/delta?$deltatoken=t1";
 
+    private String storedLink() {
+        return base + "/v1.0/teams/T1/channels/C1/messages/delta?$deltatoken=t1";
+    }
+
+    // ── where the feed starts ──────────────────────────────────────
+
+    /** No checkpoint: the whole feed, unfiltered — and the channel listing is never read. */
     @Test
-    @DisplayName("Teams: the channel is read across pages and the oldest new messages are taken first")
-    void teamsListsTheChannelAndTakesTheOldestFirst() {
-        messages = (exchange, n) -> {
-            if (n == 1) json(exchange, 200, page(2, msg("m5", "2026-01-01T00:00:05Z"), msg("m4", "2026-01-01T00:00:04Z"), msg("m3", "2026-01-01T00:00:03Z")));
-            else json(exchange, 200, page(null, msg("m2", "2026-01-01T00:00:02Z"), msg("m1", "2026-01-01T00:00:01Z")));
-        };
-        FetchResult result = teams().execute(null, profile(), connector(), CHANNEL, 2);
+    @DisplayName("Teams: a fresh profile reads the whole delta feed, not the channel listing, and saves the delta link")
+    void teamsAFreshProfileReadsTheWholeFeedNotTheListing() {
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2", msg("m1", "2026-01-01T00:00:01Z"), msg("m2", "2026-01-01T00:00:02Z")));
+        FetchResult result = teams().execute(null, profile(), connector(), CHANNEL, 10);
 
-        assertEquals(2, MESSAGE_CALLS.get(), "the nextLink was not followed");
-        assertEquals(5, result.fetched(), result.toString());
-        assertEquals(List.of("m1", "m2"), importedIds, "the budget did not take the oldest messages");
-        assertFalse(result.sawEverything(), "3 messages were left for the next poll: " + result);
-        assertTrue(result.incompleteReads().get(0).contains("left for the next poll"), result.incompleteReads().get(0));
-        verify(checkpointManager).saveSimpleCheckpoint("p-teams", KEY, "2026-01-01T00:00:02.000000000Z|m2");
+        assertEquals(0, MESSAGE_CALLS.get(), "the channel listing was read");
+        assertEquals(List.of(base + "/v1.0/teams/T1/channels/C1/messages/delta"), DELTA_LINKS, "the feed was not read from its start, unfiltered");
+        assertEquals(List.of("m1", "m2"), importedIds);
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        assertFalse(result.hasErrors(), result.errors().toString());
+        assertEquals("delta:" + deltaLink("delta", "t2"), savedCheckpoint());
     }
 
     /**
-     * Graph has no filter on the creation time, so the listing STOPS at the first page holding a
-     * message at or below the checkpoint — the older pages are never asked for.
+     * A creation-time checkpoint an earlier version wrote: the feed starts a millisecond before
+     * it (lastModifiedDateTime gt), so a message at that very time comes again — the import
+     * service's dedupe answers for it — and none created after it is left out.
      */
     @Test
-    @DisplayName("Teams: the listing stops at the checkpoint's page and does not ask for the older ones")
-    void teamsTheListingStopsAtTheCheckpointPage() {
-        messages = (exchange, n) -> {
-            if (n == 1) json(exchange, 200, page(2, msg("m5", "2026-01-01T00:00:05Z"), msg("m4", "2026-01-01T00:00:04Z")));
-            else if (n == 2) json(exchange, 200, page(3, msg("m3", "2026-01-01T00:00:03Z"), msg("m2", "2026-01-01T00:00:02Z")));
-            else json(exchange, 200, page(null, msg("m1", "2026-01-01T00:00:01Z")));
-        };
+    @DisplayName("Teams: a legacy checkpoint starts the feed a millisecond before its time")
+    void teamsALegacyCheckpointStartsTheFeedAMillisecondBeforeIt() {
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2", msg("m1", "2026-01-01T00:00:01Z")));
         TeamsFetchOrchestrator orchestrator = teams();
-        // the checkpoint is m3, in the middle of page 2: m2 (older) stops the listing there
-        checkpointIs("2026-01-01T00:00:03Z|m3");
+        checkpointIs("2026-01-01T00:00:01Z");
 
         FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 10);
 
-        assertEquals(2, MESSAGE_CALLS.get(), "the page below the checkpoint was asked for");
-        assertEquals(List.of("m4", "m5"), importedIds);
-        assertTrue(result.sawEverything(), result.incompleteReads().toString());
-        verify(checkpointManager).saveSimpleCheckpoint("p-teams", KEY, "2026-01-01T00:00:05.000000000Z|m5");
+        assertEquals(List.of(base + "/v1.0/teams/T1/channels/C1/messages/delta?$filter=lastModifiedDateTime%20gt%202026-01-01T00%3A00%3A00.999Z"),
+                DELTA_LINKS, "the feed did not start a millisecond before the legacy checkpoint");
+        assertEquals(List.of("m1"), importedIds);
+        assertFalse(result.hasErrors(), result.errors().toString());
+        assertEquals("delta:" + deltaLink("delta", "t2"), savedCheckpoint());
+    }
+
+    /** The shape an intermediate build wrote — canonical time and the ids at it — starts the same way, from its time truncated to the millisecond. */
+    @Test
+    @DisplayName("Teams: a <time>|<ids> checkpoint starts the feed a millisecond before its time")
+    void teamsATimeAndIdsCheckpointStartsTheFeedAMillisecondBeforeIt() {
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2"));
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs("2026-01-01T00:00:02.000500000Z|m2");
+
+        orchestrator.execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertEquals(List.of(base + "/v1.0/teams/T1/channels/C1/messages/delta?$filter=lastModifiedDateTime%20gt%202026-01-01T00%3A00%3A01.999Z"), DELTA_LINKS);
+    }
+
+    @Test
+    @DisplayName("Teams: a stored checkpoint that is neither a delta link nor a timestamp is an error, not 'no checkpoint'")
+    void teamsAStoredCheckpointThatCannotBeReadIsAnError() {
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs("last tuesday|m1");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("last tuesday") && e.contains("neither a delta link nor a timestamp")), result.errors().toString());
+        assertEquals(0, DELTA_CALLS.get() + MESSAGE_CALLS.get(), "the channel was read although the checkpoint could not be");
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /** A checkpoint is not a place to put a URL: a stored link into another channel's feed is not followed. */
+    @Test
+    @DisplayName("Teams: a stored delta link into another channel's feed is not followed")
+    void teamsAStoredDeltaLinkOfAnotherChannelIsNotFollowed() {
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs("delta:" + deltaLink("OTHER", "delta", "t1"));
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("did not write")), result.errors().toString());
+        assertEquals(0, DELTA_CALLS.get() + MESSAGE_CALLS.get(), "a link this connector did not write was followed: " + DELTA_LINKS);
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("Teams: a stored delta link on another host is not followed")
+    void teamsAStoredDeltaLinkOfAnotherHostIsNotFollowed() {
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs("delta:http://graph.example.invalid:" + server.getAddress().getPort() + "/v1.0/teams/T1/channels/C1/messages/delta?$deltatoken=t1");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("did not write")), result.errors().toString());
+        assertEquals(0, DELTA_CALLS.get() + MESSAGE_CALLS.get());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }
 
     /**
-     * The checkpoint's own message at the END of a page: nothing older is on that page, so the
-     * next page is read too — a message at the checkpoint's own time can continue on it (m2b), and
-     * only a strictly older message (m1) says the span is done. One page more than a stop at the
-     * checkpoint's time would cost, and it is not optional (subagent, Teams 1st round).
+     * Graph writes a channel id raw in the links it hands back ({@code 19:…@thread.tacv2}); this
+     * connector writes it encoded. The same place either way — a comparison of the raw strings
+     * would refuse every link Graph returned and stop the channel for good.
      */
     @Test
-    @DisplayName("Teams: a checkpoint at the end of a page reads the next page — a same-time message on it is not lost")
-    void teamsACheckpointAtThePageEndReadsTheNextPage() {
-        messages = (exchange, n) -> {
-            if (n == 1) json(exchange, 200, page(2, msg("m5", "2026-01-01T00:00:05Z"), msg("m4", "2026-01-01T00:00:04Z")));
-            else if (n == 2) json(exchange, 200, page(3, msg("m3", "2026-01-01T00:00:03Z"), msg("m2", "2026-01-01T00:00:02Z")));
-            else if (n == 3) json(exchange, 200, page(4, msg("m2b", "2026-01-01T00:00:02Z"), msg("m1", "2026-01-01T00:00:01Z")));
-            else json(exchange, 200, page(null, msg("m0", "2026-01-01T00:00:00Z")));
+    @DisplayName("Teams: a delta link with the channel id written raw, as Graph writes it, is followed and saved")
+    void teamsAGraphLinkWithTheChannelIdRawIsFollowed() {
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPageLinking(deltaLink(RAW_CHANNEL, "delta", "t2"), false, msg("m7", "2026-01-01T00:00:07Z")));
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs("delta:" + deltaLink(RAW_CHANNEL, "delta", "t1"));
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), Map.of("teamId", "T1", "channelId", RAW_CHANNEL), 10);
+
+        assertFalse(result.hasErrors(), "Graph's own link was refused: " + result.errors());
+        assertEquals(List.of("m7"), importedIds);
+        assertEquals("delta:" + deltaLink(RAW_CHANNEL, "delta", "t2"), savedCheckpoint("teams.T1." + RAW_CHANNEL));
+    }
+
+    /** Graph may hand a link back in the OData key syntax: the same feed, followed and saved. */
+    @Test
+    @DisplayName("Teams: a nextLink in Graph's key syntax is this channel's feed — followed and saved")
+    void teamsAGraphLinkInTheKeySyntaxIsFollowed() {
+        String keyLink = base + KEY_SYNTAX_FEED + "?$skiptoken=k1";
+        deltaPages = (exchange, n) -> {
+            if (n == 1) json(exchange, 200, deltaPageLinking(keyLink, true, msg("m7", "2026-01-01T00:00:07Z")));
+            else json(exchange, 200, deltaPage("delta", "t2", msg("m8", "2026-01-01T00:00:08Z")));
         };
         TeamsFetchOrchestrator orchestrator = teams();
-        checkpointIs("2026-01-01T00:00:02Z|m2");
+        checkpointIs(String.format(STORED, base));
 
         FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 10);
 
-        assertEquals(3, MESSAGE_CALLS.get(), "the page after the checkpoint's is read once (to see an older message), and no further");
-        assertEquals(List.of("m2b", "m3", "m4", "m5"), importedIds, "the same-time message on the next page was lost: " + importedIds);
-        assertTrue(result.sawEverything(), result.incompleteReads().toString());
-        verify(checkpointManager).saveSimpleCheckpoint("p-teams", KEY, "2026-01-01T00:00:05.000000000Z|m5");
+        assertFalse(result.hasErrors(), "Graph's key-syntax link was refused: " + result.errors());
+        assertEquals(keyLink, DELTA_LINKS.get(1), DELTA_LINKS.toString());
+        assertEquals(List.of("m7", "m8"), importedIds);
+        assertEquals("delta:" + deltaLink("delta", "t2"), savedCheckpoint());
     }
 
-    /** A message AT the checkpoint's timestamp that the checkpoint names is skipped; one it does not name is taken. */
+    // ── following the feed ─────────────────────────────────────────
+
     @Test
-    @DisplayName("Teams: at the checkpoint's timestamp only the ids it names are skipped")
-    void teamsAtTheCheckpointTimestampOnlyTheNamedIdsAreSkipped() {
-        messages = (exchange, n) -> json(exchange, 200, page(null, msg("m3", "2026-01-01T00:00:03Z"), msg("m2b", "2026-01-01T00:00:02Z"), msg("m2", "2026-01-01T00:00:02Z")));
+    @DisplayName("Teams: a delta checkpoint reads the feed from the stored link and saves the new delta link")
+    void teamsADeltaCheckpointReadsTheFeedFromTheStoredLink() {
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2", msg("m7", "2026-01-01T00:00:07Z"), msg("m8", "2026-01-01T00:00:08Z")));
         TeamsFetchOrchestrator orchestrator = teams();
-        checkpointIs("2026-01-01T00:00:02Z|m2");
+        checkpointIs(String.format(STORED, base));
 
-        // the adapter stops at m2b? No: m2b is AT the checkpoint's time and not named, so it is newer for the checkpoint's purposes —
-        // the adapter must not stop on it. It stops on m2 (named).
         FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 10);
 
-        assertTrue(importedIds.contains("m2b") && importedIds.contains("m3"), "a message at the checkpoint time that it does not name was skipped: " + importedIds);
-        assertFalse(importedIds.contains("m2"), importedIds.toString());
-        verify(checkpointManager).saveSimpleCheckpoint("p-teams", KEY, "2026-01-01T00:00:03.000000000Z|m3");
+        assertEquals(0, MESSAGE_CALLS.get(), "the channel listing was read");
+        assertEquals(List.of(storedLink()), DELTA_LINKS, "the feed was not read from the stored link");
+        assertEquals(List.of("m7", "m8"), importedIds);
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        assertEquals("delta:" + deltaLink("delta", "t2"), savedCheckpoint());
     }
 
     @Test
-    @DisplayName("Teams: a listing cut at the request cap imports nothing, holds the checkpoint and names the cap")
-    void teamsAListingCutAtTheCapImportsNothing() {
-        messages = (exchange, n) -> json(exchange, 200, page(n + 1, msg("m" + (9 - n), "2026-01-01T00:00:0" + (9 - n) + "Z")));
-        FetchResult result = teams().execute(null, profile(), connector(),
-                Map.of("teamId", "T1", "channelId", "C1", TeamsFetchOrchestrator.PARAM_MAX_MESSAGE_REQUESTS, "2"), 10);
+    @DisplayName("Teams: a round follows nextLinks and saves the deltaLink that ends it")
+    void teamsADeltaRoundFollowsNextLinksThenSavesTheDeltaLink() {
+        deltaPages = (exchange, n) -> {
+            if (n == 1) json(exchange, 200, deltaPage("skip", "s1", msg("m7", "2026-01-01T00:00:07Z")));
+            else json(exchange, 200, deltaPage("delta", "t2", msg("m8", "2026-01-01T00:00:08Z")));
+        };
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs(String.format(STORED, base));
 
-        assertEquals(2, MESSAGE_CALLS.get());
+        FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertEquals(2, DELTA_CALLS.get(), DELTA_LINKS.toString());
+        assertEquals(deltaLink("skip", "s1"), DELTA_LINKS.get(1), "the nextLink was not followed");
+        assertEquals(List.of("m7", "m8"), importedIds);
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        assertEquals("delta:" + deltaLink("delta", "t2"), savedCheckpoint());
+    }
+
+    /** A run cut at the request cap loses nothing: what was read is imported and the link it reached is saved. */
+    @Test
+    @DisplayName("Teams: a run cut at the request cap saves the link it reached — the next poll continues, nothing is lost")
+    void teamsADeltaRoundCutAtTheCapSavesTheLinkItReached() {
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("skip", "s" + n, msg("m" + (6 + n), "2026-01-01T00:00:0" + (6 + n) + "Z")));
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs(String.format(STORED, base));
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(),
+                Map.of("teamId", "T1", "channelId", "C1", TeamsFetchOrchestrator.PARAM_MAX_MESSAGE_REQUESTS, "1"), 10);
+
+        assertEquals(1, DELTA_CALLS.get());
+        assertEquals(List.of("m7"), importedIds, "the page read before the cap should be imported: " + importedIds);
         assertFalse(result.sawEverything(), result.toString());
         assertTrue(result.incompleteReads().get(0).contains("teamsMessageMaxRequests"), result.incompleteReads().get(0));
-        assertTrue(importedIds.isEmpty(), importedIds.toString());
         assertFalse(result.hasErrors(), result.errors().toString());
-        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+        assertEquals("delta:" + deltaLink("skip", "s1"), savedCheckpoint());
     }
 
+    /** The budget stops INSIDE a page: the page is not passed, so the next poll reads it again and takes the rest. */
     @Test
-    @DisplayName("Teams: a page without a value array is refused, not read as an empty channel")
-    void teamsAPageWithoutValueIsRefused() {
-        messages = (exchange, n) -> json(exchange, 200, "{\"@odata.context\":\"x\"}");
-        FetchResult result = teams().execute(null, profile(), connector(), CHANNEL, 10);
-
-        assertTrue(result.hasErrors(), "a malformed page was read as a channel: " + result);
-        assertTrue(importedIds.isEmpty(), importedIds.toString());
-        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
-    }
-
-    @Test
-    @DisplayName("Teams: a message without a readable creation time refuses the listing")
-    void teamsAMessageWithoutACreationTimeRefusesTheListing() {
-        messages = (exchange, n) -> json(exchange, 200, "{\"value\":[{\"id\":\"m-x\",\"body\":{\"content\":\"no time\"}}," + msg("m1", "2026-01-01T00:00:01Z") + "]}");
-        FetchResult result = teams().execute(null, profile(), connector(), CHANNEL, 10);
-
-        assertTrue(result.errors().stream().anyMatch(e -> e.contains("m-x") && e.contains("creation time")), result.errors().toString());
-        assertTrue(importedIds.isEmpty(), importedIds.toString());
-        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
-    }
-
-    @Test
-    @DisplayName("Teams: a message without an id refuses the listing — it can neither be skipped nor named")
-    void teamsAMessageWithoutAnIdRefusesTheListing() {
-        messages = (exchange, n) -> json(exchange, 200, "{\"value\":[{\"createdDateTime\":\"2026-01-01T00:00:02Z\",\"body\":{\"content\":\"no id\"}}," + msg("m1", "2026-01-01T00:00:01Z") + "]}");
-        FetchResult result = teams().execute(null, profile(), connector(), CHANNEL, 10);
-
-        assertTrue(result.errors().stream().anyMatch(e -> e.contains("without an id")), result.errors().toString());
-        assertTrue(importedIds.isEmpty(), importedIds.toString());
-        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
-    }
-
-    /**
-     * The stop at the checkpoint rests on Graph listing newest first. A listing that is not —
-     * a message newer than the one before it — is refused: a stop taken on it would report as
-     * complete a span with newer messages behind it (Codex P1; R112).
-     */
-    @Test
-    @DisplayName("Teams: a listing that is not newest first is refused — the stop at the checkpoint would lose what is behind it")
-    void teamsAListingNotNewestFirstIsRefused() {
-        // m5 comes AFTER m3 — newer than the one before it — while the listing is still above the
-        // checkpoint. (A page in order whose last message is below the checkpoint hides a newer
-        // message on the NEXT page from any check: that is the residual, R112.)
-        messages = (exchange, n) -> json(exchange, 200, page(null, msg("m3", "2026-01-01T00:00:03Z"), msg("m5", "2026-01-01T00:00:05Z"), msg("m4", "2026-01-01T00:00:04Z")));
+    @DisplayName("Teams: the budget stops inside a page without passing it")
+    void teamsTheBudgetStopsInsideADeltaPageWithoutPassingIt() {
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2", msg("m7", "2026-01-01T00:00:07Z"), msg("m8", "2026-01-01T00:00:08Z")));
         TeamsFetchOrchestrator orchestrator = teams();
-        checkpointIs("2026-01-01T00:00:02Z|m2");
+        checkpointIs(String.format(STORED, base));
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 1);
+
+        assertEquals(List.of("m7"), importedIds, "the budget did not stop: " + importedIds);
+        assertFalse(result.sawEverything(), result.toString());
+        assertTrue(result.incompleteReads().get(0).contains("read again next poll"), result.incompleteReads().get(0));
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /** The budget reached at a page boundary: the page is passed and the next one is not asked for. */
+    @Test
+    @DisplayName("Teams: the budget reached at a page boundary passes the page and asks for no further one")
+    void teamsTheBudgetReachedAtAPageBoundaryReadsNoFurther() {
+        deltaPages = (exchange, n) -> {
+            if (n == 1) json(exchange, 200, deltaPage("skip", "s1", msg("m7", "2026-01-01T00:00:07Z")));
+            else json(exchange, 200, deltaPage("delta", "t2", msg("m8", "2026-01-01T00:00:08Z")));
+        };
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs(String.format(STORED, base));
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 1);
+
+        assertEquals(1, DELTA_CALLS.get(), "a page was asked for after the budget was spent: " + DELTA_LINKS);
+        assertEquals(List.of("m7"), importedIds);
+        assertTrue(result.incompleteReads().get(0).contains("continues from the saved link"), result.incompleteReads().get(0));
+        assertEquals("delta:" + deltaLink("skip", "s1"), savedCheckpoint());
+    }
+
+    /** A page read again is mostly messages already imported: their skips spend no budget, so the page is passed. */
+    @Test
+    @DisplayName("Teams: a page read again spends no budget on the messages it already imported")
+    void teamsADeltaPageReadAgainSpendsNoBudgetOnWhatItSkips() {
+        skippingImports = List.of("m7");
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2", msg("m7", "2026-01-01T00:00:07Z"), msg("m8", "2026-01-01T00:00:08Z")));
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs(String.format(STORED, base));
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 1);
+
+        assertEquals(List.of("m8"), importedIds, "the skipped message spent the budget and the page can never be passed: " + importedIds);
+        assertEquals(1, result.skipped(), result.toString());
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        assertEquals("delta:" + deltaLink("delta", "t2"), savedCheckpoint());
+    }
+
+    /** A failure nothing records holds its page — and the pages passed before it stay passed. */
+    @Test
+    @DisplayName("Teams: a failure that could not be dead-lettered holds its page; the pages before it stay passed")
+    void teamsAnUnrecordedFailureInADeltaPageHoldsTheLink() {
+        dlqWritable = false;
+        failingDownloads = List.of("F-bad");
+        deltaPages = (exchange, n) -> {
+            if (n == 1) json(exchange, 200, deltaPage("skip", "s1", msg("m6", "2026-01-01T00:00:06Z")));
+            else json(exchange, 200, deltaPage("delta", "t2", msgWithFile("m7", "2026-01-01T00:00:07Z", "F-bad")));
+        };
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs(String.format(STORED, base));
 
         FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 10);
 
-        assertTrue(result.errors().stream().anyMatch(e -> e.contains("not listed newest first")), result.errors().toString());
-        assertTrue(importedIds.isEmpty(), "a listing that is not newest first was trusted: " + importedIds);
-        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("could not be dead-lettered")), result.errors().toString());
+        assertEquals("delta:" + deltaLink("skip", "s1"), savedCheckpoint(), "the held page was passed, or the passed one was not saved");
     }
 
+    /** A recorded failure does not hold the page: the row is the record, and the feed moves on. */
     @Test
-    @DisplayName("Teams: the same nextLink twice is a cut, not progress")
-    void teamsTheSameNextLinkTwiceIsACut() {
-        messages = (exchange, n) -> json(exchange, 200, page(1, msg("m" + (9 - n), "2026-01-01T00:00:0" + (9 - n) + "Z")));
-        FetchResult result = teams().execute(null, profile(), connector(),
-                Map.of("teamId", "T1", "channelId", "C1", TeamsFetchOrchestrator.PARAM_MAX_MESSAGE_REQUESTS, "6"), 10);
-
-        assertEquals(2, MESSAGE_CALLS.get(), "the repeated nextLink was not recognised on the request that repeated it");
-        assertFalse(result.sawEverything(), result.toString());
-        assertTrue(result.incompleteReads().get(0).contains("same @odata.nextLink twice"), result.incompleteReads().get(0));
-        assertTrue(importedIds.isEmpty(), importedIds.toString());
-        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
-    }
-
-    @Test
-    @DisplayName("Teams: a failed download is dead-lettered as never read with its URL; the message is not named and the newer one moves the checkpoint")
-    void teamsAFailedDownloadIsDeadLetteredNeverReadWithItsUrl() {
+    @DisplayName("Teams: a failed download is dead-lettered as never read with its URL and the page is passed")
+    void teamsAFailedDownloadIsDeadLetteredNeverReadAndThePagePasses() {
         failingDownloads = List.of("F-bad");
-        messages = (exchange, n) -> json(exchange, 200, page(null, msg("m2", "2026-01-01T00:00:02Z"), msgWithFile("m1", "2026-01-01T00:00:01Z", "F-bad")));
-        FetchResult result = teams().execute(null, profile(), connector(), CHANNEL, 10);
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2", msgWithFile("m7", "2026-01-01T00:00:07Z", "F-bad")));
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs(String.format(STORED, base));
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 10);
 
         assertEquals(1, dlqReasons.size(), dlqReasons.toString());
         assertTrue(dlqReasons.get(0).contains("F-bad") && dlqReadReasons.isEmpty(), "expected a never-read row: " + dlqReasons);
         assertEquals(base + "/files/F-bad", dlqRequests.get(0).getMetadata().get("teamsFileUrl"), "the row must carry the URL it is fetched again by");
         assertTrue(result.hasErrors(), result.toString());
-        verify(checkpointManager).saveSimpleCheckpoint("p-teams", KEY, "2026-01-01T00:00:02.000000000Z|m2");
-    }
-
-    /** A file attachment without a content URL cannot be read; skipped, the message would settle and the checkpoint pass it. */
-    @Test
-    @DisplayName("Teams: a file attachment without a content URL is dead-lettered as never read, not skipped")
-    void teamsAFileWithoutAContentUrlIsDeadLetteredNotSkipped() {
-        messages = (exchange, n) -> json(exchange, 200, page(null, msg("m2", "2026-01-01T00:00:02Z"),
-                "{\"id\":\"m1\",\"createdDateTime\":\"2026-01-01T00:00:01Z\",\"body\":{\"content\":\"see file\"},\"from\":{\"user\":{\"displayName\":\"u\"}},"
-                + "\"attachments\":[{\"id\":\"att-nourl\",\"name\":\"a.pdf\",\"contentType\":\"file\",\"contentUrl\":null}]}"));
-        FetchResult result = teams().execute(null, profile(), connector(), CHANNEL, 10);
-
-        assertEquals(1, dlqReasons.size(), "the attachment without a URL was skipped, not recorded: " + dlqReasons);
-        assertTrue(dlqReasons.get(0).contains("att-nourl") && dlqReadReasons.isEmpty(), dlqReasons.toString());
-        assertTrue(result.hasErrors(), result.toString());
-        verify(checkpointManager).saveSimpleCheckpoint("p-teams", KEY, "2026-01-01T00:00:02.000000000Z|m2");
+        assertEquals("delta:" + deltaLink("delta", "t2"), savedCheckpoint());
     }
 
     @Test
-    @DisplayName("Teams: an import that throws after the read is dead-lettered as read, not never-read")
-    void teamsAnImportThatThrowsIsDeadLetteredAsRead() {
-        throwingImports = List.of("m1");
-        messages = (exchange, n) -> json(exchange, 200, page(null, msg("m2", "2026-01-01T00:00:02Z"), msg("m1", "2026-01-01T00:00:01Z")));
-        FetchResult result = teams().execute(null, profile(), connector(), CHANNEL, 10);
+    @DisplayName("Teams: a deleted message in the feed — deletedDateTime or @removed — is skipped, not imported")
+    void teamsADeletedMessageInTheFeedIsSkippedNotImported() {
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2",
+                "{\"id\":\"m5\",\"createdDateTime\":\"2026-01-01T00:00:05Z\",\"deletedDateTime\":\"2026-01-02T00:00:00Z\",\"body\":{\"content\":\"\"}}",
+                "{\"id\":\"m6\",\"@removed\":{\"reason\":\"deleted\"}}",
+                msg("m7", "2026-01-01T00:00:07Z")));
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs(String.format(STORED, base));
 
-        assertEquals(1, dlqReadReasons.size(), "the thrown import was not recorded as a READ item: " + dlqReasons);
-        assertEquals(1, dlqReasons.size(), dlqReasons.toString());
-        assertEquals(List.of("m2"), importedIds);
-        assertTrue(result.hasErrors(), result.toString());
-        verify(checkpointManager).saveSimpleCheckpoint("p-teams", KEY, "2026-01-01T00:00:02.000000000Z|m2");
+        FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertEquals(List.of("m7"), importedIds, "a deleted message was imported: " + importedIds);
+        assertEquals(2, result.skipped(), result.toString());
+        assertFalse(result.hasErrors(), result.errors().toString());
+        assertEquals("delta:" + deltaLink("delta", "t2"), savedCheckpoint());
     }
 
     @Test
-    @DisplayName("Teams: an import that answers an error is dead-lettered as read and the message is not named")
-    void teamsAnImportThatAnswersAnErrorIsDeadLetteredAsRead() {
-        failingImports = List.of("m2");
-        messages = (exchange, n) -> json(exchange, 200, page(null, msg("m2", "2026-01-01T00:00:02Z"), msg("m1", "2026-01-01T00:00:01Z")));
-        FetchResult result = teams().execute(null, profile(), connector(), CHANNEL, 10);
+    @DisplayName("Teams: a page without a nextLink or deltaLink is refused — the feed could not be continued from it")
+    void teamsADeltaPageWithoutALinkIsRefused() {
+        deltaPages = (exchange, n) -> json(exchange, 200, "{\"value\":[" + msg("m7", "2026-01-01T00:00:07Z") + "]}");
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs(String.format(STORED, base));
 
-        assertEquals(1, dlqReadReasons.size(), "the refused import was not dead-lettered as read: " + dlqReasons);
-        assertEquals(List.of("m1"), importedIds);
-        assertTrue(result.hasErrors(), result.toString());
-        verify(checkpointManager).saveSimpleCheckpoint("p-teams", KEY, "2026-01-01T00:00:01.000000000Z|m1");
-    }
+        FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 10);
 
-    @Test
-    @DisplayName("Teams: a failure that could not be dead-lettered holds the checkpoint and is reported")
-    void teamsAnUnrecordedFailureHoldsTheCheckpoint() {
-        dlqWritable = false;
-        failingDownloads = List.of("F-bad");
-        messages = (exchange, n) -> json(exchange, 200, page(null, msg("m2", "2026-01-01T00:00:02Z"), msgWithFile("m1", "2026-01-01T00:00:01Z", "F-bad")));
-        FetchResult result = teams().execute(null, profile(), connector(), CHANNEL, 10);
-
-        assertTrue(result.errors().stream().anyMatch(e -> e.contains("could not be dead-lettered")), result.errors().toString());
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("@odata.nextLink or @odata.deltaLink")), result.errors().toString());
+        assertTrue(importedIds.isEmpty(), "a page the feed cannot continue from was imported: " + importedIds);
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }
 
     @Test
-    @DisplayName("Teams: the attempts of one run are bounded by four times the limit")
-    void teamsTheAttemptsOfOneRunAreBoundedByFourTimesTheLimit() {
-        failingImports = List.of("m1", "m2", "m3", "m4");
-        messages = (exchange, n) -> json(exchange, 200, page(null, msg("m5", "2026-01-01T00:00:05Z"), msg("m4", "2026-01-01T00:00:04Z"),
-                msg("m3", "2026-01-01T00:00:03Z"), msg("m2", "2026-01-01T00:00:02Z"), msg("m1", "2026-01-01T00:00:01Z")));
-        FetchResult result = teams().execute(null, profile(), connector(), CHANNEL, 1);
+    @DisplayName("Teams: a page whose nextLink is its own link is refused, not followed to the cap")
+    void teamsADeltaPageThatLinksToItselfIsRefused() {
+        deltaPages = (exchange, n) -> json(exchange, 200, "{\"value\":[],\"@odata.nextLink\":\"" + storedLink() + "\"}");
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs(String.format(STORED, base));
 
-        assertEquals(4, dlqReadReasons.size(), dlqReasons.toString());
-        assertTrue(importedIds.isEmpty(), "the message behind four failures was tried beyond the bound: " + importedIds);
-        assertTrue(result.incompleteReads().stream().anyMatch(n -> n.contains("4 × the limit of 1")), result.incompleteReads().toString());
+        FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertEquals(1, DELTA_CALLS.get(), DELTA_LINKS.toString());
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("own link")), result.errors().toString());
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("Teams: a page without a value array is refused, not passed as empty")
+    void teamsADeltaPageWithoutValueIsRefused() {
+        deltaPages = (exchange, n) -> json(exchange, 200, "{\"@odata.deltaLink\":\"" + deltaLink("delta", "t2") + "\"}");
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs(String.format(STORED, base));
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertTrue(result.hasErrors(), "a malformed page was read as empty: " + result);
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /** A link Graph hands back is saved only if it would be followed: one out of this channel's feed holds the page. */
+    @Test
+    @DisplayName("Teams: a page linking out of this channel's feed is refused, nothing on it imported")
+    void teamsADeltaPageLinkingOutOfTheChannelFeedIsRefused() {
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPageLinking(deltaLink("OTHER", "skip", "x"), true, msg("m7", "2026-01-01T00:00:07Z")));
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs(String.format(STORED, base));
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("outside this channel's feed")), result.errors().toString());
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /** The page is checked whole first: a message without an id holds the page before anything on it is imported. */
+    @Test
+    @DisplayName("Teams: a message without an id holds its page, and nothing on the page is imported")
+    void teamsAMessageWithoutAnIdHoldsThePageAndNothingOnItIsImported() {
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2", msg("m7", "2026-01-01T00:00:07Z"),
+                "{\"createdDateTime\":\"2026-01-01T00:00:08Z\",\"body\":{\"content\":\"no id\"}}"));
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs(String.format(STORED, base));
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("without an id")), result.errors().toString());
+        assertTrue(importedIds.isEmpty(), "part of a page that cannot be passed was imported: " + importedIds);
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /**
+     * At most limit × 4 messages are tried in a run, counted between pages — a page is finished
+     * once begun, so a page of failures cannot hold the feed for ever. Three failures on page 1
+     * (under the bound), two on page 2 (over it), and page 3 is not asked for.
+     */
+    @Test
+    @DisplayName("Teams: the attempts of one run are bounded by four times the limit, counted between pages")
+    void teamsTheAttemptsOfOneRunAreBoundedBetweenPages() {
+        failingImports = List.of("f1", "f2", "f3", "f4", "f5");
+        deltaPages = (exchange, n) -> {
+            if (n == 1) json(exchange, 200, deltaPage("skip", "s1", msg("f1", "2026-01-01T00:00:01Z"), msg("f2", "2026-01-01T00:00:02Z"), msg("f3", "2026-01-01T00:00:03Z")));
+            else if (n == 2) json(exchange, 200, deltaPage("skip", "s2", msg("f4", "2026-01-01T00:00:04Z"), msg("f5", "2026-01-01T00:00:05Z")));
+            else json(exchange, 200, deltaPage("delta", "t3", msg("m9", "2026-01-01T00:00:09Z")));
+        };
+        TeamsFetchOrchestrator orchestrator = teams();
+        checkpointIs(String.format(STORED, base));
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 1);
+
+        assertEquals(2, DELTA_CALLS.get(), "a page was asked for past the bound: " + DELTA_LINKS);
+        assertEquals(5, dlqReadReasons.size(), dlqReasons.toString());
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        assertTrue(result.incompleteReads().stream().anyMatch(r -> r.contains("4 × the limit of 1")), result.incompleteReads().toString());
+        assertEquals("delta:" + deltaLink("skip", "s2"), savedCheckpoint());
     }
 
     @Test
@@ -462,38 +674,94 @@ class TeamsChannelsAreReadToTheCheckpointTest {
 
         assertTrue(result.hasErrors(), result.toString());
         assertTrue(result.errors().get(0).contains("teamsMessageMaxRequests"), result.errors().get(0));
-        assertEquals(0, MESSAGE_CALLS.get());
+        assertEquals(0, DELTA_CALLS.get());
     }
 
+    /** A request that fails midway: the pages passed before it stay passed. */
     @Test
-    @DisplayName("Teams: a stored checkpoint that cannot be read is an error, not 'no checkpoint'")
-    void teamsAStoredCheckpointThatCannotBeReadIsAnError() {
+    @DisplayName("Teams: a failed request keeps the pages already passed")
+    void teamsAFailedRequestKeepsThePagesAlreadyPassed() {
+        deltaPages = (exchange, n) -> {
+            if (n == 1) json(exchange, 200, deltaPage("skip", "s1", msg("m7", "2026-01-01T00:00:07Z")));
+            else json(exchange, 400, "{\"error\":{\"code\":\"BadRequest\"}}");
+        };
         TeamsFetchOrchestrator orchestrator = teams();
-        checkpointIs("last tuesday|m1");
+        checkpointIs(String.format(STORED, base));
 
         FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 10);
 
-        assertTrue(result.errors().stream().anyMatch(e -> e.contains("last tuesday") && e.contains("not a timestamp this connector can read")), result.errors().toString());
-        assertEquals(0, MESSAGE_CALLS.get(), "the channel was listed although the checkpoint could not be read");
-        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("connection failed")), result.errors().toString());
+        assertEquals(List.of("m7"), importedIds);
+        assertEquals("delta:" + deltaLink("skip", "s1"), savedCheckpoint(), "the page passed before the failure was not kept");
     }
 
-    /**
-     * A legacy checkpoint (Graph's own form, no ids) names nothing at its timestamp, so a message
-     * AT that time is offered once more — the import service's dedupe answers for it — and is then
-     * named; a message older than it is not offered.
-     */
+    // ── one message: body, attachments, dead letters ──────────────
+
+    /** A file attachment without a content URL cannot be read; skipped, the message would settle and the page pass it. */
     @Test
-    @DisplayName("Teams: a legacy checkpoint offers the messages at its own time once, then names them")
-    void teamsALegacyCheckpointOffersItsOwnTimeOnceThenNamesIt() {
-        messages = (exchange, n) -> json(exchange, 200, page(null, msg("m1", "2026-01-01T00:00:01Z"), msg("m0", "2026-01-01T00:00:00Z")));
-        TeamsFetchOrchestrator orchestrator = teams();
-        checkpointIs("2026-01-01T00:00:01Z");
+    @DisplayName("Teams: a file attachment without a content URL is dead-lettered as never read, not skipped")
+    void teamsAFileWithoutAContentUrlIsDeadLetteredNotSkipped() {
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2",
+                "{\"id\":\"m1\",\"createdDateTime\":\"2026-01-01T00:00:01Z\",\"body\":{\"content\":\"see file\"},\"from\":{\"user\":{\"displayName\":\"u\"}},"
+                + "\"attachments\":[{\"id\":\"att-nourl\",\"name\":\"a.pdf\",\"contentType\":\"file\",\"contentUrl\":null}]}"));
+        FetchResult result = teams().execute(null, profile(), connector(), CHANNEL, 10);
 
-        FetchResult result = orchestrator.execute(null, profile(), connector(), CHANNEL, 10);
+        assertEquals(1, dlqReasons.size(), "the attachment without a URL was skipped, not recorded: " + dlqReasons);
+        assertTrue(dlqReasons.get(0).contains("att-nourl") && dlqReadReasons.isEmpty(), dlqReasons.toString());
+        assertTrue(result.hasErrors(), result.toString());
+        assertEquals("delta:" + deltaLink("delta", "t2"), savedCheckpoint());
+    }
 
-        assertEquals(List.of("m1"), importedIds, "the message at the legacy checkpoint's time is offered once; older ones are not: " + importedIds);
-        assertFalse(result.hasErrors(), result.errors().toString());
-        verify(checkpointManager).saveSimpleCheckpoint("p-teams", KEY, "2026-01-01T00:00:01.000000000Z|m1");
+    @Test
+    @DisplayName("Teams: an import that throws after the read is dead-lettered as read, not never-read")
+    void teamsAnImportThatThrowsIsDeadLetteredAsRead() {
+        throwingImports = List.of("m1");
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2", msg("m1", "2026-01-01T00:00:01Z"), msg("m2", "2026-01-01T00:00:02Z")));
+        FetchResult result = teams().execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertEquals(1, dlqReadReasons.size(), "the thrown import was not recorded as a READ item: " + dlqReasons);
+        assertEquals(1, dlqReasons.size(), dlqReasons.toString());
+        assertEquals(List.of("m2"), importedIds);
+        assertTrue(result.hasErrors(), result.toString());
+        assertEquals("delta:" + deltaLink("delta", "t2"), savedCheckpoint());
+    }
+
+    @Test
+    @DisplayName("Teams: an import that answers an error is dead-lettered as read")
+    void teamsAnImportThatAnswersAnErrorIsDeadLetteredAsRead() {
+        failingImports = List.of("m2");
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2", msg("m1", "2026-01-01T00:00:01Z"), msg("m2", "2026-01-01T00:00:02Z")));
+        FetchResult result = teams().execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertEquals(1, dlqReadReasons.size(), "the refused import was not dead-lettered as read: " + dlqReasons);
+        assertEquals(List.of("m1"), importedIds);
+        assertTrue(result.hasErrors(), result.toString());
+        assertEquals("delta:" + deltaLink("delta", "t2"), savedCheckpoint());
+    }
+
+    /** A message whose body import failed is dead-lettered WITH the body: replayable, not only a record of the miss (Codex P1 on Mattermost). */
+    @Test
+    @DisplayName("Teams: a failed body import is dead-lettered with the body bytes, so the replay imports the text")
+    void teamsAFailedBodyImportRowCarriesTheBodyBytes() {
+        failingImports = List.of("m2");
+        throwingImports = List.of("m1");
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2", msg("m1", "2026-01-01T00:00:01Z"), msg("m2", "2026-01-01T00:00:02Z")));
+        teams().execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertEquals(2, dlqReadReasons.size(), dlqReasons.toString());
+        assertEquals("hello m2", new String(dlqBodies.getOrDefault("m2", new byte[0]), StandardCharsets.UTF_8), "the row for the refused body carries no bytes");
+        assertEquals("hello m1", new String(dlqBodies.getOrDefault("m1", new byte[0]), StandardCharsets.UTF_8), "the row for the thrown body carries no bytes");
+    }
+
+    /** The attachment row names the message document, so a replay links the attachment to it again (Codex P2 on Mattermost). */
+    @Test
+    @DisplayName("Teams: a failed attachment row names its message document for the replay to link to")
+    void teamsAFailedAttachmentRowNamesItsMessageDocument() {
+        failingDownloads = List.of("F-bad");
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2", msgWithFile("m1", "2026-01-01T00:00:01Z", "F-bad")));
+        teams().execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertEquals(1, dlqRequests.size(), dlqReasons.toString());
+        assertEquals("obj-m1", dlqRequests.get(0).getMetadata().get("parentObjectId"), "the row does not name the message document: " + dlqRequests.get(0).getMetadata());
     }
 }

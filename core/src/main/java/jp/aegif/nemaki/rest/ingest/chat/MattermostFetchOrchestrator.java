@@ -277,14 +277,15 @@ public class MattermostFetchOrchestrator implements FetchOrchestrator {
             } else {
                 failed = true;
                 FetchSupport.addError(errors, "MM msg " + post.id() + ": " + String.join(", ", result.errors()));
-                if (!fetchSupport.saveSourceReadToDlq(msgReq, "MM msg " + post.id() + ": " + String.join(", ", result.errors()))) {
+                if (!fetchSupport.saveSourceReadToDlq(msgReq, "MM msg " + post.id() + ": " + String.join(", ", result.errors()),
+                        postText.getBytes(StandardCharsets.UTF_8))) {
                     unrecorded = true;
                 }
             }
         } catch (Exception e) {
             failed = true;
             FetchSupport.addError(errors, "MM msg " + post.id() + ": " + e.getMessage());
-            if (!fetchSupport.saveSourceReadToDlq(msgReq, "MM msg " + post.id() + ": " + e.getMessage())) {
+            if (!fetchSupport.saveSourceReadToDlq(msgReq, "MM msg " + post.id() + ": " + e.getMessage(), postText.getBytes(StandardCharsets.UTF_8))) {
                 unrecorded = true;
             }
         }
@@ -321,6 +322,7 @@ public class MattermostFetchOrchestrator implements FetchOrchestrator {
                     // id on replay — not imported as a content-less document.
                     failed = true;
                     FetchSupport.addError(errors, "MM file " + fileId + ": " + notRead.getMessage());
+                    nameTheParent(req, parentObjectId);
                     if (!fetchSupport.saveSourceNeverReadToDlq(req, "MM file " + fileId + ": " + notRead.getMessage())) {
                         unrecorded = true;
                     }
@@ -339,6 +341,7 @@ public class MattermostFetchOrchestrator implements FetchOrchestrator {
                 } else {
                     failed = true;
                     FetchSupport.addError(errors, "MM " + fileId + ": " + String.join(", ", result.errors()));
+                    nameTheParent(req, parentObjectId);
                     if (!fetchSupport.saveSourceReadToDlq(req, "MM " + fileId + ": " + String.join(", ", result.errors()))) {
                         unrecorded = true;
                     }
@@ -347,6 +350,7 @@ public class MattermostFetchOrchestrator implements FetchOrchestrator {
                 // The download succeeded and the import threw: the item WAS read.
                 failed = true;
                 FetchSupport.addError(errors, "MM file " + fileId + ": " + e.getMessage());
+                nameTheParent(req, parentObjectId);
                 if (!fetchSupport.saveSourceReadToDlq(req, "MM file " + fileId + ": " + e.getMessage())) {
                     unrecorded = true;
                 }
@@ -355,5 +359,17 @@ public class MattermostFetchOrchestrator implements FetchOrchestrator {
             }
         }
         return unrecorded ? Outcome.FAILED_UNRECORDED : failed ? Outcome.FAILED_RECORDED : Outcome.SETTLED;
+    }
+
+    /**
+     * The message document the attachment belongs to, named on the dead-letter row so that a
+     * replay links the attachment to it again: the DLQ controller creates the relationship from
+     * this metadata, as the orchestrator does on the normal path. Without it a replayed
+     * attachment stood alone for ever (review, P2).
+     */
+    private static void nameTheParent(ExternalIngestRequest req, String parentObjectId) {
+        if (parentObjectId != null && req.getMetadata() != null) {
+            req.getMetadata().put("parentObjectId", parentObjectId);
+        }
     }
 }

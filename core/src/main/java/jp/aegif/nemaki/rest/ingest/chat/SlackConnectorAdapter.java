@@ -54,7 +54,11 @@ public class SlackConnectorAdapter {
     public record SlackMessage(String ts, String userId, String text, String threadTs, List<SlackFile> files) {}
     /**
      * @param external a file Slack only links to ({@code mode} "external" / {@code is_external}) — it
-     *                 has no download URL by design and is not an attachment to import
+     *                 has no download URL by design and is not an attachment to import. This is the
+     *                 ONLY mode read that way: a file Slack redacted ({@code tombstone}, deleted;
+     *                 {@code hidden_by_limit}, hidden by the plan's limit) has no URL either, and is
+     *                 deliberately left on the never-read path — an attachment that existed and cannot
+     *                 be read is recorded, not dropped (review, P3)
      */
     public record SlackFile(String id, String name, String mimeType, String urlPrivateDownload, long size, boolean external) {}
     public record SlackChannel(String id, String name, boolean isPrivate) {}

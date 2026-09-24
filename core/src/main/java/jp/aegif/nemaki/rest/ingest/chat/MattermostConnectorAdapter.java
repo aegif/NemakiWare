@@ -102,8 +102,15 @@ public class MattermostConnectorAdapter {
      * are read. {@code before} is strict (posts created BEFORE that post's time), so the next page
      * is asked before the LAST post created strictly after the page's oldest creation time: it
      * begins with that oldest time again, and a post at it that the page did not show is not lost
-     * (the ones it did show are listed once — a seen set). A full page of posts all created at one
-     * time cannot be walked past this way and is a cut. A page that repeats an earlier one is out
+     * (the ones it did show are listed once — a seen set). So a page asked {@code before} a post
+     * always carries at least one post already seen; one that carries none is a cut — the
+     * cursor post was deleted since (the server's subquery for its time answers nothing and the
+     * page comes back empty), and read as the end it would pass every older post (review, P1).
+     * A full page of posts all created at one time cannot be walked past this way and is a cut —
+     * one no parameter lifts: {@code before} cannot split a millisecond, and walking the tie with
+     * {@code page} offsets is not used because SQL leaves the order of equal {@code CreateAt}
+     * unspecified, so an offset could skip a post. The channel stays PARTIAL until those posts are
+     * dealt with outside this connector (R113). A page that repeats an earlier one is out
      * of order — its first post is newer than the last post read — and is refused by the order
      * check below, so a server that repeats itself is not walked to the cap.
      *
@@ -135,6 +142,7 @@ public class MattermostConnectorAdapter {
             }
             List<MattermostPost> page = new ArrayList<>();
             List<String> ats = new ArrayList<>();
+            boolean overlapped = false;
             for (JsonNode postId : order) {
                 String id = postId.asText("");
                 JsonNode post = id.isEmpty() ? null : posts.get(id);
@@ -156,8 +164,14 @@ public class MattermostConnectorAdapter {
                             + "the listing cannot tell where the checkpoint is");
                 }
                 previousAt = at;
+                if (seen.contains(msg.id())) overlapped = true;
                 page.add(msg);
                 ats.add(at);
+            }
+            if (before != null && !overlapped) {
+                return new PostListing(newer, false, "the page before post " + before + " carried none of the posts the page "
+                        + "it was asked from ended with — the post may have been deleted since — so it cannot be read as the "
+                        + "end of the channel");
             }
             for (int i = 0; i < page.size(); i++) {
                 MattermostPost msg = page.get(i);
@@ -184,7 +198,8 @@ public class MattermostConnectorAdapter {
             if (cursor == null) {
                 return new PostListing(newer, false, "a full page of posts all created at " + oldestAt
                         + " (create_at " + page.get(0).createAt() + ") cannot be walked past by this connector, "
-                        + "so the listing cannot move forward");
+                        + "so the listing cannot move forward — raising mattermostPostMaxRequests does not help: more than "
+                        + PAGE_SIZE + " posts share one millisecond (R113)");
             }
             before = cursor;
         }

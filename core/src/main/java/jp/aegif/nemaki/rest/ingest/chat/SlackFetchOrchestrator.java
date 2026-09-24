@@ -281,14 +281,15 @@ public class SlackFetchOrchestrator implements FetchOrchestrator {
                 } else {
                     failed = true;
                     FetchSupport.addError(errors, "Slack msg " + msg.ts() + ": " + String.join(", ", result.errors()));
-                    if (!fetchSupport.saveSourceReadToDlq(msgReq, "Slack msg " + msg.ts() + ": " + String.join(", ", result.errors()))) {
+                    if (!fetchSupport.saveSourceReadToDlq(msgReq, "Slack msg " + msg.ts() + ": " + String.join(", ", result.errors()),
+                            messageText.getBytes(StandardCharsets.UTF_8))) {
                         unrecorded = true;
                     }
                 }
             } catch (Exception e) {
                 failed = true;
                 FetchSupport.addError(errors, "Slack msg " + msg.ts() + ": " + e.getMessage());
-                if (!fetchSupport.saveSourceReadToDlq(msgReq, "Slack msg " + msg.ts() + ": " + e.getMessage())) {
+                if (!fetchSupport.saveSourceReadToDlq(msgReq, "Slack msg " + msg.ts() + ": " + e.getMessage(), messageText.getBytes(StandardCharsets.UTF_8))) {
                     unrecorded = true;
                 }
             }
@@ -323,6 +324,7 @@ public class SlackFetchOrchestrator implements FetchOrchestrator {
             if (file.urlPrivateDownload() == null) {
                 failed = true;
                 FetchSupport.addError(errors, "Slack file " + file.id() + ": no download URL — the file cannot be read");
+                nameTheParent(fileReq, parentObjectId);
                 if (!fetchSupport.saveSourceNeverReadToDlq(fileReq, "Slack file " + file.id() + ": no download URL — the file cannot be read")) {
                     unrecorded = true;
                 }
@@ -338,6 +340,7 @@ public class SlackFetchOrchestrator implements FetchOrchestrator {
                     // on replay — not imported as a content-less document.
                     failed = true;
                     FetchSupport.addError(errors, "Slack file " + file.id() + ": " + downloadFailed.getMessage());
+                    nameTheParent(fileReq, parentObjectId);
                     if (!fetchSupport.saveSourceNeverReadToDlq(fileReq, "Slack file " + file.id() + ": " + downloadFailed.getMessage())) {
                         unrecorded = true;
                     }
@@ -356,6 +359,7 @@ public class SlackFetchOrchestrator implements FetchOrchestrator {
                 } else {
                     failed = true;
                     FetchSupport.addError(errors, "Slack file " + file.id() + ": " + String.join(", ", result.errors()));
+                    nameTheParent(fileReq, parentObjectId);
                     if (!fetchSupport.saveSourceReadToDlq(fileReq, "Slack file " + file.id() + ": " + String.join(", ", result.errors()))) {
                         unrecorded = true;
                     }
@@ -364,6 +368,7 @@ public class SlackFetchOrchestrator implements FetchOrchestrator {
                 // The download succeeded and the import threw: the item WAS read.
                 failed = true;
                 FetchSupport.addError(errors, "Slack file " + file.id() + ": " + e.getMessage());
+                nameTheParent(fileReq, parentObjectId);
                 if (!fetchSupport.saveSourceReadToDlq(fileReq, "Slack file " + file.id() + ": " + e.getMessage())) {
                     unrecorded = true;
                 }
@@ -372,5 +377,17 @@ public class SlackFetchOrchestrator implements FetchOrchestrator {
             }
         }
         return unrecorded ? Outcome.FAILED_UNRECORDED : failed ? Outcome.FAILED_RECORDED : Outcome.SETTLED;
+    }
+
+    /**
+     * The message document the attachment belongs to, named on the dead-letter row so that a
+     * replay links the attachment to it again: the DLQ controller creates the relationship from
+     * this metadata, as the orchestrator does on the normal path. Without it a replayed
+     * attachment stood alone for ever (review, P2).
+     */
+    private static void nameTheParent(ExternalIngestRequest req, String parentObjectId) {
+        if (parentObjectId != null && req.getMetadata() != null) {
+            req.getMetadata().put("parentObjectId", parentObjectId);
+        }
     }
 }

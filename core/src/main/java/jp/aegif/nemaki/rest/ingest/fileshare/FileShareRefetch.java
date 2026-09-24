@@ -94,7 +94,14 @@ public class FileShareRefetch {
             if (connector.getEndpoint() == null || connector.getEndpoint().isBlank()) {
                 throw new IllegalArgumentException("the Mattermost connector names no endpoint to fetch the file from");
             }
-            return mattermostFactory.apply(connector.getEndpoint(), token).downloadFile(fileId);
+            MattermostConnectorAdapter mattermost = mattermostFactory.apply(connector.getEndpoint(), token);
+            // The row may be named by the id alone — written when the info call failed before
+            // the bytes were read. The name and type come from the info call again, so the
+            // replay does not create "f123" of an unknown type (review, P2).
+            MattermostConnectorAdapter.MattermostFile info = mattermost.getFileInfo(fileId);
+            if (info.name() != null && !info.name().isBlank()) request.setFileName(info.name());
+            if (info.mimeType() != null && !info.mimeType().isBlank()) request.setMimeType(info.mimeType());
+            return mattermost.downloadFile(fileId);
         }
         throw new IllegalArgumentException(system + " items are not fetched again here");
     }

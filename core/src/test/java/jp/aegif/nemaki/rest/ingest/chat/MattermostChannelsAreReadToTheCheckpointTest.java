@@ -213,6 +213,8 @@ class MattermostChannelsAreReadToTheCheckpointTest {
     private final List<String> dlqReasons = new ArrayList<>();
     private final List<String> dlqReadReasons = new ArrayList<>();
     private final List<ExternalIngestRequest> dlqRequests = new ArrayList<>();
+    /** The bytes a read row was written with, by source object id (null: metadata-only). */
+    private final Map<String, byte[]> dlqBodies = new java.util.HashMap<>();
     private List<String> throwingImports = List.of();
     private boolean dlqWritable = true;
     private List<String> failingImports = List.of();
@@ -226,6 +228,7 @@ class MattermostChannelsAreReadToTheCheckpointTest {
         dlqReasons.clear();
         dlqReadReasons.clear();
         dlqRequests.clear();
+        dlqBodies.clear();
         lenient().when(fetchSupport.resolvePasswordOrRefuse(any())).thenReturn("mm-token");
         lenient().doNothing().when(fetchSupport).throttle(anyLong());
         lenient().doAnswer(call -> {
@@ -239,6 +242,14 @@ class MattermostChannelsAreReadToTheCheckpointTest {
             dlqReadReasons.add(call.getArgument(1));
             return dlqWritable;
         }).when(fetchSupport).saveSourceReadToDlq(any(), anyString());
+        lenient().doAnswer(call -> {
+            ExternalIngestRequest r = call.getArgument(0);
+            dlqRequests.add(r);
+            dlqReasons.add(call.getArgument(1));
+            dlqReadReasons.add(call.getArgument(1));
+            dlqBodies.put(r.getSourceObjectId(), call.getArgument(2));
+            return dlqWritable;
+        }).when(fetchSupport).saveSourceReadToDlq(any(), anyString(), any());
         lenient().when(checkpointManager.loadSimpleCheckpoint(anyString(), anyString())).thenReturn(null);
         lenient().when(importService.executeChatContextImport(any(), any())).thenAnswer(call -> {
             ExternalIngestRequest req = call.getArgument(1);
@@ -295,7 +306,7 @@ class MattermostChannelsAreReadToTheCheckpointTest {
     void mattermostListsTheChannelAndTakesTheOldestFirst() {
         posts = (exchange, n) -> {
             if (n == 1) json(exchange, 200, page(descending(300, 200)));
-            else json(exchange, 200, page(descending(100, 5)));
+            else json(exchange, 200, page(descending(101, 6))); // begins with p101 again: the overlap the cursor leaves
         };
         FetchResult result = mattermost().execute(null, profile(), connector(), CHANNEL, 2);
 
@@ -345,8 +356,8 @@ class MattermostChannelsAreReadToTheCheckpointTest {
     void mattermostTheListingStopsAtTheCheckpointPage() {
         posts = (exchange, n) -> {
             if (n == 1) json(exchange, 200, page(descending(300, 200)));
-            else if (n == 2) json(exchange, 200, page(descending(100, 200)));
-            else json(exchange, 200, page(descending(-100, 200)));
+            else if (n == 2) json(exchange, 200, page(descending(101, 200)));
+            else json(exchange, 200, page(descending(-98, 200)));
         };
         MattermostFetchOrchestrator orchestrator = mattermost();
         // the checkpoint is p50, in the middle of page 2: p49 (older) stops the listing there
@@ -404,7 +415,7 @@ class MattermostChannelsAreReadToTheCheckpointTest {
     @Test
     @DisplayName("Mattermost: a listing cut at the request cap imports nothing, holds the checkpoint and names the cap")
     void mattermostAListingCutAtTheCapImportsNothing() {
-        posts = (exchange, n) -> json(exchange, 200, page(descending(1000 - (n - 1) * 200, 200)));
+        posts = (exchange, n) -> json(exchange, 200, page(descending(1000 - (n - 1) * 199, 200))); // each page begins with the last post of the one before
         FetchResult result = mattermost().execute(null, profile(), connector(),
                 Map.of("channelId", "C1", MattermostFetchOrchestrator.PARAM_MAX_POST_REQUESTS, "2"), 10);
 
@@ -445,8 +456,58 @@ class MattermostChannelsAreReadToTheCheckpointTest {
         assertEquals(1, POST_CALLS.get(), POST_QUERIES.toString());
         assertFalse(result.sawEverything(), result.toString());
         assertTrue(result.incompleteReads().get(0).contains("all created at"), result.incompleteReads().get(0));
+        // the cap is not the way out, and the message must not send the operator to it (subagent P2)
+        assertTrue(result.incompleteReads().get(0).contains("does not help"), result.incompleteReads().get(0));
         assertTrue(importedIds.isEmpty(), importedIds.toString());
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /**
+     * A page asked {@code before} a post always carries at least one post already seen (the
+     * posts at the page's oldest time). One that carries none — the cursor post was deleted
+     * since, and the server's subquery for its time answers nothing — is a cut, not the end:
+     * read as the end it would pass every older post (Codex P1).
+     */
+    @Test
+    @DisplayName("Mattermost: a page before a vanished cursor post is a cut, not read as the end of the channel")
+    void mattermostAPageBeforeAVanishedCursorIsACut() {
+        posts = (exchange, n) -> {
+            if (n == 1) json(exchange, 200, page(descending(300, 200)));
+            else json(exchange, 200, "{\"order\":[],\"posts\":{}}");
+        };
+        FetchResult result = mattermost().execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertEquals(2, POST_CALLS.get(), POST_QUERIES.toString());
+        assertFalse(result.sawEverything(), "an empty page before a vanished cursor was read as the end: " + result);
+        assertTrue(result.incompleteReads().get(0).contains("carried none of the posts"), result.incompleteReads().get(0));
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
+    /** A post whose body import failed is dead-lettered WITH the body: replayable, not only a record of the miss (Codex P1). */
+    @Test
+    @DisplayName("Mattermost: a failed body import is dead-lettered with the body bytes, so the replay imports the text")
+    void mattermostAFailedBodyImportRowCarriesTheBodyBytes() {
+        failingImports = List.of("p2");
+        throwingImports = List.of("p1");
+        posts = (exchange, n) -> json(exchange, 200, page(post("p2", 2), post("p1", 1)));
+        mattermost().execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertEquals(2, dlqReadReasons.size(), dlqReasons.toString());
+        assertEquals("hello p2", new String(dlqBodies.getOrDefault("p2", new byte[0]), StandardCharsets.UTF_8), "the row for the refused body carries no bytes");
+        assertEquals("hello p1", new String(dlqBodies.getOrDefault("p1", new byte[0]), StandardCharsets.UTF_8), "the row for the thrown body carries no bytes");
+    }
+
+    /** The attachment row names the message document, so a replay links the attachment to it again (Codex P2). */
+    @Test
+    @DisplayName("Mattermost: a failed attachment row names its message document for the replay to link to")
+    void mattermostAFailedAttachmentRowNamesItsMessageDocument() {
+        failingDownloads = List.of("F-bad");
+        posts = (exchange, n) -> json(exchange, 200, page(postWithFile("p1", 1, "F-bad")));
+        mattermost().execute(null, profile(), connector(), CHANNEL, 10);
+
+        assertEquals(1, dlqRequests.size(), dlqReasons.toString());
+        assertEquals("obj-p1", dlqRequests.get(0).getMetadata().get("parentObjectId"), "the row does not name the message document: " + dlqRequests.get(0).getMetadata());
     }
 
     @Test

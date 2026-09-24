@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -407,7 +408,22 @@ public class IngestDlqController {
             }
 
             // Route through the correct archetype-specific flow
+            // A chat message body is bytes or nothing too. A body row carries the bytes it was
+            // read with (this version); a row written before that carries only a shortened copy
+            // of the text in its metadata, and the chat import made an EMPTY document from it,
+            // reported success and deleted the row — the only record of the message (review, P1).
+            // Refused, row kept — unless the row says the message had no text, when an empty
+            // document is the faithful replay.
+            if (request.getContentStream() == null && "chat_message".equals(request.getSourceObjectType())
+                    && !recordsAnEmptyMessage(request)) {
+                return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId + " is a chat message without its body"
+                        + " (rows written before the body was kept with them carry only a shortened copy of the"
+                        + " text), so replaying it would import an empty document; the entry is kept and nothing"
+                        + " was imported. Re-fetch the message through its connector, then delete this entry");
+            }
+
             ExternalIngestResult result = dispatchByArchetype(callContext, request);
+            relinkToTheParent(callContext, request, result, response);
 
             if (dlq.getRequestBinaryStrippedCount() > 0) {
                 // The stored request is byte-free by rule; say so, or a "success" here reads as
@@ -579,6 +595,42 @@ public class IngestDlqController {
                 "Connector '" + request.getConnectorId() + "' has no sourceArchetype, so the "
                         + "replay cannot pick the import flow that attaches this item's "
                         + "evidence. Set the archetype on the connector definition, then retry.");
+    }
+
+    /**
+     * A replayed item's link to the document it belongs to. An attachment row written by a chat
+     * orchestrator names its message document (metadata {@code parentObjectId}); the orchestrator
+     * links the two on the normal path whatever the profile's relationship policy, and the chat
+     * import links from metadata only when a policy is set — so a replayed attachment stood alone
+     * (review, P2). Linked here the way the normal path links (idempotent: a link that is there is
+     * found, not doubled), for an import that succeeded or was skipped. A link that could not be
+     * made is a warning on the answer, not a failed replay: the document exists either way.
+     */
+    private void relinkToTheParent(CallContext callContext, ExternalIngestRequest request,
+                                   ExternalIngestResult result, Map<String, Object> response) {
+        Object parent = request.getMetadata() == null ? null : request.getMetadata().get("parentObjectId");
+        if (parent == null || parent.toString().isBlank() || result == null || result.objectId() == null
+                || !(result.isSuccess() || result.skipped())) {
+            return;
+        }
+        List<String> linkWarnings = new ArrayList<>();
+        fetchSupport.createRelationshipSafe(callContext, request.getRepositoryId(), parent.toString(),
+                result.objectId(), null, request, linkWarnings);
+        if (!linkWarnings.isEmpty()) {
+            response.put("relationshipWarnings", linkWarnings);
+        }
+    }
+
+    /**
+     * Whether a chat message row says its message had no text: the metadata names
+     * {@code messageText} and it is blank. A row that does not say is not read as empty.
+     */
+    private static boolean recordsAnEmptyMessage(ExternalIngestRequest request) {
+        Map<String, Object> metadata = request.getMetadata();
+        if (metadata == null || !metadata.containsKey("messageText") || metadata.get("messageText") == null) {
+            return false;
+        }
+        return metadata.get("messageText").toString().isBlank();
     }
 
     private boolean isAdmin() {
