@@ -51,8 +51,8 @@ poll で恒久的に除外**されていました（残件 R59）。
 - 実機の Notion に対しては測っていません（sort の受理、拒否時の status、`request_status`
   の形、検索索引の遅延の長さ）。索引の遅延が猶予（既定 10 分）を超えたページは、その分を
   checkpoint が過ぎていれば次に編集されるまで見えません
-- 他のコネクタ（Slack / Salesforce / Mattermost / Teams / Chatwork / M365 メール / Gmail）の
-  checkpoint は同じ形のまま未測定です（残件 R107。Box / Dropbox は下の節で直しました）
+- 他のコネクタ（Salesforce / Mattermost / Teams / Chatwork / M365 メール / Gmail）の
+  checkpoint は同じ形のまま未測定です（残件 R107。Box / Dropbox / Slack は下の節で直しました）
 - `request_status` の欄名が実機の応答と違っていた場合、Notion 側の打ち切りは見えず、
   10,000 件未満なら `has_more` だけで完了と読みます（この点は変更前と同じです）。
   10,000 件ちょうどで `request_status` が無い応答だけは、切れたものとして扱います。既定の
@@ -146,8 +146,37 @@ Box も Dropbox もフォルダを更新時刻順には返さないので、そ�
 - 列挙の遅延（更新が listing に反映されるまでの時間）は `…CheckpointLagMinutes` の猶予の範囲で
   だけ扱います。猶予より古い更新時刻で listing に遅れて現れたファイル（他のフォルダからの移動を
   含む）は、次に更新されるまで取り込まれません（残件 R109）
-- Notion 以外の他の 6 コネクタ（Slack / Salesforce / Mattermost / Teams / M365 メール / Gmail）と
+- Notion 以外の他の 5 コネクタ（Salesforce / Mattermost / Teams / M365 メール / Gmail）と
   Chatwork は同じ形のままです（残件 R107）
+
+## Slack コネクタが、checkpoint より新しいメッセージを全部読んでから古い順に取り込むようになりました (**挙動変更**)
+
+これまでは checkpoint 以降の**新しい順**の先頭 `limit` 件（既定 50）だけを読んで、その中の最新の
+時刻を checkpoint にしていました。1 回の poll の間に `limit` を超えるメッセージが来ると、古い側は
+次回には checkpoint より古くなり、**二度と取り込まれませんでした**（残件 R107）。
+
+- checkpoint より新しいメッセージを cursor で末尾まで読みます（`slackHistoryMaxRequests` 回まで、
+  1 回 200 件、既定 50 = 10,000 件。超えると**何も取り込まず** `PARTIAL` で止まります — 切られるのは
+  古い側なので、読めた分だけで checkpoint を上げると古い側が恒久に除外されるためです）
+- 1 回の実行で取り込むのは**古い順に `limit` 件**で、残りは次回に回り `PARTIAL` になります。失敗した
+  メッセージは数に入らず、試みるのは `limit` の 4 倍までです（Box / Dropbox と同じ）
+- checkpoint はメッセージの `ts` です。保存済みの値が `ts` の形でないとき、`ts` の無いメッセージが
+  来たとき、応答に `messages` や `has_more` が無いときはエラーで止まります。`has_more` に cursor が
+  無い・同じ cursor が続くときは `PARTIAL` です
+- 添付の download に失敗すると「読めていない item」として死信キューに記録し（download URL 付き）、
+  メッセージは checkpoint に名指されません。新しいメッセージが取り込めれば checkpoint はそれを
+  越えます（記録が行です）。**死信キューの再送は Slack から URL で取り直します**。記録が書けなかった
+  失敗が 1 つでもあると checkpoint は進みません
+- 死信キューの再送で、**添付（`attachment`）の行は bytes が無ければ取り直すか拒否します** — Slack は
+  取り直し、Teams / Mattermost / Chatwork / Notion / メールの添付の行は拒否して行を残します（以前は
+  bytes 無しで取り込み、空の文書を作って「成功」と報告し、行を消していました。取り直しの実装は
+  残件 R111）。メッセージ本文の行は従来どおり再送できます
+
+### 主張しないこと
+
+- 実機の Slack に対しては測っていません（錠はローカルの stub API に対するもの）
+- 編集されたメッセージ（`ts` は変わらない）、thread の返信（`conversations.history` に出ない）、
+  古い `ts` を持って後から現れるメッセージ（import や Slack Connect の backfill）は取り込みません
 
 ## コネクタ定義と取込プロファイルの保存 ID を確定的にし、旧 ID の行は起動時に移行します
 

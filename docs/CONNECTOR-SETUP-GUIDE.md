@@ -32,7 +32,7 @@ NemakiWare の取り込みは **コネクタ定義** と **インポートプロ
 
 | サービス | `sourceSystem`（接続先） | `sourceArchetype`（種別） | `endpoint` の要否 | 実トークンの種類（`credentialRef` キーで参照、§2） | 必須 `schedulerParams` | Webhook |
 |---|---|---|---|---|---|---|
-| Slack | `slack` | `CHAT_CONTEXT` | 任意（既定 slack.com/api） | Bot Token (`xoxb-…`) | `channelId` | あり |
+| Slack | `slack` | `CHAT_CONTEXT` | 任意（既定 slack.com/api） | Bot Token (`xoxb-…`) | `channelId`, `slackHistoryMaxRequests`（既定 50） | あり |
 | Microsoft Teams | `teams` | `CHAT_CONTEXT` | 任意（既定 Graph） | Graph アクセストークン | `teamId`, `channelId` | あり |
 | Mattermost | `mattermost` | `CHAT_CONTEXT` | **必須**（サーバ URL） | Personal Access / Bot Token | `channelId` | なし |
 | Chatwork | `chatwork` | `CHAT_CONTEXT` | 任意（既定 API） | API Token | `roomId` | あり（汎用） |
@@ -232,7 +232,13 @@ INGEST_NOTION_SITES_TOKEN=ntn_...
   （アプリの Basic Information → App Credentials）を設定。
 
 **C. プロファイル**
-- `schedulerParams`：`channelId = C01ABCD2345`（必須）、任意 `limit`。
+- `schedulerParams`：`channelId = C01ABCD2345`（必須）、任意 `limit`（1 回の実行で取り込むメッセージ数。
+  古い順に取り、残りは次回に回って実行結果は `PARTIAL`。失敗したメッセージは数に入らないが、試みるのは
+  `limit` の 4 倍まで）、任意 `slackHistoryMaxRequests`（1 回の listing で `conversations.history` を呼ぶ回数の
+  上限。1 回 200 件、既定 50 = 10,000 件。checkpoint 以降がそれを超えると**何も取り込まず** `PARTIAL` で
+  止まるので上げる）。**checkpoint より新しいメッセージは毎回全部読む**。checkpoint はメッセージの `ts`。
+  記録できなかった失敗が 1 つでもあると checkpoint は進まない。添付の download 失敗は死信キューに
+  URL 付きで記録され、再送時に Slack から取り直す。
 
 **（任意）Webhook 設定**
 - Slack アプリの **Event Subscriptions** を ON。
