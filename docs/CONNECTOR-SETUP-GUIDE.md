@@ -309,7 +309,15 @@ INGEST_NOTION_SITES_TOKEN=ntn_...
 - credentialRef = キー（実値は Personal Access / Bot Token、§2 で provision）。
 
 **C. プロファイル**
-- `schedulerParams`：`channelId`（必須）、任意 `limit`。
+- `schedulerParams`：`channelId`（必須）、任意 `limit`（1 回の実行で取り込む投稿数。古い順に取り、残りは
+  次回に回って `PARTIAL`。試みるのは `limit` の 4 倍まで）、任意 `mattermostPostMaxRequests`（1 回の listing で
+  投稿のページを読む回数の上限。1 回 200 件、既定 50 = 10,000 件。checkpoint より新しい投稿がそれを超えると
+  **何も取り込まず** `PARTIAL` で止まるので上げる。ページは `before` cursor で読み、同じミリ秒の投稿がページ
+  境界で失われないよう次のページは「末尾の時刻より新しい最後の投稿」の前から読む — 同じミリ秒の投稿が 200 件を
+  超えるとその先へ進めず `PARTIAL`）。
+  checkpoint は `<作成時刻を UTC に正規化>|<id>,…`（旧形式の `create_at` ミリ秒もそのまま読める）。記録できなかった
+  失敗が 1 つでもあると checkpoint は進まない。添付の情報取得・download の失敗は死信キューに file id 付きで記録され、
+  再送時に Mattermost から取り直す（この版より前に書かれた行も file id を持つので取り直せる）。
 
 Webhook はこのコネクタでは未対応（ポーリングのみ）。
 
