@@ -42,11 +42,12 @@ import java.util.Map;
  * the request cap saves the link it reached, and the next poll continues from it.
  *
  * <p>A message whose MIME could not be fetched is dead-lettered as never read; one the import
- * refused, threw on, or imported without some of its attachments — on this try or, already
- * imported, again — is dead-lettered as read. Not
- * covered: messages older than the checkpoint an earlier version passed in a burst (this version
- * starts from that checkpoint; clearing it reads the folder from the start), messages edited after
- * their import (the default dedupe skips them), subfolders. Graph's delta feed is measured against a
+ * refused, threw on, or imported without some of its parts (an attachment, its link, the raw
+ * .eml — {@link MailImportWarnings}) — on this try or, already imported, again — is dead-lettered as
+ * read. The link a checkpoint holds, and every link Graph answers, must read the profile's folder:
+ * a link naming the configured mailbox and folder exactly does; any other spelling is asked for the
+ * id of the folder it reads. Not
+ * covered: messages edited after their import (the default dedupe skips them), subfolders. Graph's delta feed is measured against a
  * stub, not against Graph.
  */
 public class M365MailFetchOrchestrator implements FetchOrchestrator {
@@ -143,10 +144,23 @@ public class M365MailFetchOrchestrator implements FetchOrchestrator {
                 }
                 if (!storedFolder.equals(folder)) {
                     // Written for another folder: its link reads THAT folder. Graph's ids are
-                    // case-sensitive, so they are compared exactly.
-                    FetchSupport.addError(errors, "M365 Mail checkpoint for " + key + " was written for the folder '" + storedFolder
-                            + "', and this profile's folder is '" + folder + "' (the token's user, the userId or the folderId "
-                            + "changed); clear it to read this folder — nothing was read");
+                    // case-sensitive, so they are compared exactly. A prefix that is the mailbox
+                    // this profile names is the form an earlier build of this version wrote: said
+                    // so, so the refusal is not read as a folder that changed (review, P2).
+                    boolean earlierBuild = storedFolder.equalsIgnoreCase(mailbox);
+                    FetchSupport.addError(errors, "M365 Mail checkpoint for " + key + (earlierBuild
+                            ? " was written by an earlier build of this version, which named the mailbox ('" + storedFolder
+                                    + "') rather than the folder; clear it to read this folder"
+                            : " was written for the folder '" + storedFolder + "', and this profile's folder is '" + folder
+                                    + "' (the token's user, the userId or the folderId changed, or Graph gave the folder another id); "
+                                    + "clear it to read this folder") + " — nothing was read");
+                    return new FetchResult(0, 0, 0, errors);
+                }
+                if (!m365.namesFolder(link, folderId) && !folder.equals(m365.folderIdentityOf(link))) {
+                    // The prefix names this folder, and the link reads another — the prefix is not
+                    // proof of the link (review, P1). The link's own folder is asked for its id.
+                    FetchSupport.addError(errors, "M365 Mail checkpoint for " + key + " holds a delta link that reads another folder"
+                            + " than '" + folder + "'; clear it to read this folder — nothing was read");
                     return new FetchResult(0, 0, 0, errors);
                 }
                 start = link;
@@ -205,6 +219,11 @@ public class M365MailFetchOrchestrator implements FetchOrchestrator {
                 String after = page.nextLink() != null ? page.nextLink() : page.deltaLink();
                 if (!m365.isMailDeltaLink(after)) {
                     FetchSupport.addError(errors, "Graph's mail delta feed for " + key + " answered a link that is not a mail delta link on this endpoint ('"
+                            + after + "'); the page was not passed and nothing on it was imported");
+                    return finish(profile, key, folder, start, reached, fetched, counts, errors, incompleteReads);
+                }
+                if (!m365.namesFolder(after, folderId) && !folder.equals(m365.folderIdentityOf(after))) {
+                    FetchSupport.addError(errors, "Graph's mail delta feed for " + key + " answered a link that reads another folder ('"
                             + after + "'); the page was not passed and nothing on it was imported");
                     return finish(profile, key, folder, start, reached, fetched, counts, errors, incompleteReads);
                 }
@@ -304,16 +323,17 @@ public class M365MailFetchOrchestrator implements FetchOrchestrator {
         req.setContentStream(content);
         try {
             ExternalIngestResult result = canonicalImportService.executeMailImport(callContext, req);
-            List<String> attachmentWarnings = result.warnings() == null ? List.of()
-                    : result.warnings().stream().filter(w -> w.contains("Attachment") || w.contains("attachment")).toList();
+            // The parts of the mail the import could not import or link (MailImportWarnings) —
+            // not every warning: the others are about evidence (review, P1).
+            List<String> attachmentWarnings = MailImportWarnings.missingParts(result.warnings());
             // skipped() first: a skipped result also reports isSuccess()==true (no errors).
             if (result.skipped()) {
                 counts.skipped++;
                 if (attachmentWarnings.isEmpty()) return Outcome.SKIPPED;
-                // The message was imported before; the import service tried its missing attachments
-                // again and some still failed. Passed as a skip, nothing recorded them and the page
-                // moved on (review, P1): recorded as read.
-                String missing = "M365 " + msg.id() + ": already imported, but some of its attachments are still missing — "
+                // The message was imported before; the import service tried its missing parts again
+                // and some still failed. Passed as a skip, nothing recorded them and the page moved
+                // on (review, P1): recorded as read.
+                String missing = "M365 " + msg.id() + ": already imported, but some of its parts are still missing — "
                         + String.join(", ", attachmentWarnings);
                 FetchSupport.addError(errors, missing);
                 return fetchSupport.saveSourceReadToDlq(req, missing) ? Outcome.FAILED_RECORDED : Outcome.FAILED_UNRECORDED;
@@ -328,7 +348,7 @@ public class M365MailFetchOrchestrator implements FetchOrchestrator {
                 // import. Passed silently before — the attachment was lost once a newer message
                 // moved the checkpoint — it is recorded now.
                 counts.imported++;
-                why = "M365 " + msg.id() + ": imported without some of its attachments — " + String.join(", ", attachmentWarnings);
+                why = "M365 " + msg.id() + ": imported without some of its parts — " + String.join(", ", attachmentWarnings);
             } else {
                 why = "M365 " + msg.id() + ": " + String.join(", ", result.errors());
             }

@@ -85,6 +85,9 @@ class GmailMessagesAreReadOldestFirstInWindowsTest {
     /** Ids whose first summary read is answered 429 (rate limited); the ones after are answered. */
     private static volatile Set<String> rateLimitedOnce = Set.of();
     private static final Set<String> RATE_LIMITED = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** Ids whose first summary read is answered 503 (unavailable); the ones after are answered. */
+    private static volatile Set<String> unavailableOnce = Set.of();
+    private static final Set<String> UNAVAILABLE = java.util.concurrent.ConcurrentHashMap.newKeySet();
     /** The search strings asked for, in order. */
     private static final List<String> LIST_QUERIES = new CopyOnWriteArrayList<>();
     /** The page tokens asked for, in order. */
@@ -128,6 +131,9 @@ class GmailMessagesAreReadOldestFirstInWindowsTest {
         inclusiveBounds = false;
         rateLimitedOnce = Set.of();
         RATE_LIMITED.clear();
+        unavailableOnce = Set.of();
+        UNAVAILABLE.clear();
+        warnedImports = Map.of();
         LIST_QUERIES.clear();
         PAGE_TOKENS.clear();
         SUMMARY_CALLS.set(0);
@@ -215,6 +221,10 @@ class GmailMessagesAreReadOldestFirstInWindowsTest {
             return;
         }
         SUMMARY_CALLS.incrementAndGet();
+        if (unavailableOnce.contains(id) && UNAVAILABLE.add(id)) {
+            json(exchange, 503, "{\"error\":{\"code\":503,\"message\":\"backend unavailable\"}}");
+            return;
+        }
         if (rateLimitedOnce.contains(id) && RATE_LIMITED.add(id)) {
             exchange.getResponseHeaders().add("Retry-After", "0");
             json(exchange, 429, "{\"error\":{\"code\":429,\"message\":\"rate limit exceeded\"}}");
@@ -264,6 +274,8 @@ class GmailMessagesAreReadOldestFirstInWindowsTest {
     private List<String> attachmentWarningImports = List.of();
     /** Ids the import answers "already imported" for, with an attachment it tried again and could not import. */
     private List<String> skippedWithMissingAttachments = List.of();
+    /** Ids the import answers "imported" for, with the given warnings — the import's own wording. */
+    private Map<String, List<String>> warnedImports = Map.of();
 
     private GmailFetchOrchestrator gmail() {
         GmailFetchOrchestrator orchestrator = new GmailFetchOrchestrator();
@@ -294,6 +306,10 @@ class GmailMessagesAreReadOldestFirstInWindowsTest {
             if (failingImports.contains(id)) return ExternalIngestResult.error("r", "refused by the import service");
             if (throwingImports.contains(id)) throw new RuntimeException("the import service threw after reading the content");
             if (skippingImports.contains(id)) return ExternalIngestResult.skipped("r", "obj-" + id, "already imported");
+            if (warnedImports.containsKey(id)) {
+                importedIds.add(id);
+                return new ExternalIngestResult("r", "obj-" + id, "1.0", false, false, false, null, null, List.of(), warnedImports.get(id));
+            }
             if (skippedWithMissingAttachments.contains(id)) {
                 return new ExternalIngestResult("r", "obj-" + id, "1.0", false, false, true, "already imported", null, List.of(),
                         List.of("Attachment 'a.pdf' import failed: boom"));
@@ -653,6 +669,52 @@ class GmailMessagesAreReadOldestFirstInWindowsTest {
         assertEquals(Set.of("m2"), RATE_LIMITED, "the stub did not answer 429");
     }
 
+    /** A summary read Gmail answers 503 is asked again too: the message is placed by its date. */
+    @Test
+    @DisplayName("Gmail: an unavailable (503) summary read is asked again, not taken as unreadable")
+    void gmailAnUnavailableSummaryIsAskedAgain() {
+        unavailableOnce = Set.of("m2");
+        mailbox = List.of(msg("m1", "2026-03-01T10:00:01Z"), msg("m2", "2026-03-01T10:00:02Z"), msg("m3", "2026-03-01T10:00:03Z"));
+        GmailFetchOrchestrator orchestrator = gmail();
+        checkpointIs(canonical("2026-03-01T09:00:00Z"));
+
+        orchestrator.execute(null, profile(), connector(), INBOX, 10);
+
+        assertEquals(List.of("m1", "m2", "m3"), importedIds, "the unavailable read was not asked again: " + importedIds);
+        assertEquals(Set.of("m2"), UNAVAILABLE, "the stub did not answer 503");
+    }
+
+    /** An attachment imported and not linked is a part missing: the import says "Relationship failed" (review, P1). */
+    @Test
+    @DisplayName("Gmail: a message whose attachment could not be linked is recorded")
+    void gmailAMessageWhoseAttachmentLinkFailedIsRecorded() {
+        warnedImports = Map.of("m1", List.of("Relationship failed: boom"));
+        mailbox = List.of(msg("m1", "2026-03-01T10:00:01Z"));
+        GmailFetchOrchestrator orchestrator = gmail();
+        checkpointIs(canonical("2026-03-01T09:00:00Z"));
+
+        orchestrator.execute(null, profile(), connector(), INBOX, 10);
+
+        assertEquals(1, dlqReadReasons.size(), "the failed link was not recorded: " + dlqReasons);
+        assertTrue(dlqReadReasons.get(0).contains("Relationship failed"), dlqReadReasons.toString());
+    }
+
+    /** The import's warnings about evidence do not mean a part is missing (review, P1). */
+    @Test
+    @DisplayName("Gmail: a warning about evidence is not a missing part")
+    void gmailAnEvidenceWarningIsNotAMissingPart() {
+        warnedImports = Map.of("m1", List.of("attachment 'a.pdf': Provenance was NOT recorded for this document (x)",
+                "Provenance was NOT recorded for this document (y)"));
+        mailbox = List.of(msg("m1", "2026-03-01T10:00:01Z"));
+        GmailFetchOrchestrator orchestrator = gmail();
+        checkpointIs(canonical("2026-03-01T09:00:00Z"));
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), INBOX, 10);
+
+        assertTrue(dlqReasons.isEmpty(), "a complete mail was dead-lettered for a warning about evidence: " + dlqReasons);
+        assertEquals(1, result.imported(), result.toString());
+    }
+
     /** The connector's rate limit paces every summary read as well as every import. */
     @Test
     @DisplayName("Gmail: the connector's rate limit paces the summary reads too")
@@ -744,7 +806,7 @@ class GmailMessagesAreReadOldestFirstInWindowsTest {
 
         assertEquals(1, result.imported(), result.toString());
         assertEquals(1, dlqReadReasons.size(), dlqReasons.toString());
-        assertTrue(dlqReadReasons.get(0).contains("imported without some of its attachments"), dlqReadReasons.toString());
+        assertTrue(dlqReadReasons.get(0).contains("imported without some of its parts"), dlqReadReasons.toString());
     }
 
     /** A failure nothing records stops the run, and the message settled before it does not move the checkpoint past it. */

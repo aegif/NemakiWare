@@ -570,6 +570,26 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
         assertTrue(executed.isEmpty(), "replayed without its body: an empty document would have been imported");
     }
 
+    /**
+     * A gap row records messages the chat API no longer answers (Chatwork gives a room's latest 100):
+     * there is no item behind it. Replayed, the chat import made an empty document and the only
+     * record of the loss went with the row — refused, row kept.
+     */
+    @Test
+    @DisplayName("a chat gap row is not replayed")
+    void aChatGapRowIsNotReplayed() throws Exception {
+        String row = "{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\",\"sourceObjectId\":\"gap:R1:1000-2001\","
+                + "\"sourceObjectType\":\"chat_gap\",\"metadata\":{\"channelId\":\"R1\",\"gapAfterMessageId\":\"1000\","
+                + "\"gapBeforeMessageId\":\"2001\"}}";
+        ResponseEntity<?> res = retry("chatwork", SourceArchetype.CHAT_CONTEXT, false, null, row,
+                url -> new ByteArrayInputStream(new byte[0]), r -> { });
+
+        assertEquals(HttpStatus.CONFLICT, res.getStatusCode(), String.valueOf(res.getBody()));
+        assertTrue(String.valueOf(res.getBody()).contains("records a gap"), String.valueOf(res.getBody()));
+        assertTrue(executed.isEmpty(), "a gap row was replayed: " + executed);
+        verify(jobService, never()).deleteDlqEntry(any());
+    }
+
     /** A row that does not say what the text was is not read as an empty message. */
     @Test
     @DisplayName("a chat message row that does not record its text is refused too")

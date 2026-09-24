@@ -48,8 +48,9 @@ import java.util.regex.Pattern;
  * <p>Budget, attempts and failures as for Box: the budget counts settled messages, at most
  * {@code limit × 4} are tried in a run, a failure is dead-lettered — a message whose raw form
  * could not be fetched as never read; one the import refused, threw on, or imported without some
- * of its attachments — on this try or, already imported, again — as read — and passed once a newer
- * message settles or its window is finished;
+ * of its parts (an attachment, its link, the raw .eml — {@link MailImportWarnings}) — on this try
+ * or, already imported, again — as read — and passed once a newer message settles or its window is
+ * finished;
  * a failure whose row could not be written holds the checkpoint. A message whose internal date
  * cannot be read is tried before the rest of its window and never named. The checkpoint is capped
  * at the listing's start minus {@code gmailCheckpointLagMinutes} (default 5): Gmail's search is an
@@ -444,15 +445,16 @@ public class GmailFetchOrchestrator implements FetchOrchestrator {
         req.setContentStream(content);
         try {
             ExternalIngestResult result = canonicalImportService.executeMailImport(callContext, req);
-            List<String> attachmentWarnings = result.warnings() == null ? List.of()
-                    : result.warnings().stream().filter(w -> w.contains("Attachment") || w.contains("attachment")).toList();
+            // The parts of the mail the import could not import or link (MailImportWarnings) —
+            // not every warning: the others are about evidence (review, P1).
+            List<String> attachmentWarnings = MailImportWarnings.missingParts(result.warnings());
             // skipped() first: a skipped result also reports isSuccess()==true (no errors).
             if (result.skipped()) {
                 run.skipped++;
                 if (attachmentWarnings.isEmpty()) return Outcome.SKIPPED;
-                // Imported before; the import service tried its missing attachments again and some
-                // still failed. Passed as a skip, nothing would record them (review, P1 on M365).
-                String missing = "Gmail " + msg.id() + ": already imported, but some of its attachments are still missing — "
+                // Imported before; the import service tried its missing parts again and some still
+                // failed. Passed as a skip, nothing would record them (review, P1 on M365).
+                String missing = "Gmail " + msg.id() + ": already imported, but some of its parts are still missing — "
                         + String.join(", ", attachmentWarnings);
                 FetchSupport.addError(errors, missing);
                 return fetchSupport.saveSourceReadToDlq(req, missing) ? Outcome.FAILED_RECORDED : Outcome.FAILED_UNRECORDED;
@@ -466,7 +468,7 @@ public class GmailFetchOrchestrator implements FetchOrchestrator {
                 // The message is in the repository, some of its attachments are not: recorded — it
                 // used to be neither counted nor recorded, and the day moved past it.
                 run.imported++;
-                why = "Gmail " + msg.id() + ": imported without some of its attachments — " + String.join(", ", attachmentWarnings);
+                why = "Gmail " + msg.id() + ": imported without some of its parts — " + String.join(", ", attachmentWarnings);
             } else {
                 why = "Gmail " + msg.id() + ": " + String.join(", ", result.errors());
             }

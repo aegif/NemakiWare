@@ -117,9 +117,50 @@ public class M365MailConnectorAdapter {
      * folder's id belongs to one folder of one mailbox (review, P2).
      */
     public String folderIdentity(String folderId) throws Exception {
+        return folderIdAt(graphBase + mailboxPath + "/mailFolders/"
+                + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(folderId) + "?$select=id", folderId);
+    }
+
+    /**
+     * Whether a mail delta link names exactly the mailbox and folder this adapter reads with the
+     * given folder — the segments its own first request carries ({@code me} or {@code users/<userId>},
+     * and {@code folderId}), in any of Graph's spellings of the path. Exactly: a folder's id is
+     * case-sensitive, and a spelling that differs is resolved, not guessed (see {@link #folderIdentityOf}).
+     */
+    public boolean namesFolder(String link, String folderId) {
+        List<String> target = mailboxAndFolder(link);
+        if (target == null) return false;
+        String mailbox = mailboxPath.equals("/me") ? "me" : "users/" + mailboxLabel;
+        return target.get(0).equals(mailbox) && target.get(1).equals(folderId);
+    }
+
+    /**
+     * The id Graph answers for the folder a mail delta link points at — by the link's OWN mailbox
+     * and folder, whatever spelling Graph wrote them in. A stored or answered link is the profile's
+     * only when this is the id of the profile's folder: a link of the right shape can still read
+     * another folder (review, P1).
+     */
+    public String folderIdentityOf(String link) throws Exception {
+        List<String> target = mailboxAndFolder(link);
+        if (target == null) throw new IllegalArgumentException("not a mail delta link on this endpoint: " + link);
+        String mailbox = target.get(0).equals("me") ? "/me"
+                : "/users/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(target.get(0).substring("users/".length()));
+        return folderIdAt(graphBase + mailbox + "/mailFolders/"
+                + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(target.get(1)) + "?$select=id", target.get(1));
+    }
+
+    /** The mailbox ({@code me} or {@code users/<id>}) and the folder a mail delta link names; null when it is not one. */
+    private List<String> mailboxAndFolder(String link) {
+        if (!isMailDeltaLink(link)) return null;
+        List<String> base = odataSegments(URI.create(graphBase).getPath());
+        List<String> path = odataSegments(URI.create(link).getPath());
+        List<String> rest = path.subList(base.size(), path.size());
+        return "me".equalsIgnoreCase(rest.get(0)) ? List.of("me", rest.get(2)) : List.of("users/" + rest.get(1), rest.get(3));
+    }
+
+    private String folderIdAt(String url, String folderId) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(graphBase + mailboxPath + "/mailFolders/"
-                        + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(folderId) + "?$select=id"))
+                .uri(URI.create(url))
                 .header("Authorization", "Bearer " + accessToken)
                 .header("Accept", "application/json")
                 .timeout(Duration.ofSeconds(30))

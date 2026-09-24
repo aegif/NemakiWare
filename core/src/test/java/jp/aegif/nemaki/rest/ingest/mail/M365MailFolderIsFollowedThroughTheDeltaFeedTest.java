@@ -93,6 +93,14 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
                 deltaPages.respond(exchange, DELTA_CALLS.incrementAndGet());
             });
         }
+        // The inbox by its id, and another folder: what a link in another spelling, or into
+        // another folder, is resolved to.
+        server.createContext("/v1.0/users/" + USER + "/mailFolders/AAMkInbox", exchange -> json(exchange, 200, "{\"id\":\"" + FOLDER_ID + "\"}"));
+        server.createContext("/v1.0/users/other@x.com/mailFolders/inbox", exchange -> json(exchange, 200, "{\"id\":\"AAMkOthersInbox\"}"));
+        server.createContext("/v1.0/users/" + USER + "/mailFolders/Other", exchange -> {
+            if (exchange.getRequestURI().getPath().endsWith("/mailFolders/Other")) json(exchange, 200, "{\"id\":\"AAMkOther\"}");
+            else deltaPages.respond(exchange, DELTA_CALLS.incrementAndGet());
+        });
         for (String mailbox : List.of(USER, OBJECT_ID)) {
             server.createContext("/v1.0/users/" + mailbox + "/mailFolders/inbox", exchange -> {
                 if (!exchange.getRequestURI().getPath().endsWith("/mailFolders/inbox")) {
@@ -144,6 +152,7 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
         FOLDER_CALLS.set(0);
         folderAnswer = FOLDER_ID;
         skippedWithMissingAttachments = List.of();
+        warnedImports = Map.of();
         DELTA_LINKS.clear();
         lastPrefer = null;
         failingFetches = List.of();
@@ -197,6 +206,8 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
     private List<String> attachmentWarningImports = List.of();
     /** Ids the import answers "already imported" for, with an attachment it tried again and could not import. */
     private List<String> skippedWithMissingAttachments = List.of();
+    /** Ids the import answers "imported" for, with the given warnings — the import's own wording. */
+    private Map<String, List<String>> warnedImports = Map.of();
 
     private M365MailFetchOrchestrator m365() {
         M365MailFetchOrchestrator orchestrator = new M365MailFetchOrchestrator();
@@ -228,6 +239,10 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
             if (failingImports.contains(id)) return ExternalIngestResult.error("r", "refused by the import service");
             if (throwingImports.contains(id)) throw new RuntimeException("the import service threw after reading the content");
             if (skippingImports.contains(id)) return ExternalIngestResult.skipped("r", "obj-" + id, "already imported");
+            if (warnedImports.containsKey(id)) {
+                importedIds.add(id);
+                return new ExternalIngestResult("r", "obj-" + id, "1.0", false, false, false, null, null, List.of(), warnedImports.get(id));
+            }
             if (skippedWithMissingAttachments.contains(id)) {
                 return new ExternalIngestResult("r", "obj-" + id, "1.0", false, false, true, "already imported", null, List.of(),
                         List.of("Attachment 'a.pdf' import failed: boom"));
@@ -378,7 +393,9 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
 
         assertFalse(result.hasErrors(), result.errors().toString());
         assertEquals(List.of("m7"), importedIds);
-        assertEquals(1, FOLDER_CALLS.get());
+        // Its own folder, then the stored link's and the answered link's: the links name the
+        // mailbox by its UPN, so each is asked for the id of the folder it reads.
+        assertEquals(3, FOLDER_CALLS.get());
     }
 
     /** The folder cannot be read: the stored link cannot be checked against it, so nothing is read. */
@@ -578,6 +595,95 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
         assertEquals("delta:" + FOLDER_ID + "|" + link("delta", "t2"), savedCheckpoint());
     }
 
+    /** An attachment imported and not linked to its message is a part missing too: the import says "Relationship failed" (review, P1). */
+    @Test
+    @DisplayName("M365: a message whose attachment could not be linked is recorded")
+    void m365AMessageWhoseAttachmentLinkFailedIsRecorded() {
+        warnedImports = Map.of("m1", List.of("Relationship failed: boom"));
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2", msg("m1")));
+        M365MailFetchOrchestrator orchestrator = m365();
+        checkpointIs(stored("delta", "t1"));
+
+        orchestrator.execute(null, profile(), connector(), FOLDER, 10);
+
+        assertEquals(1, dlqReadReasons.size(), "the failed link was not recorded: " + dlqReasons);
+        assertTrue(dlqReadReasons.get(0).contains("Relationship failed"), dlqReadReasons.toString());
+    }
+
+    /**
+     * The import's warnings about evidence — an attachment's provenance, say — do not mean a part
+     * is missing: recording them dead-lettered complete mail that could not be replayed (review, P1).
+     */
+    @Test
+    @DisplayName("M365: a warning about evidence is not a missing part")
+    void m365AnEvidenceWarningIsNotAMissingPart() {
+        warnedImports = Map.of("m1", List.of("attachment 'a.pdf': Provenance was NOT recorded for this document (x)",
+                "Provenance was NOT recorded for this document (y)"));
+        deltaPages = (exchange, n) -> json(exchange, 200, deltaPage("delta", "t2", msg("m1")));
+        M365MailFetchOrchestrator orchestrator = m365();
+        checkpointIs(stored("delta", "t1"));
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), FOLDER, 10);
+
+        assertTrue(dlqReasons.isEmpty(), "a complete mail was dead-lettered for a warning about evidence: " + dlqReasons);
+        assertEquals(1, result.imported(), result.toString());
+    }
+
+    /** A stored link of the right shape into another folder: the prefix names this folder, the link reads another (review, P1). */
+    @Test
+    @DisplayName("M365: a stored link that reads another folder is not followed")
+    void m365AStoredLinkThatReadsAnotherFolderIsNotFollowed() {
+        M365MailFetchOrchestrator orchestrator = m365();
+        checkpointIs("delta:" + FOLDER_ID + "|" + base + "/v1.0/users/" + USER + "/mailFolders/Other/messages/delta?$deltatoken=t1");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), FOLDER, 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("reads another folder")), result.errors().toString());
+        assertEquals(0, DELTA_CALLS.get(), "another folder's feed was read: " + DELTA_LINKS);
+    }
+
+    /** Another mailbox's inbox: the folder segment is the same name, the mailbox is not — resolved, and refused. */
+    @Test
+    @DisplayName("M365: a stored link into another mailbox's folder of the same name is not followed")
+    void m365AStoredLinkIntoAnotherMailboxsFolderIsNotFollowed() {
+        M365MailFetchOrchestrator orchestrator = m365();
+        checkpointIs("delta:" + FOLDER_ID + "|" + base + "/v1.0/users/other@x.com/mailFolders/inbox/messages/delta?$deltatoken=t1");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), FOLDER, 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("reads another folder")), result.errors().toString());
+        assertEquals(0, DELTA_CALLS.get(), "another mailbox's feed was read: " + DELTA_LINKS);
+    }
+
+    /** The form an earlier build of this version wrote names the mailbox: refused, and said to be that (review, P2). */
+    @Test
+    @DisplayName("M365: a checkpoint an earlier build wrote with the mailbox is refused as such")
+    void m365ACheckpointFromAnEarlierBuildIsRefusedAsSuch() {
+        M365MailFetchOrchestrator orchestrator = m365();
+        checkpointIs("delta:" + USER + "|" + link("delta", "t1"));
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), FOLDER, 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("earlier build")), result.errors().toString());
+        assertEquals(0, DELTA_CALLS.get());
+    }
+
+    /** Graph answers a link into another folder: the page is not passed on it. */
+    @Test
+    @DisplayName("M365: a page whose link reads another folder is refused, nothing on it imported")
+    void m365APageWhoseLinkReadsAnotherFolderIsRefused() {
+        deltaPages = (exchange, n) -> json(exchange, 200, pageLinking(base + "/v1.0/users/" + USER + "/mailFolders/Other/messages/delta?$skiptoken=s1",
+                true, msg("m1")));
+        M365MailFetchOrchestrator orchestrator = m365();
+        checkpointIs(stored("delta", "t1"));
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), FOLDER, 10);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("reads another folder")), result.errors().toString());
+        assertTrue(importedIds.isEmpty(), importedIds.toString());
+        verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+    }
+
     /** A removal that names nothing is not one this connector can account for: the page is not passed on it (review, P3). */
     @Test
     @DisplayName("M365: a removed entry without an id holds its page, nothing on it imported")
@@ -665,7 +771,10 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
 
         FetchResult result = orchestrator.execute(null, profile(), connector(), FOLDER, 10);
 
-        assertTrue(result.errors().stream().anyMatch(e -> e.contains("not a mail delta link")), result.errors().toString());
+        // The feed's own words, not the folder lookup's: that lookup also refuses a link out of
+        // the feed, as a "connection failed" — which tells the operator the wrong thing.
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("answered a link that is not a mail delta link")),
+                result.errors().toString());
         assertTrue(importedIds.isEmpty(), importedIds.toString());
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }
@@ -776,7 +885,7 @@ class M365MailFolderIsFollowedThroughTheDeltaFeedTest {
 
         assertEquals(List.of("m1"), importedIds, "a message past the limit was imported: " + importedIds);
         assertEquals(1, dlqReadReasons.size(), dlqReasons.toString());
-        assertTrue(dlqReadReasons.get(0).contains("without some of its attachments"), dlqReadReasons.toString());
+        assertTrue(dlqReadReasons.get(0).contains("without some of its parts"), dlqReadReasons.toString());
         assertTrue(result.incompleteReads().stream().anyMatch(r -> r.contains("read again next poll")), result.incompleteReads().toString());
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }

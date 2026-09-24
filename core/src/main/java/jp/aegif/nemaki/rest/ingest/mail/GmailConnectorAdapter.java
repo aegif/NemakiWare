@@ -66,14 +66,13 @@ public class GmailConnectorAdapter {
         // Rate limited (429) or unavailable (503): asked again after a growing wait, as the other
         // adapters' shared client does. The Google client asks nothing again by default, so a
         // window's summary reads turned each 429 into a failure — a message dead-lettered for a
-        // pause Gmail asked for. The credential's own handling (401) is kept, and comes first.
+        // pause Gmail asked for. A 401 is answered as the failure it is: the token is a fixed
+        // access token, and nothing here can refresh it.
         HttpRequestInitializer init = request -> {
             auth.initialize(request);
-            HttpBackOffUnsuccessfulResponseHandler backOff = new HttpBackOffUnsuccessfulResponseHandler(
+            request.setUnsuccessfulResponseHandler(new HttpBackOffUnsuccessfulResponseHandler(
                     new ExponentialBackOff.Builder().setMaxElapsedTimeMillis(RETRY_MAX_ELAPSED_MILLIS).build())
-                    .setBackOffRequired(response -> response.getStatusCode() == 429 || response.getStatusCode() == 503);
-            request.setUnsuccessfulResponseHandler((req, response, supportsRetry) ->
-                    auth.handleResponse(req, response, supportsRetry) || backOff.handleResponse(req, response, supportsRetry));
+                    .setBackOffRequired(response -> response.getStatusCode() == 429 || response.getStatusCode() == 503));
         };
         Gmail.Builder builder = new Gmail.Builder(
                 GoogleNetHttpTransport.newTrustedTransport(),
