@@ -239,6 +239,9 @@ INGEST_NOTION_SITES_TOKEN=ntn_...
   止まるので上げる）。**checkpoint より新しいメッセージは毎回全部読む**。checkpoint はメッセージの `ts`。
   記録できなかった失敗が 1 つでもあると checkpoint は進まない。添付の download 失敗は死信キューに
   URL 付きで記録され、再送時に Slack から取り直す（この版より前に書かれた行は URL を持たず、再送は拒否される）。
+  download URL の無いファイル（`mode` が `tombstone` / `hidden_by_limit` など — 削除済みやプランの上限で
+  隠されたもの）も「読めていない」として記録される（再送はできない）。Slack が外部サービスにリンクして
+  いるだけのファイル（`mode` が `external`）は添付として扱わず飛ばす。
 
 **（任意）Webhook 設定**
 - Slack アプリの **Event Subscriptions** を ON。
@@ -277,14 +280,16 @@ INGEST_NOTION_SITES_TOKEN=ntn_...
 
 **C. プロファイル**
 - `schedulerParams`：`teamId` と `channelId`（両方必須）、任意 `limit`（1 回の実行で取り込むメッセージ数。
-  古い順に取り、残りは次回に回って `PARTIAL`。試みるのは `limit` の 4 倍まで）、任意 `teamsMessageMaxRequests`
-  （1 回の listing でメッセージのページを読む回数の上限。1 回 50 件、既定 50 = 2,500 件。checkpoint より
-  新しいメッセージがそれを超えると**何も取り込まず** `PARTIAL` で止まるので上げる。checkpoint の
-  メッセージがページの末尾にあるときは、同じ作成時刻のメッセージが次のページに続いていないか見るために
-  次のページも 1 回読む）。
-  checkpoint は `<作成時刻を UTC に正規化>|<id>,…`。記録できなかった失敗が 1 つでもあると checkpoint は進まない。
+  ページの途中で尽きたらそのページは次回もう一度読む。試みるのは `limit` の 4 倍まで）、任意
+  `teamsMessageMaxRequests`（1 回の実行で Graph の delta feed に投げるページ要求の上限、既定 50。切れても
+  読めたところまでの link を保存して次回続く）。
+  チャンネルの一覧（返信チェーンの最終更新順で返る）は読まず、Graph の delta feed を追う。checkpoint は
+  `delta:<Graph の delta link>`。消すと feed の最初から読み直す（Graph は直近 8 か月として文書化。取り込み
+  済みは重複判定が答える）。この版より前の checkpoint（作成時刻）はその 1 ミリ秒前から読む。記録できなかった
+  失敗が 1 つでもあるとそのページは進まない。
   添付の download 失敗は死信キューに content URL 付きで記録され、再送時に Teams から取り直す（この版より
-  前に書かれた行は URL を持たず、再送は拒否される）。
+  前に書かれた行は URL を持たず、再送は拒否される）。content URL の無いファイル添付も「読めていない」として
+  記録される（再送はできない）。
 
 **（任意）Webhook**
 - Graph の change notification subscription を作成し、notificationUrl に
@@ -314,10 +319,12 @@ INGEST_NOTION_SITES_TOKEN=ntn_...
   投稿のページを読む回数の上限。1 回 200 件、既定 50 = 10,000 件。checkpoint より新しい投稿がそれを超えると
   **何も取り込まず** `PARTIAL` で止まるので上げる。ページは `before` cursor で読み、同じミリ秒の投稿がページ
   境界で失われないよう次のページは「末尾の時刻より新しい最後の投稿」の前から読む — 同じミリ秒の投稿が 200 件を
-  超えるとその先へ進めず `PARTIAL`）。
+  超えるとその先へ進めず `PARTIAL` で止まり続ける。上限を上げても checkpoint を消しても効かない — 残件 R113）。
   checkpoint は `<作成時刻を UTC に正規化>|<id>,…`（旧形式の `create_at` ミリ秒もそのまま読める）。記録できなかった
   失敗が 1 つでもあると checkpoint は進まない。添付の情報取得・download の失敗は死信キューに file id 付きで記録され、
-  再送時に Mattermost から取り直す（この版より前に書かれた行も file id を持つので取り直せる）。
+  再送時に Mattermost から取り直す（この版より前に書かれた行も file id を持つので取り直せる。情報取得に失敗して
+  id を名前にした行も再送で名前と種別を取り直す）。`before` の cursor の投稿が消えていて空のページが返ると
+  `PARTIAL`（次回やり直す）。
 
 Webhook はこのコネクタでは未対応（ポーリングのみ）。
 
