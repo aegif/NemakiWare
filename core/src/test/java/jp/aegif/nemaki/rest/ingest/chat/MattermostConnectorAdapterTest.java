@@ -44,6 +44,19 @@ class MattermostConnectorAdapterTest {
         System.clearProperty("nemaki.ingest.allowLocalhost");
     }
 
+    /** A full page of {@code count} posts p{firstK}, p{firstK-1}, … newest first, one per second. */
+    private static String pageOf(int firstK, int count) {
+        StringBuilder order = new StringBuilder();
+        StringBuilder posts = new StringBuilder();
+        for (int k = firstK; k > firstK - count; k--) {
+            if (order.length() > 0) { order.append(','); posts.append(','); }
+            order.append("\"p").append(k).append('"');
+            posts.append("\"p").append(k).append("\":{\"id\":\"p").append(k).append("\",\"message\":\"m\",\"user_id\":\"u1\",\"create_at\":")
+                    .append(1_700_000_000_000L + k * 1000L).append('}');
+        }
+        return "{\"order\":[" + order + "],\"posts\":{" + posts + "}}";
+    }
+
     // ── Auth contract ────────────────────────────────────────────
 
     @Test
@@ -67,7 +80,7 @@ class MattermostConnectorAdapterTest {
                     }}
                     """)));
 
-        var posts = adapter.getPosts("ch1", 50);
+        var posts = adapter.listSince("ch1", null, 10).posts();
         assertEquals(1, posts.size());
         assertEquals("p1", posts.get(0).id());
         assertEquals("Hello MM", posts.get(0).message());
@@ -86,7 +99,7 @@ class MattermostConnectorAdapterTest {
                     }}
                     """)));
 
-        var posts = adapter.getPosts("ch1", 50);
+        var posts = adapter.listSince("ch1", null, 10).posts();
         assertEquals("p1", posts.get(0).rootId());
     }
 
@@ -100,7 +113,7 @@ class MattermostConnectorAdapterTest {
                     }}
                     """)));
 
-        var posts = adapter.getPosts("ch1", 50);
+        var posts = adapter.listSince("ch1", null, 10).posts();
         assertTrue(posts.get(0).fileIds().isEmpty());
     }
 
@@ -114,7 +127,7 @@ class MattermostConnectorAdapterTest {
                     }}
                     """)));
 
-        var posts = adapter.getPosts("ch1", 50);
+        var posts = adapter.listSince("ch1", null, 10).posts();
         assertEquals(2, posts.size());
         // Posts should be returned in "order" array sequence
         assertEquals("p2", posts.get(0).id());
@@ -170,42 +183,61 @@ class MattermostConnectorAdapterTest {
     void shouldThrowOn401() {
         wireMock.stubFor(get(urlPathEqualTo("/api/v4/channels/ch1/posts"))
                 .willReturn(aResponse().withStatus(401)));
-        assertThrows(RuntimeException.class, () -> adapter.getPosts("ch1", 50));
+        assertThrows(RuntimeException.class, () -> adapter.listSince("ch1", null, 10));
     }
 
     // ── Pagination contract ──────────────────────────────────────
 
+    /**
+     * A listing stopped at the request cap says so and is NOT complete — the posts it did not
+     * reach are the older ones, and a checkpoint raised over the ones it did reach would exclude
+     * them for ever (R107). The old getPosts() cut at a post count and said nothing.
+     */
     @Test
-    void getPostsRespectsLimitCap() throws Exception {
+    void aListingCutAtTheRequestCapSaysSoAndIsNotComplete() throws Exception {
         wireMock.stubFor(get(urlPathMatching("/api/v4/channels/.*/posts.*"))
-                .willReturn(okJson("""
-                    {"order":["p1","p2","p3"],"posts":{
-                        "p1":{"id":"p1","message":"a","user_id":"u1","create_at":1000},
-                        "p2":{"id":"p2","message":"b","user_id":"u1","create_at":2000},
-                        "p3":{"id":"p3","message":"c","user_id":"u1","create_at":3000}
-                    }}
-                    """)));
+                .willReturn(okJson(pageOf(300, 200))));
 
-        var posts = adapter.getPosts("ch1", 2);
-        assertEquals(2, posts.size(), "Should respect limit cap of 2");
+        var listing = adapter.listSince("ch1", null, 1);
+        assertFalse(listing.complete(), "a cut listing was reported whole");
+        assertTrue(listing.truncatedBecause().contains("mattermostPostMaxRequests"), listing.truncatedBecause());
+        assertEquals(200, listing.posts().size());
     }
 
+    /** The listing stops at the first post created before the checkpoint — Mattermost lists newest first. */
     @Test
-    void getPostsPaginatesAcrossPages() throws Exception {
-        // Page 0: full page
+    void theListingStopsAtTheCheckpoint() throws Exception {
         wireMock.stubFor(get(urlPathMatching("/api/v4/channels/.*/posts.*"))
-                .withQueryParam("page", equalTo("0"))
                 .willReturn(okJson("""
-                    {"order":["p1"],"posts":{"p1":{"id":"p1","message":"a","user_id":"u1","create_at":1000}}}
+                    {"order":["p3","p2","p1"],"posts":{
+                        "p3":{"id":"p3","message":"c","user_id":"u1","create_at":3000},
+                        "p2":{"id":"p2","message":"b","user_id":"u1","create_at":2000},
+                        "p1":{"id":"p1","message":"a","user_id":"u1","create_at":1000}
+                    }}
                     """)));
-        // Page 1: empty (end)
-        wireMock.stubFor(get(urlPathMatching("/api/v4/channels/.*/posts.*"))
-                .withQueryParam("page", equalTo("1"))
-                .willReturn(okJson("""
-                    {"order":[],"posts":{}}
-                    """)));
+        var listing = adapter.listSince("ch1", "1970-01-01T00:00:01.500000000Z", 10);
+        assertTrue(listing.complete(), listing.truncatedBecause());
+        assertEquals(2, listing.posts().size(), "only the posts newer than the checkpoint: " + listing.posts());
+        assertEquals("p3", listing.posts().get(0).id());
+        assertEquals("p2", listing.posts().get(1).id());
+    }
 
-        var posts = adapter.getPosts("ch1", 200);
-        assertEquals(1, posts.size());
+    /** The pages are walked by {@code before=<post id>}: the second page is asked before the post above the first page's oldest time. */
+    @Test
+    void theListingFollowsBeforeCursorsToTheEnd() throws Exception {
+        // Page 1: full (200 posts, p300…p101), asked without a cursor
+        wireMock.stubFor(get(urlPathMatching("/api/v4/channels/.*/posts.*"))
+                .withQueryParam("before", absent())
+                .willReturn(okJson(pageOf(300, 200))));
+        // Page 2: asked before p102 (the post above p101, the oldest of page 1); short, so the end
+        wireMock.stubFor(get(urlPathMatching("/api/v4/channels/.*/posts.*"))
+                .withQueryParam("before", equalTo("p102"))
+                .willReturn(okJson(pageOf(101, 2))));
+
+        var listing = adapter.listSince("ch1", null, 10);
+        assertTrue(listing.complete(), listing.truncatedBecause());
+        assertEquals(201, listing.posts().size(), "p101 is listed once although both pages carry it");
+        assertEquals("p100", listing.posts().get(200).id());
+        wireMock.verify(1, getRequestedFor(urlPathMatching("/api/v4/channels/.*/posts")).withQueryParam("before", equalTo("p102")));
     }
 }

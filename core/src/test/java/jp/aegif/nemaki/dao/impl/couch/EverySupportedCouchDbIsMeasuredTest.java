@@ -230,9 +230,14 @@ class EverySupportedCouchDbIsMeasuredTest {
         }
         assertTrue(boundaries >= 2, "the canon used to name the sweep boundary in more than one "
                 + "place and now names it " + boundaries + " time(s)");
-        java.util.SortedSet<String> unswept = new java.util.TreeSet<>();
+        // The "3" generation above the boundary, and the whole "4" generation that follows it
+        // (AA4 came after ZZ3; every "4" id is newer than any "3" id, whatever the letters say),
+        // in that order: the generation digit first, then the letters.
+        java.util.Comparator<String> byGeneration = java.util.Comparator
+                .comparing((String id) -> id.charAt(2)).thenComparing(id -> id.substring(0, 2));
+        java.util.SortedSet<String> unswept = new java.util.TreeSet<>(byGeneration);
         for (String id : seen) {
-            if (id.compareTo(from) > 0 && id.matches("[A-Z]{2}3")) {
+            if ((id.compareTo(from) > 0 && id.matches("[A-Z]{2}3")) || id.matches("[A-Z]{2}4")) {
                 unswept.add(id);
             }
         }
@@ -325,14 +330,14 @@ class EverySupportedCouchDbIsMeasuredTest {
             assertTrue(listEnd > listStart, "the ledger's enumeration does not end where this looks");
             String ledger = canon.substring(listStart, listEnd);
             java.util.Set<String> named = new java.util.LinkedHashSet<>();
-            Matcher single = Pattern.compile("\\b([A-Z]{2}3)\\b").matcher(ledger);
+            Matcher single = Pattern.compile("\\b([A-Z]{2}[34])\\b").matcher(ledger);
             while (single.find()) {
                 named.add(single.group(1));
             }
-            Matcher range = Pattern.compile("([A-Z]{2}3)〜([A-Z]{2}3)").matcher(ledger);
+            Matcher range = Pattern.compile("([A-Z]{2}[34])〜([A-Z]{2}[34])").matcher(ledger);
             while (range.find()) {
                 for (String id : unswept) {
-                    if (id.compareTo(range.group(1)) >= 0 && id.compareTo(range.group(2)) <= 0) {
+                    if (byGeneration.compare(id, range.group(1)) >= 0 && byGeneration.compare(id, range.group(2)) <= 0) {
                         named.add(id);
                     }
                 }

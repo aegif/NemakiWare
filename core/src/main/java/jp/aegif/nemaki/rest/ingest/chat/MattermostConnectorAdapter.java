@@ -12,8 +12,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import jp.aegif.nemaki.config.ObjectMapperFactory;
+import jp.aegif.nemaki.rest.ingest.WatermarkCheckpoint;
 
 /**
  * Mattermost REST API connector adapter — fetches channel posts and files.
@@ -25,6 +28,11 @@ public class MattermostConnectorAdapter {
 
     private static final Logger logger = LoggerFactory.getLogger(MattermostConnectorAdapter.class);
     private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
+
+    /** Posts per page: Mattermost clamps {@code per_page} to 200 ({@code PerPageMaximum} in the server). */
+    static final int PAGE_SIZE = 200;
+    /** How many post pages one listing may ask for by default: 50 × 200 = 10,000 posts. */
+    public static final int DEFAULT_MAX_POST_REQUESTS = 50;
 
     private final String baseUrl;
     private final String token;
@@ -50,6 +58,17 @@ public class MattermostConnectorAdapter {
     public record MattermostFile(String id, String name, String mimeType, long size) {}
 
     /**
+     * What a listing down to the checkpoint read.
+     *
+     * @param posts the posts newer than the checkpoint, newest first as Mattermost lists them
+     * @param complete false when the listing was CUT before reaching the checkpoint — the
+     *                 posts it did not reach are the OLDER ones, so a checkpoint raised from what
+     *                 it did reach would exclude them for ever
+     * @param truncatedBecause why, when not complete
+     */
+    public record PostListing(List<MattermostPost> posts, boolean complete, String truncatedBecause) {}
+
+    /**
      * List channels in a team.
      */
     public List<MattermostChannel> listChannels(String teamId) throws Exception {
@@ -69,48 +88,142 @@ public class MattermostConnectorAdapter {
     }
 
     /**
-     * Fetch posts from a channel with page-based pagination.
+     * The posts of a channel newer than a checkpoint, read newest first down to it.
      *
-     * <p>Mattermost uses {@code page} + {@code per_page} parameters.
-     * Fetches until {@code perPage} total posts are collected or no more
-     * results remain.
+     * <p>Mattermost lists a channel's posts by creation time, newest first ({@code ORDER BY
+     * CreateAt DESC} in the server's store), and offers no filter on the creation time — its
+     * {@code since} selects by UPDATE time, is capped at 1,000 rows by the server without saying
+     * so, and ignores paging — so the listing walks the pages until it sees a post created before
+     * the checkpoint. A post AT the checkpoint's time is passed on: the caller's checkpoint names
+     * the ids done at its time, and only the caller can tell those from the rest.
      *
-     * @param channelId channel ID
-     * @param perPage   max total posts to return
+     * <p>The pages are walked by {@code before=<post id>}, a cursor on the post's creation time,
+     * not by page offsets — an offset skips a post when one above it is deleted while the pages
+     * are read. {@code before} is strict (posts created BEFORE that post's time), so the next page
+     * is asked before the LAST post created strictly after the page's oldest creation time: it
+     * begins with that oldest time again, and a post at it that the page did not show is not lost
+     * (the ones it did show are listed once — a seen set). A full page of posts all created at one
+     * time cannot be walked past this way and is a cut. A page that repeats an earlier one is out
+     * of order — its first post is newer than the last post read — and is refused by the order
+     * check below, so a server that repeats itself is not walked to the cap.
+     *
+     * <p>Refused, as a whole: a page without {@code order} / {@code posts}, an order naming a post
+     * the page does not carry, a post without an id or a creation time, and a post created after
+     * the one before it — the stop rests on newest-first order, and a listing that is not in
+     * order would report as complete a span with newer posts behind it. A short page is the end:
+     * the server answers {@code LIMIT per_page} rows and clamps {@code per_page} to 200.
+     *
+     * @param sinceCanonical the checkpoint's creation time in {@link WatermarkCheckpoint#canonical}
+     *                       form, or null to read the whole channel
+     * @param maxRequests    how many pages may be asked for before the listing is cut
      */
-    public List<MattermostPost> getPosts(String channelId, int perPage) throws Exception {
-        int pageSize = Math.min(perPage, 200); // Mattermost max: 200
-        List<MattermostPost> allPosts = new ArrayList<>();
-
-        for (int page = 0; page < 50; page++) { // Hard cap
-            String url = baseUrl + "/api/v4/channels/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(channelId)
-                    + "/posts?per_page=" + pageSize + "&page=" + page;
+    public PostListing listSince(String channelId, String sinceCanonical, int maxRequests) throws Exception {
+        String channel = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(channelId);
+        List<MattermostPost> newer = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        String before = null;
+        String previousAt = null;
+        for (int request = 1; request <= maxRequests; request++) {
+            String url = baseUrl + "/api/v4/channels/" + channel + "/posts?per_page=" + PAGE_SIZE + "&page=0"
+                    + (before == null ? "" : "&before=" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(before));
             JsonNode root = mmGet(url);
             JsonNode order = root.get("order");
             JsonNode posts = root.get("posts");
-            if (order == null || posts == null || order.isEmpty()) break;
-
-            for (JsonNode postId : order) {
-                JsonNode post = posts.get(postId.asText());
-                if (post == null) continue;
-                List<String> fileIds = new ArrayList<>();
-                JsonNode fids = post.get("file_ids");
-                if (fids != null && fids.isArray()) {
-                    for (JsonNode fid : fids) fileIds.add(fid.asText());
-                }
-                allPosts.add(new MattermostPost(
-                        post.path("id").asText(),
-                        post.path("message").asText(),
-                        post.path("user_id").asText(),
-                        post.path("create_at").asLong(0),
-                        post.has("root_id") ? post.path("root_id").asText("") : "",
-                        fileIds));
-                if (allPosts.size() >= perPage) break;
+            if (order == null || !order.isArray() || posts == null || !posts.isObject()) {
+                throw new RuntimeException("Mattermost answered the channel posts without an order array and a posts map on request "
+                        + request + ", so how many posts the channel holds is unknown");
             }
-            if (allPosts.size() >= perPage) break;
-            if (order.size() < pageSize) break; // Last page
+            List<MattermostPost> page = new ArrayList<>();
+            List<String> ats = new ArrayList<>();
+            for (JsonNode postId : order) {
+                String id = postId.asText("");
+                JsonNode post = id.isEmpty() ? null : posts.get(id);
+                if (post == null) {
+                    throw new RuntimeException("Mattermost listed post '" + id + "' in the order of a page without carrying it in posts, "
+                            + "so the page cannot be read");
+                }
+                MattermostPost msg = parsePost(post);
+                if (msg.id() == null || msg.id().isBlank()) {
+                    throw new RuntimeException("Mattermost listed a post without an id, so it can neither be skipped nor named");
+                }
+                String at = creationTime(msg);
+                // The stop below rests on newest-first order. A post NEWER than the one before it
+                // — within a page or across the pages read — breaks that, and a stop taken on such
+                // a listing would report as complete a span with newer posts behind it. Refused.
+                if (previousAt != null && at.compareTo(previousAt) > 0) {
+                    throw new RuntimeException("Mattermost listed post " + msg.id() + " (create_at " + msg.createAt()
+                            + ") newer than the one before it, so the channel is not listed newest first and "
+                            + "the listing cannot tell where the checkpoint is");
+                }
+                previousAt = at;
+                page.add(msg);
+                ats.add(at);
+            }
+            for (int i = 0; i < page.size(); i++) {
+                MattermostPost msg = page.get(i);
+                if (!seen.add(msg.id())) {
+                    continue; // listed again by the overlap the cursor leaves
+                }
+                if (sinceCanonical != null && ats.get(i).compareTo(sinceCanonical) < 0) {
+                    // Newest first: this and everything after it is older than the checkpoint.
+                    return new PostListing(newer, true, null);
+                }
+                newer.add(msg);
+            }
+            if (page.size() < PAGE_SIZE) {
+                return new PostListing(newer, true, null);
+            }
+            // The next page is asked BEFORE the last post created strictly after this page's
+            // oldest creation time, so that it begins with that time again — a post at it that
+            // this page did not show (a tie cut by the page boundary) is not lost.
+            String oldestAt = ats.get(ats.size() - 1);
+            String cursor = null;
+            for (int i = 0; i < page.size(); i++) {
+                if (ats.get(i).compareTo(oldestAt) > 0) cursor = page.get(i).id();
+            }
+            if (cursor == null) {
+                return new PostListing(newer, false, "a full page of posts all created at " + oldestAt
+                        + " (create_at " + page.get(0).createAt() + ") cannot be walked past by this connector, "
+                        + "so the listing cannot move forward");
+            }
+            before = cursor;
         }
-        return allPosts;
+        return new PostListing(newer, false, "the cap of " + maxRequests + " post request(s) was reached with "
+                + newer.size() + " post(s) read and older ones still above the checkpoint (raise the profile's "
+                + "mattermostPostMaxRequests parameter)");
+    }
+
+    /**
+     * A post's creation time in the canonical form. Mattermost writes {@code create_at} (Unix
+     * milliseconds) for every post; a post without one — or with one this connector cannot
+     * place — can neither be skipped nor named, so the listing that carries it is refused.
+     */
+    static String creationTime(MattermostPost post) {
+        if (post.createAt() <= 0) {
+            throw new RuntimeException("Mattermost listed post " + post.id() + " without a creation time (create_at), "
+                    + "so it can neither be skipped nor named");
+        }
+        try {
+            return WatermarkCheckpoint.canonical(java.time.Instant.ofEpochMilli(post.createAt()));
+        } catch (IllegalStateException | java.time.DateTimeException outOfRange) {
+            throw new RuntimeException("Mattermost listed post " + post.id() + " with a creation time this connector cannot place ("
+                    + post.createAt() + "): " + outOfRange.getMessage());
+        }
+    }
+
+    private static MattermostPost parsePost(JsonNode post) {
+        List<String> fileIds = new ArrayList<>();
+        JsonNode fids = post.get("file_ids");
+        if (fids != null && fids.isArray()) {
+            for (JsonNode fid : fids) fileIds.add(fid.asText());
+        }
+        return new MattermostPost(
+                post.path("id").asText(""),
+                post.path("message").asText(),
+                post.path("user_id").asText(),
+                post.path("create_at").asLong(0),
+                post.has("root_id") ? post.path("root_id").asText("") : "",
+                fileIds);
     }
 
     /**

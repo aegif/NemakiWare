@@ -73,7 +73,7 @@ public final class AdapterRegistry {
                 "mattermost", "Mattermost",
                 SourceArchetype.CHAT_CONTEXT,
                 Set.of("channelId"),
-                Set.of("limit"),
+                Set.of("limit", "mattermostPostMaxRequests"),
                 List.of("channelId"),
                 3, "{\"channelId\":\"...\"}"));
 

@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jp.aegif.nemaki.rest.ingest.fileshare.BoxConnectorAdapter;
 import jp.aegif.nemaki.rest.ingest.fileshare.DropboxConnectorAdapter;
 import jp.aegif.nemaki.rest.ingest.fileshare.FileShareRefetch;
+import jp.aegif.nemaki.rest.ingest.chat.MattermostConnectorAdapter;
 import jp.aegif.nemaki.rest.ingest.chat.SlackConnectorAdapter;
 import jp.aegif.nemaki.rest.ingest.chat.TeamsConnectorAdapter;
 import jp.aegif.nemaki.util.constant.CallContextKey;
@@ -105,6 +106,7 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
         connector.setSourceArchetype(archetype);
         connector.setSourceSystem(system);
         connector.setCredentialRef("key");
+        connector.setEndpoint("https://mm.example.com");
         when(connectorService.get("c1")).thenReturn(connector);
         when(connectorService.countIndexFree("c1")).thenReturn(1);
 
@@ -112,6 +114,17 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
         when(fetchSupport.resolvePasswordOrRefuse(any())).thenReturn("tok");
 
         FileShareRefetch refetch = new FileShareRefetch();
+        Field mattermostFactory = FileShareRefetch.class.getDeclaredField("mattermostFactory");
+        mattermostFactory.setAccessible(true);
+        mattermostFactory.set(refetch, (java.util.function.BiFunction<String, String, MattermostConnectorAdapter>) (endpoint, token) -> {
+            adaptersBuilt.incrementAndGet();
+            return new MattermostConnectorAdapter(endpoint, token) {
+                @Override public InputStream downloadFile(String fileId) {
+                    downloaded.add("mattermost:" + endpoint + "#" + fileId);
+                    return download.apply(fileId);
+                }
+            };
+        });
         Field boxFactory = FileShareRefetch.class.getDeclaredField("boxFactory");
         boxFactory.setAccessible(true);
         boxFactory.set(refetch, (java.util.function.Function<String, BoxConnectorAdapter>) token -> {
@@ -422,15 +435,33 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
         assertTrue(executed.isEmpty() && downloaded.isEmpty(), "replayed or fetched without a URL: " + executed.size() + " / " + downloaded);
     }
 
-    @Test
-    @DisplayName("a Mattermost attachment row without bytes is refused, not replayed as an empty document")
-    void aMattermostAttachmentRowWithoutBytesIsRefused() throws Exception {
-        ResponseEntity<?> res = retry("mattermost", SourceArchetype.CHAT_CONTEXT, false, null, SLACK_ATTACHMENT_ROW,
-                url -> new ByteArrayInputStream(new byte[0]), row -> { });
+    private static final String MATTERMOST_ATTACHMENT_ROW = "{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\",\"sourceObjectId\":\"f-1\","
+            + "\"sourceObjectType\":\"attachment\",\"fileName\":\"a.pdf\",\"metadata\":{\"channelId\":\"C1\"}}";
 
-        assertTrue(executed.isEmpty(), "replayed without bytes: an empty document would have been imported");
+    /** A Mattermost attachment row names the file id; the bytes come back from the connector's own endpoint. */
+    @Test
+    @DisplayName("a Mattermost attachment row without bytes is fetched again by its file id from the connector's endpoint")
+    void aMattermostAttachmentRowIsFetchedAgainByItsFileId() throws Exception {
+        ResponseEntity<?> res = retry("mattermost", SourceArchetype.CHAT_CONTEXT, false, null, MATTERMOST_ATTACHMENT_ROW,
+                id -> new ByteArrayInputStream("fresh bytes".getBytes(StandardCharsets.UTF_8)), row -> { });
+
+        assertEquals(HttpStatus.OK, res.getStatusCode(), String.valueOf(res.getBody()));
+        assertEquals(List.of("mattermost:https://mm.example.com#f-1"), downloaded);
+        assertEquals(1, executed.size());
+        assertEquals("fresh bytes", read(requireBytes(executed.get(0))));
+    }
+
+    @Test
+    @DisplayName("a Mattermost attachment row that names no file id is refused, not fetched by anything else")
+    void aMattermostAttachmentRowWithoutAFileIdIsRefused() throws Exception {
+        String noId = "{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\",\"sourceObjectId\":\"\",\"sourceObjectType\":\"attachment\","
+                + "\"metadata\":{\"channelId\":\"C1\"}}";
+        ResponseEntity<?> res = retry("mattermost", SourceArchetype.CHAT_CONTEXT, false, null, noId,
+                id -> new ByteArrayInputStream("fresh bytes".getBytes(StandardCharsets.UTF_8)), row -> { });
+
         assertEquals(HttpStatus.CONFLICT, res.getStatusCode(), String.valueOf(res.getBody()));
-        assertTrue(String.valueOf(res.getBody()).contains("mattermost"), String.valueOf(res.getBody()));
+        assertTrue(String.valueOf(res.getBody()).contains("file id"), String.valueOf(res.getBody()));
+        assertTrue(executed.isEmpty() && downloaded.isEmpty(), "replayed or fetched without a file id: " + executed.size() + " / " + downloaded);
     }
 
     /** A chat MESSAGE row (not an attachment) is metadata-only by design and still replays as before. */

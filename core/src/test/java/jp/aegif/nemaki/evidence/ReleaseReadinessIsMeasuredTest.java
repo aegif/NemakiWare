@@ -419,11 +419,15 @@ class ReleaseReadinessIsMeasuredTest {
         Matcher boundary = Pattern.compile("境界 LM3").matcher(canon);
         assertTrue(boundary.find(), "the canon no longer names the sweep boundary");
 
-        // The three-letter sequence the ids run through, from the boundary to the newest.
+        // The three-letter sequence the ids run through, from the boundary to the newest: the
+        // "3" generation AA3…ZZ3 and then the "4" generation AA4… that follows it (the first id
+        // after ZZ3 was AA4; a sequence that stopped at ZZ3 would count no gap past it).
         List<String> sequence = new ArrayList<>();
-        for (char first = 'A'; first <= 'Z'; first++) {
-            for (char second = 'A'; second <= 'Z'; second++) {
-                sequence.add("" + first + second + "3");
+        for (char generation = '3'; generation <= '4'; generation++) {
+            for (char first = 'A'; first <= 'Z'; first++) {
+                for (char second = 'A'; second <= 'Z'; second++) {
+                    sequence.add("" + first + second + generation);
+                }
             }
         }
         String newest = declared.stream().filter(sequence::contains)

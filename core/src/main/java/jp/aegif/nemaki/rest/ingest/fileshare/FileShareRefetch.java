@@ -6,6 +6,7 @@ import java.util.function.Function;
 import jp.aegif.nemaki.rest.ingest.ConnectorDefinition;
 import jp.aegif.nemaki.rest.ingest.ExternalIngestRequest;
 import jp.aegif.nemaki.rest.ingest.SourceArchetype;
+import jp.aegif.nemaki.rest.ingest.chat.MattermostConnectorAdapter;
 import jp.aegif.nemaki.rest.ingest.chat.SlackConnectorAdapter;
 import jp.aegif.nemaki.rest.ingest.chat.TeamsConnectorAdapter;
 
@@ -23,9 +24,10 @@ import jp.aegif.nemaki.rest.ingest.chat.TeamsConnectorAdapter;
  * id (review, P1). Box by the file id the request names; Dropbox by its {@code id:…} file id,
  * which its download API accepts in place of a path. A Slack attachment by the download URL
  * the orchestrator put in the request's metadata ({@code slackFileUrl}); a Teams attachment by
- * its content URL ({@code teamsFileUrl}). Google Drive and OneDrive files, and the attachments of
- * the other chat and mail connectors, are not fetched again here (R111) — their rows are refused
- * rather than replayed as empty documents.
+ * its content URL ({@code teamsFileUrl}); a Mattermost attachment by the file id the request
+ * names, from the connector's own endpoint. Google Drive and OneDrive files, and the attachments
+ * of the other chat and mail connectors, are not fetched again here (R111) — their rows are
+ * refused rather than replayed as empty documents.
  */
 public class FileShareRefetch {
 
@@ -34,14 +36,17 @@ public class FileShareRefetch {
     Function<String, DropboxConnectorAdapter> dropboxFactory = DropboxConnectorAdapter::new;
     Function<String, SlackConnectorAdapter> slackFactory = SlackConnectorAdapter::new;
     Function<String, TeamsConnectorAdapter> teamsFactory = TeamsConnectorAdapter::new;
+    /** By the connector's endpoint and the token: Mattermost is self-hosted. */
+    java.util.function.BiFunction<String, String, MattermostConnectorAdapter> mattermostFactory = MattermostConnectorAdapter::new;
 
-    /** Whether the row's item is one this can fetch again: a Box / Dropbox file, or a Slack attachment. */
+    /** Whether the row's item is one this can fetch again: a Box / Dropbox file, or a Slack / Teams / Mattermost attachment. */
     public boolean canRefetch(ConnectorDefinition connector, ExternalIngestRequest request) {
         String system = connector.getSourceSystem();
         if (connector.getSourceArchetype() == SourceArchetype.FILE_SHARE) {
             return "box".equals(system) || "dropbox".equals(system);
         }
-        return ("slack".equals(system) || "teams".equals(system)) && "attachment".equals(request.getSourceObjectType());
+        return ("slack".equals(system) || "teams".equals(system) || "mattermost".equals(system))
+                && "attachment".equals(request.getSourceObjectType());
     }
 
     /**
@@ -80,6 +85,16 @@ public class FileShareRefetch {
                         + "connector recorded one cannot be fetched again)");
             }
             return teamsFactory.apply(token).downloadFile(url.toString());
+        }
+        if ("mattermost".equals(system) && "attachment".equals(request.getSourceObjectType())) {
+            String fileId = request.getSourceObjectId();
+            if (fileId == null || fileId.isBlank()) {
+                throw new IllegalArgumentException("the row names no Mattermost file id");
+            }
+            if (connector.getEndpoint() == null || connector.getEndpoint().isBlank()) {
+                throw new IllegalArgumentException("the Mattermost connector names no endpoint to fetch the file from");
+            }
+            return mattermostFactory.apply(connector.getEndpoint(), token).downloadFile(fileId);
         }
         throw new IllegalArgumentException(system + " items are not fetched again here");
     }
