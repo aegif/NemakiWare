@@ -12590,13 +12590,20 @@ CONTROLS = [
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
         # Re-pointed 2026-09-22 (11 巡目): the looseness is gone, so the sabotage ADDS it back
         # as a last resort after every named base has failed.
+        # Re-pointed 2026-09-25 (before the sixth sweep): the lookup was extracted into
+        # resolveSpellings (20 巡目), the anchor moved with it, and `reference` is not in scope
+        # there — the sabotage no longer compiled, and a compile failure stops a sweep. Found by
+        # compiling every .java sabotage before the sweep. Same looseness, over each spelling.
+        # The lookup is handed the DECODED spellings, so the looseness no longer reaches the
+        # literal one: the escaped-href lock stays green here (three other controls declare it),
+        # and the foreign file-URI lock fails instead (measured).
         find='        return null;\n    }\n\n    /**\n     * Is this candidate inside the package',
-        replace='        for (String path : entries.keySet()) {\n            if (path.endsWith(reference)) {\n                return path;\n            }\n        }\n        return null;\n    }\n\n    /**\n     * Is this candidate inside the package',
+        replace='        for (String spelling : spellings) {\n            for (String path : entries.keySet()) {\n                if (path.endsWith(spelling)) {\n                    return path;\n                }\n            }\n        }\n        return null;\n    }\n\n    /**\n     * Is this candidate inside the package',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['oneMetssReferenceIsNotResolvedByAnothersDirectory',
                      'aPayloadCopyDoesNotCloseTheMets',
                      'anAbsoluteReferenceIgnoresTheMetssOwnDirectory',
-                     'anEscapedHrefIsNotSatisfiedByItsLiteralSpelling'],
+                     'aForeignFileUriIsNotLocalAndAnEmptyAuthorityIsAbsolute'],
     ),
     dict(
         id='QT3',
